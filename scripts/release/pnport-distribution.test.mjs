@@ -10,7 +10,8 @@ import { createRequire } from "node:module";
 import { buildPackage, inspectTarball, nativeArchive, packageNames, tarEntries } from "../../packages/pnport/scripts/package.mjs";
 import { publishArtifacts, registryTags, registryPreviewTags, validatePreviewTags } from "../../packages/pnport/scripts/publish.mjs";
 import { findRelease, publish as publishGithub } from "../../packages/pnport/scripts/github-release.mjs";
-import { metadata, requireReleaseReady, requirePublicationReady, sourceText } from "../../packages/pnport/scripts/common.mjs";
+import { metadata, npm, requireReleaseReady, requirePublicationReady, sourceText } from "../../packages/pnport/scripts/common.mjs";
+import { companion, nativeManifest } from "../../packages/pnport/scripts/manifests.mjs";
 import { isPreviewVersion, publicationChannel } from "../../packages/pnport/scripts/version.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -67,12 +68,47 @@ test("preview launcher and native tarballs retain exact version and immutable id
     const preload = path.join(output, "preload-fixture");
     writeFileSync(binary, `#!/bin/sh\nprintf 'pnport ${version}\\n'\n`);
     chmodSync(binary, 0o755);
-    writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
+    writeFileSync(preload, target.os === "darwin" ? "PNPORT_PRELOAD_0.1.0_FORMAT_2_READY" : "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
     const native = buildPackage({ target, binary, preload, output, sourceRevision: revision, read });
     assert.equal(native.version, version);
     assert.equal(inspectTarball(path.join(output, "tarballs", native.filename), version, revision).integrity, native.integrity);
   }
   assert.throws(() => buildPackage({ output, sourceRevision: revision, read: (file) => read(file).replaceAll(version, "0.1.0-next.01") }), /Unsupported/u);
+});
+
+test("macOS native package inspection rejects companions without constructor leases", (t) => {
+  if (process.platform === "win32") {
+    t.skip("This macOS tarball fixture requires POSIX executable modes");
+    return;
+  }
+  const output = fixture(t);
+  const { version } = metadata();
+  for (const target of targets.filter(({ os }) => os === "darwin")) {
+    const directory = path.join(output, target.suffix);
+    mkdirSync(path.join(directory, "bin"), { recursive: true });
+    const value = nativeManifest(target.suffix, version, revision);
+    value.repository = { ...value.repository, directory: "packages/pnport" };
+    value.publishConfig = { access: "public", registry: "https://registry.npmjs.org" };
+    value.files = [`bin/${target.binary}`, `bin/${companion(target)}`, "README.md", "LICENSE", "LICENSE.fspy"];
+    writeFileSync(path.join(directory, "package.json"), JSON.stringify(value));
+    for (const [name, source] of [["README.md", "packages/pnport/README.md"], ["LICENSE", "crates/pnport/LICENSE"], ["LICENSE.fspy", "crates/fspy/LICENSE"]]) {
+      writeFileSync(path.join(directory, name), sourceText(source));
+    }
+    const binary = path.join(directory, "bin", target.binary);
+    const preload = path.join(directory, "bin", companion(target));
+    writeFileSync(binary, "native-inspection-fixture");
+    chmodSync(binary, 0o755);
+    // Inspect fixture bytes on any Unix host without claiming a native build
+    // or bypassing buildPackage's actual target-host restriction.
+    const pack = () => {
+      const [packed] = JSON.parse(npm(["pack", "--json", "--ignore-scripts", "--pack-destination", output], { cwd: directory }));
+      return path.join(output, packed.filename);
+    };
+    writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
+    assert.throws(() => inspectTarball(pack(), version, revision), /companion ABI mismatch/u);
+    writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_2_READY");
+    assert.equal(inspectTarball(pack(), version, revision).name, target.name);
+  }
 });
 
 test("native release archives contain one matched pair and exact license notices", () => {

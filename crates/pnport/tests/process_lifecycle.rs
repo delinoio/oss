@@ -3,7 +3,7 @@
 
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     os::{
         fd::{AsRawFd, FromRawFd},
         unix::{
@@ -215,18 +215,89 @@ impl Fixture {
             let status = self.child.as_mut().unwrap().try_wait().unwrap();
             assert!(
                 status.is_none(),
-                "terminal driver exited before {name}: {status:?}"
+                "terminal driver exited before {name}: {status:?}; diagnostics={}",
+                self.terminal_diagnostics()
             );
             assert!(
                 Instant::now() < deadline,
-                "terminal job did not reach {name}; driver={}, launching={}, running={}, root={}",
+                "terminal job did not reach {name}; driver={}, launching={}, running={}, root={}, \
+                 diagnostics={}",
                 self.root.path().join("terminal.driver").is_file(),
                 self.root.path().join("terminal.launching").is_file(),
                 self.root.path().join("terminal.running").is_file(),
-                self.root.path().join("root.pid").is_file()
+                self.root.path().join("root.pid").is_file(),
+                self.terminal_diagnostics()
             );
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    fn terminal_diagnostics(&self) -> serde_json::Value {
+        let mut log = String::new();
+        if let Ok(file) = fs::File::open(self.root.path().join("terminal.diagnostics")) {
+            let _ = file.take(64 * 1024).read_to_string(&mut log);
+        }
+        let actions = [
+            "macos_owner_started",
+            "spawn",
+            "initialization_started",
+            "macos_job_stopped",
+            "macos_job_resumed",
+            "descendant_injection_deadline",
+            "supervisor_failed",
+            "macos_owner_cleanup_requested",
+            "macos_owner_cleanup_acknowledged",
+            "child_exit",
+        ];
+        let observed: Vec<_> = log
+            .lines()
+            .flat_map(|line| {
+                actions
+                    .iter()
+                    .filter(move |action| line.contains(&format!("action=\"{action}\"")))
+            })
+            .take(128)
+            .collect();
+        let codes: Vec<_> = [
+            "PNPORT_INJECTION_FAILED",
+            "PNPORT_CLEANUP_FAILED",
+            "PNPORT_UNSUPPORTED_OPERATION",
+            "PNPORT_GRAPH_CHANGED",
+            "PNPORT_CACHE_FAILED",
+        ]
+        .into_iter()
+        .filter(|code| log.contains(code))
+        .collect();
+        #[cfg(target_os = "macos")]
+        let stopped = fs::read_to_string(self.root.path().join("terminal.supervisor"))
+            .ok()
+            .and_then(|value| value.parse::<i32>().ok())
+            .and_then(|pid| {
+                let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+                let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+                (unsafe {
+                    libc::proc_pidinfo(
+                        pid,
+                        libc::PROC_PIDTBSDINFO,
+                        1,
+                        info.as_mut_ptr().cast(),
+                        size,
+                    )
+                } == size)
+                    .then(|| unsafe { info.assume_init() }.pbi_status == 4)
+            });
+        #[cfg(not(target_os = "macos"))]
+        let stopped: Option<bool> = None;
+        // Emit closed actions/codes and one state bit, never raw native output,
+        // identifiers, paths, argv or environment values from the debug file.
+        let wait: Vec<i32> = fs::read_to_string(self.root.path().join("terminal.wait"))
+            .unwrap_or_default()
+            .split_whitespace()
+            .filter_map(|value| value.parse().ok())
+            .take(3)
+            .collect();
+        json!({"actions": observed, "codes": codes, "supervisorStopped": stopped,
+            "waitOutcome": wait})
     }
 
     fn ready(&mut self) {

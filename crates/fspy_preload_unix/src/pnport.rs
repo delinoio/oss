@@ -816,6 +816,9 @@ unsafe extern "C" fn initialize() {
         }
     }
     INJECTION_ENV.set(injection_env).ok();
+    // Keep the lease outside the fallible setup closure. A failed constructor
+    // must publish its stage/code before process exit releases the lease.
+    let mut launch = None;
     let result: std::result::Result<(), InitializationStage> = (|| {
         use InitializationStage as Stage;
         // Acknowledge entry before graph/cache work that may legitimately wait
@@ -823,6 +826,21 @@ unsafe extern "C" fn initialize() {
         fs::create_dir_all(session.join("starting")).map_err(|_| Stage::AcknowledgeEntry)?;
         fs::write(session.join("starting").join(getpid().to_string()), b"1")
             .map_err(|_| Stage::AcknowledgeEntry)?;
+        launch = if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
+            let token = token.to_str().ok_or(Stage::LaunchToken)?;
+            if !pnport_core::launch::valid_token(token) {
+                return Err(Stage::LaunchToken);
+            }
+            // Link this exact pending inode before graph/cache coordination.
+            // A stale acknowledgement with a reused filename cannot exempt a
+            // different image from the missing-injection deadline.
+            Some(
+                pnport_core::launch::Entry::begin(&session, token)
+                    .map_err(|_| Stage::AcknowledgeLaunch)?,
+            )
+        } else {
+            None
+        };
         let bytes = fs::read(session.join("graph.json")).map_err(|_| Stage::ReadGraph)?;
         let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
         let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
@@ -852,21 +870,27 @@ unsafe extern "C" fn initialize() {
         fs::create_dir_all(session.join("ready")).map_err(|_| Stage::PublishReadiness)?;
         fs::write(session.join("ready").join(getpid().to_string()), b"1")
             .map_err(|_| Stage::PublishReadiness)?;
-        if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
-            let token = token.to_str().ok_or(Stage::LaunchToken)?;
-            if !token.starts_with("pnport-")
-                || !token
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-            {
-                return Err(Stage::LaunchToken);
-            }
-            fs::remove_file(session.join("pending").join(token))
-                .map_err(|_| Stage::AcknowledgeLaunch)?;
+        if let Some(launch) = &launch {
+            launch.acknowledge().map_err(|_| Stage::AcknowledgeLaunch)?;
         }
         Ok(())
     })();
     if let Err(stage) = result {
+        #[cfg(test)]
+        if launch.is_some() {
+            // The isolated native failure control reaches this exact ordering
+            // boundary, before publishing either diagnostic record.
+            let token = std::env::var_os("PNPORT_LAUNCH_TOKEN").unwrap();
+            let pending = fs::metadata(session.join("pending").join(&token)).unwrap();
+            assert!(
+                pnport_core::launch::entry_state(
+                    &session.join("launch-starting").join(token),
+                    &pending,
+                )
+                .unwrap()
+                    == pnport_core::launch::EntryState::Initializing
+            );
+        }
         record_initialization_failure(&session, stage);
         record_failure(&session, Code::PnportInjectionFailed);
         _exit(125);
@@ -884,26 +908,41 @@ mod initialization_tests {
 
     #[test]
     fn failed_native_initializers_record_the_stage_without_input_contents() {
-        for (bytes, expected) in [
-            (None, InitializationStage::ReadGraph),
+        for (bytes, token, expected) in [
+            (None, None, InitializationStage::ReadGraph),
             (
                 Some(b"private-input-canary".as_slice()),
+                None,
                 InitializationStage::DecodeGraph,
+            ),
+            (None, Some("pnport-test"), InitializationStage::ReadGraph),
+            (
+                None,
+                Some("pnport-../outside"),
+                InitializationStage::LaunchToken,
             ),
         ] {
             let session = tempfile::tempdir().unwrap();
             if let Some(bytes) = bytes {
                 fs::write(session.path().join("graph.json"), bytes).unwrap();
             }
-            let status = std::process::Command::new(std::env::current_exe().unwrap())
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
                 .args([
                     "pnport::initialization_tests::initializer_process",
                     "--exact",
                 ])
                 .env("PNPORT_SESSION", session.path())
                 .env_remove("PNPORT_CACHE")
-                .status()
-                .unwrap();
+                .env_remove("PNPORT_LAUNCH_TOKEN");
+            if let Some(token) = token {
+                command.env("PNPORT_LAUNCH_TOKEN", token);
+                if pnport_core::launch::valid_token(token) {
+                    fs::create_dir(session.path().join("pending")).unwrap();
+                    fs::write(session.path().join("pending").join(token), b"").unwrap();
+                }
+            }
+            let status = command.status().unwrap();
             assert_eq!(status.code(), Some(125));
             let record = fs::read(session.path().join("initialization-failure")).unwrap();
             assert_eq!(
@@ -917,6 +956,16 @@ mod initialization_tests {
             assert!(record.len() < 64);
             assert!(session.path().join("starting").is_dir());
             assert!(!session.path().join("ready").exists());
+            if token == Some("pnport-test") {
+                use std::os::unix::fs::MetadataExt;
+                let pending = fs::metadata(session.path().join("pending/pnport-test")).unwrap();
+                let entered =
+                    fs::metadata(session.path().join("launch-starting/pnport-test")).unwrap();
+                assert_eq!(
+                    (pending.dev(), pending.ino()),
+                    (entered.dev(), entered.ino())
+                );
+            }
         }
     }
 }

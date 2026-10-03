@@ -1,6 +1,7 @@
 # pnport npm and native distribution
 
 ## Scope
+macOS packages and CLI admission require private companion ABI format 2 for the pending-image constructor lease protocol. Package inspection rejects older format 1 macOS libraries; Linux/Windows retain their independent format 1. Build and install the executable and companion together. This private protocol change retains CLI commands, doctor JSON v1 and the closed stable gate.
 `packages/pnport` owns the private npm source, launcher and four native packages for 0.1.0; the two Windows packages are deferred to 0.2.0. Native release archives include the matching interception artifacts. All distribution requirements in [#958](crates-pnport-requirements.md) remain stable release gates; the explicitly authorized experimental next channel retains the complete four-host package gates and discloses unfinished acceptance.
 
 ## Runtime and Language

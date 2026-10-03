@@ -4,6 +4,7 @@ pub mod cache;
 pub mod diagnostic;
 pub mod executable;
 pub mod graph;
+pub mod launch;
 #[cfg(unix)]
 pub mod native_path;
 pub mod view;
