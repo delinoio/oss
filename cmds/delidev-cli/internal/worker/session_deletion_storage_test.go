@@ -15,6 +15,21 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+func TestSessionStorageCopyPathsIncludesRemovalJournal(t *testing.T) {
+	root := t.TempDir()
+	jobID := domain.NewID()
+	paths := workspace.SessionStorageCopyPaths(root, domain.SessionDeletionWork{
+		Copies: []domain.SessionDeletionCopy{{JobID: jobID, Type: domain.WorkspaceStorageJob}},
+	})
+	want := filepath.Join(root, "storage-removal-claims", string(jobID)+".pending")
+	for _, path := range paths {
+		if path == want {
+			return
+		}
+	}
+	t.Fatalf("removal journal missing from deletion inventory: %s", want)
+}
+
 func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 	for _, kind := range []domain.WorkspaceType{domain.GeneralChat, domain.Worktree} {
 		for _, action := range []string{"create", "cleanup", "restore"} {
