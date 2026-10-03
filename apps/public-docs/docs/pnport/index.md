@@ -6,6 +6,8 @@ pnport is a command-line tool in development for running subprocesses against an
 
 See [installation and availability](/pnport/installation) for the registry check, installation commands and known preview limits. Pin the exact version when reporting a failure.
 
+To try the published preview with Turbopack or TypeScript 7, follow [preview testing](/pnport/preview-testing).
+
 ## Release targets
 
 The 0.1.0 release targets macOS 15+ and Ubuntu 22.04-equivalent glibc Linux, each on x64 and arm64. All four targets must pass native execution and installation checks before release. Windows 10 22H2+ with MSVC on x64 and arm64 is planned for 0.2.0, with the same complete validation requirements. Linux static child executables are part of the first release gate. Musl hosts and mixed-architecture execution are outside the target set.
@@ -25,6 +27,7 @@ Start with [getting started](/pnport/getting-started) and the [command reference
 
 - [Installation and availability](/pnport/installation)
 - [Getting started](/pnport/getting-started)
+- [Preview testing](/pnport/preview-testing)
 - [Commands](/pnport/commands)
 - [Filesystem and processes](/pnport/filesystem-and-processes)
 - [Editors and language servers](/pnport/editors)

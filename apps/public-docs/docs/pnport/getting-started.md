@@ -2,6 +2,8 @@
 
 **pnport 0.1.0 is unreleased; the commands below describe the CLI interface.** Check [installation and availability](/pnport/installation) before using an experimental preview. Prepare an installed Yarn 4 Plug'n'Play project first. The project must have `.pnp.cjs`; inline and split PnP data are part of the release contract.
 
+For a walkthrough using the published preview with Turbopack and TypeScript 7, see [preview testing](/pnport/preview-testing).
+
 ## Check the project
 
 From the directory where a future subprocess should run, `pnport doctor` checks the selected PnP project, platform, injection artifact, and cache. `pnport doctor --json` provides the same checks as one machine-readable object. A non-ready report exits with status 125. Doctor readiness does not certify a particular child executable; `run` checks its own admission requirements.

@@ -194,6 +194,7 @@
 - Public pnport benchmark guidance must keep development observations distinct from released performance, compare identical child work and incremental/application state across cold/warm caches, and disclose instrumented-count and sampled-memory limits without exposing internal harness or validation paths.
 - Public pnport installation guidance must explain package-age quarantine while preserving the user's configured gate. Temporary validation may preapprove only the exact five verified candidate package/version descriptors; record that exception rather than claiming immediate default Yarn acceptance.
 - Disclose the published pnport `0.1.0-next.1` macOS detached-session/group cleanup gap in user terms, with foreground/daemonization-disabled preview guidance. Do not attribute a later source-only containment fix to that immutable package or equate containment with complete stable process acceptance.
+- Keep `/pnport/preview-testing` in the public sidebar and explicit route catalog, linked from overview, installation and getting started. Its Turbopack and TypeScript 7 walkthrough pins the published pnport preview and validated TypeScript 7.1 nightly, uses the `typescript` package and `tsc` command, preserves the TypeScript 7.0.2 macOS signing limitation, and explains project-local cache placement and sanitized reporting without claiming complete tool acceptance.
 
 ### React Forge public documentation Rules
 
