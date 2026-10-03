@@ -575,6 +575,37 @@ type StorageRemovalReference struct {
 	Action      StorageAction `json:"action"`
 }
 
+// RemoveClaimedStorageRemoval removes a still-present removal namespace only
+// through its original intent and version-2 claim. Permanent session deletion
+// must not pass this namespace to the generic tree remover, which cannot bind
+// replacement bytes to the captured inventory.
+func (m *Manager) RemoveClaimedStorageRemoval(ctx context.Context, operationID, sessionID, snapshotID domain.ID) error {
+	if operationID.Validate() != nil || sessionID.Validate() != nil || snapshotID.Validate() != nil {
+		return ResultUncertain()
+	}
+	removal := filepath.Join(m.Root, "workspace-removals", string(operationID))
+	exists, err := storageExists(removal)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	raw, err := security.ReadPrivate(m.removalIntentPath(operationID), maxSnapshotManifest)
+	var intent storageRemovalIntent
+	if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != operationID || intent.SessionID != sessionID || intent.SnapshotID != snapshotID || (intent.Action != StorageCleanup && intent.Action != StorageDelete) {
+		return ResultUncertain()
+	}
+	request := StorageRequest{
+		Version:     1,
+		OperationID: operationID,
+		Action:      intent.Action,
+		Preparation: PrepareRequest{SessionID: sessionID},
+		SnapshotID:  snapshotID,
+	}
+	return m.removeClaimedSnapshotTree(ctx, request, removal, true)
+}
+
 func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalReference) error {
 	if ref.OperationID.Validate() != nil || ref.SessionID.Validate() != nil || ref.SnapshotID.Validate() != nil || (ref.Action != StorageCleanup && ref.Action != StorageDelete) {
 		return ResultUncertain()

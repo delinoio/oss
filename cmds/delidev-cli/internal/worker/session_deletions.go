@@ -211,6 +211,20 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		if e != nil {
 			return e
 		}
+		for _, copy := range w.Copies {
+			if copy.Type != domain.WorkspaceStorageJob {
+				continue
+			}
+			removal := filepath.Join(root, "workspace-removals", string(copy.JobID))
+			if _, e := os.Lstat(removal); errors.Is(e, os.ErrNotExist) {
+				continue
+			} else if e != nil {
+				return domain.SessionDeletionPending()
+			}
+			if e := manager.RemoveClaimedStorageRemoval(ctx, copy.JobID, w.SessionID, copy.SnapshotID); e != nil {
+				return e
+			}
+		}
 		for _, path := range paths {
 			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") {
 				// Workspace cleanup already checked the original native staging
