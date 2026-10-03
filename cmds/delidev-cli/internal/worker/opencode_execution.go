@@ -140,6 +140,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	if input.Configuration.OpenCodeContext != nil {
 		nativeConfig.ContextLimit = int64(input.Configuration.OpenCodeContext.Tokens)
+		nativeConfig.Prune = input.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1
 	}
 	var compacted *openCodeSessionCompactionCheckpoint
 	if checkpoint != nil && input.Continuation.Compaction != nil {

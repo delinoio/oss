@@ -32,6 +32,7 @@ type apiSessionConfig struct {
 	Token        string                                    `json:"-"`
 	Settings     SessionSettings                           `json:"-"`
 	Instructions string                                    `json:"-"`
+	Prune        bool                                      `json:"-"`
 	ContextLimit int64                                     `json:"-"`
 	OutputLimit  int64                                     `json:"-"`
 	Rejection    RejectionPolicy                           `json:"-"`
@@ -98,7 +99,7 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	origin.Path = apiproxy.Prefix
 	settings := config.Settings
 	settings.Permission = slices.Clone(settings.Permission)
-	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection, Instructions: config.Instructions}
+	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, Prune: config.Prune, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection, Instructions: config.Instructions}
 	profile.ProjectConfig = projectConfig
 	profile.WorkspaceRoot = &scope
 	profile.References = slices.Clone(config.References)

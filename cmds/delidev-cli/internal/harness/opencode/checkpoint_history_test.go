@@ -142,3 +142,52 @@ func TestCheckpointLineageAndFreshInputRejectOriginalIdentityReuse(t *testing.T)
 		}
 	}
 }
+
+func TestLateNativePruningReadIsAtomicAndCannotChangeOriginalContent(t *testing.T) {
+	for _, mode := range []string{"valid", "changed-output", "changed-info", "before-completion", "foreign-part", "no-original-inventory"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newObserverFixture(t)
+			info, _ := json.Marshal(f.a)
+			expected := HistoryMessage{ID: f.a["id"].(string), Role: AssistantMessageRole, Digest: mutationDigest(canonicalNative(info)), Parts: []HistoryPart{}}
+			values := []any{}
+			for i := 0; i < 2; i++ {
+				original := f.assistantPart(ToolPartKind, 200+i, map[string]any{"tool": "bash", "callID": "private-call", "state": map[string]any{"status": "completed", "input": map[string]any{}, "output": "private-original-output", "title": "private-title", "metadata": map[string]any{}, "time": map[string]any{"start": 1240, "end": 1245}}})
+				raw, _ := json.Marshal(original)
+				expected.Parts = append(expected.Parts, HistoryPart{ID: original["id"].(string), Kind: ToolPartKind, Digest: mutationDigest(canonicalNative(raw))})
+				pruned := contextFixtureCopy(original)
+				state := pruned["state"].(map[string]any)
+				state["time"].(map[string]any)["compacted"] = 1250
+				if i == 1 {
+					switch mode {
+					case "changed-output":
+						state["output"] = "private-changed-output"
+					case "foreign-part":
+						pruned["id"] = contextFixturePart(900)
+					}
+				}
+				values = append(values, pruned)
+			}
+			f.o.contextBaseInventory = []HistoryMessage{expected}
+			f.o.progress.SettledObserved = mode != "before-completion"
+			if mode == "no-original-inventory" {
+				f.o.contextBaseInventory = nil
+			}
+			if mode == "changed-info" {
+				f.a["modelID"] = "foreign-model"
+				info, _ = json.Marshal(f.a)
+			}
+			raw, _ := json.Marshal(map[string]any{"info": json.RawMessage(info), "parts": values})
+			session := &sessionAPI{observer: f.o, input: &f.o.input}
+			if session.checkpointNativeMessageMatches(raw, expected) != (mode == "valid") {
+				t.Fatal("late pruning read granted unrelated history authority")
+			}
+			want := 0
+			if mode == "valid" {
+				want = 2
+			}
+			if len(f.o.contextPruned) != want || len(f.o.parts) != 0 || len(f.o.messageOrder) != 0 {
+				t.Fatal("partial read published pruning or canonical content")
+			}
+		})
+	}
+}

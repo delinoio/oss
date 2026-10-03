@@ -262,6 +262,15 @@ metadata provenance, not measured provider capacity; omitted legacy limits stay
 unknown and no output-limit default is invented. Later model changes cannot
 rewrite that snapshot.
 
+New known/declared-limit snapshots pin closed context policy `native-v1`, enabling
+the pinned native pruning policy explicitly. Omitted legacy policy keeps its
+original native configuration and digest. The checkpoint settings digest includes
+the enabled policy; restoring a source cannot silently change it. Native pruning
+may complete after the original idle arrival. Final original history reads may
+retain its completed timestamp-only marker after validating the entire part
+against the original private inventory; this atomic comparison grants no input,
+event or settlement authority and rejects any output or metadata change.
+
 Private checkpoints retain the complete current native message/part inventory,
 all original automatic/manual context records and independently validated pruning
 markers alongside immutable ordinary input histories. Pruning may add only the

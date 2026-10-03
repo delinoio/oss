@@ -148,6 +148,7 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 	nativeConfig := opencode.APIExecutionConfig{Probe: opencode.ProbeConfig{Version: i.Assignment.Installation.Version, Home: filepath.Join(home, "opencode"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}}, Workspace: lease.WorkingDirectory(), Root: root, References: openCodeWorkspaceReferences(manifest), ServerOrigin: c.Credential.Endpoint, Token: token, Settings: settings.Session, Instructions: settings.Instructions, Rejection: settings.Rejection}
 	if i.Assignment.Configuration.OpenCodeContext != nil {
 		nativeConfig.ContextLimit = int64(i.Assignment.Configuration.OpenCodeContext.Tokens)
+		nativeConfig.Prune = i.Assignment.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1
 	}
 	resume, err := opencode.CheckpointResumeClaim(nativeConfig, sourceRef, i.Restore.ThreadRequestID)
 	if err != nil {

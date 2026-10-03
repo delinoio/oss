@@ -23,6 +23,7 @@ type nativeAPIProfile struct {
 	Settings            SessionSettings      `json:"-"`
 	BaseURL             string               `json:"-"`
 	Token               string               `json:"-"`
+	Prune               bool                 `json:"-"`
 	ContextLimit        int64                `json:"-"`
 	OutputLimit         int64                `json:"-"`
 	Rejection           RejectionPolicy      `json:"-"`
@@ -60,6 +61,11 @@ func (p nativeAPIProfile) config() (map[string]any, error) {
 				"modalities": map[string]any{"input": []string{"text"}, "output": []string{"text"}},
 			}},
 		}},
+	}
+	// New immutable context profiles explicitly own native pruning. Historical
+	// snapshots omit this policy and retain their original settings digest.
+	if p.Prune {
+		result["compaction"] = map[string]any{"prune": true}
 	}
 	var instructionPaths []string
 	if p.ProjectInstructions != nil {
