@@ -58,6 +58,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		return backupUnavailable()
 	}
 	queries := []string{
+		// A historical image cannot replace current once-only OAuth dispatch or
+		// cleanup evidence. Eligibility already excludes every unresolved attempt.
+		"DELETE FROM account_oauth_attempts",
+		"INSERT INTO account_oauth_attempts SELECT * FROM current_state.account_oauth_attempts",
 		"INSERT OR REPLACE INTO tombstones SELECT * FROM current_state.tombstones",
 		"INSERT OR REPLACE INTO retired_configurations SELECT * FROM current_state.retired_configurations",
 		// Old grants and pairing codes never acquire fresh authority.
