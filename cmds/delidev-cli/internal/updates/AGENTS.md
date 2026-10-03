@@ -1,0 +1,3 @@
+# DeliDev signed release verification
+
+Follow `docs/cmds-delidev-updates-contract.md` and parent instructions. The compiled public root is the sole release authority. Test roots stay private to tests. Authenticate the original complete manifest again before download; never trust retained typed metadata independently. Fixed repository/tag/asset identity, bounded canonical JSON, strict signatures and full target inventory precede file publication. Download and reverify content through exact size/hash and private regular-file identity checks. Logs contain typed outcomes and original operation IDs only.
