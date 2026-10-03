@@ -54,6 +54,9 @@ func (a *OwnedAPI) CloseCompleted(ctx context.Context) (HistoryObservation, erro
 	if err != nil {
 		return HistoryObservation{}, err
 	}
+	if err := s.verifyForegroundChildren(ctx); err != nil {
+		return HistoryObservation{}, err
+	}
 	a.completionAttempted = true
 	err = s.closeOwned(ctx)
 	s.events.Close()

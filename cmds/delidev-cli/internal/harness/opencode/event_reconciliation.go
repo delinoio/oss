@@ -117,7 +117,7 @@ func (s *sessionAPI) reconcileEvents(ctx context.Context, old *eventStream, o *i
 	eligible := old.problem != nil && old.failure == streamTransport && !old.closing && old.parent != nil && old.parent.Err() == nil
 	deadline, seen := old.failedAt.Add(eventIdleLimit), maps.Clone(old.seen)
 	old.mu.Unlock()
-	if !eligible || s.reconciliation != ReconciliationOriginal || s.problem != nil || s.observer != o || s.events != old || s.verifyStreamOwner == nil || !s.apiVerified || s.apiProfile == nil {
+	if !eligible || s.reconciliation != ReconciliationOriginal || s.problem != nil || s.observer != o || s.events != old || s.verifyStreamOwner == nil || !s.apiVerified || s.apiProfile == nil || len(s.children) != 0 || len(s.earlyChildren) != 0 {
 		return o.interruption(ctx)
 	}
 	o.mu.Lock()

@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"encoding/json"
 	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -10,13 +11,15 @@ import (
 // canonical payload never enters JSON or logs. It can reproduce owned typed
 // copies for bounded deferred publication without consuming the observer again.
 type FrozenObservation struct {
-	event     NativeEvent
-	repeated  bool
-	finalized bool
-	rejected  []string
-	always    []string
-	bytes     int
-	snapshot  bool
+	children     []domain.SubagentObservation
+	childPending bool
+	event        NativeEvent
+	repeated     bool
+	finalized    bool
+	rejected     []string
+	always       []string
+	bytes        int
+	snapshot     bool
 }
 
 // PublicationKey is private deduplication metadata. A reconciled read has no
@@ -36,11 +39,15 @@ func (o inputObservation) PublicationKey() (string, error) {
 }
 
 func freezeObservation(event NativeEvent, value inputObservation) *FrozenObservation {
-	result := &FrozenObservation{event: event, repeated: value.Repeated, finalized: value.MessageFinalized, rejected: slices.Clone(value.RejectionSources), always: slices.Clone(value.AlwaysObservations), bytes: len(event.Properties) + len(event.ID) + len(event.Kind) + 128}
+	result := &FrozenObservation{event: event, children: copyChildObservations(value.Children), childPending: value.ChildPending, repeated: value.Repeated, finalized: value.MessageFinalized, rejected: slices.Clone(value.RejectionSources), always: slices.Clone(value.AlwaysObservations), bytes: len(event.Properties) + len(event.ID) + len(event.Kind) + 128}
 	for _, group := range [][]string{result.rejected, result.always} {
 		for _, id := range group {
 			result.bytes += len(id) + 16
 		}
+	}
+	if raw, err := json.Marshal(result.children); err == nil {
+		result.bytes += len(raw)
+		clear(raw)
 	}
 	return result
 }
@@ -64,7 +71,10 @@ func (f *FrozenObservation) Thaw() (inputObservation, error) {
 		return inputObservation{}, observerProblem()
 	}
 	event := f.event
-	result := inputObservation{EventID: event.ID, Kind: event.Kind, Repeated: f.repeated, MessageFinalized: f.finalized, RejectionSources: slices.Clone(f.rejected), AlwaysObservations: slices.Clone(f.always), frozen: f}
+	result := inputObservation{Children: copyChildObservations(f.children), ChildPending: f.childPending, EventID: event.ID, Kind: event.Kind, Repeated: f.repeated, MessageFinalized: f.finalized, RejectionSources: slices.Clone(f.rejected), AlwaysObservations: slices.Clone(f.always), frozen: f}
+	if f.childPending || eventSession(event) != "" && len(f.children) > 0 && eventSession(event) != f.children[0].ParentID {
+		return result, nil
+	}
 	fields, err := object(event.Properties)
 	if err != nil {
 		return inputObservation{}, observerProblem()

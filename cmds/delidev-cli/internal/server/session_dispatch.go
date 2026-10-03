@@ -141,6 +141,9 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 		}
 		version, protocol = domain.ClaudeProtocolVersion, domain.AnthropicMessages
 	case domain.OpenCode:
+		if !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeForegroundSubagentsV1) {
+			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks foreground child observation support.", "Update and reconnect that Runner Device before OpenCode execution.")
+		}
 		if _, err := c.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
 			return empty, err
 		}

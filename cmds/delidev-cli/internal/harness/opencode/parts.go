@@ -441,6 +441,12 @@ func decodeTool(fields map[string]json.RawMessage, owner NativePart) (*NativeToo
 		required, optional = append(required, "time", "output", "title", "metadata"), []string{"attachments"}
 	case ToolError:
 		required, optional = append(required, "time", "error"), []string{"metadata"}
+		// Pinned native abort spreads the original running task state. The
+		// observer must independently prove the original Stop before adopting
+		// its preserved title; ordinary tool errors keep their closed shape.
+		if tool.Name == "task" {
+			optional = append(optional, "title")
+		}
 	default:
 		return nil, partProblem()
 	}

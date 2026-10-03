@@ -176,7 +176,7 @@ func (a *OwnedAPI) Next(ctx context.Context) (Observation, error) {
 		}
 		return Observation{}, err
 	}
-	return observer.observe(ctx, event)
+	return a.session.observeOwnedEvent(ctx, observer, event)
 }
 
 func (a *OwnedAPI) Progress(ctx context.Context) (Progress, error) {

@@ -90,7 +90,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 		}
 		return bytes.Clone(a.checkpointBytes), a.checkpointReference, nil
 	}
-	if !a.completionAttempted || (a.completed == nil) == (a.stoppedCompletion == nil) || s.problem != nil || s.creation == nil || s.input == nil || s.apiProfile == nil || !s.apiVerified || s.observer == nil || !canonicalDirectory(s.runtimeHome) {
+	if !a.completionAttempted || (a.completed == nil) == (a.stoppedCompletion == nil) || s.problem != nil || s.creation == nil || s.input == nil || s.apiProfile == nil || !s.apiVerified || s.observer == nil || !canonicalDirectory(s.runtimeHome) || len(s.children) != 0 || !s.childInventoryVerified {
 		return nil, CheckpointReference{}, sessionUncertain()
 	}
 	var history HistoryObservation

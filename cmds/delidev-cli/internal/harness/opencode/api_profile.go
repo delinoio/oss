@@ -47,7 +47,8 @@ func (p nativeAPIProfile) config() (map[string]any, error) {
 	}
 	model := p.Settings.Provider + "/" + p.Settings.Model
 	result := map[string]any{
-		"autoupdate": false, "share": "disabled", "username": "delidev",
+		"subagent_depth": 1,
+		"autoupdate":     false, "share": "disabled", "username": "delidev",
 		"model": model, "small_model": model, "enabled_providers": []string{p.Settings.Provider},
 		"experimental": map[string]any{"continue_loop_on_deny": p.Rejection == ContinueOnInteractionRejection},
 		"provider": map[string]any{p.Settings.Provider: map[string]any{

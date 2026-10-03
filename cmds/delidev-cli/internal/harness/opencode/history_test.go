@@ -60,6 +60,8 @@ func (f *historyFixture) RoundTrip(request *http.Request) (*http.Response, error
 	header := http.Header{"Content-Type": []string{"application/json"}}
 	var value any
 	switch request.URL.Path {
+	case "/session/" + fixtureSessionID + "/children":
+		value = []any{}
 	case "/session/" + fixtureSessionID:
 		value = fixtureSession(f.o.cwd, f.o.creation.request, fixtureSettings())
 	case "/session/" + fixtureSessionID + "/message/" + fixtureMessageID:
