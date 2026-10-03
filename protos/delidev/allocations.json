@@ -2982,6 +2982,335 @@
       "declaration": "AccountingUnitKind",
       "member": "ACCOUNTING_UNIT_KIND_OPENCODE_STEP",
       "number": 4
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingMeasure",
+      "member": "known_total",
+      "number": 1
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingMeasure",
+      "member": "measured_units",
+      "number": 2
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingMeasure",
+      "member": "unavailable_units",
+      "number": 3
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeCurrencyEstimate",
+      "member": "currency",
+      "number": 1
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeCurrencyEstimate",
+      "member": "known_amount",
+      "number": 2
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeCurrencyEstimate",
+      "member": "complete_units",
+      "number": 3
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeCurrencyEstimate",
+      "member": "partial_units",
+      "number": 4
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeCurrencyEstimate",
+      "member": "unavailable_units",
+      "number": 5
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "kind",
+      "number": 1
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "units",
+      "number": 2
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "input",
+      "number": 3
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "cache_read",
+      "number": 4
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "cache_write",
+      "number": 5
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "output",
+      "number": 6
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "thinking",
+      "number": 7
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "total",
+      "number": 8
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "currencies",
+      "number": 9
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingTotals",
+      "member": "unpriced_units",
+      "number": 10
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingGroup",
+      "member": "session_id",
+      "number": 1
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingGroup",
+      "member": "project_id",
+      "number": 2
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingGroup",
+      "member": "account_id",
+      "number": 3
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingGroup",
+      "member": "provider_id",
+      "number": 4
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingGroup",
+      "member": "model_id",
+      "number": 5
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingGroup",
+      "member": "totals",
+      "number": 6
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingDay",
+      "member": "from_unix_ms",
+      "number": 1
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingDay",
+      "member": "until_unix_ms",
+      "number": 2
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingDay",
+      "member": "totals",
+      "number": 3
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeEstimateMeasure",
+      "member": "known_amount",
+      "number": 1
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeEstimateMeasure",
+      "member": "known_tokens",
+      "number": 2
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeEstimateMeasure",
+      "member": "priced_units",
+      "number": 3
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeEstimateMeasure",
+      "member": "missing_usage_units",
+      "number": 4
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeEstimateMeasure",
+      "member": "missing_price_units",
+      "number": 5
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeEstimateMeasure",
+      "member": "not_applicable_units",
+      "number": 6
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingPricing",
+      "member": "pricing",
+      "number": 1
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingPricing",
+      "member": "totals",
+      "number": 2
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingPricing",
+      "member": "input",
+      "number": 3
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingPricing",
+      "member": "cache_read",
+      "number": 4
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingPricing",
+      "member": "cache_write",
+      "number": 5
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingPricing",
+      "member": "output",
+      "number": 6
+    },
+    {
+      "issue": 1099,
+      "kind": "message",
+      "declaration": "NativeAccountingPricing",
+      "member": "reasoning",
+      "number": 7
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingSummary",
+      "member": "totals",
+      "number": 1
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingSummary",
+      "member": "groups",
+      "number": 2
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingSummary",
+      "member": "days",
+      "number": 3
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingSummary",
+      "member": "models",
+      "number": 4
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingSummary",
+      "member": "pricing",
+      "number": 5
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingSummary",
+      "member": "coverage",
+      "number": 6
+    },
+    {
+      "pr": 1115,
+      "kind": "message",
+      "declaration": "NativeAccountingSummary",
+      "member": "actual_cost",
+      "number": 7
     }
   ]
 }
