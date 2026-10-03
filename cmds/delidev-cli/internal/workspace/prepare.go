@@ -94,6 +94,7 @@ type Manager struct {
 	storageAfterRootValidation   func()
 	storageBeforeRemovalClaim    func()
 	storageBeforeRemovalUnlink   func(string)
+	storageAfterRemovalClaim     func(string)
 	storageAfterSnapshot         func()
 	Root                         string
 	Git                          Git

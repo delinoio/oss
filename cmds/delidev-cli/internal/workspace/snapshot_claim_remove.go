@@ -104,31 +104,56 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			if m.storageBeforeRemovalUnlink != nil {
 				m.storageBeforeRemovalUnlink(entry.Path)
 			}
+			// Move the observed entry out of its replaceable name before verifying
+			// it. A writer retaining this directory can replace the original name
+			// after this claim without making the cleanup unlink that replacement.
+			privateName := ".removing-" + string(domain.NewID())
+			privatePath := filepath.Join(parent.Name(), privateName)
+			originalPath := filepath.Join(parent.Name(), name)
+			if err := renameStorage(originalPath, privatePath); err != nil {
+				return ResultUncertain()
+			}
+			if m.storageAfterRemovalClaim != nil {
+				m.storageAfterRemovalClaim(entry.Path)
+			}
+			restore := func() error {
+				if err := renameStorage(privatePath, originalPath); err != nil {
+					return ResultUncertain()
+				}
+				return nil
+			}
 			if before.IsDir() {
 				if !os.FileMode(entry.Mode).IsDir() || !partial && uint32(before.Mode()) != entry.Mode {
+					if restoreErr := restore(); restoreErr != nil {
+						return restoreErr
+					}
 					return ResultUncertain()
 				}
-				child, err := openVerifiedChildRoot(parent, name, before)
-				if err != nil {
-					return ResultUncertain()
+				child, err := openVerifiedChildRoot(parent, privateName, before)
+				if err == nil {
+					// Owned directory permission changes are necessary for faithfully
+					// captured read-only trees; partial recovery retains their identity.
+					if err = child.Chmod(".", 0700); err == nil {
+						err = remove(child, entry.Path)
+					}
+					child.Close()
 				}
-				// Owned directory permission changes are necessary for faithfully
-				// captured read-only trees; partial recovery retains their identity.
-				if err = child.Chmod(".", 0700); err == nil {
-					err = remove(child, entry.Path)
-				}
-				child.Close()
 				if err != nil {
+					if restoreErr := restore(); restoreErr != nil {
+						return restoreErr
+					}
 					return err
 				}
-				after, err := parent.Lstat(name)
-				if err != nil || !os.SameFile(before, after) || !after.IsDir() {
-					return ResultUncertain()
+			} else if err := verifyRemovalEntry(ctx, parent, privateName, before, entry, buffer); err != nil {
+				if restoreErr := restore(); restoreErr != nil {
+					return restoreErr
 				}
-			} else if err := verifyRemovalEntry(ctx, parent, name, before, entry, buffer); err != nil {
 				return err
 			}
-			if err := parent.Remove(name); err != nil {
+			if err := parent.Remove(privateName); err != nil {
+				if restoreErr := restore(); restoreErr != nil {
+					return restoreErr
+				}
 				return ResultUncertain()
 			}
 		}

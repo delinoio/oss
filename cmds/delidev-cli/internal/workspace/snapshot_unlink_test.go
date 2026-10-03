@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -12,7 +13,7 @@ import (
 
 func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 	for _, action := range []StorageAction{StorageCleanup, StorageDelete} {
-		for _, mutation := range []string{"add-root", "add-child", "replace", "modify", "last-root"} {
+		for _, mutation := range []string{"add-root", "add-child", "replace", "modify", "replace-after-claim", "last-root"} {
 			t.Run(string(action)+"/"+mutation, func(t *testing.T) {
 				m, prepare, manifest := chatExecutionFixture(t)
 				if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
@@ -48,6 +49,17 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 				if mutation == "last-root" {
 					trigger = "."
 				}
+				heldParent := held
+				parentPath := filepath.ToSlash(filepath.Dir(changed))
+				if parentPath != "." {
+					for _, component := range strings.Split(parentPath, "/") {
+						heldParent, err = heldParent.OpenRoot(component)
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer heldParent.Close()
+					}
+				}
 				raced := false
 				m.storageBeforeRemovalUnlink = func(relative string) {
 					if raced || relative != trigger {
@@ -60,11 +72,24 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 					case "add-child":
 						changed = prefix + "/late"
 					case "replace":
-						if err := held.Remove(filepath.FromSlash(changed)); err != nil {
+						if err := heldParent.Remove(filepath.Base(changed)); err != nil {
 							t.Fatal(err)
 						}
 					}
-					if err := held.WriteFile(filepath.FromSlash(changed), []byte("uncaptured writer bytes"), 0600); err != nil {
+					writerParent := heldParent
+					if mutation == "add-root" || mutation == "last-root" {
+						writerParent = held
+					}
+					if err := writerParent.WriteFile(filepath.Base(changed), []byte("uncaptured writer bytes"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				m.storageAfterRemovalClaim = func(relative string) {
+					if mutation != "replace-after-claim" || raced || relative != trigger {
+						return
+					}
+					raced = true
+					if err := heldParent.WriteFile(filepath.Base(changed), []byte("uncaptured writer bytes"), 0600); err != nil {
 						t.Fatal(err)
 					}
 				}
