@@ -3749,6 +3749,437 @@
       "declaration": "RequestDiagnostic",
       "member": "subscription_service",
       "number": 32
+    },
+    {
+      "issue": 1096,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1",
+      "number": 18
+    },
+    {
+      "issue": 1104,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1",
+      "number": 19
+    },
+    {
+      "issue": 1096,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1",
+      "number": 8
+    },
+    {
+      "issue": 1096,
+      "kind": "enum",
+      "declaration": "SubscriptionAction",
+      "member": "SUBSCRIPTION_ACTION_QUOTA",
+      "number": 5
+    },
+    {
+      "issue": 1104,
+      "kind": "enum",
+      "declaration": "SubscriptionAction",
+      "member": "SUBSCRIPTION_ACTION_RESET_CREDIT",
+      "number": 6
+    },
+    {
+      "issue": 1096,
+      "kind": "enum",
+      "declaration": "SubscriptionObservationAction",
+      "member": "SUBSCRIPTION_OBSERVATION_ACTION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "enum",
+      "declaration": "SubscriptionObservationAction",
+      "member": "SUBSCRIPTION_OBSERVATION_ACTION_QUOTA",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "enum",
+      "declaration": "SubscriptionObservationAction",
+      "member": "SUBSCRIPTION_OBSERVATION_ACTION_RESET_CREDIT",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "enum",
+      "declaration": "SubscriptionResetOutcome",
+      "member": "SUBSCRIPTION_RESET_OUTCOME_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "enum",
+      "declaration": "SubscriptionResetOutcome",
+      "member": "SUBSCRIPTION_RESET_OUTCOME_RESET",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "enum",
+      "declaration": "SubscriptionResetOutcome",
+      "member": "SUBSCRIPTION_RESET_OUTCOME_ALREADY_REDEEMED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "enum",
+      "declaration": "SubscriptionResetOutcome",
+      "member": "SUBSCRIPTION_RESET_OUTCOME_NOTHING_TO_RESET",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "enum",
+      "declaration": "SubscriptionResetOutcome",
+      "member": "SUBSCRIPTION_RESET_OUTCOME_NO_CREDIT",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "action",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "connection_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "generation_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "credit_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "next_credit",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "credits_observation_id",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationRequest",
+      "member": "confirmed",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationResponse",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RequestSubscriptionObservationResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RefreshAllSubscriptionQuotasRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RefreshAllSubscriptionQuotasResponse",
+      "member": "accounts",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RefreshAllSubscriptionQuotasResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "RefreshAllSubscriptionQuotasResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "message",
+      "declaration": "ReconcileSubscriptionCreditRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "message",
+      "declaration": "ReconcileSubscriptionCreditRequest",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "message",
+      "declaration": "ReconcileSubscriptionCreditRequest",
+      "member": "connection_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "message",
+      "declaration": "ReconcileSubscriptionCreditRequest",
+      "member": "generation_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "message",
+      "declaration": "ReconcileSubscriptionCreditResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1104,
+      "kind": "message",
+      "declaration": "ReconcileSubscriptionCreditResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "ClaimSubscriptionObservationRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "ClaimSubscriptionObservationRequest",
+      "member": "lease_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "ClaimSubscriptionObservationRequest",
+      "member": "machine_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "ClaimSubscriptionObservationRequest",
+      "member": "instance_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "ClaimSubscriptionObservationRequest",
+      "member": "operation_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "ClaimSubscriptionObservationRequest",
+      "member": "generation_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "ClaimSubscriptionObservationResponse",
+      "member": "operation_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationRequest",
+      "member": "lease_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationRequest",
+      "member": "machine_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationRequest",
+      "member": "instance_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationRequest",
+      "member": "operation_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationRequest",
+      "member": "generation_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationRequest",
+      "member": "observation_json",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "PublishSubscriptionObservationResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1096,
+      "kind": "enum",
+      "declaration": "InboxSource",
+      "member": "INBOX_SOURCE_SUBSCRIPTION_RECOVERY",
+      "number": 3
+    },
+    {
+      "issue": 1096,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY",
+      "number": 5
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "InboxView",
+      "member": "account",
+      "number": 4
+    },
+    {
+      "issue": 1096,
+      "kind": "message",
+      "declaration": "NotificationCandidate",
+      "member": "account_id",
+      "number": 4
     }
   ]
 }
