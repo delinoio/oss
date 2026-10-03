@@ -487,7 +487,7 @@ func TestRemovalClaimRecoveryTruncatesIncompleteJournalRecord(t *testing.T) {
 	if err := security.WriteAtomic(m.removalClaimJournalPath(input.OperationID), partial); err != nil {
 		t.Fatal(err)
 	}
-	_, pending, err := m.readRemovalClaimPending(input, intentRaw)
+	_, pending, _, err := m.readRemovalClaimPending(input, intentRaw)
 	if err != nil || len(pending) != 1 || pending[0].Original != "chat/keep" {
 		t.Fatal("complete journal prefix was not retained", pending, err)
 	}

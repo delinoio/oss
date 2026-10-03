@@ -28,7 +28,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action || len(intent.Inventory.Entries) > maxSnapshotRemovalEntries {
 		return ResultUncertain()
 	}
-	claim, pending, err := m.readRemovalClaimPending(r, raw)
+	claim, pending, cleared, err := m.readRemovalClaimPending(r, raw)
 	if err != nil {
 		return ResultUncertain()
 	}
@@ -141,6 +141,9 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			name := path.Base(physicalEntry)
 			before, err := parent.Lstat(name)
 			if os.IsNotExist(err) && partial {
+				if _, proven := cleared[removalClearedDigest(entry.Path)]; !proven {
+					return ResultUncertain()
+				}
 				continue
 			}
 			if err != nil {
@@ -255,6 +258,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			if err := removePending(entry.Path, privateRelative); err != nil {
 				return err
 			}
+			cleared[removalClearedDigest(entry.Path)] = struct{}{}
 			if err := m.compactRemovalClaim(ctx, r, pending); err != nil {
 				return err
 			}

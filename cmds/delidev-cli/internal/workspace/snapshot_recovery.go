@@ -54,12 +54,14 @@ type storageRemovalRenameRecord struct {
 	Original string `json:"original"`
 	Private  string `json:"private"`
 	State    string `json:"state"`
+	Digest   string `json:"digest,omitempty"`
 }
 
 const (
-	storageRemovalRenamePrepared = "prepared"
-	storageRemovalRenameRenamed  = "renamed"
-	storageRemovalRenameCleared  = "cleared"
+	storageRemovalRenamePrepared     = "prepared"
+	storageRemovalRenameRenamed      = "renamed"
+	storageRemovalRenameCleared      = "cleared"
+	storageRemovalRenameClearedProof = "cleared-proof"
 )
 
 func (m *Manager) removalClaimPath(id domain.ID) string {
@@ -123,7 +125,19 @@ func (m *Manager) appendRemovalClaimRecord(ctx context.Context, r StorageRequest
 }
 
 func validRemovalClaimRecord(record storageRemovalRenameRecord) bool {
-	return validRemovalRelativePath(record.Original) && validRemovalRelativePath(record.Private) && record.Original != record.Private && (record.State == storageRemovalRenamePrepared || record.State == storageRemovalRenameRenamed || record.State == storageRemovalRenameCleared)
+	if record.State == storageRemovalRenameClearedProof {
+		if record.Original != "" || record.Private != "" || len(record.Digest) != sha256.Size*2 {
+			return false
+		}
+		_, err := hex.DecodeString(record.Digest)
+		return err == nil
+	}
+	return validRemovalRelativePath(record.Original) && validRemovalRelativePath(record.Private) && record.Original != record.Private && record.Digest == "" && (record.State == storageRemovalRenamePrepared || record.State == storageRemovalRenameRenamed || record.State == storageRemovalRenameCleared)
+}
+
+func removalClearedDigest(original string) string {
+	digest := sha256.Sum256([]byte(original))
+	return hex.EncodeToString(digest[:])
 }
 
 // Rewrite the journal from the still-active mappings after a successful clear.
@@ -145,6 +159,22 @@ func (m *Manager) compactRemovalClaim(ctx context.Context, r StorageRequest, pen
 	}
 	if len(oldJournal) < maxStorageRemovalClaim/2 {
 		return nil
+	}
+	cleared := map[string]struct{}{}
+	text := strings.TrimSuffix(string(oldJournal), "\n")
+	if text != "" {
+		for _, line := range strings.Split(text, "\n") {
+			var record storageRemovalRenameRecord
+			if domain.Decode([]byte(line), &record) != nil || !validRemovalClaimRecord(record) {
+				return ResultUncertain()
+			}
+			switch record.State {
+			case storageRemovalRenameCleared:
+				cleared[removalClearedDigest(record.Original)] = struct{}{}
+			case storageRemovalRenameClearedProof:
+				cleared[record.Digest] = struct{}{}
+			}
+		}
 	}
 	active := make([]storageRemovalRename, 0, len(pending))
 	seenOriginal := map[string]bool{}
@@ -186,14 +216,30 @@ func (m *Manager) compactRemovalClaim(ctx context.Context, r StorageRequest, pen
 			}
 		}
 	}
+	digests := make([]string, 0, len(cleared))
+	for digest := range cleared {
+		digests = append(digests, digest)
+	}
+	slices.Sort(digests)
+	for _, digest := range digests {
+		raw, err := json.Marshal(storageRemovalRenameRecord{State: storageRemovalRenameClearedProof, Digest: digest})
+		if err != nil {
+			return ResultUncertain()
+		}
+		journal = append(journal, raw...)
+		journal = append(journal, '\n')
+		if len(journal) > maxStorageRemovalClaim {
+			return ResultUncertain()
+		}
+	}
 	return security.WriteAtomic(journalPath, journal)
 }
 
-func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (storageRemovalClaim, []storageRemovalRename, error) {
+func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (storageRemovalClaim, []storageRemovalRename, map[string]struct{}, error) {
 	claimRaw, err := security.ReadPrivate(m.removalClaimPath(r.OperationID), maxStorageRemovalClaim)
 	var claim storageRemovalClaim
 	if err != nil || !removalClaimMatches(claimRaw, removalReference(r), intent) || domain.Decode(claimRaw, &claim) != nil {
-		return storageRemovalClaim{}, nil, ResultUncertain()
+		return storageRemovalClaim{}, nil, nil, ResultUncertain()
 	}
 	active := make(map[string]storageRemovalRename, len(claim.Pending))
 	for _, rename := range claim.Pending {
@@ -201,10 +247,10 @@ func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (stor
 	}
 	raw, err := security.ReadPrivate(m.removalClaimJournalPath(r.OperationID), maxStorageRemovalClaim)
 	if errors.Is(err, os.ErrNotExist) {
-		return claim, append([]storageRemovalRename(nil), claim.Pending...), nil
+		return claim, append([]storageRemovalRename(nil), claim.Pending...), map[string]struct{}{}, nil
 	}
 	if err != nil {
-		return storageRemovalClaim{}, nil, ResultUncertain()
+		return storageRemovalClaim{}, nil, nil, ResultUncertain()
 	}
 	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
 		lastNewline := bytes.LastIndexByte(raw, '\n')
@@ -217,60 +263,64 @@ func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (stor
 			// filesystem write error. Preserve every complete prior record and
 			// discard only that incomplete suffix before retrying recovery.
 			if err := security.WriteAtomic(m.removalClaimJournalPath(r.OperationID), prefix); err != nil {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			raw = prefix
 		case json.Unmarshal(tail, &record) != nil:
-			return storageRemovalClaim{}, nil, ResultUncertain()
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		case !validRemovalClaimRecord(record):
-			return storageRemovalClaim{}, nil, ResultUncertain()
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		default:
 			repaired := append(append([]byte(nil), raw...), '\n')
 			if err := security.WriteAtomic(m.removalClaimJournalPath(r.OperationID), repaired); err != nil {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			raw = repaired
 		}
 	}
 	text := strings.TrimSuffix(string(raw), "\n")
+	cleared := map[string]struct{}{}
 	if text == "" {
-		return claim, append([]storageRemovalRename(nil), claim.Pending...), nil
+		return claim, append([]storageRemovalRename(nil), claim.Pending...), cleared, nil
 	}
 	for _, line := range strings.Split(text, "\n") {
 		var record storageRemovalRenameRecord
 		if domain.Decode([]byte(line), &record) != nil || !validRemovalClaimRecord(record) {
-			return storageRemovalClaim{}, nil, ResultUncertain()
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		}
 		current, exists := active[record.Original]
 		switch record.State {
 		case storageRemovalRenamePrepared:
 			if exists || record.Private == record.Original {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			active[record.Original] = storageRemovalRename{Original: record.Original, Private: record.Private}
 		case storageRemovalRenameRenamed:
 			if !exists || current.Private != record.Private || current.Renamed {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			current.Renamed = true
 			active[record.Original] = current
 		case storageRemovalRenameCleared:
 			if !exists || current.Private != record.Private {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			delete(active, record.Original)
+			cleared[removalClearedDigest(record.Original)] = struct{}{}
+		case storageRemovalRenameClearedProof:
+			cleared[record.Digest] = struct{}{}
 		default:
-			return storageRemovalClaim{}, nil, ResultUncertain()
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		}
 		if len(active) > maxSnapshotRemovalEntries {
-			return storageRemovalClaim{}, nil, ResultUncertain()
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		}
 	}
 	pending := make([]storageRemovalRename, 0, len(active))
 	for _, rename := range active {
 		pending = append(pending, rename)
 	}
-	return claim, pending, nil
+	return claim, pending, cleared, nil
 }
 
 func (m *Manager) retainRemovalClaim(ctx context.Context, r StorageRequest, intent []byte) error {
@@ -361,7 +411,7 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 	}
 	var pending []storageRemovalRename
 	if partial {
-		_, pending, err = m.readRemovalClaimPending(r, raw)
+		_, pending, _, err = m.readRemovalClaimPending(r, raw)
 		if err != nil {
 			return ResultUncertain()
 		}
