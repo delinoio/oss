@@ -291,6 +291,9 @@ func (c *Client) acquireControl(ctx context.Context) error {
 }
 func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, settings ThreadSettings, method threadMethod) (result ThreadResult, returned error) {
 	result.RequestID = requestID
+	if c.sidechat != "" && !sidechatSettings(settings) {
+		return result, sidechatUnavailable()
+	}
 	if c.mode != ThreadProtocol {
 		return result, unsupportedSettings()
 	}
@@ -327,6 +330,9 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		if err := c.verifyAPI(ctx, settings.Cwd); err != nil {
 			return result, err
 		}
+	}
+	if err := c.verifySidechat(ctx, settings.Cwd, ""); err != nil {
+		return result, err
 	}
 	if settings.Options.SubagentModel != "" || settings.Options.SubagentEffort != "" {
 		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -401,6 +407,14 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		c.thread = thread.ID
 	}
 	if err != nil {
+		c.problem = threadUncertain()
+		return result, c.problem
+	}
+	if c.sidechat != "" && !sidechatEffective(*effective) {
+		c.problem = threadUncertain()
+		return result, c.problem
+	}
+	if err := c.verifySidechat(ctx, settings.Cwd, thread.ID); err != nil {
 		c.problem = threadUncertain()
 		return result, c.problem
 	}
