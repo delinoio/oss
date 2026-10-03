@@ -3,6 +3,7 @@ package workspace
 
 import (
 	"context"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
 	"time"
 )
@@ -10,6 +11,9 @@ import (
 // Terminals use the immutable primary root but have their own process owner.
 // They neither take an agent lease nor authorize preparation or recovery.
 func (m *Manager) WithTerminalDirectory(ctx context.Context, input PrepareRequest, manifest Manifest, owner ReadRequest, launch func(string) error) error {
+	if input.SidechatSource != nil || manifest.Reference != nil {
+		return domain.Fail(domain.PermissionDenied, "Sidechat cannot open a terminal in the referenced workspace.", "Use the original parent session's terminal controls.")
+	}
 	owner.Preparation, owner.Manifest = input, manifest
 	owner.Deadline = time.Now().Add(15 * time.Second)
 	// Verify every original repository before native startup. The shared scope
