@@ -505,6 +505,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				if err := tx.PutOpenCodeUsage(event.ObservationID, sr.ID, sr.ProjectID, observation); err != nil {
 					return err
 				}
+				if err := tx.PutOpenCodeAccounting(event.ObservationID, input.InputID, sr.ID, sr.ProjectID, observation); err != nil {
+					return err
+				}
 				progress.LatestUsageID = event.ObservationID
 			} else if event.Kind == domain.ExecutionUsageObserved {
 				observation := domain.ExecutionUsageObservation{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.Usage}

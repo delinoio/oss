@@ -129,6 +129,11 @@ func historicalSchema(db *sql.DB, version string) (sql.Result, error) {
 			continue
 		}
 		projection := strings.Join(common, ",")
+		if table == "metadata" && version == "025" {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM main.metadata WHERE key<>'native_accounting_layout'"); err != nil {
+				return nil, err
+			}
+		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO main.`+quote(table)+` (`+projection+`) SELECT `+projection+` FROM temp.`+quote("retained_"+table)); err != nil {
 			return nil, fmt.Errorf("restore fixture table %s: %w", table, err)
 		}

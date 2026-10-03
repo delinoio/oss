@@ -20,7 +20,7 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	until := f.String("until", "", "exclusive RFC3339 timestamp (default: server now)")
 	granularity := f.String("granularity", "", "analytics granularity (day)")
 	timezone := f.String("timezone", "", "explicit IANA timezone for daily analytics")
-	profile := f.String("accounting-profile", "", "native-units-v1 for distinct Codex responses and verified Grok closed inputs")
+	profile := f.String("accounting-profile", "", "native-units-v1 for distinct Codex responses, Grok closed inputs, Claude main-loop inputs and OpenCode steps")
 	requestBody := &pb.GetUsageSummaryRequest{}
 	f.StringVar(&requestBody.SessionId, "session-id", "", "original session filter")
 	f.StringVar(&requestBody.ProjectId, "project-id", "", "original project filter")

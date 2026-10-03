@@ -524,3 +524,9 @@ the original job and optional published child; an accepted job is not a child.
 remain excluded from these product methods and complete their original job via
 existing authenticated `WatchWork`/`ReportWork`. See the
 [fork contract](cmds-delidev-forks-contract.md). No destructive migration occurs.
+
+Native input accounting activates original capability 8, coverage 2, summary field
+13 and the reserved native budget coverage fields. AccountingUnitKind 3 and 4 are
+Claude main-loop input and OpenCode step, respectively. Negotiated native-units-v1
+returns their independent repeated summaries, retaining all existing response and
+Grok meanings. See the usage contract for source-specific counts and pricing.
