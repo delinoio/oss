@@ -126,6 +126,10 @@ fn private_file(path: &Path) -> Result<File> {
 impl Cache {
     pub fn open(root: PathBuf) -> Result<Self> {
         private_dir(&root)?;
+        // Darwin F_GETPATH reports the resolved backing path. Keep the cache
+        // root in that same spelling when --cache-dir has a symlinked ancestor,
+        // so live descriptor checks and View::translate agree on managed data.
+        let root = fs::canonicalize(root).map_err(|_| cache_error())?;
         let lock = private_file(&root.join(".lock"))?;
         lock.lock_exclusive().map_err(|_| cache_error())?;
         let owner = root.join(".pnport-owner");
@@ -753,6 +757,20 @@ pub fn path_identity(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_root_is_canonical_with_a_symlinked_ancestor() {
+        let directory = tempfile::tempdir().unwrap();
+        let real = directory.path().join("real");
+        let alias = directory.path().join("alias");
+        fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+
+        let cache = Cache::open(alias.join("cache")).unwrap();
+
+        assert_eq!(cache.root, fs::canonicalize(real.join("cache")).unwrap());
+    }
 
     #[cfg(unix)]
     #[test]
