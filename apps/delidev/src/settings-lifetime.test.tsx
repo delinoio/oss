@@ -5,7 +5,7 @@ import { TransportProvider, useQuery } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationQuery, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceQuery, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
+import { SystemService, SystemCapability, ConfigurationQuery, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceQuery, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { SettingsOpening } from "./settings-lifetime";
 import { MutationIntents, useRetainedMutation } from "./mutation";
@@ -30,6 +30,7 @@ function fixture() {
     return { resource };
   });
   const base = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] }) });
     router.service(ProviderService, { listProviderInventory: () => ({ entries: [], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: [model], providers: [provider] }) });
     router.service(ResourceService, { listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
     router.service(ConfigurationService, { saveConfiguration: save });
@@ -122,7 +123,7 @@ it("aborts Settings reads without evicting sibling queries or accumulating openi
   const sibling = value.client.getQueryCache().getAll()[0];
   for (let cycle = 0; cycle < 4; cycle++) {
     const before = value.waiting.length;
-    value.delay("ListProviderInventory");
+    value.delay("GetStatus");
     view.rerender(value.view(true));
     await waitFor(() => expect(value.waiting.length).toBeGreaterThan(before));
     const reads = value.waiting.filter((entry) => !entry.signal.aborted);

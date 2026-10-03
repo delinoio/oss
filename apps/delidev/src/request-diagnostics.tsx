@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
-  isEntityId, RequestDiagnosticSource as Source, RequestDiagnosticState as State,
+  subscriptionServiceFromWire, subscriptionServiceLabel, subscriptionServiceHarnesses, isEntityId, RequestDiagnosticSource as Source, RequestDiagnosticState as State,
   RequestDiagnosticOperation as Operation, SessionQuery, SystemCapability, SystemQuery,
   type ListRequestDiagnosticsResponse, type RequestDiagnostic,
 } from "@delinoio/delidev-api-client";
@@ -24,7 +24,9 @@ export function validateDiagnosticPage(response: ListRequestDiagnosticsResponse,
   if (response.records.length > 50 || response.nextPageToken.length > 2048) invalid();
   const ids = new Set<string>();
   for (const value of response.records) {
-    if (![value.id, value.sessionId, value.executionId, value.accountId, value.connectionId, value.providerId, value.modelId].every(isEntityId) || ids.has(value.id) || value.sessionId !== sessionId || executionId && value.executionId !== executionId || value.revision < 1n || value.revision > 9223372036854775807n) invalid();
+    if (![value.id, value.sessionId, value.executionId, value.accountId, value.connectionId, value.modelId].every(isEntityId) || ids.has(value.id) || value.sessionId !== sessionId || executionId && value.executionId !== executionId || value.revision < 1n || value.revision > 9223372036854775807n) invalid();
+    const service = subscriptionServiceFromWire(value.subscriptionService);
+    if (value.subscriptionService ? !service || value.providerId || value.source !== Source.NATIVE_INPUT || subscriptionServiceHarnesses[service] !== value.harness : !isEntityId(value.providerId)) invalid();
     ids.add(value.id);
     if (![Source.NATIVE_INPUT, Source.PROXY_HTTP].includes(value.source) || ![State.IN_PROGRESS, State.SUCCEEDED, State.FAILED, State.CANCELED].includes(value.state) || value.operation < Operation.INPUT || value.operation > Operation.COUNT || !errors.has(value.errorCode) || !["conversation", "session-title"].includes(value.purpose) || !harnesses.has(value.harness) || (value.state === State.IN_PROGRESS) !== (value.finishedAt === undefined) || [State.IN_PROGRESS, State.SUCCEEDED].includes(value.state) && value.errorCode) invalid();
     for (const id of [value.inputId, value.publicationRequestId, value.correlationId]) if (id && !isEntityId(id)) invalid();
@@ -47,7 +49,7 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
     <dl>
       <dt>Request</dt><dd>{value.id}</dd><dt>Execution</dt><dd>{value.executionId}</dd>
       <dt>Account at request time</dt><dd>{value.accountId}</dd><dt>Connection</dt><dd>{value.connectionId}</dd>
-      <dt>Provider</dt><dd>{value.providerId}</dd><dt>Model</dt><dd>{value.modelId}</dd><dt>Purpose</dt><dd>{value.purpose}</dd>
+      <dt>{value.subscriptionService ? "Subscription service" : "Provider"}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : value.providerId}</dd><dt>Model</dt><dd>{value.modelId}</dd><dt>Purpose</dt><dd>{value.purpose}</dd>
       <dt>Observed</dt><dd>{value.observedAt}</dd><dt>Finished</dt><dd>{value.finishedAt ?? "Unavailable"}</dd>
       <dt>HTTP latency</dt><dd>{value.durationMs === undefined ? "Unavailable" : `${value.durationMs.toString()} ms`}</dd>
       <dt>HTTP attempt</dt><dd>{value.httpAttempted === undefined ? "Unavailable" : value.httpAttempted ? "Send claimed; provider acceptance is unconfirmed" : "No HTTP attempt"}</dd>

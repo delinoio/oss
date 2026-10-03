@@ -45,7 +45,7 @@ function fixture() {
   return { provider, models, entry, inventory, search, save, price, readPrice, transport, client, view };
 }
 function openModels() { fireEvent.click(screen.getByRole("button", { name: "Models" })); }
-const searchInput = () => screen.getByRole("textbox", { name: "Search active provider models" }) as HTMLInputElement;
+const searchInput = () => screen.getByRole("textbox", { name: "Search models" }) as HTMLInputElement;
 
 it("composes one Models heading/action and a neutral successful empty page with optional accounts", async () => {
   const value = fixture();
@@ -128,7 +128,7 @@ it("shows initial inventory and model loading without successful-empty content",
   expect(value.search).not.toHaveBeenCalled();
   expect(screen.queryByRole("heading", { name: "No models yet" })).toBeNull();
   await act(async () => inventory.resolve(create(ListProviderInventoryResponseSchema, { entries: [value.entry], capabilities })));
-  await screen.findByText("Loading active provider models…");
+  await screen.findByText("Loading models…");
   expect(screen.queryByRole("heading", { name: "No models yet" })).toBeNull();
   await act(async () => search.resolve(create(SearchModelsResponseSchema, {})));
   await screen.findByRole("heading", { name: "No models yet" });
@@ -175,7 +175,7 @@ it("keeps cached same-page rows through refresh/failure/retry, but never display
   const refresh = deferred<ReturnType<typeof create<typeof SearchModelsResponseSchema>>>();
   value.search.mockImplementationOnce(() => refresh.promise);
   void value.client.refetchQueries({ predicate: (query) => JSON.stringify(query.queryKey).includes('"pageToken":"model-page-2"') });
-  await screen.findByText("Refreshing active provider models.");
+  await screen.findByText("Refreshing models.");
   expect(screen.getByRole("heading", { name: "Example model A" })).toBeTruthy();
   await act(async () => refresh.resolve(create(SearchModelsResponseSchema, { models: value.models, providers: [value.provider] })));
   value.search.mockRejectedValueOnce(new ConnectError("Refresh unavailable", Code.Unavailable));
@@ -190,7 +190,7 @@ it("keeps cached same-page rows through refresh/failure/retry, but never display
   await act(async () => retryGate.resolve(create(SearchModelsResponseSchema, { models: value.models, providers: [value.provider] })));
   const next = deferred<ReturnType<typeof create<typeof SearchModelsResponseSchema>>>(); value.search.mockImplementationOnce(() => next.promise);
   fireEvent.change(searchInput(), { target: { value: "missing-fixture" } });
-  await screen.findByText("Loading active provider models…");
+  await screen.findByText("Loading models…");
   expect(screen.queryByRole("heading", { name: "Example model A" })).toBeNull();
   await act(async () => next.resolve(create(SearchModelsResponseSchema, {})));
   await screen.findByText("No models match this search.");
@@ -233,7 +233,7 @@ it("retains list state across edit/pricing/category/responsive/reconnect transit
   fireEvent.click(screen.getByRole("button", { name: "Back to Models" }));
   await screen.findByRole("heading", { name: "Example model A" });
   await waitFor(() => expect(value.client.isFetching()).toBe(0));
-  await waitFor(() => expect(screen.queryByText("Refreshing active provider models.")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("Refreshing models.")).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
   await act(async () => { await Promise.resolve(); });
   const calls = value.search.mock.calls.length;

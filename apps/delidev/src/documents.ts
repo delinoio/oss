@@ -1,8 +1,8 @@
-import { type Resource } from "@delinoio/delidev-api-client";
+import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 
 export type Document = Record<string, unknown>;
 export function document(resource?: Resource): Document {
-  if (!resource || resource.schemaVersion !== 1 || resource.documentJson.byteLength > 1 << 20) return {};
+  if (!resource || !supportsResourceSchema(resource) || resource.documentJson.byteLength > 1 << 20) return {};
   try {
     const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson));
     return object(value);

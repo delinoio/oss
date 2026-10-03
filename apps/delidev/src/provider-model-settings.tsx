@@ -1,3 +1,4 @@
+import { subscriptionService, subscriptionServiceNames, supportsResourceSchema } from "@delinoio/delidev-api-client";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -195,16 +196,18 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
   const providers = new Map((models.data?.providers ?? []).map((provider) => [provider.id, provider]));
   const grouped = new Map<string, Resource[]>();
   for (const model of models.data?.models ?? []) {
-    const providerID = text(document(model).provider_id);
+    const data = document(model);
+    const providerID = text(data.provider_id) || `subscription:${text(data.subscription_service)}`;
     const entries = grouped.get(providerID) ?? [];
     entries.push(model);
     grouped.set(providerID, entries);
   }
-  return <section className="models-list" aria-label="Models from active API providers">
+  const groupName = (id: string) => id.startsWith("subscription:") ? subscriptionServiceNames[subscriptionService(id.slice(13))!] ?? "Unsupported subscription service" : resourceName(providers.get(id));
+  return <section className="models-list" aria-label="Models from active API providers and subscription services">
     <SettingsHeading title="Models" actions={<>
       <button className="primary" type="button" disabled={!ready} onClick={() => createModel()}><span aria-hidden="true">+</span> New Model</button>
     </>} />
-    <label className="models-search">Search active provider models
+    <label className="models-search">Search models
       <span className="models-search-control"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg><input value={query} maxLength={256} placeholder="Search models..." onChange={(event) => changeState({ query: event.target.value, page: "" })} /></span>
     </label>
     {inventory.isLoading ? <SettingsLoading label="Loading provider inventory…" /> : null}
@@ -212,15 +215,15 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
     <ModelReadProblem error={inventory.error} busy={inventory.isFetching || !active} retry={inventory.refetch} label="Provider inventory read failure" />
     {inventory.error && inventory.data ? <p role="status">Provider refresh failed. Showing the last successfully loaded provider state.</p> : null}
     {!inventory.error && inventory.data && !ready ? <p role="alert">This server does not report the required provider and active-model filtering capabilities. Update the server before using model settings.</p> : null}
-    {ready && models.isLoading ? <SettingsLoading label="Loading active provider models…" /> : null}
-    {ready && models.isFetching && models.data ? <p role="status">Refreshing active provider models.</p> : null}
+    {ready && models.isLoading ? <SettingsLoading label="Loading models…" /> : null}
+    {ready && models.isFetching && models.data ? <p role="status">Refreshing models.</p> : null}
     <ModelReadProblem error={models.error} busy={models.isFetching || !active || !ready} retry={models.refetch} label="Model search read failure" />
     {ready && models.data && (models.error || inventory.error) ? <p role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
     {emptyFirstPage ? <SettingsEmpty title="No models yet"><p>Add models manually using New Model.</p>
       {knownZeroAccounts ? <div className="models-account-guidance"><p>You can add models without an API account.</p><p>Connect an account only for automatic model discovery.</p></div> : null}
     </SettingsEmpty> : hasEmptyResults ? <p className="models-empty-message">{noEnabledProviders ? "No API providers are enabled. Turn on a provider in API Providers." : page ? "No models on this page." : "No models match this search."}</p> : null}
-    {ready && [...grouped.entries()].map(([providerID, entries]) => <section className="models-provider-group" key={providerID} aria-label={`Models from ${resourceName(providers.get(providerID))}`}>
-      <h3>{resourceName(providers.get(providerID))}</h3>
+    {ready && [...grouped.entries()].map(([providerID, entries]) => <section className="models-provider-group" key={providerID} aria-label={`Models from ${groupName(providerID)}`}>
+      <h3>{groupName(providerID)}</h3>
       <div className="models-rows">{entries.map((model) => {
         const data = document(model);
         return <article className="models-row" key={model.id}>
@@ -229,12 +232,12 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
             <div className="models-identifiers"><p>Native ID: {text(data.native_id) || "Unavailable"}</p><p>CLI alias: {text(data.alias) || "None"}</p></div>
             <p>Configured harnesses: {items(data.harnesses).map(text).join(", ") || "None"}</p>
           </div>
-          <div className="models-row-actions"><button type="button" disabled={model.schemaVersion !== 1} onClick={() => editModel(model)}>Edit model</button><button type="button" disabled={model.schemaVersion !== 1} onClick={() => priceModel(model)}>Token pricing</button></div>
+          <div className="models-row-actions"><button type="button" disabled={!supportsResourceSchema(model) || document(model).retired === true} onClick={() => editModel(model)}>Edit model</button><button type="button" disabled={!supportsResourceSchema(model) || document(model).retired === true} onClick={() => priceModel(model)}>Token pricing</button></div>
         </article>;
       })}</div>
     </section>)}
     {ready && !hidePagination ? <nav className="models-pages" aria-label="Model pages"><button type="button" disabled={!page || models.isFetching} onClick={() => changeState({ query, page: "" })}>First page</button><More available={Boolean(models.data?.nextPageToken)} busy={models.isFetching} load={() => changeState({ query, page: models.data!.nextPageToken })} /></nav> : null}
-    <p className="models-footnote">New model choices come only from enabled API providers. Existing disabled references stay attached to their original identities.</p>
+    <p className="models-footnote">Model choices retain independent subscription-service identity or an enabled API provider. Existing disabled references stay attached to their original identities.</p>
     <NativeModelSettings active={active} createModel={createModel} />
   </section>;
 }

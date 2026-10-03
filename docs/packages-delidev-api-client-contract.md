@@ -221,3 +221,7 @@ Generated messages, the `ForkWorkspace`/server capability enums and the existing
 logic in Go. Preserve exact uncertain requests; observe accepted operations by
 job ID instead of issuing another mutation. Desktop connection memory retains
 its controller through navigation and separates acceptance from child publication.
+
+## Service-native schema families
+
+`configuration-identity.ts` owns bounded schema-v2 read negotiation for closed service-native Account/native Model, reconfiguration-required Agent and inert retired wrappers. It preserves API-only v1 reads, refuses mixed Provider/service identity and maps generated closed service enums independently from JSON service strings. The helper grants no mutation/native authority and never unwraps a retired document into a live configuration. Synchronization accepts those owning families without changing exact revisions or snapshot/event atomicity. Portable UI preserves original v2 or API-only v1 document/preview bytes; service-native v1 graphs are unsupported.
