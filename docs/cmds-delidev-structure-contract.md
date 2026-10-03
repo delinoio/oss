@@ -170,3 +170,10 @@ Issue #1208 reserves independent System capability 23 and Worker capability 12 f
 Issues #1202/#1203 reserve independent Codex/OpenCode compaction System capabilities 24/25, Worker capabilities 13/14 and SessionContext capabilities 3–6 before dependent activation. The shared existing capability 15/5 remains the common boundary, with each native profile independently negotiated. `SessionContextCapability` baseline values 0–2 are copied from verified main source `2fd96133`; their existing Claude meanings remain unchanged. These reservations grant no compaction send, checkpoint or cleanup authority and allocate no migration. The owner-approved single integrated PR exception applies; independent changes still establish reservations on main first.
 
 Issue #1202 additionally reserves `GetUsageSummaryResponse.accepted_compactions_without_response = 14`, shared with #1203. It counts accepted native context actions independently of ordinary executions, preserving unavailable response coverage without a fabricated charge or measured zero. The integrated prerequisite is recorded before generation; independent PRs retain the main-first rule.
+
+Issue #1210 reserves independent System capability 26 and Worker capability 15
+for bounded Unix plain-text OpenCode General Chat forks before dependent source
+implementation. Existing Codex Fork capability 13 grants no OpenCode authority.
+This profile introduces no migration; reservations grant no native creation,
+relocation, deletion or inference authority. The approved integrated-PR exception
+applies while independent PRs retain the main-first prerequisite.

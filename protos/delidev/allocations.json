@@ -4652,6 +4652,20 @@
       "declaration": "GetUsageSummaryResponse",
       "member": "accepted_compactions_without_response",
       "number": 14
+    },
+    {
+      "issue": 1210,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1",
+      "number": 26
+    },
+    {
+      "issue": 1210,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1",
+      "number": 15
     }
   ]
 }

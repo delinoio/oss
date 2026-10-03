@@ -570,3 +570,12 @@ RPCs, exact mutation revisions and durable receipt identities carry closed
 version-3 OpenCode action/result JSON. Legacy Claude and Codex versions remain
 unchanged. Generated Go and TypeScript bindings come from the reconciled schema.
 The compaction contract owns original native/source/claim/report/cleanup proof.
+
+## OpenCode General Chat fork reservation (#1210)
+
+System capability 26 and Worker capability 15 are independently reserved for the
+Unix plain-text General Chat profile through existing authenticated `ForkSession`,
+CLI and desktop surfaces. Codex capability 13 cannot imply OpenCode support.
+Reservation alone grants no native mutation, child execution or inherited usage
+charge; activation requires the full original source, relocation, history,
+workspace and cleanup proof under the fork contract. No migration is allocated.
