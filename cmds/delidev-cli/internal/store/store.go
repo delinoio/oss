@@ -84,13 +84,16 @@ type Result struct {
 }
 
 type Tx struct {
-	tx           *sql.Tx
-	ctx          context.Context
-	requestID    domain.ID
-	now          time.Time
-	touched      map[domain.ID]bool
-	queueTouched map[domain.ID]bool
-	readOnly     bool
+	// Only migration 16 reads pre-service immutable pricing while rebuilding its
+	// original budget table. Normal transactions require the current layout.
+	historicalPricingV1 bool
+	tx                  *sql.Tx
+	ctx                 context.Context
+	requestID           domain.ID
+	now                 time.Time
+	touched             map[domain.ID]bool
+	queueTouched        map[domain.ID]bool
+	readOnly            bool
 }
 
 func Open(ctx context.Context, root string) (_ *Store, returned error) {
