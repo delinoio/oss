@@ -10,6 +10,7 @@ pub enum InitializationStage {
     ReadGraph,
     DecodeGraph,
     HydrateGraph,
+    OwnedGroup,
     CacheLocation,
     OpenCache,
     RuntimeMutex,
@@ -18,6 +19,14 @@ pub enum InitializationStage {
     PublishReadiness,
     LaunchToken,
     AcknowledgeLaunch,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProcessGroupOperation {
+    Session,
+    Group,
+    SpawnGroup,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

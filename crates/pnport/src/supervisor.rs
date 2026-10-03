@@ -142,17 +142,28 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
         .and_then(|bytes| {
             serde_json::from_slice::<pnport::diagnostic::InitializationStage>(&bytes).ok()
         });
+    let group_operation = fs::read(session.join("process-group-failure"))
+        .ok()
+        .and_then(|bytes| {
+            serde_json::from_slice::<pnport::diagnostic::ProcessGroupOperation>(&bytes).ok()
+        });
     tracing::debug!(
         action = "native_failure_record",
         code = code.as_str(),
         recognized = recorded_code.is_some(),
         observed_initialization_failure_stage = ?initialization_stage,
+        observed_process_group_failure = ?group_operation,
         "Read the native interception failure record"
     );
     Ok(Some(Error::new(
         code,
-        "Native filesystem interception reported a runtime failure; the process tree has been \
-         stopped.",
+        if code == Code::PnportUnsupportedOperation && group_operation.is_some() {
+            "The command requested an unsupported macOS process group or session change. Run it in \
+             the foreground with daemonization disabled; owned processes were stopped."
+        } else {
+            "Native filesystem interception reported a runtime failure; the process tree has been \
+             stopped."
+        },
     )))
 }
 
@@ -240,7 +251,9 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         {
             use std::os::unix::process::CommandExt;
             #[cfg(target_os = "macos")]
-            command.process_group(owner.group());
+            command
+                .process_group(owner.group())
+                .env("PNPORT_MACOS_GROUP", owner.group().to_string());
             #[cfg(not(target_os = "macos"))]
             command.process_group(0);
         }

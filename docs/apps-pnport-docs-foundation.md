@@ -4,6 +4,7 @@
 `apps/public-docs/docs/pnport` owns English guides at https://oss.delino.io/pnport, using the existing consolidated documentation app and publisher.
 
 The content and navigation are implemented at `/pnport` before the first release. The guides retain the stable 0.1.0 unreleased notice. An owner-authorized experimental `0.1.0-next.N` npm channel may be documented separately, with a published registry check, known feature/minimum-OS/initialization limits, and no Homebrew availability. Prepared sources do not establish published availability. The verified published `0.1.0-next.1` npm next preview and matching signed GitHub prerelease archives are available separately from stable 0.1.0. Guide npm users through a global installation to avoid a conflicting physical project node_modules directory, and Yarn users through a project-local PnP installation and `yarn pnport` invocation.
+The published preview's macOS detached-session/group cleanup gap must be explicit: descendants can remain after pnport stops, so external preview tests use foreground commands with daemonization disabled. A later source-only containment fix cannot be described as available in the immutable published preview or as complete stable detached-process acceptance.
 
 ## Runtime and Language
 Rspress, shared accessible navigation and Cloudflare Pages. Use pnpm dev:public-docs on fixed loopback port 46302. No standalone app, publisher or port.

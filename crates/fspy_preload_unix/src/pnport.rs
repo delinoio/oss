@@ -36,7 +36,7 @@ use libc::{
 };
 use pnport_core::{
     cache::Cache,
-    diagnostic::{Code, Error, ExecFailureKind, InitializationStage},
+    diagnostic::{Code, Error, ExecFailureKind, InitializationStage, ProcessGroupOperation},
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
     view::{Translation, View},
@@ -181,6 +181,7 @@ fn directory_entry(stream: &mut DirectoryStream) -> *mut dirent {
 }
 static RUNTIME: OnceLock<Box<ForkMutex<Runtime>>> = OnceLock::new();
 static SESSION: OnceLock<PathBuf> = OnceLock::new();
+static OWNED_GROUP: OnceLock<pid_t> = OnceLock::new();
 
 unsafe extern "C" fn before_fork() {
     // Wait for all runtime operations to finish before libSystem copies the
@@ -219,10 +220,14 @@ fn record_failure(session: &Path, code: Code) {
     // The supervisor may read concurrently with any injected process. Publish
     // complete bytes once; truncation or collateral failures must not replace
     // the first diagnostic with an empty or different failure code.
-    if let Ok(mut stage) = tempfile::NamedTempFile::new_in(session)
-        && stage.write_all(code.as_str().as_bytes()).is_ok()
+    record_bytes(session, "failure", code.as_str().as_bytes());
+}
+
+fn record_bytes(session: &Path, name: &'static str, bytes: &[u8]) {
+    if let Ok(mut file) = tempfile::NamedTempFile::new_in(session)
+        && file.write_all(bytes).is_ok()
     {
-        let _ = stage.persist_noclobber(session.join("failure"));
+        let _ = file.persist_noclobber(session.join(name));
     }
 }
 
@@ -230,12 +235,18 @@ fn record_initialization_failure(session: &Path, stage: InitializationStage) {
     // The constructor cannot initialize a process-wide tracing subscriber in
     // the user's executable. Publish only a closed enum for supervisor logs.
     // Preserve the first observed stage atomically, like the failure code.
-    if let Ok(bytes) = serde_json::to_vec(&stage)
-        && let Ok(mut file) = tempfile::NamedTempFile::new_in(session)
-        && file.write_all(&bytes).is_ok()
-    {
-        let _ = file.persist_noclobber(session.join("initialization-failure"));
+    if let Ok(bytes) = serde_json::to_vec(&stage) {
+        record_bytes(session, "initialization-failure", &bytes);
     }
+}
+
+fn reject_group_change(operation: ProcessGroupOperation) -> c_int {
+    if let Some(session) = SESSION.get()
+        && let Ok(bytes) = serde_json::to_vec(&operation)
+    {
+        record_bytes(session, "process-group-failure", &bytes);
+    }
+    fail(Code::PnportUnsupportedOperation)
 }
 
 #[cfg(test)]
@@ -553,6 +564,7 @@ unsafe extern "C" fn initialize() {
     for name in [
         "PNPORT_SESSION",
         "PNPORT_CACHE",
+        "PNPORT_MACOS_GROUP",
         "DYLD_INSERT_LIBRARIES",
         "LD_PRELOAD",
     ] {
@@ -576,6 +588,12 @@ unsafe extern "C" fn initialize() {
         let bytes = fs::read(session.join("graph.json")).map_err(|_| Stage::ReadGraph)?;
         let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
         let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
+        let group = std::env::var("PNPORT_MACOS_GROUP")
+            .ok()
+            .and_then(|group| group.parse::<pid_t>().ok())
+            .filter(|group| *group > 0 && *group == libc::getpgrp())
+            .ok_or(Stage::OwnedGroup)?;
+        OWNED_GROUP.set(group).map_err(|_| Stage::OwnedGroup)?;
         let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
         let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
         let view = View::new(graph, cache, session.clone());
@@ -1255,6 +1273,46 @@ hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
     if result>=0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&newfd);if let Some(t)=t {runtime.descriptors.insert(newfd,t);}} result
 });
 
+// Until every additional group has a pinned native owner, permit only
+// operations that keep children in the existing owned group. Do not emulate
+// successful detachment or signal an unreserved group found by PID polling.
+// Remove this containment boundary only with complete multi-group ownership,
+// abrupt-supervisor recovery and native terminal/job-control acceptance.
+hook!(setsid, pnport_setsid, () -> pid_t, {
+    let original = original!(setsid, unsafe extern "C" fn()->pid_t);
+    let Some(_guard) = Guard::enter() else { return original(); };
+    if RUNTIME.get().is_none() || libc::getpid() == libc::getpgrp() { return original(); }
+    errno(reject_group_change(ProcessGroupOperation::Session));
+    -1
+});
+hook!(setpgid, pnport_setpgid, (pid:pid_t,group:pid_t) -> c_int, {
+    let original = original!(setpgid, unsafe extern "C" fn(pid_t,pid_t)->c_int);
+    let Some(_guard) = Guard::enter() else { return original(pid,group); };
+    if RUNTIME.get().is_none() || pid < 0 || group < 0 { return original(pid,group); }
+    let target = if pid == 0 { libc::getpid() } else { pid };
+    let destination = if group == 0 { target } else { group };
+    if OWNED_GROUP.get().is_some_and(|owned| *owned == destination) {
+        return original(pid,group);
+    }
+    errno(reject_group_change(ProcessGroupOperation::Group));
+    -1
+});
+unsafe extern "C" {
+    #[link_name = "setpgrp"]
+    fn native_setpgrp() -> pid_t;
+}
+unsafe extern "C" fn pnport_setpgrp() -> pid_t {
+    pnport_setpgid(0, 0)
+}
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_setpgrp as _,
+        _old: native_setpgrp as _,
+    };
+};
+
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
 fn child_exec_error(error: &Error) -> c_int {
     // A failed native exec is recoverable by its caller (and libc's PATH
@@ -1380,6 +1438,7 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
         if ![
             b"PNPORT_SESSION=".as_slice(),
             b"PNPORT_CACHE=",
+            b"PNPORT_MACOS_GROUP=",
             b"PNPORT_LAUNCH_TOKEN=",
             b"DYLD_INSERT_LIBRARIES=",
             b"LD_PRELOAD=",
@@ -1434,6 +1493,26 @@ unsafe fn spawn_admitted(
             *const *mut c_char,
         ) -> c_int
     );
+    if !attributes.is_null() {
+        let mut flags = 0;
+        let result = libc::posix_spawnattr_getflags(attributes, &raw mut flags);
+        if result != 0 {
+            return result;
+        }
+        if i32::from(flags) & libc::POSIX_SPAWN_SETPGROUP != 0 {
+            let mut group = 0;
+            let result = libc::posix_spawnattr_getpgroup(attributes, &raw mut group);
+            if result != 0 {
+                return result;
+            }
+            if group < 0 {
+                return EINVAL;
+            }
+            if OWNED_GROUP.get().is_none_or(|owned| *owned != group) {
+                return reject_group_change(ProcessGroupOperation::SpawnGroup);
+            }
+        }
+    }
     // Opaque file actions can change the child's cwd before resolving a
     // relative image. Until the actions can be inspected, reject this shape
     // instead of resolving and launching a different image in the parent cwd.

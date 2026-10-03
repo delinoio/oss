@@ -18,6 +18,8 @@ One process tree uses one PnP graph snapshot. If PnP data or an actively used ZI
 
 ## Current limits
 
+In the published `0.1.0-next.1` preview, macOS commands that detach into a new background session or process group can leave descendants running after pnport stops. Test foreground commands with daemonization disabled. Complete detached-process cleanup remains a requirement for stable 0.1.0.
+
 Release acceptance still requires complete filesystem, process, watch, native loading, and installation checks on all four macOS and glibc Linux targets, including static child execution on Linux. Native preview candidate fixtures passed on macOS and glibc Linux x64 and arm64, including Linux static children. Full feature, minimum-OS and benchmark acceptance remain open; intermittent native initialization failures remain under investigation. Windows execution remains unavailable and is planned for 0.2.0 with the same full requirements. Protected or incompatible executables fail explicitly. pnport will not replace a protected executable, elevate privileges, or silently run it without virtualization. No claim of universal executable compatibility or editor-version certification is made.
 
 For an unsupported child, check [diagnostics](/pnport/diagnostics) and use the [GitHub issue tracker](https://github.com/delinoio/oss/issues) to report a reproducible case.

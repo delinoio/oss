@@ -377,6 +377,95 @@ fn cancellation(signal: i32) {
     fixture.assert_released();
 }
 
+#[cfg(target_os = "macos")]
+fn group_boundary(modes: &[&str], rejected: bool) {
+    for mode in modes {
+        let root = Fixture::project_source(false, "process-group.c");
+        let executable = root.path().join("tree");
+        let native = Command::new(&executable)
+            .current_dir(root.path())
+            .args([*mode, "native"])
+            .process_group(0)
+            .output()
+            .unwrap();
+        assert_eq!(native.status.code(), Some(0));
+        if rejected {
+            assert!(root
+                .path()
+                .join(if *mode == "spawn-new" {
+                    "spawn-created"
+                } else {
+                    "group-escaped"
+                })
+                .is_file());
+        }
+        for marker in ["spawn-created", "child-created", "group-escaped"] {
+            let _ = fs::remove_file(root.path().join(marker));
+        }
+        let cache_path = root.path().join("store");
+        let output = Command::new(pnport_binary())
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(&cache_path)
+            .args(["--color", "never", "run", "--"])
+            .arg(&executable)
+            .args([*mode, "virtual"])
+            .process_group(0)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(if rejected { 125 } else { 0 }),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if rejected {
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("PNPORT_UNSUPPORTED_OPERATION")
+            );
+            assert!(String::from_utf8_lossy(&output.stderr).contains("daemonization disabled"));
+            for marker in ["group-escaped", "spawn-created", "child-created"] {
+                assert!(
+                    !root.path().join(marker).exists(),
+                    "{mode} passed the native group boundary"
+                );
+            }
+        } else {
+            assert_eq!(output.stdout, b"owned group control\n");
+            if *mode == "spawn-same" {
+                assert!(root.path().join("child-created").is_file());
+            }
+        }
+        let cache = Cache::open(cache_path).unwrap();
+        let entries = cache.entries(Operation::List).unwrap();
+        assert!(
+            !entries.is_empty()
+                && entries
+                    .iter()
+                    .all(|entry| matches!(entry.state, State::Complete))
+        );
+        assert!(cache
+            .entries(Operation::Clean)
+            .unwrap()
+            .iter()
+            .all(|entry| matches!(entry.state, State::Removed)));
+        assert!(cache.entries(Operation::List).unwrap().is_empty());
+        assert!(!root.path().join("node_modules").exists());
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn session_and_group_creation_fail_before_a_descendant_escapes() {
+    group_boundary(&["setsid", "setpgid", "setpgrp", "spawn-new"], true);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn children_can_join_and_spawn_into_the_existing_owned_group() {
+    group_boundary(&["join", "spawn-same"], false);
+}
+
 #[test]
 fn interrupt_reaches_the_owned_tree_and_releases_leases() {
     cancellation(libc::SIGINT);
