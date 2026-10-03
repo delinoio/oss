@@ -1,6 +1,6 @@
 # Preview testing
 
-Use the published pnport preview to test Turbopack and the native TypeScript compiler against a Yarn 4 Plug'n'Play project, without creating a physical project `node_modules` directory.
+Use the published pnport preview to test Turbopack and TypeScript 7 against a Yarn 4 Plug'n'Play project, without creating a physical project `node_modules` directory.
 
 **pnport 0.1.0 is unreleased.** The experimental `0.1.0-next.1` preview is available on macOS and glibc Linux, each on x64 and arm64. Windows, musl hosts such as Alpine Linux, and mixed architectures are unsupported. Full feature, minimum-OS and benchmark acceptance remain unfinished; intermittent native initialization failures with exit status 125 remain under investigation. These workflows are for testing and do not certify compatibility with every project or tool.
 
@@ -61,11 +61,11 @@ pnport run -- next start
 
 Stop it with Ctrl+C. Run the same build command again to check an unchanged rebuild, and record the Next.js version with `pnport run -- next --version`.
 
-## Run native TypeScript
+## Run TypeScript 7
 
-Starting with TypeScript 7.0 RC, the native compiler's command is `tsc`; older previews use `tsgo`. See the [official native TypeScript preview instructions](https://github.com/microsoft/typescript-go#preview).
+TypeScript 7 provides the native compiler through the `typescript` package and the `tsc` command. See the [official TypeScript installation guide](https://www.typescriptlang.org/download/).
 
-For a reproducible test, install the exact native compiler version used in pnport's macOS and Linux validation. Run this in the workspace you want to type-check:
+For a reproducible test, install the exact TypeScript 7.1 nightly used in pnport's macOS and Linux validation. Run this in the workspace you want to type-check:
 
 ```sh
 yarn add --dev --exact typescript@7.1.0-dev.20260812.1
@@ -73,7 +73,9 @@ pnport run -- tsc --version
 pnport run -- tsc --noEmit -p tsconfig.json
 ```
 
-This version's `tsc` is the Go-based native compiler. Confirm that a project without type errors exits with status 0. In a test copy, introduce a deliberate type error, rerun the check, and confirm that the compiler reports it and exits with a nonzero status; then restore the source.
+The pinned nightly has the macOS signing entitlements pnport requires. The `typescript@7.0.2` macOS binary lacks them and is rejected.
+
+Confirm that a project without type errors exits with status 0. In a test copy, introduce a deliberate type error, rerun the check, and confirm that the compiler reports it and exits with a nonzero status; then restore the source.
 
 For a project-reference build, use:
 
@@ -81,20 +83,9 @@ For a project-reference build, use:
 pnport run -- tsc -b
 ```
 
-### Use an existing tsgo preview
-
-If the workspace already has `@typescript/native-preview` as a direct dependency and you want to test its `tsgo` command, use:
-
-```sh
-pnport run -- tsgo --version
-pnport run -- tsgo --noEmit -p tsconfig.json
-```
-
-The older `@typescript/native-preview@7.0.0-dev.20260707.2` macOS binary lacks the signing entitlements pnport requires, so pnport rejects it. On macOS, use the pinned `typescript` version and `tsc` commands above. The legacy commands are provided for testing an existing installation, not as a compatibility guarantee.
-
 ## Report results
 
-Report the OS version and CPU architecture, the exact command, whether it passed, and the Next.js or native TypeScript version. Include the following version and readiness information:
+Report the OS version and CPU architecture, the exact command, whether it passed, and the Next.js or TypeScript 7 version. Include the following version and readiness information:
 
 ```sh
 pnport --version

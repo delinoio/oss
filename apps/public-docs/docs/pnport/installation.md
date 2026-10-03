@@ -16,7 +16,7 @@ Keep optional dependencies enabled and use Node.js 22 or newer. Global npm insta
 
 Yarn's [minimum package age setting](https://yarnpkg.com/configuration/yarnrc/#npmMinimalAgeGate) can temporarily quarantine a newly published preview. If Yarn reports that the version is quarantined, wait for your configured age requirement. The global npm CLI above can run against your already installed PnP project while that Yarn installation is unavailable.
 
-Continue with [preview testing](/pnport/preview-testing) for exact-version installation, project preparation, and Turbopack and native TypeScript commands.
+Continue with [preview testing](/pnport/preview-testing) for exact-version installation, project preparation, and Turbopack and TypeScript 7 commands.
 
 The preview is experimental: full filesystem/process/tool compatibility, minimum supported OS validation and complete benchmark acceptance remain unfinished. Intermittent native initialization failures, reported with exit status 125, remain under investigation. A passing installation or TypeScript build does not establish compatibility with every tool. Windows, musl hosts and mixed architectures are unsupported; no preview Homebrew formula is provided. Report reproducible failures in [issue #958](https://github.com/delinoio/oss/issues/958), including the exact version, OS and architecture, command shape and sanitized diagnostics. Remove credentials, private paths and project content before sharing.
 

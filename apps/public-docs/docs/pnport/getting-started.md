@@ -2,7 +2,7 @@
 
 **pnport 0.1.0 is unreleased; the commands below describe the CLI interface.** Check [installation and availability](/pnport/installation) before using an experimental preview. Prepare an installed Yarn 4 Plug'n'Play project first. The project must have `.pnp.cjs`; inline and split PnP data are part of the release contract.
 
-For a walkthrough using the published preview with Turbopack and native TypeScript, see [preview testing](/pnport/preview-testing).
+For a walkthrough using the published preview with Turbopack and TypeScript 7, see [preview testing](/pnport/preview-testing).
 
 ## Check the project
 

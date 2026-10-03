@@ -6,7 +6,7 @@ pnport is a command-line tool in development for running subprocesses against an
 
 See [installation and availability](/pnport/installation) for the registry check, installation commands and known preview limits. Pin the exact version when reporting a failure.
 
-To try the published preview with Turbopack or the native TypeScript compiler, follow [preview testing](/pnport/preview-testing).
+To try the published preview with Turbopack or TypeScript 7, follow [preview testing](/pnport/preview-testing).
 
 ## Release targets
 

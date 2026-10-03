@@ -17,7 +17,7 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Cross-Domain Invariants
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.
-- pnport's eleven public guide routes include `/pnport/preview-testing` for external Turbopack and native TypeScript testing; its sidebar, entry-page links and required headings/links stay aligned with the shared route catalog and `docs/apps-pnport-docs-foundation.md`.
+- pnport's eleven public guide routes include `/pnport/preview-testing` for external Turbopack and TypeScript 7 testing; its sidebar, entry-page links and required headings/links stay aligned with the shared route catalog and `docs/apps-pnport-docs-foundation.md`.
 - User-facing content changes should be versioned alongside relevant contract updates.
 - The root site's top-level navbar intentionally contains no route items; the public project pages remain available through the sidebar and documented links. The current product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`. DevHud's stable child routes are `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, and `/devhud/releases`.
 - Runmoor public guides are owned directly by `apps/public-docs/docs/runmoor` and are published at `https://oss.delino.io/runmoor`. The canonical public routes use the same-origin `/runmoor` subpath.
