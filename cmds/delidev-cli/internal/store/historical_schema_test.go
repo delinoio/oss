@@ -129,7 +129,7 @@ func historicalSchema(db *sql.DB, version string) (sql.Result, error) {
 			continue
 		}
 		projection := strings.Join(common, ",")
-		if table == "metadata" && version == "025" {
+		if table == "metadata" && (version == "025" || version == "026") {
 			if _, err = tx.ExecContext(ctx, "DELETE FROM main.metadata WHERE key<>'native_accounting_layout'"); err != nil {
 				return nil, err
 			}
