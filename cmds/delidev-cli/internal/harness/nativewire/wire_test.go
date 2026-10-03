@@ -99,7 +99,7 @@ func init() {
 	}
 	os.Exit(0)
 }
-func startFixture(t *testing.T, mode string) (*Connection, process.Config, *bytes.Buffer) {
+func startFixture(t *testing.T, mode string, protected ...string) (*Connection, process.Config, *bytes.Buffer) {
 	t.Helper()
 	executable, err := os.Executable()
 	if err != nil {
@@ -107,6 +107,7 @@ func startFixture(t *testing.T, mode string) (*Connection, process.Config, *byte
 	}
 	var log bytes.Buffer
 	cfg := process.Config{Directory: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID(), Executable: executable, Args: []string{"__delidev_wire_fixture", mode}, Cwd: t.TempDir(), Env: []string{}, Logger: slog.New(slog.NewJSONHandler(&log, nil))}
+	cfg.ProtectedValues = protected
 	start := Start
 	if strings.HasPrefix(mode, "jsonrpc") {
 		start = StartJSONRPC
@@ -121,6 +122,40 @@ func startFixture(t *testing.T, mode string) (*Connection, process.Config, *byte
 		}
 	})
 	return c, cfg, &log
+}
+
+func TestProtectedNativeFrameFailsBeforePublicationAndMetadataPersistence(t *testing.T) {
+	const secret = "fixture-native-proxy-reflection-sentinel"
+	c, config, logs := startFixture(t, "normal", secret)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.Notify(ctx, "notify", map[string]string{"value": secret}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Next(ctx); err == nil || domain.SafeError(err).Code != domain.PermissionDenied {
+		t.Fatal("protected native frame crossed publication", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(logs.String(), secret) {
+		t.Fatal("protected native frame entered logs")
+	}
+	if err := filepath.WalkDir(config.Directory, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err == nil && strings.Contains(string(raw), secret) {
+			t.Fatal("protected native frame entered process metadata")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestExplicitJSONRPCProfileRequestsRepliesAndNotifications(t *testing.T) {

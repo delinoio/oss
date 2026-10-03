@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,6 +14,99 @@ import (
 
 func apiFixtureToken() string {
 	return apiproxy.TokenPrefix + base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("x", 32)))
+}
+
+func TestOwnedProxyRebuildsEnvironmentAndRejectsInvalidLocalAuthority(t *testing.T) {
+	local := "http://delidev:" + base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("p", 32))) + "@127.0.0.1:12346"
+	for _, platform := range []string{"linux", "darwin", "windows"} {
+		t.Run(platform, func(t *testing.T) {
+			got := proxyEnvironment([]string{"PATH=fixture", "Http_Proxy=foreign", "https_proxy=foreign", "ALL_PROXY=foreign", "No_Proxy=*"}, local, platform)
+			seen := map[string]bool{}
+			for _, entry := range got {
+				key, value, _ := strings.Cut(entry, "=")
+				if seen[key] || strings.Contains(entry, "foreign") {
+					t.Fatal("proxy environment retained inherited authority")
+				}
+				seen[key] = true
+				if proxyEnvironmentKey(key) {
+					expected := ""
+					if strings.EqualFold(key, "HTTP_PROXY") || strings.EqualFold(key, "HTTPS_PROXY") {
+						expected = local
+					}
+					if value != expected || platform == "windows" && key != strings.ToUpper(key) {
+						t.Fatal("inconsistent native proxy environment")
+					}
+				}
+			}
+			if len(got) != 9 && platform != "windows" || platform == "windows" && len(got) != 5 {
+				t.Fatal("missing proxy exclusions")
+			}
+		})
+	}
+	for _, change := range []string{"valid", "zero", "leading-zero", "overflow", "base64", "credential-size", "host-alias"} {
+		t.Run(change, func(t *testing.T) {
+			endpoint := local
+			switch change {
+			case "zero":
+				endpoint = strings.ReplaceAll(endpoint, ":12346", ":0")
+			case "leading-zero":
+				endpoint = strings.ReplaceAll(endpoint, ":12346", ":012346")
+			case "overflow":
+				endpoint = strings.ReplaceAll(endpoint, ":12346", ":65536")
+			case "base64":
+				endpoint = strings.ReplaceAll(endpoint, base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("p", 32))), strings.Repeat("!", 43))
+			case "credential-size":
+				endpoint = strings.ReplaceAll(endpoint, base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("p", 32))), base64.RawURLEncoding.EncodeToString([]byte("short")))
+			case "host-alias":
+				endpoint = strings.ReplaceAll(endpoint, "127.0.0.1", "localhost")
+			}
+			cfg := Config{Mode: ThreadProtocol, API: &APIConfig{ServerOrigin: "https://server.example", Token: apiFixtureToken(), LoopbackProxyURL: endpoint}}
+			binding, err := configureAPI(&cfg)
+			if (err == nil) != (change == "valid") {
+				t.Fatal("invalid local authority classification", err)
+			}
+			if err != nil {
+				return
+			}
+			if !binding.proxied || !slices.Contains(cfg.Process.Args, "features.respect_system_proxy=false") {
+				t.Fatal("native system proxy discovery remained enabled")
+			}
+			if strings.Contains(strings.Join(cfg.Process.Args, " "), local) || !slices.Contains(cfg.Process.ProtectedValues, local) {
+				t.Fatal("local authority escaped transient protection")
+			}
+		})
+	}
+}
+
+func TestOwnedProxyMergedConfigurationCannotRestoreSystemOrShellAuthority(t *testing.T) {
+	for _, change := range []string{"valid", "feature-absent", "feature-true", "feature-null", "exclude-missing", "setter"} {
+		t.Run(change, func(t *testing.T) {
+			provider := map[string]any{"name": "DeliDev", "base_url": "https://server.example/api-proxy/v1", "env_key": executionTokenEnv, "wire_api": "responses", "requires_openai_auth": false, "supports_websockets": false, "supports_standalone_web_search": false}
+			shell := map[string]any{"exclude": append([]string{executionTokenEnv}, proxyEnvironmentKeys...)}
+			config := map[string]any{"features": map[string]any{"respect_system_proxy": false}, "model_provider": APIProvider, "cli_auth_credentials_store": "ephemeral", "model_providers": map[string]any{APIProvider: provider}, "shell_environment_policy": shell}
+			switch change {
+			case "feature-absent":
+				delete(config, "features")
+			case "feature-true":
+				config["features"] = map[string]any{"respect_system_proxy": true}
+			case "feature-null":
+				config["features"] = map[string]any{"respect_system_proxy": nil}
+			case "exclude-missing":
+				shell["exclude"] = []string{executionTokenEnv}
+			case "setter":
+				shell["set"] = map[string]string{"hTtPs_PrOxY": "foreign"}
+			}
+			raw, _ := json.Marshal(config)
+			var merged map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &merged); err != nil {
+				t.Fatal(err)
+			}
+			binding := apiBinding{endpoint: "https://server.example/api-proxy/v1", proxied: true}
+			if err := binding.validateConfig(merged); (err == nil) != (change == "valid") {
+				t.Fatal("merged proxy authority was misclassified", err)
+			}
+		})
+	}
 }
 
 func TestExecutionAPIRejectsInvalidAuthorityBeforeLaunch(t *testing.T) {

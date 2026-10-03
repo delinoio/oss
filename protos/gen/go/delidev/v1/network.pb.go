@@ -609,6 +609,279 @@ func (x *ExportWorkerNetworkMetadataResponse) GetAuthentication() string {
 	return ""
 }
 
+type ExportWorkerNetworkBundleRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Mutation          *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	MachineId         string                 `protobuf:"bytes,2,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	DeviceId          string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	PairingId         string                 `protobuf:"bytes,4,opt,name=pairing_id,json=pairingId,proto3" json:"pairing_id,omitempty"`
+	Endpoint          string                 `protobuf:"bytes,5,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	Recipient         string                 `protobuf:"bytes,6,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	KeyId             string                 `protobuf:"bytes,7,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	ProfileId         string                 `protobuf:"bytes,8,opt,name=profile_id,json=profileId,proto3" json:"profile_id,omitempty"`
+	ProfileRevision   uint64                 `protobuf:"varint,9,opt,name=profile_revision,json=profileRevision,proto3" json:"profile_revision,omitempty"`
+	DesiredGeneration uint64                 `protobuf:"varint,10,opt,name=desired_generation,json=desiredGeneration,proto3" json:"desired_generation,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ExportWorkerNetworkBundleRequest) Reset() {
+	*x = ExportWorkerNetworkBundleRequest{}
+	mi := &file_delidev_v1_network_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportWorkerNetworkBundleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportWorkerNetworkBundleRequest) ProtoMessage() {}
+
+func (x *ExportWorkerNetworkBundleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_network_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportWorkerNetworkBundleRequest.ProtoReflect.Descriptor instead.
+func (*ExportWorkerNetworkBundleRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_network_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetPairingId() string {
+	if x != nil {
+		return x.PairingId
+	}
+	return ""
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetRecipient() string {
+	if x != nil {
+		return x.Recipient
+	}
+	return ""
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetProfileId() string {
+	if x != nil {
+		return x.ProfileId
+	}
+	return ""
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetProfileRevision() uint64 {
+	if x != nil {
+		return x.ProfileRevision
+	}
+	return 0
+}
+
+func (x *ExportWorkerNetworkBundleRequest) GetDesiredGeneration() uint64 {
+	if x != nil {
+		return x.DesiredGeneration
+	}
+	return 0
+}
+
+type ExportWorkerNetworkBundleResponse struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Ciphertext []byte                 `protobuf:"bytes,1,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	// Obtain independently from this authenticated response before import.
+	CiphertextDigest string    `protobuf:"bytes,2,opt,name=ciphertext_digest,json=ciphertextDigest,proto3" json:"ciphertext_digest,omitempty"`
+	Route            *Resource `protobuf:"bytes,3,opt,name=route,proto3" json:"route,omitempty"`
+	Replayed         bool      `protobuf:"varint,4,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ExportWorkerNetworkBundleResponse) Reset() {
+	*x = ExportWorkerNetworkBundleResponse{}
+	mi := &file_delidev_v1_network_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportWorkerNetworkBundleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportWorkerNetworkBundleResponse) ProtoMessage() {}
+
+func (x *ExportWorkerNetworkBundleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_network_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportWorkerNetworkBundleResponse.ProtoReflect.Descriptor instead.
+func (*ExportWorkerNetworkBundleResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_network_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ExportWorkerNetworkBundleResponse) GetCiphertext() []byte {
+	if x != nil {
+		return x.Ciphertext
+	}
+	return nil
+}
+
+func (x *ExportWorkerNetworkBundleResponse) GetCiphertextDigest() string {
+	if x != nil {
+		return x.CiphertextDigest
+	}
+	return ""
+}
+
+func (x *ExportWorkerNetworkBundleResponse) GetRoute() *Resource {
+	if x != nil {
+		return x.Route
+	}
+	return nil
+}
+
+func (x *ExportWorkerNetworkBundleResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type GetWorkerNetworkStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetWorkerNetworkStatusRequest) Reset() {
+	*x = GetWorkerNetworkStatusRequest{}
+	mi := &file_delidev_v1_network_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetWorkerNetworkStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetWorkerNetworkStatusRequest) ProtoMessage() {}
+
+func (x *GetWorkerNetworkStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_network_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetWorkerNetworkStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetWorkerNetworkStatusRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_network_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetWorkerNetworkStatusRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+type GetWorkerNetworkStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StatusJson    []byte                 `protobuf:"bytes,1,opt,name=status_json,json=statusJson,proto3" json:"status_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetWorkerNetworkStatusResponse) Reset() {
+	*x = GetWorkerNetworkStatusResponse{}
+	mi := &file_delidev_v1_network_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetWorkerNetworkStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetWorkerNetworkStatusResponse) ProtoMessage() {}
+
+func (x *GetWorkerNetworkStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_network_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetWorkerNetworkStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetWorkerNetworkStatusResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_network_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetWorkerNetworkStatusResponse) GetStatusJson() []byte {
+	if x != nil {
+		return x.StatusJson
+	}
+	return nil
+}
+
 var File_delidev_v1_network_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_network_proto_rawDesc = "" +
@@ -659,8 +932,38 @@ const file_delidev_v1_network_proto_rawDesc = "" +
 	"\x12desired_generation\x18\x02 \x01(\x04R\x11desiredGeneration\"r\n" +
 	"#ExportWorkerNetworkMetadataResponse\x12#\n" +
 	"\rmetadata_json\x18\x01 \x01(\fR\fmetadataJson\x12&\n" +
-	"\x0eauthentication\x18\x02 \x01(\tR\x0eauthentication2\xa7\x04\n" +
-	"\x0eNetworkService\x12c\n" +
+	"\x0eauthentication\x18\x02 \x01(\tR\x0eauthentication\"\xf9\x02\n" +
+	" ExportWorkerNetworkBundleRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x02 \x01(\tR\tmachineId\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x1d\n" +
+	"\n" +
+	"pairing_id\x18\x04 \x01(\tR\tpairingId\x12\x1a\n" +
+	"\bendpoint\x18\x05 \x01(\tR\bendpoint\x12\x1c\n" +
+	"\trecipient\x18\x06 \x01(\tR\trecipient\x12\x15\n" +
+	"\x06key_id\x18\a \x01(\tR\x05keyId\x12\x1d\n" +
+	"\n" +
+	"profile_id\x18\b \x01(\tR\tprofileId\x12)\n" +
+	"\x10profile_revision\x18\t \x01(\x04R\x0fprofileRevision\x12-\n" +
+	"\x12desired_generation\x18\n" +
+	" \x01(\x04R\x11desiredGeneration\"\xb8\x01\n" +
+	"!ExportWorkerNetworkBundleResponse\x12\x1e\n" +
+	"\n" +
+	"ciphertext\x18\x01 \x01(\fR\n" +
+	"ciphertext\x12+\n" +
+	"\x11ciphertext_digest\x18\x02 \x01(\tR\x10ciphertextDigest\x12*\n" +
+	"\x05route\x18\x03 \x01(\v2\x14.delidev.v1.ResourceR\x05route\x12\x1a\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed\">\n" +
+	"\x1dGetWorkerNetworkStatusRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\"A\n" +
+	"\x1eGetWorkerNetworkStatusResponse\x12\x1f\n" +
+	"\vstatus_json\x18\x01 \x01(\fR\n" +
+	"statusJson2\x92\x06\n" +
+	"\x0eNetworkService\x12x\n" +
+	"\x19ExportWorkerNetworkBundle\x12,.delidev.v1.ExportWorkerNetworkBundleRequest\x1a-.delidev.v1.ExportWorkerNetworkBundleResponse\x12o\n" +
+	"\x16GetWorkerNetworkStatus\x12).delidev.v1.GetWorkerNetworkStatusRequest\x1a*.delidev.v1.GetWorkerNetworkStatusResponse\x12c\n" +
 	"\x12SaveNetworkProfile\x12%.delidev.v1.SaveNetworkProfileRequest\x1a&.delidev.v1.SaveNetworkProfileResponse\x12i\n" +
 	"\x14DeleteNetworkProfile\x12'.delidev.v1.DeleteNetworkProfileRequest\x1a(.delidev.v1.DeleteNetworkProfileResponse\x12i\n" +
 	"\x14SelectNetworkProfile\x12'.delidev.v1.SelectNetworkProfileRequest\x1a(.delidev.v1.SelectNetworkProfileResponse\x12Z\n" +
@@ -679,7 +982,7 @@ func file_delidev_v1_network_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_network_proto_rawDescData
 }
 
-var file_delidev_v1_network_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_delidev_v1_network_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_delidev_v1_network_proto_goTypes = []any{
 	(*SaveNetworkProfileRequest)(nil),           // 0: delidev.v1.SaveNetworkProfileRequest
 	(*DeleteNetworkProfileRequest)(nil),         // 1: delidev.v1.DeleteNetworkProfileRequest
@@ -691,32 +994,42 @@ var file_delidev_v1_network_proto_goTypes = []any{
 	(*GetNetworkRouteResponse)(nil),             // 7: delidev.v1.GetNetworkRouteResponse
 	(*ExportWorkerNetworkMetadataRequest)(nil),  // 8: delidev.v1.ExportWorkerNetworkMetadataRequest
 	(*ExportWorkerNetworkMetadataResponse)(nil), // 9: delidev.v1.ExportWorkerNetworkMetadataResponse
-	(*Mutation)(nil),                            // 10: delidev.v1.Mutation
-	(*Resource)(nil),                            // 11: delidev.v1.Resource
+	(*ExportWorkerNetworkBundleRequest)(nil),    // 10: delidev.v1.ExportWorkerNetworkBundleRequest
+	(*ExportWorkerNetworkBundleResponse)(nil),   // 11: delidev.v1.ExportWorkerNetworkBundleResponse
+	(*GetWorkerNetworkStatusRequest)(nil),       // 12: delidev.v1.GetWorkerNetworkStatusRequest
+	(*GetWorkerNetworkStatusResponse)(nil),      // 13: delidev.v1.GetWorkerNetworkStatusResponse
+	(*Mutation)(nil),                            // 14: delidev.v1.Mutation
+	(*Resource)(nil),                            // 15: delidev.v1.Resource
 }
 var file_delidev_v1_network_proto_depIdxs = []int32{
-	10, // 0: delidev.v1.SaveNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	10, // 1: delidev.v1.DeleteNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	10, // 2: delidev.v1.SelectNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	11, // 3: delidev.v1.SaveNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
-	11, // 4: delidev.v1.DeleteNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
-	11, // 5: delidev.v1.SelectNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
-	11, // 6: delidev.v1.GetNetworkRouteResponse.route:type_name -> delidev.v1.Resource
-	0,  // 7: delidev.v1.NetworkService.SaveNetworkProfile:input_type -> delidev.v1.SaveNetworkProfileRequest
-	1,  // 8: delidev.v1.NetworkService.DeleteNetworkProfile:input_type -> delidev.v1.DeleteNetworkProfileRequest
-	2,  // 9: delidev.v1.NetworkService.SelectNetworkProfile:input_type -> delidev.v1.SelectNetworkProfileRequest
-	6,  // 10: delidev.v1.NetworkService.GetNetworkRoute:input_type -> delidev.v1.GetNetworkRouteRequest
-	8,  // 11: delidev.v1.NetworkService.ExportWorkerNetworkMetadata:input_type -> delidev.v1.ExportWorkerNetworkMetadataRequest
-	3,  // 12: delidev.v1.NetworkService.SaveNetworkProfile:output_type -> delidev.v1.SaveNetworkProfileResponse
-	4,  // 13: delidev.v1.NetworkService.DeleteNetworkProfile:output_type -> delidev.v1.DeleteNetworkProfileResponse
-	5,  // 14: delidev.v1.NetworkService.SelectNetworkProfile:output_type -> delidev.v1.SelectNetworkProfileResponse
-	7,  // 15: delidev.v1.NetworkService.GetNetworkRoute:output_type -> delidev.v1.GetNetworkRouteResponse
-	9,  // 16: delidev.v1.NetworkService.ExportWorkerNetworkMetadata:output_type -> delidev.v1.ExportWorkerNetworkMetadataResponse
-	12, // [12:17] is the sub-list for method output_type
-	7,  // [7:12] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	14, // 0: delidev.v1.SaveNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	14, // 1: delidev.v1.DeleteNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	14, // 2: delidev.v1.SelectNetworkProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	15, // 3: delidev.v1.SaveNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
+	15, // 4: delidev.v1.DeleteNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
+	15, // 5: delidev.v1.SelectNetworkProfileResponse.resource:type_name -> delidev.v1.Resource
+	15, // 6: delidev.v1.GetNetworkRouteResponse.route:type_name -> delidev.v1.Resource
+	14, // 7: delidev.v1.ExportWorkerNetworkBundleRequest.mutation:type_name -> delidev.v1.Mutation
+	15, // 8: delidev.v1.ExportWorkerNetworkBundleResponse.route:type_name -> delidev.v1.Resource
+	10, // 9: delidev.v1.NetworkService.ExportWorkerNetworkBundle:input_type -> delidev.v1.ExportWorkerNetworkBundleRequest
+	12, // 10: delidev.v1.NetworkService.GetWorkerNetworkStatus:input_type -> delidev.v1.GetWorkerNetworkStatusRequest
+	0,  // 11: delidev.v1.NetworkService.SaveNetworkProfile:input_type -> delidev.v1.SaveNetworkProfileRequest
+	1,  // 12: delidev.v1.NetworkService.DeleteNetworkProfile:input_type -> delidev.v1.DeleteNetworkProfileRequest
+	2,  // 13: delidev.v1.NetworkService.SelectNetworkProfile:input_type -> delidev.v1.SelectNetworkProfileRequest
+	6,  // 14: delidev.v1.NetworkService.GetNetworkRoute:input_type -> delidev.v1.GetNetworkRouteRequest
+	8,  // 15: delidev.v1.NetworkService.ExportWorkerNetworkMetadata:input_type -> delidev.v1.ExportWorkerNetworkMetadataRequest
+	11, // 16: delidev.v1.NetworkService.ExportWorkerNetworkBundle:output_type -> delidev.v1.ExportWorkerNetworkBundleResponse
+	13, // 17: delidev.v1.NetworkService.GetWorkerNetworkStatus:output_type -> delidev.v1.GetWorkerNetworkStatusResponse
+	3,  // 18: delidev.v1.NetworkService.SaveNetworkProfile:output_type -> delidev.v1.SaveNetworkProfileResponse
+	4,  // 19: delidev.v1.NetworkService.DeleteNetworkProfile:output_type -> delidev.v1.DeleteNetworkProfileResponse
+	5,  // 20: delidev.v1.NetworkService.SelectNetworkProfile:output_type -> delidev.v1.SelectNetworkProfileResponse
+	7,  // 21: delidev.v1.NetworkService.GetNetworkRoute:output_type -> delidev.v1.GetNetworkRouteResponse
+	9,  // 22: delidev.v1.NetworkService.ExportWorkerNetworkMetadata:output_type -> delidev.v1.ExportWorkerNetworkMetadataResponse
+	16, // [16:23] is the sub-list for method output_type
+	9,  // [9:16] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_network_proto_init() }
@@ -731,7 +1044,7 @@ func file_delidev_v1_network_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_network_proto_rawDesc), len(file_delidev_v1_network_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

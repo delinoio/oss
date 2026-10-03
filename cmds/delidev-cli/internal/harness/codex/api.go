@@ -2,8 +2,10 @@ package codex
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/url"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,9 +22,10 @@ const executionTokenEnv = "DELIDEV_EXECUTION_TOKEN"
 // token. It is never a provider key, user-editable native config or persisted
 // document. The owning Worker registers its digest before calling Open.
 type APIConfig struct {
-	ServerOrigin string `json:"-"`
-	Token        string `json:"-"`
-	TitleProfile bool   `json:"-"`
+	ServerOrigin     string `json:"-"`
+	Token            string `json:"-"`
+	TitleProfile     bool   `json:"-"`
+	LoopbackProxyURL string `json:"-"`
 }
 
 // Retain only non-secret configuration after launch. The process owner receives
@@ -30,6 +33,7 @@ type APIConfig struct {
 type apiBinding struct {
 	endpoint string
 	title    bool
+	proxied  bool
 }
 
 func configureAPI(config *Config) (*apiBinding, error) {
@@ -55,6 +59,25 @@ func configureAPI(config *Config) (*apiBinding, error) {
 		}
 	}
 	config.Process.Env = append(slices.Clone(config.Process.Env), executionTokenEnv+"="+config.API.Token)
+	config.Process.ProtectedValues = append(slices.Clone(config.Process.ProtectedValues), config.API.Token)
+	excluded := []string{executionTokenEnv}
+	if config.API.LoopbackProxyURL != "" {
+		proxy, err := url.Parse(config.API.LoopbackProxyURL)
+		if err != nil || proxy.Scheme != "http" || proxy.Hostname() != "127.0.0.1" || proxy.Port() == "" || proxy.User == nil || proxy.User.Username() != "delidev" || proxy.Path != "" || proxy.RawQuery != "" || proxy.ForceQuery || proxy.Fragment != "" || proxy.RawPath != "" || proxy.Opaque != "" {
+			return nil, apiConfigMismatch("owned-proxy")
+		}
+		password, present := proxy.User.Password()
+		decoded, decodeErr := base64.RawURLEncoding.DecodeString(password)
+		port, portErr := strconv.ParseUint(proxy.Port(), 10, 16)
+		if !present || decodeErr != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != password || portErr != nil || port == 0 || strconv.FormatUint(port, 10) != proxy.Port() || proxy.Host != "127.0.0.1:"+proxy.Port() {
+			return nil, apiConfigMismatch("owned-proxy-credential")
+		}
+		config.Process.Env = proxyEnvironment(config.Process.Env, config.API.LoopbackProxyURL, runtime.GOOS)
+		config.Process.ProtectedValues = append(config.Process.ProtectedValues, password, config.API.LoopbackProxyURL)
+		excluded = append(excluded, proxyEnvironmentKeys...)
+		config.Process.Args = append(config.Process.Args, "-c", "features.respect_system_proxy=false")
+		binding.proxied = true
+	}
 	// Native session flags override project configuration. Legacy managed
 	// policy can outrank them, so verifyAPI also checks the effective merged
 	// authority before thread creation/resume, without changing that policy.
@@ -62,9 +85,10 @@ func configureAPI(config *Config) (*apiBinding, error) {
 	if binding.title {
 		provider = strings.TrimSuffix(provider, "}") + ",request_max_retries=0,stream_max_retries=0}"
 	}
+	exclusion, _ := json.Marshal(excluded)
 	config.Process.Args = append(config.Process.Args,
 		"-c", `model_provider="`+APIProvider+`"`, "-c", "model_providers."+APIProvider+"="+provider,
-		"-c", `shell_environment_policy.exclude=["`+executionTokenEnv+`"]`)
+		"-c", "shell_environment_policy.exclude="+string(exclusion))
 	return binding, nil
 }
 
@@ -104,6 +128,12 @@ func apiConfigMismatch(field string) *domain.Error {
 }
 
 func (a *apiBinding) validateConfig(config map[string]json.RawMessage) error {
+	if a.proxied {
+		var features map[string]json.RawMessage
+		if json.Unmarshal(config["features"], &features) != nil || strings.TrimSpace(string(features["respect_system_proxy"])) != "false" {
+			return apiConfigMismatch("system-proxy-policy")
+		}
+	}
 	var selected, store string
 	if json.Unmarshal(config["model_provider"], &selected) != nil || selected != APIProvider || json.Unmarshal(config["cli_auth_credentials_store"], &store) != nil || store != "ephemeral" {
 		return apiConfigMismatch("provider-selection")
@@ -173,10 +203,46 @@ func (a *apiBinding) validateConfig(config map[string]json.RawMessage) error {
 	if json.Unmarshal(config["shell_environment_policy"], &shell) != nil || !slices.Contains(shell.Exclude, executionTokenEnv) {
 		return apiConfigMismatch("shell-exclusion")
 	}
+	if a.proxied {
+		for _, key := range proxyEnvironmentKeys {
+			if !slices.Contains(shell.Exclude, key) {
+				return apiConfigMismatch("proxy-shell-exclusion")
+			}
+		}
+	}
 	for key := range shell.Set {
-		if strings.EqualFold(key, executionTokenEnv) {
+		if strings.EqualFold(key, executionTokenEnv) || a.proxied && proxyEnvironmentKey(key) {
 			return apiConfigMismatch("shell-setter")
 		}
 	}
 	return nil
+}
+
+var proxyEnvironmentKeys = []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"}
+
+func proxyEnvironmentKey(key string) bool {
+	return slices.Contains([]string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"}, strings.ToUpper(key))
+}
+
+// Reconstruct every proxy name from scratch. Windows has case-insensitive
+// environment names; Unix needs consistent upper/lower-case native entries.
+func proxyEnvironment(environment []string, endpoint, platform string) []string {
+	result := make([]string, 0, len(environment)+len(proxyEnvironmentKeys))
+	for _, entry := range environment {
+		key, _, _ := strings.Cut(entry, "=")
+		if !proxyEnvironmentKey(key) {
+			result = append(result, entry)
+		}
+	}
+	for _, key := range proxyEnvironmentKeys {
+		if platform == "windows" && key != strings.ToUpper(key) {
+			continue
+		}
+		value := ""
+		if strings.EqualFold(key, "HTTP_PROXY") || strings.EqualFold(key, "HTTPS_PROXY") {
+			value = endpoint
+		}
+		result = append(result, key+"="+value)
+	}
+	return result
 }

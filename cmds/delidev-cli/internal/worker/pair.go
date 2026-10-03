@@ -115,7 +115,7 @@ func writeJSON(path string, value any) error {
 // acceptance. A lost response can therefore retry exactly without creating a
 // new device or replacing an existing credential.
 func Pair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string) (Credential, error) {
-	return pair(ctx, root, grant, kind, name, false, nil)
+	return pair(ctx, root, grant, kind, name, false, nil, false)
 }
 
 // PairWithCommitment publishes caller-owned proof of the accepted credential
@@ -126,15 +126,15 @@ func PairWithCommitment(ctx context.Context, root string, grant PairingCode, kin
 	if commit == nil {
 		return Credential{}, domain.Fail(domain.InvalidArgument, "A credential commitment is required.", "Retain the original pairing proof before publishing its credential.")
 	}
-	return pair(ctx, root, grant, kind, name, false, commit)
+	return pair(ctx, root, grant, kind, name, false, commit, false)
 }
 
 // RetryPair requires the original private pairing journal or completed device.
 // It cannot recreate lost request/token ownership from a saved grant alone.
 func RetryPair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string) (Credential, error) {
-	return pair(ctx, root, grant, kind, name, true, nil)
+	return pair(ctx, root, grant, kind, name, true, nil, false)
 }
-func pair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string, existing bool, commit func(Credential) error) (Credential, error) {
+func pair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string, existing bool, commit func(Credential) error, prepareOnly bool) (Credential, error) {
 	var zero Credential
 	if err := grant.Validate(); err != nil {
 		return zero, err
@@ -208,13 +208,23 @@ func pair(ctx context.Context, root string, grant PairingCode, kind domain.Devic
 			return zero, domain.Fail(domain.RecoveryRequired, "The original pairing journal has inconsistent ownership.", "Preserve the original scope; do not resend or replace its request or credential.")
 		}
 	}
-	httpClient, transport := rpc.HTTPClient()
+	if prepareOnly {
+		return pending.Credential, nil
+	}
+	httpClient, transport, err := networkHTTPClient(ctx, root, pending.Credential)
+	if err != nil {
+		return zero, err
+	}
 	defer transport.CloseIdleConnections()
 	client := delidevv1connect.NewDeviceServiceClient(httpClient, grant.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
 	digest := sha256.Sum256([]byte(pending.Credential.Token))
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	response, err := client.PairDevice(ctx, connect.NewRequest(&pb.PairDeviceRequest{RequestId: string(pending.RequestID), PairingId: string(grant.PairingID), Code: grant.Code, DeviceId: string(pending.Credential.DeviceID), CredentialDigest: digest[:], MachineId: string(pending.Credential.MachineID), MachineJson: pending.Machine}))
+	recipient, key, err := pairingNetworkRecipient(root, pending.Credential)
+	if err != nil {
+		return zero, err
+	}
+	response, err := client.PairDevice(ctx, connect.NewRequest(&pb.PairDeviceRequest{RequestId: string(pending.RequestID), PairingId: string(grant.PairingID), Code: grant.Code, DeviceId: string(pending.Credential.DeviceID), CredentialDigest: digest[:], MachineId: string(pending.Credential.MachineID), MachineJson: pending.Machine, NetworkRecipient: recipient, NetworkKeyId: string(key)}))
 	if err != nil {
 		return zero, rpc.ClientError(err)
 	}
