@@ -129,6 +129,49 @@ static int descriptor_mutations(void) {
     return dependency();
 }
 
+static int native_aliases(void) {
+    if (symlink("node_modules/dep", "logical-alias")) return 90;
+    int fd = open("logical-alias/file.txt", O_RDONLY | O_CLOEXEC);
+    char bytes[13];
+    if (fd < 0 || read(fd, bytes, 13) != 13 || memcmp(bytes, "package bytes", 13)) return 91;
+    errno = 0;
+    if (chmod("logical-alias/file.txt", 0600) != -1 || errno != EROFS) return 92;
+    errno = 0;
+    if (truncate("logical-alias/file.txt", 0) != -1 || errno != EROFS) return 93;
+    errno = 0;
+    if (open("logical-alias/file.txt", O_RDWR) != -1 || errno != EROFS) return 94;
+    struct stat info;
+    if (lstat("logical-alias", &info) || !S_ISLNK(info.st_mode) ||
+        stat("logical-alias", &info) || !S_ISDIR(info.st_mode)) return 95;
+    char link[64];
+    if (readlink("logical-alias", link, sizeof(link)) != 16 ||
+        memcmp(link, "node_modules/dep", 16)) return 96;
+    errno = 0;
+    if (open("logical-alias", O_RDONLY | O_NOFOLLOW) != -1 || errno != ELOOP) return 97;
+#ifdef __APPLE__
+    char backing[4096];
+    if (fcntl(fd, F_GETPATH, backing) || symlink(backing, "backing-alias")) return 98;
+    errno = 0;
+    if (chmod("backing-alias", 0600) != -1 || errno != EROFS) return 99;
+    errno = 0;
+    if (truncate("backing-alias", 0) != -1 || errno != EROFS) return 100;
+    // Removing the caller-owned link must not mutate or remove its target.
+    if (unlink("backing-alias")) return 101;
+#endif
+    if (close(fd) || rename("logical-alias", "moved-alias")) return 102;
+    fd = open("moved-alias/file.txt", O_RDONLY | O_CLOEXEC);
+    if (fd < 0 || read(fd, bytes, 13) != 13 || memcmp(bytes, "package bytes", 13) || close(fd)) return 103;
+    if (unlink("moved-alias") || mkdir("output/inside", 0700) ||
+        symlink("output/inside", "native-alias")) return 104;
+    fd = open("native-alias/../native.txt", O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0 || write(fd, "native", 6) != 6 || close(fd) || unlink("native-alias")) return 105;
+    errno = 0;
+    if (open("source.txt/", O_RDONLY) != -1 || errno != ENOTDIR) return 106;
+    errno = 0;
+    if (open("missing-native/../source.txt", O_RDONLY) != -1 || errno != ENOENT) return 107;
+    return dependency();
+}
+
 static int watch(void) {
     int result = dependency();
     if (result) return result;
@@ -217,6 +260,9 @@ int main(int argc, char **argv) {
     int result;
     if (!strcmp(argv[1], "mutations")) {
         result = descriptor_mutations();
+        if (result) return result;
+    } else if (!strcmp(argv[1], "aliases")) {
+        result = native_aliases();
         if (result) return result;
     } else
 #ifndef PNPORT_WATCH_ONLY

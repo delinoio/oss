@@ -269,3 +269,16 @@ fn dependency_descriptor_mutations_remain_readonly_with_a_symlinked_cache_ancest
         );
     }
 }
+
+#[test]
+fn native_symlinks_resolve_dependencies_and_preserve_link_and_output_operations() {
+    for split in [false, true] {
+        let fixture = Fixture::new(split, false);
+        fixture.run(fixture.binary.as_os_str(), "aliases");
+        assert_eq!(
+            fs::read(fixture.root.path().join("output/native.txt")).unwrap(),
+            b"native"
+        );
+        assert!(!fixture.root.path().join("native.txt").exists());
+    }
+}
