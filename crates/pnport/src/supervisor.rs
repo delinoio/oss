@@ -168,15 +168,84 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn pending_launches(session: &Path) -> Result<bool> {
-    match fs::read_dir(session.join("pending")) {
-        Ok(mut entries) => entries
-            .next()
-            .transpose()
-            .map(|entry| entry.is_some())
-            .map_err(|_| injection_error()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(_) => Err(injection_error()),
+#[derive(Default)]
+struct PendingLaunches {
+    observed: std::collections::HashMap<PathBuf, (Option<(u64, u64)>, Instant)>,
+}
+
+#[cfg(not(target_os = "linux"))]
+fn marker_identity(metadata: &fs::Metadata) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some((metadata.dev(), metadata.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        None
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl PendingLaunches {
+    fn observe(&mut self, session: &Path) -> Result<bool> {
+        let entries = match fs::read_dir(session.join("pending")) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.observed.clear();
+                return Ok(false);
+            }
+            Err(_) => return Err(injection_error()),
+        };
+        let mut present = std::collections::HashSet::new();
+        for entry in entries {
+            let entry = entry.map_err(|_| injection_error())?;
+            let token = entry.file_name();
+            if !token.to_str().is_some_and(pnport::launch::valid_token) {
+                return Err(injection_error());
+            }
+            let path = entry.path();
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.is_file() => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                _ => return Err(injection_error()),
+            };
+            let identity = marker_identity(&metadata);
+            let observed = self
+                .observed
+                .entry(path.clone())
+                .or_insert_with(|| (identity, Instant::now()));
+            if observed.0 != identity {
+                *observed = (identity, Instant::now());
+            }
+            present.insert(path.clone());
+            let entered = fs::symlink_metadata(session.join("launch-starting").join(token))
+                .is_ok_and(|entry| {
+                    entry.is_file() && identity.is_some() && marker_identity(&entry) == identity
+                });
+            if !entered && observed.1.elapsed() > Duration::from_secs(5) {
+                // Completion can remove the pending inode during this scan.
+                // Recheck it before rejecting a launch already acknowledged.
+                if !fs::symlink_metadata(&path)
+                    .is_ok_and(|current| marker_identity(&current) == identity)
+                {
+                    continue;
+                }
+                tracing::debug!(
+                    action = "descendant_injection_deadline",
+                    constructor_entered = false,
+                    "A pending native image did not enter its constructor"
+                );
+                return Err(Error::new(
+                    Code::PnportInjectionFailed,
+                    "A child executable did not acknowledge native injection; execution was \
+                     stopped.",
+                ));
+            }
+        }
+        self.observed.retain(|path, _| present.contains(path));
+        Ok(!present.is_empty())
     }
 }
 
@@ -281,6 +350,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         let starting = view.session.join("starting").join(pid.to_string());
         let ready = view.session.join("ready").join(pid.to_string());
         let mut initialization_started = false;
+        let mut pending_launches = PendingLaunches::default();
         let result = (|| loop {
             #[cfg(target_os = "macos")]
             owner.check()?;
@@ -314,6 +384,10 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                 }
             }
             watch.poll()?;
+            // Observe descendant launches while the root is still running.
+            // Constructor entry permits legitimate cache coordination; only
+            // removal after readiness acknowledges a complete native image.
+            pending_launches.observe(&view.session)?;
             if !initialization_started && starting.is_file() {
                 initialization_started = true;
                 tracing::debug!(
@@ -340,7 +414,9 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                          a virtualized run.",
                     ));
                 }
-                if pending_launches(&view.session)? {
+                // A launch can be published after the running-root scan and
+                // before exit. Check again before accepting the final result.
+                if pending_launches.observe(&view.session)? {
                     if root_exited_at.is_some_and(|at| at.elapsed() > Duration::from_secs(5)) {
                         return Err(Error::new(
                             Code::PnportInjectionFailed,
@@ -463,6 +539,46 @@ mod failure_tests {
 }
 
 #[cfg(all(test, target_os = "macos"))]
+mod pending_launch_tests {
+    use super::*;
+
+    #[test]
+    fn cache_wait_requires_entry_for_the_exact_pending_inode() {
+        let session = tempfile::tempdir().unwrap();
+        let pending = session.path().join("pending");
+        let starting = session.path().join("launch-starting");
+        fs::create_dir(&pending).unwrap();
+        fs::create_dir(&starting).unwrap();
+        let marker = pending.join("pnport-test");
+        let entered = starting.join("pnport-test");
+        fs::write(&marker, b"").unwrap();
+        fs::hard_link(&marker, &entered).unwrap();
+        let mut launches = PendingLaunches::default();
+        launches.observed.insert(
+            marker.clone(),
+            (
+                marker_identity(&fs::metadata(&marker).unwrap()),
+                Instant::now() - Duration::from_secs(6),
+            ),
+        );
+        assert!(launches.observe(session.path()).unwrap());
+        fs::remove_file(&marker).unwrap();
+        fs::write(&marker, b"").unwrap();
+        // Reuse of a filename starts a fresh deadline and cannot reuse the
+        // previous image's hard-linked constructor acknowledgement.
+        assert!(launches.observe(session.path()).unwrap());
+        launches.observed.get_mut(&marker).unwrap().1 = Instant::now() - Duration::from_secs(6);
+        assert_eq!(
+            launches.observe(session.path()).unwrap_err().code,
+            Code::PnportInjectionFailed
+        );
+        fs::remove_file(&marker).unwrap();
+        assert!(!launches.observe(session.path()).unwrap());
+        assert!(launches.observed.is_empty());
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use std::sync::{atomic::AtomicBool, Arc};
 
@@ -480,6 +596,8 @@ mod tests {
         CacheContention,
         IncompleteInitialization,
         UnacknowledgedDescendant,
+        LiveUnacknowledgedDescendant,
+        DescendantCacheContention,
     }
 
     impl Scenario {
@@ -493,6 +611,12 @@ mod tests {
                 }
                 Self::UnacknowledgedDescendant => {
                     "unacknowledged_descendant_prevents_a_complete_result"
+                }
+                Self::LiveUnacknowledgedDescendant => {
+                    "unacknowledged_descendant_stops_a_running_root"
+                }
+                Self::DescendantCacheContention => {
+                    "descendant_constructor_entry_permits_prolonged_cache_wait"
                 }
             }
         }
@@ -691,5 +815,138 @@ __attribute__((constructor)) static void start(void) {
         let result = run(&mut view, &artifact().unwrap(), &executable, &[]);
         record_outcome(Scenario::UnacknowledgedDescendant, &result);
         assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
+    }
+
+    #[test]
+    fn unacknowledged_descendant_stops_a_running_root() {
+        if run_in_fresh_process(Scenario::LiveUnacknowledgedDescendant) {
+            return;
+        }
+        let (root, mut view, executable) = fixture();
+        fs::write(
+            root.path().join("probe.c"),
+            "#include <unistd.h>\n#include <fcntl.h>\nint main(int argc, char **argv) {\nif (argc \
+             != 2) return 1;\nsleep(8);\nint fd = open(argv[1], O_CREAT | O_WRONLY, 0600);\nif \
+             (fd < 0) return 2;\nclose(fd); return 0; }\n",
+        )
+        .unwrap();
+        assert!(Command::new("cc")
+            .arg(root.path().join("probe.c"))
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .unwrap()
+            .success());
+        fs::create_dir(view.session.join("pending")).unwrap();
+        fs::write(view.session.join("pending/pnport-unacknowledged"), b"").unwrap();
+        let finished = root.path().join("root-finished");
+        let result = run(
+            &mut view,
+            &artifact().unwrap(),
+            &executable,
+            &[finished.clone().into_os_string()],
+        );
+        record_outcome(Scenario::LiveUnacknowledgedDescendant, &result);
+        assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
+        assert_eq!(fs::read_dir(view.session.join("ready")).unwrap().count(), 1);
+        assert!(
+            !finished.exists(),
+            "The unacknowledged launch was ignored until the root exited."
+        );
+    }
+
+    #[test]
+    fn descendant_constructor_entry_permits_prolonged_cache_wait() {
+        if run_in_fresh_process(Scenario::DescendantCacheContention) {
+            return;
+        }
+        let (root, mut view, executable) = fixture();
+        fs::write(
+            root.path().join("probe.c"),
+            r#"
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+int main(int argc, char **argv) {
+    alarm(20);
+    if (argc == 2) return 0;
+    if (argc != 3) return 1;
+    int fd = open(argv[1], O_CREAT | O_WRONLY, 0600);
+    if (fd < 0 || close(fd)) return 2;
+    while (access(argv[2], F_OK)) usleep(10000);
+    char *child_argv[] = {argv[0], "child", 0};
+    pid_t child;
+    if (posix_spawn(&child, argv[0], 0, 0, child_argv, environ)) return 3;
+    int status;
+    if (waitpid(child, &status, 0) != child) return 4;
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 5;
+}
+"#,
+        )
+        .unwrap();
+        assert!(Command::new("cc")
+            .arg(root.path().join("probe.c"))
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .unwrap()
+            .success());
+        let root_started = root.path().join("root-started");
+        let allow_child = root.path().join("allow-child");
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(view.cache.root.join(".lock"))
+            .unwrap();
+        let session = view.session.clone();
+        let supervisor_finished = Arc::new(AtomicBool::new(false));
+        let finished = Arc::clone(&supervisor_finished);
+        let started = root_started.clone();
+        let allow = allow_child.clone();
+        let release = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while !started.is_file() {
+                if finished.load(Ordering::SeqCst) || Instant::now() >= deadline {
+                    return Err("The root did not initialize before supervision ended.");
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            lock.lock_exclusive().unwrap();
+            fs::write(allow, b"").unwrap();
+            while fs::read_dir(session.join("launch-starting"))
+                .ok()
+                .is_none_or(|mut entries| entries.next().is_none())
+            {
+                if finished.load(Ordering::SeqCst) || Instant::now() >= deadline {
+                    return Err(
+                        "The descendant constructor did not enter before supervision ended.",
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            std::thread::sleep(Duration::from_secs(6));
+            assert!(!finished.load(Ordering::SeqCst));
+            assert_eq!(fs::read_dir(session.join("ready")).unwrap().count(), 1);
+            assert_eq!(fs::read_dir(session.join("pending")).unwrap().count(), 1);
+            drop(lock);
+            Ok(())
+        });
+        let result = run(
+            &mut view,
+            &artifact().unwrap(),
+            &executable,
+            &[root_started.into_os_string(), allow_child.into_os_string()],
+        );
+        record_outcome(Scenario::DescendantCacheContention, &result);
+        supervisor_finished.store(true, Ordering::SeqCst);
+        release.join().unwrap().unwrap();
+        assert_eq!(result.unwrap(), 0);
+        assert_eq!(fs::read_dir(view.session.join("ready")).unwrap().count(), 2);
+        assert_eq!(
+            fs::read_dir(view.session.join("pending")).unwrap().count(),
+            0
+        );
     }
 }
