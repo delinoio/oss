@@ -122,7 +122,7 @@ future_not_send = "allow"
 
 [workspace.dependencies]
 allocator-api2 = { version = "0.2", default-features = false }
-anyhow = "=1.0.103"
+anyhow = "=1.0.104"
 assert2 = "0.4.0"
 assertables = "10.0.0"
 base64 = "0.22.1"
