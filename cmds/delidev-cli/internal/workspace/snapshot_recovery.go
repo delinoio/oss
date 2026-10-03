@@ -2,6 +2,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -204,6 +205,32 @@ func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (stor
 	}
 	if err != nil {
 		return storageRemovalClaim{}, nil, ResultUncertain()
+	}
+	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
+		lastNewline := bytes.LastIndexByte(raw, '\n')
+		prefix := raw[:lastNewline+1]
+		tail := raw[lastNewline+1:]
+		var record storageRemovalRenameRecord
+		switch {
+		case !json.Valid(tail):
+			// AppendPrivate may leave a short final JSON fragment after a
+			// filesystem write error. Preserve every complete prior record and
+			// discard only that incomplete suffix before retrying recovery.
+			if err := security.WriteAtomic(m.removalClaimJournalPath(r.OperationID), prefix); err != nil {
+				return storageRemovalClaim{}, nil, ResultUncertain()
+			}
+			raw = prefix
+		case json.Unmarshal(tail, &record) != nil:
+			return storageRemovalClaim{}, nil, ResultUncertain()
+		case !validRemovalClaimRecord(record):
+			return storageRemovalClaim{}, nil, ResultUncertain()
+		default:
+			repaired := append(append([]byte(nil), raw...), '\n')
+			if err := security.WriteAtomic(m.removalClaimJournalPath(r.OperationID), repaired); err != nil {
+				return storageRemovalClaim{}, nil, ResultUncertain()
+			}
+			raw = repaired
+		}
 	}
 	text := strings.TrimSuffix(string(raw), "\n")
 	if text == "" {

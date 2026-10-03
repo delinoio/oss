@@ -4,6 +4,8 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -14,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func snapshotRequest(t *testing.T, m *Manager, multi bool) (StorageRequest, []string) {
@@ -451,6 +454,49 @@ func TestSnapshotRecoveryContinuesOnlyVerifiedClaimedRemoval(t *testing.T) {
 		t.Fatal("removal retained", err)
 	}
 }
+
+func TestRemovalClaimRecoveryTruncatesIncompleteJournalRecord(t *testing.T) {
+	m := manager(t)
+	if err := m.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"storage-removal-intents", "storage-removal-claims"} {
+		if err := security.PrivateDir(filepath.Join(m.Root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StorageCleanup, Preparation: PrepareRequest{SessionID: domain.NewID()}, SnapshotID: domain.NewID()}
+	intent := storageRemovalIntent{Version: 1, OperationID: input.OperationID, SessionID: input.Preparation.SessionID, SnapshotID: input.SnapshotID, Action: input.Action}
+	intentRaw, err := json.Marshal(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(m.removalIntentPath(input.OperationID), intentRaw); err != nil {
+		t.Fatal(err)
+	}
+	intentDigest := sha256.Sum256(intentRaw)
+	claimRaw, err := json.Marshal(storageRemovalClaim{Version: 2, RootIdentity: "root-identity", Reference: removalReference(input), IntentDigest: hex.EncodeToString(intentDigest[:])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(m.removalClaimPath(input.OperationID), claimRaw); err != nil {
+		t.Fatal(err)
+	}
+	complete := []byte(`{"original":"chat/keep","private":".removing-file","state":"prepared"}` + "\n")
+	partial := append(append([]byte(nil), complete...), []byte(`{"original":"chat/next","private":".removing-next","state":"prepared"`)...)
+	if err := security.WriteAtomic(m.removalClaimJournalPath(input.OperationID), partial); err != nil {
+		t.Fatal(err)
+	}
+	_, pending, err := m.readRemovalClaimPending(input, intentRaw)
+	if err != nil || len(pending) != 1 || pending[0].Original != "chat/keep" {
+		t.Fatal("complete journal prefix was not retained", pending, err)
+	}
+	repaired, err := os.ReadFile(m.removalClaimJournalPath(input.OperationID))
+	if err != nil || string(repaired) != string(complete) {
+		t.Fatal("incomplete journal suffix was not truncated", err)
+	}
+}
+
 func TestSnapshotCancellationDuringSecondCopyPreservesSources(t *testing.T) {
 	m := manager(t)
 	input, _ := snapshotRequest(t, m, true)
