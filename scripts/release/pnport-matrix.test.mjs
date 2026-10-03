@@ -63,23 +63,26 @@ test("native CI and candidates require repeated benchmarks and publish only nume
   }
 });
 
-test("native CI and candidates verify process ownership against the packaged binary before acceptance", () => {
-  const invocation = 'PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test process_lifecycle --target "$PNPORT_TARGET"';
+test("native CI and candidates verify process and filesystem conformance against the packaged binary before acceptance", () => {
+  const invocations = ["process_lifecycle", "native_conformance"].map((suite) => `PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test ${suite} --target "$PNPORT_TARGET"`);
   for (const workflow of [ci, release]) {
     const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
     const steps = job.steps.map(({ run }) => run ?? "");
-    const lifecycle = steps.findIndex((run) => run.includes(invocation));
+    const lifecycle = steps.findIndex((run) => run.includes(invocations[0]));
     assert(lifecycle >= 0);
-    for (const prerequisite of ["scripts/install-smoke.mjs", "scripts/package.mjs binary"]) {
-      const position = steps[lifecycle].indexOf(prerequisite);
-      assert(position >= 0 && position < steps[lifecycle].indexOf(invocation));
-    }
-    assert(!job.steps[lifecycle]["continue-on-error"] && !job.steps[lifecycle].if);
-    assert(lifecycle < steps.findIndex((run) => run.includes("scripts/benchmark.mjs")));
-    const evidence = steps.findIndex((run) => run.includes("scripts/evidence.mjs record"));
-    if (evidence >= 0) {
-      assert.equal(evidence, lifecycle);
-      assert(steps[evidence].indexOf(invocation) < steps[evidence].indexOf("scripts/evidence.mjs record"));
+    for (const invocation of invocations) {
+      assert(steps[lifecycle].includes(invocation));
+      for (const prerequisite of ["scripts/install-smoke.mjs", "scripts/package.mjs binary"]) {
+        const position = steps[lifecycle].indexOf(prerequisite);
+        assert(position >= 0 && position < steps[lifecycle].indexOf(invocation));
+      }
+      assert(!job.steps[lifecycle]["continue-on-error"] && !job.steps[lifecycle].if);
+      assert(lifecycle < steps.findIndex((run) => run.includes("scripts/benchmark.mjs")));
+      const evidence = steps.findIndex((run) => run.includes("scripts/evidence.mjs record"));
+      if (evidence >= 0) {
+        assert.equal(evidence, lifecycle);
+        assert(steps[evidence].indexOf(invocation) < steps[evidence].indexOf("scripts/evidence.mjs record"));
+      }
     }
     assert(!steps[lifecycle].includes("--test-threads=1"));
   }

@@ -8,6 +8,8 @@ The VoidZero MIT text from the pinned revision is copied in full to each importe
 
 ## Local changes
 
+pnport-mode macOS named `dlopen` translates its library path, then releases the pnport runtime lock and recursion guard before dyld invokes user constructors. Nested ZIP-library loading, constructor filesystem access and fork callbacks retain virtualization; inner hooks still guard their own backing operations. The generic fspy side channel is unchanged. The installed pnport native conformance suite covers this local extension on both macOS architectures alongside Linux syscall-backed controls.
+
 Issue #971 adds optional macOS and Windows operation side channels to the generic preloads. The private `CLIBOX_FSPY_SOCKET` macOS channel and authenticated `CLIBOX_FSPY_ENDPOINT` Windows loopback channel send paired native results and wait for a before-operation acknowledgment. They cover synchronous opens, descriptor reads/writes/closes, metadata and directory queries, pathname mutations, and process images within the declared operation boundary. The existing fspy path channel still proves injection remained complete; pnport-mode builds exclude the macOS side channel. The tracked child exposes its root PID for the owning clibox supervisor. These channels serve the source clibox workflow; published 0.2.0 packages do not contain it. Native evidence across all eight targets is the release gate.
 
 On macOS, the paired descriptor boundary also interposes libc's separate `$NOCANCEL` read, write, vector, positional, and close symbols. The pnport-mode preload excludes these hooks with the rest of the generic fspy side channel.

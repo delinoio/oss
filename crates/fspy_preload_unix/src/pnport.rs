@@ -728,9 +728,14 @@ hook!(dlopen, pnport_dlopen, (path:*const c_char,flags:c_int) -> *mut c_void, {
     let original = original!(dlopen, unsafe extern "C" fn(*const c_char,c_int)->*mut c_void);
     // NULL requests the process/global symbol namespace, not a filesystem path.
     if path.is_null() { return original(path,flags); }
-    let Some(_guard) = Guard::enter() else { return original(path,flags); };
+    let Some(guard) = Guard::enter() else { return original(path,flags); };
     if RUNTIME.get().is_none() { return original(path,flags); }
     let (path,_) = translated!(path,AT_FDCWD,false,ptr::null_mut());
+    // Translation has released the runtime lock. dyld now invokes arbitrary
+    // library constructors, including nested loads and fork callbacks. Keep
+    // their filesystem accesses virtualized instead of treating them as our
+    // backing I/O. Inner hooks still guard their own native/runtime operations.
+    drop(guard);
     original(path.as_ptr(),flags)
 });
 
