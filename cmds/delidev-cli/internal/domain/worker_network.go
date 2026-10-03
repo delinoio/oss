@@ -91,3 +91,10 @@ type WorkerNetworkStatus struct {
 	NativeGeneration    uint64                 `json:"native_generation,string"`
 	NativeExecutionID   ID                     `json:"native_execution_id,omitempty"`
 }
+
+func (v WorkerNetworkStatus) Validate() error {
+	if v.Version != 1 || v.MachineID.Validate() != nil || v.DesiredGeneration >= 1<<63 || v.EffectiveGeneration >= 1<<63 || v.NativeGeneration >= 1<<63 || !v.ControlState.Valid() || !v.NativeState.Valid() || v.RouteID != "" && v.RouteID.Validate() != nil || v.NativeExecutionID != "" && v.NativeExecutionID.Validate() != nil {
+		return Fail(Unsupported, "Unsupported Worker routing status.", "Update the client and server before interpreting the original generation state.")
+	}
+	return nil
+}

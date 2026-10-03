@@ -194,7 +194,10 @@ impl Connector {
         self.saved_worker_proof_inner(expected)
     }
 
-    fn saved_worker_proof_inner(&self, expected: &SavedConnection) -> Result<LocalWorkerProof> {
+    pub(crate) fn saved_worker_proof_inner(
+        &self,
+        expected: &SavedConnection,
+    ) -> Result<LocalWorkerProof> {
         self.check_saved_profile(expected)?;
         let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
             "connection".into(),

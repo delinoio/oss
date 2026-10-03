@@ -3,11 +3,12 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -50,19 +51,27 @@ func workerNetworkCommand(ctx context.Context, o options, args []string, streams
 		}
 		return worker.PrepareNetwork(ctx, *root, grant, *name, slog.New(slog.NewJSONHandler(streams.Err, nil)))
 	case "import":
-		if *codeStdin || *input == "" || *input == "-" || *digest == "" {
+		if *codeStdin || *input == "" || *digest == "" || *input == "-" && o.tokenStdin {
 			return nil, domain.Fail(domain.InvalidArgument, "A separate expected ciphertext digest is required.", "Use --input with the encrypted file and --expected-ciphertext-digest from the authenticated export response.")
 		}
-		file, err := os.Open(*input)
-		if err != nil {
-			return nil, domain.SafeError(err)
+		reader := streams.In
+		if *input != "-" {
+			file, err := os.Open(*input)
+			if err != nil {
+				return nil, domain.SafeError(err)
+			}
+			defer file.Close()
+			reader = file
 		}
-		defer file.Close()
-		raw, err := io.ReadAll(io.LimitReader(file, workernetwork.MaxCiphertext+1))
+		raw, err := io.ReadAll(io.LimitReader(reader, workernetwork.MaxCiphertext+1))
 		if err != nil || len(raw) > workernetwork.MaxCiphertext {
 			return nil, usage()
 		}
-		return worker.ImportNetwork(ctx, *root, raw, *digest, slog.New(slog.NewJSONHandler(streams.Err, nil)))
+		cache, err := worker.ImportNetwork(ctx, *root, raw, *digest, slog.New(slog.NewJSONHandler(streams.Err, nil)))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"version": 1, "key_id": cache.KeyID, "route_id": cache.RouteID, "generation": strconv.FormatUint(cache.Generation, 10), "ciphertext_digest": cache.CiphertextDigest}, nil
 	case "status":
 		if *codeStdin || *input != "" || *digest != "" {
 			return nil, usage()
@@ -106,6 +115,9 @@ func exportWorkerNetworkCommand(ctx context.Context, c client, o options, args [
 	if status.Msg.ServerId != string(recipient.Authority.ServerID) {
 		return nil, domain.Fail(domain.Conflict, "The recipient server identity changed.", "Use the original pairing authority and protected key.")
 	}
+	if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_WORKER_NETWORK_BOOTSTRAP_V1) {
+		return nil, domain.Fail(domain.Unsupported, "The server does not support encrypted Worker configuration.", "Update the selected server; signed metadata is not an encrypted bootstrap substitute.")
+	}
 	response, err := c.network.ExportWorkerNetworkBundle(ctx, request(c, &pb.ExportWorkerNetworkBundleRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, MachineId: string(recipient.Authority.MachineID), DeviceId: string(recipient.Authority.DeviceID), PairingId: string(recipient.Authority.PairingID), Endpoint: c.endpoint, Recipient: recipient.PublicKey, KeyId: string(recipient.KeyID), ProfileId: *profile, ProfileRevision: *profileRevision, DesiredGeneration: *revision}))
 	if err != nil {
 		return nil, rpc.ClientError(err)
@@ -124,12 +136,19 @@ func workerNetworkStatusCommand(ctx context.Context, c client, args []string) (a
 	if err := parse(f, args); err != nil {
 		return nil, err
 	}
+	status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+	if err != nil {
+		return nil, rpc.ClientError(err)
+	}
+	if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_WORKER_NETWORK_BOOTSTRAP_V1) {
+		return nil, domain.Fail(domain.Unsupported, "The server does not support Worker generation status.", "Update the selected server and client before inspecting native routing.")
+	}
 	response, err := c.network.GetWorkerNetworkStatus(ctx, request(c, &pb.GetWorkerNetworkStatusRequest{MachineId: *machine}))
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
-	var value json.RawMessage
-	if domain.Decode(response.Msg.StatusJson, &value) != nil {
+	var value domain.WorkerNetworkStatus
+	if len(response.Msg.StatusJson) > 4096 || domain.Decode(response.Msg.StatusJson, &value) != nil || value.Validate() != nil || value.MachineID != domain.ID(*machine) {
 		return nil, domain.Fail(domain.RecoveryRequired, "Unsupported Worker route status.", "Update the client and selected server.")
 	}
 	return value, nil

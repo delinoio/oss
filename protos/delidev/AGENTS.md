@@ -163,3 +163,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Subscription observation declarations retain the quota/reset-credit allocations for issues #1096/#1104. Owner/client request/reconcile and Worker-only claim/publication lanes remain independent. Generate both bindings from the reconciled schema; reservations alone cannot advertise capability.
 
 - Worker network/control declarations use the established System 20/21 and Worker 9/10 reservations, original recipient/attachment fields and closed native-route states. Owner encrypted export/status remains distinct from original-instance Worker synchronization/reporting. Regenerate both languages and compatibility facades; reservations do not advertise product support or native acceptance.
+
+- System 20/21 activate authenticated encrypted bootstrap/control status and the owned Codex API/title route implementation. Worker 9/10 remain independently negotiated; unsupported peers receive explicit update guidance and no Direct fallback. Public support never substitutes for platform/account acceptance.

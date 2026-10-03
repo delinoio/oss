@@ -203,3 +203,48 @@ func TestWorkerNativeRouteKeepsOriginalGenerationAndDoesNotGrantAnotherLaunch(t 
 		t.Fatal("unpaired actor reported native routing")
 	}
 }
+
+func TestPendingWorkerBootstrapCanExportBeforePairingAndPinsOneOriginalRecipient(t *testing.T) {
+	f := newIntegrationFixture(t)
+	vault := &accountTestSecrets{values: map[credentials.Ref][]byte{}, removed: map[credentials.Ref]bool{}}
+	ctx := context.Background()
+	devices := delidevv1connect.NewDeviceServiceClient(f.httpServer.Client(), f.url)
+	code := "fixture-pending-worker-grant"
+	digest := sha256.Sum256([]byte(code))
+	grant, err := devices.CreatePairing(ctx, ownerRequest(f.service.Identity, &pb.CreatePairingRequest{RequestId: string(domain.NewID()), Name: "Pending network fixture", Type: pb.DeviceType_DEVICE_TYPE_WORKER, CodeDigest: digest[:]}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority := workernetwork.Authority{ServerID: f.service.Identity.ServerID, Endpoint: f.url, MachineID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.ID(grant.Msg.Pairing.Id)}
+	root := filepath.Join(t.TempDir(), "private-worker")
+	recipient, err := workernetwork.Prepare(ctx, root, vault, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	network := delidevv1connect.NewNetworkServiceClient(f.httpServer.Client(), f.url)
+	route, err := network.GetNetworkRoute(ctx, ownerRequest(f.service.Identity, &pb.GetNetworkRouteRequest{MachineId: string(authority.MachineID)}))
+	if err != nil || route.Msg.Route != nil {
+		t.Fatal("pending recipient could not inspect initial route", err)
+	}
+	request := &pb.ExportWorkerNetworkBundleRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, MachineId: string(authority.MachineID), DeviceId: string(authority.DeviceID), PairingId: string(authority.PairingID), Endpoint: authority.Endpoint, Recipient: recipient.PublicKey, KeyId: string(recipient.KeyID)}
+	exported, err := network.ExportWorkerNetworkBundle(ctx, ownerRequest(f.service.Identity, request))
+	if err != nil {
+		t.Fatal("bootstrap required an already paired machine", err)
+	}
+	if _, err := workernetwork.Import(ctx, root, vault, authority, exported.Msg.Ciphertext, exported.Msg.CiphertextDigest); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := network.ExportWorkerNetworkBundle(ctx, ownerRequest(f.service.Identity, request))
+	if err != nil || !repeated.Msg.Replayed || repeated.Msg.Route.Id != exported.Msg.Route.Id {
+		t.Fatal("exact pending acceptance changed", err)
+	}
+	request.Mutation = &pb.Mutation{RequestId: string(domain.NewID())}
+	request.MachineId = string(domain.NewID())
+	request.DeviceId = string(domain.NewID())
+	if _, err := network.ExportWorkerNetworkBundle(ctx, ownerRequest(f.service.Identity, request)); err == nil {
+		t.Fatal("one pending grant admitted another original recipient scope")
+	}
+	if _, err := network.ExportWorkerNetworkMetadata(ctx, ownerRequest(f.service.Identity, &pb.ExportWorkerNetworkMetadataRequest{MachineId: string(authority.MachineID), DesiredGeneration: exported.Msg.Route.Revision})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatal("legacy metadata gained pending bootstrap authority", err)
+	}
+}

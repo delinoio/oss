@@ -37,6 +37,10 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 	var input *bool
 	var generation *string
 	var revision *uint64
+	var networkDigest *string
+	if args[0] == "worker-network-import" {
+		networkDigest = fs.String("expected-ciphertext-digest", "", "separately authenticated ciphertext digest")
+	}
 	if args[0] == "worker-stop" {
 		generation = fs.String("generation", "", "original Worker lifecycle generation")
 	}
@@ -70,7 +74,7 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 		if err == nil {
 			value = credentialMetadata(credential)
 		}
-	case "worker-inspect", "worker-status", "worker-start", "worker-stop":
+	case "worker-inspect", "worker-status", "worker-start", "worker-stop", "worker-network-prepare", "worker-network-import", "worker-network-status":
 		credential, credentialErr := connections.WorkerCredential(o.dataDir, domain.ID(*id))
 		if credentialErr != nil {
 			err = credentialErr
@@ -90,6 +94,15 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 			value, err = startDetachedWorker(ctx, o, root)
 		case "worker-stop":
 			value, err = stopLocalWorker(ctx, root, domain.ID(*generation))
+		case "worker-network-prepare", "worker-network-status", "worker-network-import":
+			networkArgs := []string{"status", "--worker-dir", root}
+			if args[0] == "worker-network-prepare" {
+				networkArgs[0] = "prepare"
+			}
+			if args[0] == "worker-network-import" {
+				networkArgs = []string{"import", "--worker-dir", root, "--input", "-", "--expected-ciphertext-digest", *networkDigest}
+			}
+			value, err = workerNetworkCommand(ctx, o, networkArgs, streams)
 		}
 	case "inspect":
 		value, err = connections.Inspect(o.dataDir, domain.ID(*id))
