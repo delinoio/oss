@@ -861,7 +861,7 @@ mod initialization_tests {
 #[cfg_attr(target_os = "linux", unsafe(link_section = ".init_array"))]
 static INITIALIZER: unsafe extern "C" fn() = initialize;
 
-fn open_follows_final_component(flags: c_int) -> bool {
+const fn open_follows_final_component(flags: c_int) -> bool {
     #[cfg(target_os = "macos")]
     let nofollow = libc::O_NOFOLLOW | libc::O_SYMLINK;
     #[cfg(target_os = "linux")]
