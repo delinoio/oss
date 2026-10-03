@@ -4163,6 +4163,343 @@
       "declaration": "NotificationCandidate",
       "member": "account_id",
       "number": 4
+    },
+    {
+      "issue": 1085,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_WORKER_NETWORK_BOOTSTRAP_V1",
+      "number": 20
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_WORKER_CODEX_PROXY_V1",
+      "number": 21
+    },
+    {
+      "issue": 1085,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1",
+      "number": 9
+    },
+    {
+      "issue": 1209,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_API_PROXY_V1",
+      "number": 10
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "machine_id",
+      "number": 2
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "device_id",
+      "number": 3
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "pairing_id",
+      "number": 4
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "endpoint",
+      "number": 5
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "recipient",
+      "number": 6
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "key_id",
+      "number": 7
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "profile_id",
+      "number": 8
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "profile_revision",
+      "number": 9
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleRequest",
+      "member": "desired_generation",
+      "number": 10
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleResponse",
+      "member": "ciphertext",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleResponse",
+      "member": "ciphertext_digest",
+      "number": 2
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleResponse",
+      "member": "route",
+      "number": 3
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkBundleResponse",
+      "member": "replayed",
+      "number": 4
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "GetWorkerNetworkStatusRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "GetWorkerNetworkStatusResponse",
+      "member": "status_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkRequest",
+      "member": "machine_id",
+      "number": 2
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkRequest",
+      "member": "instance_id",
+      "number": 3
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkRequest",
+      "member": "recipient",
+      "number": 4
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkRequest",
+      "member": "key_id",
+      "number": 5
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkRequest",
+      "member": "effective_generation",
+      "number": 6
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkRequest",
+      "member": "route_id",
+      "number": 7
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkRequest",
+      "member": "ciphertext_digest",
+      "number": 8
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkResponse",
+      "member": "ciphertext",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkResponse",
+      "member": "ciphertext_digest",
+      "number": 2
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkResponse",
+      "member": "route",
+      "number": 3
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "SyncWorkerNetworkResponse",
+      "member": "in_sync",
+      "number": 4
+    },
+    {
+      "issue": 1209,
+      "kind": "message",
+      "declaration": "ReportWorkerNativeRouteRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1209,
+      "kind": "message",
+      "declaration": "ReportWorkerNativeRouteRequest",
+      "member": "machine_id",
+      "number": 2
+    },
+    {
+      "issue": 1209,
+      "kind": "message",
+      "declaration": "ReportWorkerNativeRouteRequest",
+      "member": "instance_id",
+      "number": 3
+    },
+    {
+      "issue": 1209,
+      "kind": "message",
+      "declaration": "ReportWorkerNativeRouteRequest",
+      "member": "execution_id",
+      "number": 4
+    },
+    {
+      "issue": 1209,
+      "kind": "message",
+      "declaration": "ReportWorkerNativeRouteRequest",
+      "member": "route_id",
+      "number": 5
+    },
+    {
+      "issue": 1209,
+      "kind": "message",
+      "declaration": "ReportWorkerNativeRouteRequest",
+      "member": "generation",
+      "number": 6
+    },
+    {
+      "issue": 1209,
+      "kind": "message",
+      "declaration": "ReportWorkerNativeRouteRequest",
+      "member": "state",
+      "number": 7
+    },
+    {
+      "issue": 1209,
+      "kind": "message",
+      "declaration": "ReportWorkerNativeRouteResponse",
+      "member": "replayed",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "AttachWorkerRequest",
+      "member": "network_generation",
+      "number": 6
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "AttachWorkerRequest",
+      "member": "network_route_id",
+      "number": 7
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "AttachWorkerRequest",
+      "member": "network_key_id",
+      "number": 8
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "AttachWorkerRequest",
+      "member": "network_recipient",
+      "number": 9
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "AttachWorkerResponse",
+      "member": "network_status_json",
+      "number": 4
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "PairDeviceRequest",
+      "member": "network_recipient",
+      "number": 8
+    },
+    {
+      "issue": 1085,
+      "kind": "message",
+      "declaration": "PairDeviceRequest",
+      "member": "network_key_id",
+      "number": 9
     }
   ]
 }
