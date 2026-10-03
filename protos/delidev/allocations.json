@@ -4848,6 +4848,51 @@
       "declaration": "ProviderPresetId",
       "member": "PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG",
       "number": 35
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1",
+      "number": 27
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1",
+      "number": 16
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ForkSessionRequest",
+      "member": "purpose",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ForkPurpose",
+      "member": "FORK_PURPOSE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ForkPurpose",
+      "member": "FORK_PURPOSE_INDEPENDENT",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ForkPurpose",
+      "member": "FORK_PURPOSE_SIDECHAT",
+      "number": 2,
+      "newDeclaration": true
     }
   ]
 }

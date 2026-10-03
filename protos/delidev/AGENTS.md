@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- Issue #964 reserves independent System capability 27, Worker capability 16, `ForkSessionRequest.purpose = 6` and the closed `ForkPurpose` enum for Sidechat. Follow `docs/cmds-delidev-sidechat-contract.md`; record missing numbers before source use and activate only the complete native read-only, workspace-reference and dependent-cleanup boundary. Preserve ordinary omitted-purpose Fork bytes and all existing capability values.
+
 - Issue #1148 activates only its recorded `ProviderPresetId` 10–35 additions after real migration 30 and complete fixed inspection profiles. Preserve 0–9 and generated Go/TypeScript parity, provider inventory gates and service-native subscription separation; preset visibility grants no harness/protocol/account authority.
 
 - The owner-approved coordinated single-PR exception in `docs/cmds-delidev-structure-contract.md` permits missing reservations and their complete dependency closure in one integration PR. Record allocations before source use, retain original owners and numbers, and regenerate composed Go/TypeScript bindings. Independent dependent branches still require reservations on main; reservation-only changes advertise no support.
