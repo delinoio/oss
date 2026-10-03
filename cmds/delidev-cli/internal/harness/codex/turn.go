@@ -244,6 +244,12 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 		return result, err
 	}
 	s := state.settings
+	if err := c.verifySidechat(ctx, s.Cwd, c.thread); err != nil {
+		return result, err
+	}
+	if c.sidechat != "" && !sidechatEffective(s) {
+		return result, sidechatUnavailable()
+	}
 	mode := nativeExecute
 	if input.Mode == domain.PlanMode {
 		mode = nativePlan
@@ -301,6 +307,12 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	}
 	if err := c.checkNativeStateLocked(ctx, false); err != nil {
 		return result, err
+	}
+	if err := c.verifySidechat(ctx, state.settings.Cwd, c.thread); err != nil {
+		return result, err
+	}
+	if c.sidechat != "" && !sidechatEffective(state.settings) {
+		return result, sidechatUnavailable()
 	}
 	params := struct {
 		ThreadID       domain.ID         `json:"threadId"`

@@ -12,6 +12,9 @@ import (
 // must journal the response claim first. Delivery and closure are not proof that
 // native code accepted the decision or installed a requested policy amendment.
 func (c *Client) RespondApproval(ctx context.Context, responseID, interactionID, turnID domain.ID, decision ApprovalDecision) (InteractionStatus, error) {
+	if c.sidechat != "" && decision.Kind != ApprovalDecline && decision.Kind != ApprovalCancel {
+		return InteractionStatus{}, sidechatUnavailable()
+	}
 	return c.respondApproval(ctx, responseID, interactionID, turnID, func(request *ApprovalRequest) (any, error) {
 		if err := validateApprovalDecision(request, decision); err != nil {
 			return nil, err
@@ -25,6 +28,9 @@ func (c *Client) RespondApproval(ctx context.Context, responseID, interactionID,
 // GrantPermissions preserves the native permission request and explicit grant
 // scope. It cannot approve a command/file decision or create a broader sandbox.
 func (c *Client) GrantPermissions(ctx context.Context, responseID, interactionID, turnID domain.ID, grant PermissionGrant) (InteractionStatus, error) {
+	if c.sidechat != "" {
+		return InteractionStatus{}, sidechatUnavailable()
+	}
 	return c.respondApproval(ctx, responseID, interactionID, turnID, func(request *ApprovalRequest) (any, error) {
 		if request == nil || request.Kind != PermissionsApproval {
 			return nil, interactionConflict()

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,15 @@ import (
 )
 
 func TestManualNativeForkSmoke(t *testing.T) {
+	manualNativeForkSmoke(t, false)
+}
+
+func TestManualNativeSidechatForkSmoke(t *testing.T) {
+	manualNativeForkSmoke(t, true)
+}
+
+func manualNativeForkSmoke(t *testing.T, sidechat bool) {
+	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_THREAD_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit pinned native fork with temporary state and scripted loopback provider")
@@ -50,6 +60,9 @@ func TestManualNativeForkSmoke(t *testing.T) {
 	defer cancel()
 	cfg := nativeFixtureConfig(t, binary, provider.URL)
 	settings := ThreadSettings{Model: "fixture-model", Provider: "delidev_fixture", Effort: "high", Cwd: filepath.Join(filepath.Dir(cfg.Home), "workspace"), Options: domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}}
+	if sidechat {
+		settings.Options.Permission = domain.PermissionWorkspaceWrite
+	}
 	client, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -80,18 +93,31 @@ func TestManualNativeForkSmoke(t *testing.T) {
 		t.Fatalf("source inspection: %v; cleanup: %v", inspectErr, closeErr)
 	}
 	childCfg := nativeFixtureConfig(t, binary, provider.URL)
+	if sidechat {
+		childCfg.Process.Logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+		childCfg.Sidechat = ReadOnlySidechatV1
+		childCfg.Process.Cwd = settings.Cwd
+		settings.Options.Permission, settings.Options.ApprovalPolicy = domain.PermissionReadOnly, string(ApprovalNever)
+	}
 	child, err := Open(ctx, childCfg)
 	if err != nil {
-		t.Fatal(err)
+		problem := domain.SafeError(err)
+		t.Fatalf("child handshake: %s; %s", problem.Code, problem.Guidance)
 	}
 	defer child.Close()
-	settings.Cwd = filepath.Join(filepath.Dir(childCfg.Home), "workspace")
+	if !sidechat {
+		settings.Cwd = filepath.Join(filepath.Dir(childCfg.Home), "workspace")
+	}
 	fork, err := child.ForkThread(ctx, domain.NewID(), source, settings)
 	if err != nil {
-		t.Fatal("native fork", err)
+		problem := domain.SafeError(err)
+		t.Fatalf("native fork: %s; %s", problem.Code, problem.Guidance)
 	}
 	if fork.Thread.ID == bound.Thread.ID || requests.Load() != 1 {
 		t.Fatal("fork changed source identity or requested inference")
+	}
+	if sidechat && (!nativePathEqual(fork.Effective.Cwd, bound.Effective.Cwd) || !sidechatEffective(*fork.Effective)) {
+		t.Fatal("Sidechat gained workspace ownership or lost read-only authority")
 	}
 	checkpoint.ThreadID, checkpoint.SessionID, checkpoint.Effective = fork.Thread.ID, fork.Thread.SessionID, *fork.Effective
 	if _, err := child.VerifyContinuation(ctx, domain.NewID(), checkpoint, ContinueAfterSuccess); err != nil {
