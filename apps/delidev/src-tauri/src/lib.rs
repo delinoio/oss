@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
+pub mod oauth;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
@@ -138,6 +139,26 @@ pub struct Connector {
 }
 
 impl Connector {
+    // Read-only original local identity; never starts, pairs or replaces a server.
+    pub fn oauth_server_identity(&self) -> Result<String> {
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
+            "device".into(),
+            "inspect".into(),
+            "--device-dir".into(),
+            self.root.join("desktop-client").into_os_string(),
+        ])?)
+        .map_err(|_| NativeFailure::InvalidEvidence)?;
+        if metadata.kind != DeviceType::Client
+            || !metadata.machine_id.is_empty()
+            || metadata.endpoint != "http://127.0.0.1:46310"
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        canonical_id(&metadata.server_id)?;
+        Ok(metadata.server_id)
+    }
+
     pub fn open_github(&self, url: &str) -> Result<()> {
         // Go applies the complete closed destination contract. Bound this
         // infrastructure argument before starting its credential-free sidecar.

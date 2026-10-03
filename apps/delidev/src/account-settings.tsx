@@ -1,3 +1,4 @@
+import { OpenRouterOAuth, useOpenRouterOAuth, type OpenRouterOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -32,6 +33,7 @@ export interface AccountProviderSummary {
   provider: Resource;
   keyGuidance: string;
   documentationUrl: string;
+  oauthAvailable?: boolean;
 }
 
 export interface AccountProviderPicker {
@@ -47,6 +49,7 @@ export interface AccountProviderPicker {
 }
 
 export interface AccountSettingsProps {
+  oauth?: OpenRouterOAuthFlow;
   section: AccountSettingsSection;
   active: boolean;
   accountTypeFilteringReady: boolean;
@@ -117,6 +120,8 @@ function sameProviderContract(left: ReturnType<typeof providerContract> | undefi
 }
 
 function AccountCreationWizard({
+  oauth: suppliedOAuth,
+  openEdit,
   active,
   accountTypeFilteringReady,
   initialProvider,
@@ -128,6 +133,8 @@ function AccountCreationWizard({
   openManage,
   saved,
 }: {
+  oauth?: OpenRouterOAuthFlow;
+  openEdit: (resource: Resource) => void;
   active: boolean;
   accountTypeFilteringReady: boolean;
   initialProvider?: AccountProviderSummary;
@@ -139,6 +146,8 @@ function AccountCreationWizard({
   openManage: (resource: Resource) => void;
   saved: (resource: Resource) => void;
 }) {
+  const localOAuth = useOpenRouterOAuth();
+  const oauth = suppliedOAuth ?? localOAuth;
   const [step, setStep] = useState(initialProvider ? WizardStep.Account : WizardStep.Provider);
   const [providerId, setProviderId] = useState(initialProvider?.providerId ?? "");
   // Keep the clicked contract authoritative when independent inventory pages retain different snapshots.
@@ -354,6 +363,7 @@ function AccountCreationWizard({
     setAutoConnect(undefined);
     setStep(WizardStep.Account);
     setFocusTarget(WizardFocus.Account);
+    if (provider.oauthAvailable && oauth.available) oauth.start(provider);
   };
   const returnToProviders = () => {
     if (providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain) return;
@@ -478,6 +488,8 @@ function AccountCreationWizard({
     </section>;
   }
 
+  if (oauth.view) return <OpenRouterOAuth flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} edit={resource => { saved(resource); openEdit(resource); }} manage={resource => { saved(resource); openManage(resource); }} done={() => { if (oauth.view?.account) saved(oauth.view.account); close(); }} />;
+
   return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to AI API Keys</button>
     <SettingsHeading title="AI API Keys" /><h2 id="api-account-wizard-title">Add AI API key</h2>
@@ -492,7 +504,7 @@ function AccountCreationWizard({
       {picker.loaded && (!accountTypeFilteringReady || !picker.ready) ? <p role="status">Provider choices are unavailable because this server does not report the required provider inventory and account-type filtering capabilities. Update the server before continuing.</p> : null}
       {accountTypeFilteringReady && picker.ready ? <>
         <div className="account-provider-choices">{options.map((provider) => <button type="button" className="account-provider-action" key={provider.providerId} ref={(button) => { if (button) providerButtons.current.set(provider.providerId, button); else providerButtons.current.delete(provider.providerId); }} onClick={() => pickProvider(provider)}>
-          <span><strong>{provider.displayName}</strong><span className="account-provider-method">{document(provider.provider).authentication === Authentication.Keyless ? "Local endpoint" : "API key"}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
+          <span><strong>{provider.displayName}</strong><span className="account-provider-method">{provider.oauthAvailable && oauth.available ? "Browser sign-in" : document(provider.provider).authentication === Authentication.Keyless ? "Local endpoint" : "API key"}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
         </button>)}</div>
         {options.length === 0 && !picker.fetching && !picker.error ? !picker.pageToken && !picker.nextPageToken ? <div><p>Enable an API provider to add an entry.</p><button type="button" onClick={openProviders}>Open API Providers</button></div> : <p>No enabled API providers on this page.</p> : null}
       </> : null}
@@ -540,6 +552,7 @@ export function AccountSettings(props: AccountSettingsProps) {
 }
 
 function ApiAccountSettings({
+  oauth,
   section,
   active,
   accountTypeFilteringReady,
@@ -621,7 +634,7 @@ function ApiAccountSettings({
 
   if (selectedAccount && section === AccountSettingsSection.Api) return <><SettingsHeading title="AI API Keys" /><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></>;
 
-  if (wizard) return <AccountCreationWizard active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
+  if (wizard) return <AccountCreationWizard oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
 
   const inventoryProblem = accountTypeFilteringProblem || providerSearchError;
   const readProblem = inventoryProblem || rows.error;

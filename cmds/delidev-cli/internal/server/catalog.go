@@ -70,11 +70,27 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1,
 	}}
 	for _, entry := range entries {
 		wire := &pb.ProviderInventoryEntry{PresetId: wireProviderPreset(entry.PresetID), ProviderId: string(entry.ProviderID), DisplayName: entry.DisplayName, Enabled: entry.Enabled, TotalAccounts: entry.TotalAccounts, ConnectedAccounts: entry.ConnectedAccounts, AccountCountsAvailable: entry.AccountCountsAvailable}
+		wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_API_KEY
 		if entry.Provider != nil {
+			p, e := store.Decode[domain.Provider](*entry.Provider)
+			if e != nil || p.Validate() != nil {
+				return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "Provider connection ownership is invalid.", "Inspect the current saved provider."), req.Header().Get(rpc.CorrelationHeader))
+			}
+			if p.Authentication == domain.KeylessAuth {
+				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_KEYLESS
+			}
+			if p.PresetID != nil && *p.PresetID == domain.PresetOpenRouter && p.EnabledValue() && p.Endpoint == "https://openrouter.ai/api/v1" && p.Protocol == domain.OpenAIChat && p.Authentication == domain.BearerAuth {
+				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_PKCE
+			}
 			wire.Provider = rpc.Resource(*entry.Provider)
+		} else if entry.PresetID != nil {
+			if p, ok := providerPresetDefaults(*entry.PresetID); ok && p.Authentication == domain.KeylessAuth {
+				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_KEYLESS
+			}
 		}
 		message.Entries = append(message.Entries, wire)
 	}

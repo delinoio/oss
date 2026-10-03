@@ -12,13 +12,25 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
 )
 
 const openRouterExchangeURL = "https://openrouter.ai/api/v1/auth/keys"
 
-type directOAuthExchange struct{}
+type ownedOAuthExchange struct{ route outbound.Resolver }
 
-func (directOAuthExchange) Exchange(ctx context.Context, code, verifier []byte) ([]byte, error) {
+func (owner ownedOAuthExchange) Exchange(ctx context.Context, code, verifier []byte) ([]byte, error) {
+	if owner.route == nil {
+		return nil, oauthProblem()
+	}
+	transport := &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 20 * time.Second}).DialContext, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, TLSHandshakeTimeout: 20 * time.Second, ResponseHeaderTimeout: 20 * time.Second, MaxResponseHeaderBytes: 32 << 10, DisableKeepAlives: true, DisableCompression: true}
+	defer transport.CloseIdleConnections()
+	return exchangeOAuthHTTP(ctx, code, verifier, &outbound.Transport{Base: transport, Resolve: owner.route})
+}
+
+// The transport seam permits isolated TLS fixtures without configuring an
+// exchange destination. Production always supplies the owned explicit route.
+func exchangeOAuthHTTP(ctx context.Context, code, verifier []byte, transport http.RoundTripper) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	payload, err := json.Marshal(struct {
@@ -32,8 +44,6 @@ func (directOAuthExchange) Exchange(ctx context.Context, code, verifier []byte) 
 	defer clear(payload)
 	// A fresh transport with keep-alives disabled cannot replay on a reused
 	// connection. An opaque reader also supplies no GetBody retry authority.
-	transport := &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 20 * time.Second}).DialContext, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, TLSHandshakeTimeout: 20 * time.Second, ResponseHeaderTimeout: 20 * time.Second, MaxResponseHeaderBytes: 32 << 10, DisableKeepAlives: true}
-	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openRouterExchangeURL, io.NopCloser(bytes.NewReader(payload)))
 	if err != nil {

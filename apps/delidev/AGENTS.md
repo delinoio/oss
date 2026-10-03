@@ -15,6 +15,8 @@ Read the relevant owner before changing its behavior, including cross-domain con
 
 Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
+- OpenRouter OAuth follows `docs/cmds-delidev-account-oauth-contract.md`: independently negotiate inventory capability 5 and the managed entry's closed connection method. Go owns PKCE/exchange/credentials; `src/account-oauth.tsx` owns the current Settings visit and `src-tauri/src/oauth.rs`/`oauth_host.rs` own only trusted-window loopback callback/opener infrastructure. Preserve manual connection for older servers and validation/discovery as explicit operations. Fixtures/builds cannot establish real provider or packaged platform acceptance.
+
 The Schedules context pane owns the issue #1153 presentation and connection-memory retained-history disclosure. Follow `src/AGENTS.md` and `docs/apps-delidev-desktop-contract.md`; keep shared shell defaults and the Settings visit lifetime unchanged.
 
 - Issue #1137 makes a fresh trusted main host own one Go-admitted launch before supervision, without renderer-triggered startup. Keep same-process Stop, native-service ownership and saved-window authority independent. Use persistent Connection & diagnostics for advanced controls, with product startup/sidebar/tray wording. Follow docs/apps-delidev-desktop-contract.md.

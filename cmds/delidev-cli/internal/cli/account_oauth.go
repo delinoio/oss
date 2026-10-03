@@ -101,10 +101,15 @@ func accountOAuthCommand(ctx context.Context, c client, o options, args []string
 	}
 	return oauthCLIResponse(r.Msg), nil
 }
-func oauthCLIResponse(r *pb.AccountOAuthResponse) map[string]any {
-	value := map[string]any{"attempt": r.Attempt, "request_id": r.RequestId, "replayed": r.Replayed}
-	if r.Account != nil {
-		value["account"] = resourceJSON(r.Account)
+func oauthCLIResponse(r interface {
+	GetAttempt() *pb.AccountOAuthAttempt
+	GetAccount() *pb.Resource
+	GetRequestId() string
+	GetReplayed() bool
+}) map[string]any {
+	value := map[string]any{"attempt": r.GetAttempt(), "request_id": r.GetRequestId(), "replayed": r.GetReplayed()}
+	if r.GetAccount() != nil {
+		value["account"] = resourceJSON(r.GetAccount())
 	}
 	return value
 }
