@@ -14,6 +14,9 @@ import (
 )
 
 func startDetachedWorker(ctx context.Context, o options, root string) (any, error) {
+	return startDetachedWorkerWithAdmission(ctx, o, root, nil)
+}
+func startDetachedWorkerWithAdmission(ctx context.Context, o options, root string, admitted func(worker.RuntimeStatus) error) (any, error) {
 	if _, err := worker.LoadCredential(root); err != nil {
 		return nil, err
 	}
@@ -25,6 +28,11 @@ func startDetachedWorker(ctx context.Context, o options, root string) (any, erro
 	status, launch, err := worker.PrepareStart(root)
 	if err != nil {
 		return status, err
+	}
+	if admitted != nil {
+		if err := admitted(status); err != nil {
+			return status, err
+		}
 	}
 	generation := status.Lifecycle.Generation
 	var exited <-chan error

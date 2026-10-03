@@ -69,3 +69,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Saved Worker network commands derive the exact private root and original credential from the saved connection. Ciphertext may enter bounded stdin independently of its authenticated digest, never alongside token/pairing input. Import output contains only public original IDs, exact decimal generation and ciphertext digest; omit vault references and reject future/malformed status shapes.
 
 - Explicit `account oauth start|complete|status|cancel` follows the OAuth contract. Start defaults to headless mode; completion accepts exact bounded code stdin only, without trimming or secret argv. Code-free `--recover` requires the original completion request/revision and never exchanges. CLI product operations never implicitly start a server.
+
+- machine ssh uses authenticated InstallationService and write-only bounded stdin. The native-only worker ssh-setup helper verifies the signed artifact identity, journals original pairing/start admission and never repeats missing progress or replaces registration/workspaces.

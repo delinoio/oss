@@ -25,6 +25,7 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1       WorkerCapability = 17
 	WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1    WorkerCapability = 16
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1   WorkerCapability = 5
 	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1    WorkerCapability = 13
@@ -48,6 +49,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		17: "WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1",
 		16: "WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1",
 		5:  "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
 		13: "WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1",
@@ -67,6 +69,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1":          17,
 		"WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1":       16,
 		"WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":      5,
 		"WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1":       13,
@@ -3029,9 +3032,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"generation\x128\n" +
 	"\x05state\x18\a \x01(\x0e2\".delidev.v1.WorkerNativeRouteStateR\x05state\"=\n" +
 	"\x1fReportWorkerNativeRouteResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xe3\x06\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\x93\a\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x121\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12.\n" +
+	"*WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1\x10\x11\x121\n" +
 	"-WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1\x10\x10\x122\n" +
 	".WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1\x10\x05\x121\n" +
 	"-WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1\x10\r\x124\n" +

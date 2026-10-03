@@ -108,3 +108,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - OAuth attempt metadata uses closed states, unique original identities, exact revision/lifetime and keyed comparison commitments. Validate exact UTF-8 authorization-code bytes without trimming and only the canonical owned localhost callback. Keep this private domain outside resources, synchronization and portable configuration under the OAuth contract.
 
 - ProviderPresetID includes the 26 additions allocated in 10–35, preserving old IDs and fixed managed definitions. Preset guidance and advisory catalog metadata cannot grant connection, readiness or inference/harness authority. Follow the catalog/inspection contracts.
+
+- EntityKind update and ssh_setup are installation metadata owned by Go InstallationService. Worker version admission requires the original compiled-authority release and exact registration; reservations alone never advertise installation support.

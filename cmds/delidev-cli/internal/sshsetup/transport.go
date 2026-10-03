@@ -91,6 +91,7 @@ func (c *Credential) Clear() {
 	c.Secret = nil
 	c.Passphrase = nil
 }
+func (c Credential) Validate() error { _, err := c.auth(); return err }
 func (c Credential) auth() (ssh.AuthMethod, error) {
 	if len(c.Secret) == 0 || len(c.Secret) > 48<<10 || len(c.Passphrase) > 8<<10 {
 		return nil, failure(domain.InvalidArgument)
@@ -248,8 +249,13 @@ func (c *Connection) command(ctx context.Context, command string, input io.Reade
 	if ctx.Err() != nil {
 		return nil, domain.SafeError(ctx.Err())
 	}
-	if e != nil || output.over || discard.over {
+	if output.over || discard.over {
 		return nil, failure(domain.Unavailable)
+	}
+	if e != nil {
+		// Only the closed setup parser may inspect this bounded envelope on exit
+		// failure. No raw stdout/stderr is exposed to callers or diagnostics.
+		return append([]byte(nil), output.Bytes()...), failure(domain.Unavailable)
 	}
 	return append([]byte(nil), output.Bytes()...), nil
 }

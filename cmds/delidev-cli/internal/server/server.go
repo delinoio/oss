@@ -19,6 +19,7 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
+	releaseFactory            func() (releaseClient, error)
 	userServiceBackend        userservice.Backend
 	StartupID                 domain.ID
 	DataDir                   string
@@ -42,6 +43,8 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	releaseFactory func() (releaseClient, error)
+	delidevv1connect.UnimplementedInstallationServiceHandler
 	delidevv1connect.UnimplementedWorkspaceStorageServiceHandler
 	userServiceOptions userservice.ServerOptions
 	userServiceBackend userservice.Backend

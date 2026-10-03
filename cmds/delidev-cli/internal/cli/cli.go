@@ -137,6 +137,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		limit := 30 * time.Second
 		// Network credential work and backup inspection/replacement own bounded
 		// 30-second server work. Allow its typed outcome to arrive first.
+		if command == "machine" && len(rest) > 0 && rest[0] == "ssh" {
+			limit = 35 * time.Second
+			c.transport.ResponseHeaderTimeout = limit
+		}
 		if command == "network" || command == "backup" && len(rest) > 0 && (rest[0] == "restore" || rest[0] == "inspect") {
 			limit = 35 * time.Second
 			c.transport.ResponseHeaderTimeout = limit

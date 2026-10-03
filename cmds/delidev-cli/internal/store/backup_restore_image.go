@@ -60,6 +60,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	queries := []string{
 		// A historical image cannot replace current once-only OAuth dispatch or
 		// cleanup evidence. Eligibility already excludes every unresolved attempt.
+		// Installation state is current once-only authority, never historical configuration.
+		"DELETE FROM entities WHERE kind IN ('ssh_setup','update')",
+		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind IN ('ssh_setup','update')",
 		"DELETE FROM account_oauth_attempts",
 		"INSERT INTO account_oauth_attempts SELECT * FROM current_state.account_oauth_attempts",
 		"INSERT OR REPLACE INTO tombstones SELECT * FROM current_state.tombstones",

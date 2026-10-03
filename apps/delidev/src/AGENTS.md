@@ -604,3 +604,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Original Codex/OpenCode automatic context disclosures use the closed bounded harness/lifecycle/reference union. Keep native context independent of canonical conversation and billed usage, and show unreported counters as unavailable. A private native manual controller cannot enable a desktop mutation without independently negotiated product support.
 
 - OpenCode Context controls independently require System capability 25 and per-session capability 6 alongside common support and exact revision. Preserve original action receipt/retry across navigation; automatic/native summary counters and current context utilization remain independent and cannot fabricate response coverage.
+
+- SSH setup in ssh-setup.tsx belongs to Runner Devices. Verify capability and exact host identity before explicit installation. Keep write-only credentials out of React Query and mutation receipts, clear them after a send, and inspect the original setup after ambiguity without resending native effects. Settings disposal rejects late results without canceling the detached Worker.
