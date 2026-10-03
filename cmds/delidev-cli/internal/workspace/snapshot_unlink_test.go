@@ -33,14 +33,17 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 				}
 				// Go's Windows OpenRoot(path) omits delete sharing and blocks the
 				// namespace rename. A child opened through its stable parent permits
-				// rename while keeping writes anchored to the original directory.
+				// rename while keeping writes anchored to the original directory. Close
+				// the parent immediately so the fixture retains only the writer handle.
 				parent, err := os.OpenRoot(filepath.Dir(source))
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer parent.Close()
 				held, err := parent.OpenRoot(filepath.Base(source))
 				if err != nil {
+					t.Fatal(err)
+				}
+				if err := parent.Close(); err != nil {
 					t.Fatal(err)
 				}
 				defer held.Close()
