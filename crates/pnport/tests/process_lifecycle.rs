@@ -3,7 +3,7 @@
 
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     os::{
         fd::{AsRawFd, FromRawFd},
         unix::{
@@ -233,8 +233,10 @@ impl Fixture {
     }
 
     fn terminal_diagnostics(&self) -> serde_json::Value {
-        let log =
-            fs::read_to_string(self.root.path().join("terminal.diagnostics")).unwrap_or_default();
+        let mut log = String::new();
+        if let Ok(file) = fs::File::open(self.root.path().join("terminal.diagnostics")) {
+            let _ = file.take(64 * 1024).read_to_string(&mut log);
+        }
         let actions = [
             "macos_owner_started",
             "spawn",
@@ -254,6 +256,7 @@ impl Fixture {
                     .iter()
                     .filter(move |action| line.contains(&format!("action=\"{action}\"")))
             })
+            .take(128)
             .collect();
         let codes: Vec<_> = [
             "PNPORT_INJECTION_FAILED",
@@ -287,7 +290,14 @@ impl Fixture {
         let stopped: Option<bool> = None;
         // Emit closed actions/codes and one state bit, never raw native output,
         // identifiers, paths, argv or environment values from the debug file.
-        json!({"actions": observed, "codes": codes, "supervisorStopped": stopped})
+        let wait: Vec<i32> = fs::read_to_string(self.root.path().join("terminal.wait"))
+            .unwrap_or_default()
+            .split_whitespace()
+            .filter_map(|value| value.parse().ok())
+            .take(3)
+            .collect();
+        json!({"actions": observed, "codes": codes, "supervisorStopped": stopped,
+            "waitOutcome": wait})
     }
 
     fn ready(&mut self) {

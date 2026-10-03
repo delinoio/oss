@@ -2,6 +2,7 @@
 // A test-only shell boundary on an isolated controlling terminal.
 #include <signal.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,7 +76,18 @@ int main(int argc, char **argv) {
     close(launch[1]);
     marker("terminal.running");
     if (strcmp(argv[3], "interrupt") != 0 && !redirected) {
-        if (waitpid(child, &status, WUNTRACED) != child || !WIFSTOPPED(status)) return 78;
+        pid_t waited = waitpid(child, &status, WUNTRACED);
+        if (waited != child || !WIFSTOPPED(status)) {
+            int wait_error = waited < 0 ? errno : 0;
+            FILE *outcome = fopen("terminal.wait", "w");
+            if (outcome) {
+                fprintf(outcome, "%d %d %d\n", wait_error,
+                        waited == child && WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+                        waited == child && WIFSIGNALED(status) ? WTERMSIG(status) : -1);
+                fclose(outcome);
+            }
+            return 78;
+        }
         pid_t expected = strcmp(argv[3], "background") == 0 ? getpgrp() : child;
         if (tcgetpgrp(0) != expected) return 79;
         marker("terminal.stopped");
