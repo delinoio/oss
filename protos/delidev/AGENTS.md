@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- The owner-approved coordinated single-PR exception in `docs/cmds-delidev-structure-contract.md` permits missing reservations and their complete dependency closure in one integration PR. Record allocations before source use, retain original owners and numbers, and regenerate composed Go/TypeScript bindings. Independent dependent branches still require reservations on main; reservation-only changes advertise no support.
+
 - Issue #1146 reserves `ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 = 5`, `ProviderInventoryEntry.connection_method = 9` and the exclusively owned `ProviderConnectionMethod` / `AccountOAuthState` enums in `allocations.json`. Each member of a wholly new enum carries `newDeclaration: true`, one original owner and a zero UNSPECIFIED value; do not add planned declarations to the active baseline. Establish reservations on main before dependent implementation and keep them out of active schemas/advertisements until complete support exists. Follow `docs/cmds-delidev-account-oauth-contract.md`; OAuth remains independent of the four existing inventory gates and cannot be inferred from names or copied URLs.
 
 - Issue #1235 reserves `SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` under its owning issue identity. Establish this allocation and storage migration 28 on main before dependent implementation. The reservation does not change schemas, generated clients or advertised support; preserve the independent capability boundary from API provider inventory.

@@ -106,6 +106,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 ### Migration ownership
 
+- The owner-approved coordinated single-PR exception in `docs/cmds-delidev-structure-contract.md` permits reservations and complete dependent implementations in one integration PR. Record reservations first and retain real 26/27/28/29 order, original provenance, backup-first publication and rollback. It does not permit placeholder migrations or independent dependent branches before main.
+
 - Issue #1146 reserves migration 29 for private metadata-only OAuth attempts after real migrations 26–28. Establish the reservation on main first. Follow `docs/cmds-delidev-account-oauth-contract.md`: retain original actor/provider/process/request and reserved-account identities, durable once-only HTTP dispatch, protected references and unresolved cleanup without an account foreign key or cascade. Verifier, authorization code, API key and callback/authorization URLs never enter SQLite, receipts or backup images. Copied/restarted metadata cannot grant another exchange; this prerequisite adds no executable migration.
 
 - Issue #1235 reserves migration 28 for service-native subscription identity and legacy configuration retirement. Keep versions 26 and 27 in their existing order and implement both real predecessors before activating 28. Reservations use one original `pr` or owning `issue`; retain that provenance after an implementation PR exists. The planned reset is backup-first and atomic, preserves historical bytes/attribution and configured-empty deny-all restrictions, and refuses unsettled native ownership or cleanup without inferring a service.

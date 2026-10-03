@@ -35,6 +35,19 @@ Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
 
+### Coordinated single-PR exception
+
+An explicitly owner-approved single integration PR may establish missing numeric
+reservations and implement their complete dependency closure in that same PR.
+Record reservations before dependent source edits, retain the original allocation
+owners, and regenerate bindings from the composed schema. This exception does
+not authorize independent dependent branches before the reservations reach main.
+Executable migrations must still implement every real predecessor in order;
+the integration of 26 through 29 cannot use placeholders, reorder reservations,
+or reinterpret existing layouts. Reservation-only commits are intermediate work,
+not feature completion or capability evidence. Record final implementation and
+validation coverage in the integration PR and CI, not repository evidence files.
+
 Wholly new closed enums use explicit `newDeclaration: true` member reservations
 under one original owner, including their zero UNSPECIFIED member. Keep these
 planned declarations out of the immutable active baseline; the allocation check
