@@ -4666,6 +4666,188 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1",
       "number": 15
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_GEMINI",
+      "number": 10
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_GROQ",
+      "number": 11
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MISTRAL",
+      "number": 12
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_TOGETHER_AI",
+      "number": 13
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_FIREWORKS_AI",
+      "number": 14
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_PERPLEXITY",
+      "number": 15
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_COHERE",
+      "number": 16
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_CEREBRAS",
+      "number": 17
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_NEBIUS",
+      "number": 18
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_NOVITA",
+      "number": 19
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_DEEPINFRA",
+      "number": 20
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_HUGGING_FACE",
+      "number": 21
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_VENICE",
+      "number": 22
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_SCALEWAY",
+      "number": 23
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_BASETEN",
+      "number": 24
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MOONSHOT",
+      "number": 25
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MOONSHOT_CN",
+      "number": 26
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MINIMAX",
+      "number": 27
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_MINIMAX_CN",
+      "number": 28
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_SILICONFLOW",
+      "number": 29
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_SILICONFLOW_CN",
+      "number": 30
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_QIANFAN",
+      "number": 31
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_TENCENT_TOKENHUB",
+      "number": 32
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_TENCENT_TOKENHUB_INTERNATIONAL",
+      "number": 33
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_INTERNATIONAL",
+      "number": 34
+    },
+    {
+      "issue": 1148,
+      "kind": "enum",
+      "declaration": "ProviderPresetId",
+      "member": "PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG",
+      "number": 35
     }
   ]
 }

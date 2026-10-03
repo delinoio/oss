@@ -66,3 +66,14 @@ Automated fixtures do not establish real desktop layout/keyboard, real provider 
 - [Desktop client](apps-delidev-desktop-contract.md)
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [TypeScript client](packages-delidev-api-client-contract.md)
+
+## Additional hosted-provider reservation (#1148)
+
+The coordinated integrated PR reserves `ProviderPresetId` 10–35 in the issue's
+published table order for 26 additional fixed hosted services. Existing 0–9
+retain their meanings. Storage migration 30 belongs to the added hosted defaults;
+29 remains exclusively OAuth after real 26/27/28. The original issue's proposed
+25 predates the reconciled main accounting sequence and cannot be reused.
+Reservations alone expose no preset, inspection profile or seeded provider.
+Independent dependent PRs retain the main-first prerequisite; the approved
+single-PR composition follows the structure contract's narrow exception.
