@@ -99,13 +99,13 @@ static int descriptor_mutations(void) {
         errno = 0;
         if (fcntl(dependency_fd, F_PREALLOCATE, &allocation) != -1 || errno != EROFS) return 83;
         // F_TRANSFEREXTENTS has two integer descriptors. Either managed
-        // operand is read-only, while an invalid operand retains native EBADF.
+        // operand is read-only; invalid operands retain native errno ordering.
         errno = 0;
         if (fcntl(dependency_fd, F_TRANSFEREXTENTS, extent_output) != -1 || errno != EROFS) return 85;
         errno = 0;
         if (fcntl(extent_output, F_TRANSFEREXTENTS, dependency_fd) != -1 || errno != EROFS) return 86;
         errno = 0;
-        if (fcntl(dependency_fd, F_TRANSFEREXTENTS, -1) != -1 || errno != EBADF) return 87;
+        if (fcntl(dependency_fd, F_TRANSFEREXTENTS, -1) != -1 || errno != EINVAL) return 87;
         errno = 0;
         if (fcntl(-1, F_TRANSFEREXTENTS, dependency_fd) != -1 || errno != EBADF) return 88;
 #endif

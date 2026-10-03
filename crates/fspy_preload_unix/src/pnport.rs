@@ -406,6 +406,12 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
     // variadic argument, unlike the pointer-valued fcntl commands below.
     // Decode it once so the secondary backing is admitted before native fcntl.
     let transfer_descriptor = (command == libc::F_TRANSFEREXTENTS).then(|| args.arg::<c_int>());
+    if let Some(transfer_fd) = transfer_descriptor.filter(|descriptor| *descriptor < 0) {
+        // A negative destination cannot mutate either operand. Native fcntl
+        // owns its validation order: EINVAL for a valid primary descriptor,
+        // while an invalid primary still returns its own native failure.
+        return original(fd, command, transfer_fd);
+    }
     let mutation = matches!(
         command,
         libc::F_PREALLOCATE
