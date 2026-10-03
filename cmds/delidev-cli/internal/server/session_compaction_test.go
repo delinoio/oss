@@ -100,17 +100,20 @@ func TestPublicCompactionAtomicReceiptAndFIFO(t *testing.T) {
 func TestPublicCodexCompactionAtomicReceiptAndFIFO(t *testing.T) {
 	testPublicCompactionAtomicReceiptAndFIFO(t, domain.Codex)
 }
+func TestPublicOpenCodeCompactionAtomicReceiptAndFIFO(t *testing.T) {
+	testPublicCompactionAtomicReceiptAndFIFO(t, domain.OpenCode)
+}
 func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harness) {
 	for _, scenario := range []string{"success", "failed-compact-outer-success", "queued-stop", "queued-archive", "claimed-stop", "claimed-archive", "claimed-disconnect", "lost-report", "foreign-result"} {
-		if harness == domain.Codex && scenario == "failed-compact-outer-success" {
+		if harness != domain.ClaudeCode && scenario == "failed-compact-outer-success" {
 			continue
 		}
 		t.Run(scenario, func(t *testing.T) {
 			ctx := context.Background()
 			var f *firstDispatchFixture
 			var pf *publicationFixture
-			if harness == domain.Codex {
-				c := newContinuationFixture(t, domain.ExecutionSucceeded)
+			if harness == domain.Codex || harness == domain.OpenCode {
+				c := newContinuationFixtureProfile(t, domain.ExecutionSucceeded, harness)
 				f = c.firstDispatchFixture
 				pf = &publicationFixture{authorityFixture: &authorityFixture{service: f.service, client: f.workerClient, workerToken: f.workerIdentity.Token, job: domain.ID(c.job.Id), device: f.workerDevice, instance: domain.ID(f.workerInstance), input: c.input}, revision: c.job.Revision, thread: c.thread, turn: c.turn}
 				f.workerStream.Close()
@@ -119,7 +122,11 @@ func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harne
 					if err != nil {
 						return nil, err
 					}
-					m.WorkerCapabilities = append(m.WorkerCapabilities, domain.NativeSessionCompactionV1, domain.CodexSessionCompactionV1)
+					nativeCapability := domain.CodexSessionCompactionV1
+					if harness == domain.OpenCode {
+						nativeCapability = domain.OpenCodeSessionCompactionV1
+					}
+					m.WorkerCapabilities = append(m.WorkerCapabilities, domain.NativeSessionCompactionV1, nativeCapability)
 					return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
 				})
 				if err != nil {
@@ -209,6 +216,11 @@ func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harne
 			expected := []apiproxy.Operation{apiproxy.MessageCreate}
 			if harness == domain.Codex {
 				expected = []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
+			} else if harness == domain.OpenCode {
+				expected = []apiproxy.Operation{apiproxy.ChatCompletion}
+			}
+			if lease != nil {
+				defer lease.Release()
 			}
 			if e != nil || lease.Scope.ExecutionID != input.ActionID || lease.Scope.AccountID != input.Assignment.AccountID || lease.Scope.Harness != harness || !reflect.DeepEqual(lease.Scope.Operations, expected) {
 				t.Fatal("manual action changed relay authority", e)
@@ -248,6 +260,9 @@ func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harne
 			result := publicCompactionResult(input, claim.ID, scenario == "failed-compact-outer-success")
 			if harness == domain.Codex {
 				result = domain.SessionCompactionResult{Version: 2, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: result.Checkpoint, Codex: &domain.CodexCompactionResult{NativeThreadID: input.Completion.NativeThreadID, SourceNativeTurnID: input.Completion.NativeTurnID, NativeTurnID: domain.NativeIdentity(domain.NewID()), LiveItemID: "original-live-context", HistoryItemID: "item-0", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, ResponseUsages: []domain.NativeResponseUsage{}}}
+			}
+			if harness == domain.OpenCode {
+				result = domain.SessionCompactionResult{Version: 3, Harness: domain.OpenCode, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: result.Checkpoint, OpenCode: &domain.OpenCodeCompactionResult{NativeSessionID: input.Completion.NativeThreadID, SourceNativeInputID: input.Completion.NativeTurnID, UserID: "msg_01960dcbe1fcABCDEFGHIJKLMN", PartID: "prt_01960dcbe1fcABCDEFGHIJKLMN", SummaryID: "msg_01960dcbe1fdABCDEFGHIJKLMN", CompletedEventID: "evt_01960dcbe1fdABCDEFGHIJKLMN", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, Usages: []domain.OpenCodeUsageObservation{}}}
 			}
 			if scenario == "foreign-result" {
 				result.Checkpoint.JobID = domain.NewID()
@@ -627,9 +642,15 @@ func TestCompactionRejectsFailedConversationEligibleForExplicitResume(t *testing
 }
 
 func TestCodexCompactionRejectsIneligibleBoundaryBeforeMutation(t *testing.T) {
+	testCompactionRejectsIneligibleBoundary(t, domain.Codex)
+}
+func TestOpenCodeCompactionRejectsIneligibleBoundaryBeforeMutation(t *testing.T) {
+	testCompactionRejectsIneligibleBoundary(t, domain.OpenCode)
+}
+func testCompactionRejectsIneligibleBoundary(t *testing.T, harness domain.Harness) {
 	for _, scenario := range []string{"missing-worker-profile", "paused", "queued-input", "pending-question", "pending-approval", "unfinished-observation", "child-history", "unconfirmed-response"} {
 		t.Run(scenario, func(t *testing.T) {
-			f := newContinuationFixture(t, domain.ExecutionSucceeded)
+			f := newContinuationFixtureProfile(t, domain.ExecutionSucceeded, harness)
 			f.workerStream.Close()
 			if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.compaction-rejection", scenario, func(tx *store.Tx) (any, error) {
 				r, session, err := sessionRecord(tx, domain.ID(f.change.Session.Id))
@@ -658,7 +679,11 @@ func TestCodexCompactionRejectsIneligibleBoundaryBeforeMutation(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
-					m.WorkerCapabilities = append(m.WorkerCapabilities, domain.NativeSessionCompactionV1, domain.CodexSessionCompactionV1)
+					nativeCapability := domain.CodexSessionCompactionV1
+					if harness == domain.OpenCode {
+						nativeCapability = domain.OpenCodeSessionCompactionV1
+					}
+					m.WorkerCapabilities = append(m.WorkerCapabilities, domain.NativeSessionCompactionV1, nativeCapability)
 					if _, err := tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", m); err != nil {
 						return nil, err
 					}

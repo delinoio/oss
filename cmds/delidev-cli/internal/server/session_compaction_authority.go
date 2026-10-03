@@ -38,6 +38,9 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	if i.Assignment.Configuration.Harness == domain.Codex && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
 		return denied()
 	}
+	if i.Assignment.Configuration.Harness == domain.OpenCode && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.OpenCodeSessionCompactionV1)) {
+		return denied()
+	}
 	sr, s, err := sessionRecord(tx, r.SessionID)
 	if err != nil || !s.WorkspaceAvailable() || s.CompactionJobID != r.ID || s.Archive != domain.NotArchived || s.Recovery != domain.NoRecovery || !s.OwnsExecution(i.Assignment) || s.ActiveExecutionID != "" {
 		return denied()

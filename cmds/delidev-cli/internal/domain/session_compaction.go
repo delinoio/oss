@@ -51,7 +51,7 @@ type SessionCompactionInput struct {
 
 func (i SessionCompactionInput) Validate() error {
 	a, done := i.Assignment, i.Completion
-	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && a.Installation.Version == ClaudeProtocolVersion || i.Version == 2 && a.Configuration.Harness == Codex && a.Installation.Version == CodexProtocolVersion
+	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && a.Installation.Version == ClaudeProtocolVersion || i.Version == 2 && a.Configuration.Harness == Codex && a.Installation.Version == CodexProtocolVersion || i.Version == 3 && a.Configuration.Harness == OpenCode && a.Installation.Version == OpenCodeProtocolVersion
 	if !profile || UniqueIDs([]ID{i.ActionID, i.SourceJobID, a.ExecutionID, a.InputID, a.SessionID}) != nil || a.Validate() != nil || done.ValidateForHarness(a.Configuration.Harness) != nil || done.Version != 2 || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || done.Outcome != ExecutionSucceeded {
 		return CompactionUncertain()
 	}
@@ -61,7 +61,7 @@ func (i SessionCompactionInput) Validate() error {
 	if i.Previous != nil && (i.Previous.Validate() != nil || i.Previous.ExecutionID != a.ExecutionID) {
 		return CompactionUncertain()
 	}
-	if a.Configuration.Harness == Codex && (i.Dispatch != DispatchReady || i.Previous != nil && i.Previous.RequiresResume || len(i.Restore.Continuation.Previous.Subagents) != 0 || !i.Restore.Continuation.Previous.NativeCompactions.Closed()) {
+	if (a.Configuration.Harness == Codex || a.Configuration.Harness == OpenCode) && (i.Dispatch != DispatchReady || i.Previous != nil && i.Previous.RequiresResume || len(i.Restore.Continuation.Previous.Subagents) != 0 || !i.Restore.Continuation.Previous.NativeCompactions.Closed()) {
 		return CompactionUncertain()
 	}
 	if i.Dispatch != DispatchReady && i.Dispatch != DispatchPaused && i.Dispatch != DispatchBlocked {
@@ -95,6 +95,7 @@ func compactionDigest(raw []byte) string {
 type SessionCompactionResult struct {
 	Harness            Harness                   `json:"harness,omitempty"`
 	Codex              *CodexCompactionResult    `json:"codex,omitempty"`
+	OpenCode           *OpenCodeCompactionResult `json:"opencode,omitempty"`
 	Version            uint32                    `json:"version"`
 	ActionID           ID                        `json:"action_id"`
 	ExecutionID        ID                        `json:"execution_id"`
@@ -127,8 +128,11 @@ type CodexCompactionResult struct {
 }
 
 func (r SessionCompactionResult) Validate() error {
+	if r.Version == 3 {
+		return r.validateOpenCode()
+	}
 	if r.Version == 2 {
-		if r.Harness != Codex || r.Codex == nil || r.Outcome != CompactionSucceeded || r.OuterKind != "" || r.OuterError || r.CommandEchoID != "" || r.ResultID != "" || r.CommandCompletedID != "" || r.IdleID != "" || r.BoundaryID != "" || r.SummaryID != "" || r.Boundary != nil || r.Summary != nil || !r.CleanupVerified || r.Checkpoint.Validate() != nil || r.Checkpoint.ActionID != r.ActionID || r.Checkpoint.ExecutionID != r.ExecutionID || r.Checkpoint.RequiresResume {
+		if r.OpenCode != nil || r.Harness != Codex || r.Codex == nil || r.Outcome != CompactionSucceeded || r.OuterKind != "" || r.OuterError || r.CommandEchoID != "" || r.ResultID != "" || r.CommandCompletedID != "" || r.IdleID != "" || r.BoundaryID != "" || r.SummaryID != "" || r.Boundary != nil || r.Summary != nil || !r.CleanupVerified || r.Checkpoint.Validate() != nil || r.Checkpoint.ActionID != r.ActionID || r.Checkpoint.ExecutionID != r.ExecutionID || r.Checkpoint.RequiresResume {
 			return CompactionUncertain()
 		}
 		p := r.Codex
@@ -144,7 +148,7 @@ func (r SessionCompactionResult) Validate() error {
 		}
 		return nil
 	}
-	if r.Harness != "" || r.Codex != nil {
+	if r.Harness != "" || r.Codex != nil || r.OpenCode != nil {
 		return CompactionUncertain()
 	}
 	if r.OuterKind != ClaudeResultSuccess || r.OuterError || r.Version != 1 || r.Checkpoint.Validate() != nil || r.ActionID != r.Checkpoint.ActionID || r.ExecutionID != r.Checkpoint.ExecutionID || !r.CleanupVerified || r.CommandEchoID != string(r.ActionID) {

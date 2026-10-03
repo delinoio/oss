@@ -101,6 +101,7 @@ const (
 	SubscriptionObservationsV1     WorkerCapability = "subscription-observations-v1"
 	NativeSessionCompactionV1      WorkerCapability = "native-session-compaction-v1"
 	CodexSessionCompactionV1       WorkerCapability = "codex-session-compaction-v1"
+	OpenCodeSessionCompactionV1    WorkerCapability = "opencode-session-compaction-v1"
 	NetworkBootstrapV1             WorkerCapability = "network-bootstrap-v1"
 	CodexAPIProxyV1                WorkerCapability = "codex-api-proxy-v1"
 )

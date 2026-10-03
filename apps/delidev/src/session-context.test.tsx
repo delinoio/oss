@@ -10,8 +10,8 @@ import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { contextDocument, SessionContext } from "./session-context";
 
-it("preserves one exact manual request through response loss and navigation", async () => {
- const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ initial_execution: { configuration: { harness: "codex" } } }) });
+it.each(["codex", "opencode"])("preserves one exact %s manual request through response loss and navigation", async (harness) => {
+ const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ initial_execution: { configuration: { harness } } }) });
  const requests: unknown[] = [];
  let action: unknown = null;
  const compact = vi.fn(async (request) => {
@@ -21,8 +21,8 @@ it("preserves one exact manual request through response loss and navigation", as
   return { requestId: request.mutation.requestId, replayed: true, job: create(ResourceSchema, { kind: EntityKind.JOB, id: newRequestId(), sessionId: session.id, documentJson: encode({ input: { action_id: request.mutation.requestId, assignment: { session_id: session.id } } }) }) };
  });
  const transport = createRouterTransport((router) => {
-  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_SESSION_COMPACTION_V1, SystemCapability.CODEX_SESSION_COMPACTION_V1] }) });
-  router.service(SessionService, { compactSession: compact, getSessionContext: () => ({ documentJson: encode({ session_id: session.id, session_revision: "8", current_tokens: null, manual_action: action }), capabilities: action ? [] : [SessionContextCapability.CODEX_MANUAL_COMPACTION_V1] }) });
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_SESSION_COMPACTION_V1, SystemCapability.CODEX_SESSION_COMPACTION_V1, SystemCapability.OPENCODE_SESSION_COMPACTION_V1] }) });
+  router.service(SessionService, { compactSession: compact, getSessionContext: () => ({ documentJson: encode({ session_id: session.id, session_revision: "8", current_tokens: null, manual_action: action }), capabilities: action ? [] : [harness === "codex" ? SessionContextCapability.CODEX_MANUAL_COMPACTION_V1 : SessionContextCapability.OPENCODE_MANUAL_COMPACTION_V1] }) });
  });
  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
  const view = (active: boolean) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{active ? <SessionContext session={session} /> : <p>Another conversation</p>}</MutationIntents></QueryClientProvider></TransportProvider>;

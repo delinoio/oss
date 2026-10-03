@@ -13,6 +13,7 @@ import (
 // emitted completion event. They contain no summary text or execution authority.
 type NativeContextRecord struct {
 	ActionID            domain.ID `json:"action_id,omitempty"`
+	HistoryDigest       string    `json:"history_digest,omitempty"`
 	InputRequestID      domain.ID `json:"input_request_id"`
 	SourceInputID       string    `json:"source_input_id"`
 	UserID              string    `json:"user_id"`

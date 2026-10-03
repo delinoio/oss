@@ -290,9 +290,33 @@ retained as a successful checkpoint even if native lifecycle arrived. Repeated
 manual actions preserve the original input/outcome and complete inherited context
 through each fresh process and subsequent ordinary input.
 
-This private manual primitive does not activate System capability 25, Worker
-capability 14 or the reserved manual product context capability. Durable product
-admission, original Worker action/checkpoint journals, authenticated RPC/CLI and
-desktop eligibility remain independently required before their activation. Actual
-scripted-provider native checks and unperformed real account/platform acceptance
-must remain separate in PR/issue/CI validation records.
+The public OpenCode profile activates System capability 25, Worker capability 14
+and SessionContext capabilities 5/6 independently of Codex and Claude. Worker
+negotiation requires the original detected, protocol-verified pinned OpenCode
+installation; the common capability 5 cannot imply either native profile. Manual
+admission requires a ready successful child-free boundary with no queued input,
+current original account/configuration, exact revision, independent accepted
+version-2 completion and current Worker support. Version-3 action/result JSON
+remains a closed OpenCode union; legacy Claude version 1 and Codex version 2 retain
+their original meaning and bytes.
+
+The Worker synchronizes separate original registration, command, native Resume
+and native summarize claims before their effects. Its private checkpoint binds
+server/device/job/instance/revision/assignment, immutable original source digest,
+complete ordinary/context lineage and the exact accepted report. Repeated actions
+validate every prior accepted action and retained source independently. Ordinary
+successors claim the last action's closed workspace owner and restore its full
+native snapshot while retaining the original ordinary assignment/report owner.
+Missing, changed or uncertain claims, reports, history or cleanup never grant a
+new command or replacement checkpoint. A lost native acknowledgment cannot be
+resent, including after Worker replacement.
+
+Successful original manual summary step-finish sources are retained once under
+their action, original account/model and native summary identity. Finalized summary
+counters do not add another unit, and missing exact provider-response telemetry
+remains separately unavailable. API/client/CLI/context desktop flows share the
+existing authenticated revision-bound RPC and durable mutation receipt. The
+desktop requires both common and independent OpenCode support plus the exact
+server-observed eligible session revision. Actual scripted-provider native checks
+and unperformed real account/platform acceptance remain separate in PR/issue/CI
+validation records.
