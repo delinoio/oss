@@ -170,7 +170,7 @@ passfd = { git = "https://github.com/polachok/passfd", rev = "d55881752c16aced1a
 path-clean = "1.0.1"
 phf = "0.13.0"
 proc-macro2 = "1"
-quote = "=1.0.45"
+quote = "=1.0.47"
 ref-cast = "1.0.24"
 rustc-hash = "2.1.1"
 seccompiler = { git = "https://github.com/rust-vmm/seccompiler", rev = "08587106340b8e3cb361c7561411510039436857" }
