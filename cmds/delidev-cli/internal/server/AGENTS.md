@@ -1,5 +1,6 @@
 # DeliDev server ownership
 
+- Sidechat admission/publication/execution require the original parent, account, completed native boundary and Worker capability 16. Selected complete replies use exact child/message/parent revisions and the ordinary queue receipt. Parent storage retirement and deletion freeze complete child obligations before cancellation; retirement inspection never grants early cleanup. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Keep PR activity projection and original-source validation in `activity_pr.go` under the activity contract. Validate immutable original versions and stable numeric PR ownership, preserve historical navigation across repository renames, cap complete pages in protobuf and JSON, and advertise the typed activity capability. Reads cannot change Inbox or PR handling or infer verified handling from an attempt.

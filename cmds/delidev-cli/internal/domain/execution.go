@@ -21,6 +21,7 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
+	SidechatPolicy      SidechatPolicy          `json:"sidechat_policy,omitempty"`
 	AgentID             ID                      `json:"agent_id"`
 	AgentRevision       uint64                  `json:"agent_revision"`
 	Harness             Harness                 `json:"harness"`
@@ -115,6 +116,9 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if err := c.ValidateSidechat(); err != nil {
+		return err
+	}
 	if c.Harness == Codex && ValidateCodexSubagentOptions(c.Options) != nil {
 		return ValidateCodexSubagentOptions(c.Options)
 	}

@@ -125,6 +125,7 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1 = 16;
   WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 = 5;
   WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1 = 13;
   WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1 = 14;
@@ -279,6 +280,9 @@ message ListSessionDeletionWorkRequest {
   string machine_id = 1;
   string instance_id = 2;
   string after_session_id = 3;
+  // Exact retiring assignment inspection does not authorize premature cleanup.
+  string original_session_id = 4;
+  string original_job_id = 5;
 }
 message ListSessionDeletionWorkResponse {
   // Closed version-1 metadata-only ownership envelopes, at most 20 per page.

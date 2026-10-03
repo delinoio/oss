@@ -155,6 +155,9 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
+		if session.IsSidechat() {
+			return nil, domain.SidechatUnavailable()
+		}
 		if sr.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before accepting storage work.")
 		}
@@ -235,12 +238,26 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 				return nil, domain.Fail(domain.Conflict, "This snapshot is the workspace's only recoverable copy.", "Restore the workspace before permanently deleting its snapshot.")
 			}
 		}
+		if action == workspace.StorageCleanup {
+			ids, err := tx.SidechatDependents(sr.ID)
+			if err != nil {
+				return nil, err
+			}
+			if len(ids) != 0 {
+				input.SidechatDependents, input.SidechatActor = ids, &actor
+			}
+		}
 		raw, err := json.Marshal(input)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := tx.PutJob(input.OperationID, 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: session.MachineID, ParentID: domain.ID(req.Msg.RecoveryJobId), Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
 			return nil, err
+		}
+		if len(input.SidechatDependents) != 0 {
+			if err := tx.RegisterSidechatStorageRetirement(input.OperationID, sr.ID); err != nil {
+				return nil, err
+			}
 		}
 		snapshotID := domain.ID("")
 		if session.Storage != nil {
@@ -259,6 +276,9 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 	}
 	var receipt storageReceipt
 	if err := domain.Decode(result.Data, &receipt); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	if err := s.Store.BeginSidechatStorageRetirement(ctx, receipt.JobID, s.Identity.ServerID); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	record, err := s.storageOperation(ctx, receipt.JobID)

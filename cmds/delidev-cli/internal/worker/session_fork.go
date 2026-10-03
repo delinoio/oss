@@ -30,6 +30,7 @@ const (
 )
 
 type ForkCheckpoint struct {
+	SidechatPolicy      domain.SidechatPolicy        `json:"sidechat_policy,omitempty"`
 	Version             uint32                       `json:"version"`
 	JobID               domain.ID                    `json:"job_id"`
 	JobInputDigest      string                       `json:"job_input_digest"`
@@ -85,7 +86,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if domain.Decode(assignment.Preparation, &preparation) != nil || domain.Decode(assignment.Manifest, &manifest) != nil || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
 		return nil, executionCheckpointUncertain()
 	}
-	if input.Workspace == domain.Local {
+	if input.Workspace == domain.Local && input.Purpose != domain.SidechatFork {
 		if err := workspace.ValidateLocalForkSource(manifest); err != nil {
 			return nil, err
 		}
@@ -149,7 +150,11 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
-	sourceClient, err := codex.Open(ctx, codex.Config{Mode: codex.ThreadProtocol, Version: codex.SupportedVersion, Home: sourceHome, Process: processConfig})
+	sourceConfig := codex.Config{Mode: codex.ThreadProtocol, Version: codex.SupportedVersion, Home: sourceHome, Process: processConfig}
+	if input.Purpose == domain.SidechatFork {
+		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
+	}
+	sourceClient, err := codex.Open(ctx, sourceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -162,15 +167,24 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if inspectErr != nil {
 		return nil, inspectErr
 	}
-	childPreparation, err := manager.ForkPreparation(ctx, manifest, input.ChildSessionID, input.Workspace)
+	var childPreparation workspace.PrepareRequest
+	var childManifest workspace.Manifest
+	var workspaceSnapshot *workspace.ForkSnapshot
+	if input.Purpose == domain.SidechatFork {
+		childPreparation, childManifest, err = manager.PrepareSidechatReference(ctx, input.ChildSessionID, preparation, manifest)
+	} else {
+		childPreparation, err = manager.ForkPreparation(ctx, manifest, input.ChildSessionID, input.Workspace)
+		if err == nil {
+			workspaceSnapshot, err = manager.InspectForkSnapshot(ctx, manifest, childPreparation)
+		}
+		if err == nil {
+			childManifest, err = manager.PrepareFork(ctx, childPreparation, workspaceSnapshot)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	workspaceSnapshot, err := manager.InspectForkSnapshot(ctx, manifest, childPreparation)
-	if err != nil {
-		return nil, err
-	}
-	childManifest, err := manager.PrepareFork(ctx, childPreparation, workspaceSnapshot)
+	childSnapshot, err := input.ChildSnapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +204,10 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	default:
 		return nil, executionCheckpointUncertain()
 	}
+	if input.Purpose == domain.SidechatFork {
+		settings.Options.Permission, settings.Options.ApprovalPolicy, settings.Options.ApprovalReviewModel = domain.PermissionReadOnly, "never", ""
+		settings.Options.SubagentModel, settings.Options.SubagentEffort, settings.Options.MaxConcurrency = "", "", 0
+	}
 	processConfig.Env, processConfig.Cwd = env, settings.Cwd
 	rawToken, err := security.RandomToken()
 	if err != nil {
@@ -200,7 +218,11 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	client, err := codex.Open(ctx, codex.Config{Mode: codex.ThreadProtocol, Version: codex.SupportedVersion, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig})
+	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: codex.SupportedVersion, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	if input.Purpose == domain.SidechatFork {
+		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
+	}
+	client, err := codex.Open(ctx, nativeConfig)
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}
@@ -209,12 +231,17 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if forkErr != nil || closeErr != nil || bound.Thread == nil || bound.Effective == nil {
 		return nil, executionCheckpointUncertain()
 	}
-	if source.Verify(ctx) != nil || workspaceSnapshot.Verify(ctx, childManifest) != nil {
+	if input.Purpose == domain.SidechatFork {
+		err = manager.VerifySidechatReference(ctx, childPreparation, childManifest)
+	} else {
+		err = workspaceSnapshot.Verify(ctx, childManifest)
+	}
+	if source.Verify(ctx) != nil || err != nil {
 		return nil, executionCheckpointUncertain()
 	}
 	native := checkpoint.Native
 	native.ThreadID, native.SessionID, native.Effective = bound.Thread.ID, bound.Thread.SessionID, *bound.Effective
-	file := ForkCheckpoint{Version: 1, JobID: owner, JobInputDigest: executionInputDigest(job.Input), SessionID: input.ChildSessionID, MachineID: job.MachineID, RuntimeID: input.RuntimeID, ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, ManifestDigest: executionInputDigest(mustForkJSON(childManifest)), Native: native}
+	file := ForkCheckpoint{Version: input.Version, SidechatPolicy: childSnapshot.Configuration.SidechatPolicy, JobID: owner, JobInputDigest: executionInputDigest(job.Input), SessionID: input.ChildSessionID, MachineID: job.MachineID, RuntimeID: input.RuntimeID, ConfigurationDigest: childSnapshot.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, ManifestDigest: executionInputDigest(mustForkJSON(childManifest)), Native: native}
 	raw, err := json.Marshal(file)
 	if err != nil || len(raw) > maxExecutionCheckpointBytes {
 		return nil, executionCheckpointUncertain()
@@ -229,7 +256,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err := ctx.Err(); err != nil {
 		return nil, executionCheckpointUncertain()
 	}
-	return json.Marshal(domain.ForkJobResult{Version: 1, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
+	return json.Marshal(domain.ForkJobResult{Version: input.Version, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
 }
 
 // Every pre-native validation/preparation return shares this guard. Workspace
@@ -287,7 +314,7 @@ func readForkCheckpoint(root string, input domain.ExecutionJobInput) (codex.Cont
 		return result.Native, err
 	}
 	raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(f.RuntimeID), "fork-completion.json"), maxExecutionCheckpointBytes)
-	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &result) != nil || result.Version != 1 || result.JobID != f.JobID || result.SessionID != input.SessionID || result.MachineID != input.MachineID || result.RuntimeID != f.RuntimeID || result.ConfigurationDigest != input.ConfigurationDigest || result.AccountID != input.AccountID || result.ConnectionID != input.ConnectionID || result.ManifestDigest != executionInputDigest(input.Manifest) || string(result.Native.ThreadID) != string(f.NativeThreadID) || string(result.Native.TurnID) != string(f.NativeTurnID) || result.Native.Status != codex.TurnCompleted || string(mustForkJSON(result)) != string(raw) {
+	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &result) != nil || ((input.Configuration.SidechatPolicy == "" && result.Version != 1) || (input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 && result.Version != 3)) || result.SidechatPolicy != input.Configuration.SidechatPolicy || result.JobID != f.JobID || result.SessionID != input.SessionID || result.MachineID != input.MachineID || result.RuntimeID != f.RuntimeID || result.ConfigurationDigest != input.ConfigurationDigest || result.AccountID != input.AccountID || result.ConnectionID != input.ConnectionID || result.ManifestDigest != executionInputDigest(input.Manifest) || string(result.Native.ThreadID) != string(f.NativeThreadID) || string(result.Native.TurnID) != string(f.NativeTurnID) || result.Native.Status != codex.TurnCompleted || string(mustForkJSON(result)) != string(raw) {
 		return codex.ContinuationCheckpoint{}, executionCheckpointUncertain()
 	}
 	return result.Native, nil

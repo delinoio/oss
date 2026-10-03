@@ -25,6 +25,7 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1    WorkerCapability = 16
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1   WorkerCapability = 5
 	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1    WorkerCapability = 13
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1 WorkerCapability = 14
@@ -47,6 +48,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		16: "WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1",
 		5:  "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
 		13: "WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1",
 		14: "WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1",
@@ -65,6 +67,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1":       16,
 		"WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":      5,
 		"WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1":       13,
 		"WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1":    14,
@@ -2226,8 +2229,11 @@ type ListSessionDeletionWorkRequest struct {
 	MachineId      string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
 	InstanceId     string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	AfterSessionId string                 `protobuf:"bytes,3,opt,name=after_session_id,json=afterSessionId,proto3" json:"after_session_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Exact retiring assignment inspection does not authorize premature cleanup.
+	OriginalSessionId string `protobuf:"bytes,4,opt,name=original_session_id,json=originalSessionId,proto3" json:"original_session_id,omitempty"`
+	OriginalJobId     string `protobuf:"bytes,5,opt,name=original_job_id,json=originalJobId,proto3" json:"original_job_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ListSessionDeletionWorkRequest) Reset() {
@@ -2277,6 +2283,20 @@ func (x *ListSessionDeletionWorkRequest) GetInstanceId() string {
 func (x *ListSessionDeletionWorkRequest) GetAfterSessionId() string {
 	if x != nil {
 		return x.AfterSessionId
+	}
+	return ""
+}
+
+func (x *ListSessionDeletionWorkRequest) GetOriginalSessionId() string {
+	if x != nil {
+		return x.OriginalSessionId
+	}
+	return ""
+}
+
+func (x *ListSessionDeletionWorkRequest) GetOriginalJobId() string {
+	if x != nil {
+		return x.OriginalJobId
 	}
 	return ""
 }
@@ -2950,13 +2970,15 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"instanceId\"l\n" +
 	"\x1cWatchForwardRequestsResponse\x12\x1c\n" +
 	"\theartbeat\x18\x01 \x01(\bR\theartbeat\x12.\n" +
-	"\aforward\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aforward\"\x8a\x01\n" +
+	"\aforward\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aforward\"\xe2\x01\n" +
 	"\x1eListSessionDeletionWorkRequest\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1f\n" +
 	"\vinstance_id\x18\x02 \x01(\tR\n" +
 	"instanceId\x12(\n" +
-	"\x10after_session_id\x18\x03 \x01(\tR\x0eafterSessionId\"f\n" +
+	"\x10after_session_id\x18\x03 \x01(\tR\x0eafterSessionId\x12.\n" +
+	"\x13original_session_id\x18\x04 \x01(\tR\x11originalSessionId\x12&\n" +
+	"\x0foriginal_job_id\x18\x05 \x01(\tR\roriginalJobId\"f\n" +
 	"\x1fListSessionDeletionWorkResponse\x12\x1b\n" +
 	"\twork_json\x18\x01 \x03(\fR\bworkJson\x12&\n" +
 	"\x0fnext_session_id\x18\x02 \x01(\tR\rnextSessionId\"\xde\x01\n" +
@@ -3007,9 +3029,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"generation\x128\n" +
 	"\x05state\x18\a \x01(\x0e2\".delidev.v1.WorkerNativeRouteStateR\x05state\"=\n" +
 	"\x1fReportWorkerNativeRouteResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xb0\x06\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\xe3\x06\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x122\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x121\n" +
+	"-WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1\x10\x10\x122\n" +
 	".WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1\x10\x05\x121\n" +
 	"-WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1\x10\r\x124\n" +
 	"0WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1\x10\x0e\x123\n" +

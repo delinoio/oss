@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -371,5 +372,73 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 	}
 	if again, err := deleteSessionCopies(context.Background(), c, w); err != nil || again.ReportID != proof.ReportID {
 		t.Fatal("unchanged completed proof failed after fixture cleanup", again, err)
+	}
+}
+
+// The original deletion envelope permits controller progress, without fabricating
+// native success. Every assignment operand is independently compared.
+type retiringAssignmentClient struct {
+	delidevv1connect.WorkerServiceClient
+	response *pb.ListSessionDeletionWorkResponse
+	request  *pb.ListSessionDeletionWorkRequest
+}
+
+func (c *retiringAssignmentClient) ListSessionDeletionWork(_ context.Context, r *connect.Request[pb.ListSessionDeletionWorkRequest]) (*connect.Response[pb.ListSessionDeletionWorkResponse], error) {
+	c.request = r.Msg
+	return connect.NewResponse(c.response), nil
+}
+func TestRetiringAssignmentRequiresExactAuthenticatedOriginalOwnership(t *testing.T) {
+	config, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	copy := w.Copies[0]
+	raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(copy.JobID)+".json"), 2<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original journal
+	if domain.Decode(raw, &original) != nil {
+		t.Fatal("original journal")
+	}
+	// This inspection binds the claimed envelope bytes rather than its mutable
+	// final journal. Use a metadata-only envelope for the isolated comparison.
+	document := []byte(`{"original":true}`)
+	w.Copies[0].Digest = executionInputDigest(document)
+	resource := &pb.Resource{Id: string(copy.JobID), SessionId: string(w.SessionID), Revision: copy.Revision, DocumentJson: document}
+	credential := Credential{ServerID: w.ServerID, DeviceID: w.DeviceID, MachineID: w.MachineID}
+	for _, mismatch := range []string{"none", "server", "device", "machine", "session", "instance", "revision", "digest", "extra", "cursor"} {
+		t.Run(mismatch, func(t *testing.T) {
+			value := w
+			value.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
+			switch mismatch {
+			case "server":
+				value.ServerID = domain.NewID()
+			case "device":
+				value.DeviceID = domain.NewID()
+			case "machine":
+				value.MachineID = domain.NewID()
+			case "session":
+				value.SessionID = domain.NewID()
+			case "instance":
+				value.Copies[0].InstanceID = domain.NewID()
+			case "revision":
+				value.Copies[0].Revision++
+			case "digest":
+				value.Copies[0].Digest = strings.Repeat("f", 64)
+			}
+			raw, _ := json.Marshal(value)
+			response := &pb.ListSessionDeletionWorkResponse{WorkJson: [][]byte{raw}}
+			if mismatch == "extra" {
+				response.WorkJson = append(response.WorkJson, raw)
+			}
+			if mismatch == "cursor" {
+				response.NextSessionId = string(domain.NewID())
+			}
+			c := &retiringAssignmentClient{response: response}
+			if got := retiringAssignment(context.Background(), config, c, credential, copy.InstanceID, resource); got != (mismatch == "none") {
+				t.Fatal("changed retirement operands authorized controller progress", mismatch, got)
+			}
+			if c.request == nil || c.request.OriginalSessionId != resource.SessionId || c.request.OriginalJobId != resource.Id || c.request.AfterSessionId != "" {
+				t.Fatal("inspection lost original request scope")
+			}
+		})
 	}
 }

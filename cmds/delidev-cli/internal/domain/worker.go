@@ -93,6 +93,7 @@ const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configurat
 type WorkerCapability string
 
 const (
+	CodexReadOnlySidechatWorkerV1  WorkerCapability = "codex-read-only-sidechat-v1"
 	RepositoryInspectionMetadataV1 WorkerCapability = "repository-inspection-metadata-v1"
 	SessionTerminalsV1             WorkerCapability = "session-terminals-v1"
 	AutomaticTitlesCodexV1         WorkerCapability = "automatic-titles-codex-v1"

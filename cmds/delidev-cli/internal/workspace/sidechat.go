@@ -20,6 +20,22 @@ import (
 
 const CodexSidechatReferenceV1 ForkProfile = "codex-sidechat-reference-v1"
 
+// Recheck the original reference after joined native Fork without running any
+// workspace preparation or repairing ownership. Ordinary execution performs
+// the same check at its own claim and continuation boundaries.
+func (m *Manager) VerifySidechatReference(ctx context.Context, input PrepareRequest, manifest Manifest) error {
+	if input.SidechatSource == nil || manifest.Reference == nil || m.initialize() != nil {
+		return ResultUncertain()
+	}
+	lock, err := m.lockWorkspaceObservations(ctx, input.SessionID)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	_, err = m.verifyWorkspaceIdentity(ctx, input, manifest, continuationIdentity)
+	return err
+}
+
 // Retain the complete original prepared identity rather than reinterpreting an
 // owned Worktree as Local. Nested references are outside this closed profile.
 type SidechatSource struct {

@@ -57,6 +57,7 @@ const (
 	nativeLocalReviewWorkspaces
 	nativeForkWorkspaces
 	nativeAccountSwitchWorkspaces
+	nativeSidechatWorkspaces
 )
 
 func TestManualNativeCLILocalRepositories(t *testing.T) {
@@ -73,6 +74,10 @@ func TestManualNativeCLIScheduledWorkspaces(t *testing.T) {
 
 func TestManualNativeCLICronWorkspace(t *testing.T) {
 	testManualNativeCLI(t, false, nativeCronWorkspace)
+}
+
+func TestManualNativeCLISidechat(t *testing.T) {
+	testManualNativeCLI(t, false, nativeSidechatWorkspaces)
 }
 
 func TestManualNativeCLISessionFork(t *testing.T) {
@@ -113,7 +118,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 	if profile == nativeLocalReviewWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}}
 	}
-	if profile == nativeForkWorkspaces {
+	if profile == nativeForkWorkspaces || profile == nativeSidechatWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.GeneralChat, 0}, {domain.ExecuteMode, domain.Worktree, 2}}
 	}
 	if profile == nativeAccountSwitchWorkspaces {
@@ -128,7 +133,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				// Two independently owned native startups and account validations may
 				// run on a busy host. Keep product probe/operation bounds unchanged.
 				deadline = 3 * time.Minute
-			} else if profile == nativeForkWorkspaces {
+			} else if profile == nativeForkWorkspaces || profile == nativeSidechatWorkspaces {
 				deadline = 8 * time.Minute
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), deadline)
@@ -282,7 +287,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 					}
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
-				if (steerScenario || profile == nativeCronWorkspace) && call == 1 {
+				if (steerScenario || profile == nativeCronWorkspace) && call == 1 || profile == nativeSidechatWorkspaces && call == 4 {
 					fmt.Fprintf(w, "data: %s\n\n", `{"type":"response.created","response":{"id":"resp_public_fixture_1","status":"in_progress"}}`)
 					w.(http.Flusher).Flush()
 					close(firstRequestStarted)
@@ -336,7 +341,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}
 			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: candidates, Options: options})["resource"].(map[string]any)
 			create := []string{"session", "create", "--request-id", string(domain.NewID())}
-			if profile != nativeForkWorkspaces {
+			if profile != nativeForkWorkspaces && profile != nativeSidechatWorkspaces {
 				create = append(create, "--wait")
 			}
 			// Fork acceptance needs a completed source, rather than the ordinary
@@ -694,8 +699,12 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			if calls.Load() != expectedCalls || validations.Load() != 1 {
 				t.Fatal("public receipt replay repeated validation or inference")
 			}
-			if profile == nativeForkWorkspaces {
-				verifyNativeCLIFork(t, ctx, run, id, state, value, workerRoot, &calls)
+			if profile == nativeForkWorkspaces || profile == nativeSidechatWorkspaces {
+				if profile == nativeSidechatWorkspaces {
+					verifyNativeCLISidechat(t, ctx, run, id, state, value, workerRoot, &calls, firstRequestStarted, releaseFirstRequest)
+				} else {
+					verifyNativeCLIFork(t, ctx, run, id, state, value, workerRoot, &calls)
+				}
 				return
 			}
 			initialBytes, _ := json.Marshal(state.InitialExecution)

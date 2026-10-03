@@ -1,5 +1,6 @@
 # DeliDev src ownership
-- New schedule creation presentation is owned by `src/schedule-creation.tsx` and `src/schedule-creation.css` (relative to `apps/delidev`) and follows the issue #1152 section in `docs/apps-delidev-desktop-contract.md`: creation-only Task/Execution/Repeat layout with bounded responsive columns and an unobscured main-content action row, mounted collapsed overrides, native radios, explicit catalog states and once-only name focus. Frequency/time/weekday/disclosure stay in connection memory, emit only canonical existing Cron fields, preserve raw Custom transitions and invalid Time drafts, and never replace server calendar authority. Preserve strict schema-v1 writes, limits, fresh Local proof, exact uncertain retry and all existing edit/list/detail/history/sidebar behavior. Keep native viewport/zoom evidence separate from component checks.
+
+- Sidechat actions require negotiated server/native Worker support and a completed original parent. Retain creation/findings requests across navigation and uncertainty, offer complete own assistant replies only and transfer full selected content under exact revisions. Explain dependent permanent cleanup and keep workspace/terminal mutation outside Sidechat authority; follow `docs/cmds-delidev-sidechat-contract.md`.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 

@@ -220,6 +220,9 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	cancelAction := context.AfterFunc(ctx, cancel)
 	defer cancelAction()
 	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: i.Assignment.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
+	if i.Assignment.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
+		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
+	}
 	var proxy *nativeproxy.Proxy
 	if managed != nil {
 		nativeConfig.API = nil

@@ -65,6 +65,27 @@ references/pending state until that join; unavailable/offline resources remain
 visible rather than being declared deleted. Deleting the child alone preserves
 every parent file, native history and independent ordinary Fork.
 
+Parent and child deletion plans retain complete immutable descendant obligations
+outside rollbackable SQLite. The original synchronized parent intent precedes
+child pause/cancellation and is the only source for reconstructing a lost child
+journal. Native copies, database removal and managed backup removal must all
+finish before the dependency index is released. Ordinary independent Forks do
+not enter that index. Workspace Cleanup/Recover freezes its selected Sidechats
+and actor in the accepted storage assignment; its separate synchronized intent
+retires only that set before native parent storage work. Canceling after that
+intent cannot undo already accepted permanent child retirement. Canceling before
+it exists preserves children. Preview and snapshot creation remain read-only
+with respect to child lifetimes.
+
+The Worker deletion-work read also accepts an exact original session/job pair
+without pagination. It returns only that device's immutable retiring ownership
+envelope after current instance authorization. This inspection can let the live
+controller release a fenced assignment when native publication races deletion;
+it is not execution completion or permission to bypass descendant/terminal
+cleanup gates. The Worker independently compares original session, server,
+pairing device, machine, instance, claimed revision and assignment digest before
+continuing its controller. Missing or changed evidence retains recovery.
+
 ## Security
 
 Codex Sidechat overrides native execution to read-only, network-disabled tool

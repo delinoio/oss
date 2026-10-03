@@ -2495,6 +2495,14 @@
         "SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1": 1,
         "SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1": 2
       }
+    },
+    "ListSessionDeletionWorkRequest": {
+      "kind": "message",
+      "members": {
+        "machine_id": 1,
+        "instance_id": 2,
+        "after_session_id": 3
+      }
     }
   },
   "reservations": [
@@ -4893,6 +4901,76 @@
       "member": "FORK_PURPOSE_SIDECHAT",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SendSidechatFindingsRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SendSidechatFindingsRequest",
+      "member": "parent_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SendSidechatFindingsRequest",
+      "member": "expected_parent_revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SendSidechatFindingsRequest",
+      "member": "messages",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SidechatFindingSelection",
+      "member": "message_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SidechatFindingSelection",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SendSidechatFindingsResponse",
+      "member": "change",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListSessionDeletionWorkRequest",
+      "member": "original_session_id",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListSessionDeletionWorkRequest",
+      "member": "original_job_id",
+      "number": 5
     }
   ]
 }

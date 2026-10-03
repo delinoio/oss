@@ -25,6 +25,7 @@ type SystemCapability int32
 
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                    SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1             SystemCapability = 27
 	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1   SystemCapability = 15
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1    SystemCapability = 24
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1 SystemCapability = 25
@@ -62,6 +63,7 @@ const (
 var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
+		27: "SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1",
 		15: "SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
 		24: "SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1",
 		25: "SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1",
@@ -91,6 +93,7 @@ var (
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                      0,
+		"SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1":               27,
 		"SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":     15,
 		"SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1":      24,
 		"SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1":   25,
@@ -2881,10 +2884,11 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xb4\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xde\n" +
 	"\n" +
 	"\x10SystemCapability\x12!\n" +
-	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x122\n" +
+	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12(\n" +
+	"$SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1\x10\x1b\x122\n" +
 	".SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1\x10\x0f\x121\n" +
 	"-SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1\x10\x18\x124\n" +
 	"0SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1\x10\x19\x123\n" +
