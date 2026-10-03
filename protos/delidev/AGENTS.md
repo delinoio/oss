@@ -177,3 +177,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Issue #1210 activates independent System 26 and Worker 15 only for the pinned Unix plain-text General Chat OpenCode Fork profile. Preserve full original native fork/relocation/history/cleanup proof, closed mapped child identities and explicit inherited canonical provenance without input/accounting authority. Codex Fork support grants no OpenCode authority; native preparation cannot publish effective model/agent selection.
 
 - OAuth AccountService schemas retain capability 5, entry field 9 and the original closed enum allocations. Completion code is write-only bytes; responses never contain keys, verifiers or URLs outside live Start. Reservations do not grant product authority; regenerate bindings from reconciled sources and preserve owner/client-only execution under the OAuth contract.
+
+- Each OAuth RPC has its own standard-named response schema. The ten reserved `ACCOUNT_OAUTH_STATE_*` names retain their original allocation spelling with value-local Buf acronym-prefix comments; do not broaden lint exceptions or rename their contract to accommodate acronym splitting.

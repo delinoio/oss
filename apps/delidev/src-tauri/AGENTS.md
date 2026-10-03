@@ -1,5 +1,7 @@
 # DeliDev src-tauri ownership
 
+- `src/oauth.rs` and `src/oauth_host.rs` implement only the closed OpenRouter browser/callback infrastructure under `docs/cmds-delidev-account-oauth-contract.md`. Capture/recheck trusted-window native epochs, selected server and saved-window instance; bind both loopback families to one ephemeral port and retain one generation per opening. Bound parsing and single-use code transfer, return constant no-store/no-referrer callback pages, clear transient bytes and join listeners/openers on disposal. Scoped tombstones block a queued Begin after unknown-response disposal; late predecessor cleanup cannot revoke replacements. Rust never exchanges a code or stores a provider credential, broadcasts callbacks or exposes a generic opener. Settings departure removes local authority without implicit business cancellation.
+
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Local connection and registration permission errors must explain both device authorization and owner-only private state; do not equate a permission denial with an owner being unable to read files or a revoked registration. Give macOS/Linux guidance of 0700 for private directories and 0600 for private files, preserve existing data, and never automatically change permissions or offer replacement without verified revoked-client evidence.

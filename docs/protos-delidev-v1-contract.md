@@ -21,8 +21,10 @@ FAILED 7, INTERRUPTED 8 and RECOVERY_REQUIRED 9. Each new-enum member uses expli
 declaration provenance in the allocation ledger without entering the active
 baseline. Establish these reservations and migration 29 on main before dependent
 implementation, except the owner-approved single integrated PR. The reconciled
-AccountService schema defines owner/client Start/Complete/Cancel/Status and
-generates both languages from their source. Reservations alone grant no exchange
+AccountService schema defines owner/client Start/Complete/Cancel/Status, each
+with its own standard-named response, and generates both languages from their
+source. Value-local Buf acronym-prefix comments preserve the reserved OAuth
+enum spelling; they grant no broader lint exception. Reservations alone grant no exchange
 or capability authority. Complete product support remains required before
 advertisement. Older servers satisfying the four existing gates
 retain manual connection without an OAuth badge.

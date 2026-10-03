@@ -237,8 +237,8 @@ func oauthProjection(a domain.AccountOAuthAttempt) *pb.AccountOAuthAttempt {
 	}
 	return r
 }
-func (s *Service) oauthResponse(ctx context.Context, a domain.AccountOAuthAttempt, request string, replayed bool) (*pb.AccountOAuthResponse, error) {
-	r := &pb.AccountOAuthResponse{Attempt: oauthProjection(a), RequestId: request, Replayed: replayed}
+func (s *Service) oauthResponse(ctx context.Context, a domain.AccountOAuthAttempt, request string, replayed bool) (*pb.CompleteAccountOAuthResponse, error) {
+	r := &pb.CompleteAccountOAuthResponse{Attempt: oauthProjection(a), RequestId: request, Replayed: replayed}
 	if a.State == domain.OAuthConnected || a.StagingClaimed {
 		row, err := s.accountRecord(ctx, a.AccountID)
 		if err == nil {
@@ -249,7 +249,7 @@ func (s *Service) oauthResponse(ctx context.Context, a domain.AccountOAuthAttemp
 	}
 	return r, nil
 }
-func (s *Service) GetAccountOAuthStatus(ctx context.Context, req *connect.Request[pb.GetAccountOAuthStatusRequest]) (*connect.Response[pb.AccountOAuthResponse], error) {
+func (s *Service) GetAccountOAuthStatus(ctx context.Context, req *connect.Request[pb.GetAccountOAuthStatusRequest]) (*connect.Response[pb.GetAccountOAuthStatusResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	if err := domain.ID(req.Msg.AttemptId).Validate(); err != nil {
 		return nil, rpc.Error(err, c)
@@ -276,7 +276,7 @@ func (s *Service) GetAccountOAuthStatus(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	r := connect.NewResponse(value)
+	r := connect.NewResponse(&pb.GetAccountOAuthStatusResponse{Attempt: value.Attempt, Account: value.Account, RequestId: value.RequestId, Replayed: value.Replayed})
 	rpc.CopyCorrelation(r, req.Header())
 	return r, nil
 }
@@ -420,7 +420,7 @@ func (s *Service) oauthFinishLocalLocked(ctx context.Context, a domain.AccountOA
 	return s.oauthRead(ctx, a.ID)
 }
 
-func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request[pb.CompleteAccountOAuthRequest]) (*connect.Response[pb.AccountOAuthResponse], error) {
+func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request[pb.CompleteAccountOAuthRequest]) (*connect.Response[pb.CompleteAccountOAuthResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	defer clear(req.Msg.AuthorizationCode)
 	actor, err := requireOAuthActor(ctx)
@@ -460,7 +460,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	respond := func(current domain.AccountOAuthAttempt, replay bool) (*connect.Response[pb.AccountOAuthResponse], error) {
+	respond := func(current domain.AccountOAuthAttempt, replay bool) (*connect.Response[pb.CompleteAccountOAuthResponse], error) {
 		value, err := s.oauthResponse(ctx, current, m.RequestId, replay)
 		if err != nil {
 			return nil, rpc.Error(err, c)
@@ -473,6 +473,19 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		var accepted oauthReceipt
 		if domain.Decode(result.Data, &accepted) != nil || accepted.AttemptID != a.ID || a.CompletionRequestID != domain.ID(m.RequestId) || a.CompletionRevision != m.ExpectedRevision {
 			return nil, rpc.Error(oauthProblem(), c)
+		}
+		if a.State == domain.OAuthExchanging {
+			check, active := s.accountChecks[a.AccountID][a.CompletionRequestID]
+			if a.Generation != s.oauthGeneration || !active || check.operation != oauthInspection {
+				// A committed dispatch claim without its original live owner is
+				// uncertain even in this process. Observation cannot dispatch it.
+				s.oauthRecoveryLocked(a, oauthProblem())
+				var err error
+				a, err = s.oauthRead(ctx, a.ID)
+				if err != nil {
+					return nil, rpc.Error(err, c)
+				}
+			}
 		}
 		if a.State == domain.OAuthConnected || a.State == domain.OAuthCanceled || a.State == domain.OAuthExchanging && a.Generation == s.oauthGeneration || !a.StagingClaimed {
 			return respond(a, true)
@@ -546,7 +559,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	defer clear(verifier)
 	exchange := s.oauthExchange
 	if exchange == nil {
-		exchange = directOAuthExchange{}
+		exchange = ownedOAuthExchange{route: s.outboundResolver()}
 	}
 	unlock()
 	locked = false
@@ -610,7 +623,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	return respond(a, false)
 }
 
-func (s *Service) CancelAccountOAuth(ctx context.Context, req *connect.Request[pb.CancelAccountOAuthRequest]) (*connect.Response[pb.AccountOAuthResponse], error) {
+func (s *Service) CancelAccountOAuth(ctx context.Context, req *connect.Request[pb.CancelAccountOAuthRequest]) (*connect.Response[pb.CancelAccountOAuthResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	actor, err := requireOAuthActor(ctx)
 	if err == nil {
@@ -695,7 +708,7 @@ func (s *Service) CancelAccountOAuth(ctx context.Context, req *connect.Request[p
 		return nil, rpc.Error(err, c)
 	}
 	s.logger.InfoContext(ctx, "account_oauth_canceled", "attempt_id", a.ID, "state", a.State, "replayed", result.Replayed, "correlation_id", c)
-	r := connect.NewResponse(value)
+	r := connect.NewResponse(&pb.CancelAccountOAuthResponse{Attempt: value.Attempt, Account: value.Account, RequestId: value.RequestId, Replayed: value.Replayed})
 	rpc.CopyCorrelation(r, req.Header())
 	return r, nil
 }

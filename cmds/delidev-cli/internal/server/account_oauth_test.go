@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
@@ -75,7 +76,7 @@ func (f *oauthFixture) start(t *testing.T) *pb.StartAccountOAuthResponse {
 func oauthMutation(a *pb.AccountOAuthAttempt, request domain.ID) *pb.Mutation {
 	return &pb.Mutation{Id: a.Id, ExpectedRevision: a.Revision, RequestId: string(request)}
 }
-func (f *oauthFixture) complete(a *pb.AccountOAuthAttempt, id domain.ID, code string) (*connect.Response[pb.AccountOAuthResponse], error) {
+func (f *oauthFixture) complete(a *pb.AccountOAuthAttempt, id domain.ID, code string) (*connect.Response[pb.CompleteAccountOAuthResponse], error) {
 	return f.s.CompleteAccountOAuth(f.ctx, connect.NewRequest(&pb.CompleteAccountOAuthRequest{Mutation: oauthMutation(a, id), AuthorizationCode: []byte(code)}))
 }
 func (f *oauthFixture) restart(t *testing.T) {
@@ -332,4 +333,44 @@ func TestAccountOAuthRestartInterruptsAwaitingAndWorkerCannotStart(t *testing.T)
 	wantAccountCode(t, err, domain.PermissionDenied)
 	_, err = f.s.GetAccountOAuthStatus(worker, connect.NewRequest(&pb.GetAccountOAuthStatusRequest{AttemptId: a.Attempt.Id}))
 	wantAccountCode(t, err, domain.PermissionDenied)
+}
+
+func TestAccountOAuthUnownedDurableDispatchCannotRemainLiveOrResend(t *testing.T) {
+	f := newOAuthFixture(t)
+	start := f.start(t)
+	private, err := f.s.oauthRead(f.ctx, domain.ID(start.Attempt.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := domain.NewID()
+	actor := domain.Principal{Type: domain.OwnerDevice}
+	commitment := f.s.oauthCommitment("code", original, []byte("unknown-dispatch-code"))
+	_, err = f.s.Store.Mutate(f.ctx, original, "oauth.complete", oauthCompleteInput{private.ID, private.Revision, actor, commitment}, func(tx *store.Tx) (any, error) {
+		current := private
+		current.Revision++
+		current.State = domain.OAuthExchanging
+		current.CompletionRequestID = original
+		current.CompletionRevision = private.Revision
+		current.CodeCommitment = commitment
+		current.UpdatedAt = time.Now().UTC().Truncate(time.Millisecond)
+		return oauthReceipt{private.ID}, tx.PutAccountOAuth(current, private.Revision)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.oauthExchange = oauthExchangeFunc(func(context.Context, []byte, []byte) ([]byte, error) {
+		t.Fatal("unowned dispatch was retried")
+		return nil, nil
+	})
+	r, err := f.complete(start.Attempt, original, "")
+	if err != nil || r.Msg.Attempt.State != pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED || !r.Msg.Replayed {
+		t.Fatalf("unowned dispatch outcome: %v", err)
+	}
+	if f.s.oauthLive[private.ID] != nil {
+		t.Fatal("unowned verifier retained")
+	}
+	puts, _, _ := f.vault.counts()
+	if puts != 0 {
+		t.Fatal("unowned dispatch staged a key")
+	}
 }

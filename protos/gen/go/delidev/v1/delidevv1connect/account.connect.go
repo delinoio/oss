@@ -66,9 +66,9 @@ type AccountServiceClient interface {
 	GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error)
 	ValidateAccount(context.Context, *connect.Request[v1.ValidateAccountRequest]) (*connect.Response[v1.ValidateAccountResponse], error)
 	StartAccountOAuth(context.Context, *connect.Request[v1.StartAccountOAuthRequest]) (*connect.Response[v1.StartAccountOAuthResponse], error)
-	CompleteAccountOAuth(context.Context, *connect.Request[v1.CompleteAccountOAuthRequest]) (*connect.Response[v1.AccountOAuthResponse], error)
-	CancelAccountOAuth(context.Context, *connect.Request[v1.CancelAccountOAuthRequest]) (*connect.Response[v1.AccountOAuthResponse], error)
-	GetAccountOAuthStatus(context.Context, *connect.Request[v1.GetAccountOAuthStatusRequest]) (*connect.Response[v1.AccountOAuthResponse], error)
+	CompleteAccountOAuth(context.Context, *connect.Request[v1.CompleteAccountOAuthRequest]) (*connect.Response[v1.CompleteAccountOAuthResponse], error)
+	CancelAccountOAuth(context.Context, *connect.Request[v1.CancelAccountOAuthRequest]) (*connect.Response[v1.CancelAccountOAuthResponse], error)
+	GetAccountOAuthStatus(context.Context, *connect.Request[v1.GetAccountOAuthStatusRequest]) (*connect.Response[v1.GetAccountOAuthStatusResponse], error)
 }
 
 // NewAccountServiceClient constructs a client for the delidev.v1.AccountService service. By
@@ -112,19 +112,19 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(accountServiceMethods.ByName("StartAccountOAuth")),
 			connect.WithClientOptions(opts...),
 		),
-		completeAccountOAuth: connect.NewClient[v1.CompleteAccountOAuthRequest, v1.AccountOAuthResponse](
+		completeAccountOAuth: connect.NewClient[v1.CompleteAccountOAuthRequest, v1.CompleteAccountOAuthResponse](
 			httpClient,
 			baseURL+AccountServiceCompleteAccountOAuthProcedure,
 			connect.WithSchema(accountServiceMethods.ByName("CompleteAccountOAuth")),
 			connect.WithClientOptions(opts...),
 		),
-		cancelAccountOAuth: connect.NewClient[v1.CancelAccountOAuthRequest, v1.AccountOAuthResponse](
+		cancelAccountOAuth: connect.NewClient[v1.CancelAccountOAuthRequest, v1.CancelAccountOAuthResponse](
 			httpClient,
 			baseURL+AccountServiceCancelAccountOAuthProcedure,
 			connect.WithSchema(accountServiceMethods.ByName("CancelAccountOAuth")),
 			connect.WithClientOptions(opts...),
 		),
-		getAccountOAuthStatus: connect.NewClient[v1.GetAccountOAuthStatusRequest, v1.AccountOAuthResponse](
+		getAccountOAuthStatus: connect.NewClient[v1.GetAccountOAuthStatusRequest, v1.GetAccountOAuthStatusResponse](
 			httpClient,
 			baseURL+AccountServiceGetAccountOAuthStatusProcedure,
 			connect.WithSchema(accountServiceMethods.ByName("GetAccountOAuthStatus")),
@@ -140,9 +140,9 @@ type accountServiceClient struct {
 	getAccountStatus      *connect.Client[v1.GetAccountStatusRequest, v1.GetAccountStatusResponse]
 	validateAccount       *connect.Client[v1.ValidateAccountRequest, v1.ValidateAccountResponse]
 	startAccountOAuth     *connect.Client[v1.StartAccountOAuthRequest, v1.StartAccountOAuthResponse]
-	completeAccountOAuth  *connect.Client[v1.CompleteAccountOAuthRequest, v1.AccountOAuthResponse]
-	cancelAccountOAuth    *connect.Client[v1.CancelAccountOAuthRequest, v1.AccountOAuthResponse]
-	getAccountOAuthStatus *connect.Client[v1.GetAccountOAuthStatusRequest, v1.AccountOAuthResponse]
+	completeAccountOAuth  *connect.Client[v1.CompleteAccountOAuthRequest, v1.CompleteAccountOAuthResponse]
+	cancelAccountOAuth    *connect.Client[v1.CancelAccountOAuthRequest, v1.CancelAccountOAuthResponse]
+	getAccountOAuthStatus *connect.Client[v1.GetAccountOAuthStatusRequest, v1.GetAccountOAuthStatusResponse]
 }
 
 // ConnectAccount calls delidev.v1.AccountService.ConnectAccount.
@@ -171,17 +171,17 @@ func (c *accountServiceClient) StartAccountOAuth(ctx context.Context, req *conne
 }
 
 // CompleteAccountOAuth calls delidev.v1.AccountService.CompleteAccountOAuth.
-func (c *accountServiceClient) CompleteAccountOAuth(ctx context.Context, req *connect.Request[v1.CompleteAccountOAuthRequest]) (*connect.Response[v1.AccountOAuthResponse], error) {
+func (c *accountServiceClient) CompleteAccountOAuth(ctx context.Context, req *connect.Request[v1.CompleteAccountOAuthRequest]) (*connect.Response[v1.CompleteAccountOAuthResponse], error) {
 	return c.completeAccountOAuth.CallUnary(ctx, req)
 }
 
 // CancelAccountOAuth calls delidev.v1.AccountService.CancelAccountOAuth.
-func (c *accountServiceClient) CancelAccountOAuth(ctx context.Context, req *connect.Request[v1.CancelAccountOAuthRequest]) (*connect.Response[v1.AccountOAuthResponse], error) {
+func (c *accountServiceClient) CancelAccountOAuth(ctx context.Context, req *connect.Request[v1.CancelAccountOAuthRequest]) (*connect.Response[v1.CancelAccountOAuthResponse], error) {
 	return c.cancelAccountOAuth.CallUnary(ctx, req)
 }
 
 // GetAccountOAuthStatus calls delidev.v1.AccountService.GetAccountOAuthStatus.
-func (c *accountServiceClient) GetAccountOAuthStatus(ctx context.Context, req *connect.Request[v1.GetAccountOAuthStatusRequest]) (*connect.Response[v1.AccountOAuthResponse], error) {
+func (c *accountServiceClient) GetAccountOAuthStatus(ctx context.Context, req *connect.Request[v1.GetAccountOAuthStatusRequest]) (*connect.Response[v1.GetAccountOAuthStatusResponse], error) {
 	return c.getAccountOAuthStatus.CallUnary(ctx, req)
 }
 
@@ -192,9 +192,9 @@ type AccountServiceHandler interface {
 	GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error)
 	ValidateAccount(context.Context, *connect.Request[v1.ValidateAccountRequest]) (*connect.Response[v1.ValidateAccountResponse], error)
 	StartAccountOAuth(context.Context, *connect.Request[v1.StartAccountOAuthRequest]) (*connect.Response[v1.StartAccountOAuthResponse], error)
-	CompleteAccountOAuth(context.Context, *connect.Request[v1.CompleteAccountOAuthRequest]) (*connect.Response[v1.AccountOAuthResponse], error)
-	CancelAccountOAuth(context.Context, *connect.Request[v1.CancelAccountOAuthRequest]) (*connect.Response[v1.AccountOAuthResponse], error)
-	GetAccountOAuthStatus(context.Context, *connect.Request[v1.GetAccountOAuthStatusRequest]) (*connect.Response[v1.AccountOAuthResponse], error)
+	CompleteAccountOAuth(context.Context, *connect.Request[v1.CompleteAccountOAuthRequest]) (*connect.Response[v1.CompleteAccountOAuthResponse], error)
+	CancelAccountOAuth(context.Context, *connect.Request[v1.CancelAccountOAuthRequest]) (*connect.Response[v1.CancelAccountOAuthResponse], error)
+	GetAccountOAuthStatus(context.Context, *connect.Request[v1.GetAccountOAuthStatusRequest]) (*connect.Response[v1.GetAccountOAuthStatusResponse], error)
 }
 
 // NewAccountServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -299,14 +299,14 @@ func (UnimplementedAccountServiceHandler) StartAccountOAuth(context.Context, *co
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.StartAccountOAuth is not implemented"))
 }
 
-func (UnimplementedAccountServiceHandler) CompleteAccountOAuth(context.Context, *connect.Request[v1.CompleteAccountOAuthRequest]) (*connect.Response[v1.AccountOAuthResponse], error) {
+func (UnimplementedAccountServiceHandler) CompleteAccountOAuth(context.Context, *connect.Request[v1.CompleteAccountOAuthRequest]) (*connect.Response[v1.CompleteAccountOAuthResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.CompleteAccountOAuth is not implemented"))
 }
 
-func (UnimplementedAccountServiceHandler) CancelAccountOAuth(context.Context, *connect.Request[v1.CancelAccountOAuthRequest]) (*connect.Response[v1.AccountOAuthResponse], error) {
+func (UnimplementedAccountServiceHandler) CancelAccountOAuth(context.Context, *connect.Request[v1.CancelAccountOAuthRequest]) (*connect.Response[v1.CancelAccountOAuthResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.CancelAccountOAuth is not implemented"))
 }
 
-func (UnimplementedAccountServiceHandler) GetAccountOAuthStatus(context.Context, *connect.Request[v1.GetAccountOAuthStatusRequest]) (*connect.Response[v1.AccountOAuthResponse], error) {
+func (UnimplementedAccountServiceHandler) GetAccountOAuthStatus(context.Context, *connect.Request[v1.GetAccountOAuthStatusRequest]) (*connect.Response[v1.GetAccountOAuthStatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.GetAccountOAuthStatus is not implemented"))
 }
