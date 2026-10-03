@@ -436,6 +436,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadGateway, code)
 		return
 	}
+	if operation == ResponseCreate || operation == ResponseCompact {
+		if err = observeResponseUsage(ctx, lease, domain.ID(correlation), object); err != nil {
+			code = safeCode(err)
+			fail(http.StatusBadGateway, code)
+			return
+		}
+	}
 	diagnosticResponse(object, &observations, guard)
 	if ctx.Err() != nil {
 		code = domain.Canceled

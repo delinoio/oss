@@ -85,7 +85,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if c := input.Continuation; c != nil {
-		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
+		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
+		if c.Compaction != nil {
+			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
+		}
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, previous, preparation, manifest)
 	} else {
 		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
 	}
@@ -125,6 +129,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	nativeHome := filepath.Join(home, "codex")
 	var checkpoint CodexExecutionCheckpoint
+	var compacted *codex.CompactedCheckpoint
 	if c := input.Continuation; c != nil {
 		rawDigest, err := hex.DecodeString(c.PromptDigest)
 		if err != nil || len(rawDigest) != sha256.Size {
@@ -155,6 +160,16 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
 				return nil, err
 			}
+		}
+		if c.Compaction != nil {
+			retained, err := readCodexSessionCompactionCheckpoint(ctx, manager.Root, config.execution.Credential, input, *c.Compaction, checkpoint)
+			if err != nil {
+				return nil, err
+			}
+			if err := codex.VerifyCompactionRollout(ctx, nativeHome, retained); err != nil {
+				return nil, err
+			}
+			compacted = &retained
 		}
 		logger.InfoContext(ctx, "native_execution_predecessor_verified", "previous_execution_id", c.Previous.ExecutionID)
 	}
@@ -381,7 +396,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if c.Intent == domain.ContinueExplicitly {
 				intent = codex.ResumeAfterTerminal
 			}
-			_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
+			if compacted != nil {
+				_, err = client.VerifyCompactedContinuation(ctx, c.HistoryRequestID, *compacted)
+			} else {
+				_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
+			}
 		}
 	} else if f := input.Fork; f != nil {
 		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)

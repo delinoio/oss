@@ -259,13 +259,14 @@ type UsageAnalytics struct {
 }
 
 type UsageSummary struct {
-	NativeAccounting                  []NativeAccountingSummary `json:"native_accounting,omitempty"`
-	Estimates                         EstimateTotals            `json:"estimates"`
-	Pricing                           []PricingUsage            `json:"pricing"`
-	Totals                            UsageTotals               `json:"totals"`
-	Groups                            []UsageGroup              `json:"groups"`
-	Analytics                         *UsageAnalytics           `json:"analytics,omitempty"`
-	AcceptedExecutionsWithoutResponse uint32                    `json:"accepted_executions_without_response"`
+	NativeAccounting                   []NativeAccountingSummary `json:"native_accounting,omitempty"`
+	Estimates                          EstimateTotals            `json:"estimates"`
+	Pricing                            []PricingUsage            `json:"pricing"`
+	Totals                             UsageTotals               `json:"totals"`
+	Groups                             []UsageGroup              `json:"groups"`
+	Analytics                          *UsageAnalytics           `json:"analytics,omitempty"`
+	AcceptedCompactionsWithoutResponse uint32                    `json:"accepted_compactions_without_response"`
+	AcceptedExecutionsWithoutResponse  uint32                    `json:"accepted_executions_without_response"`
 }
 
 func SortUsageAnalyticsModels(models []UsageAnalyticsModel) {

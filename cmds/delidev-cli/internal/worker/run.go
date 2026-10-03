@@ -221,6 +221,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
 		if err == nil {
+			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
 			subagentExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
 			openCodeChildExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1)
@@ -257,6 +258,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			titleCapabilityExpected = verifiedTitleProfile
 			profile := executable
+			if compactionExpected && executable != "" {
+				profile += "\x00codex-session-compaction-v1"
+			}
 			if subagentExpected {
 				profile += "\x00codex-subagent-configuration-v1"
 			}
@@ -288,6 +292,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if compactionExpected && executable != "" {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
+			}
 			if openCodeChildExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1)
 			}

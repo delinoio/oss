@@ -225,6 +225,11 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 				return started, err
 			}
 		}
+		if terminal && kind == "response.completed" && observedResponse != nil && terminalFailure == nil {
+			if err := observeResponseUsage(ctx, lease, domain.ID(correlation), observedResponse); err != nil {
+				return started, err
+			}
+		}
 		if observedResponse != nil {
 			diagnosticResponse(observedResponse, diagnostic, guard)
 		} else if operation == ChatCompletion {

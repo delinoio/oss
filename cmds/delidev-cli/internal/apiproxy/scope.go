@@ -35,22 +35,23 @@ const (
 // Scope is an immutable server-resolved dispatch binding, never client input.
 // Credential generation and revocation belong to the execution/account owner.
 type Scope struct {
-	SubscriptionService domain.SubscriptionService
-	ExecutionID         domain.ID
-	SessionID           domain.ID
-	AccountID           domain.ID
-	ConnectionID        domain.ID
-	ProviderID          domain.ID
-	ModelID             domain.ID
-	NativeModel         string
-	ChildModel          *domain.ExecutionSubagentModel
-	Purpose             domain.UsagePurpose
-	TitlePrompt         string
-	Effort              string
-	ServiceTier         string
-	Harness             domain.Harness
-	Provider            domain.Provider
-	Operations          []Operation
+	CompactionSourceTurn domain.NativeIdentity
+	SubscriptionService  domain.SubscriptionService
+	ExecutionID          domain.ID
+	SessionID            domain.ID
+	AccountID            domain.ID
+	ConnectionID         domain.ID
+	ProviderID           domain.ID
+	ModelID              domain.ID
+	NativeModel          string
+	ChildModel           *domain.ExecutionSubagentModel
+	Purpose              domain.UsagePurpose
+	TitlePrompt          string
+	Effort               string
+	ServiceTier          string
+	Harness              domain.Harness
+	Provider             domain.Provider
+	Operations           []Operation
 }
 
 func (s Scope) Validate() error {
@@ -80,6 +81,9 @@ func (s Scope) Validate() error {
 		}
 	} else if s.Purpose != "" && s.Purpose != domain.ConversationUsage {
 		return domain.Fail(domain.Unsupported, "Unknown native usage purpose.", "Use the conversation or session-title authority profile.")
+	}
+	if s.CompactionSourceTurn != "" && (s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.CompactionSourceTurn.Validate(domain.Codex, domain.NativeTurnIdentity) != nil || s.ChildModel != nil || s.Purpose == domain.SessionTitleUsage) {
+		return domain.CompactionUncertain()
 	}
 	seen := map[Operation]bool{}
 	for _, operation := range s.Operations {
@@ -141,6 +145,10 @@ type Lease struct {
 	ObserveReference   func(context.Context, ReferenceKind, string) error
 	BeforeSubmit       func(context.Context, Operation) error
 	PublishDiagnostic  func(context.Context, domain.RequestDiagnostic) error
+	// ObserveResponseUsage receives only a completed original HTTP response
+	// after reflection guards. It is enabled exclusively for manual Codex
+	// actions whose resumed native profile has no raw-response notifications.
+	ObserveResponseUsage func(context.Context, domain.ID, domain.NativeResponseUsage) error
 	// ObserveHistory records only full-history versus account-bound use before
 	// any provider side effect. It never retains request content or identifiers.
 	ObserveHistory func(context.Context, bool) error

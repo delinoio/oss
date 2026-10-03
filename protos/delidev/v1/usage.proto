@@ -146,6 +146,9 @@ message GetUsageSummaryResponse {
   UsageAccountingProfile accounting_profile = 12;
   // Independent summaries preserve each native accounting unit kind.
   repeated NativeAccountingSummary native_accounting = 13;
+  // Accepted native context actions with no exact response retained in the range.
+  // Separate from ordinary executions; unavailable does not establish zero usage.
+  uint32 accepted_compactions_without_response = 14;
 }
 
 // User-declared token prices only. No rate or result establishes actual spend.

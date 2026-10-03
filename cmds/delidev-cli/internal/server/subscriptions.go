@@ -433,7 +433,35 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 			job, err := store.Decode[domain.Job](jr)
 			var execution domain.ExecutionJobInput
-			if err != nil || jr.Revision != input.Revision || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID || domain.Decode(job.Input, &execution) != nil || execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || execution.Configuration.Harness != domain.Codex {
+			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
+				return nil, subscriptionDenied()
+			}
+			switch job.Type {
+			case domain.ExecuteSessionJob:
+				if domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil {
+					return nil, subscriptionDenied()
+				}
+			case domain.CompactSessionJob:
+				var compact domain.SessionCompactionInput
+				if domain.Decode(job.Input, &compact) != nil || compact.Validate() != nil || compact.Version != 2 {
+					return nil, subscriptionDenied()
+				}
+				sr, session, err := sessionRecord(tx, jr.SessionID)
+				_, machine, machineErr := activeMachine(tx, input.Machine)
+				if err != nil || machineErr != nil || !machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1) || session.CompactionJobID != jr.ID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || !session.OwnsExecution(compact.Assignment) {
+					return nil, subscriptionDenied()
+				}
+				if _, err := checkedExecutionAssignment(tx, sr, session, machine, compact.Assignment); err != nil {
+					return nil, err
+				}
+				if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
+					return nil, err
+				}
+				execution = compact.Assignment
+			default:
+				return nil, subscriptionDenied()
+			}
+			if execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
 				return nil, subscriptionDenied()
 			}
 			if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {

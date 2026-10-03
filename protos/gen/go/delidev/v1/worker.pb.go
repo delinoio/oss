@@ -25,6 +25,8 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                       WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1      WorkerCapability = 5
+	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1       WorkerCapability = 13
 	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1         WorkerCapability = 1
 	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1             WorkerCapability = 2
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1    WorkerCapability = 3
@@ -42,6 +44,8 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		5:  "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
+		13: "WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1",
 		1:  "WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1",
 		2:  "WORKER_CAPABILITY_SESSION_FORWARDING_V1",
 		3:  "WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1",
@@ -56,6 +60,8 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":      5,
+		"WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1":       13,
 		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":         1,
 		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":             2,
 		"WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1":    3,
@@ -2994,9 +3000,11 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"generation\x128\n" +
 	"\x05state\x18\a \x01(\x0e2\".delidev.v1.WorkerNativeRouteStateR\x05state\"=\n" +
 	"\x1fReportWorkerNativeRouteResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xde\x04\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\xc5\x05\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x122\n" +
+	".WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1\x10\x05\x121\n" +
+	"-WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1\x10\r\x12/\n" +
 	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01\x12+\n" +
 	"'WORKER_CAPABILITY_SESSION_FORWARDING_V1\x10\x02\x124\n" +
 	"0WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1\x10\x03\x12*\n" +

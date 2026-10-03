@@ -137,7 +137,7 @@ func (r SessionCompactionResult) Validate() error {
 		}
 		seen := map[string]bool{}
 		for _, usage := range p.ResponseUsages {
-			if usage.Validate() != nil || seen[usage.ResponseDigest] {
+			if usage.Source != "" || usage.Validate() != nil || seen[usage.ResponseDigest] {
 				return CompactionUncertain()
 			}
 			seen[usage.ResponseDigest] = true

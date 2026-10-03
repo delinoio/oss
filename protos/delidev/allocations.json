@@ -4642,6 +4642,16 @@
       "declaration": "SessionContextCapability",
       "member": "SESSION_CONTEXT_CAPABILITY_OPENCODE_MANUAL_COMPACTION_V1",
       "number": 6
+    },
+    {
+      "issue": 1202,
+      "sharedIssues": [
+        1203
+      ],
+      "kind": "message",
+      "declaration": "GetUsageSummaryResponse",
+      "member": "accepted_compactions_without_response",
+      "number": 14
     }
   ]
 }

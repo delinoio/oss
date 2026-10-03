@@ -493,6 +493,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				}
 				progress.Waiting = *event.Waiting
 			} else if event.Kind == domain.ExecutionResponseUsageObserved {
+				if event.ResponseUsage.Source != "" {
+					return domain.CompactionUncertain()
+				}
 				observation := domain.ResponseUsageRecord{SessionID: sr.ID, ProjectID: sr.ProjectID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.ResponseUsage}
 				id, _, err := tx.PutResponseUsage(event.ObservationID, observation)
 				if err != nil {

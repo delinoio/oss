@@ -4,8 +4,9 @@
 
 This is the common boundary for issues #1093 (Claude), #1202 (Codex) and
 #1203 (OpenCode). Claude owns its implemented settled-boundary product profile.
-Codex and OpenCode have independent reserved profiles; a reservation never
-advertises support or enables dispatch. The integrated implementation must join
+Codex implements its independently negotiated settled-boundary product profile.
+OpenCode retains its independent reservation; a reservation never advertises
+support or enables dispatch. The integrated implementation must join
 native adapters, durable action/checkpoint ownership, authenticated product
 interfaces and replacement-process verification before activating either profile.
 The existing harness and session contracts retain their separate acceptance limits.
@@ -209,3 +210,36 @@ an empty unavailable inventory, never a fabricated measured zero. A Codex failed
 or uncertain action cannot borrow Claude's failed-command Resume checkpoint.
 This domain union alone does not advertise the reserved product capability or
 establish durable native command authority.
+
+## Codex manual product profile
+
+System capability 15 and Worker capability 5 identify the shared product boundary;
+System capability 24 and Worker capability 13 independently enable pinned Codex
+`0.151.0`. SessionContext capabilities 3/4 expose retained automatic observations
+and currently eligible manual actions. Original source success, ready dispatch,
+no pending input/interaction/child, unchanged configuration and current original
+Worker authority are required in the acceptance transaction. Context reads bind
+the exact session revision; the desktop uses one retained UUID-v7 mutation.
+
+Version-2 Codex results are a closed union with separate acknowledgment, lifecycle,
+complete history digest, live/durable item identities, repeated-action count and
+private checkpoint reference. They cannot carry Claude summary/result fields.
+Preserve original conversation outcomes and input receipts. Native send claims
+synchronize before one `thread/compact/start`; a lost response remains uncertain.
+Original process, active quota observers, proxy listener and workspace leases must
+join before checkpoint retention. Successor execution restores the original action
+journal and complete native history, then retains that inherited context in its
+own continuation checkpoint. Archive/Stop/revocation cannot convert a late report
+into successor authority. Managed ChatGPT uses its original exclusive native
+account lease; API execution retains its original server-only credential scope.
+
+The pinned resumed Codex process has no raw-response-event option. Manual API
+actions therefore collect original completed HTTP response identities/counters
+at the Go relay, separately from native cumulative/context observations. Store
+only a hashed response identity, action/account/model ownership and nullable
+integer counters. Bind the genuine source native turn separately; leave the
+action's unobserved native turn absent. This source is refused in Worker ordinary
+response publications, preventing double charging. Missing counter splits remain
+unavailable, and actual cost remains unavailable. Accepted compaction actions with
+no exact response have a separate coverage count. No unavailable observation is
+a fabricated zero, and a transport response cannot prove native compaction success.
