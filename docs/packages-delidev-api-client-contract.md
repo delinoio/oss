@@ -15,6 +15,8 @@ TypeScript ES2022 modules run in the desktop renderer. Development uses the repo
 The DeliDev desktop client connects to one explicitly selected authenticated local/remote server. Maintainers generate bindings from the canonical protobuf and validate them against the actual Go server.
 
 ## Interfaces and Contracts
+Generated `EntityKind.SUBAGENT` and `SystemCapability.SUBAGENT_OBSERVATION_V1` support [session child-observation reads](cmds-delidev-subagents-contract.md) through existing Resource/System Connect Query descriptors. Preserve exact native IDs, independent requested/observed models, partial output and nullable string counters. Native usage reports are exact JSON strings. No client mutation or native control is derived from observations.
+
 
 `NativeModelQuery` exports generated discovery/status/list/cancel descriptors
 under the [native model contract](cmds-delidev-native-models-contract.md). Keep

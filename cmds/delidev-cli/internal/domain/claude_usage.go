@@ -151,7 +151,7 @@ func claudeUsageCounts(values ...*ClaudeUsageCount) bool {
 func (u *ClaudeCacheCreationUsage) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeCacheCreationUsage
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.OneHour, value.FiveMinutes) {
+	if decodeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.OneHour, value.FiveMinutes) {
 		return invalidClaudeUsage()
 	}
 	*u = ClaudeCacheCreationUsage(value)
@@ -161,7 +161,7 @@ func (u *ClaudeCacheCreationUsage) UnmarshalJSON(raw []byte) error {
 func (u *ClaudeOutputTokenDetails) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeOutputTokenDetails
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.Thinking) {
+	if decodeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.Thinking) {
 		return invalidClaudeUsage()
 	}
 	*u = ClaudeOutputTokenDetails(value)
@@ -171,7 +171,7 @@ func (u *ClaudeOutputTokenDetails) UnmarshalJSON(raw []byte) error {
 func (u *ClaudeServerToolUsage) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeServerToolUsage
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.WebSearch, value.WebFetch) {
+	if decodeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.WebSearch, value.WebFetch) {
 		return invalidClaudeUsage()
 	}
 	*u = ClaudeServerToolUsage(value)
@@ -181,7 +181,7 @@ func (u *ClaudeServerToolUsage) UnmarshalJSON(raw []byte) error {
 func (u *ClaudeUsageIteration) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeUsageIteration
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.Input, value.Output, value.CacheWrite, value.CacheRead) {
+	if decodeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.Input, value.Output, value.CacheWrite, value.CacheRead) {
 		return invalidClaudeUsage()
 	}
 	switch value.Kind {
@@ -207,7 +207,7 @@ func (u *ClaudeUsageIteration) UnmarshalJSON(raw []byte) error {
 func (u *ClaudeProviderUsage) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeProviderUsage
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.Input, value.Output, value.CacheRead, value.CacheWrite) || len(value.Iterations) > 1024 {
+	if decodeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.Input, value.Output, value.CacheRead, value.CacheWrite) || len(value.Iterations) > 1024 {
 		return invalidClaudeUsage()
 	}
 	if (value.ServiceTier != nil && !slices.Contains([]ClaudeNativeServiceTier{ClaudeStandardTier, ClaudePriorityTier, ClaudeBatchTier}, *value.ServiceTier)) || (value.Speed != nil && !slices.Contains([]ClaudeNativeSpeed{ClaudeStandardSpeed, ClaudeFastSpeed}, *value.Speed)) || (value.InferenceGeo != nil && Text(*value.InferenceGeo, "native inference geography", 128, false) != nil) {
@@ -220,7 +220,7 @@ func (u *ClaudeProviderUsage) UnmarshalJSON(raw []byte) error {
 func (u *ClaudeFallbackCreditUsage) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeFallbackCreditUsage
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil || (value.Status.Kind != ClaudeCreditRedeemed && value.Status.Kind != ClaudeCreditNotApplied) {
+	if decodeUsageObject(raw, &value) != nil || (value.Status.Kind != ClaudeCreditRedeemed && value.Status.Kind != ClaudeCreditNotApplied) {
 		return invalidClaudeUsage()
 	}
 	*u = ClaudeFallbackCreditUsage(value)
@@ -230,7 +230,7 @@ func (u *ClaudeFallbackCreditUsage) UnmarshalJSON(raw []byte) error {
 func (s *ClaudeFallbackCreditStatus) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeFallbackCreditStatus
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil {
+	if decodeUsageObject(raw, &value) != nil {
 		return invalidClaudeUsage()
 	}
 	switch value.Kind {
@@ -259,7 +259,7 @@ func (s *ClaudeFallbackCreditStatus) UnmarshalJSON(raw []byte) error {
 func (u *ClaudeNativeModelUsage) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeNativeModelUsage
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.Input, value.Output, value.CacheRead, value.CacheWrite, value.WebSearch) || (value.ContextWindow != nil && *value.ContextWindow == "0") || (value.MaxOutput != nil && *value.MaxOutput == "0") {
+	if decodeUsageObject(raw, &value) != nil || !claudeUsageCounts(value.Input, value.Output, value.CacheRead, value.CacheWrite, value.WebSearch) || (value.ContextWindow != nil && *value.ContextWindow == "0") || (value.MaxOutput != nil && *value.MaxOutput == "0") {
 		return invalidClaudeUsage()
 	}
 	for _, label := range []*string{value.CanonicalModel, value.Provider} {
@@ -274,7 +274,7 @@ func (u *ClaudeNativeModelUsage) UnmarshalJSON(raw []byte) error {
 func (u *ClaudeResultUsage) UnmarshalJSON(raw []byte) error {
 	type wire ClaudeResultUsage
 	var value wire
-	if decodeClaudeUsageObject(raw, &value) != nil || len(value.Models) > 256 {
+	if decodeUsageObject(raw, &value) != nil || len(value.Models) > 256 {
 		return invalidClaudeUsage()
 	}
 	for model := range value.Models {
@@ -290,7 +290,9 @@ func invalidClaudeUsage() *Error {
 	return Fail(InvalidArgument, "Invalid native Claude usage observation.", "Preserve exact nullable counters and independent original usage scopes.")
 }
 
-func decodeClaudeUsageObject(raw []byte, target any) error {
+// Native and retained usage schemas share exact case-sensitive field names.
+// Decode also rejects duplicate keys at every depth before typed projection.
+func decodeUsageObject(raw []byte, target any) error {
 	var fields map[string]json.RawMessage
 	if Decode(raw, &fields) != nil || fields == nil {
 		return invalidClaudeUsage()

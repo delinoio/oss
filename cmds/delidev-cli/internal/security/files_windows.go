@@ -169,4 +169,14 @@ func tryLock(path string, create bool) (*Lock, error) {
 	}
 	return l, nil
 }
-func (l *Lock) Close() error { return l.f.Close() }
+func (l *Lock) Close() error {
+	// Windows may defer releasing a byte-range lock after handle close when a
+	// controller exits. Unlock it explicitly so a lifecycle observer does not
+	// see a transient access-denied result during a legitimate handoff.
+	unlockErr := windows.UnlockFileEx(windows.Handle(l.f.Fd()), 0, 1, 0, &l.over)
+	closeErr := l.f.Close()
+	if unlockErr != nil {
+		return unlockErr
+	}
+	return closeErr
+}

@@ -55,6 +55,7 @@ const (
 	EntityKind_ENTITY_KIND_TERMINAL        EntityKind = 31
 	EntityKind_ENTITY_KIND_NETWORK_PROFILE EntityKind = 28
 	EntityKind_ENTITY_KIND_NETWORK_ROUTE   EntityKind = 29
+	EntityKind_ENTITY_KIND_SUBAGENT        EntityKind = 30
 )
 
 // Enum value maps for EntityKind.
@@ -91,6 +92,7 @@ var (
 		31: "ENTITY_KIND_TERMINAL",
 		28: "ENTITY_KIND_NETWORK_PROFILE",
 		29: "ENTITY_KIND_NETWORK_ROUTE",
+		30: "ENTITY_KIND_SUBAGENT",
 	}
 	EntityKind_value = map[string]int32{
 		"ENTITY_KIND_UNSPECIFIED":     0,
@@ -124,6 +126,7 @@ var (
 		"ENTITY_KIND_TERMINAL":        31,
 		"ENTITY_KIND_NETWORK_PROFILE": 28,
 		"ENTITY_KIND_NETWORK_ROUTE":   29,
+		"ENTITY_KIND_SUBAGENT":        30,
 	}
 )
 
@@ -634,7 +637,7 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x10database_removed\x18\b \x01(\bR\x0fdatabaseRemoved\x12'\n" +
 	"\x0fbackups_removed\x18\t \x01(\bR\x0ebackupsRemoved\x122\n" +
 	"\x15reclaimed_bytes_known\x18\n" +
-	" \x01(\bR\x13reclaimedBytesKnown*\xac\x06\n" +
+	" \x01(\bR\x13reclaimedBytesKnown*\xc6\x06\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -668,7 +671,8 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x13ENTITY_KIND_FORWARD\x10\x1b\x12\x18\n" +
 	"\x14ENTITY_KIND_TERMINAL\x10\x1f\x12\x1f\n" +
 	"\x1bENTITY_KIND_NETWORK_PROFILE\x10\x1c\x12\x1d\n" +
-	"\x19ENTITY_KIND_NETWORK_ROUTE\x10\x1d*[\n" +
+	"\x19ENTITY_KIND_NETWORK_ROUTE\x10\x1d\x12\x18\n" +
+	"\x14ENTITY_KIND_SUBAGENT\x10\x1e*[\n" +
 	"\rUsageCoverage\x12\x1e\n" +
 	"\x1aUSAGE_COVERAGE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01*\x88\x01\n" +

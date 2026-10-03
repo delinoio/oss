@@ -13,7 +13,20 @@ type claudePublishedContent struct {
 	content *domain.ClaudeMessageContent
 }
 
+type claudeChildUsageModel struct {
+	sourceID string
+	model    string
+}
+
+type claudeChildHistorySource struct {
+	child, leaf string
+	digest      [32]byte
+}
+
 type claudeContentCommit struct {
+	childHistoryDigest *[32]byte
+	childUsageModel    *string
+	child              *domain.SubagentObservation
 	tasksNext          *domain.ClaudeTasksState
 	replyEcho          domain.ID
 	interactionArrival domain.ID
@@ -32,6 +45,11 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
+	childHistorySources        map[claudeChildHistorySource]struct{}
+	childUsageModels           map[string]claudeChildUsageModel
+	children                   map[string]domain.SubagentObservation
+	childTools                 map[string]string
+	childProofs                map[string][]claude.HistoryMessageProof
 	citationHistoryUnsupported bool
 	tasks                      *domain.ClaudeTasksState
 	denial                     *domain.ClaudeDenialCompletion
@@ -40,6 +58,7 @@ type ClaudeContentPublisher struct {
 	terminalCommandID          string
 	resultUsageNativeID        string
 	resultBoundary             *claude.NativeResult
+	pendingTerminal            *domain.ClaudeTerminalObservation
 	terminal                   *domain.ClaudeTerminalObservation
 	terminalSequence           uint64
 	completion                 *domain.ExecutionCompletion
@@ -120,6 +139,9 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	}
 	if o.Kind != claude.ContentObserved {
 		return false, nil
+	}
+	if handled, err := c.publishChildContent(ctx, o); handled {
+		return true, err
 	}
 	if c.resultUsage || !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 || len(o.Content) == 0 || len(o.Content) > 128 {
 		return true, b.block()
@@ -314,6 +336,55 @@ func (c *ClaudeContentPublisher) commitHead() {
 	if u := item.event.ClaudeMessage; u != nil && u.Mutation == domain.ClaudeBlockCitation && c.binding.publisher.config.Logger != nil {
 		c.binding.publisher.config.Logger.Info("claude_citation_observed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence, "kind", u.Citation.Kind)
 	}
+	if item.child != nil {
+		if c.children == nil {
+			c.children = map[string]domain.SubagentObservation{}
+		}
+		if c.childTools == nil {
+			c.childTools = map[string]string{}
+		}
+		child := *item.child
+		if item.childHistoryDigest != nil {
+			if c.childHistorySources == nil {
+				c.childHistorySources = map[claudeChildHistorySource]struct{}{}
+			}
+			c.childHistorySources[claudeChildHistorySource{child.NativeID, child.SourceID, *item.childHistoryDigest}] = struct{}{}
+		}
+		prior := c.children[child.NativeID]
+		// Receipt bytes describe only the current source. Retain last available
+		// observations locally only after acknowledgment, as the server does.
+		if child.Output == nil {
+			child.Output = prior.Output
+		}
+		if child.ObservedModel == nil {
+			child.ObservedModel = prior.ObservedModel
+		}
+		if child.RequestedModel == nil {
+			child.RequestedModel = prior.RequestedModel
+		}
+		if child.Usage == nil {
+			child.Usage = prior.Usage
+		}
+		c.children[item.child.NativeID] = child
+		if item.child.Source == domain.ClaudeTaskSource {
+			// Reserve the original native task event only with its acknowledged
+			// child receipt, including a lost-ack replay of that same receipt.
+			if c.binding.progressSeen == nil {
+				c.binding.progressSeen = map[string]bool{}
+			}
+			c.binding.progressSeen[item.child.SourceID] = true
+		}
+		delete(c.childUsageModels, item.child.NativeID)
+		if item.childUsageModel != nil {
+			if c.childUsageModels == nil {
+				c.childUsageModels = map[string]claudeChildUsageModel{}
+			}
+			c.childUsageModels[item.child.NativeID] = claudeChildUsageModel{sourceID: item.child.SourceID, model: *item.childUsageModel}
+		}
+		for _, tool := range item.child.Tools {
+			c.childTools[tool.NativeID] = item.child.NativeID
+		}
+	}
 	if item.tasksNext != nil {
 		c.tasks = item.tasksNext
 		if logger := c.binding.publisher.config.Logger; logger != nil {
@@ -337,6 +408,7 @@ func (c *ClaudeContentPublisher) commitHead() {
 	if v := item.event.ClaudeTerminal; v != nil {
 		copy := *v
 		c.terminal, c.terminalSequence = &copy, item.event.Sequence
+		c.pendingTerminal = nil
 		c.binding.stage = claudeTerminalPublished
 		if logger := c.binding.publisher.config.Logger; logger != nil {
 			logger.Info("claude_original_terminal_observed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence, "outcome", item.event.Outcome)

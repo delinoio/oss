@@ -34,6 +34,10 @@ the child is published only after both native history and every workspace are
 verified and native process cleanup is independently confirmed. Exact receipt
 replay observes the original job/child without repeating native side effects.
 
+Sessions with observed native subagents retain version-1 paused completion under
+the subagent contract. Their closed child inventory cannot satisfy Fork's
+independent version-2 checkpoint requirement or promote that completion.
+
 Status observation and acceptance-receipt reads require current owner/client
 authority in the same read transaction before reading any job or child document.
 Worker credentials and missing principals cannot use this client-only observation

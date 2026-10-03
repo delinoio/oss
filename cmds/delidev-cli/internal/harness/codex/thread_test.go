@@ -16,6 +16,7 @@ import (
 )
 
 type threadFixture struct {
+	subagents              []map[string]any
 	mode                   string
 	thread                 map[string]any
 	turn                   domain.ID
@@ -27,6 +28,9 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleSubagentRead(id, method, raw, write) {
+		return true
+	}
 	if f.handleContinuation(id, method, raw, write) {
 		return true
 	}

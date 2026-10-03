@@ -61,6 +61,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	action := args[0]
 	f := flags("session " + action)
 	switch action {
+	case "subagents":
+		return sessionSubagents(ctx, c, args[1:])
 	case "delete", "deletion":
 		return sessionDeletionCommand(ctx, c, o, args)
 	case "compact", "context":
