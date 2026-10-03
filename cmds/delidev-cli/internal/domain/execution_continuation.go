@@ -99,7 +99,10 @@ type ExecutionContinuation struct {
 }
 
 func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
-	if c.Compaction != nil && (input.Configuration.Harness != ClaudeCode || c.Compaction.Validate() != nil || c.Compaction.ExecutionID != c.Previous.ExecutionID || c.Compaction.RequiresResume && c.Intent != ContinueExplicitly) {
+	if c.Compaction != nil && input.Configuration.Harness == Codex && (c.Compaction.RequiresResume || len(c.Previous.Subagents) != 0 || c.Previous.Outcome != ExecutionSucceeded) {
+		return CompactionUncertain()
+	}
+	if c.Compaction != nil && ((input.Configuration.Harness != ClaudeCode && input.Configuration.Harness != Codex) || c.Compaction.Validate() != nil || c.Compaction.ExecutionID != c.Previous.ExecutionID || c.Compaction.RequiresResume && c.Intent != ContinueExplicitly) {
 		return CompactionUncertain()
 	}
 	invalid := func() error {

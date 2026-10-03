@@ -66,6 +66,8 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	contextBase         *ContinuationContextCheckpoint
+	contextOrder        []ContextRecord
 	compaction          *manualCompaction
 	compactionItems     map[string]compactionItem
 	thread              Thread
