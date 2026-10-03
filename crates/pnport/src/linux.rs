@@ -27,7 +27,8 @@ use libc::{self, c_void};
 use pnport::{
     diagnostic::{Code, Error, ExecFailureKind, Result},
     executable::Prepared,
-    graph::{Graph, Input},
+    graph::Input,
+    native_path::{resolved_lookup as resolved_caller_lookup, Lookup as NativeLookup},
     view::{Translation, View},
 };
 
@@ -135,85 +136,13 @@ fn escapes_beneath(path: &Path) -> bool {
     false
 }
 
-fn resolved_caller_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<PathBuf> {
-    let mut remaining: VecDeque<OsString> = path
-        .components()
-        .map(|part| part.as_os_str().to_os_string())
-        .collect();
-    let mut resolved = PathBuf::new();
-    let mut archive_root: Option<PathBuf> = None;
-    let mut followed = 0;
-    while let Some(part) = remaining.pop_front() {
-        match Path::new(&part).components().next()? {
-            Component::RootDir => {
-                resolved = PathBuf::from("/");
-                archive_root = None;
-            }
-            Component::CurDir => {}
-            Component::ParentDir => {
-                resolved.pop();
-                if archive_root
-                    .as_ref()
-                    .is_some_and(|archive| !resolved.starts_with(archive))
-                {
-                    archive_root = None;
-                }
-            }
-            Component::Normal(name) => {
-                let candidate = resolved.join(name);
-                match fs::symlink_metadata(&candidate) {
-                    Ok(metadata)
-                        if metadata.file_type().is_symlink()
-                            && (follow_last || !remaining.is_empty()) =>
-                    {
-                        followed += 1;
-                        if followed > 40 {
-                            return None;
-                        }
-                        let target = fs::read_link(&candidate).ok()?;
-                        let mut expanded: VecDeque<OsString> = target
-                            .components()
-                            .map(|part| part.as_os_str().to_os_string())
-                            .collect();
-                        expanded.append(&mut remaining);
-                        remaining = expanded;
-                    }
-                    Ok(metadata) => {
-                        let archive_boundary = metadata.is_file()
-                            && candidate.extension() == Some(OsStr::new("zip"))
-                            && graph.is_location_ancestor(&candidate);
-                        // Yarn's registered archive is a regular host file,
-                        // while its children belong to the PnP virtual view.
-                        // Only a graph-owned ZIP boundary may cross that
-                        // otherwise native ENOTDIR result.
-                        if !remaining.is_empty() && !metadata.is_dir() && !archive_boundary {
-                            return None;
-                        }
-                        resolved = candidate;
-                        if archive_boundary {
-                            archive_root = Some(resolved.clone());
-                        }
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        // A virtual node_modules component has no physical
-                        // directory; the PnP view resolves it after this walk.
-                        resolved = candidate;
-                    }
-                    Err(error)
-                        if error.raw_os_error() == Some(libc::ENOTDIR)
-                            && archive_root.is_some() =>
-                    {
-                        // The host reports ENOTDIR below the ZIP file; the
-                        // view resolves these components after this walk.
-                        resolved = candidate;
-                    }
-                    Err(_) => return None,
-                }
-            }
-            Component::Prefix(_) => return None,
+fn preserve_terminal_directory(lookup: &Path, translation: &mut Translation, required: bool) {
+    if required {
+        translation.virtual_link = false;
+        if lookup != translation.physical {
+            translation.physical.push(".");
         }
     }
-    Some(resolved)
 }
 
 fn follows_final_component(
@@ -1928,6 +1857,12 @@ impl Trace<'_> {
         })
     }
 
+    fn resolved_lookup(&mut self, path: &Path, follow_last: bool) -> Result<Option<NativeLookup>> {
+        resolved_caller_lookup(path, follow_last, &self.view.graph)
+            .map(|lookup| lookup.validate_parents(|parent| self.translate(parent)))
+            .transpose()
+    }
+
     fn source_path(&self, pid: i32, dirfd: i32, path: &Path) -> Result<PathBuf> {
         let absolute = self.base(pid, dirfd, path)?;
         Ok(self.proc_root(pid, &absolute)?.unwrap_or(absolute))
@@ -2527,11 +2462,18 @@ impl Trace<'_> {
                         }
                     }
                     let source = self.source_path(pid, target_fd, target)?;
-                    let Some(lookup) = resolved_caller_lookup(&source, false, &self.view.graph)
-                    else {
-                        return Ok(false);
+                    let (lookup, requires_directory) = match self.resolved_lookup(&source, false)? {
+                        Some(NativeLookup::Resolved {
+                            path,
+                            requires_directory,
+                        }) => (path, requires_directory),
+                        Some(NativeLookup::NativeFailure { errno, .. }) => {
+                            self.force_error(pid, &mut regs, target_arg, errno)?;
+                            return Ok(true);
+                        }
+                        None => return Ok(false),
                     };
-                    let translated = match self.translate(&lookup) {
+                    let mut translated = match self.translate(&lookup) {
                         Ok(value) => value,
                         Err(error) if error.code == Code::PnportResolutionFailed => {
                             self.force_error(pid, &mut regs, target_arg, libc::ENOENT)?;
@@ -2539,6 +2481,7 @@ impl Trace<'_> {
                         }
                         Err(error) => return Err(error),
                     };
+                    preserve_terminal_directory(&lookup, &mut translated, requires_directory);
                     if translated.readonly {
                         self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
                         return Ok(true);
@@ -2685,18 +2628,25 @@ impl Trace<'_> {
         } else {
             self.source_path(pid, dirfd, &original)?
         };
-        let Some(lookup) = resolved_caller_lookup(
+        let (lookup, requires_directory) = match self.resolved_lookup(
             &source,
             follows_final_component(call, &regs, path_arg, open_flags),
-            &self.view.graph,
-        ) else {
-            return Ok(false);
+        )? {
+            Some(NativeLookup::Resolved {
+                path,
+                requires_directory,
+            }) => (path, requires_directory),
+            Some(NativeLookup::NativeFailure { errno, .. }) => {
+                self.force_error(pid, &mut regs, path_arg, errno)?;
+                return Ok(true);
+            }
+            None => return Ok(false),
         };
         let mutating = writing
             && call != libc::SYS_faccessat
             && call != libc::SYS_faccessat2
             && call != SYS_ACCESS;
-        let translation = match self.translate(&lookup) {
+        let mut translation = match self.translate(&lookup) {
             Ok(value) => value,
             Err(error) if error.code == Code::PnportResolutionFailed => {
                 let errno = self.missing_path_errno(&lookup, mutating)?;
@@ -2705,6 +2655,7 @@ impl Trace<'_> {
             }
             Err(error) => return Err(error),
         };
+        preserve_terminal_directory(&lookup, &mut translation, requires_directory);
         if call == libc::SYS_execve || call == libc::SYS_execveat {
             let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
             if self.prepare_script_exec(pid, &mut regs, &translation, path_arg, argv_arg, false)? {
@@ -2750,42 +2701,51 @@ impl Trace<'_> {
             self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
             return Ok(true);
         }
-        let second_translation =
-            if let Some(((other_arg, other_fd), other)) = second.zip(second_original) {
-                if !other.is_absolute() && other_fd != libc::AT_FDCWD {
-                    let descriptor = format!("/proc/{pid}/fd/{other_fd}");
-                    let error = match fs::metadata(descriptor) {
-                        Ok(metadata) if !metadata.is_dir() => Some(libc::ENOTDIR),
-                        Err(_) => Some(libc::EBADF),
-                        _ => None,
-                    };
-                    if let Some(error) = error {
-                        self.force_error(pid, &mut regs, path_arg, error)?;
-                        return Ok(true);
-                    }
-                }
-                let source = self.source_path(pid, other_fd, &other)?;
-                let Some(other_lookup) = resolved_caller_lookup(&source, false, &self.view.graph)
-                else {
-                    return Ok(false);
+        let second_translation = if let Some(((other_arg, other_fd), other)) =
+            second.zip(second_original)
+        {
+            if !other.is_absolute() && other_fd != libc::AT_FDCWD {
+                let descriptor = format!("/proc/{pid}/fd/{other_fd}");
+                let error = match fs::metadata(descriptor) {
+                    Ok(metadata) if !metadata.is_dir() => Some(libc::ENOTDIR),
+                    Err(_) => Some(libc::EBADF),
+                    _ => None,
                 };
-                let translated = match self.translate(&other_lookup) {
-                    Ok(value) => value,
-                    Err(error) if error.code == Code::PnportResolutionFailed => {
-                        let errno = self.missing_path_errno(&other_lookup, true)?;
-                        self.force_error(pid, &mut regs, path_arg, errno)?;
-                        return Ok(true);
-                    }
-                    Err(error) => return Err(error),
-                };
-                if translated.readonly {
-                    self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                if let Some(error) = error {
+                    self.force_error(pid, &mut regs, path_arg, error)?;
                     return Ok(true);
                 }
-                Some((other_arg, other_lookup, translated))
-            } else {
-                None
+            }
+            let source = self.source_path(pid, other_fd, &other)?;
+            let (other_lookup, requires_directory) = match self.resolved_lookup(&source, false)? {
+                Some(NativeLookup::Resolved {
+                    path,
+                    requires_directory,
+                }) => (path, requires_directory),
+                Some(NativeLookup::NativeFailure { errno, .. }) => {
+                    self.force_error(pid, &mut regs, other_arg, errno)?;
+                    return Ok(true);
+                }
+                None => return Ok(false),
             };
+            let mut translated = match self.translate(&other_lookup) {
+                Ok(value) => value,
+                Err(error) if error.code == Code::PnportResolutionFailed => {
+                    let errno = self.missing_path_errno(&other_lookup, true)?;
+                    self.force_error(pid, &mut regs, path_arg, errno)?;
+                    return Ok(true);
+                }
+                Err(error) => return Err(error),
+            };
+            preserve_terminal_directory(&other_lookup, &mut translated, requires_directory);
+            if translated.readonly {
+                self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                return Ok(true);
+            }
+            Some((other_arg, other_lookup, translated))
+        } else {
+            None
+        };
         let changed = if openat2_resolve != 0 {
             // openat2's resolve flags apply to the path relative to its real
             // dirfd. Keep that spelling when it already names the translated

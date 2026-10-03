@@ -8,6 +8,8 @@ The VoidZero MIT text from the pinned revision is copied in full to each importe
 
 ## Local changes
 
+The pnport-only macOS path hooks use the shared native component lookup before virtual translation. They follow native aliases into logical dependencies and managed cache backing, retain read-only classification for following mutations, and keep non-following link operations and unmanaged pathname bytes native. This extension does not change generic fspy or claim complete symlink/canonicalization acceptance.
+
 pnport-mode macOS named `dlopen` translates its library path, then releases the pnport runtime lock and recursion guard before dyld invokes user constructors. Nested ZIP-library loading, constructor filesystem access and fork callbacks retain virtualization; inner hooks still guard their own backing operations. The generic fspy side channel is unchanged. The installed pnport native conformance suite covers this local extension on both macOS architectures alongside Linux syscall-backed controls.
 
 pnport-mode macOS descriptor metadata hooks reject managed dependency/cache mutations through direct or duplicated read handles, including selected allocating/extent-changing `fcntl` operations. Live native backing supplements descriptor provenance for inherited/unpublished mappings. Admitted close, duplication and mutation serialize through the kernel operation and map update, and C `close` and `close$NOCANCEL` have separate entries. Generic fspy operation transport retains its independent implementation. Installed inline/split controls preserve ordinary output mutation, reused descriptor numbers, closed-handle errors and unchanged dependency bytes; see the pnport foundation for the bounded coverage.

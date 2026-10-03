@@ -77,6 +77,10 @@ static int descriptor_mutations(void) {
     int duplicate = fcntl(fd, F_DUPFD_CLOEXEC, 64);
     if (duplicate < 0) return 71;
     struct timeval times[2] = {{0, 0}, {0, 0}};
+#ifdef __APPLE__
+    int extent_output = open("output/extents.txt", O_RDWR | O_CREAT | O_EXCL, 0600);
+    if (extent_output < 0) return 84;
+#endif
     for (int index = 0; index < 2; index++) {
         int dependency_fd = index ? duplicate : fd;
         errno = 0;
@@ -94,8 +98,21 @@ static int descriptor_mutations(void) {
                               .fst_offset = 0, .fst_length = 4096};
         errno = 0;
         if (fcntl(dependency_fd, F_PREALLOCATE, &allocation) != -1 || errno != EROFS) return 83;
+        // F_TRANSFEREXTENTS has two integer descriptors. Either managed
+        // operand is read-only; invalid operands retain native errno ordering.
+        errno = 0;
+        if (fcntl(dependency_fd, F_TRANSFEREXTENTS, extent_output) != -1 || errno != EROFS) return 85;
+        errno = 0;
+        if (fcntl(extent_output, F_TRANSFEREXTENTS, dependency_fd) != -1 || errno != EROFS) return 86;
+        errno = 0;
+        if (fcntl(dependency_fd, F_TRANSFEREXTENTS, -1) != -1 || errno != EINVAL) return 87;
+        errno = 0;
+        if (fcntl(-1, F_TRANSFEREXTENTS, dependency_fd) != -1 || errno != EBADF) return 88;
 #endif
     }
+#ifdef __APPLE__
+    if (close(extent_output)) return 89;
+#endif
     if (close(fd) || close(duplicate)) return 77;
     // Reuse a tracked descriptor number for a normal output file. Clearing
     // dependency provenance must preserve ordinary output mutations.
@@ -109,6 +126,140 @@ static int descriptor_mutations(void) {
     if (close(output) || close(duplicate)) return 81;
     errno = 0;
     if (fchmod(duplicate, 0600) != -1 || errno != EBADF) return 82;
+    return dependency();
+}
+
+static int native_aliases(void) {
+    if (symlink("node_modules/dep", "logical-alias")) return 90;
+    int fd = open("logical-alias/file.txt", O_RDONLY | O_CLOEXEC);
+    char bytes[13];
+    if (fd < 0 || read(fd, bytes, 13) != 13 || memcmp(bytes, "package bytes", 13)) return 91;
+    errno = 0;
+    if (chmod("logical-alias/file.txt", 0600) != -1 || errno != EROFS) return 92;
+    errno = 0;
+    if (truncate("logical-alias/file.txt", 0) != -1 || errno != EROFS) return 93;
+    errno = 0;
+    if (open("logical-alias/file.txt", O_RDWR) != -1 || errno != EROFS) return 94;
+    struct stat info;
+    if (lstat("logical-alias", &info) || !S_ISLNK(info.st_mode) ||
+        stat("logical-alias", &info) || !S_ISDIR(info.st_mode)) return 95;
+    char link[64];
+    if (readlink("logical-alias", link, sizeof(link)) != 16 ||
+        memcmp(link, "node_modules/dep", 16)) return 96;
+    errno = 0;
+    if (open("logical-alias", O_RDONLY | O_NOFOLLOW) != -1 || errno != ELOOP) return 97;
+    if (symlink("node_modules/dep/file.txt", "file-alias") ||
+        symlink("node_modules/dep/file.txt/", "slash-target") ||
+        symlink("node_modules/dep/file.txt/.", "dot-target")) return 128;
+    const char *directory_required[] = {"source.txt/", "source.txt/.",
+        "file-alias/", "file-alias/.", "slash-target", "dot-target"};
+    for (size_t i = 0; i < sizeof(directory_required) / sizeof(directory_required[0]); ++i) {
+        errno = 0;
+        if (open(directory_required[i], O_RDONLY) != -1 || errno != ENOTDIR) return 129;
+        errno = 0;
+        if (stat(directory_required[i], &info) != -1 || errno != ENOTDIR) return 130;
+    }
+    int directory_fd = open("logical-alias/", O_RDONLY | O_DIRECTORY);
+    if (directory_fd < 0 || fstat(directory_fd, &info) || !S_ISDIR(info.st_mode) ||
+        close(directory_fd) || lstat("logical-alias/.", &info) || !S_ISDIR(info.st_mode)) return 131;
+    errno = 0;
+    if (open("node_modules/missing/", O_RDONLY) != -1 || errno != ENOENT) return 132;
+#ifdef __APPLE__
+    errno = 0;
+    if (open("logical-alias/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 133;
+    int any_root = open(".", O_RDONLY | O_DIRECTORY);
+    if (any_root < 0) return 134;
+    errno = 0;
+    if (openat(any_root, "logical-alias/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 135;
+    errno = 0;
+    if (open("node_modules/dep/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 136;
+    errno = 0;
+    if (open("logical-alias/file.txt", O_WRONLY | O_NOFOLLOW_ANY | O_NOFOLLOW) != -1 || errno != EINVAL) return 137;
+    errno = 0;
+    if (open("missing-native/../logical-alias/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ENOENT) return 138;
+    errno = 0;
+    if (open("node_modules/dep/../dep/file.txt", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 142;
+    if (symlink("missing-native/../source.txt", "any-dangling")) return 143;
+    errno = 0;
+    if (open("any-dangling", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP || unlink("any-dangling")) return 144;
+    errno = 0;
+    if (openat(any_root, "source.txt", O_RDONLY | O_NOFOLLOW_ANY | O_NOFOLLOW) != -1 || errno != EINVAL) return 145;
+    int any_fd = openat(any_root, "source.txt", O_RDONLY | O_NOFOLLOW_ANY);
+    if (any_fd < 0 || read(any_fd, bytes, 6) != 6 || memcmp(bytes, "source", 6) || close(any_fd)) return 139;
+    any_fd = open("node_modules", O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY);
+    if (any_fd < 0 || fstat(any_fd, &info) || !S_ISDIR(info.st_mode) || close(any_fd) || close(any_root)) return 140;
+    // Darwin O_SYMLINK opens the link inode, even when its target is virtual.
+    int link_fd = open("logical-alias", O_RDONLY | O_SYMLINK);
+    if (link_fd < 0 || fstat(link_fd, &info) || !S_ISLNK(info.st_mode) || close(link_fd)) return 113;
+    int root_fd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (root_fd < 0) return 114;
+    link_fd = openat(root_fd, "logical-alias", O_RDONLY | O_SYMLINK);
+    if (link_fd < 0 || fstat(link_fd, &info) || !S_ISLNK(info.st_mode) ||
+        close(link_fd) || close(root_fd)) return 115;
+    char backing[4096];
+    if (fcntl(fd, F_GETPATH, backing) || symlink(backing, "backing-alias")) return 98;
+    errno = 0;
+    if (open("backing-alias", O_RDONLY | O_NOFOLLOW_ANY) != -1 || errno != ELOOP) return 141;
+    errno = 0;
+    if (chmod("backing-alias", 0600) != -1 || errno != EROFS) return 99;
+    errno = 0;
+    if (truncate("backing-alias", 0) != -1 || errno != EROFS) return 100;
+    // Removing the caller-owned link must not mutate or remove its target.
+    if (unlink("backing-alias")) return 101;
+#endif
+    if (close(fd) || rename("logical-alias", "moved-alias")) return 102;
+    fd = open("moved-alias/file.txt", O_RDONLY | O_CLOEXEC);
+    if (fd < 0 || read(fd, bytes, 13) != 13 || memcmp(bytes, "package bytes", 13) || close(fd)) return 103;
+    if (unlink("moved-alias") || mkdir("output/inside", 0700) ||
+        symlink("output/inside", "native-alias")) return 104;
+    fd = open("native-alias/../native.txt", O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0 || write(fd, "native", 6) != 6 || close(fd) || unlink("native-alias")) return 105;
+    errno = 0;
+    if (open("source.txt/", O_RDONLY) != -1 || errno != ENOTDIR) return 106;
+    errno = 0;
+    if (open("missing-native/../source.txt", O_RDONLY) != -1 || errno != ENOENT) return 107;
+    errno = 0;
+    if (open("missing-native/../node_modules/dep/file.txt", O_RDONLY) != -1 || errno != ENOENT) return 122;
+    if (symlink("missing-native/../node_modules/dep/file.txt", "dangling-alias")) return 123;
+    errno = 0;
+    if (open("dangling-alias", O_RDONLY) != -1 || errno != ENOENT || unlink("dangling-alias")) return 124;
+    // A real virtual directory may be traversed before '..'; missing virtual
+    // descendants and virtual files must retain ENOENT and ENOTDIR instead.
+    fd = open("node_modules/../node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0 || read(fd, bytes, 13) != 13 || memcmp(bytes, "package bytes", 13) || close(fd)) return 125;
+    errno = 0;
+    if (open("node_modules/dep/missing/../file.txt", O_RDONLY) != -1 || errno != ENOENT) return 126;
+    errno = 0;
+    if (open("node_modules/dep/file.txt/../file.txt", O_RDONLY) != -1 || errno != ENOTDIR) return 127;
+#ifdef __APPLE__
+    // Synthetic directory backing lives in the private session, separately
+    // from extracted cache content, and has the same read-only boundary.
+    fd = open("node_modules", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) return 108;
+    errno = 0;
+    if (fchmod(fd, 0700) != -1 || errno != EROFS) return 109;
+    if (fcntl(fd, F_GETPATH, backing)) return 110;
+    errno = 0;
+    if (chmod(backing, 0700) != -1 || errno != EROFS) return 111;
+    if (close(fd)) return 112;
+    // Darwin permits 32 followed links. Compare the same chain against a
+    // native file and a virtual dependency so translation cannot extend it.
+    char chain[32], target[32];
+    for (int i = 32; i >= 0; --i) {
+        snprintf(chain, sizeof(chain), "chain-%02d", i);
+        snprintf(target, sizeof(target), "chain-%02d", i + 1);
+        if (symlink(i == 32 ? "source.txt" : target, chain)) return 116;
+    }
+    errno = 0;
+    if (open("chain-00", O_RDONLY) != -1 || errno != ELOOP) return 117;
+    fd = open("chain-01", O_RDONLY);
+    if (fd < 0 || read(fd, bytes, 6) != 6 || memcmp(bytes, "source", 6) || close(fd)) return 118;
+    if (unlink("chain-32") || symlink("node_modules/dep/file.txt", "chain-32")) return 119;
+    errno = 0;
+    if (open("chain-00", O_RDONLY) != -1 || errno != ELOOP) return 120;
+    fd = open("chain-01", O_RDONLY);
+    if (fd < 0 || read(fd, bytes, 13) != 13 || memcmp(bytes, "package bytes", 13) || close(fd)) return 121;
+#endif
     return dependency();
 }
 
@@ -200,6 +351,9 @@ int main(int argc, char **argv) {
     int result;
     if (!strcmp(argv[1], "mutations")) {
         result = descriptor_mutations();
+        if (result) return result;
+    } else if (!strcmp(argv[1], "aliases")) {
+        result = native_aliases();
         if (result) return result;
     } else
 #ifndef PNPORT_WATCH_ONLY

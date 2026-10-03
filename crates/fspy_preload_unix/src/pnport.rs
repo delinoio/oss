@@ -39,6 +39,7 @@ use pnport_core::{
     diagnostic::{Code, Error, ExecFailureKind, InitializationStage, ProcessGroupOperation},
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
+    native_path::{Lookup as NativeLookup, SymlinkPolicy},
     view::{Translation, View},
 };
 
@@ -406,6 +407,12 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
     // variadic argument, unlike the pointer-valued fcntl commands below.
     // Decode it once so the secondary backing is admitted before native fcntl.
     let transfer_descriptor = (command == libc::F_TRANSFEREXTENTS).then(|| args.arg::<c_int>());
+    if let Some(transfer_fd) = transfer_descriptor.filter(|descriptor| *descriptor < 0) {
+        // A negative destination cannot mutate either operand. Native fcntl
+        // owns its validation order: EINVAL for a valid primary descriptor,
+        // while an invalid primary still returns its own native failure.
+        return original(fd, command, transfer_fd);
+    }
     let mutation = matches!(
         command,
         libc::F_PREALLOCATE
@@ -425,43 +432,12 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
     } else {
         None
     };
-    if mutation && let Some(runtime) = runtime.as_mut() {
-        // F_GETPATH is a backing-path probe, not a descriptor-validity check:
-        // it fails for pipes and invalid descriptors alike. Validate every
-        // operand with the native descriptor query first so an invalid
-        // descriptor keeps the kernel's EBADF result instead of being masked
-        // by a managed-backing EROFS rejection.
-        if let Err(code) = descriptor_valid(fd, original) {
-            errno(code);
-            return -1;
-        }
-        if let Some(transfer_fd) = transfer_descriptor
-            && let Err(code) = descriptor_valid(transfer_fd, original)
-        {
-            errno(code);
-            return -1;
-        }
-        let primary_readonly = match descriptor_readonly(fd, runtime) {
-            Ok(readonly) => readonly,
-            Err(code) => {
-                errno(code);
-                return -1;
-            }
-        };
-        let transfer_readonly = match transfer_descriptor {
-            Some(transfer_fd) => match descriptor_readonly(transfer_fd, runtime) {
-                Ok(readonly) => readonly,
-                Err(code) => {
-                    errno(code);
-                    return -1;
-                }
-            },
-            None => false,
-        };
-        if primary_readonly || transfer_readonly {
-            errno(EROFS);
-            return -1;
-        }
+    if mutation
+        && let Some(runtime) = runtime.as_mut()
+        && let Err(code) = validate_descriptor_mutation(fd, transfer_descriptor, runtime, original)
+    {
+        errno(code);
+        return -1;
     }
 
     // Only duplication carries logical directory provenance. An inode lookup
@@ -523,6 +499,31 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
     result
 }
 
+#[cfg(target_os = "macos")]
+unsafe fn validate_descriptor_mutation(
+    fd: c_int,
+    transfer_descriptor: Option<c_int>,
+    runtime: &mut Runtime,
+    original: unsafe extern "C" fn(c_int, c_int, ...) -> c_int,
+) -> std::result::Result<(), c_int> {
+    // F_GETPATH is a backing-path probe, not a descriptor-validity check:
+    // it fails for pipes and invalid descriptors alike. Validate every
+    // operand first so native EBADF takes precedence over managed EROFS.
+    descriptor_valid(fd, original)?;
+    if let Some(transfer_fd) = transfer_descriptor {
+        descriptor_valid(transfer_fd, original)?;
+    }
+    let primary_readonly = descriptor_readonly(fd, runtime)?;
+    let transfer_readonly = match transfer_descriptor {
+        Some(transfer_fd) => descriptor_readonly(transfer_fd, runtime)?,
+        None => false,
+    };
+    if primary_readonly || transfer_readonly {
+        return Err(EROFS);
+    }
+    Ok(())
+}
+
 unsafe fn descriptor_valid(
     fd: c_int,
     original: unsafe extern "C" fn(c_int, c_int, ...) -> c_int,
@@ -552,15 +553,111 @@ unsafe fn translate(
     dirfd: c_int,
     write: bool,
 ) -> std::result::Result<(CString, Translation), c_int> {
+    translate_following(path, dirfd, write, true, SymlinkPolicy::Allow)
+}
+
+fn native_translation(logical: &Path, physical: PathBuf) -> Translation {
+    Translation {
+        logical: logical.to_owned(),
+        physical,
+        readonly: false,
+        virtual_link: false,
+    }
+}
+
+fn translate_lookup(
+    runtime: &mut Runtime,
+    path: &Path,
+    follow_last: bool,
+) -> pnport_core::diagnostic::Result<Translation> {
+    let Some(lookup) =
+        pnport_core::native_path::resolved_lookup(path, follow_last, &runtime.view.graph)
+    else {
+        return Ok(native_translation(path, path.to_owned()));
+    };
+    let checked = lookup.validate_parents(|parent| runtime.view.translate(parent))?;
+    translate_checked_lookup(runtime, path, checked)
+}
+
+fn translate_checked_lookup(
+    runtime: &mut Runtime,
+    path: &Path,
+    lookup: NativeLookup,
+) -> pnport_core::diagnostic::Result<Translation> {
+    let (resolved, requires_directory) = match lookup {
+        pnport_core::native_path::Lookup::Resolved {
+            path,
+            requires_directory,
+        } => (path, requires_directory),
+        NativeLookup::NativeFailure { path: physical, .. } => {
+            return Ok(native_translation(path, physical));
+        }
+    };
+    let mut translation = runtime.view.translate(&resolved)?;
+    if requires_directory {
+        translation.virtual_link = false;
+        if translation.readonly {
+            translation.physical.push(".");
+        }
+    }
+    if !translation.readonly {
+        // Native lookup must keep the caller's symlink, '..', missing-parent
+        // and trailing-separator semantics. Only managed backing is rewritten.
+        path.clone_into(&mut translation.physical);
+    }
+    Ok(translation)
+}
+
+unsafe fn translate_following(
+    path: *const c_char,
+    dirfd: c_int,
+    write: bool,
+    follow_last: bool,
+    policy: SymlinkPolicy,
+) -> std::result::Result<(CString, Translation), c_int> {
     let Some(runtime) = RUNTIME.get() else {
         return Err(EIO);
     };
     let mut runtime = runtime.lock().map_err(|_| EIO)?;
     let path = path_from(path, dirfd, &runtime)?;
-    let translation = runtime
-        .view
-        .translate(&path)
-        .map_err(|error| fail(error.code))?;
+    let translation = if policy == SymlinkPolicy::Reject {
+        match pnport_core::native_path::resolved_lookup_with_policy(
+            &path,
+            follow_last,
+            &runtime.view.graph,
+            policy,
+        ) {
+            Some(lookup) => {
+                let mut virtual_alias = false;
+                let checked = lookup
+                    .validate_parents(|parent| {
+                        virtual_alias |= runtime.view.contains_dependency_alias(parent)?;
+                        runtime.view.translate(parent)
+                    })
+                    .map_err(|error| fail(error.code))?;
+                if virtual_alias {
+                    return Err(libc::ELOOP);
+                }
+                match &checked {
+                    NativeLookup::NativeFailure { errno, .. } => return Err(*errno),
+                    NativeLookup::Resolved { path, .. } => {
+                        if runtime
+                            .view
+                            .contains_dependency_alias(path)
+                            .map_err(|error| fail(error.code))?
+                        {
+                            return Err(libc::ELOOP);
+                        }
+                    }
+                }
+                translate_checked_lookup(&mut runtime, &path, checked)
+                    .map_err(|error| fail(error.code))?
+            }
+            None => native_translation(&path, path.clone()),
+        }
+    } else {
+        translate_lookup(&mut runtime, &path, follow_last).map_err(|error| fail(error.code))?
+    };
     if write && translation.readonly {
         return Err(EROFS);
     }
@@ -675,7 +772,13 @@ macro_rules! original {
 }
 macro_rules! translated {
     ($path:ident, $dir:expr, $write:expr, $failure:expr) => {
-        match translate($path, $dir, $write) {
+        translated!($path, $dir, $write, true, $failure)
+    };
+    ($path:ident, $dir:expr, $write:expr, $follow:expr, $failure:expr) => {
+        translated!($path, $dir, $write, $follow, SymlinkPolicy::Allow, $failure)
+    };
+    ($path:ident, $dir:expr, $write:expr, $follow:expr, $policy:expr, $failure:expr) => {
+        match translate_following($path, $dir, $write, $follow, $policy) {
             Ok(value) => value,
             Err(error) => {
                 errno(error);
@@ -822,6 +925,36 @@ mod initialization_tests {
 #[cfg_attr(target_os = "linux", unsafe(link_section = ".init_array"))]
 static INITIALIZER: unsafe extern "C" fn() = initialize;
 
+const fn open_follows_final_component(flags: c_int) -> bool {
+    #[cfg(target_os = "macos")]
+    let nofollow = libc::O_NOFOLLOW | libc::O_SYMLINK;
+    #[cfg(target_os = "linux")]
+    let nofollow = libc::O_NOFOLLOW;
+    flags & nofollow == 0 && flags & (O_CREAT | libc::O_EXCL) != (O_CREAT | libc::O_EXCL)
+}
+
+const fn open_symlink_policy(flags: c_int) -> SymlinkPolicy {
+    #[cfg(target_os = "macos")]
+    if flags & libc::O_NOFOLLOW_ANY != 0 {
+        return SymlinkPolicy::Reject;
+    }
+    let _ = flags;
+    SymlinkPolicy::Allow
+}
+
+const fn conflicting_open_flags(flags: c_int) -> bool {
+    // XNU rejects this pair before vnode lookup, so native forwarding cannot
+    // mutate managed backing and preserves the kernel's argument-error order.
+    #[cfg(target_os = "macos")]
+    return flags & (libc::O_NOFOLLOW_ANY | libc::O_NOFOLLOW)
+        == (libc::O_NOFOLLOW_ANY | libc::O_NOFOLLOW);
+    #[cfg(target_os = "linux")]
+    {
+        let _ = flags;
+        false
+    }
+}
+
 unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
         args.arg::<c_int>()
@@ -832,6 +965,9 @@ unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ..
         open,
         unsafe extern "C" fn(*const c_char, c_int, ...) -> c_int
     );
+    if conflicting_open_flags(flags) {
+        return original(path, flags, mode);
+    }
     let Some(_guard) = Guard::enter() else {
         return original(path, flags, mode);
     };
@@ -842,6 +978,8 @@ unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ..
         path,
         AT_FDCWD,
         flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
+        open_follows_final_component(flags),
+        open_symlink_policy(flags),
         -1
     );
     let fd = original(path.as_ptr(), flags, mode);
@@ -882,6 +1020,9 @@ unsafe extern "C" fn pnport_openat(
         openat,
         unsafe extern "C" fn(c_int, *const c_char, c_int, ...) -> c_int
     );
+    if conflicting_open_flags(flags) {
+        return original(dirfd, path, flags, mode);
+    }
     let Some(_guard) = Guard::enter() else {
         return original(dirfd, path, flags, mode);
     };
@@ -892,6 +1033,8 @@ unsafe extern "C" fn pnport_openat(
         path,
         dirfd,
         flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
+        open_follows_final_component(flags),
+        open_symlink_policy(flags),
         -1
     );
     let fd = original(AT_FDCWD, path.as_ptr(), flags, mode);
@@ -924,25 +1067,25 @@ unsafe extern "C" fn linux_openat(
 }
 
 macro_rules! path_hook {
-    ($name:ident, $wrapper:ident, ($path:ident: *const c_char $(,$arg:ident: $ty:ty)*) -> $ret:ty, $write:expr, $failure:expr) => {
+    ($name:ident, $wrapper:ident, ($path:ident: *const c_char $(,$arg:ident: $ty:ty)*) -> $ret:ty, $write:expr, $follow:expr, $failure:expr) => {
         hook!($name, $wrapper, ($path:*const c_char $(,$arg:$ty)*) -> $ret, {
             let original = original!($name, unsafe extern "C" fn(*const c_char $(,$ty)*) -> $ret);
             let Some(_guard) = Guard::enter() else { return original($path $(,$arg)*); };
             if RUNTIME.get().is_none() { return original($path $(,$arg)*); }
-            let (path, _) = translated!($path, AT_FDCWD, $write, $failure);
+            let (path, _) = translated!($path, AT_FDCWD, $write, $follow, $failure);
             original(path.as_ptr() $(,$arg)*)
         });
     };
 }
-path_hook!(stat, pnport_stat, (path:*const c_char, output:*mut stat) -> c_int, false, -1);
+path_hook!(stat, pnport_stat, (path:*const c_char, output:*mut stat) -> c_int, false, true, -1);
 
-path_hook!(access, pnport_access, (path:*const c_char, mode:c_int) -> c_int, mode & W_OK != 0, -1);
+path_hook!(access, pnport_access, (path:*const c_char, mode:c_int) -> c_int, mode & W_OK != 0, true, -1);
 
-path_hook!(unlink, pnport_unlink, (path:*const c_char) -> c_int, true, -1);
-path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, -1);
-path_hook!(mkdir, pnport_mkdir, (path:*const c_char, mode:mode_t) -> c_int, true, -1);
-path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true, -1);
-path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, -1);
+path_hook!(unlink, pnport_unlink, (path:*const c_char) -> c_int, true, false, -1);
+path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, false, -1);
+path_hook!(mkdir, pnport_mkdir, (path:*const c_char, mode:mode_t) -> c_int, true, false, -1);
+path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true, true, -1);
+path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, true, -1);
 hook!(fchmod, pnport_fchmod, (fd:c_int,mode:mode_t) -> c_int, {
     mutate_descriptor(fd, || libc::fchmod(fd, mode))
 });
@@ -985,7 +1128,7 @@ hook!(fstatat, pnport_fstatat, (dirfd:c_int,path:*const c_char,output:*mut stat,
     let original = original!(fstatat, unsafe extern "C" fn(c_int,*const c_char,*mut stat,c_int)->c_int);
     let Some(_guard) = Guard::enter() else { return original(dirfd,path,output,flags); };
     if RUNTIME.get().is_none() { return original(dirfd,path,output,flags); }
-    let (path,translation) = translated!(path,dirfd,false,-1);
+    let (path,translation) = translated!(path,dirfd,false,flags & AT_SYMLINK_NOFOLLOW == 0,-1);
     let result = original(AT_FDCWD,path.as_ptr(),output,flags);
     if result == 0 && flags & AT_SYMLINK_NOFOLLOW != 0 { virtual_link_metadata(output,&translation); }
     result
@@ -1088,7 +1231,7 @@ hook!(readlink, pnport_readlink, (path:*const c_char, output:*mut c_char, size:s
         Ok(value) => value,
         Err(error) => { errno(error); return -1; }
     };
-    let (physical,translation) = translated!(path,AT_FDCWD,false,-1);
+    let (physical,translation) = translated!(path,AT_FDCWD,false,false,-1);
     if let Some(suffix) = terminal {
         let physical = match append_terminal_lookup(&physical, suffix) {
             Ok(value) => value,
@@ -1108,7 +1251,7 @@ hook!(readlinkat, pnport_readlinkat, (dirfd:c_int, path:*const c_char, output:*m
         Ok(value) => value,
         Err(error) => { errno(error); return -1; }
     };
-    let (physical,translation) = translated!(path,dirfd,false,-1);
+    let (physical,translation) = translated!(path,dirfd,false,false,-1);
     if let Some(suffix) = terminal {
         let physical = match append_terminal_lookup(&physical, suffix) {
             Ok(value) => value,
@@ -1156,7 +1299,7 @@ unsafe fn close_descriptor(fd: c_int, native: unsafe extern "C" fn(c_int) -> c_i
     // remain permanently held. The cancellation state is restored only after
     // both the provenance update and the Rust guards have been released.
     let mut previous_cancel_state = 0;
-    if set_cancel_state(libc::PTHREAD_CANCEL_DISABLE, &mut previous_cancel_state) != 0 {
+    if set_cancel_state(libc::PTHREAD_CANCEL_DISABLE, &raw mut previous_cancel_state) != 0 {
         errno(EIO);
         return -1;
     }
@@ -1437,7 +1580,7 @@ hook!(lstat, pnport_lstat, (path:*const c_char,output:*mut stat) -> c_int, {
     let original=original!(lstat,unsafe extern "C" fn(*const c_char,*mut stat)->c_int);
     let Some(_guard)=Guard::enter() else {return original(path,output);};
     if RUNTIME.get().is_none() {return original(path,output);}
-    let (path,translation)=translated!(path,AT_FDCWD,false,-1);
+    let (path,translation)=translated!(path,AT_FDCWD,false,false,-1);
     let result=original(path.as_ptr(),output);
     if result==0 {virtual_link_metadata(output,&translation);} result
 });
@@ -1445,13 +1588,13 @@ hook!(rename, pnport_rename, (from:*const c_char,to:*const c_char) -> c_int, {
     let original=original!(rename,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(from,to);};
     if RUNTIME.get().is_none() {return original(from,to);}
-    let (from,_)=translated!(from,AT_FDCWD,true,-1);let (to,_)=translated!(to,AT_FDCWD,true,-1);original(from.as_ptr(),to.as_ptr())
+    let (from,_)=translated!(from,AT_FDCWD,true,false,-1);let (to,_)=translated!(to,AT_FDCWD,true,false,-1);original(from.as_ptr(),to.as_ptr())
 });
 hook!(unlinkat, pnport_unlinkat, (fd:c_int,path:*const c_char,flags:c_int) -> c_int, {
     let original=original!(unlinkat,unsafe extern "C" fn(c_int,*const c_char,c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd,path,flags);};
     if RUNTIME.get().is_none() {return original(fd,path,flags);}
-    let (path,_)=translated!(path,fd,true,-1);original(AT_FDCWD,path.as_ptr(),flags)
+    let (path,_)=translated!(path,fd,true,false,-1);original(AT_FDCWD,path.as_ptr(),flags)
 });
 hook!(fchdir, pnport_fchdir, (fd:c_int) -> c_int, {
     let original=original!(fchdir,unsafe extern "C" fn(c_int)->c_int);
@@ -1606,16 +1749,13 @@ unsafe fn prepare_child_image(
         user_args,
         search_path,
         |path| {
-            runtime
-                .lock()
-                .map_err(|_| {
-                    pnport_core::diagnostic::Error::new(
-                        Code::PnportInjectionFailed,
-                        "The native interception state is unavailable.",
-                    )
-                })?
-                .view
-                .translate(path)
+            let mut runtime = runtime.lock().map_err(|_| {
+                pnport_core::diagnostic::Error::new(
+                    Code::PnportInjectionFailed,
+                    "The native interception state is unavailable.",
+                )
+            })?;
+            translate_lookup(&mut runtime, path, true)
         },
     )
     .map_err(|error| child_exec_error(&error))?;
@@ -1828,7 +1968,10 @@ unsafe fn spawn_path(
             let runtime = runtime.lock().map_err(|_| EIO)?;
             path_from(candidate.as_ptr(), AT_FDCWD, &runtime)?
         };
-        let translation = runtime.lock().map_err(|_| EIO)?.view.translate(&logical);
+        let translation = {
+            let mut runtime = runtime.lock().map_err(|_| EIO)?;
+            translate_lookup(&mut runtime, &logical, true)
+        };
         let translation = match translation {
             Ok(translation) => translation,
             Err(error)

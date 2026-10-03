@@ -47,6 +47,10 @@ enum Lookup {
 
 impl View {
     pub fn new(graph: Graph, cache: Cache, session: PathBuf) -> Self {
+        // Runtime sessions already exist and must match native descriptor
+        // spelling, including Darwin's /var alias. Data-only fixtures may
+        // reserve a session path before creating it.
+        let session = fs::canonicalize(&session).unwrap_or(session);
         Self {
             graph,
             cache,
@@ -57,6 +61,12 @@ impl View {
 
     pub fn translate(&mut self, path: &Path) -> Result<Translation> {
         self.translate_with_wait(path, &mut || Ok(()))
+    }
+
+    /// A dependency alias is a link even when it is an intermediate component.
+    /// This query performs no archive extraction or backing publication.
+    pub fn contains_dependency_alias(&self, path: &Path) -> Result<bool> {
+        Ok(matches!(self.lookup(path)?, Lookup::Dependency { .. }))
     }
 
     pub fn translate_with_wait(
