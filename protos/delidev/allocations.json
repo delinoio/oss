@@ -4550,6 +4550,20 @@
       "declaration": "WorkerNativeRouteState",
       "member": "WORKER_NATIVE_ROUTE_STATE_STALE",
       "number": 6
+    },
+    {
+      "issue": 1101,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1",
+      "number": 22
+    },
+    {
+      "issue": 1101,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1",
+      "number": 11
     }
   ]
 }
