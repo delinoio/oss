@@ -191,3 +191,6 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
 
 - [React Forge static GLB/FBX scenes](packages-react-forge-scene-contract.md): generation, materials, sessions and interoperability evidence requirements.
+
+- [DeliDev signed updates](cmds-delidev-updates-contract.md)
+- [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
