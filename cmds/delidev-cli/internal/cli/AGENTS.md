@@ -48,6 +48,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - `session switch-account --id ID --revision N --account-id ID` invokes only the explicit owner/client Connect operation. Gate support with the typed status capability, preserve exact request identities, and leave the selected session paused until explicit Resume.
 
+- Provide `session context --id` and `session compact --id --revision` through the authenticated Connect APIs in `docs/cmds-delidev-claude-compaction-contract.md`. Context is read-only; compaction retains the supplied UUID-v7 request identity and returns the durable job without claiming native success.
+
 - `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.
 
 - Manual remediation capabilities/fix commands use generated authenticated PullRequestFixService with the same closed original selection and receipt semantics as desktop. Preserve exact revisions/request IDs; reject foreign acknowledgments and avoid authentication/document stdin sharing. Never publish with the server lookup PAT or silently select another harness.

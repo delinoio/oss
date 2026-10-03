@@ -236,29 +236,32 @@ type LocalOrigin struct {
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
-	Fork                *ForkOrigin          `json:"fork,omitempty"`
-	EstimatedCostBudget *EstimatedCostBudget `json:"estimated_cost_budget,omitempty"`
-	ScheduleOrigin      *ScheduleOrigin      `json:"schedule_origin,omitempty"`
-	LocalOrigin         *LocalOrigin         `json:"local_origin,omitempty"`
-	Name                string               `json:"name"`
-	NameMode            SessionNameMode      `json:"name_mode,omitempty"`
-	NameOwner           SessionNameOwner     `json:"name_owner,omitempty"`
-	NameGeneration      uint64               `json:"name_generation,omitempty"`
-	TitleState          SessionTitleState    `json:"title_state,omitempty"`
-	TitleReason         SessionTitleReason   `json:"title_reason,omitempty"`
-	TitleOperationID    ID                   `json:"title_operation_id,omitempty"`
-	TitleJobID          ID                   `json:"title_job_id,omitempty"`
-	AgentID             ID                   `json:"agent_id"`
-	MachineID           ID                   `json:"machine_id"`
-	ProjectID           ID                   `json:"project_id,omitempty"`
-	Workspace           WorkspaceType        `json:"workspace"`
-	Starting            []RepositoryStart    `json:"starting,omitempty"`
-	Source              SessionSource        `json:"source"`
-	CreatedBy           ID                   `json:"created_by,omitempty"`
-	Outcome             ExecutionOutcome     `json:"outcome"`
-	Archive             ArchiveState         `json:"archive"`
-	Recovery            RecoveryState        `json:"recovery"`
-	Dispatch            DispatchState        `json:"dispatch"`
+	LastCompactionJobID ID                    `json:"last_compaction_job_id,omitempty"`
+	CompactionJobID     ID                    `json:"compaction_job_id,omitempty"`
+	Compaction          *SessionCompactionRef `json:"compaction,omitempty"`
+	Fork                *ForkOrigin           `json:"fork,omitempty"`
+	EstimatedCostBudget *EstimatedCostBudget  `json:"estimated_cost_budget,omitempty"`
+	ScheduleOrigin      *ScheduleOrigin       `json:"schedule_origin,omitempty"`
+	LocalOrigin         *LocalOrigin          `json:"local_origin,omitempty"`
+	Name                string                `json:"name"`
+	NameMode            SessionNameMode       `json:"name_mode,omitempty"`
+	NameOwner           SessionNameOwner      `json:"name_owner,omitempty"`
+	NameGeneration      uint64                `json:"name_generation,omitempty"`
+	TitleState          SessionTitleState     `json:"title_state,omitempty"`
+	TitleReason         SessionTitleReason    `json:"title_reason,omitempty"`
+	TitleOperationID    ID                    `json:"title_operation_id,omitempty"`
+	TitleJobID          ID                    `json:"title_job_id,omitempty"`
+	AgentID             ID                    `json:"agent_id"`
+	MachineID           ID                    `json:"machine_id"`
+	ProjectID           ID                    `json:"project_id,omitempty"`
+	Workspace           WorkspaceType         `json:"workspace"`
+	Starting            []RepositoryStart     `json:"starting,omitempty"`
+	Source              SessionSource         `json:"source"`
+	CreatedBy           ID                    `json:"created_by,omitempty"`
+	Outcome             ExecutionOutcome      `json:"outcome"`
+	Archive             ArchiveState          `json:"archive"`
+	Recovery            RecoveryState         `json:"recovery"`
+	Dispatch            DispatchState         `json:"dispatch"`
 	// Explicit Stop/Archive/Restore suppress replacement PR automation. A
 	// settled failed automatic execution may pause its own queue independently.
 	AutomaticRemediationStopped bool                       `json:"automatic_remediation_stopped,omitempty"`

@@ -55,6 +55,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Explicit outbound networking](cmds-delidev-network-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Claude native context and manual compaction](cmds-delidev-claude-compaction-contract.md)
 - [Same-account Codex session forks](cmds-delidev-forks-contract.md)
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)

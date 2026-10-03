@@ -22,6 +22,47 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@fixture/peer-blue@workspace:packages/peer-blue":
+  version: 0.0.0-use.local
+  resolution: "@fixture/peer-blue@workspace:packages/peer-blue"
+  dependencies:
+    "@fixture/peer-consumer": "npm:1.0.0"
+    "@fixture/peer-provider": "file:../../fixture-packages/peer-blue"
+  languageName: unknown
+  linkType: soft
+
+"@fixture/peer-consumer@file:./fixture-packages/peer-consumer::locator=pnport-typescript-fixture%40workspace%3A.":
+  version: 1.0.0
+  resolution: "@fixture/peer-consumer@file:./fixture-packages/peer-consumer#./fixture-packages/peer-consumer::hash=c511a0&locator=pnport-typescript-fixture%40workspace%3A."
+  peerDependencies:
+    "@fixture/peer-provider": "*"
+  checksum: 10c0/bf1bcd1c5e9b508f1316c69c76726db5841aeef4496bcda75f14c7b3e5033fb9440003a8e76ba3076e528ac1609f28924ba9e99c4e7f9282c7007686f39d1abf
+  languageName: node
+  linkType: hard
+
+"@fixture/peer-provider@file:../../fixture-packages/peer-blue::locator=%40fixture%2Fpeer-blue%40workspace%3Apackages%2Fpeer-blue":
+  version: 1.0.0
+  resolution: "@fixture/peer-provider@file:../../fixture-packages/peer-blue#../../fixture-packages/peer-blue::hash=ae0dc6&locator=%40fixture%2Fpeer-blue%40workspace%3Apackages%2Fpeer-blue"
+  checksum: 10c0/b09e40f41ae8bc414316a16daeb3f56c59f6cac88eb6df0a9037cd57821505cfe18115813bb3b2aa6527a4c1c39bea3a4ecdf6eea67362dda55a69183dcfb418
+  languageName: node
+  linkType: hard
+
+"@fixture/peer-provider@file:../../fixture-packages/peer-red::locator=%40fixture%2Fpeer-red%40workspace%3Apackages%2Fpeer-red":
+  version: 2.0.0
+  resolution: "@fixture/peer-provider@file:../../fixture-packages/peer-red#../../fixture-packages/peer-red::hash=d408f8&locator=%40fixture%2Fpeer-red%40workspace%3Apackages%2Fpeer-red"
+  checksum: 10c0/18fe086f0dffd3b96a70b49bfd8ae7ae8ef89ecdb75bdcbaf327a4686222d999b8a190d95db81669d0e57fc7b5238352a0d535ae05e56593c9628e77cff32c2e
+  languageName: node
+  linkType: hard
+
+"@fixture/peer-red@workspace:packages/peer-red":
+  version: 0.0.0-use.local
+  resolution: "@fixture/peer-red@workspace:packages/peer-red"
+  dependencies:
+    "@fixture/peer-consumer": "npm:1.0.0"
+    "@fixture/peer-provider": "file:../../fixture-packages/peer-red"
+  languageName: unknown
+  linkType: soft
+
 "@fixture/scoped@file:../../fixture-packages/scoped::locator=%40fixture%2Fapp%40workspace%3Apackages%2Fapp":
   version: 1.0.0
   resolution: "@fixture/scoped@file:../../fixture-packages/scoped#../../fixture-packages/scoped::hash=114c1c&locator=%40fixture%2Fapp%40workspace%3Apackages%2Fapp"

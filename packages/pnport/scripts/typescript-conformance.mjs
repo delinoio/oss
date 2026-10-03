@@ -37,8 +37,34 @@ if (mode === "prepare") {
   for (const format of formats) {
     const root = join(directory, format);
     cpSync(fixture, root, { recursive: true, filter: (path) => !path.split(/[\\/]/).some((part) => [".yarn", "lib"].includes(part)) && !/\.pnp\.|\.tsbuildinfo$/.test(path) });
-    writeFileSync(join(root, ".yarnrc.yml"), `nodeLinker: pnp\nenableScripts: false\nenableGlobalCache: false\npnpEnableInlining: ${format === "inline"}\ncacheFolder: ${JSON.stringify(join(directory, "external-cache"))}\n`);
+    const settings = (inline) => `nodeLinker: pnp\nenableScripts: false\nenableGlobalCache: false\npnpEnableInlining: ${inline}\ncacheFolder: ${JSON.stringify(join(directory, "external-cache"))}\n`;
+    // Inspect generated data before inlining; never evaluate the project loader.
+    writeFileSync(join(root, ".yarnrc.yml"), settings(false));
     npm(["exec", "--yes", "--package", `@yarnpkg/cli-dist@${yarn}`, "--", "yarn", "install", "--immutable"], { cwd: root, env });
+    const graph = JSON.parse(readFileSync(join(root, ".pnp.data.json"), "utf8"));
+    const registry = new Map(graph.packageRegistryData);
+    const consumers = new Map(registry.get("@fixture/peer-consumer"));
+    const peers = ["blue", "red"].map((flavor) => {
+      const workspace = new Map(registry.get(`@fixture/peer-${flavor}`)).get(`workspace:packages/peer-${flavor}`);
+      const reference = new Map(workspace.packageDependencies).get("@fixture/peer-consumer");
+      assert(reference.startsWith("virtual:"));
+      const consumer = consumers.get(reference);
+      assert.equal(consumer.linkType, "HARD");
+      const provider = new Map(consumer.packageDependencies).get("@fixture/peer-provider");
+      assert(provider.includes(`fixture-packages/peer-${flavor}`));
+      const archive = consumer.packageLocation.match(/([^/]+\.zip)\/node_modules\/@fixture\/peer-consumer\/$/u)?.[1];
+      assert(archive && existsSync(join(directory, "external-cache", archive)));
+      return { flavor, reference, provider, archiveSha256: sha256(join(directory, "external-cache", archive)) };
+    });
+    assert.notEqual(peers[0].reference, peers[1].reference);
+    assert.notEqual(peers[0].provider, peers[1].provider);
+    assert.equal(peers[0].archiveSha256, peers[1].archiveSha256, "Peer instances must share the same ZIP-backed consumer bytes.");
+    if (format === "inline") {
+      writeFileSync(join(root, ".yarnrc.yml"), settings(true));
+      npm(["exec", "--yes", "--package", `@yarnpkg/cli-dist@${yarn}`, "--", "yarn", "install", "--immutable", "--immutable-cache"], { cwd: root, env });
+    }
+    writeFileSync(join(root, "peer-identities.json"), JSON.stringify({ manifestSha256: sha256(join(root, ".pnp.cjs")),
+      dataSha256: format === "split" ? sha256(join(root, ".pnp.data.json")) : null, peers }, null, 2));
     assert(!existsSync(join(root, "node_modules")));
   }
   writeFileSync(join(directory, "prepared.json"), JSON.stringify({ yarn, compiler, platform: process.platform, arch: process.arch }, null, 2));
@@ -82,7 +108,10 @@ if (mode === "prepare") {
           "Linux conformance must exercise the static syscall backend.");
       }
     }
-    for (const workspace of ["core", "app"]) {
+    const peerIdentity = JSON.parse(readFileSync(join(root, "peer-identities.json"), "utf8"));
+    assert.equal(peerIdentity.manifestSha256, sha256(join(root, ".pnp.cjs")));
+    assert.equal(peerIdentity.dataSha256, format === "split" ? sha256(join(root, ".pnp.data.json")) : null);
+    for (const workspace of ["core", "app", "peer-blue", "peer-red"]) {
       rmSync(join(root, "packages", workspace, "lib"), { recursive: true, force: true });
       rmSync(join(root, "packages", workspace, "tsconfig.tsbuildinfo"), { force: true });
     }
@@ -102,6 +131,23 @@ if (mode === "prepare") {
     assert.equal(unsupported.status, 1);
     assert.match(unsupported.stdout + unsupported.stderr, /TS2688: Cannot find type definition file for 'node'/);
     successful(run("tsc", "--noEmit", "-p", "packages/app"));
+    for (const flavor of ["blue", "red"]) {
+      const workspace = `packages/peer-${flavor}`;
+      const peerSource = join(root, workspace, "src/index.ts");
+      const peerOriginal = readFileSync(peerSource, "utf8");
+      assert(existsSync(join(root, workspace, "lib/index.js")) && existsSync(join(root, workspace, "lib/index.d.ts")));
+      const withoutView = execute(native, ["--noEmit", "-p", workspace], root);
+      assert.equal(withoutView.status, 1);
+      assert.match(withoutView.stdout + withoutView.stderr, /TS2307.*@fixture\/peer-consumer/u);
+      successful(run(native, "--noEmit", "-p", workspace));
+      writeFileSync(peerSource, `${peerOriginal}\nexport const wrongPeer: Flavor = "${flavor === "blue" ? "red" : "blue"}";\n`);
+      try {
+        const wrongPeer = run(native, "--noEmit", "-p", workspace);
+        assert.equal(wrongPeer.status, 1);
+        assert.match(wrongPeer.stdout + wrongPeer.stderr, /TS2322/u);
+      } finally { writeFileSync(peerSource, peerOriginal); }
+      successful(run(native, "--noEmit", "-p", workspace));
+    }
     successful(run(native, "--noEmit", "-p", "packages/app"));
     writeFileSync(source, `${original}\nexport const invalid: number = "type-error-canary";\n`);
     try {
@@ -113,7 +159,11 @@ if (mode === "prepare") {
     assert(!existsSync(join(root, "node_modules")));
     assert.equal(sha256(native), originalDigest, "Never rewrite or re-sign the official compiler.");
     successful(execute(binary, ["--cache-dir", cache, "cache", "clean"], root));
-    samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest });
+    samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest,
+      peers: peerIdentity.peers.map(({ flavor, reference, provider, archiveSha256 }) => ({ flavor,
+        locatorSha256: createHash("sha256").update(reference).digest("hex"),
+        providerSha256: createHash("sha256").update(provider).digest("hex"), archiveSha256,
+        nativeExecution: true, wrongPeerRejected: true, unvirtualizedRejected: true })) });
   }
   const hostVersion = process.platform === "darwin"
     ? successful(execute("/usr/bin/sw_vers", ["-productVersion"], directory)).stdout.trim()

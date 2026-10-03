@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { publicationChannel } from "./version.mjs";
 
 export const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 export const root = path.resolve(packageRoot, "../..");
@@ -22,7 +23,8 @@ export function metadata(read = sourceText) {
     ensure(section?.includes(`name = "${name}"\n`), `Missing ${name} Cargo identity`);
     return section.match(/^version = "([^"]+)"$/mu)?.[1];
   });
-  ensure(npm.name === "@delino/pnport" && versions.every((value) => value === npm.version) && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(npm.version), "pnport Cargo/npm version mismatch");
+  ensure(npm.name === "@delino/pnport" && versions.every((value) => value === npm.version), "pnport Cargo/npm version mismatch");
+  publicationChannel(npm.version);
   return { version: npm.version };
 }
 
@@ -32,6 +34,15 @@ export function requireReleaseReady(read = sourceText) {
   // results are reviewed; dry runs must stay available while it is closed.
   const source = JSON.parse(read("packages/pnport/package.json"));
   ensure(source.pnportReleaseReady === true && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(source.version) && source.version !== "0.0.0", "pnport publication is blocked until full native, minimum-OS, and benchmark acceptance is complete");
+}
+
+export function requirePublicationReady(read = sourceText) {
+  const source = JSON.parse(read("packages/pnport/package.json"));
+  const policy = publicationChannel(source.version);
+  if (policy.prerelease) {
+    ensure(source.pnportPreviewVersion === source.version, "pnport preview publication requires exact reviewed source-version authorization");
+  } else requireReleaseReady(read);
+  return policy;
 }
 
 export function revision() {

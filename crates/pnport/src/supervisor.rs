@@ -92,7 +92,7 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(injection_error()),
     };
-    let code = [
+    let recorded_code = [
         Code::PnportManifestMissing,
         Code::PnportManifestInvalid,
         Code::PnportFilesystemConflict,
@@ -106,8 +106,14 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
         Code::PnportCommandNotExecutable,
     ]
     .into_iter()
-    .find(|code| code.as_str().as_bytes() == recorded)
-    .unwrap_or(Code::PnportInjectionFailed);
+    .find(|code| code.as_str().as_bytes() == recorded);
+    let code = recorded_code.unwrap_or(Code::PnportInjectionFailed);
+    tracing::debug!(
+        action = "native_failure_record",
+        code = code.as_str(),
+        recognized = recorded_code.is_some(),
+        "Read the native interception failure record"
+    );
     Ok(Some(Error::new(
         code,
         "Native filesystem interception reported a runtime failure; the process tree has been \
@@ -268,6 +274,12 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                 );
             }
             if let Some(exit) = child.try_wait().map_err(|_| injection_error())? {
+                // The child may publish its admission/runtime failure after
+                // this loop's first read and then exit before try_wait. Read
+                // again after observing exit so success cannot hide that code.
+                if let Some(error) = runtime_failure(&view.session)? {
+                    return Err(error);
+                }
                 if status.is_none() {
                     status = Some(exit);
                     root_exited_at = Some(Instant::now());

@@ -2,9 +2,10 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isPreviewVersion } from "../../packages/pnport/scripts/version.mjs";
 
 export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", Pnport: "pnport", AsyncCommitHook: "async-commit-hook", ReactForge: "react-forge" });
-export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major" });
+export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major", Next: "next" });
 export const Kind = Object.freeze({ Rust: "rust", Go: "go", Node: "node" });
 const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
@@ -54,14 +55,15 @@ function replaceLockVersion(lock, project, previous, next) {
   requireValue(!lock.includes(` "${project} ${previous}`), "Version-qualified workspace dependents require an explicit release contract");
   return lock.replace(section, section.replace(/^version = "[^"]+"$/mu, `version = "${next}"`));
 }
-function versionParts(version) {
+function versionParts(version, pnport = false) {
+  if (pnport && isPreviewVersion(version)) return [0n, 1n, 0n];
   requireValue(typeof version === "string" && version.length <= 62 && semverPattern.test(version), "An exact stable MAJOR.MINOR.PATCH version is required");
   const parts = version.split(".").map(BigInt);
   requireValue(parts.every((part) => part <= 18446744073709551615n), "Version component overflow");
   return parts;
 }
 export function bumpVersion(version, bump) {
-  requireValue(Object.values(Bump).includes(bump), "Unknown version bump");
+  requireValue([Bump.Patch, Bump.Minor, Bump.Major].includes(bump), "Unknown stable version bump");
   const parts = versionParts(version);
   const index = { major: 0, minor: 1, patch: 2 }[bump];
   parts[index] += 1n;
@@ -99,7 +101,7 @@ function replaceVersion(source, project, kind, next) {
   const fields = [...section.matchAll(/^version = "([^"]+)"$/gmu)];
   requireValue(fields.length === 1, "Missing or ambiguous manifest version");
   const current = fields[0][1];
-  versionParts(current);
+  versionParts(current, ["pnport", "pnport-core", "pnport-preload"].includes(project));
   return { current, text: next ? source.replace(pattern, (_, header, body) => header + body.replace(/^version = "[^"]+"$/mu, `version = "${next}"`)) : source };
 }
 
@@ -141,10 +143,19 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
 export function versionChanges(project, bump, read) {
   const { file, kind } = descriptor(project);
   const previous_version = readVersion(project, read);
-  if ([Project.Pnport, Project.ReactForge].includes(project) && previous_version === "0.0.0") {
+  requireValue(bump !== Bump.Next || project === Project.Pnport, "The next bump is reserved for pnport");
+  if ([Project.Pnport, Project.ReactForge].includes(project) && previous_version === "0.0.0" && bump !== Bump.Next) {
     requireValue(bump === Bump.Minor, `${project} first public release requires a minor bump to 0.1.0`);
   }
-  const version = bumpVersion(previous_version, bump);
+  let version;
+  if (project === Project.Pnport && bump === Bump.Next) {
+    requireValue(previous_version === "0.0.0" || isPreviewVersion(previous_version), "pnport preview preparation requires the unreleased or preview source line");
+    version = previous_version === "0.0.0" ? "0.1.0-next.1" : `0.1.0-next.${BigInt(previous_version.slice("0.1.0-next.".length)) + 1n}`;
+    requireValue(isPreviewVersion(version) && JSON.parse(read("packages/pnport/package.json")).pnportPreviewVersion === version, "pnport next version requires exact reviewed source-version authorization");
+  } else if (project === Project.Pnport && isPreviewVersion(previous_version)) {
+    requireValue(bump === Bump.Minor, "pnport preview promotion requires a minor bump to 0.1.0");
+    version = "0.1.0";
+  } else version = bumpVersion(previous_version, bump);
   const changes = { [file]: replaceVersion(read(file), project, kind, version).text };
   if (kind === Kind.Rust) {
     changes["Cargo.lock"] = replaceLockVersion(read("Cargo.lock"), project, previous_version, version);
@@ -176,7 +187,8 @@ export function sourceMetadata({ project, event, ref, requestedVersion, requeste
   const dry_run = event === "push" ? "false" : requestedDryRun;
   requireValue(["true", "false"].includes(dry_run), "Invalid release dry-run mode");
   const version = event === "push" ? ref?.replace(`refs/tags/${project}@v`, "") : requestedVersion;
-  versionParts(version);
+  versionParts(version, project === Project.Pnport);
+  if (project === Project.Pnport && isPreviewVersion(version)) requireValue(JSON.parse(read("packages/pnport/package.json")).pnportPreviewVersion === version, "pnport preview source is not the exact authorized version");
   requireValue(readVersion(project, read) === version, "Requested release version does not match source");
   const tag = `${project}@v${version}`;
   requireValue(event !== "push" || ref === `refs/tags/${tag}`, "Release push must be the exact project tag");
@@ -201,6 +213,7 @@ const authArgs = ["-c", "credential.helper=", "-c", "credential.helper=!gh auth 
 function validateRun(project, bump, runId) {
   descriptor(project);
   requireValue(Object.values(Bump).includes(bump), "Unknown version bump");
+  requireValue(bump !== Bump.Next || project === Project.Pnport, "The next bump is reserved for pnport");
   requireValue(/^[1-9]\d{0,19}$/u.test(runId ?? ""), "Invalid release run ID");
 }
 function releaseMessage(plan, runId) {

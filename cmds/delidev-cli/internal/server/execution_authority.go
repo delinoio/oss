@@ -60,6 +60,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil {
 		return empty, executionDenied()
 	}
+	if job.Type == domain.CompactSessionJob {
+		return a.compactionScope(tx, grant, jobRecord, job)
+	}
 	if job.Type == domain.GenerateSessionTitleJob {
 		return a.titleScope(tx, grant, jobRecord, job)
 	}
@@ -489,7 +492,13 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, executionDenied()
 		}
-		if job.Type == domain.GenerateSessionTitleJob {
+		if job.Type == domain.CompactSessionJob {
+			var input domain.SessionCompactionInput
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil {
+				return nil, executionDenied()
+			}
+			grant.ExecutionID = input.ActionID
+		} else if job.Type == domain.GenerateSessionTitleJob {
 			var input domain.AuxiliaryTitleInput
 			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil {
 				return nil, executionDenied()

@@ -12,6 +12,11 @@ import (
 func claudeTerminalPublicationFixture(t *testing.T, originalInput bool) (*publicationFixture, domain.ExecutionEvent) {
 	t.Helper()
 	f := newClaudePublicationFixture(t, domain.ExecuteMode)
+	return f, publishClaudeTerminalFixture(t, f, originalInput)
+}
+
+func publishClaudeTerminalFixture(t *testing.T, f *publicationFixture, originalInput bool) domain.ExecutionEvent {
+	t.Helper()
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
 	sequence := uint64(3)
@@ -31,7 +36,7 @@ func claudeTerminalPublicationFixture(t *testing.T, originalInput bool) (*public
 	e = f.event(domain.ExecutionTurnFinished, sequence+1)
 	e.Outcome = domain.ExecutionSucceeded
 	e.ClaudeTerminal = &domain.ClaudeTerminalObservation{InputID: f.input.InputID, ResultNativeID: result, CommandNativeID: string(domain.NewID()), IdleNativeID: string(domain.NewID()), Kind: domain.ClaudeResultSuccess, Reason: domain.ClaudeCompleted, Command: domain.ClaudeCommandCompleted}
-	return f, e
+	return e
 }
 
 func TestClaudeTerminalAndCleanupRemainSeparateWithoutUnprovedContinuation(t *testing.T) {

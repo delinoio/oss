@@ -57,6 +57,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Generated `SessionQuery.switchSessionAccount` preserves the exact session revision, UUID-v7 receipt and explicitly selected account. Gate availability with the typed System capability, retain uncertain requests without automatic mutation retries, and leave stopped-session compatibility/authorization in Go.
 
+- Native context and manual compaction use the generated SessionService declarations and closed SessionContextCapability values in `docs/cmds-delidev-claude-compaction-contract.md`. Preserve raw bounded observation JSON, exact uint64 mutation revisions and UUID-v7 retry identity; never infer utilization or action success from an outer envelope.
+
 - Generated UsageQuery consumers verify the NATIVE_UNITS_V1 echo before interpreting native accounting, preserve decimal totals and distinct unit kinds, and keep legacy response fields separate. Grok pricing and budget contribution remain unavailable.
 
 - Generated BrowserQuery bindings expose only the metadata/cleanup contract in `docs/cmds-delidev-browser-contract.md`. Keep browser URLs, tabs and native paths out of product RPCs and React Query server state; local native presentation is independently authorized and generation-bound.

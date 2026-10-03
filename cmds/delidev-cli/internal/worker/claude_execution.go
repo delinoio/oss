@@ -44,7 +44,11 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	manager := &workspace.Manager{Root: config.Root, Logger: logger}
 	var lease *workspace.ExecutionLease
 	if c := input.Continuation; c != nil {
-		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
+		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
+		if c.Compaction != nil {
+			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
+		}
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, previous, preparation, manifest)
 	} else {
 		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
 	}

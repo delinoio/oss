@@ -77,6 +77,7 @@ Each project must have one project index document and one or more domain contrac
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Explicit outbound networking](cmds-delidev-network-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Claude native context and manual compaction](cmds-delidev-claude-compaction-contract.md)
 - [Same-account native Codex session forks](cmds-delidev-forks-contract.md)
 
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)

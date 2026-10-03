@@ -2,13 +2,17 @@
 
 pnport is a command-line tool in development for running subprocesses against an installed Yarn 4 Plug'n'Play project. Its virtual `node_modules` view is intended for programs that read dependencies as ordinary files, without creating a project `node_modules` directory.
 
-**pnport 0.1.0 is not released. No npm package, native archive, installer, or Homebrew formula is currently available for installation.** These guides describe the CLI interface and the requirements for a future complete release; they are not a compatibility certification for arbitrary tools.
+**pnport 0.1.0 is not released.** The experimental `0.1.0-next.1` preview is available for external testing through npm next and [signed GitHub prerelease archives](https://github.com/delinoio/oss/releases/tag/pnport%40v0.1.0-next.1). Stable installation and Homebrew remain unavailable. These guides describe the CLI interface and the requirements for a future complete release; they are not a compatibility certification for arbitrary tools.
+
+See [installation and availability](/pnport/installation) for the registry check, installation commands and known preview limits. Pin the exact version when reporting a failure.
+
+To try the published preview with Turbopack or TypeScript 7, follow [preview testing](/pnport/preview-testing).
 
 ## Release targets
 
 The 0.1.0 release targets macOS 13+ and Ubuntu 22.04-equivalent glibc Linux, each on x64 and arm64. All four targets must pass native execution and installation checks before release. Windows 10 22H2+ with MSVC on x64 and arm64 is planned for 0.2.0, with the same complete validation requirements. Linux static child executables are part of the first release gate. Musl hosts and mixed-architecture execution are outside the target set.
 
-Development evidence on macOS arm64 and Ubuntu 22.04 arm64 Docker does not establish support for every target or executable. Linux dynamic and static development fixtures pass on arm64; native Linux x64 execution and full release validation remain open. Windows execution remains unavailable. See [installation and availability](/pnport/installation) for the current status.
+The preview passed native candidate execution and installation fixtures on all four macOS and glibc Linux targets, including Linux dynamic and static children. These fixtures do not establish support for every executable. Full feature, minimum-OS and benchmark acceptance remain unfinished; intermittent native initialization failures remain under investigation. Windows execution remains unavailable. See [installation and availability](/pnport/installation) for the current status.
 
 ## What the CLI is designed to do
 
@@ -23,6 +27,7 @@ Start with [getting started](/pnport/getting-started) and the [command reference
 
 - [Installation and availability](/pnport/installation)
 - [Getting started](/pnport/getting-started)
+- [Preview testing](/pnport/preview-testing)
 - [Commands](/pnport/commands)
 - [Filesystem and processes](/pnport/filesystem-and-processes)
 - [Editors and language servers](/pnport/editors)
