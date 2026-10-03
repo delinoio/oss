@@ -23,6 +23,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   connection list
   connection worker-register|worker-inspect|worker-status|worker-start --id UUID
   connection worker-stop --id UUID --generation UUID
+  connection worker-network-prepare|worker-network-status --id UUID
+  connection worker-network-import --id UUID --expected-ciphertext-digest SHA256 < ciphertext
   connection pair --id UUID --name NAME --code-stdin
   connection inspect|verify|retry --id UUID
   device create-pairing --type worker|client --name NAME
