@@ -229,21 +229,21 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		return result, err
 	}
 	request := struct {
-		Thread       domain.ID         `json:"threadId"`
-		Last         domain.ID         `json:"lastTurnId"`
-		Path         string            `json:"path"`
-		Model        string            `json:"model"`
-		Provider     string            `json:"modelProvider"`
-		Cwd          string            `json:"cwd"`
-		Roots        []string          `json:"runtimeWorkspaceRoots,omitempty"`
-		Instructions string            `json:"developerInstructions,omitempty"`
-		Policy       ApprovalPolicy    `json:"approvalPolicy,omitempty"`
-		Reviewer     string            `json:"approvalsReviewer"`
-		Sandbox      string            `json:"sandbox,omitempty"`
-		Tier         string            `json:"serviceTier,omitempty"`
-		Config       map[string]string `json:"config,omitempty"`
-		Exclude      bool              `json:"excludeTurns"`
-		DeferGoal    bool              `json:"deferGoalContinuation"`
+		Thread       domain.ID      `json:"threadId"`
+		Last         domain.ID      `json:"lastTurnId"`
+		Path         string         `json:"path"`
+		Model        string         `json:"model"`
+		Provider     string         `json:"modelProvider"`
+		Cwd          string         `json:"cwd"`
+		Roots        []string       `json:"runtimeWorkspaceRoots,omitempty"`
+		Instructions string         `json:"developerInstructions,omitempty"`
+		Policy       ApprovalPolicy `json:"approvalPolicy,omitempty"`
+		Reviewer     string         `json:"approvalsReviewer"`
+		Sandbox      string         `json:"sandbox,omitempty"`
+		Tier         string         `json:"serviceTier,omitempty"`
+		Config       map[string]any `json:"config,omitempty"`
+		Exclude      bool           `json:"excludeTurns"`
+		DeferGoal    bool           `json:"deferGoalContinuation"`
 	}{source.checkpoint.ThreadID, source.checkpoint.TurnID, source.path, params.Model, params.ModelProvider, params.Cwd, params.WorkspaceRoots, params.DeveloperInstructions, params.ApprovalPolicy, params.ApprovalsReviewer, params.Sandbox, params.ServiceTier, params.Config, true, true}
 	response, err := c.wire.Call(ctx, requestID, string(forkThread), request)
 	if err != nil {

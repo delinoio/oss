@@ -287,6 +287,11 @@ func (a Agent) Validate() error {
 	if a.Options.MaxConcurrency > 64 {
 		return Fail(InvalidArgument, "Invalid native concurrency limit.", "Use at most 64; installed harness limits are checked before dispatch.")
 	}
+	if a.Harness == Codex {
+		if err := ValidateCodexSubagentOptions(a.Options); err != nil {
+			return err
+		}
+	}
 	for _, value := range []string{a.Effort, a.Options.SubagentModel, a.Options.SubagentEffort, a.Options.ApprovalPolicy, a.Options.ApprovalReviewModel, a.Options.ServiceTier} {
 		if err := Text(value, "native option", 256, false); err != nil {
 			return err
@@ -674,7 +679,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

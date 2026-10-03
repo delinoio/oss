@@ -14,6 +14,13 @@ func (c *Client) ModelList(ctx context.Context, hidden bool) ([]domain.NativeMod
 	if c.mode != ProbeProtocol || c.api != nil || c.modelObservation == "" {
 		return nil, domain.NativeModelFailure()
 	}
+	return c.readModelList(ctx, hidden)
+}
+
+// Execution uses this bounded read only for explicitly requested child model
+// or effort compatibility. It performs no remote model registration, inference
+// or account selection and cannot widen the server's immutable model grant.
+func (c *Client) readModelList(ctx context.Context, hidden bool) ([]domain.NativeModel, error) {
 	var cursor *string
 	cursors := map[string]bool{}
 	identities := map[string]bool{}

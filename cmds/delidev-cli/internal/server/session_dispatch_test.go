@@ -227,7 +227,7 @@ func (f *firstDispatchFixture) mutateAgent(t *testing.T, edit func(*domain.Agent
 func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.T) {
 	f := newFirstDispatchFixture(t)
 	ctx := context.Background()
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 2 })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = "unsupported" })
 	before := f.refresh(t)
 	if err := f.service.dispatchExecution(ctx, before); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("unsupported option dispatched", err)
@@ -251,7 +251,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	if f.refresh(t).Revision != blocked.Revision {
 		t.Fatal("unchanged block created a revision loop")
 	}
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 0; a.Effort = "high" })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = ""; a.Effort = "high" })
 	edited, err := sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, &pb.EditQueuedInputRequest{Mutation: acctMutation(f.change.Input, domain.NewID()), SessionId: f.change.Session.Id, Prompt: "latest input before claim"}))
 	if err != nil {
 		t.Fatal(err)
@@ -483,7 +483,7 @@ func TestInitialResumeFailurePreservesPauseAndRemovalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 2 })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = "unsupported" })
 	resume := &pb.ControlSessionRequest{Mutation: acctMutation(stopped.Msg.Change.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_RESUME}
 	_, err = sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, resume))
 	wantAccountCode(t, err, domain.Unsupported)
@@ -492,7 +492,7 @@ func TestInitialResumeFailurePreservesPauseAndRemovalOrder(t *testing.T) {
 	if unchanged.Revision != stopped.Msg.Change.Session.Revision || state.Dispatch != domain.DispatchPaused || state.InitialExecution != nil || !state.AutomaticRemediationStopped {
 		t.Fatal("failed explicit Resume changed paused state")
 	}
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 0 })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = "" })
 	second, err := sessionClient(f.accountFixture).EnqueueInput(ctx, ownerRequest(f.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: f.change.Session.Id, DocumentJson: []byte(`{"prompt":"second original input","mode":"execute"}`)}))
 	if err != nil {
 		t.Fatal(err)

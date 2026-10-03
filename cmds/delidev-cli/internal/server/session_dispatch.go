@@ -128,6 +128,9 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 	version, protocol := codex.SupportedVersion, domain.OpenAIResponses
 	switch c.Harness {
 	case domain.Codex:
+		if (c.Options.SubagentModel != "" || c.Options.SubagentEffort != "" || c.Options.MaxConcurrency != 0) && !slices.Contains(machine.WorkerCapabilities, domain.CodexSubagentConfigurationV1) {
+			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks Codex child configuration support.", "Update and reconnect that Runner Device; the saved input and native defaults remain unchanged.")
+		}
 	case domain.ClaudeCode:
 		validGeneration := input.Version == 1 && input.Continuation == nil || input.Version == 2 && input.Continuation != nil && input.Continuation.Validate(input) == nil
 		if !validGeneration {
@@ -208,6 +211,9 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 	}
 	if model.ProviderID != c.ProviderID || model.SubscriptionService != c.SubscriptionService || !model.MatchesAccount(account, c.Harness) || !slices.Contains(model.Harnesses, c.Harness) {
 		return empty, domain.Fail(domain.Unsupported, "The selected model no longer supports this execution profile.", "Restore compatibility without replacing the original session snapshot.")
+	}
+	if err := tx.RequireCodexSubagentModel(c, account); err != nil {
+		return empty, err
 	}
 	if session.ProjectID != "" {
 		project, err := tx.ExecutionProjectPolicy(session)

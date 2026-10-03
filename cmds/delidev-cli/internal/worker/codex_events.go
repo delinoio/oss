@@ -159,6 +159,9 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	}
 	switch event.Kind {
 	case codex.SubagentEvent:
+		if err := c.publisher.input.Configuration.ValidateCodexChildModels(event.Subagents); err != nil {
+			return true, err
+		}
 		next, err := domain.ApplySubagents(c.children, string(c.thread), event.Subagents)
 		if err != nil {
 			return true, err

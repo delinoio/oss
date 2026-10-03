@@ -222,6 +222,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		}
 		if err == nil {
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
+			subagentExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
 			proxyExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1)
 			if config.network != nil && (!networkExpected || !proxyExpected) {
 				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
@@ -255,6 +256,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			titleCapabilityExpected = verifiedTitleProfile
 			profile := executable
+			if subagentExpected {
+				profile += "\x00codex-subagent-configuration-v1"
+			}
 			if managedCapabilityExpected {
 				profile += "\x00managed"
 			}
@@ -280,6 +284,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if subagentExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
+			}
 			if networkExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
 			}

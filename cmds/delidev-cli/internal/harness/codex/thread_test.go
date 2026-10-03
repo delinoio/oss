@@ -28,6 +28,14 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if method == "model/list" {
+		entries := []any{}
+		for _, name := range []string{"child-model", "fixture-model"} {
+			entries = append(entries, map[string]any{"id": name, "model": name, "displayName": name, "description": "Controlled model compatibility", "hidden": false, "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium", "description": "Moderate"}, map[string]any{"reasoningEffort": "high", "description": "High"}}, "defaultReasoningEffort": "medium", "inputModalities": []string{"text"}, "serviceTiers": []any{}, "defaultServiceTier": nil, "multiAgentVersion": "v1"})
+		}
+		write(id, map[string]any{"data": entries, "nextCursor": nil})
+		return true
+	}
 	if f.handleSubagentRead(id, method, raw, write) {
 		return true
 	}
@@ -281,7 +289,7 @@ func TestThreadNativeDefaultsAreObservableWithoutInventingThem(t *testing.T) {
 func TestThreadInvalidSettingsDoNotConsumeRequestIdentity(t *testing.T) {
 	changes := []func(*ThreadSettings){
 		func(s *ThreadSettings) { s.Options.ClaudePermission = domain.ClaudePermissionDefault },
-		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentModel = "other" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "high" }, func(s *ThreadSettings) { s.Options.MaxConcurrency = 3 }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invented" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
+		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "invented" }, func(s *ThreadSettings) { s.Options.MaxConcurrency = 65 }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invented" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
 	}
 	client, capture := openThreadFixture(t, "thread-ready")
 	settings := threadSettings(t)
@@ -478,7 +486,7 @@ func TestSelectionValidationDoesNotReadCoordinatorFilesystem(t *testing.T) {
 	if err := ValidateThreadSettings(settings); err == nil {
 		t.Fatal("owning native validation skipped filesystem readiness")
 	}
-	settings.Options.MaxConcurrency = 2
+	settings.Options.ApprovalReviewModel = "unsupported"
 	if err := ValidateSelection(settings); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("coordinator accepted unsupported native settings", err)
 	}

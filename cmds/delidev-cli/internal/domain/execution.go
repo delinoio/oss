@@ -21,22 +21,23 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
-	AgentID             ID                  `json:"agent_id"`
-	AgentRevision       uint64              `json:"agent_revision"`
-	Harness             Harness             `json:"harness"`
-	ModelID             ID                  `json:"model_id"`
-	ModelRevision       uint64              `json:"model_revision"`
-	ProviderID          ID                  `json:"provider_id,omitempty"`
-	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
-	NativeModel         string              `json:"native_model"`
-	Effort              string              `json:"effort,omitempty"`
-	Options             AgentOptions        `json:"options"`
-	Accounts            []WeightedAccount   `json:"accounts"`
-	Routing             RoutingPolicy       `json:"routing"`
-	Templates           []AppliedTemplate   `json:"templates"`
-	Instructions        string              `json:"instructions"`
-	GrokContext         *GrokModelContext   `json:"grok_context,omitempty"`
-	Subscription        bool                `json:"subscription,omitempty"`
+	AgentID             ID                      `json:"agent_id"`
+	AgentRevision       uint64                  `json:"agent_revision"`
+	Harness             Harness                 `json:"harness"`
+	ModelID             ID                      `json:"model_id"`
+	ModelRevision       uint64                  `json:"model_revision"`
+	ProviderID          ID                      `json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionService     `json:"subscription_service,omitempty"`
+	NativeModel         string                  `json:"native_model"`
+	SubagentModel       *ExecutionSubagentModel `json:"subagent_model,omitempty"`
+	Effort              string                  `json:"effort,omitempty"`
+	Options             AgentOptions            `json:"options"`
+	Accounts            []WeightedAccount       `json:"accounts"`
+	Routing             RoutingPolicy           `json:"routing"`
+	Templates           []AppliedTemplate       `json:"templates"`
+	Instructions        string                  `json:"instructions"`
+	GrokContext         *GrokModelContext       `json:"grok_context,omitempty"`
+	Subscription        bool                    `json:"subscription,omitempty"`
 }
 
 func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent, modelRevision uint64, model Model, defaultPolicy RoutingPolicy, templates []AppliedTemplate) (ExecutionConfiguration, error) {
@@ -107,6 +108,12 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.Harness == Codex && ValidateCodexSubagentOptions(c.Options) != nil {
+		return ValidateCodexSubagentOptions(c.Options)
+	}
+	if c.SubagentModel != nil && (c.Harness != Codex || c.SubagentModel.ModelID.Validate() != nil || c.SubagentModel.ModelRevision == 0 || c.SubagentModel.NativeModel != c.Options.SubagentModel || Text(c.SubagentModel.NativeModel, "saved child model", 256, true) != nil) {
+		return Fail(RecoveryRequired, "Invalid retained child model identity.", "Preserve the immutable original child model snapshot.")
+	}
 	if c.SubscriptionService != "" && (!c.Subscription || !c.SubscriptionService.Valid() || c.SubscriptionService.Harness() != c.Harness || c.ProviderID != "") {
 		return Fail(RecoveryRequired, "Invalid retained subscription identity.", "Preserve the original snapshot; create a new explicitly configured session.")
 	}
