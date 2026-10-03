@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 25
+const SchemaVersion = 26
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -260,7 +260,11 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	// those files for explicit recovery instead of guessing a migration.
 	if version >= 25 {
 		var layout string
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != "grok-closed-input-v1" {
+		expectedLayout := "grok-closed-input-v1"
+		if version >= 26 {
+			expectedLayout = "priced-native-input-v2"
+		}
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != expectedLayout {
 			return domain.Fail(domain.RecoveryRequired, "The native accounting layout is unrecognized.", "Preserve the original database and use explicit recovery; never adopt an unmerged schema by version number.")
 		}
 	}

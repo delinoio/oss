@@ -8,6 +8,7 @@ import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { detectDeviceTimeZone, localDateTimeToUnixMs } from "./usage-time";
 import { UsageCharts } from "./usage-chart";
 import { GrokAccounting } from "./grok-accounting";
+import { NativeAccounting } from "./native-accounting";
 
 interface Filters { from: string; until: string; sessionId: string; projectId: string; accountId: string; providerId: string; modelId: string; generalChat: boolean }
 const emptyFilters: Filters = { from: "", until: "", sessionId: "", projectId: "", accountId: "", providerId: "", modelId: "", generalChat: false };
@@ -140,6 +141,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
         </tr>)}</tbody></table></div> : <p>No exact response usage is recorded for these filters. This does not mean zero usage or zero cost.</p>}
       </section>
       <GrokAccounting data={data} open={open} />
+      <NativeAccounting data={data} open={open} />
       <section className="usage-costs" aria-labelledby="usage-cost-title"><h2 id="usage-cost-title">Cost evidence</h2><p><strong>Actual API cost:</strong> Unavailable — no verified attributable charge is supplied by the current telemetry.</p><EstimateCosts totals={data.estimates} pricing={data.pricing} /><p>Complete token-price categories do not establish complete telemetry, billed spend, a billing ceiling or budget compliance. Historical estimates remain separated by currency and original price basis.</p></section>
     </> : null}
   </section></>;

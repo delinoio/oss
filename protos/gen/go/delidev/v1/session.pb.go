@@ -1979,14 +1979,17 @@ func (x *EstimatedCostBudget) GetThreshold() string {
 }
 
 type BudgetEvidence struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	Currency             string                 `protobuf:"bytes,1,opt,name=currency,proto3" json:"currency,omitempty"`
-	KnownAmount          string                 `protobuf:"bytes,2,opt,name=known_amount,json=knownAmount,proto3" json:"known_amount,omitempty"`
-	CompleteResponses    uint64                 `protobuf:"varint,3,opt,name=complete_responses,json=completeResponses,proto3" json:"complete_responses,omitempty"`
-	PartialResponses     uint64                 `protobuf:"varint,4,opt,name=partial_responses,json=partialResponses,proto3" json:"partial_responses,omitempty"`
-	UnavailableResponses uint64                 `protobuf:"varint,5,opt,name=unavailable_responses,json=unavailableResponses,proto3" json:"unavailable_responses,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Currency               string                 `protobuf:"bytes,1,opt,name=currency,proto3" json:"currency,omitempty"`
+	KnownAmount            string                 `protobuf:"bytes,2,opt,name=known_amount,json=knownAmount,proto3" json:"known_amount,omitempty"`
+	CompleteResponses      uint64                 `protobuf:"varint,3,opt,name=complete_responses,json=completeResponses,proto3" json:"complete_responses,omitempty"`
+	PartialResponses       uint64                 `protobuf:"varint,4,opt,name=partial_responses,json=partialResponses,proto3" json:"partial_responses,omitempty"`
+	UnavailableResponses   uint64                 `protobuf:"varint,5,opt,name=unavailable_responses,json=unavailableResponses,proto3" json:"unavailable_responses,omitempty"`
+	CompleteNativeUnits    uint64                 `protobuf:"varint,6,opt,name=complete_native_units,json=completeNativeUnits,proto3" json:"complete_native_units,omitempty"`
+	PartialNativeUnits     uint64                 `protobuf:"varint,7,opt,name=partial_native_units,json=partialNativeUnits,proto3" json:"partial_native_units,omitempty"`
+	UnavailableNativeUnits uint64                 `protobuf:"varint,8,opt,name=unavailable_native_units,json=unavailableNativeUnits,proto3" json:"unavailable_native_units,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *BudgetEvidence) Reset() {
@@ -2054,18 +2057,41 @@ func (x *BudgetEvidence) GetUnavailableResponses() uint64 {
 	return 0
 }
 
+func (x *BudgetEvidence) GetCompleteNativeUnits() uint64 {
+	if x != nil {
+		return x.CompleteNativeUnits
+	}
+	return 0
+}
+
+func (x *BudgetEvidence) GetPartialNativeUnits() uint64 {
+	if x != nil {
+		return x.PartialNativeUnits
+	}
+	return 0
+}
+
+func (x *BudgetEvidence) GetUnavailableNativeUnits() uint64 {
+	if x != nil {
+		return x.UnavailableNativeUnits
+	}
+	return 0
+}
+
 type SessionBudgetView struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Session *Resource              `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
 	Budget  *EstimatedCostBudget   `protobuf:"bytes,2,opt,name=budget,proto3" json:"budget,omitempty"`
 	State   BudgetState            `protobuf:"varint,3,opt,name=state,proto3,enum=delidev.v1.BudgetState" json:"state,omitempty"`
 	// Entire retained session lifetime, independent of dashboard time filters.
-	SelectedCurrency       *BudgetEvidence `protobuf:"bytes,4,opt,name=selected_currency,json=selectedCurrency,proto3" json:"selected_currency,omitempty"`
-	UnpricedResponses      uint64          `protobuf:"varint,5,opt,name=unpriced_responses,json=unpricedResponses,proto3" json:"unpriced_responses,omitempty"`
-	OtherCurrencyResponses uint64          `protobuf:"varint,6,opt,name=other_currency_responses,json=otherCurrencyResponses,proto3" json:"other_currency_responses,omitempty"`
-	Coverage               UsageCoverage   `protobuf:"varint,7,opt,name=coverage,proto3,enum=delidev.v1.UsageCoverage" json:"coverage,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	SelectedCurrency         *BudgetEvidence `protobuf:"bytes,4,opt,name=selected_currency,json=selectedCurrency,proto3" json:"selected_currency,omitempty"`
+	UnpricedResponses        uint64          `protobuf:"varint,5,opt,name=unpriced_responses,json=unpricedResponses,proto3" json:"unpriced_responses,omitempty"`
+	OtherCurrencyResponses   uint64          `protobuf:"varint,6,opt,name=other_currency_responses,json=otherCurrencyResponses,proto3" json:"other_currency_responses,omitempty"`
+	Coverage                 UsageCoverage   `protobuf:"varint,7,opt,name=coverage,proto3,enum=delidev.v1.UsageCoverage" json:"coverage,omitempty"`
+	UnpricedNativeUnits      uint64          `protobuf:"varint,8,opt,name=unpriced_native_units,json=unpricedNativeUnits,proto3" json:"unpriced_native_units,omitempty"`
+	OtherCurrencyNativeUnits uint64          `protobuf:"varint,9,opt,name=other_currency_native_units,json=otherCurrencyNativeUnits,proto3" json:"other_currency_native_units,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *SessionBudgetView) Reset() {
@@ -2145,6 +2171,20 @@ func (x *SessionBudgetView) GetCoverage() UsageCoverage {
 		return x.Coverage
 	}
 	return UsageCoverage_USAGE_COVERAGE_UNSPECIFIED
+}
+
+func (x *SessionBudgetView) GetUnpricedNativeUnits() uint64 {
+	if x != nil {
+		return x.UnpricedNativeUnits
+	}
+	return 0
+}
+
+func (x *SessionBudgetView) GetOtherCurrencyNativeUnits() uint64 {
+	if x != nil {
+		return x.OtherCurrencyNativeUnits
+	}
+	return 0
 }
 
 type GetSessionBudgetRequest struct {
@@ -3828,13 +3868,16 @@ const file_delidev_v1_session_proto_rawDesc = "" +
 	"\x06change\x18\x01 \x01(\v2\x19.delidev.v1.SessionChangeR\x06change\"O\n" +
 	"\x13EstimatedCostBudget\x12\x1a\n" +
 	"\bcurrency\x18\x01 \x01(\tR\bcurrency\x12\x1c\n" +
-	"\tthreshold\x18\x02 \x01(\tR\tthreshold\"\xe0\x01\n" +
+	"\tthreshold\x18\x02 \x01(\tR\tthreshold\"\x80\x03\n" +
 	"\x0eBudgetEvidence\x12\x1a\n" +
 	"\bcurrency\x18\x01 \x01(\tR\bcurrency\x12!\n" +
 	"\fknown_amount\x18\x02 \x01(\tR\vknownAmount\x12-\n" +
 	"\x12complete_responses\x18\x03 \x01(\x04R\x11completeResponses\x12+\n" +
 	"\x11partial_responses\x18\x04 \x01(\x04R\x10partialResponses\x123\n" +
-	"\x15unavailable_responses\x18\x05 \x01(\x04R\x14unavailableResponses\"\x94\x03\n" +
+	"\x15unavailable_responses\x18\x05 \x01(\x04R\x14unavailableResponses\x122\n" +
+	"\x15complete_native_units\x18\x06 \x01(\x04R\x13completeNativeUnits\x120\n" +
+	"\x14partial_native_units\x18\a \x01(\x04R\x12partialNativeUnits\x128\n" +
+	"\x18unavailable_native_units\x18\b \x01(\x04R\x16unavailableNativeUnits\"\x87\x04\n" +
 	"\x11SessionBudgetView\x12.\n" +
 	"\asession\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\asession\x127\n" +
 	"\x06budget\x18\x02 \x01(\v2\x1f.delidev.v1.EstimatedCostBudgetR\x06budget\x12-\n" +
@@ -3842,7 +3885,9 @@ const file_delidev_v1_session_proto_rawDesc = "" +
 	"\x11selected_currency\x18\x04 \x01(\v2\x1a.delidev.v1.BudgetEvidenceR\x10selectedCurrency\x12-\n" +
 	"\x12unpriced_responses\x18\x05 \x01(\x04R\x11unpricedResponses\x128\n" +
 	"\x18other_currency_responses\x18\x06 \x01(\x04R\x16otherCurrencyResponses\x125\n" +
-	"\bcoverage\x18\a \x01(\x0e2\x19.delidev.v1.UsageCoverageR\bcoverage\"8\n" +
+	"\bcoverage\x18\a \x01(\x0e2\x19.delidev.v1.UsageCoverageR\bcoverage\x122\n" +
+	"\x15unpriced_native_units\x18\b \x01(\x04R\x13unpricedNativeUnits\x12=\n" +
+	"\x1bother_currency_native_units\x18\t \x01(\x04R\x18otherCurrencyNativeUnits\"8\n" +
 	"\x17GetSessionBudgetRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"M\n" +

@@ -163,6 +163,8 @@ const (
 	UsageCoverage_USAGE_COVERAGE_UNSPECIFIED UsageCoverage = 0
 	// Exact known subtotals only. Missing/legacy/child telemetry is not zero.
 	UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES UsageCoverage = 1
+	// Distinct native input/step units; inherited history is excluded.
+	UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS UsageCoverage = 2
 )
 
 // Enum value maps for UsageCoverage.
@@ -170,10 +172,12 @@ var (
 	UsageCoverage_name = map[int32]string{
 		0: "USAGE_COVERAGE_UNSPECIFIED",
 		1: "USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES",
+		2: "USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS",
 	}
 	UsageCoverage_value = map[string]int32{
-		"USAGE_COVERAGE_UNSPECIFIED":             0,
-		"USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES": 1,
+		"USAGE_COVERAGE_UNSPECIFIED":                    0,
+		"USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES":        1,
+		"USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS": 2,
 	}
 )
 
@@ -672,10 +676,11 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x14ENTITY_KIND_TERMINAL\x10\x1f\x12\x1f\n" +
 	"\x1bENTITY_KIND_NETWORK_PROFILE\x10\x1c\x12\x1d\n" +
 	"\x19ENTITY_KIND_NETWORK_ROUTE\x10\x1d\x12\x18\n" +
-	"\x14ENTITY_KIND_SUBAGENT\x10\x1e*[\n" +
+	"\x14ENTITY_KIND_SUBAGENT\x10\x1e*\x8e\x01\n" +
 	"\rUsageCoverage\x12\x1e\n" +
 	"\x1aUSAGE_COVERAGE_UNSPECIFIED\x10\x00\x12*\n" +
-	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01*\x88\x01\n" +
+	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01\x121\n" +
+	"-USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS\x10\x02*\x88\x01\n" +
 	"\x14SessionDeletionState\x12&\n" +
 	"\"SESSION_DELETION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eSESSION_DELETION_STATE_PENDING\x10\x01\x12$\n" +

@@ -199,6 +199,27 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	if err != nil {
 		return domain.UsageSummary{}, err
 	}
+	if f.AccountingProfile == domain.NativeUnitsV1Accounting {
+		units := result.Totals.Responses
+		for _, accounting := range result.Totals.Accounting {
+			if accounting.Kind == domain.GrokClosedInput {
+				units += accounting.Units
+			}
+		}
+		groupCount := len(result.Groups)
+		for _, kind := range []domain.AccountingUnitKind{domain.ClaudeMainLoopInput, domain.OpenCodeStep} {
+			summary, err := t.nativeAccountingSummary(f, kind)
+			if err != nil {
+				return domain.UsageSummary{}, err
+			}
+			units += summary.Totals.Units
+			groupCount += len(summary.Groups)
+			if units > maxUsageResponses || groupCount > maxUsageGroups {
+				return domain.UsageSummary{}, usageReadLimit()
+			}
+			result.NativeAccounting = append(result.NativeAccounting, summary)
+		}
+	}
 	return result, nil
 }
 

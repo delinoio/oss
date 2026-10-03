@@ -242,6 +242,9 @@ message BudgetEvidence {
   uint64 complete_responses = 3;
   uint64 partial_responses = 4;
   uint64 unavailable_responses = 5;
+  uint64 complete_native_units = 6;
+  uint64 partial_native_units = 7;
+  uint64 unavailable_native_units = 8;
 }
 
 message SessionBudgetView {
@@ -253,6 +256,8 @@ message SessionBudgetView {
   uint64 unpriced_responses = 5;
   uint64 other_currency_responses = 6;
   UsageCoverage coverage = 7;
+  uint64 unpriced_native_units = 8;
+  uint64 other_currency_native_units = 9;
 }
 
 message GetSessionBudgetRequest {
