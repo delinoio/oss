@@ -30,6 +30,8 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	subagents        map[string]domain.SubagentObservation
+	subagentTurn     domain.ID
 	modelObservation string
 	home             string
 	wire             *nativewire.Connection

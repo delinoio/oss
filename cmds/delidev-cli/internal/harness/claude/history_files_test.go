@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -81,7 +82,7 @@ func TestRetainedHistoryReaderBindsOriginalMainAndChildFiles(t *testing.T) {
 	}
 	observed, err := ReadChildTranscript(context.Background(), home, session, workspace, binding, messages, nil)
 	expected, proofErr := VerifyChildTranscript(context.Background(), raw, sidecar, session, workspace, binding, messages)
-	if err != nil || proofErr != nil || observed != expected {
+	if err != nil || proofErr != nil || !reflect.DeepEqual(observed, expected) {
 		t.Fatal("child pair lost original proof or private root protection", err, proofErr)
 	}
 }

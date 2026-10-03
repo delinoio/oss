@@ -167,6 +167,14 @@ func (c *CodexEventPublisher) publishWaiting(ctx context.Context, status *codex.
 	if status.Type == codex.ThreadIdle && waiting != (domain.NativeWaiting{}) {
 		return false, publicationUncertain()
 	}
+	if c.finished {
+		// Root status notifications may follow its terminal event while owned
+		// children still run. Validate them without reopening root controls.
+		if waiting != (domain.NativeWaiting{}) {
+			return false, publicationUncertain()
+		}
+		return true, nil
+	}
 	if waiting == c.waiting {
 		return true, nil
 	}

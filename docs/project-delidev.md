@@ -37,6 +37,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Worker-owned session terminals](cmds-delidev-terminals-contract.md)
 
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
+- [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
@@ -56,7 +57,6 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Claude native context and manual compaction](cmds-delidev-claude-compaction-contract.md)
 - [Same-account Codex session forks](cmds-delidev-forks-contract.md)
-
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
@@ -80,6 +80,12 @@ owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 - Go owns business logic; clients use authenticated Connect and preserve exact request/revision identities.
 - Grok public request journals preserve typed payloads plus bounded original JSON bytes for independently verified proposal digests. Server admission precedes public response authority; byte evidence never grants native or filesystem access. Follow the [harness contract](cmds-delidev-harness-contract.md).
 - Local and remote operation preserve original native ownership, explicit authorization, credential isolation and uncertainty.
+- New Claude children require original task-source metadata and verified parent-tool ownership before content/history updates, including nested children. Content/history never creates child ownership; see the [subagent contract](cmds-delidev-subagents-contract.md).
+- Each original Claude Agent/Task parent tool owns at most one observed child across Worker composition and atomic server publication, including after that child's completion and across later executions of the same session. Clients retain the original hierarchy without child controls; see the [subagent contract](cmds-delidev-subagents-contract.md).
+- Shared Worker/server validation rejects telemetry absent from its incoming native source and closes every supplied child usage report to its native source schema, requiring exact nullable normalized counter parity before atomic publication. Native report bytes remain unchanged and independent reports remain non-additive; unavailable usage cannot be supplied without its original report. See the [subagent contract](cmds-delidev-subagents-contract.md).
+- Desktop child reads validate the complete bounded page before exposing content. Foreign/malformed envelopes, unsupported native profiles, inconsistent known-parent/source coverage or invalid exact usage parity make the whole page unavailable; earlier supported retained facts and parents on other pages remain permissible. See the [desktop](apps-delidev-desktop-contract.md) and [subagent](cmds-delidev-subagents-contract.md) contracts.
+- Sessions with observed native subagents retain version-1 paused completion after independent cleanup. Same-account Codex Fork requires a version-2 checkpoint and cannot promote that child history; see the [subagent](cmds-delidev-subagents-contract.md) and [fork](cmds-delidev-forks-contract.md) contracts.
+
 - Native relay handlers join started response-writer cancellation callbacks before returning, so downstream connection reuse cannot inherit an earlier request's deadline mutation.
 - Plaintext loopback provider and inference requests require Direct or an explicit bypass. Reject proxied plaintext before connection, preserve verified HTTPS proxy routing, and never silently fall back.
 - Explicit outbound proxy credentials remain isolated across provider, inference and GitHub response bodies and metadata: guard header names/values and keep response trailers private under the [network contract](cmds-delidev-network-contract.md).
@@ -107,6 +113,10 @@ See the [sessions contract](cmds-delidev-sessions-contract.md) and
 [proxy contract](cmds-delidev-proxy-contract.md) for the account-switching boundary.
 Record the controlled native A-to-B result separately from unperformed
 desktop/real-account/platform acceptance in pull requests, issues and CI runs.
+
+## Diagnostic resource-kind invariant
+
+Generic diagnostic consumers must accept the complete closed stored resource-kind inventory, including child-agent and session-forward records, without interpreting retained counts as execution readiness.
 
 ## Change Policy
 Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. A validation-only increment does not require editing this index or an AGENTS file.

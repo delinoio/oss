@@ -37,7 +37,7 @@ enum DiagnosticState { Observed = "observed", Unavailable = "unavailable", Uncon
 const reportFields = new Set(["schema_version", "observed_at", "version", "protocol_version", "database_schema_version", "os", "architecture", "server_id", "listener", "database", "credential_store", "inference_probes", "storage", "machines", "more_machines", "credentials", "more_credentials"]);
 const machineFields = new Set(["machine_id", "name", "os", "architecture", "version", "last_seen", "disabled", "active_stream", "installations"]);
 const storageBytes = ["database_bytes", "wal_bytes", "logical_database_bytes", "volume_capacity_bytes", "volume_available_bytes"];
-const resourceKinds = new Set(["pairing", "project", "repository", "agent", "account", "provider", "model", "machine", "session", "template", "settings", "schedule", "occurrence", "message", "queue", "steer", "interaction", "review", "snapshot", "device", "integration", "pull_request", "problem", "inbox", "usage", "job", "routing"]);
+const resourceKinds = new Set(["pairing", "project", "repository", "agent", "account", "provider", "model", "machine", "session", "template", "settings", "schedule", "occurrence", "message", "queue", "steer", "interaction", "review", "snapshot", "device", "integration", "pull_request", "problem", "inbox", "usage", "job", "routing", "forward", "subagent"]);
 const unavailableCodes = new Set([FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Unsupported, FailureCode.Canceled]);
 function shape(value: unknown, fields: Set<string>): value is Document {
   return value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => fields.has(key));

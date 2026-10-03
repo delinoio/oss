@@ -116,11 +116,15 @@ func TestManualNativeServerWebTools(t *testing.T) {
 				if _, err := s.SendInput(ctx, domain.NewID(), "Observe original server tool blocks.", ContinueSuccessfulRun); err != nil {
 					t.Fatal(err)
 				}
+				bindings := map[string]ChildHistoryBinding{}
 				var started, returned, succeeded, idle bool
 				for !idle {
 					observation, err := s.Next(ctx)
 					if err != nil {
 						t.Fatal("native server tool lifecycle failed", err, logs.String())
+					}
+					if task := observation.Task; task != nil && task.Kind == TaskStarted && task.ToolID != nil && task.SubagentType != nil && task.Description != nil && task.SpawnDepth != nil {
+						bindings[task.ID] = ChildHistoryBinding{TaskID: task.ID, ToolID: *task.ToolID, AgentType: *task.SubagentType, Description: *task.Description, SpawnDepth: *task.SpawnDepth}
 					}
 					for _, content := range observation.Content {
 						blocks := content.Blocks
@@ -179,7 +183,7 @@ func TestManualNativeServerWebTools(t *testing.T) {
 							t.Fatal("native server child task ownership changed")
 						}
 						raw, metadata := nativeFixtureChildFiles(t, cfg, id)
-						if _, err := VerifyChildTranscript(ctx, raw, metadata, cfg.SessionID, cfg.Workspace, ChildHistoryBinding{TaskID: id, ToolID: parent, AgentType: task.agentType}, nil); err != nil {
+						if _, err := VerifyChildTranscript(ctx, raw, metadata, cfg.SessionID, cfg.Workspace, bindings[id], nil); err != nil {
 							t.Fatal(err)
 						}
 						var storedUse, storedResult bool

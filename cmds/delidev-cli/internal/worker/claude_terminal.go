@@ -37,7 +37,7 @@ func (c *ClaudeContentPublisher) PublishBoundaryObservation(ctx context.Context,
 		return true, nil
 	}
 	r := c.resultBoundary
-	if o.InputID != "" || o.Accepted || o.Command != "" || o.Result != nil || len(o.Content) != 0 || o.Run.KnownWork != (claude.NativeWorkObservation{}) || o.Run.ContinuationFailed || r == nil || r.KnownWork != (claude.NativeWorkObservation{}) || r.Origin != nil || !c.resultUsage || c.resultUsageNativeID == "" || c.active != "" || !c.toolsComplete() || !c.tasks.Closed() || !c.interactionsSettled() || !b.compaction.Closed() {
+	if o.InputID != "" || o.Accepted || o.Command != "" || o.Result != nil || len(o.Content) != 0 || o.Run.KnownWork != (claude.NativeWorkObservation{}) || o.Run.ContinuationFailed || r == nil || r.KnownWork != (claude.NativeWorkObservation{}) || r.Origin != nil || !c.resultUsage || c.resultUsageNativeID == "" || c.active != "" || !c.toolsComplete() || !c.tasks.Closed() || c.pendingTerminal != nil || !c.interactionsSettled() || !b.compaction.Closed() {
 		return true, b.block()
 	}
 	v := &domain.ClaudeTerminalObservation{InputID: b.journal.InputID, ResultNativeID: c.resultUsageNativeID, CommandNativeID: c.terminalCommandID, IdleNativeID: o.NativeID, Kind: domain.ClaudeResultKind(r.Kind), Reason: domain.ClaudeTerminalReason(r.Reason), Error: r.Error, Command: c.terminalCommand}
@@ -45,8 +45,48 @@ func (c *ClaudeContentPublisher) PublishBoundaryObservation(ctx context.Context,
 		return true, b.block()
 	}
 	c.seen[o.NativeID] = true
+	// Keep the original result/command/idle proof while owned children settle.
+	// Root idle alone cannot release their process or cleanup obligations.
+	c.pendingTerminal = v
+	if !c.childrenClosed() && b.publisher.config.Logger != nil {
+		b.publisher.config.Logger.InfoContext(ctx, "claude_original_terminal_deferred", "job_id", b.journal.JobID, "child_count", len(c.children))
+	}
+	return true, c.publishPendingBoundary(ctx)
+}
+
+func (c *ClaudeContentPublisher) pendingBoundaryReady() bool {
+	c.binding.mu.Lock()
+	defer c.binding.mu.Unlock()
+	return c.pendingTerminal != nil && c.childrenClosed()
+}
+
+func (c *ClaudeContentPublisher) terminalPublished() bool {
+	c.binding.mu.Lock()
+	defer c.binding.mu.Unlock()
+	return c.binding.stage == claudeTerminalPublished
+}
+
+// PublishPendingBoundary is called after late child observations and their final
+// read-only history inspection, preserving the first original idle identity.
+func (c *ClaudeContentPublisher) PublishPendingBoundary(ctx context.Context) (bool, error) {
+	c.binding.mu.Lock()
+	defer c.binding.mu.Unlock()
+	if c.pendingTerminal == nil {
+		return false, nil
+	}
+	if err := c.verify(); err != nil {
+		return true, err
+	}
+	return true, c.publishPendingBoundary(ctx)
+}
+
+func (c *ClaudeContentPublisher) publishPendingBoundary(ctx context.Context) error {
+	if !c.childrenClosed() {
+		return nil
+	}
+	v := c.pendingTerminal
 	c.queue = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionTurnFinished, Outcome: v.Outcome(), ClaudeTerminal: v}}}
-	return true, c.drain(ctx)
+	return c.drain(ctx)
 }
 
 // Complete joins clean EOF on the original live controller only after terminal

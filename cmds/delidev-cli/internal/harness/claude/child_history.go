@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,9 +17,14 @@ type ChildHistoryBinding struct {
 	ToolID        string
 	ParentAgentID string
 	AgentType     string
+	Description   string
+	SpawnDepth    uint32
 }
 
 type ChildTranscriptObservation struct {
+	Output         *domain.SubagentOutput
+	ObservedModel  *string
+	Usage          *domain.SubagentUsage
 	Transcript     TranscriptObservation
 	MetadataSHA256 string
 	SpawnDepth     uint32
@@ -29,7 +35,7 @@ type ChildTranscriptObservation struct {
 // child files have no main last-prompt marker. Unforwarded final child messages
 // remain explicit additional observations, not manufactured streaming events.
 func VerifyChildTranscript(ctx context.Context, raw, metadata []byte, session domain.ID, workspace string, binding ChildHistoryBinding, proofs []HistoryMessageProof) (ChildTranscriptObservation, error) {
-	if domain.Text(binding.TaskID, "native child task", 1024, true) != nil || domain.Text(binding.ToolID, "native child tool", 1024, true) != nil || domain.Text(binding.ParentAgentID, "native parent agent", 1024, false) != nil || domain.Text(binding.AgentType, "native child agent type", 256, true) != nil || len(metadata) > 64<<10 {
+	if domain.Text(binding.TaskID, "native child task", 1024, true) != nil || domain.Text(binding.ToolID, "native child tool", 1024, true) != nil || domain.Text(binding.ParentAgentID, "native parent agent", 1024, false) != nil || domain.Text(binding.AgentType, "native child agent type", 256, true) != nil || domain.Text(binding.Description, "native child description", 16<<10, false) != nil || binding.SpawnDepth == 0 || binding.SpawnDepth > 128 || len(metadata) > 64<<10 {
 		return ChildTranscriptObservation{}, historyUncertain()
 	}
 	if err := ctx.Err(); err != nil {
@@ -42,7 +48,7 @@ func VerifyChildTranscript(ctx context.Context, raw, metadata []byte, session do
 		Description   *string `json:"description"`
 		SpawnDepth    *uint32 `json:"spawnDepth"`
 	}
-	if decodeNativeObject(metadata, &value) != nil || value.ToolID != binding.ToolID || value.AgentType != binding.AgentType || value.Description == nil || domain.Text(*value.Description, "native child description", 16<<10, false) != nil || value.SpawnDepth == nil || *value.SpawnDepth == 0 || *value.SpawnDepth > 128 {
+	if decodeNativeObject(metadata, &value) != nil || value.ToolID != binding.ToolID || value.AgentType != binding.AgentType || value.Description == nil || *value.Description != binding.Description || value.SpawnDepth == nil || *value.SpawnDepth != binding.SpawnDepth {
 		return ChildTranscriptObservation{}, historyUncertain()
 	}
 	var fields map[string]json.RawMessage
@@ -59,5 +65,87 @@ func VerifyChildTranscript(ctx context.Context, raw, metadata []byte, session do
 		return ChildTranscriptObservation{}, err
 	}
 	digest := sha256.Sum256(metadata)
-	return ChildTranscriptObservation{Transcript: transcript, MetadataSHA256: hex.EncodeToString(digest[:]), SpawnDepth: *value.SpawnDepth}, nil
+	observation := ChildTranscriptObservation{Transcript: transcript, MetadataSHA256: hex.EncodeToString(digest[:]), SpawnDepth: *value.SpawnDepth}
+	// The complete verifier selected and proved one ancestry. A valid sibling
+	// branch in the same file must not supply output, model or usage.
+	records := make([]map[string]json.RawMessage, 0)
+	parents := map[string]string{}
+	for _, line := range bytes.Split(raw[:len(raw)-1], []byte{'\n'}) {
+		if err := ctx.Err(); err != nil {
+			return ChildTranscriptObservation{}, domain.SafeError(err)
+		}
+		var record map[string]json.RawMessage
+		if domain.Decode(line, &record) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		var id, parent string
+		_ = json.Unmarshal(record["uuid"], &id)
+		_ = json.Unmarshal(record["parentUuid"], &parent)
+		parents[id] = parent
+		records = append(records, record)
+	}
+	selected := map[string]bool{}
+	for id := transcript.LeafID; id != ""; id = parents[id] {
+		selected[id] = true
+	}
+	// Project text only after validating the complete original transcript and
+	// sidecar. This is stored history, never synthetic streamed child output.
+	for _, record := range records {
+		if err := ctx.Err(); err != nil {
+			return ChildTranscriptObservation{}, domain.SafeError(err)
+		}
+		var recordID string
+		_ = json.Unmarshal(record["uuid"], &recordID)
+		if !selected[recordID] {
+			continue
+		}
+		var kind string
+		_ = json.Unmarshal(record["type"], &kind)
+		if kind != "assistant" {
+			continue
+		}
+		var message map[string]json.RawMessage
+		if domain.Decode(record["message"], &message) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		var id string
+		var model *string
+		_ = json.Unmarshal(message["id"], &id)
+		if native := message["model"]; len(native) != 0 && json.Unmarshal(native, &model) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		var blocks []map[string]json.RawMessage
+		if domain.Decode(message["content"], &blocks) != nil || len(blocks) > 128 {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		output := &domain.SubagentOutput{NativeMessageID: id, Partial: true}
+		for _, block := range blocks {
+			var blockKind string
+			_ = json.Unmarshal(block["type"], &blockKind)
+			var text *string
+			if blockKind == "text" {
+				_ = json.Unmarshal(block["text"], &text)
+			}
+			if blockKind == "thinking" {
+				_ = json.Unmarshal(block["thinking"], &text)
+			}
+			if text != nil && domain.Text(*text, "child history text", domain.MaxMessageText, false) != nil {
+				return ChildTranscriptObservation{}, historyUncertain()
+			}
+			output.Blocks = append(output.Blocks, domain.SubagentOutputBlock{Kind: blockKind, Text: text})
+		}
+		if domain.Text(id, "child history message", 1024, true) != nil || model != nil && domain.Text(*model, "child history model", 256, true) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		observation.Output, observation.ObservedModel = output, model
+		var usage *ProviderUsage
+		if native := message["usage"]; len(native) != 0 && json.Unmarshal(native, &usage) != nil {
+			return ChildTranscriptObservation{}, historyUncertain()
+		}
+		observation.Usage, err = SubagentProviderUsage(usage)
+		if err != nil {
+			return ChildTranscriptObservation{}, err
+		}
+	}
+	return observation, nil
 }

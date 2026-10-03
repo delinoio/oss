@@ -178,3 +178,16 @@ it("retains valid failed storage separately from a complete Worker observation",
   await screen.findByText("Runner Device and harness: Observed");
   expect(screen.getByText("Server diagnostics: Needs setup")).toBeTruthy();
 });
+
+
+it("accepts every retained resource kind including native children without inferring readiness", async () => {
+  const f = fixture();
+  const kinds = ["pairing", "project", "repository", "agent", "account", "provider", "model", "machine", "session", "template", "settings", "schedule", "occurrence", "message", "queue", "steer", "interaction", "review", "snapshot", "device", "integration", "pull_request", "problem", "inbox", "usage", "job", "routing", "forward", "subagent"];
+  f.doctor.mockResolvedValue({ reportJson: encode({ ...f.report, storage: { ...f.report.storage, resources: kinds.map(kind => ({ kind, count: "18446744073709551615" })) } }) });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText("Server diagnostics: Observed");
+  expect(screen.getByText("Runner Device and harness: Observed")).toBeTruthy();
+  expect(screen.getByText(/not a successful execution test/)).toBeTruthy();
+  expect(f.mutation).not.toHaveBeenCalled();
+});

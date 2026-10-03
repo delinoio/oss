@@ -10,6 +10,8 @@ Go; native subprocess ownership follows the [process contract](cmds-delidev-proc
 Users install and update harnesses themselves. A Worker selects an explicit executable or its own PATH. Installation/version detection, native protocol verification and selected-account execution readiness are distinct facts; none substitutes for another.
 
 ## Interfaces and Contracts
+Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original child-observation profile in the [subagent contract](cmds-delidev-subagents-contract.md). Canonical Codex collaboration/activity plus read-only descendant/history reads and original Claude task/tool/content/history ownership remain distinct sources. Unowned or unsupported child families stay gated; requested models cannot supply observed models. Child-control operations and unproved history continuation remain excluded.
+
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
 ### Codex model observation profile
