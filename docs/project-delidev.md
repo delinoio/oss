@@ -57,6 +57,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Claude native context and manual compaction](cmds-delidev-claude-compaction-contract.md)
 - [Same-account native session forks](cmds-delidev-forks-contract.md)
+- [Native read-only Sidechat](cmds-delidev-sidechat-contract.md)
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
@@ -72,6 +73,7 @@ sessions and shared account profiles are preserved. The [storage contract](cmds-
 owns the lifecycle, snapshot-copy deletion integration and remaining database-restore/Sidechat limits.
 
 ## Cross-Domain Invariants
+- Sidechat follows the [native read-only contract](cmds-delidev-sidechat-contract.md): retain the complete original parent snapshot and account separately from the child enforcement overlay, reference workspace roots without taking deletion ownership, and join dependent child cleanup before removing parent files. Independent Fork retains its separate lifetime. System 27 / Worker 16 reservations grant no native or product support.
 - New repository registration follows the [folder workflow](apps-delidev-desktop-contract.md#projects-repositories-and-configuration-actions) in issue #1142: the native picker grants selection only, fresh same-computer proof binds the Worker, and Go owns read-only canonical inspection and atomic publication. Optional GitHub identity enrichment uses pre-established Worker capability 6/attachment field 3; raw URLs and credentials stay outside renderer/server metadata. Registration shares the current Settings visit disposal policy, while existing edits preserve explicit configuration.
 - Settings is a regular `Surface.Settings` destination using the shared rail/category pane and compact drawer under issue #1236. Uninterrupted visits retain category/workflow state across reflow and same-identity reconnect; navigation away disposes Settings-local state and late continuations without changing saved effects or connection-owned conversation/New session workflows. Page-level Escape and active rail reselection preserve the visit. Targeted New Project/Repositories entries and visible destination focus follow the [desktop contract](apps-delidev-desktop-contract.md#settings-screen-and-visit-lifetime-issue-1236).
 - Issue #1146 implements inventory capability 5, entry connection-method field 9, two closed enums and real migration 29 for OpenRouter OAuth after real migrations 26–28. Reservations reached main before dependent implementation. The [OAuth contract](cmds-delidev-account-oauth-contract.md) preserves the complete authenticated Go/CLI/native/desktop lifecycle, server-owned protected credentials, once-only exchange and original local recovery. Settings lifetime/window/server generations fence callbacks; uncertainty never authorizes another exchange. Keep the issue open until real-provider/platform acceptance is complete.
