@@ -32,6 +32,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if err != nil || !removalClaimMatches(claimRaw, removalReference(r), raw) || domain.Decode(claimRaw, &claim) != nil {
 		return ResultUncertain()
 	}
+	pending := append([]storageRemovalRename(nil), claim.Pending...)
 	identity, err := directoryPathIdentity(removal)
 	if err != nil || identity != claim.RootIdentity {
 		return ResultUncertain()
@@ -110,8 +111,24 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			privateName := ".removing-" + string(domain.NewID())
 			privatePath := filepath.Join(parent.Name(), privateName)
 			originalPath := filepath.Join(parent.Name(), name)
+			parentRelative, err := filepath.Rel(removal, parent.Name())
+			if err != nil {
+				return ResultUncertain()
+			}
+			privateRelative := path.Join(filepath.ToSlash(parentRelative), privateName)
+			if parentRelative == "." {
+				privateRelative = privateName
+			}
+			pending = append(pending, storageRemovalRename{Original: entry.Path, Private: privateRelative})
+			if err := m.updateRemovalClaimPending(ctx, r, raw, pending); err != nil {
+				return err
+			}
 			if err := renameStorage(originalPath, privatePath); err != nil {
 				return ResultUncertain()
+			}
+			pending[len(pending)-1].Renamed = true
+			if err := m.updateRemovalClaimPending(ctx, r, raw, pending); err != nil {
+				return err
 			}
 			if m.storageAfterRemovalClaim != nil {
 				m.storageAfterRemovalClaim(entry.Path)
@@ -119,6 +136,10 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			restore := func() error {
 				if err := renameStorage(privatePath, originalPath); err != nil {
 					return ResultUncertain()
+				}
+				pending = pending[:len(pending)-1]
+				if err := m.updateRemovalClaimPending(ctx, r, raw, pending); err != nil {
+					return err
 				}
 				return nil
 			}
@@ -155,6 +176,10 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 					return restoreErr
 				}
 				return ResultUncertain()
+			}
+			pending = pending[:len(pending)-1]
+			if err := m.updateRemovalClaimPending(ctx, r, raw, pending); err != nil {
+				return err
 			}
 		}
 		return nil

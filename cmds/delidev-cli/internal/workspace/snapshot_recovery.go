@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -33,9 +34,19 @@ type storageRemovalClaim struct {
 	Version      uint32                  `json:"version"`
 	Reference    StorageRemovalReference `json:"reference"`
 	IntentDigest string                  `json:"intent_digest"`
+	Pending      []storageRemovalRename  `json:"pending,omitempty"`
 }
 
-const maxStorageRemovalClaim = 4096
+// A recursive source directory can retain one mapping per open directory while
+// its children are being removed. Keep the claim within the private manifest
+// bound so recovery can inspect it without trusting an unbounded journal.
+const maxStorageRemovalClaim = maxSnapshotManifest
+
+type storageRemovalRename struct {
+	Original string `json:"original"`
+	Private  string `json:"private"`
+	Renamed  bool   `json:"renamed"`
+}
 
 func (m *Manager) removalClaimPath(id domain.ID) string {
 	return filepath.Join(m.Root, "storage-removal-claims", string(id)+".json")
@@ -48,7 +59,44 @@ func removalReference(r StorageRequest) StorageRemovalReference {
 func removalClaimMatches(raw []byte, ref StorageRemovalReference, intent []byte) bool {
 	var claim storageRemovalClaim
 	sum := sha256.Sum256(intent)
-	return domain.Decode(raw, &claim) == nil && claim.Version == 2 && claim.RootIdentity != "" && claim.Reference == ref && claim.IntentDigest == hex.EncodeToString(sum[:])
+	if domain.Decode(raw, &claim) != nil || claim.Version != 2 || claim.RootIdentity == "" || claim.Reference != ref || claim.IntentDigest != hex.EncodeToString(sum[:]) || len(claim.Pending) > maxSnapshotRemovalEntries {
+		return false
+	}
+	seenOriginal := map[string]bool{}
+	seenPrivate := map[string]bool{}
+	for _, rename := range claim.Pending {
+		if !validRemovalRelativePath(rename.Original) || !validRemovalRelativePath(rename.Private) || rename.Original == rename.Private || seenOriginal[rename.Original] || seenPrivate[rename.Private] {
+			return false
+		}
+		seenOriginal[rename.Original] = true
+		seenPrivate[rename.Private] = true
+	}
+	return true
+}
+
+func validRemovalRelativePath(value string) bool {
+	return value != "" && value != "." && pathpkg.Clean(value) == value && !pathpkg.IsAbs(value) && !filepath.IsAbs(filepath.FromSlash(value)) && value != ".." && !strings.HasPrefix(value, "../") && len(value) <= 4096
+}
+
+func (m *Manager) updateRemovalClaimPending(ctx context.Context, r StorageRequest, intent []byte, pending []storageRemovalRename) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(pending) > maxSnapshotRemovalEntries {
+		return ResultUncertain()
+	}
+	path := m.removalClaimPath(r.OperationID)
+	raw, err := security.ReadPrivate(path, maxStorageRemovalClaim)
+	var claim storageRemovalClaim
+	if err != nil || !removalClaimMatches(raw, removalReference(r), intent) || domain.Decode(raw, &claim) != nil {
+		return ResultUncertain()
+	}
+	claim.Pending = append([]storageRemovalRename(nil), pending...)
+	next, err := json.Marshal(claim)
+	if err != nil || len(next) > maxStorageRemovalClaim {
+		return ResultUncertain()
+	}
+	return security.WriteAtomic(path, next)
 }
 
 func (m *Manager) retainRemovalClaim(ctx context.Context, r StorageRequest, intent []byte) error {
@@ -137,16 +185,17 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 	if r.Action == StorageDelete && intent.SnapshotDigest != r.SnapshotDigest {
 		return ResultUncertain()
 	}
+	var claim storageRemovalClaim
 	if partial {
+		claimRaw, err := security.ReadPrivate(m.removalClaimPath(r.OperationID), maxStorageRemovalClaim)
+		if err != nil || !removalClaimMatches(claimRaw, removalReference(r), raw) || domain.Decode(claimRaw, &claim) != nil {
+			return ResultUncertain()
+		}
 		exists, err := storageExists(path)
 		if err != nil {
 			return err
 		}
 		if !exists {
-			claim, err := security.ReadPrivate(m.removalClaimPath(r.OperationID), maxStorageRemovalClaim)
-			if err != nil || !removalClaimMatches(claim, removalReference(r), raw) {
-				return ResultUncertain()
-			}
 			return nil
 		}
 	}
@@ -166,16 +215,85 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 		for _, entry := range intent.Inventory.Entries {
 			expected[entry.Path] = entry
 		}
+		mappings := append([]storageRemovalRename(nil), claim.Pending...)
+		// Prefer the deepest private prefix so nested claimed directories map
+		// back to their original logical path before the inventory comparison.
+		mappingFor := func(physical string) (string, bool) {
+			best := ""
+			logical := ""
+			for _, rename := range mappings {
+				if physical != rename.Private && !strings.HasPrefix(physical, rename.Private+"/") {
+					continue
+				}
+				if len(rename.Private) > len(best) {
+					best = rename.Private
+					logical = rename.Original + strings.TrimPrefix(physical, rename.Private)
+				}
+			}
+			return logical, best != ""
+		}
+		seen := map[string]bool{}
 		for _, entry := range current.Entries {
-			old, ok := expected[entry.Path]
+			logicalPath, mapped := mappingFor(entry.Path)
+			if !mapped {
+				logicalPath = entry.Path
+			}
+			entry.Path = logicalPath
+			old, ok := expected[logicalPath]
 			if !ok {
 				return ResultUncertain()
 			}
+			if seen[logicalPath] {
+				return ResultUncertain()
+			}
+			seen[logicalPath] = true
 			if os.FileMode(old.Mode).IsDir() && os.FileMode(entry.Mode).IsDir() {
 				continue
 			}
 			if !reflect.DeepEqual(old, entry) {
 				return ResultUncertain()
+			}
+		}
+		changed := false
+		for i, rename := range mappings {
+			originalPresent, privatePresent := false, false
+			for _, entry := range current.Entries {
+				if entry.Path == rename.Original {
+					originalPresent = true
+				}
+				if entry.Path == rename.Private {
+					privatePresent = true
+				}
+			}
+			switch {
+			case privatePresent:
+				if !rename.Renamed {
+					mappings[i].Renamed = true
+					changed = true
+				}
+			case originalPresent:
+				// The claim was durable before the rename, but the rename did not
+				// publish. Drop this stale mapping so recovery can retry the same
+				// pinned entry without treating its original name as foreign.
+				mappings[i] = storageRemovalRename{}
+				changed = true
+			case rename.Renamed:
+				// The private entry was verified and may have been removed just
+				// before the mapping-clear write. Keep that proof for retry.
+			default:
+				// Neither name proves whether the pre-rename claim completed.
+				return ResultUncertain()
+			}
+		}
+		if changed {
+			filtered := mappings[:0]
+			for _, rename := range mappings {
+				if rename.Original != "" {
+					filtered = append(filtered, rename)
+				}
+			}
+			if err := m.updateRemovalClaimPending(ctx, r, raw, filtered); err != nil {
+				return err
 			}
 		}
 	}
