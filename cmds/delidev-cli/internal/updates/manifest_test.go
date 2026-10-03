@@ -29,7 +29,7 @@ func fixture(t *testing.T) (Verifier, ed25519.PrivateKey, Payload) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	p := Payload{SchemaVersion: 1, Version: "0.2.0", SourceRevision: strings.Repeat("a", 40), ProtocolVersion: 1, PublishedAt: "2026-10-04T00:00:00Z"}
+	p := Payload{SchemaVersion: 1, Version: "0.2.0", SourceRevision: strings.Repeat("a", 40), ProtocolVersion: 1, PublishedAt: "2026-10-01T00:00:00Z"}
 	data := []byte("signed-worker-fixture")
 	sum := sha256.Sum256(data)
 	for _, c := range []Component{Desktop, Worker} {
