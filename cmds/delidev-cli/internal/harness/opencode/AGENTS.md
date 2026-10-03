@@ -10,3 +10,5 @@
 - Retained manual compaction inspection pins the final original action/history digest against unchanged ordinary lineage and every inherited context record. Native acknowledgment, context lifecycle, full history and joined cleanup remain independent; no checkpoint or auxiliary read can reconstruct missing native arrivals or command authority.
 
 - New immutable `native-v1` context policy enables pinned native pruning, while omitted legacy policy preserves existing configuration/digests. Late pruning may be retained through the final owned API read only after atomic full-part comparison proves the completed timestamp is the sole change; never reconstruct an event or lifecycle from that read.
+
+- Issue #1210 preparation owns only bounded Unix plain-text General Chat native Fork, complete ID-clone/history proof, explicit no-change relocation and copied-source deletion. Use an unregistered fresh nonce without inference; native agent/model absence is an explicit preparation state. Claim every mutation once and reconcile exact owned native state after response loss without resend. Preserve inherited paths/usage as provenance, not filesystem or accounting authority.
