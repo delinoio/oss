@@ -5,6 +5,7 @@ class Pnport < Formula
   license "Apache-2.0"
 
   on_macos do
+    depends_on macos: :sequoia
     if Hardware::CPU.intel?
       url "__DARWIN_AMD64_URL__"
       sha256 "__DARWIN_AMD64_SHA256__"

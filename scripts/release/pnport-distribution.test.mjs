@@ -24,6 +24,20 @@ function fixture(t) {
   return directory;
 }
 
+test("Homebrew pnport formula declares the macOS 15 floor and version test", () => {
+  let formula = readFileSync(path.join(root, "packaging/homebrew/templates/pnport.rb.tmpl"), "utf8");
+  const replacements = { __VERSION__: "0.1.0" };
+  for (const platform of ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"]) {
+    const key = platform.replace("-", "_").toUpperCase();
+    replacements[`__${key}_URL__`] = `https://example.invalid/pnport-${platform}.tar.gz`;
+    replacements[`__${key}_SHA256__`] = "a".repeat(64);
+  }
+  for (const [placeholder, value] of Object.entries(replacements)) formula = formula.replaceAll(placeholder, value);
+  assert.doesNotMatch(formula, /__[A-Z0-9_]+__/u);
+  assert.match(formula, /on_macos do\n    depends_on macos: :sequoia/u);
+  assert.match(formula, /test do\n    assert_match version\.to_s, shell_output\("#\{bin\}\/pnport --version"\)/u);
+});
+
 test("launcher tarball has exact source text, version and executable mode", (t) => {
   const output = fixture(t);
   const artifact = buildPackage({ output, sourceRevision: revision });
