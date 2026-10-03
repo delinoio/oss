@@ -1,5 +1,6 @@
 # DeliDev src ownership
 
+- Workspace storage and permanent deletion use the connection-owned controller in `session-storage.tsx`. Retain original requests and jobs through navigation/uncertainty, pin exact successful previews and snapshot selections for confirmation, observe deletion independently of removed resources and preserve decimal/nullable byte measurements. Explain dependent permanent retirement and use separate negotiated capabilities; follow `docs/cmds-delidev-storage-contract.md`.
 - Sidechat actions require negotiated server/native Worker support and a completed original parent. Retain creation/findings requests across navigation and uncertainty, offer complete own assistant replies only and transfer full selected content under exact revisions. Explain dependent permanent cleanup and keep workspace/terminal mutation outside Sidechat authority; follow `docs/cmds-delidev-sidechat-contract.md`.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.

@@ -317,8 +317,10 @@ claims/intents, retirement receipts and restoration bindings before acknowledgin
 A stored workspace supplies its validated original manifest before deleting its only
 copy; restored independent Git is removed solely within the managed root. Original
 Local/source checkouts remain protected. Completed-proof retries verify these exact
-paths remain absent. Future session-owned native services and dependent Sidechats
-must join this ownership graph and acknowledgement boundary before exposing them.
+paths remain absent. Dependent Sidechats join this ownership graph through complete synchronized
+original child obligations and the bounded dependency index under the
+[Sidechat contract](cmds-delidev-sidechat-contract.md). Future session-owned
+native services must join that acknowledgement boundary before exposing them.
 The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
@@ -816,3 +818,36 @@ Affected Agents retain names, options, templates and original model IDs with ser
 ## Added hosted-provider defaults (migration 30)
 
 Real 30 follows implemented OAuth 29 and actual accounting/diagnostics/retirement 26–28. It stores the private `provider_presets_layout=hosted-additions-26-v1` marker and seeds only the 26 explicitly allocated hosted preset identities. Historical defaults migrations retain their original six-ID set. Existing managed UUIDs, Off state, custom providers/accounts/models and explicit deletion of original presets remain authoritative. No Account, credential or model is created. Upgrade synchronizes the original backup first and publishes all predecessor/layout/seed changes atomically; failure leaves the original version and image intact. A current-store reopen validates the exact layout marker and never seeds again.
+
+
+## Desktop workspace storage and permanent deletion
+
+The connection-owned `SessionStorageProvider` in `apps/delidev/src/session-storage.tsx`
+presents current workspace state, usage preview, snapshot creation, original
+operation inspection/cancellation/recovery and paginated snapshot inspection,
+restoration and permanent deletion. Session details open the workflow; closing the
+modal or navigating retains original request/job/session identity. Sidechats expose
+only their independent permanent deletion; original Local checkouts do not expose
+managed storage actions. Independent storage/deletion capabilities produce explicit
+older-server update guidance before product actions.
+
+Storage acceptance is displayed separately from Worker success and independently
+verified native cleanup. Exact decimal byte counts retain integer precision;
+logical source, retained snapshot and removed bytes remain separate from nullable
+filesystem free measurements. Cleanup confirmation pins the exact successful
+preview job and current session revision and explains permanent dependent Sidechat
+retirement. Snapshot removal has separate irreversible confirmation. Restoration
+and recovery disclose paused outcomes and preserve original uncertainty. Original
+cancellation cannot undo child retirement already accepted by a synchronized
+cleanup intent.
+
+Permanent deletion requires its own explicit confirmation of managed native,
+workspace, backup and dependent Sidechat removal. In-flight native work is stopped
+through its original owner; original Local checkouts and independent Forks remain
+outside removal authority. `GetSessionDeletion` observes the accepted original
+session independently of resource removal, exposing Worker, database and backup
+progress. Closing/navigating cannot resubmit either deletion or storage. Unknown
+acknowledgments retain original wire requests in the connection mutation registry;
+explicit retries use identical UUID/revision/selection bytes. A replacement
+connection follows the existing connection-memory lifetime and never adopts
+another server's operation.
