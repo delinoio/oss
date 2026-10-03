@@ -3311,6 +3311,370 @@
       "declaration": "NativeAccountingSummary",
       "member": "actual_cost",
       "number": 7
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticSource",
+      "member": "REQUEST_DIAGNOSTIC_SOURCE_UNSPECIFIED",
+      "number": 0
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticSource",
+      "member": "REQUEST_DIAGNOSTIC_SOURCE_NATIVE_INPUT",
+      "number": 1
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticSource",
+      "member": "REQUEST_DIAGNOSTIC_SOURCE_PROXY_HTTP",
+      "number": 2
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticState",
+      "member": "REQUEST_DIAGNOSTIC_STATE_UNSPECIFIED",
+      "number": 0
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticState",
+      "member": "REQUEST_DIAGNOSTIC_STATE_IN_PROGRESS",
+      "number": 1
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticState",
+      "member": "REQUEST_DIAGNOSTIC_STATE_SUCCEEDED",
+      "number": 2
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticState",
+      "member": "REQUEST_DIAGNOSTIC_STATE_FAILED",
+      "number": 3
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticState",
+      "member": "REQUEST_DIAGNOSTIC_STATE_CANCELED",
+      "number": 4
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticOperation",
+      "member": "REQUEST_DIAGNOSTIC_OPERATION_UNSPECIFIED",
+      "number": 0
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticOperation",
+      "member": "REQUEST_DIAGNOSTIC_OPERATION_INPUT",
+      "number": 1
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticOperation",
+      "member": "REQUEST_DIAGNOSTIC_OPERATION_CHAT",
+      "number": 2
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticOperation",
+      "member": "REQUEST_DIAGNOSTIC_OPERATION_RESPONSE",
+      "number": 3
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticOperation",
+      "member": "REQUEST_DIAGNOSTIC_OPERATION_COMPACT",
+      "number": 4
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticOperation",
+      "member": "REQUEST_DIAGNOSTIC_OPERATION_MESSAGE",
+      "number": 5
+    },
+    {
+      "pr": 1117,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticOperation",
+      "member": "REQUEST_DIAGNOSTIC_OPERATION_COUNT",
+      "number": 6
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "id",
+      "number": 1
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "revision",
+      "number": 2
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "session_id",
+      "number": 3
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "execution_id",
+      "number": 4
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "account_id",
+      "number": 5
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "connection_id",
+      "number": 6
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "provider_id",
+      "number": 7
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "model_id",
+      "number": 8
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "source",
+      "number": 9
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "operation",
+      "number": 10
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "state",
+      "number": 11
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "purpose",
+      "number": 12
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "harness",
+      "number": 13
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "input_id",
+      "number": 14
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "publication_request_id",
+      "number": 15
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "correlation_id",
+      "number": 16
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "native_request_id",
+      "number": 17
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "native_response_id",
+      "number": 18
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "native_thread_id",
+      "number": 19
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "native_turn_id",
+      "number": 20
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "requested_effort",
+      "number": 21
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "requested_service_tier",
+      "number": 22
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "effective_effort",
+      "number": 23
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "effective_service_tier",
+      "number": 24
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "observed_at",
+      "number": 25
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "finished_at",
+      "number": 26
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "duration_ms",
+      "number": 27
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "http_attempted",
+      "number": 28
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "http_status",
+      "number": 29
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "error_code",
+      "number": 30
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "provider_request_id",
+      "number": 31
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "ListRequestDiagnosticsRequest",
+      "member": "session_id",
+      "number": 1
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "ListRequestDiagnosticsRequest",
+      "member": "execution_id",
+      "number": 2
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "ListRequestDiagnosticsRequest",
+      "member": "page_size",
+      "number": 3
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "ListRequestDiagnosticsRequest",
+      "member": "page_token",
+      "number": 4
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "ListRequestDiagnosticsResponse",
+      "member": "records",
+      "number": 1
+    },
+    {
+      "pr": 1117,
+      "kind": "message",
+      "declaration": "ListRequestDiagnosticsResponse",
+      "member": "next_page_token",
+      "number": 2
     }
   ]
 }
