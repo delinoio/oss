@@ -139,6 +139,12 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		}
 		ref.HistoryExecutionID, ref.CreationRequestID = input.Continuation.HistoryExecutionID, b.predecessor.NativeReference.CreationRequestID
 	}
+	if input.Fork != nil {
+		if b.fork == nil || b.predecessor != nil {
+			return fail(executionCheckpointUncertain())
+		}
+		ref.HistoryExecutionID, ref.CreationRequestID = input.Fork.RuntimeID, b.fork.NativeReference.CreationRequestID
+	}
 	if ref.validate() != nil {
 		return fail(executionCheckpointUncertain())
 	}

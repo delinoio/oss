@@ -28,7 +28,7 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1   WorkerCapability = 5
 	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1    WorkerCapability = 13
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1 WorkerCapability = 14
-	// Reserved for the independently verified Unix General Chat fork profile.
+	// Independently negotiated pinned Unix plain-text General Chat fork profile.
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1     WorkerCapability = 15
 	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1         WorkerCapability = 1
 	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1             WorkerCapability = 2

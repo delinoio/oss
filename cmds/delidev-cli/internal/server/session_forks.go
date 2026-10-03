@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -21,7 +22,7 @@ type forkReceipt struct {
 }
 
 func forkConflict() error {
-	return domain.Fail(domain.Conflict, "This session has no eligible completed Codex fork boundary.", "Finish native work and confirm its original completion, workspace ownership and cleanup first.")
+	return domain.Fail(domain.Conflict, "This session has no eligible completed native fork boundary.", "Finish native work and confirm its original completion, workspace ownership and cleanup first.")
 }
 
 func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (store.Record, domain.Session, domain.ForkJobInput, error) {
@@ -41,7 +42,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	if err != nil {
 		return r, session, input, err
 	}
-	if job.Type != domain.ExecuteSessionJob || job.State != domain.JobSucceeded || job.FinishedAt == nil || domain.Decode(job.Input, &input.SourceAssignment) != nil || !session.OwnsExecution(input.SourceAssignment) || domain.Decode(job.Output, &input.Completion) != nil || input.Completion.Version != 2 || input.Completion.Validate() != nil || input.SourceAssignment.Configuration.Harness != domain.Codex {
+	if job.Type != domain.ExecuteSessionJob || job.State != domain.JobSucceeded || job.FinishedAt == nil || domain.Decode(job.Input, &input.SourceAssignment) != nil || !session.OwnsExecution(input.SourceAssignment) || domain.Decode(job.Output, &input.Completion) != nil || input.Completion.Version != 2 || input.Completion.ValidateForHarness(input.SourceAssignment.Configuration.Harness) != nil || (input.SourceAssignment.Configuration.Harness != domain.Codex && input.SourceAssignment.Configuration.Harness != domain.OpenCode) || expected.Validate(input.SourceAssignment.Configuration.Harness, domain.NativeTurnIdentity) != nil {
 		return r, session, input, forkConflict()
 	}
 	if err := checkContinuationInputs(tx, id, input.SourceAssignment, *session.Execution); err != nil {
@@ -63,6 +64,15 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 		return r, session, input, domain.Fail(domain.Unavailable, "The original Worker is not connected.", "Reconnect the same machine before forking.")
 	}
 	input.Version, input.SourceSessionID, input.SourceRevision = 1, id, r.Revision
+	if input.SourceAssignment.Configuration.Harness == domain.OpenCode {
+		if session.Workspace != domain.GeneralChat || machine.OS == "windows" || (machine.OS != "darwin" && machine.OS != "linux") || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.SourceAssignment.Installation.Version != domain.OpenCodeProtocolVersion {
+			return r, session, input, domain.Fail(domain.Unsupported, "This Runner Device does not support OpenCode General Chat Fork.", "Update the original Unix Runner Device and keep the completed source session.")
+		}
+		if err := validateOpenCodeForkTranscript(tx, id, input.Completion.NativeThreadID); err != nil {
+			return r, session, input, err
+		}
+		input.Version = 2
+	}
 	input.SourceJobID, input.Progress, input.Snapshot = prior.ID, *session.Execution, *session.InitialExecution
 	return r, session, input, nil
 }
@@ -70,7 +80,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkSessionRequest]) (*connect.Response[pb.ForkSessionResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	meta := req.Msg.Mutation
-	if meta == nil || domain.ID(meta.RequestId).Validate() != nil || domain.ID(meta.Id).Validate() != nil || meta.ExpectedRevision == 0 || domain.NativeIdentity(req.Msg.ExpectedTurnId).Validate(domain.Codex, domain.NativeTurnIdentity) != nil || domain.Text(req.Msg.Name, "fork name", 256, true) != nil {
+	if meta == nil || domain.ID(meta.RequestId).Validate() != nil || domain.ID(meta.Id).Validate() != nil || meta.ExpectedRevision == 0 || (domain.NativeIdentity(req.Msg.ExpectedTurnId).Validate(domain.Codex, domain.NativeTurnIdentity) != nil && domain.NativeIdentity(req.Msg.ExpectedTurnId).Validate(domain.OpenCode, domain.NativeTurnIdentity) != nil) || domain.Text(req.Msg.Name, "fork name", 256, true) != nil {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Fork requires exact source identities, revision, boundary and name.", "Read the completed source session before submitting a fork."), correlation)
 	}
 	kind := domain.WorkspaceType("")
@@ -153,7 +163,13 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		input.LocalOrigin, input.Actor, input.CreatedBy = origin, actor, actor.DeviceID
 		input.ChildSessionID, input.RuntimeID, input.NativeRequestID = domain.NewID(), domain.NewID(), domain.NewID()
 		input.Name = identity.Name
+		if input.Version == 2 {
+			input.OpenCode = &domain.OpenCodeForkRequests{Restore: domain.NewID(), Fork: input.NativeRequestID, Move: domain.NewID(), Mark: domain.NewID(), DeleteSource: domain.NewID()}
+		}
 		if err := input.Validate(); err != nil {
+			if input.Version == 2 {
+				s.logger.WarnContext(ctx, "opencode_fork_admission_rejected", "source_session_id", input.SourceSessionID, "operations_valid", input.OpenCode != nil && input.OpenCode.Validate() == nil, "observed_build", input.Progress.Observed.OpenCodeAgent == domain.OpenCodeBuildAgent, "children", len(input.Progress.Subagents), "context_actions", len(input.Progress.NativeCompactions), "workspace_observed", input.Progress.LatestWorkspaceEventID != "", "todo_observed", input.Progress.LatestTodoID != "", "plan_observed", input.Progress.LatestPlanID != "", "diff_observed", input.Progress.LatestDiffID != "", "code", domain.SafeError(err).Code)
+			}
 			return nil, err
 		}
 		raw, err := json.Marshal(input)
@@ -270,6 +286,14 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 			problem = domain.Fail(domain.RecoveryRequired, "Fork workspace does not match its original source inventory.", "Preserve the original job and all private workspace evidence.")
 		}
 	}
+	var inherited []forkCanonicalMessage
+	if problem == nil && input.Version == 2 {
+		var err error
+		inherited, err = prepareOpenCodeForkTranscript(tx, input, output)
+		if err != nil {
+			problem = domain.Fail(domain.RecoveryRequired, "Fork cannot publish its complete inherited conversation.", "Preserve the original native child and source boundary; do not repeat Fork.")
+		}
+	}
 	now := time.Now().UTC()
 	job.FinishedAt = &now
 	if problem != nil {
@@ -291,8 +315,20 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 		return nil, err
 	}
 	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
+	if input.Version == 2 {
+		child.Fork.NativeTurnID = output.NativeTurnID
+	}
 	if _, err := tx.Put(domain.SessionKind, input.ChildSessionID, 0, input.ChildSessionID, r.ProjectID, child); err != nil {
 		return nil, err
+	}
+	for _, message := range inherited {
+		if _, err := tx.Put(domain.MessageKind, message.ID, 0, input.ChildSessionID, r.ProjectID, message.Value); err != nil {
+			return nil, err
+		}
+		value := message.Value
+		if err := tx.BindExecutionMessage(input.ChildSessionID, input.RuntimeID, message.ID, value.NativeThreadID, value.NativeTurnID, value.NativeID, domain.MessageComplete); err != nil {
+			return nil, err
+		}
 	}
 	job.State, job.Output = domain.JobSucceeded, raw
 	return tx.PutJob(r.ID, revision, r.SessionID, r.ProjectID, job)
@@ -307,6 +343,9 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 		return forkConflict()
 	}
 	if input.Workspace == domain.GeneralChat {
+		if input.Version == 2 && preparation.ForkProfile != workspace.OpenCodeGeneralChatForkV1 || input.Version == 1 && preparation.ForkProfile != "" {
+			return forkConflict()
+		}
 		if preparation.ForkSourcePath != source.PrimaryPath {
 			return forkConflict()
 		}

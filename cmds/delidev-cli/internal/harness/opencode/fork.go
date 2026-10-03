@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -53,7 +54,7 @@ func InspectForkSourceCheckpoint(ctx context.Context, home string, raw []byte, r
 // settings. Every mutation is durably claimed before its one original send.
 // Lost acknowledgments reconcile only exact state in this owned copied runtime.
 func PrepareForkAPI(ctx context.Context, config APIExecutionConfig, sourceHome string, sourceRaw []byte, sourceRef CheckpointReference, target string, requests ForkRequests) (raw []byte, ref CheckpointReference, returned error) {
-	if requests.Validate() != nil || config.Settings.Agent != BuildAgent || config.Settings.Permission == nil || len(config.Settings.Permission) != 0 || len(config.References) != 0 || target == config.Workspace || filepath.Dir(target) != filepath.Dir(config.Workspace) || !canonicalDirectory(target) || InspectForkSourceCheckpoint(ctx, sourceHome, sourceRaw, sourceRef) != nil {
+	if requests.Validate() != nil || config.Settings.Agent != BuildAgent || config.Settings.Permission == nil || len(config.Settings.Permission) != 0 || len(config.References) != 0 || !forkWorkspacesDisjoint(config.Workspace, target) || !canonicalDirectory(target) || InspectForkSourceCheckpoint(ctx, sourceHome, sourceRaw, sourceRef) != nil {
 		return nil, ref, incompatible()
 	}
 	if _, err := GlobalWorkspaceRoot(target); err != nil {
@@ -476,4 +477,74 @@ func forkMarkerMatches(before, after []byte, request domain.ID) bool {
 	left, _ := json.Marshal(a)
 	right, _ := json.Marshal(b)
 	return bytes.Equal(canonicalNative(left), canonicalNative(right))
+}
+
+// The Worker proves ownership of sibling managed session roots; their 'chat'
+// leaves need not share an immediate parent. Reject every overlapping native
+// workspace here independently before restoring or mutating a copied runtime.
+func forkWorkspacesDisjoint(source, target string) bool {
+	if source == target {
+		return false
+	}
+	for _, pair := range [][2]string{{source, target}, {target, source}} {
+		relative, err := filepath.Rel(pair[0], pair[1])
+		if err != nil || relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return false
+		}
+	}
+	return true
+}
+
+// InspectForkCheckpoint returns only child identity/provenance metadata after
+// private full-file validation. It grants no restoration or mutation authority.
+func InspectForkCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference) ([]ForkMessageIdentity, error) {
+	c, err := decodeCheckpoint(raw, ref, home)
+	if err != nil || c.Fork == nil || !c.Fork.SelectionPending || len(checkpointHistories(c)) != len(c.Fork.ClonedHistories) || InspectCheckpoint(ctx, home, raw, ref) != nil {
+		return nil, sessionUncertain()
+	}
+	return cloneForkProof(c.Fork).Identities, nil
+}
+
+// InspectForkClaims compares every durable once-only intent to the private native
+// lineage, including the inert credential/runtime digest used for restoration.
+// It neither restores a session nor exposes native history or a credential.
+func InspectForkClaims(raw []byte, ref CheckpointReference, home string, requests ForkRequests, claims []SessionClaim) error {
+	c, err := decodeCheckpoint(raw, ref, home)
+	if err != nil || c.Fork == nil || !c.Fork.SelectionPending || requests.Validate() != nil || len(claims) != 5 || requests.Fork != c.Reference.CreationRequestID {
+		return sessionUncertain()
+	}
+	source := c.Fork.SourceReference
+	intent, _ := json.Marshal(struct {
+		CheckpointSHA256 string
+		OwnerID          domain.ID
+		RuntimeSHA256    string
+		CredentialSHA256 string
+	}{source.SHA256, c.Reference.OwnerID, mutationDigest([]byte(home)), c.CredentialSHA256})
+	move, _ := json.Marshal(struct {
+		Session     string `json:"sessionID"`
+		Destination struct {
+			Directory string `json:"directory"`
+		} `json:"destination"`
+		Move bool `json:"moveChanges"`
+	}{ref.SessionID, struct {
+		Directory string `json:"directory"`
+	}{c.Workspace}, false})
+	marker, _ := json.Marshal(struct {
+		Metadata   sessionMetadata  `json:"metadata"`
+		Permission []PermissionRule `json:"permission"`
+	}{sessionMetadata{sessionMarker{requests.Fork}}, []PermissionRule{}})
+	kinds := []SessionMutation{ResumeSessionMutation, ForkSessionMutation, MoveForkMutation, MarkForkMutation, DeleteForkSourceMutation}
+	ids := []domain.ID{requests.Restore, requests.Fork, requests.Move, requests.Mark, requests.DeleteSource}
+	bodies := [][]byte{intent, []byte("{}"), move, marker, nil}
+	for n, actual := range claims {
+		scope := source
+		if n == 2 || n == 3 {
+			scope.SessionID, scope.InputID, scope.PartID = ref.SessionID, ref.InputID, ref.PartID
+		}
+		expected := SessionClaim{RequestID: ids[n], Kind: kinds[n], SessionID: scope.SessionID, MessageID: scope.InputID, PartID: scope.PartID, InputRequestID: source.InputRequestID, BodyDigest: mutationDigest(bodies[n])}
+		if expected.Validate() != nil || actual != expected {
+			return sessionUncertain()
+		}
+	}
+	return nil
 }

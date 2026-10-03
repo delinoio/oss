@@ -77,3 +77,16 @@ it.each(["worktree", "local"] as const)("offers Local sharing only for a user-ow
   else expect(option).toBeNull();
   expect(screen.getByRole("option", { name: "Independent workspace" })).not.toBeNull();
 });
+
+it.each([true, false])("requires independent OpenCode server and Unix Runner Device support (%s)", async (supported) => {
+  const machineId = newRequestId();
+  const source = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Original OpenCode", machine_id: machineId, workspace: "general-chat", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "opencode" } }, execution: { native_turn_id: "msg_01960dcbe1fcABCDEFGHIJKLMN", cleanup_verified: true, observed: { opencode_agent: "build" } } }) });
+  const machine = create(ResourceSchema, { kind: EntityKind.MACHINE, id: machineId, revision: 1n, schemaVersion: 1, documentJson: encode({ os: supported ? "darwin" : "windows", worker_capabilities: ["opencode-general-chat-fork-v1"] }) });
+  const fork = vi.fn();
+  const transport = createRouterTransport((router) => { router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1] }) }); router.service(ResourceService, { getResource: (request) => ({ resource: request.kind === EntityKind.MACHINE ? machine : source }) }); router.service(SessionService, { forkSession: fork }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+  if (supported) { fireEvent.click(await screen.findByRole("button", { name: "Fork session" })); expect(screen.getByText(/child keeps a separate copy/)).not.toBeNull(); }
+  else { await waitFor(() => expect(client.isFetching()).toBe(0)); expect(screen.queryByRole("button", { name: "Fork session" })).toBeNull(); }
+  expect(fork).not.toHaveBeenCalled();
+});

@@ -1269,7 +1269,7 @@ export enum WorkerCapability {
   OPENCODE_SESSION_COMPACTION_V1 = 14,
 
   /**
-   * Reserved for the independently verified Unix General Chat fork profile.
+   * Independently negotiated pinned Unix plain-text General Chat fork profile.
    *
    * @generated from enum value: WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1 = 15;
    */

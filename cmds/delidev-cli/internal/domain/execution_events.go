@@ -509,7 +509,17 @@ type ExecutionProgress struct {
 	UnconfirmedResponses     uint32                      `json:"unconfirmed_responses,omitempty"`
 }
 
+type ForkMessageOrigin struct {
+	SessionID     ID     `json:"session_id"`
+	MessageID     ID     `json:"message_id"`
+	ExecutionID   ID     `json:"execution_id"`
+	InputID       ID     `json:"input_id,omitempty"`
+	FirstSequence uint64 `json:"first_sequence"`
+	LastSequence  uint64 `json:"last_sequence"`
+}
+
 type ExecutionMessage struct {
+	Inherited          *ForkMessageOrigin         `json:"inherited,omitempty"`
 	GrokTool           *GrokToolEvent             `json:"grok_tool,omitempty"`
 	GrokUser           *GrokUserHistory           `json:"grok_user,omitempty"`
 	GrokText           *GrokTextContent           `json:"grok_text,omitempty"`

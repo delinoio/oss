@@ -1035,7 +1035,7 @@ export enum SystemCapability {
   OPENCODE_SESSION_COMPACTION_V1 = 25,
 
   /**
-   * Reserved for the independently verified Unix General Chat fork profile.
+   * Independently negotiated pinned Unix plain-text General Chat fork profile.
    *
    * @generated from enum value: SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1 = 26;
    */

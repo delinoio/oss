@@ -28,7 +28,7 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1   SystemCapability = 15
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1    SystemCapability = 24
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1 SystemCapability = 25
-	// Reserved for the independently verified Unix General Chat fork profile.
+	// Independently negotiated pinned Unix plain-text General Chat fork profile.
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1    SystemCapability = 26
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1  SystemCapability = 22
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1 SystemCapability = 23
