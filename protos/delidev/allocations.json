@@ -4971,6 +4971,41 @@
       "declaration": "ListSessionDeletionWorkRequest",
       "member": "original_job_id",
       "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SIGNED_UPDATES_V1",
+      "number": 28
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1",
+      "number": 29
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1",
+      "number": 17
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "EntityKind",
+      "member": "ENTITY_KIND_UPDATE",
+      "number": 33
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "EntityKind",
+      "member": "ENTITY_KIND_SSH_SETUP",
+      "number": 34
     }
   ]
 }

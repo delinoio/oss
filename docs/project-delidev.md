@@ -166,3 +166,6 @@ Issue #1208 extends native subagent observation to OpenCode 1.18.32 foreground t
 - Bounded Unix plain-text OpenCode General Chat Fork uses independent System 26 / Worker 15, native ID-clone/history proof, explicit no-change relocation, preparation without inference and independent copied files. The [fork contract](cmds-delidev-forks-contract.md) owns this profile; Codex support does not imply OpenCode or Sidechat authority.
 
 - The canonical 35-ID API provider registry preserves original wire IDs and shares product ordering across RPC/CLI/desktop. Real default migration 30 follows actual 26–29, retaining existing identities and deletions. Fixed native/private inspection authority is owned by the [provider inspection](cmds-delidev-providers-contract.md), [catalog](cmds-delidev-catalog-contract.md) and [activation](cmds-delidev-provider-activation-contract.md) contracts; discovery grants no inference or subscription authority.
+
+- [DeliDev signed updates](cmds-delidev-updates-contract.md)
+- [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
