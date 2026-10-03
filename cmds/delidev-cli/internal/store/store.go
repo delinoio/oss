@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 26
+const SchemaVersion = 27
 const applicationID = 0x444c4456
 const MaxPage = 200
 

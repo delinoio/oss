@@ -64,3 +64,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Generated BrowserQuery bindings expose only the metadata/cleanup contract in `docs/cmds-delidev-browser-contract.md`. Keep browser URLs, tabs and native paths out of product RPCs and React Query server state; local native presentation is independently authorized and generation-bound.
 
 - Generated NativeModelQuery bindings retain exact bigint revisions, original mutation identities and immutable observation cursors under `docs/cmds-delidev-native-models-contract.md`. Keep canonical registration a separate explicit save and advisory metadata outside any client authorization/readiness engine.
+
+- Generated SessionQuery request diagnostics keeps optional metadata, original identity and exact bigint revision/latency under the diagnostics contract. Never infer requests from time proximity or resend a request from a diagnostic receipt.

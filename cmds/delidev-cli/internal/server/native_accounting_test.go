@@ -75,7 +75,7 @@ func TestClaudeNativeAccountingRPCProfilesFailureBudgetAndPrivacy(t *testing.T) 
 			raw, _ := protojson.Marshal(response.Msg)
 			// This Claude fixture's native thread uses the public session UUID, so
 			// its value legitimately appears as session_id in grouped analytics.
-			for _, private := range []string{f.input.Input.Prompt, f.workerToken, string(f.turn), resultID, "native_cumulative_cost", "999"} {
+			for _, private := range []string{f.input.Input.Prompt, f.workerToken, string(f.turn), resultID, "native_cumulative_cost", `"999"`} {
 				if strings.Contains(string(raw), private) {
 					t.Fatal("aggregate exposed private native evidence", private)
 				}

@@ -46,6 +46,7 @@ type Scope struct {
 	TitlePrompt  string
 	Effort       string
 	ServiceTier  string
+	Harness      domain.Harness
 	Provider     domain.Provider
 	Operations   []Operation
 }
@@ -127,6 +128,7 @@ type Lease struct {
 	AuthorizeReference func(context.Context, ReferenceKind, string) error
 	ObserveReference   func(context.Context, ReferenceKind, string) error
 	BeforeSubmit       func(context.Context, Operation) error
+	PublishDiagnostic  func(context.Context, domain.RequestDiagnostic) error
 	// ObserveHistory records only full-history versus account-bound use before
 	// any provider side effect. It never retains request content or identifiers.
 	ObserveHistory func(context.Context, bool) error

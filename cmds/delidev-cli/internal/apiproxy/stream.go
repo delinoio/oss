@@ -74,7 +74,7 @@ func frameData(frame []byte) (string, []byte, error) {
 	return event, data, nil
 }
 
-func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, operation Operation, lease *Lease, guard secretGuard, correlation string) (started bool, result error) {
+func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, operation Operation, lease *Lease, guard secretGuard, correlation string, diagnostic *diagnosticObservations) (started bool, result error) {
 	reader := bufio.NewReaderSize(io.LimitReader(body, maxStream+1), 32<<10)
 	controller := http.NewResponseController(w)
 	total := 0
@@ -208,6 +208,16 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 		if observedResponse != nil {
 			if err := observeReference(ctx, lease, operation, observedResponse); err != nil {
 				return started, err
+			}
+		}
+		if observedResponse != nil {
+			diagnosticResponse(observedResponse, diagnostic, guard)
+		} else if operation == ChatCompletion {
+			diagnosticResponse(object, diagnostic, guard)
+		} else if operation == MessageCreate && kind == "message_start" {
+			var message map[string]json.RawMessage
+			if json.Unmarshal(object["message"], &message) == nil {
+				diagnosticResponse(message, diagnostic, guard)
 			}
 		}
 		if err := fragments.deliver(frame, terminal, write); err != nil {

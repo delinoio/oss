@@ -176,3 +176,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
  - Native model observations reuse generic immutable jobs and receipts without a migration under `docs/cmds-delidev-native-models-contract.md`. Last-success lookup binds the original machine/account, installation generation/digest, connection and hidden policy; failed output cannot replace successful observations or modify canonical models.
 
 - Migration 26 rebuilds the shared native accounting ledger after real 25, retaining Grok body bytes and no historical raw backfill. Publish priced input units only with their touched original usage source in the same receipt transaction; validate indexed attribution against body and original price on reads. Keep response and native lifetime tables independent and combine only in budget evaluation.
+
+- Migration 27 adds the closed metadata-only request diagnostic table after real accounting 26. Reject foreign preexisting layouts, preserve original publication/revision/index parity, atomically publish session invalidation and reference receipts, and never backfill historical requests or evict records to admit new work.

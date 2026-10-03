@@ -25,7 +25,7 @@ func TestAccountingMigrationPreservesHistoryWithoutBackfill(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.db.Exec("DROP TABLE native_accounting; DROP TABLE session_native_estimate_totals; DELETE FROM metadata WHERE key='native_accounting_layout'; PRAGMA user_version=24"); err != nil {
+			if _, err := historicalSchema(s.db, "024"); err != nil {
 				t.Fatal(err)
 			}
 			if conflict {

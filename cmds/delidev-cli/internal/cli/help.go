@@ -90,6 +90,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   model native-cancel --id JOB_ID --revision N
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session forward start|status|stop|reconcile --session-id ID [--id ID] [--revision N] [--machine-id ID --worker-port N --local-port N]
+  session diagnostics --id ID [--execution-id ID] [--page-size 50] [--page-token TOKEN]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
   session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
   session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
