@@ -9,20 +9,72 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::graph::Graph;
+use crate::{
+    diagnostic::{Code, Result},
+    graph::Graph,
+    view::Translation,
+};
 
 #[cfg(target_os = "macos")]
 const MAX_SYMLINKS: usize = 32;
 #[cfg(not(target_os = "macos"))]
 const MAX_SYMLINKS: usize = 40;
 
-pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<PathBuf> {
+pub enum Lookup {
+    Resolved(PathBuf),
+    NativeFailure { path: PathBuf, errno: i32 },
+}
+
+struct ParentTraversal {
+    directory: PathBuf,
+    remaining: PathBuf,
+}
+
+pub struct ResolvedLookup {
+    path: PathBuf,
+    parents: Vec<ParentTraversal>,
+}
+
+impl ResolvedLookup {
+    pub fn validate_parents(
+        self,
+        mut translate: impl FnMut(&Path) -> Result<Translation>,
+    ) -> Result<Lookup> {
+        for parent in self.parents {
+            let (physical, errno) = match translate(&parent.directory) {
+                Ok(translation) => {
+                    let errno = match fs::metadata(&translation.physical) {
+                        Ok(metadata) if metadata.is_dir() => continue,
+                        Ok(_) => libc::ENOTDIR,
+                        Err(error) => error.raw_os_error().unwrap_or(libc::EIO),
+                    };
+                    (translation.physical, errno)
+                }
+                Err(error) if error.code == Code::PnportResolutionFailed => {
+                    (parent.directory, libc::ENOENT)
+                }
+                Err(error) => return Err(error),
+            };
+            // The prefix must exist as a directory before '..' can remove it.
+            // Darwin forwards this failing backing lookup to libc; Linux
+            // returns the observed errno before a normalized managed rewrite.
+            return Ok(Lookup::NativeFailure {
+                path: physical.join("..").join(parent.remaining),
+                errno,
+            });
+        }
+        Ok(Lookup::Resolved(self.path))
+    }
+}
+
+pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<ResolvedLookup> {
     let mut remaining: VecDeque<OsString> = path
         .components()
         .map(|part| part.as_os_str().to_os_string())
         .collect();
     let mut resolved = PathBuf::new();
     let mut archive_root: Option<PathBuf> = None;
+    let mut parents = Vec::new();
     let mut followed = 0;
     while let Some(part) = remaining.pop_front() {
         match Path::new(&part).components().next()? {
@@ -32,6 +84,10 @@ pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<
             }
             Component::CurDir => {}
             Component::ParentDir => {
+                parents.push(ParentTraversal {
+                    directory: resolved.clone(),
+                    remaining: remaining.iter().collect(),
+                });
                 resolved.pop();
                 if archive_root
                     .as_ref()
@@ -94,5 +150,8 @@ pub fn resolved_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<
             Component::Prefix(_) => return None,
         }
     }
-    Some(resolved)
+    Some(ResolvedLookup {
+        path: resolved,
+        parents,
+    })
 }

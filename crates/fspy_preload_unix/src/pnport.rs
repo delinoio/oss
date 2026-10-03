@@ -560,9 +560,21 @@ fn translate_lookup(
     path: &Path,
     follow_last: bool,
 ) -> pnport_core::diagnostic::Result<Translation> {
-    let resolved =
+    let native = |physical| Translation {
+        logical: path.to_owned(),
+        physical,
+        readonly: false,
+        virtual_link: false,
+    };
+    let Some(lookup) =
         pnport_core::native_path::resolved_lookup(path, follow_last, &runtime.view.graph)
-            .unwrap_or_else(|| path.to_owned());
+    else {
+        return Ok(native(path.to_owned()));
+    };
+    let resolved = match lookup.validate_parents(|parent| runtime.view.translate(parent))? {
+        pnport_core::native_path::Lookup::Resolved(path) => path,
+        pnport_core::native_path::Lookup::NativeFailure { path, .. } => return Ok(native(path)),
+    };
     let mut translation = runtime.view.translate(&resolved)?;
     if !translation.readonly {
         // Native lookup must keep the caller's symlink, '..', missing-parent

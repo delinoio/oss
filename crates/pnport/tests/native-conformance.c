@@ -177,6 +177,19 @@ static int native_aliases(void) {
     if (open("source.txt/", O_RDONLY) != -1 || errno != ENOTDIR) return 106;
     errno = 0;
     if (open("missing-native/../source.txt", O_RDONLY) != -1 || errno != ENOENT) return 107;
+    errno = 0;
+    if (open("missing-native/../node_modules/dep/file.txt", O_RDONLY) != -1 || errno != ENOENT) return 122;
+    if (symlink("missing-native/../node_modules/dep/file.txt", "dangling-alias")) return 123;
+    errno = 0;
+    if (open("dangling-alias", O_RDONLY) != -1 || errno != ENOENT || unlink("dangling-alias")) return 124;
+    // A real virtual directory may be traversed before '..'; missing virtual
+    // descendants and virtual files must retain ENOENT and ENOTDIR instead.
+    fd = open("node_modules/../node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0 || read(fd, bytes, 13) != 13 || memcmp(bytes, "package bytes", 13) || close(fd)) return 125;
+    errno = 0;
+    if (open("node_modules/dep/missing/../file.txt", O_RDONLY) != -1 || errno != ENOENT) return 126;
+    errno = 0;
+    if (open("node_modules/dep/file.txt/../file.txt", O_RDONLY) != -1 || errno != ENOTDIR) return 127;
 #ifdef __APPLE__
     // Synthetic directory backing lives in the private session, separately
     // from extracted cache content, and has the same read-only boundary.

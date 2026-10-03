@@ -28,7 +28,7 @@ use pnport::{
     diagnostic::{Code, Error, ExecFailureKind, Result},
     executable::Prepared,
     graph::Input,
-    native_path::resolved_lookup as resolved_caller_lookup,
+    native_path::{resolved_lookup as resolved_caller_lookup, Lookup as NativeLookup},
     view::{Translation, View},
 };
 
@@ -1848,6 +1848,12 @@ impl Trace<'_> {
         })
     }
 
+    fn resolved_lookup(&mut self, path: &Path, follow_last: bool) -> Result<Option<NativeLookup>> {
+        resolved_caller_lookup(path, follow_last, &self.view.graph)
+            .map(|lookup| lookup.validate_parents(|parent| self.translate(parent)))
+            .transpose()
+    }
+
     fn source_path(&self, pid: i32, dirfd: i32, path: &Path) -> Result<PathBuf> {
         let absolute = self.base(pid, dirfd, path)?;
         Ok(self.proc_root(pid, &absolute)?.unwrap_or(absolute))
@@ -2447,9 +2453,13 @@ impl Trace<'_> {
                         }
                     }
                     let source = self.source_path(pid, target_fd, target)?;
-                    let Some(lookup) = resolved_caller_lookup(&source, false, &self.view.graph)
-                    else {
-                        return Ok(false);
+                    let lookup = match self.resolved_lookup(&source, false)? {
+                        Some(NativeLookup::Resolved(path)) => path,
+                        Some(NativeLookup::NativeFailure { errno, .. }) => {
+                            self.force_error(pid, &mut regs, target_arg, errno)?;
+                            return Ok(true);
+                        }
+                        None => return Ok(false),
                     };
                     let translated = match self.translate(&lookup) {
                         Ok(value) => value,
@@ -2605,12 +2615,16 @@ impl Trace<'_> {
         } else {
             self.source_path(pid, dirfd, &original)?
         };
-        let Some(lookup) = resolved_caller_lookup(
+        let lookup = match self.resolved_lookup(
             &source,
             follows_final_component(call, &regs, path_arg, open_flags),
-            &self.view.graph,
-        ) else {
-            return Ok(false);
+        )? {
+            Some(NativeLookup::Resolved(path)) => path,
+            Some(NativeLookup::NativeFailure { errno, .. }) => {
+                self.force_error(pid, &mut regs, path_arg, errno)?;
+                return Ok(true);
+            }
+            None => return Ok(false),
         };
         let mutating = writing
             && call != libc::SYS_faccessat
@@ -2685,9 +2699,13 @@ impl Trace<'_> {
                     }
                 }
                 let source = self.source_path(pid, other_fd, &other)?;
-                let Some(other_lookup) = resolved_caller_lookup(&source, false, &self.view.graph)
-                else {
-                    return Ok(false);
+                let other_lookup = match self.resolved_lookup(&source, false)? {
+                    Some(NativeLookup::Resolved(path)) => path,
+                    Some(NativeLookup::NativeFailure { errno, .. }) => {
+                        self.force_error(pid, &mut regs, other_arg, errno)?;
+                        return Ok(true);
+                    }
+                    None => return Ok(false),
                 };
                 let translated = match self.translate(&other_lookup) {
                     Ok(value) => value,
