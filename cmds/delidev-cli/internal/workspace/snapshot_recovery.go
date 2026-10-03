@@ -98,6 +98,10 @@ func (m *Manager) removalClaimJournalPath(id domain.ID) string {
 	return filepath.Join(m.Root, "storage-removal-claims", string(id)+".pending")
 }
 
+func removalRootPrivatePath(root string, operationID domain.ID) string {
+	return filepath.Join(root, "workspace-removals", ".removing-root-"+string(operationID))
+}
+
 func (m *Manager) appendRemovalClaimRecord(ctx context.Context, r StorageRequest, record storageRemovalRenameRecord) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -348,6 +352,49 @@ func (m *Manager) retainRemovalClaim(ctx context.Context, r StorageRequest, inte
 	return security.WriteAtomic(path, raw)
 }
 
+// A crash can occur after the claimed root has moved to its private final
+// name and before the empty directory is unlinked. Reattach only that exact
+// root identity to the original operation name; a foreign private directory
+// remains protected behind recovery-required ownership.
+func (m *Manager) restorePrivateRemovalRoot(ctx context.Context, r StorageRequest, removal string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	privateRoot := removalRootPrivatePath(m.Root, r.OperationID)
+	exists, err := storageExists(privateRoot)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	if present, err := storageExists(removal); err != nil {
+		return false, err
+	} else if present {
+		return false, ResultUncertain()
+	}
+	intentRaw, err := security.ReadPrivate(m.removalIntentPath(r.OperationID), maxSnapshotManifest)
+	if err != nil {
+		return false, ResultUncertain()
+	}
+	claimRaw, err := security.ReadPrivate(m.removalClaimPath(r.OperationID), maxStorageRemovalClaim)
+	if err != nil || !removalClaimMatches(claimRaw, removalReference(r), intentRaw) {
+		return false, ResultUncertain()
+	}
+	var claim storageRemovalClaim
+	if domain.Decode(claimRaw, &claim) != nil {
+		return false, ResultUncertain()
+	}
+	identity, err := directoryPathIdentity(privateRoot)
+	if err != nil || identity != claim.RootIdentity {
+		return false, ResultUncertain()
+	}
+	if err := renameStorage(privateRoot, removal); err != nil {
+		return false, ResultUncertain()
+	}
+	return true, nil
+}
+
 func (m *Manager) removalIntentPath(id domain.ID) string {
 	return filepath.Join(m.Root, "storage-removal-intents", string(id)+".json")
 }
@@ -558,6 +605,13 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 	if err != nil {
 		return result, err
 	}
+	if original.Action == StorageCleanup || original.Action == StorageDelete {
+		restored, err := m.restorePrivateRemovalRoot(ctx, original, removal)
+		if err != nil {
+			return result, err
+		}
+		removed = removed || restored
+	}
 	staged, err := storageExists(staging)
 	if err != nil {
 		return result, err
@@ -743,7 +797,11 @@ func (m *Manager) RemoveClaimedStorageRemoval(ctx context.Context, operationID, 
 	if err != nil {
 		return err
 	}
-	if !exists {
+	privateExists, err := storageExists(removalRootPrivatePath(m.Root, operationID))
+	if err != nil {
+		return err
+	}
+	if !exists && !privateExists {
 		return nil
 	}
 	raw, err := security.ReadPrivate(m.removalIntentPath(operationID), maxSnapshotManifest)
@@ -757,6 +815,11 @@ func (m *Manager) RemoveClaimedStorageRemoval(ctx context.Context, operationID, 
 		Action:      intent.Action,
 		Preparation: PrepareRequest{SessionID: sessionID},
 		SnapshotID:  snapshotID,
+	}
+	if !exists {
+		if _, err := m.restorePrivateRemovalRoot(ctx, request, removal); err != nil {
+			return err
+		}
 	}
 	return m.removeClaimedSnapshotTree(ctx, request, removal, true)
 }

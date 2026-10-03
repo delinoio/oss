@@ -198,3 +198,30 @@ func TestClaimedRemovalRecoveryUsesPreUnlinkProofAfterShortClear(t *testing.T) {
 		t.Fatal("recovery did not use the pre-unlink proof after a short clear write", recovered)
 	}
 }
+
+func TestClaimedRemovalClaimsRootBeforeFinalUnlink(t *testing.T) {
+	m, prepare, manifest := chatExecutionFixture(t)
+	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
+	preview := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+	removal := filepath.Join(m.Root, "workspace-removals", string(input.OperationID))
+	replacement := removal + "-replacement"
+	m.storageAfterRemovalRootCheck = func() {
+		if err := os.Rename(removal, replacement); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(removal, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := m.Storage(context.Background(), input)
+	if domain.SafeError(err).Code != domain.RecoveryRequired || result.CleanupVerified {
+		t.Fatal("replacement root crossed the final identity boundary", result, err)
+	}
+	if _, err := os.Stat(replacement); err != nil {
+		t.Fatal("operation-owned root was not preserved after the race", err)
+	}
+}

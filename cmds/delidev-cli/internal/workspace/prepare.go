@@ -95,6 +95,7 @@ type Manager struct {
 	storageBeforeRemovalClaim    func()
 	storageBeforeRemovalUnlink   func(string)
 	storageAfterRemovalProof     func(string)
+	storageAfterRemovalRootCheck func()
 	storageAfterRemovalClaim     func(string)
 	storageAfterSnapshot         func()
 	Root                         string

@@ -290,15 +290,35 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if m.storageBeforeRemovalUnlink != nil {
 		m.storageBeforeRemovalUnlink(".")
 	}
+	if err := root.Close(); err != nil {
+		return ResultUncertain()
+	}
 	identity, err = directoryPathIdentity(removal)
 	if err != nil || identity != claim.RootIdentity {
 		return ResultUncertain()
 	}
-	root.Close()
-	if err := os.Remove(removal); err != nil {
+	if m.storageAfterRemovalRootCheck != nil {
+		m.storageAfterRemovalRootCheck()
+	}
+	privateRoot := removalRootPrivatePath(m.Root, r.OperationID)
+	if err := renameStorage(removal, privateRoot); err != nil {
 		return ResultUncertain()
 	}
-	return security.SyncParent(removal)
+	identity, err = directoryPathIdentity(privateRoot)
+	if err != nil || identity != claim.RootIdentity {
+		return ResultUncertain()
+	}
+	if err := os.Remove(privateRoot); err != nil {
+		// Keep the operation's namespace at its original recovery path when
+		// an uncaptured root entry prevents the final empty-directory unlink.
+		// If restoration itself is uncertain, the private name remains
+		// discoverable by recovery through the operation-bound identity claim.
+		if restoreErr := renameStorage(privateRoot, removal); restoreErr != nil {
+			return ResultUncertain()
+		}
+		return ResultUncertain()
+	}
+	return security.SyncParent(privateRoot)
 }
 
 func verifyRemovalEntry(ctx context.Context, parent *os.Root, name string, before os.FileInfo, entry snapshotEntry, buffer []byte) error {
