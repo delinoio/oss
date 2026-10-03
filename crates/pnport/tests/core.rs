@@ -493,6 +493,40 @@ fn view_reads_zip_scopes_aliases_and_preserves_project_writes() {
 }
 #[test]
 fn leases_survive_cleanup_and_cache_corruption_is_not_reused() {
+    const SCENARIO: &str = "PNPORT_CACHE_LEASE_SCENARIO";
+    if std::env::var_os(SCENARIO).is_none() {
+        // Lease locks belong to open file descriptions and survive fork until
+        // every inherited descriptor closes. Other parallel scenarios spawn
+        // native processes, so isolate this immediate lease-release assertion
+        // without serializing the overall Cargo runner or weakening cleanup.
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "leases_survive_cleanup_and_cache_corruption_is_not_reused",
+            ])
+            .env(SCENARIO, "1")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("isolated cache lease scenario timed out");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Cache lease scenario: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
     let root = fixture();
     let cache_root = tempfile::tempdir().unwrap();
     let cache = Cache::open(cache_root.path().join("cache")).unwrap();
@@ -526,12 +560,54 @@ fn leases_survive_cleanup_and_cache_corruption_is_not_reused() {
         cache.entries(Operation::Clean).unwrap()[0].state,
         State::Active
     ));
+    #[cfg(unix)]
+    let (inherited_child, release) = {
+        let mut pipe = [0; 2];
+        // SAFETY: The child performs only async-signal-safe native calls before
+        // _exit. The parent owns and reaps this exact child; the pipe provides
+        // deterministic release, without a scheduling sleep or PID inventory.
+        unsafe {
+            assert_eq!(libc::pipe(pipe.as_mut_ptr()), 0);
+            let child = libc::fork();
+            assert!(child >= 0);
+            if child == 0 {
+                libc::close(pipe[1]);
+                let mut byte = 0u8;
+                let received = libc::read(pipe[0], (&raw mut byte).cast(), 1);
+                libc::_exit(if received == 1 { 0 } else { 1 });
+            }
+            libc::close(pipe[0]);
+            (child, pipe[1])
+        }
+    };
     drop(second);
     drop(lease);
-    assert!(matches!(
-        cache.entries(Operation::Prune).unwrap()[0].state,
-        State::Corrupt
-    ));
+    #[cfg(unix)]
+    {
+        let inherited = cache.entries(Operation::Prune).unwrap();
+        assert!(
+            matches!(inherited[0].state, State::Active),
+            "Inherited lease: {inherited:?}"
+        );
+        // SAFETY: Release and reap the direct child before asserting that all
+        // copies of the lease descriptor have closed.
+        unsafe {
+            assert_eq!(libc::write(release, b"1".as_ptr().cast(), 1), 1);
+            assert_eq!(libc::close(release), 0);
+            let mut status = 0;
+            assert_eq!(
+                libc::waitpid(inherited_child, &raw mut status, 0),
+                inherited_child
+            );
+            assert!(libc::WIFEXITED(status));
+            assert_eq!(libc::WEXITSTATUS(status), 0);
+        }
+    }
+    let entries = cache.entries(Operation::Prune).unwrap();
+    assert!(
+        matches!(entries[0].state, State::Corrupt),
+        "Released corruption classification: {entries:?}"
+    );
     assert!(matches!(
         cache.entries(Operation::Clean).unwrap()[0].state,
         State::Removed
