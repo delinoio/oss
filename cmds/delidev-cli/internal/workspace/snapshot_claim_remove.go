@@ -163,22 +163,42 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			if parentRelative == "." {
 				privateRelative = privateName
 			}
-			if len(pending) >= maxSnapshotRemovalEntries {
-				return ResultUncertain()
+			reused := false
+			for _, rename := range pending {
+				if rename.Original != entry.Path {
+					continue
+				}
+				// Recovery may resume after the private rename but before the
+				// mapping-clear record. Reuse that durable private name; appending
+				// another prepared record would make the journal unrecoverable.
+				if !rename.Renamed {
+					return ResultUncertain()
+				}
+				privateRelative = rename.Private
+				privatePath = filepath.Join(removal, filepath.FromSlash(privateRelative))
+				privateName = filepath.Base(privatePath)
+				originalPath = filepath.Join(parent.Name(), path.Base(entry.Path))
+				reused = true
+				break
 			}
-			pending = append(pending, storageRemovalRename{Original: entry.Path, Private: privateRelative})
-			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenamePrepared}); err != nil {
-				return err
-			}
-			if err := renameStorage(originalPath, privatePath); err != nil {
-				return ResultUncertain()
-			}
-			pending[len(pending)-1].Renamed = true
-			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameRenamed}); err != nil {
-				return err
-			}
-			if m.storageAfterRemovalClaim != nil {
-				m.storageAfterRemovalClaim(entry.Path)
+			if !reused {
+				if len(pending) >= maxSnapshotRemovalEntries {
+					return ResultUncertain()
+				}
+				pending = append(pending, storageRemovalRename{Original: entry.Path, Private: privateRelative})
+				if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenamePrepared}); err != nil {
+					return err
+				}
+				if err := renameStorage(originalPath, privatePath); err != nil {
+					return ResultUncertain()
+				}
+				pending[len(pending)-1].Renamed = true
+				if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameRenamed}); err != nil {
+					return err
+				}
+				if m.storageAfterRemovalClaim != nil {
+					m.storageAfterRemovalClaim(entry.Path)
+				}
 			}
 			restore := func() error {
 				if err := renameStorage(privatePath, originalPath); err != nil {

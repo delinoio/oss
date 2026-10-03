@@ -118,3 +118,28 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 		}
 	}
 }
+
+func TestClaimedRemovalRecoveryReusesRenamedPendingEntry(t *testing.T) {
+	m, prepare, manifest := chatExecutionFixture(t)
+	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
+	preview := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+	ctx, cancel := context.WithCancel(context.Background())
+	m.storageAfterRemovalClaim = func(relative string) {
+		if relative == "chat/keep" {
+			cancel()
+		}
+	}
+	if _, err := m.Storage(ctx, input); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("interrupted claimed removal did not retain recovery", err)
+	}
+	cancel()
+	m.storageAfterRemovalClaim = nil
+	recovered := storageDo(t, m, recoveryRequest(input))
+	if recovered.WorkspaceState != domain.WorkspaceStored || !recovered.CleanupVerified {
+		t.Fatal("recovery did not reuse the renamed pending entry", recovered)
+	}
+}
