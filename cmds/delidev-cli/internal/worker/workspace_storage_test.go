@@ -335,3 +335,18 @@ func TestStorageRetirementSurvivesAcknowledgmentBeforeReportedTransition(t *test
 		}
 	}
 }
+
+func TestPendingStorageRetirementScratchIsIgnoredDuringReportReplay(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	root := filepath.Join(t.TempDir(), "worker")
+	retirements := filepath.Join(root, "storage-removal-retirements")
+	if err := security.PrivateDir(retirements); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(retirements, ".pending-crashed-write"), []byte("unpublished"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := replayPendingStorageReports(context.Background(), Config{Root: root, Logger: logger}, nil, Credential{}); err != nil {
+		t.Fatalf("unpublished retirement scratch blocked replay: %v", err)
+	}
+}

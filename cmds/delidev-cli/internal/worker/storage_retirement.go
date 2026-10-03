@@ -321,6 +321,12 @@ func replayPendingStorageReports(ctx context.Context, config Config, client deli
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		// WriteAtomic leaves unpublished files under this private prefix when a
+		// process dies after the temporary file is created. They are not report
+		// receipts and must remain inert until the atomic publication completes.
+		if strings.HasPrefix(name, ".pending-") {
+			continue
+		}
 		path := filepath.Join(root, name)
 		raw, err := security.ReadPrivate(path, 4096)
 		var receipt storageRetirement
