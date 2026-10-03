@@ -69,7 +69,7 @@ commands, durable intent outside SQLite, original Worker cleanup acknowledgement
 and managed-backup erasure. Forwarding peers independently confirm cleanup;
 offline or uncertain ownership remains pending. Original Local checkouts, other
 sessions and shared account profiles are preserved. The [storage contract](cmds-delidev-storage-contract.md)
-owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
+owns the lifecycle, snapshot-copy deletion integration and remaining database-restore/Sidechat limits.
 
 ## Cross-Domain Invariants
 - New repository registration follows the [folder workflow](apps-delidev-desktop-contract.md#projects-repositories-and-configuration-actions) in issue #1142: the native picker grants selection only, fresh same-computer proof binds the Worker, and Go owns read-only canonical inspection and atomic publication. Optional GitHub identity enrichment uses pre-established Worker capability 6/attachment field 3; raw URLs and credentials stay outside renderer/server metadata. Registration shares the current Settings visit disposal policy, while existing edits preserve explicit configuration.
@@ -97,7 +97,9 @@ owns the lifecycle and remaining snapshot/restore/Sidechat integration limits.
 - Codex fork children survive parent deletion. Explicit Local sharing is limited to user-owned Local source checkouts; managed Worktree sources require independent copies. Go rechecks ownership at acceptance, preparation and publication, and the desktop offers only the supported choice. See the [fork contract](cmds-delidev-forks-contract.md). The current Fork authentication profile is API-only; managed subscription sources require a separate protected lease implementation and are rejected before acceptance.
 - Real native/account/platform evidence remains distinct from deterministic fixtures, cross-compilation and packaging.
 - Keep complete issue #964 requirements and unresolved acceptance items visible.
-- Managed database restore preserves current revocations and external permanent deletion obligations, quarantines historical execution and ends the original server epoch. Temporary recovery images participate in permanent erasure; the storage contract owns their lifecycle. Managed subscription operations and uncertain leases block replacement; restored credential references remain fenced because the external vault is not restored.
+- Workspace storage and session forwarding share transactional ownership exclusion: storage requires both original peer cleanup confirmations; new forwarding and live socket authority require present storage, while original cleanup remains authorized. Worker observations and destructive storage/deletion also share an independent session gate through anchored reads and native cleanup, preserving views during execution.
+
+- Managed subscription operations and uncertain leases block replacement; restored credential references remain fenced because the external vault is not restored.
 - Manual PR fixes use explicit original evidence/project ownership, eligible sessions and Worker Git authentication; the server lookup PAT never authorizes publication. Native completion requires independent push/cleanup proof before exact evidence handling. Bounded automatic fixes reuse the same gates for explicitly linked PRs and independently enabled policies, retaining one durable chain and explicit Stop/Archive authority. Unperformed native/account acceptance remains separate.
 
 - Managed database restore preserves current revocations and external permanent deletion obligations, quarantines historical execution and ends the original server epoch. Temporary recovery images participate in permanent erasure; the storage contract owns their lifecycle.
@@ -130,6 +132,10 @@ Update the owning domain contract when behavior changes. Update this index only 
 ## Home navigation invariant
 
 Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
+
+- Workspace storage and Codex forks share source ownership exclusion: forks require present storage at acceptance, claim and publication, and storage waits for unresolved fork jobs. Stored workspaces require explicit restoration before a fork.
+
+- Workspace storage and session terminals share transactional ownership exclusion: storage waits for every terminal's independently verified process cleanup, while terminal creation, input/resize and non-close dispatch require present storage. Original close and cleanup authority remains available under the [storage](cmds-delidev-storage-contract.md) and [terminal](cmds-delidev-terminals-contract.md) contracts.
 
 ## Device appearance invariant
 

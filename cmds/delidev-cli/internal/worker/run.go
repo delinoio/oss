@@ -189,6 +189,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	httpClient, transport := rpc.HTTPClient()
 	defer transport.CloseIdleConnections()
 	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
+	if err := retireStorageReports(ctx, config); err != nil {
+		return err
+	}
 	instance, attachID := domain.NewID(), domain.NewID()
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
@@ -274,6 +277,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 		}
 		if err == nil {
+			if err := replayPendingStorageReports(ctx, config, client, credential); err != nil {
+				return err
+			}
 			if !ready {
 				ready = true
 				if config.Ready != nil {
@@ -669,17 +675,24 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 	if ctx.Err() != nil {
 		return context.Cause(ctx)
 	}
+	if err := prepareStorageRetirement(config, job, result); err != nil {
+		return err
+	}
 	report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(result.ReportID), Id: string(result.JobID), ExpectedRevision: result.Revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OutputJson: result.Output}
 	if result.Problem != nil {
 		report.Problem = &pb.ErrorDetail{Code: string(result.Problem.Code)}
 	}
 	attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
-	_, err = client.ReportWork(attempt, authenticated(credential, report))
+	acknowledged, err := client.ReportWork(attempt, authenticated(credential, report))
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
 			return context.Cause(ctx)
 		}
+		return err
+	}
+	if err := acknowledgeStorageRemoval(ctx, config, resource, job, result, acknowledged.Msg.Job); err != nil {
+		config.Logger.Warn("storage_intent_retirement_pending", "job_id", resource.Id, "code", domain.SafeError(err).Code)
 		return err
 	}
 	result.State = journalReported
@@ -709,6 +722,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 		var input domain.ExecutionJobInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != resource.SessionId || input.MachineID != job.MachineID {
 			return journal{}, publicationUncertain()
+		}
+	}
+	if job.Type == domain.WorkspaceStorageJob {
+		var input workspace.StorageRequest
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.OperationID != domain.ID(resource.Id) || input.Preparation.SessionID != domain.ID(resource.SessionId) || input.Preparation.MachineID != job.MachineID {
+			return journal{}, workspace.ResultUncertain()
 		}
 	}
 	if job.Type == domain.CompactSessionJob {
@@ -823,6 +842,32 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		return executeSessionTitle(ctx, config, owner, job)
 	case domain.RecoverExecutionJob:
 		return recoverExecution(ctx, config, job)
+	case domain.WorkspaceStorageJob:
+		var input workspace.StorageRequest
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		if input.Action == workspace.StorageRecover {
+			if input.Recovery == nil {
+				return nil, workspace.ResultUncertain()
+			}
+			for _, claim := range input.Recovery.Claims {
+				raw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(claim.JobID)+".json"), 2<<20)
+				if err != nil {
+					return nil, workspace.ResultUncertain()
+				}
+				var prior journal
+				if domain.Decode(raw, &prior) != nil || prior.Version != 1 || prior.JobID != claim.JobID || prior.InstanceID != claim.InstanceID || prior.Revision != claim.Revision || prior.Digest != claim.AssignmentDigest || prior.ReportID.Validate() != nil || (prior.State != journalStarted && prior.State != journalFinished && prior.State != journalReported) {
+					return nil, workspace.ResultUncertain()
+				}
+			}
+		}
+		manager := workspace.Manager{Root: root, Logger: config.Logger}
+		result, err := manager.Storage(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
 	case domain.RecoverWorkspaceJob:
 		bounded, stopRecovery := context.WithTimeout(ctx, 2*time.Minute)
 		defer stopRecovery()

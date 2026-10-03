@@ -175,6 +175,15 @@ func TestSessionForkRejectsActiveSourceAndInvalidCompletion(t *testing.T) {
 	if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, activeRequest)); domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
 		t.Fatal("active source accepted", err)
 	}
+	for _, state := range []domain.WorkspaceStorageState{domain.WorkspaceStored, domain.WorkspaceStoragePending, domain.WorkspaceStorageUncertain} {
+		protected := original
+		protected.Storage = &domain.WorkspaceStorage{State: state, JobID: domain.NewID(), SnapshotID: domain.NewID()}
+		setSource(protected)
+		blocked := &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(row.ID), ExpectedRevision: row.Revision}, ExpectedTurnId: string(f.turn), Name: "Storage-owned source"}
+		if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, blocked)); domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+			t.Fatal("fork bypassed storage ownership", state, err)
+		}
+	}
 	setSource(original)
 	request := &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(row.ID), ExpectedRevision: row.Revision}, ExpectedTurnId: string(domain.NewID()), Name: "Wrong boundary"}
 	if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, request)); domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {

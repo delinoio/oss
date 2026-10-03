@@ -142,7 +142,7 @@ func TestWorkspaceReadLocalPreservesSeparateProcessOwnership(t *testing.T) {
 	if err != nil || len(result.Entries) == 0 {
 		t.Fatal("live Local read failed", err)
 	}
-	remaining, err := os.ReadDir(filepath.Join(m.Root, "workspace-read-processes"))
+	remaining, err := os.ReadDir(filepath.Join(m.Root, "workspace-read-processes-v2"))
 	if err != nil || len(remaining) != 0 {
 		t.Fatal("read children not retired", err)
 	}
