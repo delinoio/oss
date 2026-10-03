@@ -82,6 +82,11 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 	titleReasoningBytes := 0
 	fragments := newStreamGuard(guard)
 	defer fragments.clear()
+	var foreground *foregroundToolGuard
+	if operation == ChatCompletion && lease.Scope.Harness == domain.OpenCode {
+		foreground = &foregroundToolGuard{}
+		defer foreground.clear()
+	}
 	write := func(frame []byte) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -116,13 +121,23 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 			if guard.contains(string(frame)) {
 				return started, errSecret
 			}
-			if err := fragments.deliver(frame, false, write); err != nil {
+			deliver := func(frame []byte) error {
+				// The secret guard can retain this frame beyond the foreground
+				// buffer's lifetime. Transfer an owned copy before clearing it.
+				return fragments.deliver(bytes.Clone(frame), false, write)
+			}
+			if foreground != nil {
+				err = foreground.deliver(frame, nil, deliver)
+			} else {
+				err = deliver(frame)
+			}
+			if err != nil {
 				return started, err
 			}
 			continue
 		}
 		if bytes.Equal(bytes.TrimSpace(data), []byte("[DONE]")) {
-			if operation != ChatCompletion || guard.contains(string(frame)) {
+			if operation != ChatCompletion || guard.contains(string(frame)) || foreground != nil && !foreground.settled() {
 				return started, errInvalidDocument
 			}
 			err := fragments.deliver(frame, true, write)
@@ -220,7 +235,13 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 				diagnosticResponse(message, diagnostic, guard)
 			}
 		}
-		if err := fragments.deliver(frame, terminal, write); err != nil {
+		deliver := func(frame []byte) error { return fragments.deliver(bytes.Clone(frame), terminal, write) }
+		if foreground != nil {
+			err = foreground.deliver(frame, object, deliver)
+		} else {
+			err = deliver(frame)
+		}
+		if err != nil {
 			return started, err
 		}
 		if terminal {

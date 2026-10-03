@@ -436,6 +436,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadGateway, code)
 		return
 	}
+	if operation == ChatCompletion && lease.Scope.Harness == domain.OpenCode && validateForegroundToolResponse(object) != nil {
+		code = domain.Unsupported
+		fail(http.StatusBadGateway, code)
+		return
+	}
 	if err = observeReference(ctx, lease, operation, object); err != nil {
 		code = safeCode(err)
 		fail(http.StatusBadGateway, code)
