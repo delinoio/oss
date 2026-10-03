@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -14,6 +15,7 @@ import (
 type EventKind string
 
 const (
+	CompactionEvent           EventKind = "compaction"
 	SubagentEvent             EventKind = "subagent"
 	SubagentActivityEvent     EventKind = "subagent-activity"
 	TurnStartedEvent          EventKind = "turn-started"
@@ -68,6 +70,7 @@ type Message struct {
 }
 
 type Event struct {
+	Compaction       *CompactionObservation
 	AgentThreadID    domain.ID
 	Subagents        []domain.SubagentObservation
 	Kind             EventKind
@@ -230,6 +233,15 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		}
 		event := Event{Kind: kind, ThreadID: c.thread, TurnID: turn.ID, Turn: &turn}
 		prior, exists := c.execution.turns[turn.ID]
+		if !exists && native.Method == "turn/started" && c.execution.compaction != nil && c.execution.compaction.turnID == "" && c.execution.compaction.acknowledged && c.execution.active == "" && c.problem == nil {
+			// Only the original once-claimed manual action can own a new native
+			// compaction turn. It carries no synthetic input or input receipt.
+			a := c.execution.compaction
+			a.turnID = turn.ID
+			prior = trackedTurn{Turn: turn, Mode: a.source.Mode}
+			c.execution.turns[turn.ID], c.execution.active = prior, turn.ID
+			exists = true
+		}
 		if !exists {
 			// A notification may precede a lost start acknowledgment. Its identity
 			// alone does not prove which input was accepted. Keep the typed evidence
@@ -251,6 +263,17 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			return Event{}, incompatible()
 		}
 		if turn.Status.terminal() {
+			for key, item := range c.execution.compactionItems {
+				if strings.HasPrefix(key, string(turn.ID)+"/") && item.completedAt == nil {
+					return Event{}, incompatible()
+				}
+			}
+			if a := c.execution.compaction; a != nil && a.turnID == turn.ID {
+				if turn.Status != TurnCompleted || a.itemID == "" {
+					return Event{}, compactionUncertain()
+				}
+				a.terminal = true
+			}
 			if err := c.endInteractionsLocked(turn.ID); err != nil {
 				return Event{}, err
 			}
@@ -423,6 +446,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "contextCompaction":
+		return c.observeCompactionLocked(native, params.TurnID, params.Item, params.StartedAtMS, params.CompletedAtMS)
 	case "collabAgentToolCall":
 		c.subagentTurn = params.TurnID
 		return c.observeCollaboration(params.Item, c.thread, params.TurnID)
