@@ -396,7 +396,8 @@ func checkpointSettingsForAgent(s *sessionAPI, agent PrimaryAgent) (string, erro
 		TitleSHA256, RelaySHA256  string
 		Sources                   []instruction
 		References                []WorkspaceReference `json:",omitempty"`
-	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References})
+		Prune                     bool                 `json:",omitempty"`
+	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References, p.Prune})
 	if err != nil {
 		return "", sessionUncertain()
 	}
