@@ -24,6 +24,9 @@ func continuationDigest(raw []byte) string {
 // initial snapshot/route; the successor retains the exact preceding progress.
 // There is no native, credential or filesystem operation inside this transaction.
 func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, explicit bool) (store.Record, error) {
+	if session.CompactionJobID != "" {
+		return store.Record{}, domain.CompactionUncertain()
+	}
 	if err := tx.RequireNoSessionFork(sr.ID); err != nil {
 		return store.Record{}, err
 	}
@@ -62,12 +65,18 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	// has no input yet. The Worker rechecks native history before the later send.
 	account, connection := session.ContinuationAccount()
 	candidate := continuationAssignment(session, assignment, completion, assignmentDigest, intent, account, connection)
+	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
+		candidate.Continuation.Compaction = session.Compaction
+	}
 	input, err := checkedExecutionAssignment(tx, sr, session, machine, candidate)
 	if err != nil {
 		return store.Record{}, err
 	}
 	if !bytes.Equal(input.Preparation, assignment.Preparation) || !bytes.Equal(input.Manifest, assignment.Manifest) {
 		return store.Record{}, nativeCompletionUncertain()
+	}
+	if err := input.Validate(); err != nil {
+		return store.Record{}, err
 	}
 	ir, err := tx.OldestQueuedInput(sr.ID)
 	if err != nil {

@@ -10,11 +10,11 @@ on:
         type: choice
         options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, pnport, async-commit-hook, react-forge]
       bump:
-        description: SemVer increment
+        description: SemVer increment (next is pnport only)
         required: true
         type: choice
         default: patch
-        options: [patch, minor, major]
+        options: [patch, minor, major, next]
 
 permissions:
   contents: read

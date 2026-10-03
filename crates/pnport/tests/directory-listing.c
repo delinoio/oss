@@ -2,6 +2,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -44,7 +45,7 @@ static int select_without_dependencies(const struct dirent *entry) {
     return 0;
 }
 
-static void check_scan(const char *path, int filtered, int sorted) {
+static void check_scan(const char *path, int filtered, int sorted, int expected) {
     struct dirent **entries = NULL;
     int count = scandir(path, &entries, filtered ? select_without_dependencies : NULL,
                         sorted ? alphasort : NULL);
@@ -59,7 +60,7 @@ static void check_scan(const char *path, int filtered, int sorted) {
     }
     for (int i = 0; i < count; i++) free(entries[i]);
     free(entries);
-    CHECK(found == (filtered ? 0 : 1));
+    CHECK(found == (filtered ? 0 : expected));
 }
 
 static void check_parent(const char *path) {
@@ -71,9 +72,9 @@ static void check_parent(const char *path) {
     CHECK(direct != NULL);
     CHECK(closedir(direct) == 0);
     callback_directory = dependencies;
-    check_scan(path, 0, 0);
-    check_scan(path, 0, 1);
-    check_scan(path, 1, 1);
+    check_scan(path, 0, 0, 1);
+    check_scan(path, 0, 1, 1);
+    check_scan(path, 1, 1, 1);
     DIR *first = opendir(path), *second = opendir(path);
     CHECK(first && second);
     CHECK(drain(first, 0) == 1);
@@ -122,6 +123,50 @@ static void check_parent(const char *path) {
 static void *parallel_stream(void *path) {
     for (int i = 0; i < 8; i++) check_parent(path);
     return NULL;
+}
+
+static void check_descendant(const char *path, int native_dependencies) {
+    DIR *dir = opendir(path);
+    CHECK(dir && drain(dir, 0) == native_dependencies && closedir(dir) == 0);
+    check_scan(path, 0, 1, native_dependencies);
+    char dependencies[4096];
+    CHECK(snprintf(dependencies, sizeof(dependencies), "%s/node_modules", path) < sizeof(dependencies));
+    struct stat info;
+    errno = 0;
+    if (native_dependencies) {
+        CHECK(stat(dependencies, &info) == 0 && S_ISDIR(info.st_mode));
+    } else {
+        CHECK(stat(dependencies, &info) == -1 && errno == ENOENT);
+    }
+}
+
+static int removed_entries;
+static int remove_output(const char *path, const struct stat *info, int kind, struct FTW *walk) {
+    (void)info;
+    (void)walk;
+    CHECK(++removed_entries <= 4);
+    CHECK((kind == FTW_DP ? rmdir(path) : unlink(path)) == 0);
+    return 0;
+}
+
+static void check_native_output(void) {
+    check_descendant("nested", 0);
+    check_descendant("packages/app/nested", 0);
+    check_descendant("node_modules/one/nested", 0);
+    check_descendant("node_modules/dep/native-parent", 1);
+    // Build tools may put dependency symlinks in an ordinary output tree.
+    // Scanning and removing it must neither invent descendants nor follow the
+    // symlink into the immutable package being referenced.
+    CHECK(mkdir("nested/generated", 0700) == 0);
+    CHECK(mkdir("nested/generated/node_modules", 0700) == 0);
+    CHECK(symlink("../../../node_modules/dep", "nested/generated/node_modules/dep") == 0);
+    int file = open("nested/generated/artifact", O_WRONLY | O_CREAT, 0600);
+    CHECK(file >= 0 && write(file, "output", 6) == 6 && close(file) == 0);
+    check_descendant("nested/generated", 1);
+    CHECK(nftw("nested/generated", remove_output, 16, FTW_DEPTH | FTW_PHYS) == 0);
+    CHECK(removed_entries == 4);
+    CHECK(access("nested/generated", F_OK) == -1 && errno == ENOENT);
+    CHECK(access("node_modules/dep/file.txt", F_OK) == 0);
 }
 
 #ifdef __linux__
@@ -195,7 +240,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "conflict")) {
-        DIR *dir = opendir("nested");
+        DIR *dir = opendir("packages/app");
         CHECK(dir != NULL);
         int marker = open("conflict-entered", O_WRONLY | O_CREAT, 0600);
         CHECK(marker >= 0 && close(marker) == 0);
@@ -210,6 +255,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     for (int i = 1; i < argc; i++) check_parent(argv[i]);
+    check_native_output();
     pthread_t threads[4];
     for (int i = 0; i < 4; i++) CHECK(pthread_create(&threads[i], NULL, parallel_stream, ".") == 0);
     for (int i = 0; i < 4; i++) CHECK(pthread_join(threads[i], NULL) == 0);

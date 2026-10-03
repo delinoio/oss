@@ -11,12 +11,12 @@ const { targets, selectTarget } = require("../src/platforms.cjs");
 const { resolveBinary, launch, Failure } = require("../src/launcher.cjs");
 const revision = "a".repeat(40);
 
-test("manifests pin four exact native packages and request Yarn unplugging", () => {
-  const manifest = launcherManifest("0.1.0", revision);
+for (const version of ["0.1.0", "0.1.0-next.1"]) test(`manifests pin four exact ${version} native packages and request Yarn unplugging`, () => {
+  const manifest = launcherManifest(version, revision);
   assert.equal(Object.keys(manifest.optionalDependencies).length, 4);
   assert.equal(manifest.scripts, undefined);
   for (const target of targets) {
-    const native = nativeManifest(target.suffix, "0.1.0", revision);
+    const native = nativeManifest(target.suffix, version, revision);
     assert.equal(native.preferUnplugged, true);
     assert.equal(native.scripts, undefined);
     assert.equal(manifest.optionalDependencies[native.name], native.version);

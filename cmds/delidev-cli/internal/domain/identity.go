@@ -74,8 +74,15 @@ func Text(value, label string, max int, required bool) error {
 }
 
 func Decode(data []byte, target any) error {
-	if len(data) > 1<<20 || !utf8.Valid(data) {
-		return Fail(InvalidArgument, "JSON input exceeds its limit or is not UTF-8.", "Use a document no larger than 1 MiB.")
+	return DecodeWithLimit(data, target, 1<<20)
+}
+
+// DecodeWithLimit preserves the strict JSON checks of Decode for an internal
+// envelope whose owning type has a different finite bound. Callers must keep
+// the larger limit narrower than the type-specific validation that follows.
+func DecodeWithLimit(data []byte, target any, maxBytes int) error {
+	if maxBytes < 1 || len(data) > maxBytes || !utf8.Valid(data) {
+		return Fail(InvalidArgument, "JSON input exceeds its limit or is not UTF-8.", "Use a bounded JSON document.")
 	}
 	return decodeJSON(data, target)
 }

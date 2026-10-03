@@ -1,6 +1,6 @@
 {
   "name": "@delino/clibox",
-  "version": "0.3.4",
+  "version": "0.3.6",
   "private": true,
   "description": "A native CLI distributed through native packages and npm",
   "license": "Apache-2.0",

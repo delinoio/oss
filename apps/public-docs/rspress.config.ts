@@ -87,6 +87,7 @@ const pnportPages = [
   { text: "Overview", link: "/pnport/", activeMatch: "^/pnport/$" },
   { text: "Installation and Availability", link: "/pnport/installation" },
   { text: "Getting Started", link: "/pnport/getting-started" },
+  { text: "Preview Testing", link: "/pnport/preview-testing" },
   { text: "Commands", link: "/pnport/commands" },
   { text: "Filesystem and Processes", link: "/pnport/filesystem-and-processes" },
   { text: "Editors and Language Servers", link: "/pnport/editors" },

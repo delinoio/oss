@@ -1,12 +1,25 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import path from "node:path";
-import { ensure, event, isMain, npm, packageRoot, registry, requireReleaseReady, revision } from "./common.mjs";
+import { ensure, event, isMain, npm, packageRoot, registry, requirePublicationReady, revision } from "./common.mjs";
+import { isPreviewVersion, publicationChannel } from "./version.mjs";
 import { verifySet } from "./package.mjs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { targets } = require("../src/platforms.cjs");
+
+// First-time npm staging creates public 0.0.0-stage placeholders. The registry
+// currently rejects removing their latest tags with HTTP 400, even with another
+// tag present. Preserve only these inspected immutable bootstrap bytes; remove
+// this exception once every package's latest points to an accepted stable release.
+const bootstrapIntegrities = Object.freeze({
+  "@delino/pnport-darwin-x64": "sha512-lkIEGnFuMa8WQ7C5BJRIKQKiaqXB5W0byU+4ZO3l4MbT9zR/kainVJpsr64lfs4VlHmBEJ7kLKGlhwA9SMCsLA==",
+  "@delino/pnport-darwin-arm64": "sha512-TEqq7E3U7k+ItNK+bvdogzdU6v3Fhon9amP+Y3aZ7uMrWcVmc2pQi7k5hvKNybzYJrBsdbNeqPbVCHPJ97Gkdw==",
+  "@delino/pnport-linux-x64-gnu": "sha512-l2az+wPUYylaaqjwu3ZODZl7YaO8WNE7gtyIE+qJwFpqxEwX7uxw4buPiufje6ictw/iwDkXGOEgjA7XkRiJNw==",
+  "@delino/pnport-linux-arm64-gnu": "sha512-GwHjQWInbgv4IubJyPFuw9p0OEMwrtvNkzhP6qqWh4FKvm8C5npMWI5NJ/JGJZbt/IYtuFgxChCoom4oAKnLZQ==",
+  "@delino/pnport": "sha512-2rsp47hGeDF0hUQ6N5HDSmzVVt4249qECxd9nDqOZHJ/WUDW3UyjmjgPWr4H1MZMRTz14fzLRClmgQ0opekvAw==",
+});
 
 export async function registryIntegrity(artifact, request = fetch) {
   const response = await request(`${registry}/${encodeURIComponent(artifact.name)}/${artifact.version}`, { redirect: "error", signal: AbortSignal.timeout(30000) });
@@ -17,7 +30,40 @@ export async function registryIntegrity(artifact, request = fetch) {
   return body.dist.integrity;
 }
 
-export async function publishArtifacts(artifacts, { dryRun = true, lookup = registryIntegrity, publish, delay = sleep, report = event } = {}) {
+async function registryMetadata(name, request) {
+  const response = await request(`${registry}/${encodeURIComponent(name)}`, { redirect: "error", signal: AbortSignal.timeout(30000) });
+  if (response.status === 404) return null;
+  ensure(response.ok, `npm channel inspection failed for ${name}: HTTP ${response.status}`);
+  const body = await response.json();
+  ensure(body.name === name && body["dist-tags"] && typeof body["dist-tags"] === "object" && !Array.isArray(body["dist-tags"]) && Object.values(body["dist-tags"]).every((value) => typeof value === "string"), "Invalid npm channel metadata");
+  return body;
+}
+
+export async function registryTags(name, request = fetch) {
+  return (await registryMetadata(name, request))?.["dist-tags"] ?? {};
+}
+
+export function validatePreviewTags(tags, version) {
+  ensure(isPreviewVersion(version), "Invalid preview version");
+  ensure(tags.latest === undefined || publicationChannel(tags.latest).prerelease === false, "Preview publication must preserve a stable latest channel");
+  ensure(tags.next === undefined || (isPreviewVersion(tags.next) && BigInt(tags.next.slice("0.1.0-next.".length)) <= BigInt(version.slice("0.1.0-next.".length))), "Preview publication would replace a newer or foreign next channel");
+}
+
+export async function registryPreviewTags(name, version, request = fetch) {
+  const metadata = await registryMetadata(name, request);
+  const tags = metadata?.["dist-tags"] ?? {};
+  if (tags.latest === "0.0.0-stage") {
+    // npm's compact version endpoint drops stub; the full packument retains it.
+    const placeholder = metadata.versions?.[tags.latest];
+    ensure(Object.hasOwn(bootstrapIntegrities, name) && placeholder?.name === name && placeholder.version === tags.latest && placeholder.stub === true && placeholder.description === "Temporary package placeholder for staged publishing" && placeholder.dist?.integrity === bootstrapIntegrities[name], "Unrecognized npm bootstrap placeholder");
+    // Validate next independently while returning the untouched latest tag for
+    // the same strict post-publication readback used by ordinary stable latest.
+    validatePreviewTags({ ...tags, latest: undefined }, version);
+  } else validatePreviewTags(tags, version);
+  return tags;
+}
+
+export async function publishArtifacts(artifacts, { dryRun = true, lookup = registryIntegrity, publish, confirm = async () => {}, delay = sleep, report = event } = {}) {
   ensure(JSON.stringify(artifacts.map(({ name }) => name)) === JSON.stringify([...targets.map(({ name }) => name), "@delino/pnport"]), "The complete native package set must precede the launcher");
   if (dryRun) { report("publish_dry_run", { packages: artifacts }); return; }
   ensure(typeof publish === "function", "Publisher required");
@@ -42,6 +88,7 @@ export async function publishArtifacts(artifacts, { dryRun = true, lookup = regi
       }
     }
     ensure(found === artifact.integrity, `npm readback did not confirm ${artifact.name}`);
+    await confirm(artifact);
     report("publish", { name: artifact.name, version: artifact.version, integrity: artifact.integrity, reused });
   }
 }
@@ -50,17 +97,32 @@ export async function main() {
   const { values } = parseArgs({ options: { directory: { type: "string", default: path.join(packageRoot, "dist") }, publish: { type: "boolean", default: false } } });
   const sourceRevision = revision();
   const artifacts = verifySet(values.directory, sourceRevision).packages;
+  const policy = publicationChannel(artifacts[0].version);
+  const previousTags = new Map();
   if (values.publish) {
-    requireReleaseReady();
+    requirePublicationReady();
     ensure(process.env.GITHUB_REPOSITORY === "delinoio/oss" && process.env.GITHUB_REF === `refs/tags/pnport@v${artifacts[0].version}` && process.env.GITHUB_SHA === sourceRevision, "Publication requires the exact first-party tag and commit");
     ensure(process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, "npm OIDC authority required");
+    if (policy.prerelease) for (const artifact of artifacts) {
+      const tags = await registryPreviewTags(artifact.name, artifact.version);
+      previousTags.set(artifact.name, tags);
+    }
   }
   await publishArtifacts(artifacts, {
     dryRun: !values.publish,
     publish: (artifact) => {
       try {
-        npm(["publish", path.resolve(values.directory, "tarballs", artifact.filename), "--access", "public", "--provenance", "--ignore-scripts", "--registry", registry]);
+        npm(["publish", path.resolve(values.directory, "tarballs", artifact.filename), "--tag", policy.channel, "--access", "public", "--provenance", "--ignore-scripts", "--registry", registry]);
       } catch { throw new Error(`npm publication failed for ${artifact.name}; recover using the identical retained candidate`); }
+    },
+    confirm: async (artifact) => {
+      for (let attempt = 0; attempt <= 120; attempt++) {
+        const tags = await registryTags(artifact.name);
+        if (policy.prerelease) ensure(tags.latest === previousTags.get(artifact.name)?.latest, "Preview publication changed the latest channel");
+        if (tags[policy.channel] === artifact.version) return;
+        if (attempt < 120) await sleep(10000);
+      }
+      throw new Error(`npm ${policy.channel} channel did not confirm ${artifact.name}`);
     },
   });
 }

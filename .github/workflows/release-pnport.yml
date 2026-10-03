@@ -28,6 +28,7 @@ jobs:
     outputs:
       version: ${{ steps.source.outputs.version }}
       dry_run: ${{ steps.source.outputs.dry_run }}
+      channel: ${{ steps.source.outputs.channel }}
       revision: ${{ steps.source.outputs.revision }}
       tree: ${{ steps.source.outputs.tree }}
       matrix: ${{ steps.source.outputs.matrix }}
@@ -51,14 +52,15 @@ jobs:
           import { execFileSync } from 'node:child_process';
           import { sourceMetadata, Project } from './scripts/release/project.mjs';
           import { nativeMatrix } from './packages/pnport/scripts/native-matrix.mjs';
-          import { requireReleaseReady } from './packages/pnport/scripts/common.mjs';
+          import { requirePublicationReady } from './packages/pnport/scripts/common.mjs';
+          import { publicationChannel } from './packages/pnport/scripts/version.mjs';
           const source = sourceMetadata({ project: Project.Pnport, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, file => readFileSync(file, 'utf8'));
           const revision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
           const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
           if (revision !== process.env.GITHUB_SHA) throw new Error('Checkout revision mismatch');
           if (source.dry_run !== 'true' && (process.env.GITHUB_REPOSITORY !== 'delinoio/oss' || process.env.GITHUB_REF !== `refs/tags/${source.tag}`)) throw new Error('Publication requires exact first-party tag');
-          if (source.dry_run !== 'true') requireReleaseReady();
-          appendFileSync(process.env.GITHUB_OUTPUT, Object.entries({ ...source, revision, tree, matrix: JSON.stringify(nativeMatrix) }).map(([key, value]) => `${key}=${value}\n`).join(''));
+          if (source.dry_run !== 'true') requirePublicationReady();
+          appendFileSync(process.env.GITHUB_OUTPUT, Object.entries({ ...source, ...publicationChannel(source.version), revision, tree, matrix: JSON.stringify(nativeMatrix) }).map(([key, value]) => `${key}=${value}\n`).join(''));
           JS
 
   build:
@@ -102,6 +104,13 @@ jobs:
             cargo build --locked -p pnport-preload --target "$PNPORT_TARGET"
           fi
           cargo test --locked -p pnport -p pnport-core -p pnport-preload --target "$PNPORT_TARGET"
+          # Concurrent fork ownership has exposed host-kernel ordering races.
+          # Retain the full parallel suite above and repeat this internally
+          # concurrent control before accepting candidate execution evidence.
+          for attempt in {1..10}; do
+            printf '{"event":"pnport_fork_conformance","attempt":%s}\n' "$attempt"
+            cargo test --locked -p pnport --test process_lifecycle concurrent_fork_and_child_callbacks_preserve_the_virtual_view --target "$PNPORT_TARGET"
+          done
       - name: Verify installed consumers and native TypeScript
         shell: bash
         env:
@@ -225,7 +234,7 @@ jobs:
 
   homebrew:
     needs: [prepare, package, publish-release]
-    if: needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
+    if: needs.prepare.outputs.dry_run == 'false' && needs.prepare.outputs.channel == 'latest' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -280,6 +289,6 @@ jobs:
           const jobs = JSON.parse(process.env.RESULTS);
           const lines = ['## pnport release', '', `Version: ${jobs.prepare.outputs.version || 'unresolved'}`, `Commit: ${jobs.prepare.outputs.revision || 'unresolved'}`, '', '| Phase | Result |', '| --- | --- |', ...Object.entries(jobs).map(([name, value]) => `| ${name} | ${value.result} |`), ''];
           if (process.env.DRY_RUN === 'true') lines.push('Dry run: no publication was attempted.');
-          if (jobs.build.result !== 'success' || jobs.package.result !== 'success') lines.push('Six-target execution or complete-set validation failed; publication is blocked.');
+          if (jobs.build.result !== 'success' || jobs.package.result !== 'success') lines.push('Four-target execution or complete-set validation failed; publication is blocked.');
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
           JS

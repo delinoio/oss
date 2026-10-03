@@ -25,6 +25,16 @@ export const deleteSession = SessionService.method.deleteSession;
 export const getSessionDeletion = SessionService.method.getSessionDeletion;
 
 /**
+ * @generated from rpc delidev.v1.SessionService.CompactSession
+ */
+export const compactSession = SessionService.method.compactSession;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.GetSessionContext
+ */
+export const getSessionContext = SessionService.method.getSessionContext;
+
+/**
  * @generated from rpc delidev.v1.SessionService.LinkSessionPullRequest
  */
 export const linkSessionPullRequest = SessionService.method.linkSessionPullRequest;

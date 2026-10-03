@@ -6,6 +6,12 @@
     },
     {
       "path": "packages/app"
+    },
+    {
+      "path": "packages/peer-blue"
+    },
+    {
+      "path": "packages/peer-red"
     }
   ]
 }

@@ -4,6 +4,13 @@ pub use libc::*;
 use libc::{c_char, c_int, c_void};
 
 unsafe extern "C" {
+    // Rust libc maps close to close$NOCANCEL on macOS x64. The interpose
+    // table needs the ordinary C symbol as well as the separately declared
+    // non-cancelling symbol, or native close calls disappear from the trace.
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "close"]
+    pub unsafe fn close(fd: c_int) -> c_int;
+
     // On macOS x86_64, directory functions use $INODE64 symbol suffix for 64-bit
     // inode support. On arm64, 64-bit inodes are the only option so no suffix
     // is needed. https://github.com/apple-open-source-mirror/Libc/blob/5e566be7a7047360adfb35ffc44c6a019a854bea/include/dirent.h#L198

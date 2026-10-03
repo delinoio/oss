@@ -1,6 +1,6 @@
 # Diagnostics and troubleshooting
 
-**pnport 0.1.0 is unreleased.** Development diagnostics are useful for source testing, but a complete release and all platform execution gates are still pending.
+**pnport 0.1.0 is unreleased.** Diagnostics can be used with the experimental preview or a source build, but full feature and minimum-OS acceptance remain pending. Check [installation and availability](/pnport/installation) for the preview limits.
 
 ## Start with doctor
 

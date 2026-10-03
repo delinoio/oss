@@ -17,6 +17,7 @@ type SessionDeletionCopy struct {
 	InstanceID  ID      `json:"instance_id"`
 	ExecutionID ID      `json:"execution_id,omitempty"`
 	SnapshotID  ID      `json:"snapshot_id,omitempty"`
+	ActionID    ID      `json:"action_id,omitempty"`
 }
 
 type SessionDeletionFork struct {
@@ -57,6 +58,13 @@ func (w SessionDeletionWork) Validate() error {
 		}
 		switch c.Type {
 		case PrepareWorkspaceJob, RecoverWorkspaceJob, ExecuteSessionJob, RecoverExecutionJob, GenerateSessionTitleJob, WorkspaceStorageJob, ForkSessionJob:
+			if c.ActionID != "" {
+				return SessionDeletionPending()
+			}
+		case CompactSessionJob:
+			if c.ActionID.Validate() != nil || c.ExecutionID != "" {
+				return SessionDeletionPending()
+			}
 		default:
 			return SessionDeletionPending()
 		}
