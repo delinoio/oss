@@ -11,21 +11,16 @@ import (
 )
 
 func hostedPreset(id domain.ProviderPresetID) bool {
-	switch id {
-	case domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetOpenRouter, domain.PresetVercel, domain.PresetXAI, domain.PresetDeepSeek:
-		return true
-	default:
-		return false
-	}
+	return id.Valid() && id != domain.PresetOllama && id != domain.PresetLMStudio && id != domain.PresetVLLM
 }
 
 func checkPresetDefaults(t *testing.T, s *Store) map[domain.ProviderPresetID]ProviderInventoryItem {
 	t.Helper()
 	page, more, _, err := s.ProviderInventoryPage(context.Background(), providers.Presets(), ProviderInventorySearch{Limit: 50})
-	if err != nil || more || len(page) != 9 {
+	if err != nil || more || len(page) != 35 {
 		t.Fatalf("preset inventory: %d %t %v", len(page), more, err)
 	}
-	result := make(map[domain.ProviderPresetID]ProviderInventoryItem, 9)
+	result := make(map[domain.ProviderPresetID]ProviderInventoryItem, 35)
 	for _, entry := range page {
 		if entry.PresetID == nil {
 			continue
@@ -155,11 +150,11 @@ func TestHostedProviderDefaultsMigrationPreservesSavedOffAndCustom(t *testing.T)
 			t.Fatalf("local preset activated: %+v", entry)
 		}
 	}
-	if hostedCount != 5 || customCount != 1 {
+	if hostedCount != 31 || customCount != 1 {
 		t.Fatalf("unexpected migrated providers: hosted=%d custom=%d", hostedCount, customCount)
 	}
 	var count int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM entities WHERE kind='provider'").Scan(&count); err != nil || count != 7 {
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM entities WHERE kind='provider'").Scan(&count); err != nil || count != 33 {
 		t.Fatalf("migration created duplicate providers: %d %v", count, err)
 	}
 	if err := s.Close(); err != nil {
@@ -170,7 +165,7 @@ func TestHostedProviderDefaultsMigrationPreservesSavedOffAndCustom(t *testing.T)
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM entities WHERE kind='provider'").Scan(&count); err != nil || count != 7 {
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM entities WHERE kind='provider'").Scan(&count); err != nil || count != 33 {
 		t.Fatalf("restart repeated defaults: %d %v", count, err)
 	}
 }

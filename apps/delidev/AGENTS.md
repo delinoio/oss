@@ -45,3 +45,5 @@ Unsupported-schema Agent display names/aliases are projected only within the exi
 - OpenCode 1.18.32 foreground child reads use the shared Subagents page with independent capability 23. Validate exact native session/message/part identities, the original root task reference, initial task source, same requested/observed model and exact closed response usage. Keep original task JSON inert, reject a malformed complete page and expose no child mutation controls.
 
 - OpenCode Fork presentation requires the independent server capability plus the original macOS/Linux Runner Device capability and completed Build General Chat profile. Retain the accepted operation across navigation; cloned conversation is inherited context with no new input or usage. Follow `docs/cmds-delidev-forks-contract.md` and the desktop contract.
+
+- All 35 API presets use the shared closed client identity/order mapping and authenticated inventory. Keep regional/subscription-key guidance, connection, explicit validation, discovery and selected native harness compatibility separate. Follow the catalog and provider inspection contracts.

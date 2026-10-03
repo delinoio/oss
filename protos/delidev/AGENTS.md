@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- Issue #1148 activates only its recorded `ProviderPresetId` 10–35 additions after real migration 30 and complete fixed inspection profiles. Preserve 0–9 and generated Go/TypeScript parity, provider inventory gates and service-native subscription separation; preset visibility grants no harness/protocol/account authority.
+
 - The owner-approved coordinated single-PR exception in `docs/cmds-delidev-structure-contract.md` permits missing reservations and their complete dependency closure in one integration PR. Record allocations before source use, retain original owners and numbers, and regenerate composed Go/TypeScript bindings. Independent dependent branches still require reservations on main; reservation-only changes advertise no support.
 
 - Issue #1146 reserves `ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 = 5`, `ProviderInventoryEntry.connection_method = 9` and the exclusively owned `ProviderConnectionMethod` / `AccountOAuthState` enums in `allocations.json`. Each member of a wholly new enum carries `newDeclaration: true`, one original owner and a zero UNSPECIFIED value; do not add planned declarations to the active baseline. Establish reservations on main before dependent implementation and keep them out of active schemas/advertisements until complete support exists. Follow `docs/cmds-delidev-account-oauth-contract.md`; OAuth remains independent of the four existing inventory gates and cannot be inferred from names or copied URLs.

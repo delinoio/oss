@@ -31,18 +31,44 @@ The owner and paired clients manage provider/model configuration. Execution Work
 | `SearchModels` | `model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]` | Model records, represented provider records and an opaque continuation |
 | `ResolveModel` | `model resolve --selector UUID_OR_ALIAS_OR_NATIVE_ID [--provider-id ID]` | One canonical model record or a typed missing/ambiguity error |
 
-Mutations accept the normal `--request-id` option. Creating an unsaved preset uses its concrete provider document as the saved request input; it does not create an account or imply authentication. The six hosted presets are saved On by default, so `provider create --preset ID` for an existing hosted preset returns a duplicate conflict; use inventory and edit its saved resource to change availability. `provider create --input FILE|-` remains the custom-provider path. Presets are stable enum-style identifiers:
+Mutations accept the normal `--request-id` option. Creating an unsaved preset uses its concrete provider document as the saved request input; it does not create an account or imply authentication. The 32 hosted presets are saved On by default, so `provider create --preset ID` for an existing hosted preset returns a duplicate conflict; use inventory and edit its saved resource to change availability. `provider create --input FILE|-` remains the custom-provider path. Presets are stable enum-style identifiers:
 
 Provider inventory's closed capability enum separately advertises provider activation, active-provider model filtering, account-provider filtering and `ACCOUNT_TYPE_FILTER`. The first three gate provider/model controls; separate API/subscription account lists and the guided API account flow require all four. Inventory filters are cursor-bound and server-owned; callers must not replace unavailable inventory with generic resource pages.
 
 | Preset | API base | Default protocol | Authentication |
 | --- | --- | --- | --- |
-| `vercel-ai-gateway` | `https://ai-gateway.vercel.sh/v1` | OpenAI Chat Completions | Bearer |
-| `openrouter` | `https://openrouter.ai/api/v1` | OpenAI Chat Completions | Bearer |
 | `openai` | `https://api.openai.com/v1` | OpenAI Responses | Bearer |
 | `anthropic` | `https://api.anthropic.com/v1` | Anthropic Messages | API key |
+| `openrouter` | `https://openrouter.ai/api/v1` | OpenAI Chat Completions | Bearer |
+| `vercel-ai-gateway` | `https://ai-gateway.vercel.sh/v1` | OpenAI Chat Completions | Bearer |
 | `xai` | `https://api.x.ai/v1` | OpenAI Responses | Bearer |
 | `deepseek` | `https://api.deepseek.com/v1` | OpenAI Chat Completions | Bearer |
+| `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI Chat Completions | Bearer |
+| `groq` | `https://api.groq.com/openai/v1` | OpenAI Chat Completions | Bearer |
+| `mistral` | `https://api.mistral.ai/v1` | OpenAI Chat Completions | Bearer |
+| `together-ai` | `https://api.together.ai/v1` | OpenAI Chat Completions | Bearer |
+| `fireworks-ai` | `https://api.fireworks.ai/inference/v1` | OpenAI Chat Completions | Bearer |
+| `perplexity` | `https://api.perplexity.ai/router/v1` | OpenAI Chat Completions | Bearer |
+| `cohere` | `https://api.cohere.ai/compatibility/v1` | OpenAI Chat Completions | Bearer |
+| `cerebras` | `https://api.cerebras.ai/v1` | OpenAI Chat Completions | Bearer |
+| `nebius` | `https://api.tokenfactory.nebius.com/v1` | OpenAI Chat Completions | Bearer |
+| `novita` | `https://api.novita.ai/openai/v1` | OpenAI Chat Completions | Bearer |
+| `deepinfra` | `https://api.deepinfra.com/v1/openai` | OpenAI Chat Completions | Bearer |
+| `hugging-face` | `https://router.huggingface.co/v1` | OpenAI Chat Completions | Bearer |
+| `venice` | `https://api.venice.ai/api/v1` | OpenAI Chat Completions | Bearer |
+| `scaleway` | `https://api.scaleway.ai/v1` | OpenAI Chat Completions | Bearer |
+| `baseten` | `https://inference.baseten.co/v1` | OpenAI Chat Completions | Bearer |
+| `moonshot` | `https://api.moonshot.ai/v1` | OpenAI Chat Completions | Bearer |
+| `moonshot-cn` | `https://api.moonshot.cn/v1` | OpenAI Chat Completions | Bearer |
+| `minimax` | `https://api.minimax.io/v1` | OpenAI Chat Completions | Bearer |
+| `minimax-cn` | `https://api.minimax.cn/v1` | OpenAI Chat Completions | Bearer |
+| `siliconflow` | `https://api.siliconflow.com/v1` | OpenAI Chat Completions | Bearer |
+| `siliconflow-cn` | `https://api.siliconflow.cn/v1` | OpenAI Chat Completions | Bearer |
+| `qianfan` | `https://qianfan.baidubce.com/v2` | OpenAI Chat Completions | Bearer |
+| `tencent-tokenhub` | `https://tokenhub.tencentmaas.com/v1` | OpenAI Chat Completions | Bearer |
+| `tencent-tokenhub-international` | `https://tokenhub-intl.tencentmaas.com/v1` | OpenAI Chat Completions | Bearer |
+| `alibaba-model-studio-international` | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | OpenAI Chat Completions | Bearer |
+| `alibaba-model-studio-hong-kong` | `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI Chat Completions | Bearer |
 | `ollama` | `http://127.0.0.1:11434/v1` | OpenAI Chat Completions | Explicit keyless |
 | `lm-studio` | `http://127.0.0.1:1234/v1` | OpenAI Chat Completions | Explicit keyless |
 | `vllm` | `http://127.0.0.1:8000/v1` | OpenAI Chat Completions | Explicit keyless |

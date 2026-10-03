@@ -8,11 +8,11 @@ Only owner/paired-client RPCs can invoke validation. The key is read from the cu
 
 ## HTTP boundary
 
-Inspection uses only `GET` requests under the saved provider's API base path. OpenAI Chat Completions/Responses-compatible providers use `/models`; Anthropic Messages-compatible providers use `/models?limit=1000` and bounded `after_id` pagination. The exact OpenRouter profile uses explicit `limit=500`, numeric `offset` and `output_modalities=all`; it validates `total_count` when present and accepts older count-less responses only through a bounded short-page walk. It never follows response pagination URLs. It sends the configured bearer or `x-api-key` authentication, adds the Anthropic API version where applicable, and fixes `HTTP-Referer: https://deli.dev`. It accepts no caller-supplied headers or destination overrides. Configuration rejects credentials, queries (including an empty query marker), fragments, encoded path components, backslashes and traversal segments in base URLs.
+Inspection uses only `GET` requests under the saved provider's API base path or the exact documented native/private endpoints below. OpenAI Chat Completions/Responses-compatible providers use `/models`; Anthropic Messages-compatible providers use `/models?limit=1000` and bounded `after_id` pagination. The exact OpenRouter profile uses explicit `limit=500`, numeric `offset` and `output_modalities=all`; it validates `total_count` when present and accepts older count-less responses only through a bounded short-page walk. It never follows response pagination URLs. It sends the configured bearer or `x-api-key` authentication, adds the Anthropic API version where applicable, and fixes `HTTP-Referer: https://deli.dev`. It accepts no caller-supplied headers or destination overrides. Configuration rejects credentials, queries (including an empty query marker), fragments, encoded path components, backslashes and traversal segments in base URLs.
 
 HTTPS verifies the system trust roots and hostname; plaintext is allowed only on explicit loopback. Direct and exact-bypass routing dial literal `localhost` through actual loopback IPs instead of an external resolver. Explicit proxy routing retains the original destination authority. Plaintext loopback provider requests require Direct or an explicit matching bypass and are rejected before connection otherwise; they never expose an account key through a proxy tunnel or silently change routes. Verified HTTPS destinations may use the selected proxy. Requests do not inherit environment proxy settings or cookies. Production inspection now applies the explicit selected server profile through the [outbound networking contract](cmds-delidev-network-contract.md), including catalog and credential checks. Worker selections cannot affect it, and failures never fall back.
 
-The entire inspection has a 20-second context deadline, with bounded dial, TLS handshake and response-header waits. Response headers are limited to 32 KiB. Successful JSON bodies are limited to 4 MiB each and model pages to 16 MiB in aggregate, 32 pages and 10,000 models. Connections are not reused, avoiding transport retries on a previously used connection. No HTTP redirect, provider retry, protocol translation, inference or account/model fallback occurs.
+The entire inspection has a 20-second context deadline, with bounded dial, TLS handshake and response-header waits. Response headers are limited to 32 KiB. Successful JSON bodies are limited to 4 MiB each and private checks plus model pages to 16 MiB in aggregate, 32 pages and 10,000 models. Connections are not reused, avoiding transport retries on a previously used connection. No HTTP redirect, provider retry, protocol translation, inference or account/model fallback occurs.
 
 Provider JSON may contain future fields, but known fields use exact names. Invalid UTF-8, duplicate keys, extra documents, excessive nesting, malformed model identity, duplicate identities and incomplete/looping pagination fail the whole inspection. Model identifiers and advisory display names are bounded; native IDs remain exact and are sorted only for stable output. Optional context limits, input/output modalities and supported tool/reasoning parameter evidence remain advisory. Missing/null fields remain unknown; an explicit supported-parameter list can establish an advisory false. Invalid known metadata rejects the complete response. Reflected raw/Base64 key strings in retained fields are rejected. Error bodies, arbitrary diagnostic headers, redirect locations, account labels and provider request IDs are discarded. Only typed failures, HTTP status and a parsed bounded Retry-After value leave the HTTP layer. The inspector never retries a request. The separate periodic catalog task uses an accepted retry delay as a minimum interval for its next new observation.
 
@@ -58,3 +58,54 @@ Successful model discovery with unobservable authentication records `state=unsup
 ## Provider-wide activation
 
 Provider enabled state and preset provenance are governed by the [provider activation contract](cmds-delidev-provider-activation-contract.md). Discovery requires both provider and discovery enabled; turning a provider Off cancels only its in-flight catalog work, prevents stale publication, and preserves previous model observations. Explicit account validation remains separate. Legacy providers without an activation field remain effectively enabled, while generic writes preserve a stored false value.
+
+
+## Additional fixed hosted inspection profiles (#1148)
+
+Official key-creation metadata is static presentation data on each hosted preset.
+The native desktop compiles the tool-owned allowlist generated from Go by
+`go -C cmds/delidev-cli run ./internal/providers/cmd/guidance > apps/delidev/src-tauri/provider-guidance.generated.json`
+at the repository root. The freshness test compares exact generated bytes.
+Explicit help clicks send only a closed preset/action, recheck the trusted native
+window instance and dispatch its compiled HTTPS destination through a bounded OS
+opener. Selected-server metadata cannot add a destination. Regional services keep
+distinct key guidance; a general official guide is used when a fixed console link
+would select the wrong region. Opening documentation creates no credential or
+validation authority. Custom/nonnative clients retain inert help text.
+
+The catalog contract lists all 35 presets. The 26 additions use ordinary Bearer keys and Chat Completions inference defaults. Inspector profiles match the exact HTTPS authority, base path, protocol and authentication, including equivalent custom copies. A different authority/path/protocol/authentication is custom and cannot inherit official credential evidence. Catalogs cannot distinguish a regional, subscription or coding-plan key type.
+
+Gemini uses fixed `/v1beta/models`, `x-goog-api-key`, `pageSize=1000` and bounded `pageToken`; no key query or Bearer header is sent. It retains `generateContent` models and removes only the exact `models/` prefix. Together parses its official top-level array and retains chat models. Fireworks uses `/v1/accounts/fireworks/models`, page size 200 and token pagination; ready serverless `HF_BASE_MODEL` entries retain their full account/model ID. Cohere uses `/v1/models?endpoint=chat&page_size=1000`, `next_page_token` and `page_token`, retaining nondeprecated chat entries. Mistral excludes explicit `completion_chat=false`; SiliconFlow uses `sub_type=chat`; Qianfan requires chat type and text output.
+
+Alibaba uses the selected International or Hong Kong authority's `/api/v1/models`, `capabilities=TG`, numbered pages of 100, `success=true`, and exact stable total/page metadata. It rejects incomplete pages and stops only after the total is reached. Baseten uses only `https://api.baseten.co/v1/model_apis?limit=100` and bounded cursor pagination, parsing name, optional display name/context while ignoring invocation URLs, organization and pricing. Empty/repeated/cyclic cursors, duplicate identities including filtered models, malformed known fields, inconsistent totals or capacity limits reject the whole inventory. Absent optional metadata remains unknown; uint64 context limits retain integer precision.
+
+Private verification precedes the public catalogs of Novita (`https://api.novita.ai/openapi/v1/billing/balance/detail`, five bounded decimal strings), DeepInfra (`https://api.deepinfra.com/v1/me`, nonempty bounded UID), Hugging Face (`https://huggingface.co/api/whoami-v2`, bounded identity/type and closed auth type) and Venice (`https://api.venice.ai/api/v1/api_keys/rate_limits`, `data.accessPermitted=true`). These requests use Bearer and discard all identity, financial and optional token fields. False Venice permission is access denial. DeepInfra's listing is the fixed `/v1/models` data-array profile with optional nested context metadata. No private response creates quota, cost, pricing or usage. Remaining additions use their documented authenticated model interfaces. All profiles share existing transport, cancellation, redaction and all-or-nothing publication.
+
+Official model-interface sources for the additions:
+
+- [Google Gemini](https://ai.google.dev/gemini-api/docs/openai)
+- [Groq](https://console.groq.com/docs/models)
+- [Mistral](https://docs.mistral.ai/api/endpoint/models)
+- [Together AI](https://docs.together.ai/reference/models)
+- [Fireworks AI](https://docs.fireworks.ai/api-reference/list-models)
+- [Perplexity Router](https://docs.perplexity.ai/api-reference/gateway-models-get)
+- [Cohere](https://docs.cohere.com/docs/compatibility-api)
+- [Cerebras](https://inference-docs.cerebras.ai/api-reference/models/list-models)
+- [Nebius Token Factory](https://docs.tokenfactory.nebius.com/api-reference/models/list-models)
+- [Novita](https://docs.novita.ai/api-reference/model-apis-llm-list-models)
+- [DeepInfra](https://docs.deepinfra.com/api-reference/models/openai-models)
+- [Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers/en/tasks/chat-completion)
+- [Venice](https://docs.venice.ai/api-reference/endpoint/api_keys/rate_limits)
+- [Scaleway](https://www.scaleway.com/en/developers/api/generative-apis/models)
+- [Baseten](https://docs.baseten.co/reference/management-api/model-apis/gets-all-model-apis)
+- [Moonshot / Kimi — Global](https://platform.kimi.ai/docs/api/list-models)
+- [Moonshot / Kimi — China](https://platform.kimi.com/docs/api/list-models)
+- [MiniMax — Global](https://platform.minimax.io/docs/api-reference/models/openai/list-models)
+- [MiniMax — China](https://platform.minimax.cn/docs/api-reference/models/openai/list-models)
+- [SiliconFlow — Global](https://docs.siliconflow.com/cn/api-reference/models/get-model-list)
+- [SiliconFlow — China](https://api-docs.siliconflow.cn/docs/api/models-get)
+- [Baidu Qianfan](https://cloud.baidu.com/doc/qianfan-api/s/Dmba8k71y)
+- [Tencent TokenHub — China](https://cloud.tencent.com/document/product/1823/130078)
+- [Tencent TokenHub — International](https://cloud.tencent.com/document/product/1823/130078)
+- [Alibaba Model Studio — International](https://help.aliyun.com/en/model-studio/list-models)
+- [Alibaba Model Studio — Hong Kong](https://help.aliyun.com/en/model-studio/list-models)

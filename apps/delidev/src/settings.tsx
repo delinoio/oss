@@ -1,3 +1,4 @@
+import { providerPresetNames } from "@delinoio/delidev-api-client";
 import { useOpenRouterOAuth } from "./account-oauth";
 import { SubscriptionAccounts } from "./subscription-accounts";
 import { Backups } from "./backups";
@@ -263,19 +264,15 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
       for (const preset of items(parsed).map(object)) presets.set(text(preset.id), preset);
     }
   } catch { /* Preset-specific help stays unavailable when the server response is malformed. */ }
-  const presetNames = new Map<ProviderPresetId, string>([
-    [ProviderPresetId.VERCEL_AI_GATEWAY, "vercel-ai-gateway"], [ProviderPresetId.OPENROUTER, "openrouter"],
-    [ProviderPresetId.OPENAI, "openai"], [ProviderPresetId.ANTHROPIC, "anthropic"], [ProviderPresetId.XAI, "xai"],
-    [ProviderPresetId.DEEPSEEK, "deepseek"], [ProviderPresetId.OLLAMA, "ollama"], [ProviderPresetId.LM_STUDIO, "lm-studio"],
-    [ProviderPresetId.VLLM, "vllm"],
-  ]);
   const providerSummary = (entry: ProviderInventoryEntry, oauthSupported = false): AccountProviderSummary | undefined => entry.providerId && entry.provider?.kind === EntityKind.PROVIDER ? {
     providerId: entry.providerId,
     displayName: entry.displayName,
     enabled: entry.enabled,
     provider: entry.provider,
-    keyGuidance: text(presets.get(presetNames.get(entry.presetId) ?? "")?.key_guidance) || "Use the provider's documented API key flow.",
-    documentationUrl: text(presets.get(presetNames.get(entry.presetId) ?? "")?.documentation),
+    keyGuidance: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.key_guidance) || "Use the provider's documented API key flow.",
+    documentationUrl: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.documentation),
+    presetId: providerPresetNames.get(entry.presetId),
+    keyCreationUrl: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.key_creation_url),
     oauthAvailable: oauthSupported && entry.enabled && entry.connectionMethod === ProviderConnectionMethod.OAUTH_PKCE,
   } : undefined;
   const apiProviders = (apiInventory.data?.entries ?? []).map(entry => providerSummary(entry, Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1)))).filter((value): value is AccountProviderSummary => value !== undefined);

@@ -24,43 +24,121 @@ const (
 type ProviderPresetId int32
 
 const (
-	ProviderPresetId_PROVIDER_PRESET_ID_UNSPECIFIED       ProviderPresetId = 0
-	ProviderPresetId_PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY ProviderPresetId = 1
-	ProviderPresetId_PROVIDER_PRESET_ID_OPENROUTER        ProviderPresetId = 2
-	ProviderPresetId_PROVIDER_PRESET_ID_OPENAI            ProviderPresetId = 3
-	ProviderPresetId_PROVIDER_PRESET_ID_ANTHROPIC         ProviderPresetId = 4
-	ProviderPresetId_PROVIDER_PRESET_ID_XAI               ProviderPresetId = 5
-	ProviderPresetId_PROVIDER_PRESET_ID_DEEPSEEK          ProviderPresetId = 6
-	ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA            ProviderPresetId = 7
-	ProviderPresetId_PROVIDER_PRESET_ID_LM_STUDIO         ProviderPresetId = 8
-	ProviderPresetId_PROVIDER_PRESET_ID_VLLM              ProviderPresetId = 9
+	ProviderPresetId_PROVIDER_PRESET_ID_UNSPECIFIED                        ProviderPresetId = 0
+	ProviderPresetId_PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY                  ProviderPresetId = 1
+	ProviderPresetId_PROVIDER_PRESET_ID_OPENROUTER                         ProviderPresetId = 2
+	ProviderPresetId_PROVIDER_PRESET_ID_OPENAI                             ProviderPresetId = 3
+	ProviderPresetId_PROVIDER_PRESET_ID_ANTHROPIC                          ProviderPresetId = 4
+	ProviderPresetId_PROVIDER_PRESET_ID_XAI                                ProviderPresetId = 5
+	ProviderPresetId_PROVIDER_PRESET_ID_DEEPSEEK                           ProviderPresetId = 6
+	ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA                             ProviderPresetId = 7
+	ProviderPresetId_PROVIDER_PRESET_ID_LM_STUDIO                          ProviderPresetId = 8
+	ProviderPresetId_PROVIDER_PRESET_ID_VLLM                               ProviderPresetId = 9
+	ProviderPresetId_PROVIDER_PRESET_ID_GEMINI                             ProviderPresetId = 10
+	ProviderPresetId_PROVIDER_PRESET_ID_GROQ                               ProviderPresetId = 11
+	ProviderPresetId_PROVIDER_PRESET_ID_MISTRAL                            ProviderPresetId = 12
+	ProviderPresetId_PROVIDER_PRESET_ID_TOGETHER_AI                        ProviderPresetId = 13
+	ProviderPresetId_PROVIDER_PRESET_ID_FIREWORKS_AI                       ProviderPresetId = 14
+	ProviderPresetId_PROVIDER_PRESET_ID_PERPLEXITY                         ProviderPresetId = 15
+	ProviderPresetId_PROVIDER_PRESET_ID_COHERE                             ProviderPresetId = 16
+	ProviderPresetId_PROVIDER_PRESET_ID_CEREBRAS                           ProviderPresetId = 17
+	ProviderPresetId_PROVIDER_PRESET_ID_NEBIUS                             ProviderPresetId = 18
+	ProviderPresetId_PROVIDER_PRESET_ID_NOVITA                             ProviderPresetId = 19
+	ProviderPresetId_PROVIDER_PRESET_ID_DEEPINFRA                          ProviderPresetId = 20
+	ProviderPresetId_PROVIDER_PRESET_ID_HUGGING_FACE                       ProviderPresetId = 21
+	ProviderPresetId_PROVIDER_PRESET_ID_VENICE                             ProviderPresetId = 22
+	ProviderPresetId_PROVIDER_PRESET_ID_SCALEWAY                           ProviderPresetId = 23
+	ProviderPresetId_PROVIDER_PRESET_ID_BASETEN                            ProviderPresetId = 24
+	ProviderPresetId_PROVIDER_PRESET_ID_MOONSHOT                           ProviderPresetId = 25
+	ProviderPresetId_PROVIDER_PRESET_ID_MOONSHOT_CN                        ProviderPresetId = 26
+	ProviderPresetId_PROVIDER_PRESET_ID_MINIMAX                            ProviderPresetId = 27
+	ProviderPresetId_PROVIDER_PRESET_ID_MINIMAX_CN                         ProviderPresetId = 28
+	ProviderPresetId_PROVIDER_PRESET_ID_SILICONFLOW                        ProviderPresetId = 29
+	ProviderPresetId_PROVIDER_PRESET_ID_SILICONFLOW_CN                     ProviderPresetId = 30
+	ProviderPresetId_PROVIDER_PRESET_ID_QIANFAN                            ProviderPresetId = 31
+	ProviderPresetId_PROVIDER_PRESET_ID_TENCENT_TOKENHUB                   ProviderPresetId = 32
+	ProviderPresetId_PROVIDER_PRESET_ID_TENCENT_TOKENHUB_INTERNATIONAL     ProviderPresetId = 33
+	ProviderPresetId_PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_INTERNATIONAL ProviderPresetId = 34
+	ProviderPresetId_PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG     ProviderPresetId = 35
 )
 
 // Enum value maps for ProviderPresetId.
 var (
 	ProviderPresetId_name = map[int32]string{
-		0: "PROVIDER_PRESET_ID_UNSPECIFIED",
-		1: "PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY",
-		2: "PROVIDER_PRESET_ID_OPENROUTER",
-		3: "PROVIDER_PRESET_ID_OPENAI",
-		4: "PROVIDER_PRESET_ID_ANTHROPIC",
-		5: "PROVIDER_PRESET_ID_XAI",
-		6: "PROVIDER_PRESET_ID_DEEPSEEK",
-		7: "PROVIDER_PRESET_ID_OLLAMA",
-		8: "PROVIDER_PRESET_ID_LM_STUDIO",
-		9: "PROVIDER_PRESET_ID_VLLM",
+		0:  "PROVIDER_PRESET_ID_UNSPECIFIED",
+		1:  "PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY",
+		2:  "PROVIDER_PRESET_ID_OPENROUTER",
+		3:  "PROVIDER_PRESET_ID_OPENAI",
+		4:  "PROVIDER_PRESET_ID_ANTHROPIC",
+		5:  "PROVIDER_PRESET_ID_XAI",
+		6:  "PROVIDER_PRESET_ID_DEEPSEEK",
+		7:  "PROVIDER_PRESET_ID_OLLAMA",
+		8:  "PROVIDER_PRESET_ID_LM_STUDIO",
+		9:  "PROVIDER_PRESET_ID_VLLM",
+		10: "PROVIDER_PRESET_ID_GEMINI",
+		11: "PROVIDER_PRESET_ID_GROQ",
+		12: "PROVIDER_PRESET_ID_MISTRAL",
+		13: "PROVIDER_PRESET_ID_TOGETHER_AI",
+		14: "PROVIDER_PRESET_ID_FIREWORKS_AI",
+		15: "PROVIDER_PRESET_ID_PERPLEXITY",
+		16: "PROVIDER_PRESET_ID_COHERE",
+		17: "PROVIDER_PRESET_ID_CEREBRAS",
+		18: "PROVIDER_PRESET_ID_NEBIUS",
+		19: "PROVIDER_PRESET_ID_NOVITA",
+		20: "PROVIDER_PRESET_ID_DEEPINFRA",
+		21: "PROVIDER_PRESET_ID_HUGGING_FACE",
+		22: "PROVIDER_PRESET_ID_VENICE",
+		23: "PROVIDER_PRESET_ID_SCALEWAY",
+		24: "PROVIDER_PRESET_ID_BASETEN",
+		25: "PROVIDER_PRESET_ID_MOONSHOT",
+		26: "PROVIDER_PRESET_ID_MOONSHOT_CN",
+		27: "PROVIDER_PRESET_ID_MINIMAX",
+		28: "PROVIDER_PRESET_ID_MINIMAX_CN",
+		29: "PROVIDER_PRESET_ID_SILICONFLOW",
+		30: "PROVIDER_PRESET_ID_SILICONFLOW_CN",
+		31: "PROVIDER_PRESET_ID_QIANFAN",
+		32: "PROVIDER_PRESET_ID_TENCENT_TOKENHUB",
+		33: "PROVIDER_PRESET_ID_TENCENT_TOKENHUB_INTERNATIONAL",
+		34: "PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_INTERNATIONAL",
+		35: "PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG",
 	}
 	ProviderPresetId_value = map[string]int32{
-		"PROVIDER_PRESET_ID_UNSPECIFIED":       0,
-		"PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY": 1,
-		"PROVIDER_PRESET_ID_OPENROUTER":        2,
-		"PROVIDER_PRESET_ID_OPENAI":            3,
-		"PROVIDER_PRESET_ID_ANTHROPIC":         4,
-		"PROVIDER_PRESET_ID_XAI":               5,
-		"PROVIDER_PRESET_ID_DEEPSEEK":          6,
-		"PROVIDER_PRESET_ID_OLLAMA":            7,
-		"PROVIDER_PRESET_ID_LM_STUDIO":         8,
-		"PROVIDER_PRESET_ID_VLLM":              9,
+		"PROVIDER_PRESET_ID_UNSPECIFIED":                        0,
+		"PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY":                  1,
+		"PROVIDER_PRESET_ID_OPENROUTER":                         2,
+		"PROVIDER_PRESET_ID_OPENAI":                             3,
+		"PROVIDER_PRESET_ID_ANTHROPIC":                          4,
+		"PROVIDER_PRESET_ID_XAI":                                5,
+		"PROVIDER_PRESET_ID_DEEPSEEK":                           6,
+		"PROVIDER_PRESET_ID_OLLAMA":                             7,
+		"PROVIDER_PRESET_ID_LM_STUDIO":                          8,
+		"PROVIDER_PRESET_ID_VLLM":                               9,
+		"PROVIDER_PRESET_ID_GEMINI":                             10,
+		"PROVIDER_PRESET_ID_GROQ":                               11,
+		"PROVIDER_PRESET_ID_MISTRAL":                            12,
+		"PROVIDER_PRESET_ID_TOGETHER_AI":                        13,
+		"PROVIDER_PRESET_ID_FIREWORKS_AI":                       14,
+		"PROVIDER_PRESET_ID_PERPLEXITY":                         15,
+		"PROVIDER_PRESET_ID_COHERE":                             16,
+		"PROVIDER_PRESET_ID_CEREBRAS":                           17,
+		"PROVIDER_PRESET_ID_NEBIUS":                             18,
+		"PROVIDER_PRESET_ID_NOVITA":                             19,
+		"PROVIDER_PRESET_ID_DEEPINFRA":                          20,
+		"PROVIDER_PRESET_ID_HUGGING_FACE":                       21,
+		"PROVIDER_PRESET_ID_VENICE":                             22,
+		"PROVIDER_PRESET_ID_SCALEWAY":                           23,
+		"PROVIDER_PRESET_ID_BASETEN":                            24,
+		"PROVIDER_PRESET_ID_MOONSHOT":                           25,
+		"PROVIDER_PRESET_ID_MOONSHOT_CN":                        26,
+		"PROVIDER_PRESET_ID_MINIMAX":                            27,
+		"PROVIDER_PRESET_ID_MINIMAX_CN":                         28,
+		"PROVIDER_PRESET_ID_SILICONFLOW":                        29,
+		"PROVIDER_PRESET_ID_SILICONFLOW_CN":                     30,
+		"PROVIDER_PRESET_ID_QIANFAN":                            31,
+		"PROVIDER_PRESET_ID_TENCENT_TOKENHUB":                   32,
+		"PROVIDER_PRESET_ID_TENCENT_TOKENHUB_INTERNATIONAL":     33,
+		"PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_INTERNATIONAL": 34,
+		"PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG":     35,
 	}
 )
 
@@ -928,7 +1006,8 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
 	"providerId\"B\n" +
 	"\x14ResolveModelResponse\x12*\n" +
-	"\x05model\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x05model*\xdf\x02\n" +
+	"\x05model\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x05model*\x91\n" +
+	"\n" +
 	"\x10ProviderPresetId\x12\"\n" +
 	"\x1ePROVIDER_PRESET_ID_UNSPECIFIED\x10\x00\x12(\n" +
 	"$PROVIDER_PRESET_ID_VERCEL_AI_GATEWAY\x10\x01\x12!\n" +
@@ -939,7 +1018,34 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\x1bPROVIDER_PRESET_ID_DEEPSEEK\x10\x06\x12\x1d\n" +
 	"\x19PROVIDER_PRESET_ID_OLLAMA\x10\a\x12 \n" +
 	"\x1cPROVIDER_PRESET_ID_LM_STUDIO\x10\b\x12\x1b\n" +
-	"\x17PROVIDER_PRESET_ID_VLLM\x10\t*\xec\x02\n" +
+	"\x17PROVIDER_PRESET_ID_VLLM\x10\t\x12\x1d\n" +
+	"\x19PROVIDER_PRESET_ID_GEMINI\x10\n" +
+	"\x12\x1b\n" +
+	"\x17PROVIDER_PRESET_ID_GROQ\x10\v\x12\x1e\n" +
+	"\x1aPROVIDER_PRESET_ID_MISTRAL\x10\f\x12\"\n" +
+	"\x1ePROVIDER_PRESET_ID_TOGETHER_AI\x10\r\x12#\n" +
+	"\x1fPROVIDER_PRESET_ID_FIREWORKS_AI\x10\x0e\x12!\n" +
+	"\x1dPROVIDER_PRESET_ID_PERPLEXITY\x10\x0f\x12\x1d\n" +
+	"\x19PROVIDER_PRESET_ID_COHERE\x10\x10\x12\x1f\n" +
+	"\x1bPROVIDER_PRESET_ID_CEREBRAS\x10\x11\x12\x1d\n" +
+	"\x19PROVIDER_PRESET_ID_NEBIUS\x10\x12\x12\x1d\n" +
+	"\x19PROVIDER_PRESET_ID_NOVITA\x10\x13\x12 \n" +
+	"\x1cPROVIDER_PRESET_ID_DEEPINFRA\x10\x14\x12#\n" +
+	"\x1fPROVIDER_PRESET_ID_HUGGING_FACE\x10\x15\x12\x1d\n" +
+	"\x19PROVIDER_PRESET_ID_VENICE\x10\x16\x12\x1f\n" +
+	"\x1bPROVIDER_PRESET_ID_SCALEWAY\x10\x17\x12\x1e\n" +
+	"\x1aPROVIDER_PRESET_ID_BASETEN\x10\x18\x12\x1f\n" +
+	"\x1bPROVIDER_PRESET_ID_MOONSHOT\x10\x19\x12\"\n" +
+	"\x1ePROVIDER_PRESET_ID_MOONSHOT_CN\x10\x1a\x12\x1e\n" +
+	"\x1aPROVIDER_PRESET_ID_MINIMAX\x10\x1b\x12!\n" +
+	"\x1dPROVIDER_PRESET_ID_MINIMAX_CN\x10\x1c\x12\"\n" +
+	"\x1ePROVIDER_PRESET_ID_SILICONFLOW\x10\x1d\x12%\n" +
+	"!PROVIDER_PRESET_ID_SILICONFLOW_CN\x10\x1e\x12\x1e\n" +
+	"\x1aPROVIDER_PRESET_ID_QIANFAN\x10\x1f\x12'\n" +
+	"#PROVIDER_PRESET_ID_TENCENT_TOKENHUB\x10 \x125\n" +
+	"1PROVIDER_PRESET_ID_TENCENT_TOKENHUB_INTERNATIONAL\x10!\x129\n" +
+	"5PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_INTERNATIONAL\x10\"\x125\n" +
+	"1PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG\x10#*\xec\x02\n" +
 	"\x1bProviderInventoryCapability\x12-\n" +
 	")PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED\x10\x00\x125\n" +
 	"1PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION\x10\x01\x129\n" +

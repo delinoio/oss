@@ -130,6 +130,39 @@ async fn open_github(
     result
 }
 
+// This is a closed presentation selector, never a renderer-supplied URL.
+#[tauri::command]
+async fn open_provider_guidance(
+    window: WebviewWindow<Cef>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    preset: String,
+    action: delidev_desktop::provider_guidance::GuidanceAction,
+) -> Result<(), NativeFailure> {
+    let original = if window.label() == "main" {
+        trusted_main(&window)?;
+        None
+    } else {
+        Some(saved_binding(&window, &windows)?)
+    };
+    // Capture authority on the native loop; dispatch runs on a bounded worker.
+    let connector = Arc::clone(connector.inner());
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        connector.open_provider_guidance(&preset, action)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)?;
+    if let Some(original) = original {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
+    }
+    result
+}
+
 // Observation joins the native-owned attempt; it never bootstraps or pairs.
 #[tauri::command]
 async fn launch_local(
@@ -1169,6 +1202,7 @@ fn run() -> Result<(), NativeFailure> {
             control_browser,
             browser_state,
             open_github,
+            open_provider_guidance,
             connect_local,
             launch_local,
             retry_local,

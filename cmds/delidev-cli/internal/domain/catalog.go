@@ -25,20 +25,46 @@ type ModelDiscovery struct {
 type ProviderPresetID string
 
 const (
-	PresetVercel     ProviderPresetID = "vercel-ai-gateway"
-	PresetOpenRouter ProviderPresetID = "openrouter"
-	PresetOpenAI     ProviderPresetID = "openai"
-	PresetAnthropic  ProviderPresetID = "anthropic"
-	PresetXAI        ProviderPresetID = "xai"
-	PresetDeepSeek   ProviderPresetID = "deepseek"
-	PresetOllama     ProviderPresetID = "ollama"
-	PresetLMStudio   ProviderPresetID = "lm-studio"
-	PresetVLLM       ProviderPresetID = "vllm"
+	PresetVercel                          ProviderPresetID = "vercel-ai-gateway"
+	PresetOpenRouter                      ProviderPresetID = "openrouter"
+	PresetOpenAI                          ProviderPresetID = "openai"
+	PresetAnthropic                       ProviderPresetID = "anthropic"
+	PresetXAI                             ProviderPresetID = "xai"
+	PresetDeepSeek                        ProviderPresetID = "deepseek"
+	PresetOllama                          ProviderPresetID = "ollama"
+	PresetLMStudio                        ProviderPresetID = "lm-studio"
+	PresetVLLM                            ProviderPresetID = "vllm"
+	PresetGemini                          ProviderPresetID = "gemini"
+	PresetGroq                            ProviderPresetID = "groq"
+	PresetMistral                         ProviderPresetID = "mistral"
+	PresetTogetherAI                      ProviderPresetID = "together-ai"
+	PresetFireworksAI                     ProviderPresetID = "fireworks-ai"
+	PresetPerplexity                      ProviderPresetID = "perplexity"
+	PresetCohere                          ProviderPresetID = "cohere"
+	PresetCerebras                        ProviderPresetID = "cerebras"
+	PresetNebius                          ProviderPresetID = "nebius"
+	PresetNovita                          ProviderPresetID = "novita"
+	PresetDeepInfra                       ProviderPresetID = "deepinfra"
+	PresetHuggingFace                     ProviderPresetID = "hugging-face"
+	PresetVenice                          ProviderPresetID = "venice"
+	PresetScaleway                        ProviderPresetID = "scaleway"
+	PresetBaseten                         ProviderPresetID = "baseten"
+	PresetMoonshot                        ProviderPresetID = "moonshot"
+	PresetMoonshotCN                      ProviderPresetID = "moonshot-cn"
+	PresetMiniMax                         ProviderPresetID = "minimax"
+	PresetMiniMaxCN                       ProviderPresetID = "minimax-cn"
+	PresetSiliconFlow                     ProviderPresetID = "siliconflow"
+	PresetSiliconFlowCN                   ProviderPresetID = "siliconflow-cn"
+	PresetQianfan                         ProviderPresetID = "qianfan"
+	PresetTencentTokenHub                 ProviderPresetID = "tencent-tokenhub"
+	PresetTencentTokenHubInternational    ProviderPresetID = "tencent-tokenhub-international"
+	PresetAlibabaModelStudioInternational ProviderPresetID = "alibaba-model-studio-international"
+	PresetAlibabaModelStudioHongKong      ProviderPresetID = "alibaba-model-studio-hong-kong"
 )
 
 func (id ProviderPresetID) Valid() bool {
 	switch id {
-	case PresetVercel, PresetOpenRouter, PresetOpenAI, PresetAnthropic, PresetXAI, PresetDeepSeek, PresetOllama, PresetLMStudio, PresetVLLM:
+	case PresetVercel, PresetOpenRouter, PresetOpenAI, PresetAnthropic, PresetXAI, PresetDeepSeek, PresetOllama, PresetLMStudio, PresetVLLM, PresetGemini, PresetGroq, PresetMistral, PresetTogetherAI, PresetFireworksAI, PresetPerplexity, PresetCohere, PresetCerebras, PresetNebius, PresetNovita, PresetDeepInfra, PresetHuggingFace, PresetVenice, PresetScaleway, PresetBaseten, PresetMoonshot, PresetMoonshotCN, PresetMiniMax, PresetMiniMaxCN, PresetSiliconFlow, PresetSiliconFlowCN, PresetQianfan, PresetTencentTokenHub, PresetTencentTokenHubInternational, PresetAlibabaModelStudioInternational, PresetAlibabaModelStudioHongKong:
 		return true
 	default:
 		return false
@@ -46,9 +72,10 @@ func (id ProviderPresetID) Valid() bool {
 }
 
 type ProviderPreset struct {
-	ID            ProviderPresetID `json:"id"`
-	Provider      Provider         `json:"provider"`
-	Documentation string           `json:"documentation"`
-	KeyGuidance   string           `json:"key_guidance"`
-	Compatibility string           `json:"compatibility"`
+	ID             ProviderPresetID `json:"id"`
+	Provider       Provider         `json:"provider"`
+	Documentation  string           `json:"documentation"`
+	KeyGuidance    string           `json:"key_guidance"`
+	KeyCreationURL string           `json:"key_creation_url,omitempty"`
+	Compatibility  string           `json:"compatibility"`
 }

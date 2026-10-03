@@ -23,7 +23,7 @@ type catalogReceipt struct {
 
 // Bump this version when provider inventory cursor keys or ordering change so
 // unexpired cursors from older binaries are rejected instead of reinterpreted.
-const providerInventoryCursorScopeVersion = "provider-inventory-v2"
+const providerInventoryCursorScopeVersion = "provider-inventory-v3"
 
 func (s *Service) ListProviderPresets(ctx context.Context, req *connect.Request[pb.ListProviderPresetsRequest]) (*connect.Response[pb.ListProviderPresetsResponse], error) {
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return tx.Authorize() }); err != nil {
@@ -105,21 +105,7 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 	return response, nil
 }
 
-func orderedProviderPresets() []domain.ProviderPreset {
-	all := providers.Presets()
-	byID := make(map[domain.ProviderPresetID]domain.ProviderPreset, len(all))
-	for _, preset := range all {
-		byID[preset.ID] = preset
-	}
-	order := []domain.ProviderPresetID{domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetOpenRouter, domain.PresetVercel, domain.PresetXAI, domain.PresetDeepSeek, domain.PresetOllama, domain.PresetLMStudio, domain.PresetVLLM}
-	result := make([]domain.ProviderPreset, 0, len(order))
-	for _, id := range order {
-		if preset, ok := byID[id]; ok {
-			result = append(result, preset)
-		}
-	}
-	return result
-}
+func orderedProviderPresets() []domain.ProviderPreset { return providers.Presets() }
 
 func wireProviderPreset(id *domain.ProviderPresetID) pb.ProviderPresetId {
 	if id == nil {
@@ -142,6 +128,58 @@ func wireProviderPreset(id *domain.ProviderPresetID) pb.ProviderPresetId {
 		return pb.ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA
 	case domain.PresetLMStudio:
 		return pb.ProviderPresetId_PROVIDER_PRESET_ID_LM_STUDIO
+	case domain.PresetGemini:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_GEMINI
+	case domain.PresetGroq:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_GROQ
+	case domain.PresetMistral:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_MISTRAL
+	case domain.PresetTogetherAI:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_TOGETHER_AI
+	case domain.PresetFireworksAI:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_FIREWORKS_AI
+	case domain.PresetPerplexity:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_PERPLEXITY
+	case domain.PresetCohere:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_COHERE
+	case domain.PresetCerebras:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_CEREBRAS
+	case domain.PresetNebius:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_NEBIUS
+	case domain.PresetNovita:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_NOVITA
+	case domain.PresetDeepInfra:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_DEEPINFRA
+	case domain.PresetHuggingFace:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_HUGGING_FACE
+	case domain.PresetVenice:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_VENICE
+	case domain.PresetScaleway:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_SCALEWAY
+	case domain.PresetBaseten:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_BASETEN
+	case domain.PresetMoonshot:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_MOONSHOT
+	case domain.PresetMoonshotCN:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_MOONSHOT_CN
+	case domain.PresetMiniMax:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_MINIMAX
+	case domain.PresetMiniMaxCN:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_MINIMAX_CN
+	case domain.PresetSiliconFlow:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_SILICONFLOW
+	case domain.PresetSiliconFlowCN:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_SILICONFLOW_CN
+	case domain.PresetQianfan:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_QIANFAN
+	case domain.PresetTencentTokenHub:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_TENCENT_TOKENHUB
+	case domain.PresetTencentTokenHubInternational:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_TENCENT_TOKENHUB_INTERNATIONAL
+	case domain.PresetAlibabaModelStudioInternational:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_INTERNATIONAL
+	case domain.PresetAlibabaModelStudioHongKong:
+		return pb.ProviderPresetId_PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG
 	case domain.PresetVLLM:
 		return pb.ProviderPresetId_PROVIDER_PRESET_ID_VLLM
 	default:

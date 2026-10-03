@@ -17,8 +17,11 @@ func Presets() []domain.ProviderPreset {
 		{ID: domain.PresetLMStudio, Provider: domain.Provider{Name: "LM Studio", Endpoint: "http://127.0.0.1:1234/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth}, Documentation: "https://lmstudio.ai/docs/developer/openai-compat", KeyGuidance: "Enable the LM Studio server on the DeliDev server machine. Use --keyless only when server authentication is disabled; otherwise edit authentication before connecting its key."},
 		{ID: domain.PresetVLLM, Provider: domain.Provider{Name: "vLLM", Endpoint: "http://127.0.0.1:8000/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth}, Documentation: "https://docs.vllm.ai/en/latest/serving/online_serving/", KeyGuidance: "Run the vLLM server on the DeliDev server machine. Use --keyless only without API-key enforcement; otherwise configure bearer authentication and connect its key."},
 	}
+	// One canonical product order is shared by presets, inventory and CLI.
+	items = append([]domain.ProviderPreset{items[2], items[3], items[1], items[0], items[4], items[5]}, append(additionalHostedPresets(), items[6:]...)...)
 	for i := range items {
 		items[i].Provider.Discovery = true
+		items[i].KeyCreationURL = keyCreationURL(items[i].ID)
 		presetID := items[i].ID
 		items[i].Provider.PresetID = &presetID
 		items[i].Compatibility = compatibility

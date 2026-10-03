@@ -32,7 +32,7 @@ func TestOAuthPrivateTableMigrationAfterRealPredecessors(t *testing.T) {
 			}
 			defer migrated.Close()
 			var version int
-			if err := migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 29 {
+			if err := migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
 				t.Fatal(version, err)
 			}
 			row, err := migrated.Get(context.Background(), retained.Kind, retained.ID)
