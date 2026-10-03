@@ -4541,35 +4541,25 @@ fn linux_doctor_rejects_an_incompatible_companion_architecture() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn macos_rejects_a_companion_without_constructor_leases_before_user_launch() {
+fn macos_rejects_mismatched_companions_before_user_launch() {
     use std::process::Command;
+    #[derive(Clone, Copy, Debug)]
+    enum Mismatch {
+        Abi,
+        Cpu,
+        FileType,
+        Magic,
+    }
     let root = fixture();
     let native = Path::new(env!("CARGO_BIN_EXE_pnport"));
     let executable = root.path().join("pnport");
     fs::copy(native, &executable).unwrap();
-    let mut bytes = fs::read(native.parent().unwrap().join("libfspy_preload_unix.dylib")).unwrap();
+    let bytes = fs::read(native.parent().unwrap().join("libfspy_preload_unix.dylib")).unwrap();
     let current = b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY";
     let offset = bytes
         .windows(current.len())
         .position(|window| window == current)
         .unwrap();
-    bytes[offset..offset + current.len()].copy_from_slice(b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
-    fs::write(root.path().join("libpnport_preload.dylib"), bytes).unwrap();
-    let result = Command::new(&executable)
-        .current_dir(root.path())
-        .args(["doctor", "--json"])
-        .output()
-        .unwrap();
-    assert_eq!(result.status.code(), Some(125));
-    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["schemaVersion"], 1);
-    let injection = report["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|entry| entry["id"] == "injection")
-        .unwrap();
-    assert_eq!(injection["code"], "PNPORT_INJECTION_FAILED");
     let source = root.path().join("launch.c");
     let probe = root.path().join("launch");
     fs::write(
@@ -4585,14 +4575,56 @@ fn macos_rejects_a_companion_without_constructor_leases_before_user_launch() {
         .status()
         .unwrap()
         .success());
-    let result = Command::new(&executable)
-        .current_dir(root.path())
-        .args(["run", "--"])
-        .arg(probe)
-        .output()
-        .unwrap();
-    assert_eq!(result.status.code(), Some(125));
-    assert!(!root.path().join("launched").exists());
+    for mismatch in [
+        Mismatch::Abi,
+        Mismatch::Cpu,
+        Mismatch::FileType,
+        Mismatch::Magic,
+    ] {
+        let mut companion = bytes.clone();
+        match mismatch {
+            Mismatch::Abi => companion[offset..offset + current.len()]
+                .copy_from_slice(b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY"),
+            Mismatch::Cpu => {
+                let other_cpu: u32 = if cfg!(target_arch = "aarch64") {
+                    0x0100_0007
+                } else {
+                    0x0100_000c
+                };
+                companion[4..8].copy_from_slice(&other_cpu.to_le_bytes());
+            }
+            Mismatch::FileType => companion[12..16].copy_from_slice(&2u32.to_le_bytes()),
+            Mismatch::Magic => companion[..4].copy_from_slice(b"bad!"),
+        }
+        fs::write(root.path().join("libpnport_preload.dylib"), companion).unwrap();
+        let result = Command::new(&executable)
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(root.path().join("companion-store"))
+            .args(["doctor", "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(125), "{mismatch:?}");
+        let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["schemaVersion"], 1);
+        let injection = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == "injection")
+            .unwrap();
+        assert_eq!(injection["code"], "PNPORT_INJECTION_FAILED", "{mismatch:?}");
+        let result = Command::new(&executable)
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(root.path().join("companion-store"))
+            .args(["run", "--"])
+            .arg(&probe)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(125), "{mismatch:?}");
+        assert!(!root.path().join("launched").exists(), "{mismatch:?}");
+    }
 }
 
 #[cfg(target_os = "linux")]

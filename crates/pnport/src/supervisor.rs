@@ -99,6 +99,23 @@ pub fn artifact() -> Result<PathBuf> {
             return Err(injection_error());
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        // Release companions are native single-slice 64-bit Mach-O dylibs.
+        // A marker in another CPU slice or non-library must not report ready.
+        let cpu = if cfg!(target_arch = "aarch64") {
+            0x0100_000c
+        } else {
+            0x0100_0007
+        };
+        if bytes.len() < 32
+            || &bytes[..4] != b"\xcf\xfa\xed\xfe"
+            || u32::from_le_bytes(bytes[4..8].try_into().unwrap()) != cpu
+            || u32::from_le_bytes(bytes[12..16].try_into().unwrap()) != 6
+        {
+            return Err(injection_error());
+        }
+    }
     let marker = if cfg!(target_os = "macos") {
         b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY"
     } else {
