@@ -1,6 +1,24 @@
 use std::fmt;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+/// Private initializer diagnostics; never serialize native errors or inputs.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InitializationStage {
+    AcknowledgeEntry,
+    ReadGraph,
+    DecodeGraph,
+    HydrateGraph,
+    CacheLocation,
+    OpenCache,
+    RuntimeMutex,
+    InstallRuntime,
+    RegisterForkHandlers,
+    PublishReadiness,
+    LaunchToken,
+    AcknowledgeLaunch,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

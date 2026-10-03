@@ -282,6 +282,7 @@
 - pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.
 - pnport macOS preload runtime and constructor failures must atomically publish complete diagnostic bytes without replacing an already published first failure. Preserve concurrent-reader/writer coverage and installed parallel admission regressions; an empty in-progress file must not change the owned exit class.
 - pnport macOS supervision must recheck the failure record after observing child exit before accepting its result, retaining admission/runtime failure precedence for a child that immediately returns success after a rejected call.
+- pnport preload initialization failures must atomically record a closed diagnostic stage for the supervisor's explicit debug logs. Keep native error strings, input bytes, argv and environment values out of that record; preserve the first failure code, exit 125, missing-injection deadline, readiness requirement and shutdown grace. Passing stress runs do not establish that an intermittent failure's cause is fixed.
 
 ### React Forge Engine Rules
 

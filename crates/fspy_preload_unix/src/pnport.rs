@@ -36,7 +36,7 @@ use libc::{
 };
 use pnport_core::{
     cache::Cache,
-    diagnostic::{Code, Error, ExecFailureKind},
+    diagnostic::{Code, Error, ExecFailureKind, InitializationStage},
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
     view::{Translation, View},
@@ -223,6 +223,18 @@ fn record_failure(session: &Path, code: Code) {
         && stage.write_all(code.as_str().as_bytes()).is_ok()
     {
         let _ = stage.persist_noclobber(session.join("failure"));
+    }
+}
+
+fn record_initialization_failure(session: &Path, stage: InitializationStage) {
+    // The constructor cannot initialize a process-wide tracing subscriber in
+    // the user's executable. Publish only a closed enum for supervisor logs.
+    // Preserve the first observed stage atomically, like the failure code.
+    if let Ok(bytes) = serde_json::to_vec(&stage)
+        && let Ok(mut file) = tempfile::NamedTempFile::new_in(session)
+        && file.write_all(&bytes).is_ok()
+    {
+        let _ = file.persist_noclobber(session.join("initialization-failure"));
     }
 }
 
@@ -554,15 +566,18 @@ unsafe extern "C" fn initialize() {
         }
     }
     INJECTION_ENV.set(injection_env).ok();
-    let result = (|| {
+    let result: std::result::Result<(), InitializationStage> = (|| {
+        use InitializationStage as Stage;
         // Acknowledge entry before graph/cache work that may legitimately wait
         // on another materializer. Only the later ready marker confirms setup.
-        fs::create_dir_all(session.join("starting")).ok()?;
-        fs::write(session.join("starting").join(getpid().to_string()), b"1").ok()?;
-        let snapshot: Snapshot =
-            serde_json::from_slice(&fs::read(session.join("graph.json")).ok()?).ok()?;
-        let graph = Graph::from_snapshot(snapshot).ok()?;
-        let cache = Cache::open(PathBuf::from(std::env::var_os("PNPORT_CACHE")?)).ok()?;
+        fs::create_dir_all(session.join("starting")).map_err(|_| Stage::AcknowledgeEntry)?;
+        fs::write(session.join("starting").join(getpid().to_string()), b"1")
+            .map_err(|_| Stage::AcknowledgeEntry)?;
+        let bytes = fs::read(session.join("graph.json")).map_err(|_| Stage::ReadGraph)?;
+        let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
+        let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
+        let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
+        let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
         let view = View::new(graph, cache, session.clone());
         RUNTIME
             .set(
@@ -572,30 +587,81 @@ unsafe extern "C" fn initialize() {
                     cwd: None,
                     directories: HashMap::new(),
                 })
-                .ok()?,
+                .map_err(|_| Stage::RuntimeMutex)?,
             )
-            .ok()?;
+            .map_err(|_| Stage::InstallRuntime)?;
         if libc::pthread_atfork(Some(before_fork), Some(after_fork), Some(in_fork_child)) != 0 {
-            return None;
+            return Err(Stage::RegisterForkHandlers);
         }
-        fs::create_dir_all(session.join("ready")).ok()?;
-        fs::write(session.join("ready").join(getpid().to_string()), b"1").ok()?;
+        fs::create_dir_all(session.join("ready")).map_err(|_| Stage::PublishReadiness)?;
+        fs::write(session.join("ready").join(getpid().to_string()), b"1")
+            .map_err(|_| Stage::PublishReadiness)?;
         if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
-            let token = token.to_str()?;
+            let token = token.to_str().ok_or(Stage::LaunchToken)?;
             if !token.starts_with("pnport-")
                 || !token
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
             {
-                return None;
+                return Err(Stage::LaunchToken);
             }
-            fs::remove_file(session.join("pending").join(token)).ok()?;
+            fs::remove_file(session.join("pending").join(token))
+                .map_err(|_| Stage::AcknowledgeLaunch)?;
         }
-        Some(())
+        Ok(())
     })();
-    if result.is_none() {
+    if let Err(stage) = result {
+        record_initialization_failure(&session, stage);
         record_failure(&session, Code::PnportInjectionFailed);
         _exit(125);
+    }
+}
+
+#[cfg(test)]
+mod initialization_tests {
+    use super::*;
+
+    #[test]
+    fn initializer_process() {
+        // Reached only if the native initializer did not reject the child.
+    }
+
+    #[test]
+    fn failed_native_initializers_record_the_stage_without_input_contents() {
+        for (bytes, expected) in [
+            (None, InitializationStage::ReadGraph),
+            (
+                Some(b"private-input-canary".as_slice()),
+                InitializationStage::DecodeGraph,
+            ),
+        ] {
+            let session = tempfile::tempdir().unwrap();
+            if let Some(bytes) = bytes {
+                fs::write(session.path().join("graph.json"), bytes).unwrap();
+            }
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "pnport::initialization_tests::initializer_process",
+                    "--exact",
+                ])
+                .env("PNPORT_SESSION", session.path())
+                .env_remove("PNPORT_CACHE")
+                .status()
+                .unwrap();
+            assert_eq!(status.code(), Some(125));
+            let record = fs::read(session.path().join("initialization-failure")).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<InitializationStage>(&record).unwrap(),
+                expected
+            );
+            assert_eq!(
+                fs::read(session.path().join("failure")).unwrap(),
+                Code::PnportInjectionFailed.as_str().as_bytes()
+            );
+            assert!(record.len() < 64);
+            assert!(session.path().join("starting").is_dir());
+            assert!(!session.path().join("ready").exists());
+        }
     }
 }
 #[used]

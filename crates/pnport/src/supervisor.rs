@@ -137,10 +137,16 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
     .into_iter()
     .find(|code| code.as_str().as_bytes() == recorded);
     let code = recorded_code.unwrap_or(Code::PnportInjectionFailed);
+    let initialization_stage = fs::read(session.join("initialization-failure"))
+        .ok()
+        .and_then(|bytes| {
+            serde_json::from_slice::<pnport::diagnostic::InitializationStage>(&bytes).ok()
+        });
     tracing::debug!(
         action = "native_failure_record",
         code = code.as_str(),
         recognized = recorded_code.is_some(),
+        observed_initialization_failure_stage = ?initialization_stage,
         "Read the native interception failure record"
     );
     Ok(Some(Error::new(
