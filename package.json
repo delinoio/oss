@@ -65,7 +65,7 @@
     "@connectrpc/protoc-gen-connect-query": "2.3.1",
     "clibox-prebuilt": "npm:@delino/clibox@0.1.6",
     "js-yaml": "4.3.2",
-    "lefthook": "^2.1.4",
-    "turbo": "^2.9.14"
+    "lefthook": "2.1.4",
+    "turbo": "2.9.18"
   }
 }
