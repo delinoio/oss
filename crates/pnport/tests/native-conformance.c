@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #ifdef __APPLE__
@@ -69,6 +70,47 @@ int pnport_library_probe(void) {
     return initialization ? initialization : result ? result : 42;
 }
 #else
+
+static int descriptor_mutations(void) {
+    int fd = open("node_modules/dep/file.txt", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 70;
+    int duplicate = fcntl(fd, F_DUPFD_CLOEXEC, 64);
+    if (duplicate < 0) return 71;
+    struct timeval times[2] = {{0, 0}, {0, 0}};
+    for (int index = 0; index < 2; index++) {
+        int dependency_fd = index ? duplicate : fd;
+        errno = 0;
+        if (fchmod(dependency_fd, 0600) != -1 || errno != EROFS) return 72;
+        errno = 0;
+        if (fchown(dependency_fd, getuid(), getgid()) != -1 || errno != EROFS) return 73;
+        errno = 0;
+        if (futimes(dependency_fd, times) != -1 || errno != EROFS) return 74;
+        errno = 0;
+        if (ftruncate(dependency_fd, 0) != -1 || errno != EROFS) return 75;
+#ifdef __APPLE__
+        errno = 0;
+        if (fchflags(dependency_fd, 0) != -1 || errno != EROFS) return 76;
+        fstore_t allocation = {.fst_flags = F_ALLOCATECONTIG, .fst_posmode = F_PEOFPOSMODE,
+                              .fst_offset = 0, .fst_length = 4096};
+        errno = 0;
+        if (fcntl(dependency_fd, F_PREALLOCATE, &allocation) != -1 || errno != EROFS) return 83;
+#endif
+    }
+    if (close(fd) || close(duplicate)) return 77;
+    // Reuse a tracked descriptor number for a normal output file. Clearing
+    // dependency provenance must preserve ordinary output mutations.
+    int output = open("output/mutations.txt", O_RDWR | O_CREAT | O_EXCL, 0600);
+    if (output < 0 || dup2(output, duplicate) != duplicate) return 78;
+    if (fchmod(duplicate, 0640) || fchown(duplicate, getuid(), getgid()) ||
+        futimes(duplicate, times) || ftruncate(duplicate, 7)) return 79;
+#ifdef __APPLE__
+    if (fchflags(duplicate, 0)) return 80;
+#endif
+    if (close(output) || close(duplicate)) return 81;
+    errno = 0;
+    if (fchmod(duplicate, 0600) != -1 || errno != EBADF) return 82;
+    return dependency();
+}
 
 static int watch(void) {
     int result = dependency();
@@ -156,6 +198,10 @@ int main(int argc, char **argv) {
     alarm(15); // Test-only bound: a failed callback must not hang native CI.
     if (argc != 2) return 59;
     int result;
+    if (!strcmp(argv[1], "mutations")) {
+        result = descriptor_mutations();
+        if (result) return result;
+    } else
 #ifndef PNPORT_WATCH_ONLY
     if (!strcmp(argv[1], "library")) {
         void *library = dlopen("node_modules/dep/libprobe" LIBRARY_SUFFIX, RTLD_NOW | RTLD_LOCAL);

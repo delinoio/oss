@@ -222,3 +222,17 @@ fn static_children_preserve_file_and_directory_watch_events() {
         fixture.run(fixture.binary.as_os_str(), "watch");
     }
 }
+
+#[test]
+fn dependency_descriptor_mutations_fail_and_output_descriptor_reuse_remains_native() {
+    for split in [false, true] {
+        let fixture = Fixture::new(split, false);
+        fixture.run(fixture.binary.as_os_str(), "mutations");
+        assert_eq!(
+            fs::metadata(fixture.root.path().join("output/mutations.txt"))
+                .unwrap()
+                .len(),
+            7
+        );
+    }
+}
