@@ -43,6 +43,7 @@ type Scope struct {
 	ProviderID          domain.ID
 	ModelID             domain.ID
 	NativeModel         string
+	ChildModel          *domain.ExecutionSubagentModel
 	Purpose             domain.UsagePurpose
 	TitlePrompt         string
 	Effort              string
@@ -63,6 +64,9 @@ func (s Scope) Validate() error {
 	}
 	if err := domain.Text(s.NativeModel, "proxy model", 256, true); err != nil {
 		return err
+	}
+	if s.ChildModel != nil && (s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.Purpose == domain.SessionTitleUsage || s.ChildModel.ModelID.Validate() != nil || s.ChildModel.ModelRevision == 0 || domain.Text(s.ChildModel.NativeModel, "authorized child model", 256, true) != nil) {
+		return domain.Fail(domain.PermissionDenied, "Invalid child model relay scope.", "Retain only the canonical Codex child model from the original execution snapshot.")
 	}
 	if err := s.Provider.Validate(); err != nil {
 		return err
@@ -125,7 +129,11 @@ func (s Scope) allows(operation Operation) bool {
 // Reference callbacks must enforce session/account/connection/model ownership;
 // absent callbacks refuse native state references instead of trusting an ID.
 type Lease struct {
-	Scope              Scope
+	Scope Scope
+	// BindModel narrows this request to a canonical model already authorized by
+	// the same original execution/account. It cannot acquire another credential
+	// or widen provider, cancellation, operation or native-reference ownership.
+	BindModel          func(context.Context, string, Operation) (*Lease, error)
 	Context            context.Context
 	Key                func(context.Context) ([]byte, error)
 	Release            func()

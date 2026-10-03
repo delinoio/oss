@@ -25,6 +25,7 @@ type SystemCapability int32
 
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                      SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1  SystemCapability = 22
 	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 SystemCapability = 17
 	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1            SystemCapability = 18
 	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1    SystemCapability = 19
@@ -55,6 +56,7 @@ const (
 var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
+		22: "SYSTEM_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1",
 		17: "SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1",
 		18: "SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1",
 		19: "SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1",
@@ -78,6 +80,7 @@ var (
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                      0,
+		"SYSTEM_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1":  22,
 		"SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1": 17,
 		"SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1":            18,
 		"SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1":    19,
@@ -2862,9 +2865,10 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xf3\a\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xaa\b\n" +
 	"\x10SystemCapability\x12!\n" +
-	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x126\n" +
+	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x125\n" +
+	"1SYSTEM_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1\x10\x16\x126\n" +
 	"2SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1\x10\x11\x12+\n" +
 	"'SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1\x10\x12\x123\n" +
 	"/SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1\x10\x13\x121\n" +

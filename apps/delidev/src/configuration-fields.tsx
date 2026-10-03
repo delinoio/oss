@@ -9,6 +9,7 @@ import { Problem } from "./ui";
 import { useRetainedMutation } from "./mutation";
 import { JobState, TrackedJob } from "./jobs";
 import { providerInventoryReady } from "./provider-model-settings";
+import { CodexSubagentConfiguration } from "./codex-subagent-configuration";
 
 export enum Harness { Codex = "codex", Claude = "claude-code", OpenCode = "opencode", Grok = "grok-build" }
 export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Anthropic = "anthropic-messages", Subscription = "native-subscription" }
@@ -168,7 +169,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
       reasoning={<TextField label="Reasoning effort" value={data.effort} change={field("effort")} />}
       accounts={<><Choice label="Account routing" value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label="Accounts" kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
       instructions={<OrderedLinks label="Instruction templates" kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}
-      native={<><TextField label="Subagent model" value={options.subagent_model} change={option("subagent_model")} /><TextField label="Subagent effort" value={options.subagent_effort} change={option("subagent_effort")} /><label>Maximum concurrency (0 uses native default)<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label>{data.harness !== Harness.Claude ? <TextField label="Approval policy" value={options.approval_policy} change={option("approval_policy")} /> : null}<TextField label="Approval review model" value={options.approval_review_model} change={option("approval_review_model")} /><TextField label="Service tier" value={options.service_tier} change={option("service_tier")} /><p>Unsupported native options produce a server error; no fallback harness or account is selected.</p></>}
+      native={<>{data.harness === Harness.Codex ? <CodexSubagentConfiguration options={options} active={active} change={(key, value) => option(key)(value)} /> : <><TextField label="Subagent model" value={options.subagent_model} change={option("subagent_model")} /><TextField label="Subagent effort" value={options.subagent_effort} change={option("subagent_effort")} /><label>Maximum concurrency (0 uses native default)<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label></>}{data.harness !== Harness.Claude ? <TextField label="Approval policy" value={options.approval_policy} change={option("approval_policy")} /> : null}<TextField label="Approval review model" value={options.approval_review_model} change={option("approval_review_model")} /><TextField label="Service tier" value={options.service_tier} change={option("service_tier")} /><p>Unsupported native options produce a server error; no fallback harness or account is selected.</p></>}
     />;
   }
   return null;

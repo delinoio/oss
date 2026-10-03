@@ -88,6 +88,8 @@ const (
 	GenerateSessionTitleJob JobType = "generate-session-title"
 )
 
+const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configuration-v1"
+
 type WorkerCapability string
 
 const (

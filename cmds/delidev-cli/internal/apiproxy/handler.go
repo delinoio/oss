@@ -202,6 +202,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if lease.Scope.Purpose == domain.SessionTitleUsage {
 		raw, stream, err = validateTitleRequest(raw, lease.Scope)
 	} else {
+		if lease.BindModel != nil {
+			object, decodeErr := document(raw, secretGuard{})
+			var model string
+			if decodeErr != nil || json.Unmarshal(object["model"], &model) != nil {
+				fail(http.StatusBadRequest, domain.InvalidArgument)
+				return
+			}
+			lease, err = lease.BindModel(ctx, model, operation)
+			if err != nil {
+				fail(errorStatus(err), safeCode(err))
+				return
+			}
+		}
 		stream, err = validateRequest(ctx, raw, lease, operation)
 	}
 	if err != nil {

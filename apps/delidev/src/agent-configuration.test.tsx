@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, useState } from "react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, SystemService, SystemCapability, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
 import { ConfigurationEditor, Settings } from "./settings";
@@ -29,6 +29,7 @@ function fixture() {
     router.service(ResourceService, { listResources: request => list(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? ""), getResource: request => get(request.id) });
     router.service(ProviderService, { listProviderInventory: inventory, searchModels: request => search(request.pageToken), listProviderPresets: () => ({ presetsJson: encode([]) }) });
     router.service(ConfigurationService, { saveConfiguration: save });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.CODEX_SUBAGENT_CONFIGURATION_V1] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
   const view = (children: React.ReactNode, upstream: Transport = transport) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;

@@ -132,6 +132,9 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 	if input.Configuration.Harness != domain.Codex && input.Configuration.Harness != domain.ClaudeCode {
 		return executionEventConflict()
 	}
+	if err := input.Configuration.ValidateCodexChildModels(event.Subagents); err != nil {
+		return err
+	}
 	next, err := domain.ApplySubagents(p.Subagents, p.NativeThreadID, event.Subagents)
 	if err != nil {
 		return err

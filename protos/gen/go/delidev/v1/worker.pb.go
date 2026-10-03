@@ -34,6 +34,7 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1      WorkerCapability = 8
 	WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1              WorkerCapability = 9
 	WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1                WorkerCapability = 10
+	WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1   WorkerCapability = 11
 )
 
 // Enum value maps for WorkerCapability.
@@ -49,6 +50,7 @@ var (
 		8:  "WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1",
 		9:  "WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1",
 		10: "WORKER_CAPABILITY_CODEX_API_PROXY_V1",
+		11: "WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1",
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
@@ -61,6 +63,7 @@ var (
 		"WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1":      8,
 		"WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1":              9,
 		"WORKER_CAPABILITY_CODEX_API_PROXY_V1":                10,
+		"WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1":   11,
 	}
 )
 
@@ -2988,7 +2991,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"generation\x128\n" +
 	"\x05state\x18\a \x01(\x0e2\".delidev.v1.WorkerNativeRouteStateR\x05state\"=\n" +
 	"\x1fReportWorkerNativeRouteResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xef\x03\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\xa6\x04\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
 	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01\x12+\n" +
@@ -3000,7 +3003,8 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	".WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1\x10\b\x12*\n" +
 	"&WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1\x10\t\x12(\n" +
 	"$WORKER_CAPABILITY_CODEX_API_PROXY_V1\x10\n" +
-	"*\xb6\x02\n" +
+	"\x125\n" +
+	"1WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1\x10\v*\xb6\x02\n" +
 	"\x16WorkerNativeRouteState\x12)\n" +
 	"%WORKER_NATIVE_ROUTE_STATE_UNSPECIFIED\x10\x00\x12)\n" +
 	"%WORKER_NATIVE_ROUTE_STATE_UNSUPPORTED\x10\x01\x12)\n" +

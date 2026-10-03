@@ -213,10 +213,6 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
-	digest, err := configuration.Digest()
-	if err != nil {
-		return empty, err
-	}
 	accounts := make(map[domain.ID]domain.Account, len(agent.Accounts))
 	for _, link := range agent.Accounts {
 		_, account, err := decodeEntity[domain.Account](t, domain.AccountKind, link.ID)
@@ -239,6 +235,13 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	selected := accounts[route.Selected]
 	if selected.Connection == nil || selected.Connection.ID.Validate() != nil || (configuration.Subscription && selected.Connection.Authentication != domain.SubscriptionAuth) || (!configuration.Subscription && selected.Connection.Authentication != provider.Authentication) || !model.MatchesAccount(selected, agent.Harness) {
 		return empty, domain.Fail(domain.Conflict, "The selected account connection is incompatible with the provider.", "Revalidate the current account connection before dispatch.")
+	}
+	if err := t.resolveCodexSubagentModel(&configuration, selected); err != nil {
+		return empty, err
+	}
+	digest, err := configuration.Digest()
+	if err != nil {
+		return empty, err
 	}
 	return InitialExecutionPreview{Configuration: configuration, ConfigurationDigest: digest, AccountID: route.Selected, ConnectionID: selected.Connection.ID, Route: route, routingRecord: routingRecord, nextRouting: next}, nil
 }

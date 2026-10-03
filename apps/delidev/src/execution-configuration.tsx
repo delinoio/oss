@@ -60,6 +60,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
   const configuration = object(initial.configuration);
   const options = object(configuration.options);
   const context = object(configuration.grok_context);
+  const childModel = object(configuration.subagent_model);
   const contextSource = context.source === "known" ? "Known model metadata" : context.source === "user-declared" ? "User-declared model metadata" : "Unavailable";
   const current = object(data.current_execution);
   const selection = text(current.id) ? current : { id: initial.id, input_id: initial.input_id, account_id: initial.initial_account_id };
@@ -81,6 +82,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
           {configuration.harness === Harness.Claude || options.claude_permission !== undefined ? <><dt>Saved Claude permission</dt><dd>{requested(options.claude_permission)}</dd></> : null}
           <dt>Requested approval policy</dt><dd>{requested(options.approval_policy)}</dd>
           <dt>Requested subagent model</dt><dd>{requested(options.subagent_model)}</dd>
+          {text(childModel.model_id) ? <><dt>Saved child model identity</dt><dd>{text(childModel.model_id)} · revision {integer(childModel.model_revision)}</dd></> : null}
           <dt>Requested subagent effort</dt><dd>{requested(options.subagent_effort)}</dd>
           <dt>Requested concurrency</dt><dd>{options.max_concurrency === undefined || options.max_concurrency === 0 ? "Native default requested" : integer(options.max_concurrency)}</dd>
           <dt>Requested approval review model</dt><dd>{requested(options.approval_review_model)}</dd>

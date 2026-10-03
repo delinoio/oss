@@ -1740,3 +1740,5 @@ requests and CI runs.
 ## Managed Codex subscription profile
 
 The separate managed profile pins installed Codex 0.151.0, fresh private file-backed authentication and the built-in OpenAI provider. It composes original browser/device login completion, cancellation, account/file identity comparison, refresh metadata and local logout with server-owned exclusive leases under [the subscription contract](cmds-delidev-subscription-contract.md). API/discovery profiles remain ephemeral. Controlled native fixtures establish protocol/process boundaries; real account and platform acceptance remain unperformed.
+
+Codex child model, reasoning effort and numeric concurrency configuration follows the [subagent configuration contract](cmds-delidev-subagents-contract.md#codex-child-configuration). The pinned native thread start/resume/Fork receives only those exact supported keys; independent root observation and same-account model authority remain mandatory.
