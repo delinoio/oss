@@ -2487,6 +2487,14 @@
         "SUBSCRIPTION_ACTION_LOGOUT": 3,
         "SUBSCRIPTION_ACTION_EXECUTE": 4
       }
+    },
+    "SessionContextCapability": {
+      "kind": "enum",
+      "members": {
+        "SESSION_CONTEXT_CAPABILITY_UNSPECIFIED": 0,
+        "SESSION_CONTEXT_CAPABILITY_CLAUDE_NATIVE_OBSERVATIONS_V1": 1,
+        "SESSION_CONTEXT_CAPABILITY_CLAUDE_MANUAL_COMPACTION_V1": 2
+      }
     }
   },
   "reservations": [
@@ -4578,6 +4586,62 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1",
       "number": 12
+    },
+    {
+      "issue": 1202,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1",
+      "number": 24
+    },
+    {
+      "issue": 1203,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1",
+      "number": 25
+    },
+    {
+      "issue": 1202,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1",
+      "number": 13
+    },
+    {
+      "issue": 1203,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1",
+      "number": 14
+    },
+    {
+      "issue": 1202,
+      "kind": "enum",
+      "declaration": "SessionContextCapability",
+      "member": "SESSION_CONTEXT_CAPABILITY_CODEX_NATIVE_OBSERVATIONS_V1",
+      "number": 3
+    },
+    {
+      "issue": 1202,
+      "kind": "enum",
+      "declaration": "SessionContextCapability",
+      "member": "SESSION_CONTEXT_CAPABILITY_CODEX_MANUAL_COMPACTION_V1",
+      "number": 4
+    },
+    {
+      "issue": 1203,
+      "kind": "enum",
+      "declaration": "SessionContextCapability",
+      "member": "SESSION_CONTEXT_CAPABILITY_OPENCODE_NATIVE_OBSERVATIONS_V1",
+      "number": 5
+    },
+    {
+      "issue": 1203,
+      "kind": "enum",
+      "declaration": "SessionContextCapability",
+      "member": "SESSION_CONTEXT_CAPABILITY_OPENCODE_MANUAL_COMPACTION_V1",
+      "number": 6
     }
   ]
 }
