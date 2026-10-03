@@ -103,3 +103,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - OpenCode manual compaction uses closed version-3 input/results independently of Claude v1 and Codex v2. Require original session/input/part/summary/event identities, once-only original step usage and separate acknowledgment, lifecycle, history and cleanup proof; no mixed harness fields or failed-action Resume authority.
 
 - New OpenCode known/declared context snapshots pin closed `native-v1` policy before the first digest. Omitted historical policy keeps its original initializer/checkpoint bytes; policy validation rejects unknown values and grants no observed native capacity.
+
+- OAuth attempt metadata uses closed states, unique original identities, exact revision/lifetime and keyed comparison commitments. Validate exact UTF-8 authorization-code bytes without trimming and only the canonical owned localhost callback. Keep this private domain outside resources, synchronization and portable configuration under the OAuth contract.

@@ -23,3 +23,23 @@ export const getAccountStatus = AccountService.method.getAccountStatus;
  * @generated from rpc delidev.v1.AccountService.ValidateAccount
  */
 export const validateAccount = AccountService.method.validateAccount;
+
+/**
+ * @generated from rpc delidev.v1.AccountService.StartAccountOAuth
+ */
+export const startAccountOAuth = AccountService.method.startAccountOAuth;
+
+/**
+ * @generated from rpc delidev.v1.AccountService.CompleteAccountOAuth
+ */
+export const completeAccountOAuth = AccountService.method.completeAccountOAuth;
+
+/**
+ * @generated from rpc delidev.v1.AccountService.CancelAccountOAuth
+ */
+export const cancelAccountOAuth = AccountService.method.cancelAccountOAuth;
+
+/**
+ * @generated from rpc delidev.v1.AccountService.GetAccountOAuthStatus
+ */
+export const getAccountOAuthStatus = AccountService.method.getAccountOAuthStatus;

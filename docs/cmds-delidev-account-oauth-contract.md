@@ -1,14 +1,15 @@
-# Planned OpenRouter account OAuth PKCE (issue #1146)
+# OpenRouter account OAuth PKCE (issue #1146)
 
 ## Status and ownership
 
 [Issue #1146](https://github.com/delinoio/oss/issues/1146) owns the server/CLI
 attempt lifecycle, protected credential coordination, native browser/callback
-infrastructure and desktop waiting/completion flow below. This contract is
-planned: its main-first reservation prerequisite implements no OAuth RPC,
-credential exchange, account creation, native callback or desktop flow.
+infrastructure and desktop waiting/completion flow below. Reservations alone
+grant no RPC/exchange or callback authority. The owner-approved single integrated
+PR composes real migrations 26–29 in order under the narrow structure exception;
+independent implementation PRs retain the main-first prerequisite.
 The direct-action picker prerequisite #1145 is already on main. Compose the
-future UI with the current AI API Keys terminology and compact presentation
+UI with the current AI API Keys terminology and compact presentation
 from #1135/#1237 and fresh Settings lifetime from #1138.
 
 Go remains the business and credential owner; native Rust owns only the closed
@@ -30,15 +31,15 @@ migration order retain their current meanings.
   RECOVERY_REQUIRED 9.
 - Private SQLite migration 29 follows the real Claude accounting 26, request
   diagnostics 27 and subscription identity/retirement 28 implementations.
-  Runtime migrations currently end at 25. Do not implement placeholder
-  predecessors or activate 29 before that complete sequence exists. Changing
+  Do not implement placeholder predecessors or activate 29 before that complete
+  sequence exists. Changing
   product order requires a separately reconciled reservation sequence on main.
 
 The allocation ledger marks each member of a wholly new enum with
 `newDeclaration: true`, retaining one owner and a zero UNSPECIFIED value without
-adding it to the immutable active baseline. These reservations declare no
-active protobuf enum/field or capability advertisement. Generate Go/TypeScript
-bindings from reconciled source schemas when the feature is implemented.
+adding it to the immutable active baseline. Reservations grant no capability advertisement. The reconciled schema declares
+the closed enum/field/RPC interfaces and generates Go/TypeScript bindings.
+Advertise capability 5 only together with the implemented product lifecycle.
 
 ## Required implementation
 
@@ -56,7 +57,7 @@ bindings from reconciled source schemas when the feature is implemented.
 - Go generates a cryptographic PKCE verifier/challenge with S256 and builds only `https://openrouter.ai/auth`. Desktop uses the owned callback_url; headless omits it. Exchange only through `POST https://openrouter.ai/api/v1/auth/keys` with code/verifier/S256. No registration/client secret, inference, management key, ambient cookies/proxies, redirects, automatic HTTP retry or alternate provider.
 - Keep verifier and canonical callback/authorization URL in memory in their original server process. Cap application attempts at ten minutes and 32 nonterminal or unresolved-cleanup server attempts; distinguish this application deadline from the provider's code lifetime after issuance. Clear transient buffers and bound HTTP with the existing 20-second deadline/32KiB response-header conventions and a deliberately tighter new OAuth response ceiling of 64KiB (ordinary provider inspection permits 4MiB). Validate the returned key with the existing 1–8192-byte API-key validator.
 - Add private `account_oauth_attempts` metadata storage in reserved schema 29 after the implemented schema 25 baseline and real migrations 26–28. Preserve the reservation's meaning; reconcile any required order change on main before implementation. Include actor/server/provider UUID+revision, original start/completion IDs, reserved account/create/connect UUIDs, process generation, state/revision/times, comparison HMAC/digests, protected-reference identity and cleanup status. No raw verifier, code, key, callback URL or approval URL in SQLite/receipts. No foreign key requiring an existing account and no cascading deletion of recovery evidence.
-- Fresh stores include the table; use the existing verified backup-first transactional migration, preserving accounts/providers/settings/claims/default deletions. Exclude attempt rows from public resources/snapshots/events/portable export. Database images contain metadata, never credentials. No backup restoration feature is introduced.
+- Fresh stores include the table; use the existing verified backup-first transactional migration, preserving accounts/providers/settings/claims/default deletions. Exclude attempt rows from public resources/snapshots/events/portable export. Database images contain metadata, never credentials. Existing managed restore eligibility refuses unresolved OAuth attempts or cleanup. Historical images cannot replace current once-only attempt metadata; restore copies the current private attempt table and quarantines historical receipts. This adds no restore operation.
 - Before HTTP, commit one durable exchange-dispatch claim, following the existing once-only HTTP-claim pattern. HTTP runs outside SQLite/account locks. No timeout, cancellation, duplicate callback, RPC retry or process restart may send that exchange again.
 - Seal a successfully received key in the existing vault under `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}`. Then create disconnected default metadata once and connect once using shared existing lifecycle helpers, exact creation revision and original identities. Factor locked helpers to avoid recursive account-gate acquisition. Recheck actor, provider and attempt authority before staging and at final commit.
 - Defaults: alias OpenRouter, type api, enabled=true, exclude_automatic=false, recovery_notifications=true. This intentionally follows the approved/current API-creation default; document its scoped override of the broader requirements' default-off wording without changing saved accounts or subscription defaults. Connection sets unverified and clears prior observations under existing rules. Never auto-validate/discover.

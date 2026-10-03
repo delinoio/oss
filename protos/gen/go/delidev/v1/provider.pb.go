@@ -94,11 +94,12 @@ func (ProviderPresetId) EnumDescriptor() ([]byte, []int) {
 type ProviderInventoryCapability int32
 
 const (
-	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED             ProviderInventoryCapability = 0
-	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION     ProviderInventoryCapability = 1
-	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER ProviderInventoryCapability = 2
-	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER ProviderInventoryCapability = 3
-	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER     ProviderInventoryCapability = 4
+	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED              ProviderInventoryCapability = 0
+	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION      ProviderInventoryCapability = 1
+	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER  ProviderInventoryCapability = 2
+	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER  ProviderInventoryCapability = 3
+	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER      ProviderInventoryCapability = 4
+	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1 ProviderInventoryCapability = 5
 )
 
 // Enum value maps for ProviderInventoryCapability.
@@ -109,13 +110,15 @@ var (
 		2: "PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER",
 		3: "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER",
 		4: "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER",
+		5: "PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1",
 	}
 	ProviderInventoryCapability_value = map[string]int32{
-		"PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED":             0,
-		"PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION":     1,
-		"PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER": 2,
-		"PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER": 3,
-		"PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER":     4,
+		"PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED":              0,
+		"PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION":      1,
+		"PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER":  2,
+		"PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER":  3,
+		"PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER":      4,
+		"PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1": 5,
 	}
 )
 
@@ -144,6 +147,58 @@ func (x ProviderInventoryCapability) Number() protoreflect.EnumNumber {
 // Deprecated: Use ProviderInventoryCapability.Descriptor instead.
 func (ProviderInventoryCapability) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_provider_proto_rawDescGZIP(), []int{1}
+}
+
+type ProviderConnectionMethod int32
+
+const (
+	ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_UNSPECIFIED ProviderConnectionMethod = 0
+	ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_API_KEY     ProviderConnectionMethod = 1
+	ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_PKCE  ProviderConnectionMethod = 2
+	ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_KEYLESS     ProviderConnectionMethod = 3
+)
+
+// Enum value maps for ProviderConnectionMethod.
+var (
+	ProviderConnectionMethod_name = map[int32]string{
+		0: "PROVIDER_CONNECTION_METHOD_UNSPECIFIED",
+		1: "PROVIDER_CONNECTION_METHOD_API_KEY",
+		2: "PROVIDER_CONNECTION_METHOD_OAUTH_PKCE",
+		3: "PROVIDER_CONNECTION_METHOD_KEYLESS",
+	}
+	ProviderConnectionMethod_value = map[string]int32{
+		"PROVIDER_CONNECTION_METHOD_UNSPECIFIED": 0,
+		"PROVIDER_CONNECTION_METHOD_API_KEY":     1,
+		"PROVIDER_CONNECTION_METHOD_OAUTH_PKCE":  2,
+		"PROVIDER_CONNECTION_METHOD_KEYLESS":     3,
+	}
+)
+
+func (x ProviderConnectionMethod) Enum() *ProviderConnectionMethod {
+	p := new(ProviderConnectionMethod)
+	*p = x
+	return p
+}
+
+func (x ProviderConnectionMethod) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderConnectionMethod) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_provider_proto_enumTypes[2].Descriptor()
+}
+
+func (ProviderConnectionMethod) Type() protoreflect.EnumType {
+	return &file_delidev_v1_provider_proto_enumTypes[2]
+}
+
+func (x ProviderConnectionMethod) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderConnectionMethod.Descriptor instead.
+func (ProviderConnectionMethod) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_provider_proto_rawDescGZIP(), []int{2}
 }
 
 type ListProviderInventoryRequest struct {
@@ -218,13 +273,14 @@ type ProviderInventoryEntry struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	PresetId ProviderPresetId       `protobuf:"varint,1,opt,name=preset_id,json=presetId,proto3,enum=delidev.v1.ProviderPresetId" json:"preset_id,omitempty"`
 	// Present only for an already-saved provider.
-	ProviderId             string    `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	DisplayName            string    `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Enabled                bool      `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	TotalAccounts          uint64    `protobuf:"varint,5,opt,name=total_accounts,json=totalAccounts,proto3" json:"total_accounts,omitempty"`
-	ConnectedAccounts      uint64    `protobuf:"varint,6,opt,name=connected_accounts,json=connectedAccounts,proto3" json:"connected_accounts,omitempty"`
-	Provider               *Resource `protobuf:"bytes,7,opt,name=provider,proto3" json:"provider,omitempty"`
-	AccountCountsAvailable bool      `protobuf:"varint,8,opt,name=account_counts_available,json=accountCountsAvailable,proto3" json:"account_counts_available,omitempty"`
+	ProviderId             string                   `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	DisplayName            string                   `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Enabled                bool                     `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	TotalAccounts          uint64                   `protobuf:"varint,5,opt,name=total_accounts,json=totalAccounts,proto3" json:"total_accounts,omitempty"`
+	ConnectedAccounts      uint64                   `protobuf:"varint,6,opt,name=connected_accounts,json=connectedAccounts,proto3" json:"connected_accounts,omitempty"`
+	Provider               *Resource                `protobuf:"bytes,7,opt,name=provider,proto3" json:"provider,omitempty"`
+	AccountCountsAvailable bool                     `protobuf:"varint,8,opt,name=account_counts_available,json=accountCountsAvailable,proto3" json:"account_counts_available,omitempty"`
+	ConnectionMethod       ProviderConnectionMethod `protobuf:"varint,9,opt,name=connection_method,json=connectionMethod,proto3,enum=delidev.v1.ProviderConnectionMethod" json:"connection_method,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -313,6 +369,13 @@ func (x *ProviderInventoryEntry) GetAccountCountsAvailable() bool {
 		return x.AccountCountsAvailable
 	}
 	return false
+}
+
+func (x *ProviderInventoryEntry) GetConnectionMethod() ProviderConnectionMethod {
+	if x != nil {
+		return x.ConnectionMethod
+	}
+	return ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_UNSPECIFIED
 }
 
 type ListProviderInventoryResponse struct {
@@ -820,7 +883,7 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\fenabled_only\x18\x02 \x01(\bR\venabledOnly\x12\x1b\n" +
 	"\tpage_size\x18\x03 \x01(\rR\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\"\xf3\x02\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\"\xc6\x03\n" +
 	"\x16ProviderInventoryEntry\x129\n" +
 	"\tpreset_id\x18\x01 \x01(\x0e2\x1c.delidev.v1.ProviderPresetIdR\bpresetId\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
@@ -830,7 +893,8 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\x0etotal_accounts\x18\x05 \x01(\x04R\rtotalAccounts\x12-\n" +
 	"\x12connected_accounts\x18\x06 \x01(\x04R\x11connectedAccounts\x120\n" +
 	"\bprovider\x18\a \x01(\v2\x14.delidev.v1.ResourceR\bprovider\x128\n" +
-	"\x18account_counts_available\x18\b \x01(\bR\x16accountCountsAvailable\"\xd2\x01\n" +
+	"\x18account_counts_available\x18\b \x01(\bR\x16accountCountsAvailable\x12Q\n" +
+	"\x11connection_method\x18\t \x01(\x0e2$.delidev.v1.ProviderConnectionMethodR\x10connectionMethod\"\xd2\x01\n" +
 	"\x1dListProviderInventoryResponse\x12<\n" +
 	"\aentries\x18\x01 \x03(\v2\".delidev.v1.ProviderInventoryEntryR\aentries\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12K\n" +
@@ -875,13 +939,19 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\x1bPROVIDER_PRESET_ID_DEEPSEEK\x10\x06\x12\x1d\n" +
 	"\x19PROVIDER_PRESET_ID_OLLAMA\x10\a\x12 \n" +
 	"\x1cPROVIDER_PRESET_ID_LM_STUDIO\x10\b\x12\x1b\n" +
-	"\x17PROVIDER_PRESET_ID_VLLM\x10\t*\xb0\x02\n" +
+	"\x17PROVIDER_PRESET_ID_VLLM\x10\t*\xec\x02\n" +
 	"\x1bProviderInventoryCapability\x12-\n" +
 	")PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED\x10\x00\x125\n" +
 	"1PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION\x10\x01\x129\n" +
 	"5PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER\x10\x02\x129\n" +
 	"5PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER\x10\x03\x125\n" +
-	"1PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER\x10\x042\xe6\x03\n" +
+	"1PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER\x10\x04\x12:\n" +
+	"6PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1\x10\x05*\xc1\x01\n" +
+	"\x18ProviderConnectionMethod\x12*\n" +
+	"&PROVIDER_CONNECTION_METHOD_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"PROVIDER_CONNECTION_METHOD_API_KEY\x10\x01\x12)\n" +
+	"%PROVIDER_CONNECTION_METHOD_OAUTH_PKCE\x10\x02\x12&\n" +
+	"\"PROVIDER_CONNECTION_METHOD_KEYLESS\x10\x032\xe6\x03\n" +
 	"\x0fProviderService\x12f\n" +
 	"\x13ListProviderPresets\x12&.delidev.v1.ListProviderPresetsRequest\x1a'.delidev.v1.ListProviderPresetsResponse\x12l\n" +
 	"\x15ListProviderInventory\x12(.delidev.v1.ListProviderInventoryRequest\x1a).delidev.v1.ListProviderInventoryResponse\x12W\n" +
@@ -901,50 +971,52 @@ func file_delidev_v1_provider_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_provider_proto_rawDescData
 }
 
-var file_delidev_v1_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_delidev_v1_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_delidev_v1_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_delidev_v1_provider_proto_goTypes = []any{
 	(ProviderPresetId)(0),                 // 0: delidev.v1.ProviderPresetId
 	(ProviderInventoryCapability)(0),      // 1: delidev.v1.ProviderInventoryCapability
-	(*ListProviderInventoryRequest)(nil),  // 2: delidev.v1.ListProviderInventoryRequest
-	(*ProviderInventoryEntry)(nil),        // 3: delidev.v1.ProviderInventoryEntry
-	(*ListProviderInventoryResponse)(nil), // 4: delidev.v1.ListProviderInventoryResponse
-	(*ListProviderPresetsRequest)(nil),    // 5: delidev.v1.ListProviderPresetsRequest
-	(*ListProviderPresetsResponse)(nil),   // 6: delidev.v1.ListProviderPresetsResponse
-	(*DiscoverModelsRequest)(nil),         // 7: delidev.v1.DiscoverModelsRequest
-	(*DiscoverModelsResponse)(nil),        // 8: delidev.v1.DiscoverModelsResponse
-	(*SearchModelsRequest)(nil),           // 9: delidev.v1.SearchModelsRequest
-	(*SearchModelsResponse)(nil),          // 10: delidev.v1.SearchModelsResponse
-	(*ResolveModelRequest)(nil),           // 11: delidev.v1.ResolveModelRequest
-	(*ResolveModelResponse)(nil),          // 12: delidev.v1.ResolveModelResponse
-	(*Resource)(nil),                      // 13: delidev.v1.Resource
-	(*Mutation)(nil),                      // 14: delidev.v1.Mutation
+	(ProviderConnectionMethod)(0),         // 2: delidev.v1.ProviderConnectionMethod
+	(*ListProviderInventoryRequest)(nil),  // 3: delidev.v1.ListProviderInventoryRequest
+	(*ProviderInventoryEntry)(nil),        // 4: delidev.v1.ProviderInventoryEntry
+	(*ListProviderInventoryResponse)(nil), // 5: delidev.v1.ListProviderInventoryResponse
+	(*ListProviderPresetsRequest)(nil),    // 6: delidev.v1.ListProviderPresetsRequest
+	(*ListProviderPresetsResponse)(nil),   // 7: delidev.v1.ListProviderPresetsResponse
+	(*DiscoverModelsRequest)(nil),         // 8: delidev.v1.DiscoverModelsRequest
+	(*DiscoverModelsResponse)(nil),        // 9: delidev.v1.DiscoverModelsResponse
+	(*SearchModelsRequest)(nil),           // 10: delidev.v1.SearchModelsRequest
+	(*SearchModelsResponse)(nil),          // 11: delidev.v1.SearchModelsResponse
+	(*ResolveModelRequest)(nil),           // 12: delidev.v1.ResolveModelRequest
+	(*ResolveModelResponse)(nil),          // 13: delidev.v1.ResolveModelResponse
+	(*Resource)(nil),                      // 14: delidev.v1.Resource
+	(*Mutation)(nil),                      // 15: delidev.v1.Mutation
 }
 var file_delidev_v1_provider_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.ProviderInventoryEntry.preset_id:type_name -> delidev.v1.ProviderPresetId
-	13, // 1: delidev.v1.ProviderInventoryEntry.provider:type_name -> delidev.v1.Resource
-	3,  // 2: delidev.v1.ListProviderInventoryResponse.entries:type_name -> delidev.v1.ProviderInventoryEntry
-	1,  // 3: delidev.v1.ListProviderInventoryResponse.capabilities:type_name -> delidev.v1.ProviderInventoryCapability
-	14, // 4: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
-	13, // 5: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
-	13, // 6: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
-	13, // 7: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
-	13, // 8: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
-	5,  // 9: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
-	2,  // 10: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
-	7,  // 11: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
-	9,  // 12: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
-	11, // 13: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
-	6,  // 14: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
-	4,  // 15: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
-	8,  // 16: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
-	10, // 17: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
-	12, // 18: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
-	14, // [14:19] is the sub-list for method output_type
-	9,  // [9:14] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	14, // 1: delidev.v1.ProviderInventoryEntry.provider:type_name -> delidev.v1.Resource
+	2,  // 2: delidev.v1.ProviderInventoryEntry.connection_method:type_name -> delidev.v1.ProviderConnectionMethod
+	4,  // 3: delidev.v1.ListProviderInventoryResponse.entries:type_name -> delidev.v1.ProviderInventoryEntry
+	1,  // 4: delidev.v1.ListProviderInventoryResponse.capabilities:type_name -> delidev.v1.ProviderInventoryCapability
+	15, // 5: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
+	14, // 6: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
+	14, // 7: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
+	14, // 8: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
+	14, // 9: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
+	6,  // 10: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
+	3,  // 11: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
+	8,  // 12: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
+	10, // 13: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
+	12, // 14: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
+	7,  // 15: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
+	5,  // 16: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
+	9,  // 17: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
+	11, // 18: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
+	13, // 19: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
+	15, // [15:20] is the sub-list for method output_type
+	10, // [10:15] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_provider_proto_init() }
@@ -958,7 +1030,7 @@ func file_delidev_v1_provider_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_provider_proto_rawDesc), len(file_delidev_v1_provider_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,

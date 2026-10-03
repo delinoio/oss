@@ -54,6 +54,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account logout --id ID --revision N --machine-id ID
   account validate --id ID --revision N
   account status --id ID
+  account oauth start --provider-id ID --revision N
+  account oauth complete --attempt-id ID --revision N --code-stdin
+  --request-id ORIGINAL_ID account oauth complete --attempt-id ID --revision ORIGINAL_N --recover
+  account oauth status --attempt-id ID
+  account oauth cancel --attempt-id ID --revision N
   browser-profile capabilities | status --id PROFILE | account-status --account-id ACCOUNT
   browser-profile list [--page-size N --page-token TOKEN]
   browser-profile register --id SESSION --revision N --account-id ACCOUNT
