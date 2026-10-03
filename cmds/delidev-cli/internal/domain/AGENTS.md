@@ -78,3 +78,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - ClaudeMainLoopInput and OpenCodeStep accounting follow the usage contract. Keep original source identities and immutable prices, nullable Claude primitives, unavailable OpenCode normalized zeros, independent native totals and disjoint OpenCode reasoning pricing. Never add assistant/cumulative/inherited observations or reinterpret units as responses.
 
 - Keep independent service-native subscription identity closed to ChatGPT/Claude/Grok and its exact harness. API Provider identity remains separate. Match complete account/model identity in routing and immutable snapshots; retired Agents require explicit reconfiguration before resolution.
+
+- Native subscription observations preserve sparse quota fields, authoritative credit counts and original generation-bound operation keys under the subscription contract. Only fresh positive native evidence may clear exhaustion; typed failure/reset outcomes cannot grant recovery.

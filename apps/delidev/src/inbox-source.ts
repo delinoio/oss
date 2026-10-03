@@ -1,8 +1,9 @@
 import { EntityKind, isEntityId, type InboxView } from "@delinoio/delidev-api-client";
-import { document, text } from "./documents";
+import { document, object, text } from "./documents";
 
 export function currentInboxSource(view: InboxView, id: string): boolean {
   const { entry, session, interaction } = view;
+ if (entry?.kind===EntityKind.INBOX && entry.id===id && document(entry).source==="subscription-recovery") { const recovery=object(document(entry).recovery);return !session && !interaction && !entry.sessionId && !entry.projectId && view.account?.kind===EntityKind.ACCOUNT && view.account.id===recovery.account_id && isEntityId(text(recovery.connection_id)); }
   if (!entry || entry.kind !== EntityKind.INBOX || entry.id !== id || !isEntityId(entry.sessionId) || !session || session.kind !== EntityKind.SESSION || session.id !== entry.sessionId || entry.projectId !== session.projectId) return false;
   const data = document(entry);
   if (data.source === "execution-terminal") return !interaction;

@@ -159,3 +159,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Remaining DeliDev features use the complete main-first reservation closure in `allocations.json`. Declaration ownership and later field/member ownership are independent; preserve every original issue/PR and existing main number. The expanded allocation check covers new message fields and closed enum values without activating schemas or capabilities. Follow the structure contract and merge independent complete implementations in dependency order.
 
 - Service-native subscription attribution uses the reserved closed SubscriptionServiceIdentity enum and additive usage/pricing/diagnostic fields. Keep it distinct from the SubscriptionService RPC name; activate independent capability 17 with real migration 28, preserving API schema 1 and subscription/retired projection schema 2.
+
+- Subscription observation declarations retain the quota/reset-credit allocations for issues #1096/#1104. Owner/client request/reconcile and Worker-only claim/publication lanes remain independent. Generate both bindings from the reconciled schema; reservations alone cannot advertise capability.

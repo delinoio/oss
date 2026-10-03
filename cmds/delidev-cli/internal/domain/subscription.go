@@ -5,10 +5,12 @@ import "time"
 type SubscriptionAction string
 
 const (
-	SubscriptionLogin   SubscriptionAction = "login"
-	SubscriptionRefresh SubscriptionAction = "refresh"
-	SubscriptionLogout  SubscriptionAction = "logout"
-	SubscriptionExecute SubscriptionAction = "execute"
+	SubscriptionLogin       SubscriptionAction = "login"
+	SubscriptionRefresh     SubscriptionAction = "refresh"
+	SubscriptionLogout      SubscriptionAction = "logout"
+	SubscriptionExecute     SubscriptionAction = "execute"
+	SubscriptionQuota       SubscriptionAction = "quota"
+	SubscriptionResetCredit SubscriptionAction = "reset-credit"
 )
 
 type SubscriptionPhase string
@@ -21,11 +23,18 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
-	Generation         ID                     `json:"generation,omitempty"`
-	IdentityCommitment string                 `json:"identity_commitment,omitempty"`
-	RecoveryRequired   bool                   `json:"recovery_required"`
-	Pending            *SubscriptionOperation `json:"pending,omitempty"`
-	Lease              *SubscriptionLease     `json:"lease,omitempty"`
+	OwnerMachineID         ID                                `json:"owner_machine_id,omitempty"`
+	Observation            *SubscriptionObservationOperation `json:"observation,omitempty"`
+	QuotaState             ObservationState                  `json:"quota_state,omitempty"`
+	QuotaObservedAt        *time.Time                        `json:"quota_observed_at,omitempty"`
+	SpendControlReached    *bool                             `json:"spend_control_reached,omitempty"`
+	SpendControlObservedAt *time.Time                        `json:"spend_control_observed_at,omitempty"`
+	ResetCredits           *SubscriptionResetCredits         `json:"reset_credits,omitempty"`
+	Generation             ID                                `json:"generation,omitempty"`
+	IdentityCommitment     string                            `json:"identity_commitment,omitempty"`
+	RecoveryRequired       bool                              `json:"recovery_required"`
+	Pending                *SubscriptionOperation            `json:"pending,omitempty"`
+	Lease                  *SubscriptionLease                `json:"lease,omitempty"`
 }
 type SubscriptionOperation struct {
 	ID         ID                 `json:"id"`
@@ -61,6 +70,17 @@ func (s SubscriptionState) Validate(account Account) error {
 	if s.Generation != "" && (s.Generation.Validate() != nil || account.Connection == nil && !s.RecoveryRequired || account.Connection != nil && account.Connection.Authentication != SubscriptionAuth || len(s.IdentityCommitment) != 64) {
 		return invalid()
 	}
+	if s.OwnerMachineID != "" && s.OwnerMachineID.Validate() != nil || s.Observation != nil && s.Observation.Validate() != nil || s.ResetCredits != nil && s.ResetCredits.Validate() != nil {
+		return invalid()
+	}
+	if s.QuotaState != "" && s.QuotaState != Observed && s.QuotaState != ObservationFailed && s.QuotaState != ObservationUnknown || (s.SpendControlReached == nil) != (s.SpendControlObservedAt == nil) {
+		return invalid()
+	}
+	for _, observed := range []*time.Time{s.QuotaObservedAt, s.SpendControlObservedAt} {
+		if observed != nil && (observed.IsZero() || observed.Unix() <= 0 || observed.Year() > 9999) {
+			return invalid()
+		}
+	}
 	if s.Pending != nil {
 		op := s.Pending
 		if op.ID.Validate() != nil || op.MachineID.Validate() != nil || (op.Action != SubscriptionLogin && op.Action != SubscriptionRefresh && op.Action != SubscriptionLogout) || (op.Phase != SubscriptionQueued && op.Phase != SubscriptionClaimed) || (op.Actor.Type != OwnerDevice && op.Actor.Type != ClientDevice) {
@@ -80,7 +100,7 @@ func (s SubscriptionState) Validate(account Account) error {
 				return invalid()
 			}
 		}
-		if l.Revision == 0 || l.StartedAt.IsZero() || l.Generation != s.Generation || (l.Action != SubscriptionLogin && l.Action != SubscriptionRefresh && l.Action != SubscriptionLogout && l.Action != SubscriptionExecute) {
+		if l.Revision == 0 || l.StartedAt.IsZero() || l.Generation != s.Generation || (l.Action != SubscriptionLogin && l.Action != SubscriptionRefresh && l.Action != SubscriptionLogout && l.Action != SubscriptionExecute && l.Action != SubscriptionQuota && l.Action != SubscriptionResetCredit) {
 			return invalid()
 		}
 	}

@@ -12,11 +12,19 @@ enum SubscriptionAction {
   SUBSCRIPTION_ACTION_REFRESH = 2;
   SUBSCRIPTION_ACTION_LOGOUT = 3;
   SUBSCRIPTION_ACTION_EXECUTE = 4;
+  SUBSCRIPTION_ACTION_QUOTA = 5;
+  SUBSCRIPTION_ACTION_RESET_CREDIT = 6;
 }
 
 // Public lifecycle operations and an independently authorized protected Worker
 // lane. Bundles never enter Resource, Job, events, receipts, or execution output.
 service SubscriptionService {
+  rpc RequestSubscriptionObservation(RequestSubscriptionObservationRequest) returns (RequestSubscriptionObservationResponse);
+  rpc RefreshAllSubscriptionQuotas(RefreshAllSubscriptionQuotasRequest) returns (RefreshAllSubscriptionQuotasResponse);
+  rpc ReconcileSubscriptionCredit(ReconcileSubscriptionCreditRequest) returns (ReconcileSubscriptionCreditResponse);
+  rpc ClaimSubscriptionObservation(ClaimSubscriptionObservationRequest) returns (ClaimSubscriptionObservationResponse);
+  rpc PublishSubscriptionObservation(PublishSubscriptionObservationRequest) returns (PublishSubscriptionObservationResponse);
+
   rpc RequestSubscription(RequestSubscriptionRequest) returns (RequestSubscriptionResponse);
   rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
   rpc GetSubscriptionProgress(GetSubscriptionProgressRequest) returns (GetSubscriptionProgressResponse);
@@ -99,6 +107,80 @@ message FinishSubscriptionRequest {
   bool succeeded = 9;
 }
 message FinishSubscriptionResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+
+// Quota reads and explicit credit consumption share the original native owner.
+enum SubscriptionObservationAction {
+  SUBSCRIPTION_OBSERVATION_ACTION_UNSPECIFIED = 0;
+  SUBSCRIPTION_OBSERVATION_ACTION_QUOTA = 1;
+  SUBSCRIPTION_OBSERVATION_ACTION_RESET_CREDIT = 2;
+}
+enum SubscriptionResetOutcome {
+  SUBSCRIPTION_RESET_OUTCOME_UNSPECIFIED = 0;
+  SUBSCRIPTION_RESET_OUTCOME_RESET = 1;
+  SUBSCRIPTION_RESET_OUTCOME_ALREADY_REDEEMED = 2;
+  SUBSCRIPTION_RESET_OUTCOME_NOTHING_TO_RESET = 3;
+  SUBSCRIPTION_RESET_OUTCOME_NO_CREDIT = 4;
+}
+message RequestSubscriptionObservationRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  SubscriptionObservationAction action = 3;
+  string connection_id = 4;
+  string generation_id = 5;
+  string credit_id = 6;
+  bool next_credit = 7;
+  string credits_observation_id = 8;
+  bool confirmed = 9;
+}
+message RequestSubscriptionObservationResponse {
+  Resource account = 1;
+  string operation_id = 2;
+  bool replayed = 3;
+}
+message RefreshAllSubscriptionQuotasRequest {
+  string request_id = 1;
+}
+message RefreshAllSubscriptionQuotasResponse {
+  // Complete server-side accepted account IDs; no frontend page drives work.
+  repeated string accounts = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ReconcileSubscriptionCreditRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  string connection_id = 3;
+  string generation_id = 4;
+}
+message ReconcileSubscriptionCreditResponse {
+  Resource account = 1;
+  bool replayed = 2;
+}
+message ClaimSubscriptionObservationRequest {
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string operation_id = 5;
+  string generation_id = 6;
+}
+message ClaimSubscriptionObservationResponse {
+  bytes operation_json = 1;
+}
+message PublishSubscriptionObservationRequest {
+  Mutation mutation = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string operation_id = 5;
+  string generation_id = 6;
+  // Metadata-only closed Go projection, bounded to 32 KiB.
+  bytes observation_json = 7;
+}
+message PublishSubscriptionObservationResponse {
   Resource account = 1;
   bool replayed = 2;
 }

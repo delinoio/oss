@@ -4,7 +4,7 @@
 
 Issue #1095 implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. The explicitly selected paired Worker owns installed native Codex processes and private authentication files. The complete product requirements remain in [issue #964's snapshot](cmds-delidev-requirements.md).
 
-Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens`, Claude subscriptions and concurrent use of one managed bundle are excluded. Desktop login controls, full native recovery, quota observation and real-account/platform acceptance remain separate work. This implementation does not complete issue #964 or claim a release.
+Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens`, Claude subscriptions and concurrent use of one managed bundle are excluded. Desktop login controls and native-owner quota/reset-credit operations are composed in the approved integrated PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
 
 ## Runtime and Language
 
@@ -111,3 +111,68 @@ Update the account/harness/session/protocol/client contracts and affected scoped
 - [Wire contract](protos-delidev-v1-contract.md)
 - [Pinned official account protocol](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/app-server-protocol/src/protocol/v2/account.rs)
 - [Pinned native authentication storage](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/login/src/auth/storage.rs)
+
+
+## Native quota and reset credits — issues #1096 and #1104
+
+System capabilities 18 (`SUBSCRIPTION_QUOTA_V1`) and 19
+(`SUBSCRIPTION_RESET_CREDITS_V1`) negotiate the two product operations separately.
+Worker capability 8 requires the verified managed Codex 0.151.0 profile. The
+pinned upstream source is commit `78c290807ce710180111df227df3b7a4fe845452`.
+`account/rateLimits/read` omits its unit parameters; the native wire encoder's
+explicit `OmittedParams` profile preserves the ordinary structured-parameter
+requirement and common bounds. No inference or billing probe supplies quota.
+
+Go queues one bounded five-minute observation per supported connected account,
+using the last original native owner's machine. Individual and whole-inventory
+refreshes are authenticated SubscriptionService operations with UUID-v7 receipts;
+refresh-all derives its complete account set on the server, independent of client
+pagination. An idle read takes a short exclusive credential lease. An active
+execution uses its registered original Codex process and lease; it cannot create
+a second credential writer. Original native rate-limit updates pass the same
+bounded projection. Failed observations preserve the last successful timestamp,
+values and exhaustion state. Sparse null fields retain original values, window
+identities and individual observation times. Comparable windows use their minimum
+remaining fraction; elapsed resets cannot establish recovery.
+
+The server-owned optional subscription observation records retain exact account,
+connection, credential generation, machine, actor and original operation identity.
+A durable send claim precedes every explicit native request. Claim replay never
+grants another send. Queued operations become stale on credential generation
+replacement, rather than silently inheriting a new generation. Stop, revocation,
+pending lifecycle cleanup and lost native ownership retain their original fences.
+Only confirmed native/file cleanup releases an idle credential lease.
+
+Reset-credit inventory preserves the authoritative signed-64-bit count separately
+from a bounded detail list. Null details mean unavailable; an empty list is an
+observed empty list. Native credit IDs, reset type/status and grant/expiry times
+are metadata; native titles, descriptions, balances, account identities and token
+reflection never enter resources, receipts, logs or history. The desktop requires
+explicit confirmation tied to the displayed account revision, connection,
+generation and inventory identity. The CLI requires `--confirm`, with either the
+returned credit ID or explicit native next-credit selection when only the count
+is available. Configuration saves cannot manufacture observations.
+
+The accepted UUID-v7 operation is the official `idempotencyKey` for
+`account/rateLimitResetCredit/consume`. Uncertain consumption never automatically
+requeues or receives a replacement key. Explicit generation-checked
+`ReconcileSubscriptionCredit` preserves that original key and selected credit.
+Closed outcomes retain `reset`, `alreadyRedeemed`, `nothingToReset` and `noCredit`.
+The latter two describe truthful non-reset outcomes. Every attempted consumption
+performs a separate quota read afterward; failure retains previous quota and
+cannot manufacture a recovery notification.
+
+Recovery notification preferences default to false. Only a fresh observed
+transition from confirmed exhaustion to positive usable quota creates an Inbox
+entry, atomically with account publication. The original observation source index
+deduplicates it across receipts. Recovery Inbox records have account/connection
+scope and no session, interaction or execution authority. Existing independent
+read-state and once-only notification presentation claims apply. Native delivery
+accepts only the opaque original claim/inbox IDs and a closed recovery kind; its
+fixed title/body reveal no account alias, provider identity, quota value or secret.
+Presentation is available only while the trusted desktop process runs.
+
+Validation must distinguish isolated native/provider processes, SQLite and
+response-loss fixtures from installed real-account credit consumption, quota
+recovery and platform notification acceptance. Keep the issues open until their
+remaining real-environment acceptance is satisfied.

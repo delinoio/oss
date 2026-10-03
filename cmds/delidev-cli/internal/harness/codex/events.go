@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"slices"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -123,6 +124,22 @@ func (c *Client) NextEvent(ctx context.Context) (Event, error) {
 				return Event{}, err
 			}
 			if c.managedHome != "" && event.Kind == nativewire.Notification && (event.Method == "account/updated" || event.Method == "account/rateLimits/updated") {
+				if event.Method == "account/rateLimits/updated" && c.quotaObserver != nil {
+					var notification struct {
+						RateLimits *nativeQuotaSnapshot `json:"rateLimits"`
+					}
+					if domain.Decode(event.Params, &notification) == nil && notification.RateLimits != nil {
+						observed, err := projectQuota(nativeQuotaRead{Legacy: notification.RateLimits}, domain.NewID(), time.Now().UTC())
+						if err == nil {
+							err = c.validateQuotaReflection(observed)
+						}
+						if err == nil {
+							c.quotaObserver(ctx, observed)
+						} else if c.logger != nil {
+							c.logger.WarnContext(ctx, "subscription_native_quota_rejected", "owner_id", c.ownerID, "code", domain.SafeError(err).Code)
+						}
+					}
+				}
 				// Account telemetry remains private and grants no input or refresh
 				// authority. Bundle/file evidence is verified at the lease boundary.
 				continue

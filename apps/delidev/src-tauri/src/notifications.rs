@@ -11,6 +11,7 @@ pub enum NotificationKind {
     Succeeded,
     Failed,
     Stopped,
+    SubscriptionRecovery,
 }
 impl NotificationKind {
     pub fn title(self) -> &'static str {
@@ -19,6 +20,7 @@ impl NotificationKind {
             Self::Succeeded => "DeliDev execution completed",
             Self::Failed => "DeliDev execution failed",
             Self::Stopped => "DeliDev execution stopped",
+            Self::SubscriptionRecovery => "DeliDev quota recovered",
         }
     }
 

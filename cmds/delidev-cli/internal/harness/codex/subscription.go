@@ -213,7 +213,7 @@ func (c *Client) ManagedBundle(ctx context.Context, refresh bool) ([]byte, error
 // and no RPC acknowledgment establishes revocation of every provider session.
 func (c *Client) LogoutManaged(ctx context.Context) error {
 	var result struct{}
-	if err := c.managedCall(ctx, "account/logout", struct{}{}, &result); err != nil {
+	if err := c.managedCall(ctx, "account/logout", nativewire.OmittedParams{}, &result); err != nil {
 		return err
 	}
 	var read struct {
