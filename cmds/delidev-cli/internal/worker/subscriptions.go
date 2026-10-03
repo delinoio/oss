@@ -54,9 +54,12 @@ type managedSubscriptionJournal struct {
 	Cleanup, Refresh, Success                               bool
 }
 
-func subscriptionRPC(credential Credential) (delidevv1connect.SubscriptionServiceClient, func()) {
-	httpClient, transport := rpc.HTTPClient()
-	return delidevv1connect.NewSubscriptionServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(128<<10), connect.WithSendMaxBytes(128<<10)), transport.CloseIdleConnections
+func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
+	httpClient, closeHTTP, err := networkHTTPClientFor(ctx, config, credential)
+	if err != nil {
+		return nil, nil, err
+	}
+	return delidevv1connect.NewSubscriptionServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(128<<10), connect.WithSendMaxBytes(128<<10)), closeHTTP, nil
 }
 
 func takeManagedSubscription(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction) (*managedSubscriptionLease, error) {
@@ -154,7 +157,10 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	// closes the server's ownership lane and triggers lost-lease reconciliation.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	client, closeRPC := subscriptionRPC(credential)
+	client, closeRPC, err := subscriptionRPC(ctx, config, credential)
+	if err != nil {
+		return err
+	}
 	defer closeRPC()
 	stream, err := client.WatchSubscription(ctx, authenticated(credential, &pb.WatchSubscriptionRequest{MachineId: string(credential.MachineID), InstanceId: string(instance)}))
 	if err != nil {

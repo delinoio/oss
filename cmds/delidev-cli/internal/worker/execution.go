@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -219,7 +220,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// Native subscription authentication is selected explicitly by the server's
 	// immutable assignment, independently of the existing API token profile.
 	if input.Configuration.Subscription {
-		client, closeRPC := subscriptionRPC(connection.Credential)
+		client, closeRPC, err := subscriptionRPC(ctx, config, connection.Credential)
+		if err != nil {
+			return nil, err
+		}
 		closeManagedRPC = closeRPC
 		managed, err = takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
 		if err != nil {
@@ -304,6 +308,23 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
 	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	var ownedProxy *nativeproxy.Proxy
+	if managed == nil {
+		proxy, err := openCodexNativeProxy(nativeCtx, config, input.ExecutionID)
+		if err != nil {
+			return nil, err
+		}
+		if proxy != nil {
+			ownedProxy = proxy
+			nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
+			nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
+			defer func() {
+				if err := proxy.Close(); err != nil {
+					output, returned = nil, err
+				}
+			}()
+		}
+	}
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
@@ -478,6 +499,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		captureManagedBundle()
 		if err := client.Close(); err != nil {
 			return nil, err
+		}
+		if ownedProxy != nil {
+			if err := ownedProxy.Close(); err != nil {
+				return nil, err
+			}
 		}
 		var push *domain.PRPushProof
 		if prGit != nil {

@@ -236,7 +236,7 @@ reclaimed disk space. See the [storage contract](cmds-delidev-storage-contract.m
 
 ### Explicit outbound networking
 
-Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. See [the network contract](cmds-delidev-network-contract.md); Worker bootstrap/native proxy application remains separate.
+Authenticated NetworkService and `network` CLI operations configure revisioned Direct/HTTP/HTTPS/SOCKS5 profiles with vault-only credentials, immutable server/per-Worker selections and authenticated non-secret Worker export metadata. Catalog, validation, native relay and every GitHub client use only the server selection without ambient routing or fallback. Worker preparation/import and owner encrypted export/status add original protected recipient scope and separately supplied digest; authenticated synchronization admits only the current desired generation. A separately claimed immutable Codex API/title tunnel preserves original native bytes, destination TLS and cleanup. See [the network contract](cmds-delidev-network-contract.md); capability reservation and actual native/account/platform acceptance remain distinct.
 
 ### Managed database restore commands
 

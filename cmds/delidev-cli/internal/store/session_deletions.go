@@ -583,6 +583,11 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 	return storageError(e)
 }
 func (t *Tx) deleteSessionRecord(r Record) error {
+	if r.Kind == domain.JobKind {
+		if err := t.deleteWorkerNativeRoute(r.ID); err != nil {
+			return err
+		}
+	}
 	if _, e := t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO tombstones(id,kind,created_at) VALUES(?,?,?)", r.ID, r.Kind, t.now.UnixMilli()); e != nil {
 		return storageError(e)
 	}

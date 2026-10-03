@@ -153,3 +153,5 @@ Desktop terminal history reads, polling, manual refresh and selection require
 advertised system terminal support. Unknown or unsupported status cannot issue
 terminal reads or expose cached terminal errors; see the
 [desktop contract](apps-delidev-desktop-contract.md).
+
+- Worker network bootstrap pins an original protected recipient and pending/paired identity, then independently reconciles desired/effective generation through authenticated control. Stale state blocks fresh work while original active generation and cleanup remain immutable. The separately claimed Codex API/title tunnel keeps upstream credentials in Go, verifies native proxy/shell policy and joins before cleanup; public native-route use is independent of control readiness and provider success. Follow the [network contract](cmds-delidev-network-contract.md).

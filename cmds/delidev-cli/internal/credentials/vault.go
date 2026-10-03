@@ -30,15 +30,17 @@ const maxRecordBytes = 100 << 10
 type Purpose string
 
 const (
-	AccountAPI   Purpose = "account-api"
-	AccountLogin Purpose = "account-login"
-	NetworkProxy Purpose = "network-proxy"
-	WorkerSSH    Purpose = "worker-ssh"
+	AccountAPI          Purpose = "account-api"
+	AccountLogin        Purpose = "account-login"
+	NetworkProxy        Purpose = "network-proxy"
+	WorkerSSH           Purpose = "worker-ssh"
+	WorkerNetworkKey    Purpose = "worker-network-key"
+	WorkerNetworkConfig Purpose = "worker-network-config"
 )
 
 func (p Purpose) valid() bool {
 	switch p {
-	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH:
+	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
 		return true
 	default:
 		return false

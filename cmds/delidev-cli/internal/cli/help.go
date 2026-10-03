@@ -34,6 +34,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   device revoke --id ID --revision N
   worker pair --worker-dir PATH --name NAME --code-stdin
   worker pair-local --worker-dir PATH
+  worker network prepare --worker-dir PATH [--name NAME --code-stdin]
+  worker network import --worker-dir PATH --input ENCRYPTED_FILE --expected-ciphertext-digest HEX
+  worker network status --worker-dir PATH
   worker inspect --worker-dir PATH
   worker status --worker-dir PATH
   worker stop --worker-dir PATH --generation UUID-V7
@@ -67,6 +70,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   network select [--id ROUTE_ID --revision N] [--machine-id ID] [--profile-id ID --profile-revision N]
   network status [--machine-id ID]
   network export-metadata --machine-id ID --revision DESIRED_GENERATION
+  network export-bundle --recipient-input FILE --output ENCRYPTED_FILE [--id ROUTE_ID --revision N] [--profile-id ID --profile-revision N]
+  network worker-status --machine-id ID
   integration list|get|snapshot [--id ID]
   integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
   integration inspect-repository --repository-id ID

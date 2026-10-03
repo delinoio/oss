@@ -12,6 +12,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 const MaxFrame = 1 << 20
@@ -68,6 +69,7 @@ type incoming struct {
 }
 
 type Connection struct {
+	protected  security.ProtectedJSON
 	jsonrpc    string
 	process    *process.Handle
 	cancel     context.CancelFunc
@@ -106,6 +108,7 @@ func StartJSONRPC(ctx context.Context, config process.Config) (*Connection, erro
 func start(ctx context.Context, config process.Config, version string) (*Connection, error) {
 	life, cancel := context.WithCancel(ctx)
 	c := &Connection{jsonrpc: version, cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, maxEvents), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}}
+	c.protected = security.NewProtectedJSON(config.ProtectedValues)
 	config.Stdout = &frameWriter{connection: c}
 	config.Stderr = io.Discard
 	if version != "" {
@@ -416,6 +419,9 @@ func idKey(raw json.RawMessage) (string, error) {
 	return "", protocolFailure()
 }
 func (c *Connection) receive(raw []byte) error {
+	if !c.protected.Safe(raw) {
+		return domain.Fail(domain.PermissionDenied, "The native protocol reflected protected runtime authority.", "Stop and reconcile the original runtime without publishing its private output.")
+	}
 	var message envelope
 	if err := domain.Decode(raw, &message); err != nil {
 		return protocolFailure()

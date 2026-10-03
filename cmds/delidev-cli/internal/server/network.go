@@ -277,6 +277,13 @@ func (s *Service) SelectNetworkProfile(ctx context.Context, req *connect.Request
 			return nil, networkConflict()
 		}
 		value := domain.NetworkRoute{MachineID: machine, Profile: directNetworkProfile()}
+		if current.ID != "" {
+			previous, err := store.Decode[domain.NetworkRoute](current)
+			if err != nil {
+				return nil, err
+			}
+			value.Binding = previous.Binding
+		}
 		if profile != "" {
 			r, e := tx.Get(domain.NetworkProfileKind, profile)
 			if e != nil {

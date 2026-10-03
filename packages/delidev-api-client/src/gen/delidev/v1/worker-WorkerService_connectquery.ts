@@ -5,6 +5,16 @@
 import { WorkerService } from "./worker_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.SyncWorkerNetwork
+ */
+export const syncWorkerNetwork = WorkerService.method.syncWorkerNetwork;
+
+/**
+ * @generated from rpc delidev.v1.WorkerService.ReportWorkerNativeRoute
+ */
+export const reportWorkerNativeRoute = WorkerService.method.reportWorkerNativeRoute;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.ListSessionDeletionWork
  */
 export const listSessionDeletionWork = WorkerService.method.listSessionDeletionWork;

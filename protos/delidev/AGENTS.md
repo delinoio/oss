@@ -163,3 +163,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Service-native subscription attribution uses the reserved closed SubscriptionServiceIdentity enum and additive usage/pricing/diagnostic fields. Keep it distinct from the SubscriptionService RPC name; activate independent capability 17 with real migration 28, preserving API schema 1 and subscription/retired projection schema 2.
 
 - Subscription observation declarations retain the quota/reset-credit allocations for issues #1096/#1104. Owner/client request/reconcile and Worker-only claim/publication lanes remain independent. Generate both bindings from the reconciled schema; reservations alone cannot advertise capability.
+
+- Worker network/control declarations use the established System 20/21 and Worker 9/10 reservations, original recipient/attachment fields and closed native-route states. Owner encrypted export/status remains distinct from original-instance Worker synchronization/reporting. Regenerate both languages and compatibility facades; reservations do not advertise product support or native acceptance.

@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// NetworkServiceExportWorkerNetworkBundleProcedure is the fully-qualified name of the
+	// NetworkService's ExportWorkerNetworkBundle RPC.
+	NetworkServiceExportWorkerNetworkBundleProcedure = "/delidev.v1.NetworkService/ExportWorkerNetworkBundle"
+	// NetworkServiceGetWorkerNetworkStatusProcedure is the fully-qualified name of the NetworkService's
+	// GetWorkerNetworkStatus RPC.
+	NetworkServiceGetWorkerNetworkStatusProcedure = "/delidev.v1.NetworkService/GetWorkerNetworkStatus"
 	// NetworkServiceSaveNetworkProfileProcedure is the fully-qualified name of the NetworkService's
 	// SaveNetworkProfile RPC.
 	NetworkServiceSaveNetworkProfileProcedure = "/delidev.v1.NetworkService/SaveNetworkProfile"
@@ -52,6 +58,8 @@ const (
 
 // NetworkServiceClient is a client for the delidev.v1.NetworkService service.
 type NetworkServiceClient interface {
+	ExportWorkerNetworkBundle(context.Context, *connect.Request[v1.ExportWorkerNetworkBundleRequest]) (*connect.Response[v1.ExportWorkerNetworkBundleResponse], error)
+	GetWorkerNetworkStatus(context.Context, *connect.Request[v1.GetWorkerNetworkStatusRequest]) (*connect.Response[v1.GetWorkerNetworkStatusResponse], error)
 	SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.SaveNetworkProfileResponse], error)
 	DeleteNetworkProfile(context.Context, *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.DeleteNetworkProfileResponse], error)
 	SelectNetworkProfile(context.Context, *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.SelectNetworkProfileResponse], error)
@@ -70,6 +78,18 @@ func NewNetworkServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	networkServiceMethods := v1.File_delidev_v1_network_proto.Services().ByName("NetworkService").Methods()
 	return &networkServiceClient{
+		exportWorkerNetworkBundle: connect.NewClient[v1.ExportWorkerNetworkBundleRequest, v1.ExportWorkerNetworkBundleResponse](
+			httpClient,
+			baseURL+NetworkServiceExportWorkerNetworkBundleProcedure,
+			connect.WithSchema(networkServiceMethods.ByName("ExportWorkerNetworkBundle")),
+			connect.WithClientOptions(opts...),
+		),
+		getWorkerNetworkStatus: connect.NewClient[v1.GetWorkerNetworkStatusRequest, v1.GetWorkerNetworkStatusResponse](
+			httpClient,
+			baseURL+NetworkServiceGetWorkerNetworkStatusProcedure,
+			connect.WithSchema(networkServiceMethods.ByName("GetWorkerNetworkStatus")),
+			connect.WithClientOptions(opts...),
+		),
 		saveNetworkProfile: connect.NewClient[v1.SaveNetworkProfileRequest, v1.SaveNetworkProfileResponse](
 			httpClient,
 			baseURL+NetworkServiceSaveNetworkProfileProcedure,
@@ -105,11 +125,23 @@ func NewNetworkServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // networkServiceClient implements NetworkServiceClient.
 type networkServiceClient struct {
+	exportWorkerNetworkBundle   *connect.Client[v1.ExportWorkerNetworkBundleRequest, v1.ExportWorkerNetworkBundleResponse]
+	getWorkerNetworkStatus      *connect.Client[v1.GetWorkerNetworkStatusRequest, v1.GetWorkerNetworkStatusResponse]
 	saveNetworkProfile          *connect.Client[v1.SaveNetworkProfileRequest, v1.SaveNetworkProfileResponse]
 	deleteNetworkProfile        *connect.Client[v1.DeleteNetworkProfileRequest, v1.DeleteNetworkProfileResponse]
 	selectNetworkProfile        *connect.Client[v1.SelectNetworkProfileRequest, v1.SelectNetworkProfileResponse]
 	getNetworkRoute             *connect.Client[v1.GetNetworkRouteRequest, v1.GetNetworkRouteResponse]
 	exportWorkerNetworkMetadata *connect.Client[v1.ExportWorkerNetworkMetadataRequest, v1.ExportWorkerNetworkMetadataResponse]
+}
+
+// ExportWorkerNetworkBundle calls delidev.v1.NetworkService.ExportWorkerNetworkBundle.
+func (c *networkServiceClient) ExportWorkerNetworkBundle(ctx context.Context, req *connect.Request[v1.ExportWorkerNetworkBundleRequest]) (*connect.Response[v1.ExportWorkerNetworkBundleResponse], error) {
+	return c.exportWorkerNetworkBundle.CallUnary(ctx, req)
+}
+
+// GetWorkerNetworkStatus calls delidev.v1.NetworkService.GetWorkerNetworkStatus.
+func (c *networkServiceClient) GetWorkerNetworkStatus(ctx context.Context, req *connect.Request[v1.GetWorkerNetworkStatusRequest]) (*connect.Response[v1.GetWorkerNetworkStatusResponse], error) {
+	return c.getWorkerNetworkStatus.CallUnary(ctx, req)
 }
 
 // SaveNetworkProfile calls delidev.v1.NetworkService.SaveNetworkProfile.
@@ -139,6 +171,8 @@ func (c *networkServiceClient) ExportWorkerNetworkMetadata(ctx context.Context, 
 
 // NetworkServiceHandler is an implementation of the delidev.v1.NetworkService service.
 type NetworkServiceHandler interface {
+	ExportWorkerNetworkBundle(context.Context, *connect.Request[v1.ExportWorkerNetworkBundleRequest]) (*connect.Response[v1.ExportWorkerNetworkBundleResponse], error)
+	GetWorkerNetworkStatus(context.Context, *connect.Request[v1.GetWorkerNetworkStatusRequest]) (*connect.Response[v1.GetWorkerNetworkStatusResponse], error)
 	SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.SaveNetworkProfileResponse], error)
 	DeleteNetworkProfile(context.Context, *connect.Request[v1.DeleteNetworkProfileRequest]) (*connect.Response[v1.DeleteNetworkProfileResponse], error)
 	SelectNetworkProfile(context.Context, *connect.Request[v1.SelectNetworkProfileRequest]) (*connect.Response[v1.SelectNetworkProfileResponse], error)
@@ -153,6 +187,18 @@ type NetworkServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewNetworkServiceHandler(svc NetworkServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	networkServiceMethods := v1.File_delidev_v1_network_proto.Services().ByName("NetworkService").Methods()
+	networkServiceExportWorkerNetworkBundleHandler := connect.NewUnaryHandler(
+		NetworkServiceExportWorkerNetworkBundleProcedure,
+		svc.ExportWorkerNetworkBundle,
+		connect.WithSchema(networkServiceMethods.ByName("ExportWorkerNetworkBundle")),
+		connect.WithHandlerOptions(opts...),
+	)
+	networkServiceGetWorkerNetworkStatusHandler := connect.NewUnaryHandler(
+		NetworkServiceGetWorkerNetworkStatusProcedure,
+		svc.GetWorkerNetworkStatus,
+		connect.WithSchema(networkServiceMethods.ByName("GetWorkerNetworkStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
 	networkServiceSaveNetworkProfileHandler := connect.NewUnaryHandler(
 		NetworkServiceSaveNetworkProfileProcedure,
 		svc.SaveNetworkProfile,
@@ -185,6 +231,10 @@ func NewNetworkServiceHandler(svc NetworkServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.NetworkService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case NetworkServiceExportWorkerNetworkBundleProcedure:
+			networkServiceExportWorkerNetworkBundleHandler.ServeHTTP(w, r)
+		case NetworkServiceGetWorkerNetworkStatusProcedure:
+			networkServiceGetWorkerNetworkStatusHandler.ServeHTTP(w, r)
 		case NetworkServiceSaveNetworkProfileProcedure:
 			networkServiceSaveNetworkProfileHandler.ServeHTTP(w, r)
 		case NetworkServiceDeleteNetworkProfileProcedure:
@@ -203,6 +253,14 @@ func NewNetworkServiceHandler(svc NetworkServiceHandler, opts ...connect.Handler
 
 // UnimplementedNetworkServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedNetworkServiceHandler struct{}
+
+func (UnimplementedNetworkServiceHandler) ExportWorkerNetworkBundle(context.Context, *connect.Request[v1.ExportWorkerNetworkBundleRequest]) (*connect.Response[v1.ExportWorkerNetworkBundleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.NetworkService.ExportWorkerNetworkBundle is not implemented"))
+}
+
+func (UnimplementedNetworkServiceHandler) GetWorkerNetworkStatus(context.Context, *connect.Request[v1.GetWorkerNetworkStatusRequest]) (*connect.Response[v1.GetWorkerNetworkStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.NetworkService.GetWorkerNetworkStatus is not implemented"))
+}
 
 func (UnimplementedNetworkServiceHandler) SaveNetworkProfile(context.Context, *connect.Request[v1.SaveNetworkProfileRequest]) (*connect.Response[v1.SaveNetworkProfileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.NetworkService.SaveNetworkProfile is not implemented"))
