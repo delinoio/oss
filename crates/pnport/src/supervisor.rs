@@ -190,6 +190,34 @@ fn marker_identity(metadata: &fs::Metadata) -> Option<(u64, u64)> {
 }
 
 #[cfg(not(target_os = "linux"))]
+fn pending_entry_state(
+    session: &Path,
+    path: &Path,
+    identity: Option<(u64, u64)>,
+) -> Result<Option<pnport::launch::EntryState>> {
+    let current = match fs::symlink_metadata(path) {
+        Ok(current) if current.is_file() => current,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        _ => return Err(injection_error()),
+    };
+    if marker_identity(&current) != identity {
+        return Ok(None);
+    }
+    #[cfg(unix)]
+    {
+        let token = path.file_name().ok_or_else(injection_error)?;
+        pnport::launch::entry_state(&session.join("launch-starting").join(token), &current)
+            .map(Some)
+            .map_err(|_| injection_error())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = session;
+        Ok(Some(pnport::launch::EntryState::Missing))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 impl PendingLaunches {
     fn observe(&mut self, session: &Path) -> Result<bool> {
         let entries = match fs::read_dir(session.join("pending")) {
@@ -235,16 +263,27 @@ impl PendingLaunches {
                 || state == pnport::launch::EntryState::Missing
                     && observed.1.elapsed() > Duration::from_secs(5)
             {
-                // Completion can remove the pending inode during this scan.
-                // Recheck it before rejecting a launch already acknowledged.
-                match fs::symlink_metadata(&path) {
-                    Ok(current) if current.is_file() && marker_identity(&current) == identity => {}
-                    Ok(current) if current.is_file() => continue,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // Completion can remove the pending inode, or the constructor
+                // can enter after this scan's first observation. Recheck both
+                // pending identity and its current entry/lease before failure.
+                let abandoned = match pending_entry_state(session, &path, identity)? {
+                    None => {
                         present.remove(&path);
                         continue;
                     }
-                    _ => return Err(injection_error()),
+                    Some(pnport::launch::EntryState::Abandoned) => true,
+                    Some(pnport::launch::EntryState::Missing)
+                        if observed.1.elapsed() > Duration::from_secs(5) =>
+                    {
+                        false
+                    }
+                    Some(_) => continue,
+                };
+                // Failed constructors publish before releasing their lease.
+                // Re-read now so a failure after the loop's earlier read still
+                // retains its first code and initialization-stage debug log.
+                if let Some(error) = runtime_failure(session)? {
+                    return Err(error);
                 }
                 tracing::debug!(
                     action = "descendant_injection_deadline",
@@ -561,6 +600,58 @@ mod failure_tests {
 #[cfg(all(test, target_os = "macos"))]
 mod pending_launch_tests {
     use super::*;
+
+    #[test]
+    fn abandoned_entry_retains_a_failure_published_after_the_first_read() {
+        let session = tempfile::tempdir().unwrap();
+        fs::create_dir(session.path().join("pending")).unwrap();
+        fs::write(session.path().join("pending/pnport-test"), b"").unwrap();
+        let entry = pnport::launch::Entry::begin(session.path(), "pnport-test").unwrap();
+        assert!(runtime_failure(session.path()).unwrap().is_none());
+        fs::write(
+            session.path().join("initialization-failure"),
+            serde_json::to_vec(&pnport::diagnostic::InitializationStage::ReadGraph).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            session.path().join("failure"),
+            Code::PnportArchiveCorrupt.as_str(),
+        )
+        .unwrap();
+        drop(entry);
+        let mut launches = PendingLaunches::default();
+        assert_eq!(
+            launches.observe(session.path()).unwrap_err().code,
+            Code::PnportArchiveCorrupt
+        );
+    }
+
+    #[test]
+    fn deadline_confirmation_observes_entry_published_after_an_initial_miss() {
+        let session = tempfile::tempdir().unwrap();
+        fs::create_dir(session.path().join("pending")).unwrap();
+        let pending = session.path().join("pending/pnport-test");
+        let entered = session.path().join("launch-starting/pnport-test");
+        fs::write(&pending, b"").unwrap();
+        let metadata = fs::metadata(&pending).unwrap();
+        assert!(
+            pnport::launch::entry_state(&entered, &metadata).unwrap()
+                == pnport::launch::EntryState::Missing
+        );
+        // Reproduce constructor publication between the first missing-entry
+        // observation and the supervisor's final pending-inode confirmation.
+        let entry = pnport::launch::Entry::begin(session.path(), "pnport-test").unwrap();
+        assert!(matches!(
+            pending_entry_state(session.path(), &pending, marker_identity(&metadata)).unwrap(),
+            Some(pnport::launch::EntryState::Initializing)
+        ));
+        entry.acknowledge().unwrap();
+        assert!(
+            pending_entry_state(session.path(), &pending, marker_identity(&metadata))
+                .unwrap()
+                .is_none()
+        );
+    }
 
     #[test]
     fn cache_wait_requires_entry_for_the_exact_pending_inode() {
