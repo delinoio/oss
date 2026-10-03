@@ -143,3 +143,58 @@ func TestClaimedRemovalRecoveryReusesRenamedPendingEntry(t *testing.T) {
 		t.Fatal("recovery did not reuse the renamed pending entry", recovered)
 	}
 }
+
+func TestClaimedRemovalRecoveryUsesPreUnlinkProofAfterShortClear(t *testing.T) {
+	m, prepare, manifest := chatExecutionFixture(t)
+	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
+	preview := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+	ctx, cancel := context.WithCancel(context.Background())
+	m.storageAfterRemovalProof = func(relative string) {
+		if relative == "chat/keep" {
+			cancel()
+		}
+	}
+	if _, err := m.Storage(ctx, input); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("cancellation after durable pre-unlink proof was not retained", err)
+	}
+	m.storageAfterRemovalProof = nil
+	removal := filepath.Join(m.Root, "workspace-removals", string(input.OperationID))
+	// The claimed entry itself is renamed within its original parent.
+	privateEntries, err := filepath.Glob(filepath.Join(removal, "chat", ".removing-*"))
+	if err != nil || len(privateEntries) != 1 {
+		t.Fatalf("durable private removal entry missing: %v (%v)", privateEntries, err)
+	}
+	intentRaw, err := os.ReadFile(m.removalIntentPath(input.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, pending, cleared, err := m.readRemovalClaimPending(input, intentRaw)
+	if err != nil || len(pending) < 1 {
+		t.Fatalf("pre-unlink proof was not retained: pending=%d cleared=%d err=%v", len(pending), len(cleared), err)
+	}
+	if _, ok := cleared[removalClearedDigest("chat/keep")]; !ok {
+		t.Fatal("pre-unlink proof for the interrupted entry was not retained")
+	}
+	if err := os.Remove(privateEntries[0]); err != nil {
+		t.Fatal(err)
+	}
+	journal, err := os.OpenFile(m.removalClaimJournalPath(input.OperationID), os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.WriteString(`{"state":"cleared"`); err != nil {
+		journal.Close()
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	recovered := storageDo(t, m, recoveryRequest(input))
+	if recovered.WorkspaceState != domain.WorkspaceStored || !recovered.CleanupVerified || recovered.RecoveredJobState != domain.JobSucceeded {
+		t.Fatal("recovery did not use the pre-unlink proof after a short clear write", recovered)
+	}
+}

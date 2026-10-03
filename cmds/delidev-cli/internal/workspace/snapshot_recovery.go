@@ -410,8 +410,9 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 		return ResultUncertain()
 	}
 	var pending []storageRemovalRename
+	var cleared map[string]struct{}
 	if partial {
-		_, pending, _, err = m.readRemovalClaimPending(r, raw)
+		_, pending, cleared, err = m.readRemovalClaimPending(r, raw)
 		if err != nil {
 			return ResultUncertain()
 		}
@@ -497,6 +498,12 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 					mappings[i].Renamed = true
 				}
 			case originalPresent:
+				if _, proven := cleared[removalClearedDigest(rename.Original)]; proven {
+					// A previously persisted pre-unlink proof makes a later
+					// reappearance foreign; it cannot be treated as a stale
+					// mapping whose rename never happened.
+					return ResultUncertain()
+				}
 				// The claim was durable before the rename, but the rename did not
 				// publish. Drop this stale mapping so recovery can retry the same
 				// pinned entry without treating its original name as foreign.

@@ -246,6 +246,22 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				}
 				return err
 			}
+			// The private entry has been independently verified and its original
+			// name is already claimed. Persist the proof before unlinking so a
+			// short write of the later state transition cannot make a completed
+			// unlink permanently unrecoverable.
+			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{State: storageRemovalRenameClearedProof, Digest: removalClearedDigest(entry.Path)}); err != nil {
+				if restoreErr := restore(); restoreErr != nil {
+					return restoreErr
+				}
+				return err
+			}
+			if m.storageAfterRemovalProof != nil {
+				m.storageAfterRemovalProof(entry.Path)
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if err := parent.Remove(privateName); err != nil {
 				if restoreErr := restore(); restoreErr != nil {
 					return restoreErr
