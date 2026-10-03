@@ -227,10 +227,14 @@ impl PendingLaunches {
             if !entered && observed.1.elapsed() > Duration::from_secs(5) {
                 // Completion can remove the pending inode during this scan.
                 // Recheck it before rejecting a launch already acknowledged.
-                if !fs::symlink_metadata(&path)
-                    .is_ok_and(|current| marker_identity(&current) == identity)
-                {
-                    continue;
+                match fs::symlink_metadata(&path) {
+                    Ok(current) if current.is_file() && marker_identity(&current) == identity => {}
+                    Ok(current) if current.is_file() => continue,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        present.remove(&path);
+                        continue;
+                    }
+                    _ => return Err(injection_error()),
                 }
                 tracing::debug!(
                     action = "descendant_injection_deadline",
