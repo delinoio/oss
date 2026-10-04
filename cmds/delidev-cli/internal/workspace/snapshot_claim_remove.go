@@ -19,7 +19,13 @@ import (
 // Scratch cleanup may enumerate its own output. Claimed source removal instead
 // uses only the immutable intent and checks each entry immediately before unlink.
 // New entries are never selected; a nonempty directory cannot be removed by rmdir.
-func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageRequest, removal string, partial bool) error {
+func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageRequest, removal string, partial bool) (returned error) {
+	stage := "intent"
+	defer func() {
+		if returned != nil {
+			m.Logger.WarnContext(ctx, "workspace_claimed_removal_incomplete", "operation_id", r.OperationID, "action", r.Action, "stage", stage, "code", domain.SafeError(returned).Code)
+		}
+	}()
 	if removal != filepath.Join(m.Root, "workspace-removals", string(r.OperationID)) {
 		return ResultUncertain()
 	}
@@ -28,14 +34,17 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action || len(intent.Inventory.Entries) > maxSnapshotRemovalEntries {
 		return ResultUncertain()
 	}
+	stage = "claim-journal"
 	claim, pending, err := m.readRemovalClaimPending(r, raw)
 	if err != nil {
 		return ResultUncertain()
 	}
+	stage = "root-identity"
 	identity, err := directoryPathIdentity(removal)
 	if err != nil || identity != claim.RootIdentity {
 		return ResultUncertain()
 	}
+	stage = "inventory"
 	children := map[string][]snapshotEntry{}
 	known := map[string]snapshotEntry{}
 	for _, entry := range intent.Inventory.Entries {
@@ -55,6 +64,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	}
+	stage = "root-open"
 	root, err := os.OpenRoot(removal)
 	if err != nil {
 		return ResultUncertain()
@@ -64,6 +74,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if err != nil {
 		return ResultUncertain()
 	}
+	stage = "opened-identity"
 	openedIdentity, err := directoryFileIdentity(file)
 	file.Close()
 	if err != nil || openedIdentity != claim.RootIdentity {
@@ -113,6 +124,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		stage = "directory-read"
 		file, err := parent.Open(".")
 		if err != nil {
 			return err
@@ -139,6 +151,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			}
 			physicalEntry := physicalFor(entry.Path)
 			name := path.Base(physicalEntry)
+			stage = "entry-inspection"
 			before, err := parent.Lstat(name)
 			if os.IsNotExist(err) && partial {
 				continue
@@ -167,12 +180,15 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				return ResultUncertain()
 			}
 			pending = append(pending, storageRemovalRename{Original: entry.Path, Private: privateRelative})
+			stage = "rename-prepared-journal"
 			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenamePrepared}); err != nil {
 				return err
 			}
+			stage = "entry-rename"
 			if err := renameStorage(originalPath, privatePath); err != nil {
 				return ResultUncertain()
 			}
+			stage = "rename-committed-journal"
 			pending[len(pending)-1].Renamed = true
 			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameRenamed}); err != nil {
 				return err
@@ -192,6 +208,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				}
 				return nil
 			}
+			stage = "claimed-entry-verification"
 			if before.IsDir() {
 				if !os.FileMode(entry.Mode).IsDir() || !partial && uint32(before.Mode()) != entry.Mode {
 					if restoreErr := restore(); restoreErr != nil {
@@ -220,6 +237,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				}
 				return err
 			}
+			stage = "entry-unlink"
 			if err := parent.Remove(privateName); err != nil {
 				if restoreErr := restore(); restoreErr != nil {
 					return restoreErr
@@ -235,6 +253,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 		}
 		return nil
 	}
+	stage = "root-permissions"
 	if err := root.Chmod(".", 0700); err != nil {
 		return err
 	}
@@ -244,11 +263,13 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if m.storageBeforeRemovalUnlink != nil {
 		m.storageBeforeRemovalUnlink(".")
 	}
+	stage = "final-root-identity"
 	identity, err = directoryPathIdentity(removal)
 	if err != nil || identity != claim.RootIdentity {
 		return ResultUncertain()
 	}
 	root.Close()
+	stage = "root-unlink"
 	if err := os.Remove(removal); err != nil {
 		return ResultUncertain()
 	}
