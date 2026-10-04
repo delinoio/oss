@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::{
-    diagnostic::{Code, Result},
+    diagnostic::{Code, Error, Result},
     graph::Graph,
     view::Translation,
 };
@@ -48,6 +48,7 @@ pub struct ResolvedLookup {
     parents: Vec<ParentTraversal>,
     requires_directory: bool,
     native_failure: Option<Lookup>,
+    conflict: bool,
 }
 
 impl ResolvedLookup {
@@ -55,6 +56,12 @@ impl ResolvedLookup {
         self,
         mut translate: impl FnMut(&Path) -> Result<Translation>,
     ) -> Result<Lookup> {
+        if self.conflict {
+            return Err(Error::new(
+                Code::PnportFilesystemConflict,
+                "A physical entry conflicts with the virtual dependency directory.",
+            ));
+        }
         for parent in self.parents {
             let (physical, errno) = match translate(&parent.directory) {
                 Ok(translation) => {
@@ -152,6 +159,15 @@ pub fn resolved_lookup_with_policy(
             }
             Component::Normal(name) => {
                 let candidate = resolved.join(name);
+                if name == "node_modules" && graph.check_path_conflicts(&candidate).is_err() {
+                    return Some(ResolvedLookup {
+                        path: candidate,
+                        parents,
+                        requires_directory,
+                        native_failure: None,
+                        conflict: true,
+                    });
+                }
                 match fs::symlink_metadata(&candidate) {
                     Ok(metadata) if metadata.file_type().is_symlink() => {
                         if policy == SymlinkPolicy::Reject {
@@ -159,6 +175,7 @@ pub fn resolved_lookup_with_policy(
                                 path: candidate.clone(),
                                 parents,
                                 requires_directory,
+                                conflict: false,
                                 native_failure: Some(Lookup::NativeFailure {
                                     path: candidate,
                                     errno: libc::ELOOP,
@@ -224,6 +241,7 @@ pub fn resolved_lookup_with_policy(
         parents,
         requires_directory,
         native_failure: None,
+        conflict: false,
     })
 }
 

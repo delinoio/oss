@@ -268,7 +268,8 @@ fn directory_eligibility_matches_lookup_without_materializing() {
             .unwrap();
         assert!(retained.readonly);
         assert_eq!(fs::read(retained.physical).unwrap(), b"native directory");
-        fs::create_dir(root_path.join("packages/app/node_modules")).unwrap();
+        fs::create_dir_all(root_path.join("packages/app/node_modules/conflicting-package"))
+            .unwrap();
         assert_eq!(
             view.virtual_directory_entry(&root_path.join("packages/app"))
                 .unwrap_err()
@@ -366,7 +367,8 @@ fn native_parent_listings_match_virtual_lookup_and_stream_lifecycle() {
                 );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            fs::create_dir(conflict_root.join("packages/app/node_modules")).unwrap();
+            fs::create_dir_all(conflict_root.join("packages/app/node_modules/conflicting-package"))
+                .unwrap();
             fs::write(conflict_root.join("conflict-created"), b"").unwrap();
         });
         let conflict = run(&executable, &["conflict"]);
@@ -483,7 +485,7 @@ fn view_reads_zip_scopes_aliases_and_preserves_project_writes() {
             .readonly
     );
     assert!(!root_path.join("node_modules").exists());
-    fs::create_dir(root_path.join("node_modules")).unwrap();
+    fs::create_dir_all(root_path.join("node_modules/conflicting-package")).unwrap();
     assert_eq!(
         view.translate(&root_path.join("node_modules/dep/file.txt"))
             .unwrap_err()
@@ -4797,7 +4799,9 @@ fn linux_graph_conflict_and_injection_failures_reap_detached_descendants() {
         let child: i32 = fs::read_to_string(marker).unwrap().trim().parse().unwrap();
         match mode {
             "graph" => fs::write(root.path().join(".pnp.cjs"), "changed").unwrap(),
-            "conflict" => fs::create_dir(root.path().join("node_modules")).unwrap(),
+            "conflict" => {
+                fs::create_dir_all(root.path().join("node_modules/conflicting-package")).unwrap()
+            }
             "failure" => {}
             "cancel" => {
                 assert_eq!(unsafe { libc::kill(process.id() as i32, libc::SIGINT) }, 0);
@@ -5522,6 +5526,341 @@ int main(int argc, char **argv) {
                 for marker in ["ready", "go"] {
                     let _ = fs::remove_file(root.path().join(marker));
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn writable_cache_namespaces_preserve_graph_and_conflict_boundaries() {
+    use pnport::view::PathKind;
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let canonical = fs::canonicalize(root.path()).unwrap();
+        let graph = Graph::load(&canonical.join(".pnp.cjs")).unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            graph,
+            Cache::open(cache.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+        for issuer in [canonical.clone(), canonical.join("packages/app")] {
+            let namespace = issuer.join("node_modules");
+            assert_eq!(
+                view.translate(&namespace).unwrap().kind,
+                PathKind::CacheContainer
+            );
+            assert!(
+                !namespace.exists(),
+                "Reading must not create the native cache container"
+            );
+            fs::create_dir(&namespace).unwrap();
+            view.graph.check_conflicts().unwrap();
+            for name in [
+                ".vite",
+                ".cache",
+                ".vitest",
+                ".vitest-cache",
+                ".future-tool",
+            ] {
+                fs::create_dir(namespace.join(name)).unwrap();
+                let translated = view
+                    .translate(&namespace.join(name).join("missing-cache-file"))
+                    .unwrap();
+                assert!(!translated.readonly);
+                assert_eq!(translated.kind, PathKind::ToolCache);
+            }
+            fs::write(namespace.join(".cache-metadata"), b"native").unwrap();
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::ffi::OsStringExt;
+                let name = std::ffi::OsString::from_vec(vec![b'.', 0xff]);
+                fs::write(namespace.join(&name), b"native non-UTF8 name").unwrap();
+                assert_eq!(
+                    view.translate(&namespace.join(name)).unwrap().kind,
+                    PathKind::ToolCache
+                );
+            }
+            view.graph.check_conflicts().unwrap();
+            let entries = view.directory_entries(&namespace, &namespace).unwrap();
+            if issuer == canonical {
+                assert_eq!(
+                    entries
+                        .iter()
+                        .map(|entry| entry.name.as_str())
+                        .collect::<Vec<_>>(),
+                    ["@scope", "dep", "one", "two", "workspace"]
+                );
+                assert!(
+                    view.translate(&namespace.join("dep/file.txt"))
+                        .unwrap()
+                        .readonly
+                );
+                let backing = view
+                    .dependency_link_backing(&namespace.join("dep"))
+                    .unwrap();
+                assert!(fs::symlink_metadata(backing)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink());
+                assert!(
+                    !namespace.join("dep").exists(),
+                    "Link backing must stay private"
+                );
+            }
+            for name in ["dep", "unknown", "@scope", ".bin"] {
+                fs::create_dir(namespace.join(name)).unwrap();
+                assert_eq!(
+                    view.graph.check_conflicts().unwrap_err().code,
+                    Code::PnportFilesystemConflict
+                );
+                assert_eq!(
+                    view.translate(&namespace).unwrap_err().code,
+                    Code::PnportFilesystemConflict
+                );
+                fs::remove_dir(namespace.join(name)).unwrap();
+            }
+            fs::remove_dir_all(&namespace).unwrap();
+            fs::write(&namespace, b"not a directory").unwrap();
+            assert_eq!(
+                view.graph.check_conflicts().unwrap_err().code,
+                Code::PnportFilesystemConflict
+            );
+            fs::remove_file(&namespace).unwrap();
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(&issuer, &namespace).unwrap();
+                assert_eq!(
+                    view.graph.check_conflicts().unwrap_err().code,
+                    Code::PnportFilesystemConflict
+                );
+                fs::remove_file(namespace).unwrap();
+            }
+        }
+        let mut data = view.graph.snapshot.data.clone();
+        for index in [0, 1] {
+            data["packageRegistryData"][index][1][0][1]["packageDependencies"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!([".reserved", null]));
+        }
+        data["enableTopLevelFallback"] = json!(true);
+        data["fallbackPool"] = json!([[".fallback-cache", ["dep", "npm:1"]]]);
+        data["packageRegistryData"].as_array_mut().unwrap().push(json!(
+            ["unplugged", [["npm:1", {"packageLocation":"./.yarn/unplugged/cachedep/node_modules/cachedep/","packageDependencies":[],"linkType":"HARD"}]]]
+        ));
+        if split {
+            fs::write(
+                canonical.join(".pnp.data.json"),
+                serde_json::to_vec(&data).unwrap(),
+            )
+            .unwrap();
+        } else {
+            inline(&canonical, &data);
+        }
+        let graph = Graph::load(&canonical.join(".pnp.cjs")).unwrap();
+        let namespace = canonical.join("node_modules");
+        fs::create_dir(&namespace).unwrap();
+        for name in [".reserved", ".fallback-cache"] {
+            assert!(!graph.cache_entry(&canonical, std::ffi::OsStr::new(name)));
+            fs::write(namespace.join(name), b"must not shadow dependency").unwrap();
+            assert_eq!(
+                graph.check_conflicts().unwrap_err().code,
+                Code::PnportFilesystemConflict
+            );
+            fs::remove_file(namespace.join(name)).unwrap();
+        }
+        let hard = canonical.join(".yarn/unplugged/cachedep/node_modules/cachedep");
+        fs::create_dir_all(hard.join("node_modules/.cache")).unwrap();
+        assert!(!graph.cache_container(&hard));
+        assert!(!graph.cache_entry(&hard, std::ffi::OsStr::new(".cache")));
+        assert_eq!(
+            graph.check_conflicts().unwrap_err().code,
+            Code::PnportFilesystemConflict
+        );
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
+    use std::process::Command;
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let mut data = Graph::load(&root.path().join(".pnp.cjs"))
+            .unwrap()
+            .snapshot
+            .data;
+        for index in [0, 1] {
+            data["packageRegistryData"][index][1][0][1]["packageDependencies"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(["unplugged", "npm:1"]));
+        }
+        data["packageRegistryData"].as_array_mut().unwrap().push(json!(
+            ["unplugged", [["npm:1", {"packageLocation":"./.yarn/unplugged/cachedep/node_modules/cachedep/","packageDependencies":[],"linkType":"HARD"}]]]
+        ));
+        if split {
+            fs::write(
+                root.path().join(".pnp.data.json"),
+                serde_json::to_vec(&data).unwrap(),
+            )
+            .unwrap();
+        } else {
+            inline(root.path(), &data);
+        }
+        let unplugged = root
+            .path()
+            .join(".yarn/unplugged/cachedep/node_modules/cachedep");
+        fs::create_dir_all(&unplugged).unwrap();
+        fs::write(unplugged.join("file.txt"), b"unplugged bytes").unwrap();
+        std::os::unix::fs::symlink("packages/app", root.path().join("workspace-alias")).unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let executable = root.path().join("cache-probe");
+        for static_binary in [false, true] {
+            if static_binary && cfg!(target_os = "macos") {
+                continue;
+            }
+            let mut compiler = Command::new("cc");
+            compiler
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/tests/cache-conformance.c"
+                ))
+                .args(["-Wall", "-Wextra", "-Wno-deprecated-declarations", "-o"])
+                .arg(&executable);
+            if static_binary {
+                compiler.arg("-static");
+            }
+            assert!(compiler.status().unwrap().success());
+            for _ in 0..2 {
+                let result = Command::new(
+                    std::env::var_os("PNPORT_TEST_BINARY")
+                        .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
+                )
+                .current_dir(root.path())
+                .arg("--cache-dir")
+                .arg(cache.path().join("cache"))
+                .args(["run", "--"])
+                .arg(&executable)
+                .arg(cache.path().join("cache"))
+                .output()
+                .unwrap();
+                assert_eq!(
+                    result.status.code(),
+                    Some(0),
+                    "split={split} static={static_binary}: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert_eq!(result.stdout, b"cache-conformance-ok\n");
+                assert_eq!(
+                    fs::read(root.path().join("node_modules/.vite/results.json")).unwrap(),
+                    b"cache"
+                );
+                let doctor = Command::new(
+                    std::env::var_os("PNPORT_TEST_BINARY")
+                        .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
+                )
+                .current_dir(root.path())
+                .arg("--cache-dir")
+                .arg(cache.path().join("cache"))
+                .args(["doctor", "--json"])
+                .output()
+                .unwrap();
+                assert!(doctor.status.success());
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&doctor.stdout).unwrap()["ready"],
+                    true
+                );
+            }
+        }
+        for name in [
+            "unexpected-package",
+            ".bin",
+            "namespace-file",
+            "namespace-link",
+        ] {
+            use std::time::{Duration, Instant};
+            let mut child = Command::new(
+                std::env::var_os("PNPORT_TEST_BINARY")
+                    .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
+            )
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg("conflict")
+            .arg("workspace-alias/../../node_modules/dep/file.txt")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !root.path().join("entered").exists() {
+                if child.try_wait().unwrap().is_some() || Instant::now() >= deadline {
+                    let _ = child.kill();
+                    panic!(
+                        "Cache conflict probe did not enter: {:?}",
+                        child.wait_with_output().unwrap()
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let namespace = root.path().join("node_modules");
+            let saved = root.path().join("saved-modules");
+            let conflict = namespace.join(name);
+            match name {
+                "namespace-file" => {
+                    fs::rename(&namespace, &saved).unwrap();
+                    fs::write(&namespace, b"user cache must survive").unwrap();
+                }
+                "namespace-link" => {
+                    fs::rename(&namespace, &saved).unwrap();
+                    std::os::unix::fs::symlink("saved-modules", &namespace).unwrap();
+                }
+                _ => {
+                    fs::create_dir(&conflict).unwrap();
+                    fs::write(conflict.join("keep"), b"user cache must survive").unwrap();
+                }
+            }
+            fs::write(root.path().join("go"), b"continue").unwrap();
+            let result = child.wait_with_output().unwrap();
+            assert_eq!(
+                result.status.code(),
+                Some(125),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_FILESYSTEM_CONFLICT"));
+            match name {
+                "namespace-file" | "namespace-link" => {
+                    if name == "namespace-file" {
+                        assert_eq!(fs::read(&namespace).unwrap(), b"user cache must survive");
+                    } else {
+                        assert_eq!(
+                            fs::read_link(&namespace).unwrap(),
+                            Path::new("saved-modules")
+                        );
+                    }
+                    assert_eq!(
+                        fs::read(saved.join(".vite/results.json")).unwrap(),
+                        b"cache"
+                    );
+                    fs::remove_file(&namespace).unwrap();
+                    fs::rename(&saved, &namespace).unwrap();
+                }
+                _ => {
+                    assert_eq!(
+                        fs::read(conflict.join("keep")).unwrap(),
+                        b"user cache must survive"
+                    );
+                    fs::remove_dir_all(conflict).unwrap();
+                }
+            }
+            for marker in ["entered", "go"] {
+                fs::remove_file(root.path().join(marker)).unwrap();
             }
         }
     }

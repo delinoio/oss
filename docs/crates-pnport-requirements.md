@@ -115,7 +115,9 @@ Implement and test:
 
 Dependency views and managed package contents are read-only. Writes through those views fail with appropriate filesystem errors. Ordinary project-source and output paths retain native write behavior.
 
-If a physical `node_modules` conflicts with a virtual directory, report the conflict and stop without modifying or deleting it. Detect conflicts encountered after startup as well.
+Writable SOFT project/workspace roots may contain an empty physical `node_modules` or hidden tool-cache entries. Hidden entries exclude `.bin`, `.`/`..`, and declared dependency/fallback names. Cache reads and writes use native storage; dependency content remains virtual and read-only. Allow structural cache-container creation, but reject removal, rename and metadata mutations of the merged root. Directory listings combine native caches with virtual dependencies. HARD package roots remain read-only.
+
+If any other physical `node_modules` entry conflicts with a virtual directory, report the conflict and stop without modifying or deleting it. Files and symlinked namespace roots are conflicts. Detect conflicts encountered after startup as well.
 
 The filesystem follows the PnP dependency graph, but does not promise the Yarn JavaScript loader’s complete import-boundary enforcement for arbitrary tools. Each tool remains responsible for its language-specific resolution semantics.
 

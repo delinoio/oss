@@ -29,7 +29,7 @@ test("CI and exact-tag release use the package-owned four native hosts", () => {
     const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
     assert.equal(job.env.MACOSX_DEPLOYMENT_TARGET, "15.0");
     const commands = job.steps.map(({ run }) => run ?? "").join("\n");
-    for (const gate of ["cargo test --locked -p pnport", "test:package", "test:typescript", "install-smoke.mjs"]) assert.ok(commands.includes(gate), gate);
+    for (const gate of ["cargo test --locked -p pnport", "test:package", "test:typescript", "test:cache:prepare", "test:cache", "install-smoke.mjs"]) assert.ok(commands.includes(gate), gate);
     assert.ok(commands.includes("-p pnport-core -p pnport-preload"));
     assert.ok(commands.includes('cargo build --locked -p pnport-preload --target "$PNPORT_TARGET"'));
     assert.ok(commands.includes("cargo test --locked -p fspy_preload_unix --features fspy_preload_unix/pnport"));
@@ -109,4 +109,19 @@ test("publication proves the successful exact-tag nonpublishing run before write
   const source = prepare.steps.find(({ id }) => id === "source").run;
   assert.ok(source.includes("await requireTagDryRun({ tag: source.tag, revision }, actionsRead)"));
   assert(source.indexOf("await requireTagDryRun") < source.indexOf("appendFileSync(process.env.GITHUB_OUTPUT"));
+});
+
+
+test("installed tool-cache and offline default Vitest conformance precede native evidence", () => {
+  for (const workflow of [ci, release]) {
+    const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
+    const run = job.steps.find(({ run }) => run?.includes("native_tool_caches_coexist_with_dependencies_and_directory_lifetimes")).run;
+    const install = run.indexOf("scripts/install-smoke.mjs");
+    const native = run.indexOf("--test core native_tool_caches_coexist_with_dependencies_and_directory_lifetimes");
+    const prepare = run.indexOf("test:cache:prepare");
+    const offline = run.indexOf('test:cache "$cache_fixture" "$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport"');
+    assert(install >= 0 && native > install && prepare > native && offline > prepare);
+    const evidence = run.indexOf("scripts/evidence.mjs record");
+    if (evidence >= 0) assert(evidence > offline);
+  }
 });

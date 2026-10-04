@@ -291,12 +291,96 @@ impl Graph {
                 // ZIP-internal node_modules is package content, not a physical
                 // project collision. Workspace/unplugged roots remain checked.
                 if matches!(pnp::fs::VPath::from(path), Ok(pnp::fs::VPath::Native(_))) {
-                    check_conflict(&path.join("node_modules"))?;
+                    self.check_dependency_directory(path)?;
                 }
             }
         }
         Ok(())
     }
+
+    pub fn cache_container(&self, issuer: &Path) -> bool {
+        self.package(issuer)
+            .is_some_and(|package| normalize(&package.package_location) == issuer)
+            && !self.managed(issuer)
+    }
+
+    pub fn cache_entry(&self, issuer: &Path, name: &std::ffi::OsStr) -> bool {
+        self.cache_container(issuer)
+            && name.as_encoded_bytes().starts_with(b".")
+            && !matches!(name.as_encoded_bytes(), b"." | b".." | b".bin")
+            && !self.package(issuer).is_some_and(|package| {
+                package
+                    .package_dependencies
+                    .keys()
+                    .any(|dependency| dependency.as_str() == name)
+            })
+            && !(self.manifest.enable_top_level_fallback
+                && self
+                    .manifest
+                    .fallback_pool
+                    .keys()
+                    .any(|dependency| dependency.as_str() == name))
+    }
+
+    pub fn cache_container_path(&self, path: &Path) -> bool {
+        path.file_name().is_some_and(|name| name == "node_modules")
+            && path
+                .parent()
+                .is_some_and(|parent| self.cache_container(parent))
+    }
+
+    pub fn check_dependency_directory(&self, issuer: &Path) -> Result<()> {
+        let path = issuer.join("node_modules");
+        if !self.cache_container(issuer) {
+            return check_conflict(&path);
+        }
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err(filesystem_conflict()),
+        };
+        if !metadata.is_dir() {
+            return Err(filesystem_conflict());
+        }
+        tracing::trace!(
+            action = "tool_cache_namespace",
+            "Validating a native tool-cache namespace"
+        );
+        for entry in fs::read_dir(&path).map_err(|_| filesystem_conflict())? {
+            let entry = entry.map_err(|_| filesystem_conflict())?;
+            if !self.cache_entry(issuer, &entry.file_name()) {
+                return Err(filesystem_conflict());
+            }
+        }
+        Ok(())
+    }
+
+    /// Check native namespace boundaries before following caller symlinks.
+    /// Otherwise a replaced node_modules link could bypass the virtual view.
+    pub fn check_path_conflicts(&self, path: &Path) -> Result<()> {
+        let mut prefix = PathBuf::new();
+        for component in path.components() {
+            if component.as_os_str() == "node_modules"
+                && !self.is_location_ancestor(&prefix.join(component))
+                && self
+                    .package(&prefix)
+                    .is_some_and(|package| normalize(&package.package_location) == prefix)
+                && matches!(pnp::fs::VPath::from(&prefix), Ok(pnp::fs::VPath::Native(_)))
+            {
+                self.check_dependency_directory(&prefix)?;
+            }
+            prefix.push(component);
+        }
+        Ok(())
+    }
+}
+
+fn filesystem_conflict() -> Error {
+    Error::new(
+        Code::PnportFilesystemConflict,
+        "A physical node_modules entry conflicts with the virtual view; only hidden tool cache \
+         entries are allowed at writable package roots, excluding .bin and dependency names.",
+    )
 }
 
 pub fn check_conflict(path: &Path) -> Result<()> {

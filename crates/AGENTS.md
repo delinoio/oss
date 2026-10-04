@@ -231,6 +231,8 @@
 
 ### pnport Rules
 
+- pnport writable native SOFT roots permit empty `node_modules` and immediate hidden tool-cache entries, excluding `.bin` and graph/fallback dependency names. Share path classification, mutation policy and merged directory enumeration across macOS/Linux; allow only structural root mkdir plus cache mutations. Preserve HARD package protection, descriptor/symlink ownership, native ordering/cookies and startup/runtime conflicts without changing user files. Keep inline/split dynamic/static cache conformance and the existing read-only controls. Follow `docs/crates-pnport-foundation.md`.
+
 - The owner-authorized 2026-10-04 amendment in `docs/project-pnport.md` permits exactly stable 0.1.0 publication with the recorded macOS initialization/SIGHUP failures, separate root clibox watch failure and full-acceptance review deferred. This version-specific exception takes precedence over earlier full-acceptance prerequisites; it does not establish a cause fix or passing skipped checks. Require `pnportReleaseReady: true` plus an exact `pnportReleaseVersion` match; version coordination preserves both fields. Retain all final four-native candidate execution/install/TypeScript/benchmark, integrity, signing, native-before-launcher and immutable-retry gates. New failures still block publication. Keep #958 open, preserve Windows 0.2.0 and immutable 0.1.0-next.1, and disclose unresolved user-facing limits. Remove the stable unreleased notice only after verified publication.
 
 - pnport 0.1.0 supports macOS 15+ and Ubuntu 22.04-equivalent glibc on x64/arm64. Reject older macOS hosts before native command launch, preserve the doctor v1 schema, and validate the supported floor on native CI rather than treating a deployment target as execution evidence.

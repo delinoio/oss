@@ -247,6 +247,7 @@ fn admitted_duplication_preserves_state_on_failure() {
                                 physical: root.path().to_path_buf(),
                                 readonly: true,
                                 virtual_link: false,
+                                kind: super::PathKind::Dependency,
                             },
                         );
                     }
@@ -313,6 +314,7 @@ fn transfer_extents_rejects_managed_secondary_descriptor() {
                             physical: primary_physical,
                             readonly: false,
                             virtual_link: false,
+                            kind: super::PathKind::Native,
                         },
                     );
                     runtime.descriptors.insert(
@@ -322,6 +324,7 @@ fn transfer_extents_rejects_managed_secondary_descriptor() {
                             physical: secondary_physical,
                             readonly: true,
                             virtual_link: false,
+                            kind: super::PathKind::Dependency,
                         },
                     );
                 }
