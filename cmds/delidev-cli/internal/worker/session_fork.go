@@ -143,7 +143,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			output = nil
 			if unpublishedSidechat != nil {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				cleanupErr := manager.DiscardUnpublishedSidechatReference(cleanupCtx, unpublishedSidechatInput, *unpublishedSidechat)
+				cleanupErr := manager.DiscardUnpublishedSidechatReference(cleanupCtx, owner, unpublishedSidechatInput, *unpublishedSidechat)
 				cancel()
 				if cleanupErr != nil {
 					returned = executionCheckpointUncertain()
@@ -181,7 +181,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	var childManifest workspace.Manifest
 	var workspaceSnapshot *workspace.ForkSnapshot
 	if input.Purpose == domain.SidechatFork {
-		childPreparation, childManifest, err = manager.PrepareSidechatReference(ctx, input.ChildSessionID, preparation, manifest)
+		childPreparation, childManifest, err = manager.PrepareSidechatReference(ctx, owner, input.ChildSessionID, preparation, manifest)
 		if err == nil {
 			unpublishedSidechatInput = childPreparation
 			unpublishedSidechat = &childManifest

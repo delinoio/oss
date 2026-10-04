@@ -72,3 +72,5 @@ Compact settled removal proof to one original inventory path per entry, without 
 - OpenCode General Chat Fork uses the closed `opencode-general-chat-v1` copy profile with an independent 8,192-entry/256 MiB bound. Preserve omitted legacy Codex profiles and their bounds; apply the chosen bound to initial inspection, actual copy and both final comparisons. Only independently owned sibling managed session roots may be relocated; no links, Git administration or special files may enter this copy.
 
 - Failed unpublished Sidechat reference preparation rolls back only the original inode-bound metadata through independent bounded cleanup. Foreign or replaced metadata remains pending; referenced parent files are never removed.
+
+- Sidechat preparation synchronizes a private 4 MiB original-job/parent/child/inode-bound claim in sidechat-preparations/ before manifest publication. Failure and restart cleanup remove only matching original metadata; missing, malformed or changed claims cannot adopt existing roots. Published-child deletion retires the matching claim only after metadata absence. Parent files and native thread ownership never follow from this claim.

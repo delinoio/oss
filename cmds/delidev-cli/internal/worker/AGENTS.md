@@ -596,3 +596,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Permanent deletion verifies original OpenCode fork checkpoints with the strict 9 MiB decoder and legacy Codex fork checkpoints with their declared bound. Preserve canonical bytes, digest and original job/runtime/session/machine checks before any removal.
 
 - After a failed native Sidechat fork joins its original process, discard only its original inode-bound unpublished metadata under bounded cleanup. Foreign or replaced metadata remains pending. Revalidate the closed Sidechat native configuration/features immediately before manual compaction claim/send.
+
+- Permanent deletion joins every original process/journal before reconciling unpublished Sidechat metadata through the original job/parent/child claim. Never remove those claim/root paths through generic cleanup. Published-child deletion retires its exact claim only after original metadata removal; completed-proof replay requires all claim and metadata names absent. Decode deletion work with its dedicated 4 MiB bound; the Connect response allowance includes bounded JSON/base64 overhead.

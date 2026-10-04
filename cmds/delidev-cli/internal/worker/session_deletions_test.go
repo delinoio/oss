@@ -442,3 +442,27 @@ func TestRetiringAssignmentRequiresExactAuthenticatedOriginalOwnership(t *testin
 		})
 	}
 }
+
+func TestRetiringAssignmentPreservesMaximumUnpublishedSidechatInventory(t *testing.T) {
+	config, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	document := []byte(`{"original":true}`)
+	w.Copies[0].Digest = executionInputDigest(document)
+	original := w.Copies[0]
+	for len(w.Copies) < 4096 {
+		w.Copies = append(w.Copies, domain.SessionDeletionCopy{JobID: domain.NewID(), Type: domain.ForkSessionJob, Revision: 2, InstanceID: original.InstanceID, Digest: strings.Repeat("a", 64), ExecutionID: domain.NewID(), UnpublishedSidechatID: domain.NewID()})
+	}
+	raw, err := json.Marshal(w)
+	if err != nil || len(raw) <= 1<<20 || len(raw) > domain.MaxSessionDeletionBytes {
+		t.Fatal("fixture does not cover the bounded large inventory", len(raw), err)
+	}
+	client := &retiringAssignmentClient{response: &pb.ListSessionDeletionWorkResponse{WorkJson: [][]byte{raw}}}
+	credential := Credential{ServerID: w.ServerID, DeviceID: w.DeviceID, MachineID: w.MachineID}
+	resource := &pb.Resource{Id: string(original.JobID), SessionId: string(w.SessionID), Revision: original.Revision, DocumentJson: document}
+	if !retiringAssignment(context.Background(), config, client, credential, original.InstanceID, resource) {
+		t.Fatal("large original inventory stranded the joined controller")
+	}
+	resource.Revision++
+	if retiringAssignment(context.Background(), config, client, credential, original.InstanceID, resource) {
+		t.Fatal("large envelope lost exact claimed revision")
+	}
+}

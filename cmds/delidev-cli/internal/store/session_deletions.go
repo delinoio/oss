@@ -96,11 +96,11 @@ func (s *Store) readSessionDeletion(id domain.ID) (SessionDeletion, error) {
 	if id.Validate() != nil {
 		return v, domain.SessionDeletionPending()
 	}
-	b, e := security.ReadPrivate(s.sessionDeletionPath(id), 1<<20)
+	b, e := security.ReadPrivate(s.sessionDeletionPath(id), domain.MaxSessionDeletionBytes)
 	if e != nil {
 		return v, e
 	}
-	if domain.Decode(b, &v) != nil || v.SessionID != id || v.validate() != nil {
+	if domain.DecodeWithLimit(b, &v, domain.MaxSessionDeletionBytes) != nil || v.SessionID != id || v.validate() != nil {
 		return v, domain.SessionDeletionPending()
 	}
 	return v, nil
@@ -110,7 +110,7 @@ func (s *Store) writeSessionDeletion(v SessionDeletion) error {
 		return e
 	}
 	b, e := json.Marshal(v)
-	if e != nil || len(b) > 1<<20 {
+	if e != nil || len(b) > domain.MaxSessionDeletionBytes {
 		return domain.SessionDeletionPending()
 	}
 	return storageError(security.WriteAtomic(s.sessionDeletionPath(v.SessionID), b))
@@ -872,6 +872,9 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			// Definite failed/canceled forks never published a child. Their empty or
 			// partially prepared private runtime remains owned by the source job.
 			copy.ExecutionID = input.RuntimeID
+			if input.Purpose == domain.SidechatFork {
+				copy.UnpublishedSidechatID = input.ChildSessionID
+			}
 		}
 		if j.Type == domain.PrepareWorkspaceJob {
 			h := sha256.Sum256(original.Input)

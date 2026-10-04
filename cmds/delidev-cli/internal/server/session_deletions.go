@@ -90,7 +90,10 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 			}
 			for _, copy := range w.Work.Copies {
 				if string(copy.JobID) == req.Msg.OriginalJobId {
-					raw, _ := json.Marshal(w.Work)
+					raw, err := json.Marshal(w.Work)
+					if err != nil || len(raw) > domain.MaxSessionDeletionBytes {
+						return nil, rpc.Error(domain.SessionDeletionPending(), c)
+					}
 					out.WorkJson = append(out.WorkJson, raw)
 					break
 				}
@@ -144,7 +147,7 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 		for _, w := range v.Workers {
 			if w.Work.DeviceID == actor.DeviceID && w.Work.MachineID == actor.MachineID && !w.Acknowledged {
 				b, _ := json.Marshal(w.Work)
-				if len(out.WorkJson) == 20 || size+len(b) > 1<<20 {
+				if len(out.WorkJson) == 20 || size+len(b) > domain.MaxSessionDeletionBytes {
 					if len(out.WorkJson) == 0 {
 						return nil, rpc.Error(domain.SessionDeletionPending(), c)
 					}

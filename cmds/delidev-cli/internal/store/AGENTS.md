@@ -212,3 +212,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
 
 - Parent permanent deletion capacity counts only newly created dependent journals; retained child journals preserve their exact operation/request identities without consuming a second slot.
+
+- Permanent deletion derives unpublished Sidechat child IDs only from original immutable failed/canceled Fork assignments. Persist the complete synchronized plan within its 4 MiB bound, preserving legacy omitted fields and original request/digest identities; no current child lookup can reconstruct ownership.

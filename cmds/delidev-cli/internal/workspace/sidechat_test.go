@@ -42,7 +42,7 @@ func TestSidechatReferenceRetainsParentOwnershipUntilChildDeletion(t *testing.T)
 			if err := os.WriteFile(file, []byte("before\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			input, child, err := m.PrepareSidechatReference(ctx, domain.NewID(), sourceInput, source)
+			input, child, err := m.PrepareSidechatReference(ctx, domain.NewID(), domain.NewID(), sourceInput, source)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -137,7 +137,7 @@ func TestSidechatReferenceRejectsChangedOrReplacedAuthority(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			input, child, err := m.PrepareSidechatReference(ctx, domain.NewID(), sourceInput, source)
+			input, child, err := m.PrepareSidechatReference(ctx, domain.NewID(), domain.NewID(), sourceInput, source)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -65,6 +65,15 @@ references/pending state until that join; unavailable/offline resources remain
 visible rather than being declared deleted. Deleting the child alone preserves
 every parent file, native history and independent ordinary Fork.
 
+Before publishing child reference metadata, synchronize a private 4 MiB claim bound
+to the original Fork job, parent, child and native metadata inode. Independent
+failure cleanup and permanent parent deletion after process-owner joins use only
+that claim. Restart cannot adopt an existing child root from an absent, malformed
+or changed claim. The server retains the original unpublished child ID in the
+immutable Fork copy envelope, without paths. Published-child deletion retires
+its matching claim only after original metadata removal. Completed cleanup proof
+checks both names remain absent; replacement metadata stays protected.
+
 Parent and child deletion plans retain complete immutable descendant obligations
 outside rollbackable SQLite. The original synchronized parent intent precedes
 child pause/cancellation and is the only source for reconstructing a lost child
