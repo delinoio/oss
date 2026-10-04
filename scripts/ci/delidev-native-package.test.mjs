@@ -40,6 +40,7 @@ test('workspace investigation is explicit and excludes package assembly', () => 
     description: 'Run only the Windows workspace removal regressions', type: 'boolean', default: false,
   });
   assert.equal(workflow.jobs.plan.if, '${{ !inputs.workspace_fixture_only }}');
+  assert.equal(workflow.concurrency.group, "delidev-native-dry-run-${{ github.ref }}-${{ inputs.workspace_fixture_only && 'workspace-fixtures' || 'package' }}");
   assert.equal(workflow.jobs.package.if, '${{ !inputs.workspace_fixture_only }}');
   const fixtures = workflow.jobs['workspace-fixtures'];
   assert.equal(fixtures.if, '${{ inputs.workspace_fixture_only }}');
