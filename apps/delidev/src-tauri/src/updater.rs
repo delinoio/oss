@@ -95,17 +95,28 @@ impl Prepared {
         Ok(())
     }
 }
+pub struct DesktopUpdateRequest<'a> {
+    pub server: &'a str,
+    pub id: &'a str,
+    pub revision: u64,
+    pub generation: &'a str,
+    pub action: &'a str,
+    pub outcome: Option<Phase>,
+}
 impl Connector {
     pub fn desktop_update(
         &self,
         expected: Option<&SavedConnection>,
-        server: &str,
-        id: &str,
-        revision: u64,
-        generation: &str,
-        action: &str,
-        outcome: Option<Phase>,
+        request: DesktopUpdateRequest<'_>,
     ) -> Result<Prepared> {
+        let DesktopUpdateRequest {
+            server,
+            id,
+            revision,
+            generation,
+            action,
+            outcome,
+        } = request;
         canonical_id(server)?;
         canonical_id(id)?;
         canonical_id(generation)?;
@@ -289,6 +300,7 @@ fn stage_verified(p: &Prepared) -> Result<Prepared> {
 // Commands and destinations are native-selected; no argument, environment or
 // path from the renderer reaches an OS installer. Unknown completion is
 // retained.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn command(program: &Path, args: &[OsString], exiting: &AtomicBool, seconds: u64) -> Result<()> {
     let mut cmd = Command::new(program);
     cmd.args(args)
@@ -582,7 +594,6 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
     if fs::symlink_metadata(&backup).is_ok() || fs::symlink_metadata(&staged).is_ok() {
         return Phase::Uncertain;
     }
-    use std::os::unix::fs::PermissionsExt;
     let copied = (|| -> std::io::Result<()> {
         let mut source = File::open(&p.artifact_path)?;
         let mut dest = fs::OpenOptions::new()
