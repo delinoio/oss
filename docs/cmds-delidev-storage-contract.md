@@ -44,7 +44,7 @@ managed-account ownership and cleanup boundary from issue #1095.
 Migration 29 is reserved for the private `account_oauth_attempts` table under
 [issue #1146](https://github.com/delinoio/oss/issues/1146), following real
 migrations 26–28. Establish the reservation on main before dependent
-implementation; the executable sequence still ends at 25. Do not create empty
+implementation; the executable sequence ends at 28 until OAuth is implemented. Do not create empty
 predecessors, reuse an allocated version or activate this table early.
 
 The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the

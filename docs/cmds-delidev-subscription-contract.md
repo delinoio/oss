@@ -4,7 +4,7 @@
 
 Issue #1095 implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. The explicitly selected paired Worker owns installed native Codex processes and private authentication files. The complete product requirements remain in [issue #964's snapshot](cmds-delidev-requirements.md).
 
-Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens`, Claude subscriptions and concurrent use of one managed bundle are excluded. Desktop login controls and native-owner quota/reset-credit operations are composed in the approved integrated PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
+Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens`, Claude subscriptions and concurrent use of one managed bundle are excluded. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
 
 ## Runtime and Language
 
