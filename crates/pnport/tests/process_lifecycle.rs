@@ -1410,6 +1410,41 @@ fn descendant_foreground_group_restores_the_terminal_before_cleanup() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn exited_descendant_foreground_group_restores_the_terminal() {
+    let (mut fixture, mut terminal) = Fixture::terminal("child-exit");
+    fixture.wait_marker("root.group");
+    terminal.write_all(b"first\n").unwrap();
+    fixture.wait_marker("terminal.first");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.empty-group").is_file());
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn a_live_unrelated_foreground_is_preserved_after_owned_descendant_exit() {
+    let (mut fixture, mut terminal) = Fixture::terminal("unrelated-foreground");
+    fixture.wait_marker("root.group");
+    terminal.write_all(b"first\n").unwrap();
+    fixture.wait_marker("terminal.first");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.empty-group").is_file());
+    assert!(fixture.root.path().join("terminal.preserved").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn an_unclaimed_background_job_preserves_an_empty_foreground() {
+    let (mut fixture, _terminal) = Fixture::terminal("background-empty");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.preserved").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn replacement_environment_cannot_override_the_pinned_owner_key() {
     let mut fixture = Fixture::new("spoof-key", false);
     fixture.ready();

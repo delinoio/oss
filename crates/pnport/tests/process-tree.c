@@ -90,7 +90,14 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
-    if (!strcmp(mode, "terminal-child-group")) {
+    if (!strcmp(mode, "terminal-background-empty")) {
+        FILE *group = fopen("root.group", "w");
+        if (!group) return 109;
+        fprintf(group, "%d", getpgrp());
+        fclose(group);
+        return 23;
+    }
+    if (!strcmp(mode, "terminal-child-group") || !strcmp(mode, "terminal-child-exit") || !strcmp(mode, "terminal-unrelated-group")) {
         if (!strcmp(role, "leaf")) {
             char ready;
             if (read(9, &ready, 1) != 1) return 99;
@@ -104,6 +111,7 @@ int main(int argc, char **argv) {
             marker = fopen("terminal.first", "w");
             if (!marker) return 93;
             fclose(marker);
+            if (strcmp(mode, "terminal-child-group")) return 0;
             for (;;) pause();
         }
         FILE *marker = fopen("root.group", "w");
@@ -128,6 +136,23 @@ int main(int argc, char **argv) {
         // SIGCONT before an initial SIGTTIN stop would create a fixture race.
         if (write(start[1], "1", 1) != 1) return 97;
         close(start[1]);
+        if (strcmp(mode, "terminal-child-group")) {
+            int status;
+            if (waitpid(worker, &status, 0) != worker || !WIFEXITED(status) || WEXITSTATUS(status)) return 105;
+            // Native Darwin retains the tty's reference to an empty group.
+            // Establish that state before the root exits, independent of any
+            // timing in pnport's ownership inventory or cleanup.
+            errno = 0;
+            if (tcgetpgrp(0) != worker || !kill(-worker, 0) || errno != ESRCH) return 106;
+            marker = fopen("terminal.empty-group", "w");
+            if (!marker) return 107;
+            fclose(marker);
+            if (!strcmp(mode, "terminal-unrelated-group")) {
+                for (int attempt = 0; attempt < 500 && access("terminal.foreign", F_OK); attempt++) usleep(10000);
+                if (access("terminal.foreign", F_OK)) return 108;
+            }
+            return 23;
+        }
         for (int attempt = 0; attempt < 1000; attempt++) {
             if (!access("terminal.first", F_OK)) return 23;
             usleep(10000);

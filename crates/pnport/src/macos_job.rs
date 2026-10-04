@@ -2,6 +2,7 @@
 //! Foreground terminal ownership uses the caller's existing controlling tty.
 
 use std::{
+    cell::Cell,
     fs::{File, OpenOptions},
     io, mem,
     os::{fd::AsRawFd, unix::process::CommandExt},
@@ -28,6 +29,7 @@ pub struct Job {
     terminal: Option<Terminal>,
     group: i32,
     detached: bool,
+    claimed_foreground: Cell<bool>,
 }
 
 impl Job {
@@ -40,6 +42,7 @@ impl Job {
                 terminal: None,
                 group,
                 detached: false,
+                claimed_foreground: Cell::new(false),
             });
         }
         let file = match OpenOptions::new().read(true).write(true).open("/dev/tty") {
@@ -54,6 +57,7 @@ impl Job {
                     terminal: None,
                     group,
                     detached: false,
+                    claimed_foreground: Cell::new(false),
                 });
             }
             Err(_) => return Err(failure()),
@@ -85,6 +89,7 @@ impl Job {
             }),
             group,
             detached: false,
+            claimed_foreground: Cell::new(false),
         };
         job.claim()?;
         Ok(job)
@@ -105,8 +110,13 @@ impl Job {
                 Err(failure())
             };
         }
-        if foreground == from && unsafe { libc::tcsetpgrp(fd, to) } != 0 {
-            return Err(failure());
+        if foreground == from {
+            if unsafe { libc::tcsetpgrp(fd, to) } != 0 {
+                return Err(failure());
+            }
+            if from == terminal.caller_group && to == self.group {
+                self.claimed_foreground.set(true);
+            }
         }
         Ok(())
     }
@@ -135,15 +145,31 @@ impl Job {
     pub fn restore_owned(&self, owner: &mut crate::macos_owner::Owner) -> Result<()> {
         if let Some(terminal) = &self.terminal {
             let foreground = unsafe { libc::tcgetpgrp(terminal.file.as_raw_fd()) };
-            if foreground > 0
-                && foreground != self.group
-                && foreground != terminal.caller_group
-                && owner.owns_group(foreground)?
-            {
-                return self.transfer(foreground, terminal.caller_group);
+            if foreground > 0 && foreground != self.group && foreground != terminal.caller_group {
+                // Darwin's tty retains a reference to an exited group's object
+                // and reserves its PGID until foreground is replaced. Signal 0
+                // is only an existence probe: reclaim a vacant foreground only
+                // after this job actually claimed the tty, never from a live
+                // unrelated job or from a background launch that never did.
+                let vacant = self.claimed_foreground.get()
+                    && unsafe { libc::kill(-foreground, 0) } == -1
+                    && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+                if vacant || owner.owns_group(foreground)? {
+                    self.transfer(foreground, terminal.caller_group)?;
+                    if vacant {
+                        tracing::debug!(
+                            action = "macos_job_vacant_foreground_restored",
+                            "Restored the caller after foreground exit"
+                        );
+                    }
+                    self.claimed_foreground.set(false);
+                    return Ok(());
+                }
             }
         }
-        self.restore()
+        self.restore()?;
+        self.claimed_foreground.set(false);
+        Ok(())
     }
 
     pub fn poll_stop(
