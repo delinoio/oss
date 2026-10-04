@@ -4,10 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+type nativeHost struct {
+	executable string
+	log        *slog.Logger
+}
 
 // Process identities are compared with kernel start times. They stay private;
 // neither command arguments nor process names establish execution ownership.
@@ -366,7 +372,7 @@ func (h *HostDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 func (b *ManagedImageBuilder) prepareHost(ctx context.Context, c Config, p Pool, a RunnerArtifact, release RunnerRelease) (Pool, error) {
 	native := b.Host
 	if native == nil {
-		native = nativeHost{}
+		native = nativeHost{log: b.Log}
 	}
 	if err := native.Platform(ctx); err != nil {
 		return p, err

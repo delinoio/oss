@@ -47,6 +47,9 @@ func printHelp(out io.Writer) {
 }
 
 func Execute(args []string, out, errOut io.Writer) int {
+	if len(args) == 2 && args[0] == "__host-exec" {
+		return hostExecute(args[1])
+	}
 	if len(args) == 1 && args[0] == "__host-supervisor" {
 		return hostSupervise()
 	}

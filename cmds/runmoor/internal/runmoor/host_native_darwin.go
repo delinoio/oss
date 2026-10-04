@@ -19,8 +19,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type nativeHost struct{}
-
 func hostPlatform(ctx context.Context) error {
 	if runtime.GOARCH != "arm64" {
 		return problem(ErrPlatform, "Host execution requires Apple Silicon.", "Use macOS 14+ arm64.")
@@ -52,43 +50,78 @@ func hostRenameNoReplace(root *os.Root, from, to string) error {
 	defer dir.Close()
 	return unix.RenameatxNp(int(dir.Fd()), from, int(dir.Fd()), to, unix.RENAME_EXCL)
 }
-func (nativeHost) Version(ctx context.Context, root *os.Root, version string) error {
-	dir, err := root.Open(".")
+func (h nativeHost) Version(ctx context.Context, root *os.Root, version string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	d, err := hostDirectoryMarker(root)
 	if err != nil {
 		return hostOwnership()
 	}
-	defer dir.Close()
-	cmd := exec.CommandContext(ctx, "/dev/fd/3/runner/bin/Runner.Listener", "--version")
-	cmd.ExtraFiles = []*os.File{dir}
-	// Go changes directory before remapping ExtraFiles, so use the parent
-	// descriptor for cwd and child fd 3 only for the executable path.
-	cmd.Dir = fmt.Sprintf("/dev/fd/%d/runner", dir.Fd())
+	cmd, outcome, closeFiles, err := hostRunnerCommand(ctx, h.executable, hostExecVersion, root, HostBootstrap{Directory: d})
+	if err != nil {
+		return hostExecProblem(hostExecSpawn)
+	}
+	defer closeFiles()
 	cmd.Env = hostEnvironment(root.Name())
 	cmd.Stderr = io.Discard
 	out := &boundedBuffer{Limit: 4096}
 	cmd.Stdout = out
-	if err := cmd.Run(); err == nil {
-		for _, line := range strings.Split(string(out.Bytes()), "\n") {
-			if strings.TrimSpace(line) == version {
-				return nil
-			}
+	startErr := cmd.Start()
+	closeHostChildFiles(cmd)
+	err = startErr
+	if startErr == nil {
+		err = cmd.Wait()
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	reason := hostReadExecOutcome(outcome)
+	if err != nil || reason != hostExecOK {
+		if startErr != nil {
+			reason = hostExecSpawn
+		} else if reason == hostExecOK {
+			reason = hostExecRun
+		}
+		if h.log != nil {
+			h.log.Warn("host_runner_execution_failed", "stage", hostExecVersion, "reason", reason.String())
+		}
+		return hostExecProblem(reason)
+	}
+	for _, line := range strings.Split(string(out.Bytes()), "\n") {
+		if strings.TrimSpace(line) == version {
+			return nil
 		}
 	}
-	return problem(ErrRunnerVersion, "Host runner distribution version validation failed.", "Verify the official macOS arm64 runner and installed runtime dependencies, then retry the update.")
+	if h.log != nil {
+		h.log.Warn("host_runner_version_mismatch", "stage", hostExecVersion)
+	}
+	return problem(ErrRunnerVersion, "Host runner reported an unexpected distribution version.", "Retry the managed runner update with the selected official macOS arm64 release.")
 }
 func nativeHostProcess(pid int) (HostProcess, error) {
-	info, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
-	if errors.Is(err, unix.ESRCH) || err == nil && int(info.Proc.P_pid) != pid {
+	// Darwin returns an empty successful sysctl result for an exited PID.
+	// SysctlKinfoProc turns that into EIO; the slice API preserves absence without
+	// conflating a real inspection failure with confirmed process termination.
+	entries, err := unix.SysctlKinfoProcSlice("kern.proc.pid", pid)
+	if errors.Is(err, unix.ESRCH) || err == nil && len(entries) == 0 {
 		return HostProcess{}, os.ErrNotExist
 	}
 	if err != nil {
 		return HostProcess{}, err
 	}
+	if len(entries) != 1 || int(entries[0].Proc.P_pid) != pid {
+		return HostProcess{}, hostOwnership()
+	}
+	info := entries[0]
 	if info.Eproc.Ucred.Uid != uint32(os.Geteuid()) {
 		return HostProcess{}, hostOwnership()
 	}
-	start, err := tartRunProcessStartIdentity(pid)
-	return HostProcess{PID: pid, Start: start, Group: int(info.Eproc.Pgid)}, err
+	started := info.Proc.P_starttime
+	if started.Sec < 0 || started.Usec < 0 || started.Usec >= 1_000_000 || started.Sec == 0 && started.Usec == 0 {
+		return HostProcess{}, hostOwnership()
+	}
+	start := fmt.Sprintf("darwin:%d:%d", started.Sec, started.Usec)
+	return HostProcess{PID: pid, Start: start, Group: int(info.Eproc.Pgid)}, nil
 }
 func (nativeHost) Alive(p HostProcess) (bool, error) {
 	if p.PID <= 0 || p.Start == "" {
@@ -153,11 +186,11 @@ func signalHostProcess(p HostProcess, force bool) error {
 	return err
 }
 func (nativeHost) Stop(p HostProcess) error { return signalHostProcess(p, false) }
-func (nativeHost) Launch(ctx context.Context, root *os.Root, in HostBootstrap, publish func(HostProcess) error) error {
+func (h nativeHost) Launch(ctx context.Context, root *os.Root, in HostBootstrap, publish func(HostProcess) error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	exe, err := os.Executable()
+	exe, err := hostExecutable(h.executable)
 	if err != nil {
 		return hostPending()
 	}
@@ -210,48 +243,44 @@ func (nativeHost) Launch(ctx context.Context, root *os.Root, in HostBootstrap, p
 	return nil
 }
 
-type nativeHostWorker struct{}
+type nativeHostWorker struct {
+	executable string
+}
 
-func (nativeHostWorker) Start(ctx context.Context, root *os.Root, in HostBootstrap) (HostProcess, <-chan int, error) {
+func (h nativeHostWorker) Start(ctx context.Context, root *os.Root, in HostBootstrap) (HostProcess, <-chan int, error) {
 	// Read-only inspection does not migrate state. Reject a durable stop or later
 	// lifecycle before spawning, including a force-stop during private bootstrap.
-	s, err := ReadSnapshot(Config{Storage: in.Storage})
-	if err != nil {
+	if err := hostWorkerAdmission(ctx, in); err != nil {
 		return HostProcess{}, nil, err
 	}
-	r := s.Runners[in.Directory.ID]
-	if r == nil || r.Forced || r.Phase != Preparing || s.HostExecutions[r.ID] == nil || s.Installation != in.Directory.Installation || s.HostDirectories[r.ID] == nil || *s.HostDirectories[r.ID] != in.Directory {
-		return HostProcess{}, nil, staleUpdate()
-	}
-	dir, err := root.Open(".")
+	// The detached supervisor owns cancellation and cleanup after Start succeeds.
+	cmd, outcome, closeFiles, err := hostRunnerCommand(context.Background(), h.executable, hostExecWorker, root, in)
 	if err != nil {
-		return HostProcess{}, nil, err
+		return HostProcess{}, nil, hostExecProblem(hostExecSpawn)
 	}
-	defer dir.Close()
-	cmd := exec.Command("/dev/fd/3/runner/run.sh", "--jitconfig", in.JIT)
-	cmd.ExtraFiles = []*os.File{dir}
-	// Go changes directory before remapping ExtraFiles, so use the parent
-	// descriptor for cwd and child fd 3 only for the executable path.
-	cmd.Dir = fmt.Sprintf("/dev/fd/%d/runner", dir.Fd())
 	cmd.Env = hostEnvironment(hostDirectoryPath(Config{Storage: in.Storage}, in.Directory))
 	detach(cmd)
 	null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
+		closeFiles()
 		return HostProcess{}, nil, err
 	}
 	defer null.Close()
-	cmd.Stdin = null
 	cmd.Stdout = null
 	cmd.Stderr = null
 	if ctx.Err() != nil {
+		closeFiles()
 		return HostProcess{}, nil, ctx.Err()
 	}
 	if err = cmd.Start(); err != nil {
-		return HostProcess{}, nil, err
+		closeFiles()
+		return HostProcess{}, nil, hostExecProblem(hostExecSpawn)
 	}
+	closeHostChildFiles(cmd)
 	process, identityErr := nativeHostProcess(cmd.Process.Pid)
 	done := make(chan int, 1)
 	go func() {
+		defer closeFiles()
 		err := cmd.Wait()
 		code := 0
 		if err != nil {
@@ -259,6 +288,10 @@ func (nativeHostWorker) Start(ctx context.Context, root *os.Root, in HostBootstr
 			if cmd.ProcessState != nil {
 				code = cmd.ProcessState.ExitCode()
 			}
+		}
+		if reason := hostReadExecOutcome(outcome); reason != hostExecOK {
+			// Private status retains a bounded failure stage, never raw stderr.
+			code = 100 + int(reason)
 		}
 		done <- code
 	}()
@@ -284,18 +317,12 @@ func (nativeHostWorker) Deadline(in HostBootstrap, previous time.Time) time.Time
 func hostSupervise() int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	root, err := os.OpenRoot("/dev/fd/3")
+	root, d, err := hostInheritedRoot()
 	if err != nil {
 		return 1
 	}
 	defer root.Close()
-	var d HostDirectory
-	b, err := hostRootRead(root, hostOwnerFile, 4096)
-	if err != nil || json.Unmarshal(b, &d) != nil || !validHostDirectory(d, d.Installation) || d.Kind != HostWorkspace {
-		return 1
-	}
-	info, err := root.Stat(".")
-	if err != nil || hostFileIdentity(info) != d.Identity {
+	if d.Kind != HostWorkspace {
 		return 1
 	}
 	process, err := nativeHostProcess(os.Getpid())
