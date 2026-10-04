@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
@@ -176,8 +177,13 @@ func TestPublicCompactionAtomicReceiptAndFIFO(t *testing.T) {
 				t.Fatal("action relay registration", e)
 			}
 			lease, e := f.service.executionAuthority.Acquire(ctx, token)
-			if e != nil || lease.Scope.ExecutionID != input.ActionID || lease.Scope.AccountID != input.Assignment.AccountID || len(lease.Scope.Operations) != 1 || lease.Scope.Operations[0] != apiproxy.MessageCreate {
+			if e != nil || lease.Scope.ExecutionID != input.ActionID || lease.Scope.AccountID != input.Assignment.AccountID || lease.Scope.Harness != domain.ClaudeCode || len(lease.Scope.Operations) != 1 || lease.Scope.Operations[0] != apiproxy.MessageCreate {
 				t.Fatal("manual action changed relay authority", e)
+			}
+			diagnosticID := domain.NewID()
+			attempted := false
+			if err := lease.PublishDiagnostic(ctx, domain.RequestDiagnostic{ID: diagnosticID, CorrelationID: diagnosticID, SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, ModelID: lease.Scope.ModelID, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: domain.DiagnosticMessage, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, ObservedAt: time.Now().UTC(), HTTPAttempted: &attempted}); err != nil {
+				t.Fatal("manual compaction could not publish its initial diagnostic", err)
 			}
 			lease.Release()
 			canceled := strings.HasPrefix(scenario, "claimed-")
