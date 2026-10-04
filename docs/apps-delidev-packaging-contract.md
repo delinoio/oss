@@ -12,7 +12,7 @@ updater trust and Windows/Linux execution remain separate requirements.
 
 Node.js 24 orchestrates the existing pinned Rust/Tauri CEF packager and Go sidecar.
 CI installs the repository's `nightly-2026-01-01` Rust toolchain and explicitly
-selects the matrix's native host, including Windows arm64.
+selects the matrix's native host, including Windows arm64. On macOS it installs both Apple Rust target standard libraries because the pinned upstream bundler builds both embedded CEF helper variants; each final package still verifies only the selected native architecture.
 The Tauri revision remains `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; `cef`
 150.0.0 resolves to native CEF 150.0.10 / Chromium 150.0.7871.101. No packaging
 operation starts a DeliDev server, Worker, harness or account login.
@@ -56,7 +56,7 @@ The pinned Debian bundler moves the main binary to
 `/usr/bin/delidev`. Native sidecar resolution recognizes only that exact installed
 layout; development/AppImage paths retain adjacent resolution with no PATH lookup.
 
-Before notice inspection, both dry-run paths run the pinned package-local Tauri CLI build with `--no-bundle`. That CLI owns the versioned `tauri-cef` cache; a bare Cargo build downloads into its own build output and cannot prove the package cache is prepared. Preparation failure stops the sequence. The later installer build retains full original distribution identity and notice-byte verification.
+Before notice inspection, both dry-run paths run the pinned package-local Tauri CLI build with `--no-bundle`. That CLI owns the versioned `tauri-cef` cache; a bare Cargo build downloads into its own build output and cannot prove the package cache is prepared. Preparation failure stops the sequence. The later installer build retains full original distribution identity and notice-byte verification. Original Chromium notices are copied unchanged to ignored `target/delidev-package-notices/<target>/` and supplied as a checkout-relative resource key; this avoids the pinned Windows resolver removing an absolute cache drive prefix. Packaged notice bytes remain compared against the original verified CEF cache.
 
 Every verified package contains unchanged Apache `LICENSE`/`NOTICE`, the original
 CEF license and the exact distribution's Chromium `CREDITS.html`. Distribution

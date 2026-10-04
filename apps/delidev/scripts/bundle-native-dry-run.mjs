@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { dryRunEnvironment, verifyBundle } from "./bundle-macos-dry-run.mjs";
-import { targets, selectTarget, acquireNativeBuildLock, verifyPackageRevision, cefCredits, prepareCefCredits, packageResources, verifyNotices, verifyNativePayload, findOneFile } from "./native-package.mjs";
+import { targets, selectTarget, acquireNativeBuildLock, verifyPackageRevision, cefCredits, prepareCefCredits, cefResourcePath, packageResources, verifyNotices, verifyNativePayload, findOneFile } from "./native-package.mjs";
 import { prepareAssets } from "./prepare-assets.mjs";
 import { exitLikeChild } from "../../../scripts/spawn-dev-server.mjs";
 
@@ -86,7 +86,7 @@ async function main() {
       const credits = prepareCefCredits(selected, env, (command, arguments_) => run(command, arguments_, true));
       resources = packageResources(app, root, credits);
       const kind = selected.platform === "win32" ? "msi" : "deb";
-      const config = JSON.stringify({ bundle: { resources: { [credits]: "notices/Chromium-CREDITS.html" } } });
+      const config = JSON.stringify({ bundle: { resources: { [cefResourcePath(app, root, selected, credits)]: "notices/Chromium-CREDITS.html" } } });
       const started = Date.now();
       run("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--target", selected.target, "--bundles", kind, "--features", "desktop-host,custom-protocol,tauri/cef", "--config", config], true);
       const directory = join(root, "target", selected.target, "release/bundle", kind);

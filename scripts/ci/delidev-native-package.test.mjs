@@ -23,6 +23,9 @@ test('DeliDev package dry runs cannot obtain publication or production signing a
   const packaging = workflow.jobs.package;
   assert.equal(packaging.steps.find(step => step.uses?.startsWith('dtolnay/rust-toolchain@')).with.toolchain, readFileSync('rust-toolchain', 'utf8').trim());
   assert.ok(packaging.steps.some(step => step.run === 'rustup set default-host ${{ matrix.target }}'));
+  const helperTargets = packaging.steps.find(step => step.name === 'Install both pinned macOS CEF helper targets');
+  assert.equal(helperTargets.if, "runner.os == 'macOS'");
+  assert.equal(helperTargets.run, 'rustup target add aarch64-apple-darwin x86_64-apple-darwin');
   assert.equal(packaging['runs-on'], '${{ matrix.runner }}');
   assert.equal(packaging.strategy['fail-fast'], false);
   assert.ok(packaging.steps.some(step => step.uses?.startsWith('actions/checkout@') && step.with.lfs === true));
