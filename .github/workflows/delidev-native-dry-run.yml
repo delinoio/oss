@@ -2,6 +2,11 @@ name: DeliDev native package dry run
 
 on:
   workflow_dispatch:
+    inputs:
+      workspace_fixture_only:
+        description: Run only the Windows workspace removal regressions
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -12,6 +17,7 @@ concurrency:
 
 jobs:
   plan:
+    if: ${{ !inputs.workspace_fixture_only }}
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}
@@ -24,6 +30,7 @@ jobs:
         run: echo "matrix=$(node apps/delidev/scripts/bundle-native-dry-run.mjs --plan)" >> "$GITHUB_OUTPUT"
 
   package:
+    if: ${{ !inputs.workspace_fixture_only }}
     name: ${{ matrix.target }} keyless package
     needs: plan
     timeout-minutes: 120
@@ -73,3 +80,17 @@ jobs:
           path: target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/
           if-no-files-found: error
           retention-days: 7
+
+  workspace-fixtures:
+    if: ${{ inputs.workspace_fixture_only }}
+    name: Windows workspace removal fixtures
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with: { lfs: true, persist-credentials: false }
+      - uses: actions/setup-go@v6
+        with: { go-version-file: go.mod, cache: false }
+      - name: Verify native namespace claims and inventory bounds
+        shell: pwsh
+        run: go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable)$' -count=1 -timeout=20m -v

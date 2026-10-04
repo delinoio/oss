@@ -16,6 +16,7 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 		for _, mutation := range []string{"add-root", "add-child", "replace", "modify", "replace-after-claim", "last-root"} {
 			t.Run(string(action)+"/"+mutation, func(t *testing.T) {
 				m, prepare, manifest := chatExecutionFixture(t)
+				captureStorageFailureLogs(t, m)
 				if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
 					t.Fatal(err)
 				}

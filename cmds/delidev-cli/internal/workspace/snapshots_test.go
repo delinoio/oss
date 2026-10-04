@@ -16,15 +16,20 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-func snapshotRequest(t *testing.T, m *Manager, multi bool) (StorageRequest, []string) {
+func captureStorageFailureLogs(t *testing.T, m *Manager) {
 	t.Helper()
 	var diagnostics bytes.Buffer
-	m.Logger = slog.New(slog.NewTextHandler(&diagnostics, nil))
+	m.Logger = slog.New(slog.NewJSONHandler(&diagnostics, nil))
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Log(diagnostics.String())
 		}
 	})
+}
+
+func snapshotRequest(t *testing.T, m *Manager, multi bool) (StorageRequest, []string) {
+	t.Helper()
+	captureStorageFailureLogs(t, m)
 	first, err := filepath.EvalSymlinks(repository(t))
 	if err != nil {
 		t.Fatal(err)
@@ -784,6 +789,7 @@ func TestSnapshotCleanupNeverAdoptsRacedSourceWrites(t *testing.T) {
 
 func TestSnapshotMaximumInventoryRemainsDeletable(t *testing.T) {
 	m := manager(t)
+	captureStorageFailureLogs(t, m)
 	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
 	manifest, err := m.Prepare(context.Background(), prepare)
 	if err != nil {

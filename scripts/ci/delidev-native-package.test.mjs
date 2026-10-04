@@ -49,3 +49,19 @@ test('DeliDev updater inputs retain the one six-target matrix and keyless bounda
  assert.ok(steps.findIndex(v=>v.run?.includes('bundle:updater-dry-run'))<steps.findIndex(v=>v.uses?.startsWith('actions/upload-artifact@')));
  assert.equal(steps.find(v=>v.uses?.startsWith('actions/upload-artifact@')).with.path,'target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/');
 });
+
+test('workspace investigation is explicit and excludes package assembly', () => {
+  const workflow = yaml.load(readFileSync('.github/workflows/delidev-native-dry-run.yml', 'utf8'));
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.workspace_fixture_only, {
+    description: 'Run only the Windows workspace removal regressions', type: 'boolean', default: false,
+  });
+  assert.equal(workflow.jobs.plan.if, '${{ !inputs.workspace_fixture_only }}');
+  assert.equal(workflow.jobs.package.if, '${{ !inputs.workspace_fixture_only }}');
+  const fixtures = workflow.jobs['workspace-fixtures'];
+  assert.equal(fixtures.if, '${{ inputs.workspace_fixture_only }}');
+  assert.equal(fixtures['runs-on'], 'windows-latest');
+  assert.equal(fixtures['timeout-minutes'], 30);
+  assert.equal(fixtures.steps.length, 3);
+  assert.ok(fixtures.steps.some(step => step.with?.lfs === true && step.with['persist-credentials'] === false));
+  assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable)$' -count=1 -timeout=20m -v");
+});
