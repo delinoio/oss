@@ -102,3 +102,32 @@ it.each(["failed", "canceled"] as const)("retains the restored predecessor after
  expect(f.requests[2]).toMatchObject({action:WorkspaceStorageAction.RECOVER,recoveryJobId:f.job.id,mutation:{id:f.session.id,expectedRevision:9n}});
  expect(f.requests[1]).toEqual(f.requests[0]);
 });
+
+it.each([Code.NotFound, Code.Unavailable])("makes an externally removed session resettable only after an authenticated not-found result (%s)", async code => {
+ const source=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:8n,documentJson:encode({name:"Original removed session",workspace:"general-chat",storage:{state:"pending",job_id:newRequestId()}})});
+ const next=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({name:"Next session",workspace:"general-chat"})});
+ const getDeletion=vi.fn(()=>{throw new ConnectError("no retained deletion status",Code.NotFound);});
+ const mutate=vi.fn();
+ const transport=createRouterTransport(router=>{
+  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.WORKSPACE_STORAGE_V1,SystemCapability.PERMANENT_SESSION_DELETION_V1]})});
+  router.service(ResourceService,{getResource:request=>{if(request.id===source.id)throw new ConnectError("original session unavailable",code);return {resource:next};},listResources:()=>({resources:[]})});
+  router.service(WorkspaceStorageService,{getWorkspaceStorageOperation:()=>{throw new ConnectError("original job gone",Code.NotFound);},requestWorkspaceStorage:mutate});
+  router.service(SessionService,{getSessionDeletion:getDeletion});
+ });
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionStorageProvider><SessionStorageAction source={source}/><SessionStorageAction source={next}/></SessionStorageProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ fireEvent.click(screen.getAllByRole("button",{name:"Workspace storage and permanent deletion"})[0]!);
+ await waitFor(()=>expect(client.isFetching()).toBe(0));
+ if(code===Code.NotFound){
+  expect(await screen.findByText("This session is no longer available. Its deletion cleanup status is unavailable.")).not.toBeNull();
+  expect(getDeletion).toHaveBeenCalled();
+  expect(screen.queryByText("Permanent deletion completed.")).toBeNull();
+  fireEvent.click(await screen.findByRole("button",{name:"Finish storage view"}));
+  fireEvent.click(screen.getAllByRole("button",{name:"Workspace storage and permanent deletion"})[1]!);
+  expect(await screen.findByText(new RegExp(`Next session.*${next.id}`))).not.toBeNull();
+ }else{
+  expect(screen.queryByRole("button",{name:"Finish storage view"})).toBeNull();
+  expect(getDeletion).not.toHaveBeenCalled();
+ }
+ expect(mutate).not.toHaveBeenCalled();
+});
