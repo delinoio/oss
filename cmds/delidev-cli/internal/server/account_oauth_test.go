@@ -159,6 +159,15 @@ func TestAccountOAuthPKCEOnceOnlyReplayAndPrivateMetadata(t *testing.T) {
 			if d.IsDir() {
 				return nil
 			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if info.Size() == 0 {
+				// Windows keeps the active empty server.lock unreadable. Empty
+				// files contain no sentinel bytes; scan every nonempty file.
+				return nil
+			}
 			raw, err := os.ReadFile(path)
 			if err == nil && bytes.Contains(raw, []byte(sentinel)) {
 				t.Error("OAuth content reached persisted state")
