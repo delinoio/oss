@@ -149,3 +149,5 @@ terminal reads or expose cached terminal errors; see the
 [desktop contract](apps-delidev-desktop-contract.md).
 
 Remaining-feature delivery follows the [structure contract](cmds-delidev-structure-contract.md): establish shared numeric and migration reservations on main, then merge complete independently validated feature PRs in dependency order. Reservation support and actual native/account/platform acceptance remain distinct.
+
+Native input accounting and request diagnostics activate their main-established independent capabilities with real migrations 26/27. Preserve once-only original Claude/OpenCode source attribution, nullable precise counters, immutable pricing and metadata-only requested/observed diagnostic evidence across authenticated RPC, CLI and desktop. The [usage](cmds-delidev-usage-contract.md) and [diagnostics](cmds-delidev-diagnostics-contract.md) contracts own these boundaries; no fixture establishes real-account acceptance.

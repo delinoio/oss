@@ -49,7 +49,8 @@ Server lifecycle, authorization, route registration and status have separate own
 CLI framing/authentication and command groups have separate files. They retain
 existing order, authorization, cleanup and output behavior.
 
-SQLite remains at schema 24 for this structural change. Versioned migration
+The original structural change retained schema 24. The current executable registry
+implements real migrations through 27; later reserved versions remain inactive. Versioned migration
 definitions share creation and upgrade paths while retaining backup-first atomic
 upgrade and all recognized historical layout repairs. Historical migration tests
 start from fixed historical SQL, not a newer schema with an expanding drop list.
@@ -78,8 +79,10 @@ which owns independent temporary directories and child lifetimes per file.
 `cmds/delidev-cli/internal/store/migration-reservations.json` reserves 25 for the
 replacement of #1108, 26 for #1115, and 27 for #1117. Each originally used 25.
 The Grok replacement for issue #1100 implements reserved version 25 with the
-independent `grok-closed-input-v1` layout marker. Versions 26 and 27 remain plans,
-not runtime support; the executable registry ends at 25. Unmarked historical
+independent `grok-closed-input-v1` layout marker. Real migration 26 composes
+Claude/OpenCode accounting with that original ledger; real migration 27 adds
+metadata-only request diagnostics. The executable registry ends at 27, preserving
+the original predecessor order without placeholders. Unmarked historical
 version-25 files still require recovery without modification.
 Claude accounting must compose with the Grok accounting schema and shared usage
 meaning established by the preceding change. Request diagnostics follows both
@@ -106,7 +109,7 @@ dependent implementation; no placeholder migration, active protobuf declaration,
 generated binding or OAuth capability is introduced by this prerequisite. Keep
 the existing sequence and issue open until full implementation is accepted.
 
-The storage suite covers every fixed schema from 1 through 24 and the recognized
+The storage suite covers fixed historical layouts through 26 and the recognized
 21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,
 retains existing seeded record/backfill/rollback tests, and verifies that three
 unidentified version-25 layouts return recovery-required without modifying bytes.
