@@ -360,3 +360,27 @@ managed preparation and cleanup.
   A durable successful image-creation marker is required before reopening a
   journaled VM; a failed or interrupted Tart create cannot be cleared merely
   by a later open request.
+- Guest readiness probes use a three-second manager deadline, including
+  cancellation-aware image serialization, inside the guided CLI's five-second
+  request deadline. An unavailable Agent returns `PREPARATION_FAILED` while
+  the manager remains reachable. A client deadline can use a separate bounded
+  status request to confirm manager liveness before reporting guest readiness.
+  Control header/body timeouts and cancellation retain `MANAGER_UNAVAILABLE`
+  for wire compatibility but use distinct safe messages without stale-socket
+  recovery. Actual connection and incompatible-response diagnostics remain
+  separate; TOML v1, SQLite v3 and JSON v1 do not change.
+- Guided setup consumes temporary-manager completion while waiting for guest
+  readiness or operator input. Safe manager problems retain their original
+  code and reason; unclassified failures use fixed diagnostics. Confirmed exit
+  skips manager/image cleanup requests. Ownership failure is terminal, and an
+  invalid guest after operator confirmation ends setup while retaining its
+  journal and owned image. Transient readiness failure remains retryable.
+  Structured stage/wait/failure observations contain only closed stage values,
+  stable error codes and elapsed milliseconds; raw subprocess/native content,
+  credentials and private paths are excluded.
+- Guest Agent remains operator-installed at 0.14.2. The public source-build
+  fallback pins official commit `0540136b95fcafac66f2c9a507178ae62502919b` and
+  its version metadata. Its user login agent includes the installation path in
+  PATH, uses `--run-agent`, and requires the non-root runner account to log in
+  after headless reboot. Guidance preserves existing agent definitions and
+  pending setup state, and does not imply that host Tart installs guest RPC.

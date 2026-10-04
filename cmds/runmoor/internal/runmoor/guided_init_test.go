@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ type fakeGuidedRuntime struct {
 	startError  error
 	storage     Storage
 	createFail  bool
+	probe       func(context.Context) error
 }
 
 func (*fakeGuidedRuntime) Check(context.Context, Config) error { return nil }
@@ -37,7 +39,7 @@ func (f *fakeGuidedRuntime) Start(_ context.Context, _ string, c Config, _ io.Wr
 	}
 	return f.done, ready
 }
-func (f *fakeGuidedRuntime) Control(_ context.Context, _ Config, req ControlRequest) (ControlResponse, error) {
+func (f *fakeGuidedRuntime) Control(ctx context.Context, _ Config, req ControlRequest) (ControlResponse, error) {
 	resp := ControlResponse{SchemaVersion: 1}
 	switch req.Action {
 	case "status":
@@ -70,6 +72,9 @@ func (f *fakeGuidedRuntime) Control(_ context.Context, _ Config, req ControlRequ
 				f.image.Phase = ImagePreparing
 			}
 		case "probe":
+			if f.probe != nil {
+				return resp, f.probe(ctx)
+			}
 			if !f.probeReady {
 				return resp, problem(ErrPreparation, "Guest not ready.", "Complete setup.")
 			}
@@ -86,6 +91,170 @@ func (f *fakeGuidedRuntime) Control(_ context.Context, _ Config, req ControlRequ
 		resp.Image = f.image
 	}
 	return resp, nil
+}
+
+func guidedFailureFixture(t *testing.T) (string, InitOptions) {
+	t.Helper()
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		t.Skip("Tart configuration requires an Apple Silicon Mac")
+	}
+	dir, err := os.MkdirTemp("/private/tmp", "rm-gd-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "s"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "d"))
+	return filepath.Join(dir, "config.toml"), InitOptions{Backend: string(Tart), Target: "https://github.com/example/repo", Auth: string(PAT), CredentialEnv: "RUNMOOR_TEST_UNUSED_PAT"}
+}
+
+func assertGuidedFailureRetained(t *testing.T, path string, fake *fakeGuidedRuntime) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("failed setup published a final configuration")
+	}
+	journal, _, _ := guidedPaths(path)
+	if _, err := os.Stat(journal); err != nil {
+		t.Fatal("failed setup discarded its owned image journal")
+	}
+	for _, action := range fake.actions {
+		if action == "verify-boot" || action == "seal" {
+			t.Fatal("failed readiness reached guest verification or sealing")
+		}
+	}
+}
+
+func TestGuidedInitObservesManagerExitDuringGuestSetup(t *testing.T) {
+	for _, confirmed := range []bool{false, true} {
+		for _, safeReason := range []bool{false, true} {
+			t.Run(fmt.Sprintf("confirmed=%t/safe=%t", confirmed, safeReason), func(t *testing.T) {
+				path, opts := guidedFailureFixture(t)
+				fake := &fakeGuidedRuntime{}
+				probes := 0
+				fake.probe = func(context.Context) error {
+					probes++
+					if confirmed && probes == 1 {
+						return problem(ErrPreparation, "Guest not ready.", "Complete setup.")
+					}
+					var exit error = errors.New("private manager failure details")
+					if safeReason {
+						exit = problem(ErrState, "Owned setup state is unavailable.", "Preserve setup state and retry.")
+					}
+					select {
+					case fake.done <- exit:
+					default:
+					}
+					return problem(ErrControl, "Cannot contact the local manager.", "Check manager status.")
+				}
+				input, writer := io.Pipe()
+				defer input.Close()
+				defer writer.Close()
+				var reader io.Reader = input
+				if confirmed {
+					reader = strings.NewReader("\n")
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				var output bytes.Buffer
+				err := startGuidedInit(ctx, path, opts, "latest", bufio.NewReader(reader), &output, fake)
+				if safeReason {
+					requireCode(t, err, ErrState)
+					if !strings.Contains(err.Error(), "Owned setup state") {
+						t.Fatal("safe manager failure reason was discarded", err)
+					}
+				} else {
+					requireCode(t, err, ErrControl)
+				}
+				if strings.Contains(output.String(), "private manager") || strings.Contains(output.String(), "stop could not be confirmed") {
+					t.Fatal("manager exit leaked details or attempted control after exit", output.String())
+				}
+				for _, action := range fake.actions {
+					if action == "close" {
+						t.Fatal("already exited manager received image cleanup")
+					}
+				}
+				assertGuidedFailureRetained(t, path, fake)
+			})
+		}
+	}
+}
+
+type guidedObservationWriter struct {
+	bytes.Buffer
+	observe func([]byte)
+}
+
+func (w *guidedObservationWriter) Write(body []byte) (int, error) {
+	if w.observe != nil {
+		w.observe(body)
+	}
+	return w.Buffer.Write(body)
+}
+
+func TestGuidedInitObservesManagerExitWhileAwaitingConfirmation(t *testing.T) {
+	path, opts := guidedFailureFixture(t)
+	fake := &fakeGuidedRuntime{probeReady: true}
+	input, writer := io.Pipe()
+	defer input.Close()
+	defer writer.Close()
+	output := &guidedObservationWriter{observe: func(body []byte) {
+		if bytes.Contains(body, []byte("Guest Agent RPC is ready; waiting")) {
+			fake.done <- nil
+		}
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := startGuidedInit(ctx, path, opts, "latest", bufio.NewReader(input), output, fake)
+	requireCode(t, err, ErrControl)
+	if !strings.Contains(err.Error(), "exited before VM setup") {
+		t.Fatal("unexpected successful manager exit lost its setup diagnostic", err)
+	}
+	assertGuidedFailureRetained(t, path, fake)
+}
+
+func TestGuidedInitRetriesUnavailableAgentAndHonorsCancellation(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("canceled=%t", canceled), func(t *testing.T) {
+			path, opts := guidedFailureFixture(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			fake := &fakeGuidedRuntime{}
+			probes := 0
+			fake.probe = func(context.Context) error {
+				probes++
+				if canceled {
+					cancel()
+					return context.Canceled
+				}
+				if probes == 1 {
+					return problem(ErrPreparation, "Guest not ready.", "Complete setup.")
+				}
+				fake.probeReady = true
+				return nil
+			}
+			err := startGuidedInit(ctx, path, opts, "latest", bufio.NewReader(strings.NewReader("\n")), io.Discard, fake)
+			if canceled {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatal("setup cancellation was discarded", err)
+				}
+				assertGuidedFailureRetained(t, path, fake)
+			} else if err != nil || fake.image.Phase != ImageSealed || probes != 2 {
+				t.Fatal("transient readiness did not recover into a verified sealed image", err)
+			}
+		})
+	}
+}
+
+func TestGuidedInitRejectsInvalidGuestAfterConfirmation(t *testing.T) {
+	path, opts := guidedFailureFixture(t)
+	fake := &fakeGuidedRuntime{probe: func(context.Context) error {
+		return problem(ErrImage, "The macOS guest is not prepared for Runmoor.", "Install Guest Agent 0.14.2 in the runner account.")
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := startGuidedInit(ctx, path, opts, "latest", bufio.NewReader(strings.NewReader("\n")), io.Discard, fake)
+	requireCode(t, err, ErrImage)
+	assertGuidedFailureRetained(t, path, fake)
 }
 
 func TestGuidedTartInitResumesAndProtectsConfiguration(t *testing.T) {

@@ -66,7 +66,7 @@ Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` 
 
 ## Configure
 
-> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided Mac VM creation during `init` and `image create --ipsw latest` are in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Runmoor 0.2.3 supports guided Mac VM creation during `init` and `image create --ipsw latest`. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
 ```sh
 runmoor init
@@ -96,6 +96,23 @@ In a terminal, `runmoor init` asks for the GitHub target, execution backend and
 credential reference. On Linux the suggested backend is Docker; on Apple Silicon
 macOS it is Tart. Supply the referenced credential separately. Init does not
 install Docker/Tart or start a service.
+
+Guided Tart setup also requires **Guest Agent 0.14.2 inside the VM**, running
+with `--run-agent` in the non-root `runner` account at login. Check its exact
+version; the current Homebrew formula may install a different release. The
+[Guest Agent installation guide](https://oss.delino.io/runmoor/tart#install-guest-agent-0142-in-the-vm)
+includes a source build pinned to the official 0.14.2 commit, a login-agent
+definition with the required PATH, and automatic guest login for the headless
+boot check. The host's Tart installation does not install the guest agent.
+
+Enter confirms your manual setup; it does not bypass Guest Agent validation.
+In 0.2.3, the manager-unavailable message can also indicate a Guest Agent probe
+timeout. Preserve the VM and pending setup files, correct the guest setup, and
+resume `runmoor init` with the same configuration and storage environment after
+the original process exits. See [setup recovery](https://oss.delino.io/runmoor/tart#recover-setup-that-waits-after-enter).
+Builds with the diagnostic fix distinguish request interruption from connection
+failure and stop waiting when the temporary manager exits or the confirmed
+guest is rejected. TOML, SQLite and JSON schema versions are unchanged.
 
 For scripts, provide the inputs directly:
 

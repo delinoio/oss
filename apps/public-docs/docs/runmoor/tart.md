@@ -1,6 +1,6 @@
 # Runmoor Tart Images
 
-> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided creation of a new Mac VM during `init` and `image create --ipsw latest` are in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Runmoor 0.2.3 supports guided creation of a new Mac VM during `init` and `image create --ipsw latest`. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
 Install a **stable Tart 2.x.x release** on macOS 14+ arm64 yourself. Runmoor builds with this compatibility update accept a complete SemVer `2.MINOR.PATCH` triplet with optional build metadata; prereleases are unsupported. Previously installed binaries retain their original version check until upgraded.
 
@@ -31,6 +31,114 @@ path. Runmoor resumes its owned image rather than downloading another IPSW.
 It never replaces an existing final configuration or an image with uncertain
 ownership. The existing `--image`, `--image-source` and `--image-only`
 paths remain available; noninteractive init still requires an existing image.
+
+## Install Guest Agent 0.14.2 in the VM
+
+Run these steps **inside the macOS VM**, logged in as the non-root `runner`
+account. Installing Runmoor and Tart on the host does not install Guest Agent
+inside the VM. Enter confirms that your manual setup is finished; Runmoor also
+needs a working Guest Agent connection before it can continue.
+
+First check `tart-guest-agent --version` in the VM. Runmoor requires **0.14.2**;
+do not assume that the current Homebrew formula installs that version. If an
+agent is already running, inspect its version and login configuration before
+replacing it or starting another copy.
+
+The [0.14.2 source](https://github.com/openai/tart-guest-agent/tree/v0.14.2)
+can be built from commit `0540136b95fcafac66f2c9a507178ae62502919b` when a
+matching release binary is unavailable. With Go and the Apple command-line
+tools installed in the guest, run:
+
+```sh
+set -eu
+umask 077
+agent_build_dir=$(mktemp -d)
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  'https://github.com/openai/tart-guest-agent/archive/0540136b95fcafac66f2c9a507178ae62502919b.tar.gz' \
+  -o "$agent_build_dir/source.tar.gz"
+mkdir "$agent_build_dir/source"
+tar -xzf "$agent_build_dir/source.tar.gz" --strip-components=1 \
+  -C "$agent_build_dir/source"
+mkdir -p "$HOME/.local/bin"
+(
+  cd "$agent_build_dir/source"
+  go build -trimpath \
+    -ldflags '-X github.com/cirruslabs/tart-guest-agent/internal/version.Version=0.14.2 -X github.com/cirruslabs/tart-guest-agent/internal/version.Commit=0540136b95fcafac66f2c9a507178ae62502919b' \
+    -o "$HOME/.local/bin/tart-guest-agent" ./cmd
+)
+"$HOME/.local/bin/tart-guest-agent" --version
+```
+
+Keep the downloaded source and its license with this local build. The version
+output must start with `0.14.2`; this build includes its source commit suffix.
+
+Install a login agent for the same account. The example below creates a new
+definition exclusively. If that file already exists, inspect it instead of
+overwriting it. Its PATH makes the installed binary available to commands
+executed through Guest Agent.
+
+```sh
+set -eu
+umask 077
+mkdir -p "$HOME/Library/LaunchAgents"
+agent_plist="$HOME/Library/LaunchAgents/io.delino.runmoor.tart-guest-agent.plist"
+(
+  set -C
+  cat > "$agent_plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>io.delino.runmoor.tart-guest-agent</string>
+  <key>ProgramArguments</key><array>
+    <string>AGENT_BINARY</string><string>--run-agent</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>AGENT_PATH</string>
+  </dict>
+  <key>WorkingDirectory</key><string>AGENT_HOME</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict></plist>
+PLIST
+)
+plutil -remove ProgramArguments.0 "$agent_plist"
+plutil -insert ProgramArguments.0 -string "$HOME/.local/bin/tart-guest-agent" "$agent_plist"
+plutil -replace EnvironmentVariables.PATH -string "$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "$agent_plist"
+plutil -replace WorkingDirectory -string "$HOME" "$agent_plist"
+plutil -lint "$agent_plist"
+launchctl bootstrap "gui/$(id -u)" "$agent_plist"
+launchctl print "gui/$(id -u)/io.delino.runmoor.tart-guest-agent"
+```
+
+[`--run-agent`](https://github.com/openai/tart-guest-agent/tree/v0.14.2)
+enables RPC. `--run-daemon` alone does not enable RPC, and running RPC as root
+does not meet Runmoor's non-root account requirement.
+
+The account must also log in after the VM restarts so its login agent starts
+during Runmoor's headless boot check. In the VM's System Settings, select
+**Users & Groups → Automatically log in as → runner**. FileVault or login
+policies can prevent automatic login; see [Apple's automatic login
+guide](https://support.apple.com/en-us/102316). Configure the guest's login
+policy before confirming setup.
+
+## Recover setup that waits after Enter
+
+Keep the original setup terminal open while you check Guest Agent in the VM.
+On Runmoor 0.2.3, `MANAGER_UNAVAILABLE: Cannot contact the local manager` can
+also mean that the Guest Agent check exceeded its deadline. That message alone
+does not prove that the manager stopped or that its socket needs removal.
+Preserve the VM and setup files.
+
+After correcting Guest Agent, wait for Runmoor to confirm readiness. If the
+setup process has exited or you interrupted it, run `runmoor init` again with
+the same `--config` path and the same storage environment. Do not start a second
+setup process while the first one still owns the VM. Resume repeats the boot
+check and seals only after your confirmation and successful guest validation.
+
+Builds with the setup diagnostic fix report guest readiness failures separately
+from request timeouts and cancellations, and end the wizard if its setup
+manager exits. A rejected guest version or image after confirmation also ends
+setup while preserving the owned image for correction and retry.
 
 ## Managed runners from a prepared Mac image
 

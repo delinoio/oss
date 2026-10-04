@@ -31,6 +31,18 @@ type guidedRuntime interface {
 
 type defaultGuidedRuntime struct{}
 
+type guidedInitStage string
+
+const (
+	guidedManagerStart guidedInitStage = "manager-start"
+	guidedImageCreate  guidedInitStage = "image-create"
+	guidedGuestSetup   guidedInitStage = "guest-setup"
+	guidedBootVerify   guidedInitStage = "boot-verify"
+	guidedImageSeal    guidedInitStage = "image-seal"
+	guidedManagerStop  guidedInitStage = "manager-stop"
+	guidedPublish      guidedInitStage = "config-publish"
+)
+
 func (defaultGuidedRuntime) Check(ctx context.Context, c Config) error {
 	return (&TartDriver{Exec: OSCommand{}}).check(ctx, c)
 }
@@ -251,11 +263,56 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 	if err = runtime.Check(ctx, c); err != nil {
 		return err
 	}
+	logger, err := NewLogger(c, output)
+	if err != nil {
+		return err
+	}
+	stage := guidedManagerStart
+	stageStarted := time.Now()
+	setStage := func(next guidedInitStage) {
+		logger.Info("guided_init_stage", "stage", stage, "duration_ms", time.Since(stageStarted).Milliseconds())
+		stage, stageStarted = next, time.Now()
+	}
+	defer func() {
+		if result != nil {
+			p := classify(result, ErrState, "VM setup was interrupted.", "Run runmoor init again with the same configuration to resume.")
+			logger.Warn("guided_init_failed", "stage", stage, "code", p.Code, "duration_ms", time.Since(stageStarted).Milliseconds())
+		} else {
+			logger.Info("guided_init_complete", "duration_ms", time.Since(stageStarted).Milliseconds())
+		}
+	}()
 	managerCtx, cancelManager := context.WithCancel(context.Background())
 	done, ready := runtime.Start(managerCtx, bootstrap, c, output)
 	stopped := false
 	managerFinished := false
+	managerExit := func(exit error) error {
+		managerFinished = true
+		return classify(exit, ErrControl, "Setup manager exited before VM setup finished.", "Preserve the setup VM and run runmoor init again with the same configuration to resume.")
+	}
+	checkManager := func() error {
+		select {
+		case exit := <-done:
+			return managerExit(exit)
+		default:
+			return nil
+		}
+	}
+	image := func(action string, extra ImageRequest) (*Image, error) {
+		if err := checkManager(); err != nil {
+			return nil, err
+		}
+		im, err := guidedImage(ctx, runtime, c, action, j.ImageID, extra)
+		if exit := checkManager(); exit != nil {
+			return nil, exit
+		}
+		return im, err
+	}
 	defer func() {
+		// A completed manager has already released lifetime ownership. Do not
+		// send cleanup requests to its closed socket or discard its exit reason.
+		if !managerFinished {
+			_ = checkManager()
+		}
 		if stopped || managerFinished {
 			cancelManager()
 			return
@@ -286,12 +343,17 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 			managerFinished = true
 			return err
 		}
+	case exit := <-done:
+		return managerExit(exit)
 	case <-time.After(15 * time.Second):
 		return problem(ErrControl, "Setup manager did not become ready.", "Check the local manager lock and retry runmoor init.")
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 	resp, err := guidedControl(ctx, runtime, c, ControlRequest{Action: "images"})
+	if exit := checkManager(); exit != nil {
+		return exit
+	}
 	if err != nil {
 		return err
 	}
@@ -302,8 +364,9 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 		}
 	}
 	if im == nil {
+		setStage(guidedImageCreate)
 		fmt.Fprintln(output, "Creating a macOS VM from the selected Apple IPSW. This download may take time.")
-		im, err = guidedImage(ctx, runtime, c, "create", j.ImageID, ImageRequest{Name: "macos", IPSW: j.IPSW})
+		im, err = image("create", ImageRequest{Name: "macos", IPSW: j.IPSW})
 		if err != nil {
 			return err
 		}
@@ -315,9 +378,10 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 		if im.Phase != ImagePreparing && im.Phase != ImageOpen {
 			return problem(ErrImage, "Setup image is in an unexpected phase.", "Inspect 'runmoor image list' using the pending bootstrap configuration.")
 		}
-		if _, err = guidedImage(ctx, runtime, c, "open", j.ImageID, ImageRequest{}); err != nil {
+		if _, err = image("open", ImageRequest{}); err != nil {
 			return err
 		}
+		setStage(guidedGuestSetup)
 		fmt.Fprintln(output, "In the VM, finish macOS setup and log in as a non-root runner user.")
 		fmt.Fprintln(output, "Install Tart Guest Agent 0.14.2 as a login agent with --run-agent (RPC); a normal Homebrew install may select another version.")
 		fmt.Fprintln(output, "Install your required tools, accept any Xcode license, and keep the runner directory free of credentials and old workspaces.")
@@ -329,10 +393,48 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 		defer ticker.Stop()
 		userDone, agentReady, reportedReady := false, false, false
 		lastProblem := ""
+		lastObservation := ""
 		for !userDone || !agentReady {
+			if exit := checkManager(); exit != nil {
+				return exit
+			}
 			probe, stop := context.WithTimeout(ctx, 5*time.Second)
+			started := time.Now()
 			_, e := guidedImage(probe, runtime, c, "probe", j.ImageID, ImageRequest{})
+			probeErr := probe.Err()
 			stop()
+			if exit := checkManager(); exit != nil {
+				return exit
+			}
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if probeErr == context.DeadlineExceeded {
+				// A deadline alone says nothing about manager lifetime. Status
+				// bypasses image serialization and verifies the live manager.
+				health, cancel := context.WithTimeout(ctx, time.Second)
+				status, healthErr := guidedControl(health, runtime, c, ControlRequest{Action: "status"})
+				cancel()
+				if exit := checkManager(); exit != nil {
+					return exit
+				}
+				if healthErr == nil && status.Status != nil && status.Status.Running {
+					e = problem(ErrPreparation, "Guest Agent readiness check timed out; the setup manager is running.", "In the VM, enable Guest Agent 0.14.2 RPC in the non-root runner account; setup will retry.")
+				}
+			}
+			if e != nil {
+				e = classify(e, ErrPreparation, "Guest Agent readiness could not be confirmed.", "In the VM, enable Guest Agent 0.14.2 RPC in the non-root runner account.")
+				p := e.(*Problem)
+				if p.Code == ErrOwnership || p.Code == ErrControl || userDone && p.Code == ErrImage {
+					return e
+				}
+				if e.Error() != lastObservation {
+					logger.Warn("guided_init_waiting", "stage", stage, "code", p.Code, "duration_ms", time.Since(started).Milliseconds())
+					lastObservation = e.Error()
+				}
+			} else {
+				lastObservation = ""
+			}
 			agentReady = e == nil
 			if agentReady && !reportedReady {
 				fmt.Fprintln(output, "Guest Agent RPC is ready; waiting for your VM setup confirmation.")
@@ -350,6 +452,8 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 				break
 			}
 			select {
+			case exit := <-done:
+				return managerExit(exit)
 			case e := <-confirmed:
 				if e != nil {
 					return problem(ErrConfig, "VM setup confirmation was interrupted.", "Run runmoor init again to resume the owned image.")
@@ -360,15 +464,18 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 				return ctx.Err()
 			}
 		}
+		setStage(guidedBootVerify)
 		fmt.Fprintln(output, "Rebooting the VM to verify Guest Agent starts without manual intervention.")
-		if _, err = guidedImage(ctx, runtime, c, "verify-boot", j.ImageID, ImageRequest{}); err != nil {
+		if _, err = image("verify-boot", ImageRequest{}); err != nil {
 			return err
 		}
+		setStage(guidedImageSeal)
 		fmt.Fprintln(output, "Installing the verified latest runner and sealing the image.")
-		if _, err = guidedImage(ctx, runtime, c, "seal", j.ImageID, ImageRequest{}); err != nil {
+		if _, err = image("seal", ImageRequest{}); err != nil {
 			return err
 		}
 	}
+	setStage(guidedManagerStop)
 	if _, err = guidedControl(ctx, runtime, c, ControlRequest{Action: "stop"}); err != nil {
 		return err
 	}
@@ -382,6 +489,7 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 		return ctx.Err()
 	}
 	stopped = true
+	setStage(guidedPublish)
 	body, err := readPrivate(final, 1<<20)
 	if err != nil {
 		return err

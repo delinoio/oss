@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,10 @@ import (
 	"sort"
 	"time"
 )
+
+// Finish guest probes before the guided CLI's five-second request deadline so
+// a guest without RPC can return a preparation problem over the live socket.
+const guestProbeTimeout = 3 * time.Second
 
 type ControlRequest struct {
 	Action string        `json:"action"`
@@ -154,6 +159,7 @@ func (m *Manager) ServeControl() (*http.Server, error) {
 }
 func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlResponse {
 	resp := ControlResponse{SchemaVersion: 1}
+	started := time.Now()
 	var err error
 	if req.Force && req.Action != "stop" {
 		resp.Problem = problem(ErrConfig, "Force is supported only for stop.", "Use stop with an optional pool.")
@@ -191,7 +197,19 @@ func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlRespon
 			err = problem(ErrConfig, "Image operation is missing.", "Use an image subcommand.")
 			break
 		}
-		m.imageMu.Lock()
+		if req.Image.Action == "probe" {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, guestProbeTimeout)
+			defer cancel()
+		}
+		if !m.lockControlImage(ctx) {
+			if req.Image.Action == "probe" {
+				err = problem(ErrPreparation, "Guest readiness check is waiting for another image operation.", "Wait for the existing image operation; the manager remains available.")
+			} else {
+				err = controlInterruption(ctx, ctx.Err())
+			}
+			break
+		}
 		defer m.imageMu.Unlock()
 		s := m.Store.View()
 		if s.Stopping {
@@ -214,10 +232,48 @@ func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlRespon
 	if err != nil {
 		resp.Problem = classify(err, ErrControl, "Local control operation failed.", "Inspect manager status and retry.")
 	}
+	if req.Action == "image" && req.Image != nil && req.Image.Action == "probe" {
+		var code ErrorCode
+		if resp.Problem != nil {
+			code = resp.Problem.Code
+		}
+		m.Log.Debug("image_readiness_probe", "ready", resp.Problem == nil, "code", code, "duration_ms", time.Since(started).Milliseconds())
+	}
 	return resp
 }
+
+func (m *Manager) lockControlImage(ctx context.Context) bool {
+	for ctx.Err() == nil {
+		if m.imageMu.TryLock() {
+			if ctx.Err() == nil {
+				return true
+			}
+			m.imageMu.Unlock()
+			return false
+		}
+		if !waitContext(ctx, 25*time.Millisecond) {
+			return false
+		}
+	}
+	return false
+}
+
+func controlInterruption(ctx context.Context, err error) *Problem {
+	var timeout net.Error
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout() {
+		return problem(ErrControl, "The local manager request timed out.", "Check manager status and retry; a request timeout does not confirm that the manager stopped.")
+	}
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+		return problem(ErrControl, "The local manager request was canceled.", "Retry the operation when ready; cancellation does not confirm that the manager stopped.")
+	}
+	return nil
+}
+
 func SendControl(ctx context.Context, c Config, req ControlRequest) (ControlResponse, error) {
 	var out ControlResponse
+	if p := controlInterruption(ctx, ctx.Err()); p != nil {
+		return out, p
+	}
 	path := filepath.Join(c.Storage.State, "control.sock")
 	st, e := os.Lstat(path)
 	if e != nil || st.Mode()&os.ModeSocket == 0 || st.Mode().Perm()&0077 != 0 {
@@ -235,10 +291,22 @@ func SendControl(ctx context.Context, c Config, req ControlRequest) (ControlResp
 	}
 	res, e := client.Do(r)
 	if e != nil {
+		if p := controlInterruption(ctx, e); p != nil {
+			return out, p
+		}
 		return out, problem(ErrControl, "Cannot contact the local manager.", "Check manager status; a stopped manager may leave a stale socket.")
 	}
 	defer res.Body.Close()
-	if res.StatusCode != 200 || json.NewDecoder(io.LimitReader(res.Body, 16<<20)).Decode(&out) != nil || out.SchemaVersion != 1 {
+	if res.StatusCode != 200 {
+		return out, problem(ErrControl, "The manager returned an incompatible response.", "Use the CLI matching the running manager version.")
+	}
+	if e = json.NewDecoder(io.LimitReader(res.Body, 16<<20)).Decode(&out); e != nil {
+		if p := controlInterruption(ctx, e); p != nil {
+			return out, p
+		}
+		return out, problem(ErrControl, "The manager returned an incompatible response.", "Use the CLI matching the running manager version.")
+	}
+	if out.SchemaVersion != 1 {
 		return out, problem(ErrControl, "The manager returned an incompatible response.", "Use the CLI matching the running manager version.")
 	}
 	if out.Problem != nil {
