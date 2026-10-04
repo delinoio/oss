@@ -325,11 +325,14 @@ int main(int argc, char **argv) {
     errno = 0; CHECK(clonefileat(parent, "clone-link", copy, ".clone-any", CLONE_NOFOLLOW_ANY) == -1 && errno == ELOOP);
     errno = 0; CHECK(clonefileat(parent, "node_modules/dep/file.txt", copy, ".clone-any", CLONE_NOFOLLOW_ANY) == -1 && errno == ELOOP);
     CHECK(clonefileat(parent, "clone-source", parent, "clone-beneath", CLONE_RESOLVE_BENEATH) == 0);
-    errno = 0; CHECK(clonefileat(parent, "clone-source", copy, ".clone-beneath", CLONE_RESOLVE_BENEATH) == -1 && errno == ENOTSUP);
+    CHECK(clonefileat(parent, "clone-source", copy, ".clone-beneath", CLONE_RESOLVE_BENEATH) == 0);
+    CHECK(clonefileat(copy, ".clone-at", copy, ".clone-cache-beneath", CLONE_RESOLVE_BENEATH) == 0);
+    CHECK(fclonefileat(clone_source, copy, ".clone-fd-beneath", CLONE_RESOLVE_BENEATH) == 0);
+    errno = 0; CHECK(clonefileat(parent, "node_modules/dep/file.txt", copy, ".clone-managed-beneath", CLONE_RESOLVE_BENEATH) == -1 && errno == ENOTSUP);
     errno = 0; CHECK(clonefileat(-1, "clone-source", copy, ".clone-invalid", 0) == -1 && errno == EBADF);
     errno = 0; CHECK(fclonefileat(-1, copy, ".clone-invalid", 0) == -1 && errno == EBADF);
     errno = 0; CHECK(clonefile("clone-source", "node_modules/.clone-invalid", UINT32_C(0x80000000)) == -1 && errno == EINVAL);
-    const char *clones[] = {".clone-at", ".clone-fd", ".clone-path", ".clone-dep-fd", ".clone-link"};
+    const char *clones[] = {".clone-at", ".clone-fd", ".clone-path", ".clone-dep-fd", ".clone-link", ".clone-beneath", ".clone-cache-beneath", ".clone-fd-beneath"};
     for (size_t i = 0; i < sizeof(clones) / sizeof(clones[0]); i++) CHECK(unlinkat(copy, clones[i], 0) == 0);
     close(clone_source); CHECK(unlink("clone-source") == 0 && unlink("clone-link") == 0 && unlink("clone-beneath") == 0);
 #endif

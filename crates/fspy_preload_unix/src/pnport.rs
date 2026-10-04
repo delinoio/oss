@@ -1962,6 +1962,10 @@ struct ClonePaths {
     native: bool,
 }
 
+const fn clone_native_path(translation: &Translation) -> bool {
+    !translation.readonly && matches!(translation.kind, PathKind::Native | PathKind::ToolCache)
+}
+
 unsafe fn clone_paths(
     from_fd: c_int,
     from: *const c_char,
@@ -1975,9 +1979,8 @@ unsafe fn clone_paths(
     let (source, source_translation) = translate_following(from, from_fd, false, follow, policy)?;
     let (destination, destination_translation) =
         translate_following(to, to_fd, true, follow, policy)?;
-    let native = source_translation.kind == PathKind::Native
-        && !source_translation.readonly
-        && destination_translation.kind == PathKind::Native;
+    let native =
+        clone_native_path(&source_translation) && clone_native_path(&destination_translation);
     if flags & CLONE_RESOLVE_BENEATH != 0 && !native {
         // Absolute backing rewrites cannot retain descriptor-relative beneath
         // constraints. Fail without creation until bounded managed support exists.
@@ -2016,7 +2019,7 @@ hook!(fclonefileat, pnport_fclonefileat, (from_fd:c_int,to_fd:c_int,to:*const c_
     if RUNTIME.get().is_none() {return original(from_fd,to_fd,to,flags);}
     let (follow,policy)=match clone_policy(flags) {Ok(policy)=>policy,Err(code)=>{errno(code);return -1;}};
     let (destination,translation)=translated!(to,to_fd,true,follow,policy,-1);
-    if translation.kind==PathKind::Native {return original(from_fd,to_fd,to,flags);}
+    if clone_native_path(&translation) {return original(from_fd,to_fd,to,flags);}
     if flags & CLONE_RESOLVE_BENEATH!=0 {errno(ENOTSUP);return -1;}
     original(from_fd,AT_FDCWD,destination.as_ptr(),flags)
 });
