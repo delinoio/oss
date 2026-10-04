@@ -50,7 +50,11 @@ func snapshotPrivatePathLimit(root string) int {
 	// to retain private names simultaneously. Recovery reads keep the original
 	// 4,096-byte wire bound; this admission bound applies only to new captures.
 	prefix := len(filepath.Join(root, "workspace-removals")) + 1 + 36 + 1
-	return min(4096, nativeLimit-prefix) - 3*(snapshotRemovalNameLength+1)
+	limit := min(4096, nativeLimit-prefix) - 3*(snapshotRemovalNameLength+1)
+	if limit <= 0 {
+		return -1
+	}
+	return limit
 }
 
 type snapshotLinkKind string
@@ -107,6 +111,9 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 
 func walkSnapshotBudget(ctx context.Context, source, destination string, skip func(string) bool, entryLimit int, budget *snapshotCopyBudget, merge ...bool) (snapshotInventory, error) {
 	var inventory snapshotInventory
+	if budget != nil && budget.privatePathLimit < 0 {
+		return inventory, domain.Fail(domain.ResourceExhausted, "The Worker root leaves no cleanup path headroom.", "Choose a shorter Worker state root; source files remain intact.")
+	}
 	rootInfo, err := os.Lstat(source)
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
 		return inventory, ResultUncertain()

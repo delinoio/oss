@@ -13,6 +13,13 @@ import (
 )
 
 func TestSnapshotAdmissionReservesPrivatePathHeadroom(t *testing.T) {
+	if snapshotPrivatePathLimit(strings.Repeat("x", 40000)) >= 0 {
+		t.Fatal("exhausted native root disabled admission bounds")
+	}
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes, entries: MaxSnapshotEntries, privatePathLimit: -1}
+	if _, err := walkSnapshotBudget(context.Background(), t.TempDir(), "", nil, MaxSnapshotEntries, &budget); domain.SafeError(err).Code != domain.ResourceExhausted {
+		t.Fatal("empty source bypassed exhausted native root", err)
+	}
 	// A short original spelling can grow at every retained ancestor claim.
 	if snapshotRemovalPathFits(strings.TrimSuffix(strings.Repeat("a/", 90), "/"), 4096) {
 		t.Fatal("short source path did not reserve private ancestor spellings")
