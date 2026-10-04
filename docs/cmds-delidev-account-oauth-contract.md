@@ -121,3 +121,5 @@ Subscription/Codex/Claude login; embedded browser/account-profile work (#1087/#1
 - [Desktop](apps-delidev-desktop-contract.md)
 - [Protocol](protos-delidev-v1-contract.md)
 - [Typed client](packages-delidev-api-client-contract.md)
+
+- Exchange code/verifier and returned printable-ASCII keys remain owned, zeroizable byte buffers through JSON encoding/decoding. Transport cancellation after a valid key is returned does not discard it: settle under independent bounded original-actor authority, honoring serialized business cancellation before sealing. Expired awaiting attempts with no claimed credential cleanup do not block managed restore; exchanging/saving/recovery and cleanup obligations remain blocking.

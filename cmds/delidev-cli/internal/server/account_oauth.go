@@ -584,7 +584,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	if a.State == domain.OAuthCanceled {
 		return respond(a, false)
 	}
-	if exchangeErr != nil || checkCtx.Err() != nil || domain.ValidateAPIKey(key, false) != nil {
+	if exchangeErr != nil || domain.ValidateAPIKey(key, false) != nil {
 		s.oauthRecoveryLocked(a, oauthProblem())
 		a, err = s.oauthRead(settleCtx, a.ID)
 		if err != nil {

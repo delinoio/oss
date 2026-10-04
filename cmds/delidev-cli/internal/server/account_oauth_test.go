@@ -383,3 +383,35 @@ func TestAccountOAuthUnownedDurableDispatchCannotRemainLiveOrResend(t *testing.T
 		t.Fatal("unowned dispatch staged a key")
 	}
 }
+
+func TestAccountOAuthReturnedKeySurvivesTransportCancellation(t *testing.T) {
+	f := newOAuthFixture(t)
+	started := f.start(t)
+	id := domain.NewID()
+	ctx, cancel := context.WithCancel(f.ctx)
+	defer cancel()
+	var calls atomic.Int32
+	f.s.oauthExchange = oauthExchangeFunc(func(context.Context, []byte, []byte) ([]byte, error) {
+		calls.Add(1)
+		cancel()
+		return []byte("returned-before-transport-cancellation"), nil
+	})
+	req := &pb.CompleteAccountOAuthRequest{Mutation: oauthMutation(started.Attempt, id), AuthorizationCode: []byte("original-code")}
+	_, err := f.s.CompleteAccountOAuth(ctx, connect.NewRequest(req))
+	if err != nil && connect.CodeOf(err) != connect.CodeCanceled {
+		t.Fatal(err)
+	}
+	completed, err := f.s.GetAccountOAuthStatus(f.ctx, connect.NewRequest(&pb.GetAccountOAuthStatusRequest{AttemptId: started.Attempt.Id}))
+	if err != nil || completed.Msg.Attempt.State != pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_CONNECTED || completed.Msg.Account == nil {
+		t.Fatal("known returned key was discarded", err)
+	}
+	puts, _, active := f.vault.counts()
+	if puts != 1 || active != 1 {
+		t.Fatal("returned key was not protected exactly once")
+	}
+	f.restart(t)
+	recovered, err := f.complete(started.Attempt, id, "")
+	if err != nil || !recovered.Msg.Replayed || recovered.Msg.Account == nil || recovered.Msg.Account.Id != completed.Msg.Account.Id || calls.Load() != 1 {
+		t.Fatal("original local result could not recover without exchange", err)
+	}
+}

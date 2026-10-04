@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,4 +108,56 @@ func TestOAuthAttemptPrivateCASAndLifetimeInterruption(t *testing.T) {
 	}
 	_, err = s.Mutate(ctx, domain.NewID(), "fixture.stale-oauth", nil, func(tx *Tx) (any, error) { a.Revision = 2; return nil, tx.PutAccountOAuth(a, 1) })
 	assertCode(t, err, domain.Conflict)
+}
+
+func TestOAuthExpiredAwaitingDoesNotBlockRestoreButClaimsDo(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	var attempts []domain.AccountOAuthAttempt
+	for _, state := range []domain.AccountOAuthState{domain.OAuthAwaiting, domain.OAuthAwaiting, domain.OAuthExchanging} {
+		a := privateOAuthAttempt()
+		a.State = state
+		if len(attempts) != 1 {
+			a.StartedAt = now.Add(-11 * time.Minute)
+			a.ExpiresAt = a.StartedAt.Add(10 * time.Minute)
+			a.UpdatedAt = a.StartedAt
+		}
+		if state == domain.OAuthExchanging {
+			a.CompletionRequestID = domain.NewID()
+			a.CompletionRevision = 1
+			a.CodeCommitment = strings.Repeat("a", 64)
+		}
+		attempts = append(attempts, a)
+	}
+	_, err := s.Mutate(ctx, domain.NewID(), "fixture.oauth-expiry", nil, func(tx *Tx) (any, error) {
+		for _, a := range attempts {
+			if err := tx.PutAccountOAuth(a, 0); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Read(ctx, func(tx *Tx) error {
+		n, err := tx.AccountOAuthPending()
+		if err == nil && n != 2 {
+			t.Fatalf("expiry blocked restore or released exchange: %d", n)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Eligibility is read-only: expiry never manufactures exchange cleanup proof.
+	if err := s.Read(ctx, func(tx *Tx) error {
+		a, err := tx.AccountOAuth(attempts[0].ID)
+		if err == nil && (a.State != domain.OAuthAwaiting || a.Revision != 1) {
+			t.Fatal("read eligibility changed stored attempt")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 }

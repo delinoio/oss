@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -146,4 +147,32 @@ func TestAccountOAuthHTTPUnusableExplicitRouteNeverFallsBack(t *testing.T) {
 	if err == nil || dials.Load() != 0 || strings.Contains(err.Error(), "private-route-sentinel") {
 		t.Fatal("explicit route failure escaped or dialed directly")
 	}
+}
+
+func TestOAuthOwnedByteJSONEscapesAndClosedASCIIKey(t *testing.T) {
+	for _, key := range []string{`"plain-key"`, `"escaped\u002dkey"`, `"quote\"slash\\end"`} {
+		value, err := decodeOAuthASCIIKey([]byte(key))
+		if err != nil || domain.ValidateAPIKey(value, false) != nil {
+			t.Fatal("valid escaped ASCII key rejected", err)
+		}
+		clear(value)
+	}
+	for _, key := range []string{`null`, `""`, `"line\nfeed"`, `"\u00ff"`, `"\ud800"`, `"\u0000"`, `"bad\x"`, `"not finished`} {
+		if value, err := decodeOAuthASCIIKey([]byte(key)); err == nil || len(value) != 0 {
+			t.Fatal("invalid key retained owned output")
+		}
+	}
+	value := []byte{'a', '"', '\\', 0, '\n', 0xc3, 0xa9}
+	raw := appendOAuthJSONString(make([]byte, 0, 6*len(value)+2), value)
+	defer clear(raw)
+	var decoded []byte
+	var asString string // Fixture decoding only; product never makes this immutable copy.
+	if json.Unmarshal(raw, &asString) != nil {
+		t.Fatal("secret JSON escaping changed syntax")
+	}
+	decoded = []byte(asString)
+	if !bytes.Equal(decoded, value) {
+		t.Fatal("secret byte encoding changed content")
+	}
+	clear(decoded)
 }

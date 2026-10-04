@@ -60,8 +60,42 @@ func (t *Tx) PutAccountOAuth(a domain.AccountOAuthAttempt, expected uint64) erro
 }
 func (t *Tx) AccountOAuthPending() (int, error) {
 	var n int
-	err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM account_oauth_attempts WHERE state IN ('awaiting-authorization','exchanging','saving','recovery-required') OR json_extract(body,'$.cleanup_pending')=1`).Scan(&n)
-	return n, storageError(err)
+	err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM account_oauth_attempts WHERE state IN ('exchanging','saving','recovery-required') OR json_extract(body,'$.cleanup_pending')=1`).Scan(&n)
+	if err != nil {
+		return 0, storageError(err)
+	}
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT id FROM account_oauth_attempts WHERE state='awaiting-authorization' AND COALESCE(json_extract(body,'$.cleanup_pending'),0)=0 LIMIT 33`)
+	if err != nil {
+		return 0, storageError(err)
+	}
+	var ids []domain.ID
+	for rows.Next() {
+		var id domain.ID
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, storageError(err)
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, storageError(err)
+	}
+	if len(ids) > 32 {
+		return 0, corrupt()
+	}
+	now := time.Now().UTC()
+	for _, id := range ids {
+		a, err := t.AccountOAuth(id)
+		if err != nil {
+			return 0, err
+		}
+		if now.Before(a.ExpiresAt) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // A new lifetime cannot recover an old verifier or send a claimed exchange.

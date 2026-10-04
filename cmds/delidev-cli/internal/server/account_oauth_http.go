@@ -33,15 +33,16 @@ func (owner ownedOAuthExchange) Exchange(ctx context.Context, code, verifier []b
 func exchangeOAuthHTTP(ctx context.Context, code, verifier []byte, transport http.RoundTripper) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	payload, err := json.Marshal(struct {
-		Code     string `json:"code"`
-		Verifier string `json:"code_verifier"`
-		Method   string `json:"code_challenge_method"`
-	}{string(code), string(verifier), "S256"})
-	if err != nil {
+	payload := make([]byte, 0, 128+6*(len(code)+len(verifier)))
+	payload = append(payload, `{"code":`...)
+	payload = appendOAuthJSONString(payload, code)
+	payload = append(payload, `,"code_verifier":`...)
+	payload = appendOAuthJSONString(payload, verifier)
+	payload = append(payload, `,"code_challenge_method":"S256"}`...)
+	defer clear(payload)
+	if !json.Valid(payload) {
 		return nil, oauthProblem()
 	}
-	defer clear(payload)
 	// A fresh transport with keep-alives disabled cannot replay on a reused
 	// connection. An opaque reader also supplies no GetBody retry authority.
 	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -56,11 +57,13 @@ func exchangeOAuthHTTP(ctx context.Context, code, verifier []byte, transport htt
 		return nil, oauthProblem()
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
-	defer clear(body)
-	if err != nil || len(body) > 64<<10 || response.StatusCode != http.StatusOK {
+	buffer := make([]byte, (64<<10)+1)
+	defer clear(buffer)
+	n, err := io.ReadFull(response.Body, buffer)
+	if (err != io.EOF && err != io.ErrUnexpectedEOF) || n > 64<<10 || response.StatusCode != http.StatusOK {
 		return nil, oauthProblem()
 	}
+	body := buffer[:n]
 	var fields map[string]json.RawMessage
 	if domain.Decode(body, &fields) != nil {
 		return nil, oauthProblem()
@@ -70,9 +73,91 @@ func exchangeOAuthHTTP(ctx context.Context, code, verifier []byte, transport htt
 			clear(value)
 		}
 	}()
-	var key string
-	if json.Unmarshal(fields["key"], &key) != nil || domain.ValidateAPIKey([]byte(key), false) != nil {
+	key, err := decodeOAuthASCIIKey(fields["key"])
+	if err != nil || domain.ValidateAPIKey(key, false) != nil {
+		clear(key)
 		return nil, oauthProblem()
 	}
-	return []byte(key), nil
+	return key, nil
+}
+
+// Secret inputs and output remain owned byte buffers. No secret is converted
+// to an immutable Go string while building or decoding the exchange payload.
+func appendOAuthJSONString(dst, value []byte) []byte {
+	dst = append(dst, '"')
+	const digits = "0123456789abcdef"
+	for _, b := range value {
+		switch b {
+		case '"', '\\':
+			dst = append(dst, '\\', b)
+		default:
+			if b < 0x20 {
+				dst = append(dst, '\\', 'u', '0', '0', digits[b>>4], digits[b&15])
+			} else {
+				dst = append(dst, b)
+			}
+		}
+	}
+	return append(dst, '"')
+}
+
+// API keys have a closed printable-ASCII contract. Decode JSON escapes directly
+// into that bounded output, refusing Unicode/control values outside the contract.
+func decodeOAuthASCIIKey(raw []byte) (key []byte, returned error) {
+	defer func() {
+		if returned != nil {
+			clear(key)
+			key = nil
+		}
+	}()
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' || !json.Valid(raw) {
+		return nil, oauthProblem()
+	}
+	key = make([]byte, 0, min(len(raw)-2, domain.MaxAPIKeyBytes))
+	for i := 1; i < len(raw)-1; i++ {
+		b := raw[i]
+		if b == '\\' {
+			i++
+			if i >= len(raw)-1 {
+				return key, oauthProblem()
+			}
+			switch raw[i] {
+			case '"', '\\', '/':
+				b = raw[i]
+			case 'u':
+				if i+4 >= len(raw)-1 {
+					return key, oauthProblem()
+				}
+				var value uint16
+				for _, h := range raw[i+1 : i+5] {
+					value <<= 4
+					switch {
+					case h >= '0' && h <= '9':
+						value |= uint16(h - '0')
+					case h >= 'a' && h <= 'f':
+						value |= uint16(h - 'a' + 10)
+					case h >= 'A' && h <= 'F':
+						value |= uint16(h - 'A' + 10)
+					default:
+						return key, oauthProblem()
+					}
+				}
+				i += 4
+				if value < 0x21 || value > 0x7e {
+					return key, oauthProblem()
+				}
+				b = byte(value)
+			default:
+				return key, oauthProblem()
+			}
+		}
+		if b < 0x21 || b > 0x7e || len(key) >= domain.MaxAPIKeyBytes {
+			return key, oauthProblem()
+		}
+		key = append(key, b)
+	}
+	if len(key) == 0 {
+		return key, oauthProblem()
+	}
+	return key, nil
 }
