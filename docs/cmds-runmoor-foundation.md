@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/runmoor` owns the CLI, local controller, GitHub adapter, Docker and Tart backends, image lifecycle, service integration, power inhibition, diagnostics, and reconciliation for issue #893. Internal implementation boundaries are files in `internal/runmoor`; adapters expose interfaces for deterministic tests without substituting mocks in production.
+`cmds/runmoor` owns the CLI, local controller, GitHub adapter, Docker, Tart and opt-in host backends, image lifecycle, service integration, power inhibition, diagnostics, and reconciliation for issues #893 and #1312. Internal implementation boundaries are files in `internal/runmoor`; adapters expose interfaces for deterministic tests without substituting mocks in production.
 
 ## Runtime and Language
 
@@ -21,10 +21,10 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Global and command-local `--config` select a TOML file. `--no-color` or `NO_COLOR` disables default text-log ANSI colors. JSON is uncolored. All product output is English.
 - `status --json` and `doctor --json` have `schema_version: 1`; errors contain stable `code`, `message`, `recovery`, and relevant pool/runner identifiers. Status includes image revisions and unresolved preparation; doctor includes the current status snapshot plus persistent pool/execution problems and probes actual sleep-inhibition acquisition. The local Unix HTTP control protocol is `/v1/control`, available only through an owner-only filesystem socket. It is not a remote API.
 - `init` exclusively creates a minimal valid configuration using prompts or flags and omission-aware defaults. Configuration loading rejects unknown keys/versions, unsafe paths, duplicate identities, unsupported targets/architecture, contradictory backend fields, and impossible budgets before activation.
-- New `init` pools write `runmoor-linux`, `linux`, `x64` on Docker amd64; `runmoor-linux`, `linux`, `ARM64` on Docker arm64; and `runmoor-macos`, `macOS`, `ARM64` on Tart arm64. The existing scale-set name remains the first label. These labels are generated only by `init`: loading, validating or reloading existing and manually authored pools never adds routing labels, and omitted labels remain empty.
+- New `init` pools write `runmoor-linux`, `linux`, `x64` on Docker amd64; `runmoor-linux`, `linux`, `ARM64` on Docker arm64; `runmoor-macos`, `macOS`, `ARM64` on Tart arm64; and `runmoor-macos-host`, `macOS`, `ARM64` on host arm64. The existing scale-set name remains the first label. These labels are generated only by `init`: loading, validating or reloading existing and manually authored pools never adds routing labels, and omitted labels remain empty.
 - TOML v1 has `storage`, `host`, `timeouts`, `logging`, `connections`, and `pools`; optional Docker socket/Tart executable settings select local dependencies. Connections contain a GitHub.com repository or organization URL, PAT/App enum, one `credential.env` or `credential.file` reference, and App client/installation IDs when applicable. Pools specify connection, explicit scale-set name, routing labels, optional organization group, backend/mode, optional native architecture, image or image source, latest or pinned runner version/path, min-idle/max-runners, runner resources, and DinD image/resources when enabled.
 - Host concurrency, CPU, memory MiB and minimum free disk MiB may be omitted for automatic defaults; explicit values must be positive limits. Aggregate minimum idle reservations, including daemon resources, must fit. Image setup consumes the same limits and counts toward the two-macOS-VM maximum.
-- Default timeouts are Docker preparation 5 minutes, Tart preparation 10 minutes, and a job 6 hours. Transient retries use exponential jittered backoff of 1–60 seconds, extended for provider rate-limit instructions. Three consecutive preparation failures suspend only the affected pool. Authentication/ownership failures require correction; an unchanged configuration requires explicit resume.
+- Default timeouts are Docker and host preparation 5 minutes, Tart preparation 10 minutes, and a job 6 hours. Transient retries use exponential jittered backoff of 1–60 seconds, extended for provider rate-limit instructions. Three consecutive preparation failures suspend only the affected pool. Authentication/ownership failures require correction; an unchanged configuration requires explicit resume.
 - Forced cancellation preserves the existing preparation-failure counter and pool suspension state, including when an adapter returns success after cancellation. It is logged as cancellation instead of an image/bootstrap failure.
 - A scheduled preparation must still be unforced and in the preparing phase when its worker starts. This closes the force-stop gap between reservation and worker registration; cancellation is also checked before JIT and backend work. After journaling a returned JIT registration ID, the worker re-reads the durable forced flag and preparing phase immediately before backend preparation. A stop or lifecycle transition during registration prevents provisioning even before context cancellation arrives, preserves the new phase and failure counters, and retains the registration ID for cleanup.
 
@@ -96,7 +96,7 @@ Before start, stop, or uninstall, securely read and structurally parse the gener
 - TOML may override absolute state/data directories. The Unix socket path must fit macOS's length limit. Directories are mode 0700; files/socket are 0600. Reject symlinks and foreign ownership at sensitive file boundaries.
 - SQLite schema v1 stores an atomic snapshot row under WAL/FULL durability: installation identity, configuration generations/references, pool/session metadata without tokens, runner lifecycle and reservations, image revisions, and cleanup progress. A nonblocking file lock excludes concurrent manager or offline state access.
 - SQLite opens the exact absolute `state.sqlite` filename through an escaped `file:` URI, preserving literal `?`, `#`, `%`, spaces, and Unicode in valid filesystem paths. For paths containing `?`, if the intended database is absent or empty while the prefix used by older raw-DSN opens is a regular file, startup fails before creating the state directory, data directory, manager lock, or database. The error omits private paths and requires stopping all affected managers and preserving complete backups of both locations before explicit recovery; Runmoor never adopts, moves, or deletes the ambiguous legacy database automatically.
-- Delete completed execution history after seven days. Preserve unresolved cleanup and ownership indefinitely. User-created sealed images remain until explicit deletion; generated revisions use reference-aware managed retention. SQLite v1 migrates atomically to v2; other unsupported versions are rejected.
+- Delete completed execution history after seven days. Preserve unresolved cleanup and ownership indefinitely. User-created sealed images remain until explicit deletion; generated revisions use reference-aware managed retention. SQLite upgrades atomically in v1-to-v2-to-v3-to-v4 order; other unsupported versions are rejected.
 - Storage relocation is accepted only after all executions complete cleanup and all image setup/removal operations close; it atomically rebinds retained generations while preserving installation ownership. Backup only after drain and stop: preserve the complete state and managed data directories, protect referenced credentials separately, and pair backups with a compatible binary. Runmoor binary updates and rollback are manual; never open a newer state schema with an older binary.
 
 ## Security
@@ -281,7 +281,7 @@ its snapshot and `user_version` atomically to v2, then applies the atomic v2 to
 v3 migration without rewriting installation ownership or execution history.
 Opening v2 atomically adds the v3 identity fields while preserving legacy
 numeric-only Tart records; those records remain conservatively reserved while
-their recorded PIDs exist. Old binaries reject v3. Read-only configuration
+their recorded PIDs exist. SQLite v4 adds private host directory and execution journals with an atomic v3-to-v4 migration. Earlier binaries reject v4. Read-only configuration
 inspection does not migrate state. Public
 status/doctor JSON remains schema v1 with additive managed runner and artifact
 fields. Generated artifacts retain current, previous and referenced bases;
@@ -360,3 +360,78 @@ managed preparation and cleanup.
   A durable successful image-creation marker is required before reopening a
   journaled VM; a failed or interrupted Tart create cannot be cleared merely
   by a later open request.
+
+## Opt-in macOS host execution
+
+Issue #1312 extends the closed backend enum with `host` for macOS 14+ arm64.
+`init --backend host` creates `macos-host` with scale set `runmoor-macos-host`
+and labels `runmoor-macos-host`, `macOS`, `ARM64`. Defaults still select Tart on
+macOS and Docker on Linux. Loading and reload never add or replace authored labels.
+Host configuration rejects image, image-source, guest runner-path, DinD and
+image-only setup options. `timeouts.host_preparation` extends TOML v1 and defaults
+to `5m`. Effective internal host image references are generated distribution IDs;
+operators cannot configure execution paths or select an arbitrary distribution.
+
+Host admission uses the shared scheduler, reservations, low-disk checks and fair
+allocation. Omitted resources use 2 CPUs/4096 MiB, shrinking to 1 CPU/1024 MiB.
+Explicit allocations are never reduced. Host concurrency uses CPU/memory quotients
+without the Tart two-VM ceiling. Minimum idle defaults to zero; disk reserve is
+10240 MiB, or the existing higher 20480 MiB when Tart is configured. CPU/memory
+reservations govern admission and do not enforce process usage limits.
+
+Official macOS arm64 runner archives use the existing stable release selection,
+SHA-256 verification and bounded safe tar reconstruction. Downloads and extraction
+use opened, confined distribution directories. Preparation checks the installed
+version before sealing a digest. Latest and exact pins share managed generation
+publication, support expiry, retry and reference-aware retention. Each execution
+copies its original verified distribution into a fresh installation, creates
+separate HOME, temporary and work directories, and receives fresh JIT registration.
+The manager never edits an active installation or distribution. Host-only
+configurations do not probe Docker, Tart or Guest Agent.
+
+The detached native supervisor is launched through an inherited directory
+handle. JIT data travels through its private stdin pipe and remains memory-only.
+Each launch checks cancellation and the durable unforced Preparing phase. The
+supervisor rechecks that phase before starting the runner. It observes startup
+before publishing readiness, owns a separate runner process group, and continues
+across a manager-only restart. Process identity is the kernel PID, group and OS
+start time; process names and command arguments confer no ownership. Completed,
+cancelled and timed-out executions terminate only verified group members. Missing
+supervisors, changed process identity and uncertain termination retain reservations
+and actionable recovery. Daemons escaping the managed group are unsupported.
+
+SQLite v4 keeps directory creation intent, installation/execution identity,
+owner-only markers, device/inode identity, supervisor/worker identity and cleanup
+progress in private journals. Ownership checks reject foreign, replaced and
+escaping paths. Markerless interrupted publication is preserved. Cleanup moves
+the verified directory without replacement, removes content through the opened
+root, and commits final removal intent before deleting its marker. Repeated
+cleanup reconciles confirmed absence. Public status/doctor remain JSON v1 and do
+not expose these private journals. Seven-day completed history and existing
+seven-day/256 MiB redacted diagnostic limits remain unchanged.
+
+The manager and jobs use the same macOS account. Recommend a dedicated CI account;
+Runmoor neither provisions accounts nor requires a privileged helper. The job
+allowlist retains PATH and DEVELOPER_DIR when set, the minimal locale, and
+execution-owned HOME/TMPDIR/TMP/TEMP. Other manager variables and management
+credentials are excluded. Disposable directories provide no security boundary:
+trusted jobs can access account files and Keychains. Operators manage Xcode, SDKs,
+language tools, shared caches, signing, Simulators, GUI sessions and global tool
+settings. Ordinary builds/tests and unsigned Xcode builds are intended workloads.
+GitHub repository/group and fork policies remain authoritative.
+
+The existing lifecycle owns registration, assignment/retirement races, reload,
+pause/resume/drain, pool-scoped force-stop, launchd, six-hour deadlines,
+three-failure suspension, provider rate limits and sleep inhibition. No automatic
+job rerun, telemetry, remote control, feature flag or new release channel is added.
+Installed version and explicit backend selection determine availability. Manual
+stable releases retain all existing signing/package gates. Rollback requires
+drain/stop, a compatible binary and paired state/data backup; never use a v3
+binary against v4 state.
+
+Acceptance is automated contract/mocked lifecycle tests and supported-target
+builds. Actual macOS host execution, unsigned Xcode builds and live GitHub jobs,
+including the real authentication/registration matrix, are explicitly unvalidated.
+Existing Docker/Tart, service and distribution evidence retains its original limits.
+Record commands, source revision, results and these gaps in the PR. Public guides
+must disclose host's unreleased status until a manual release provides it.

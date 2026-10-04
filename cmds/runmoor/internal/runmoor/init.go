@@ -34,13 +34,16 @@ func initialPoolLabels(backend Backend, arch string) (string, []string, error) {
 	name, platformLabel := "linux", "linux"
 	switch backend {
 	case Docker:
-	case Tart:
+	case Tart, Host:
 		if arch != "arm64" {
 			return "", nil, problem(ErrConfig, "Tart requires an arm64 host.", "Use a supported macOS arm64 host.")
 		}
 		name, platformLabel = "macos", "macOS"
+		if backend == Host {
+			name = "macos-host"
+		}
 	default:
-		return "", nil, problem(ErrConfig, "Invalid initial setup backend.", "Choose docker or tart.")
+		return "", nil, problem(ErrConfig, "Invalid initial setup backend.", "Choose docker, tart or host.")
 	}
 	var architectureLabel string
 	switch arch {
@@ -94,7 +97,7 @@ func initializeWithContext(ctx context.Context, path string, opts InitOptions, i
 			opts.Backend = string(Tart)
 		}
 		if interactive && !opts.ImageOnly {
-			opts.Backend, err = ask("Execution backend (docker/tart)", opts.Backend)
+			opts.Backend, err = ask("Execution backend (docker/tart/host)", opts.Backend)
 			if err != nil {
 				return err
 			}
@@ -177,6 +180,9 @@ func initializeWithContext(ctx context.Context, path string, opts InitOptions, i
 			}
 		}
 	}
+	if opts.Backend == string(Host) && (opts.ImageOnly || opts.Image != "" || opts.ImageSource != "" || opts.SourceHome != "") {
+		return problem(ErrConfig, "Host setup cannot use image or image-only options.", "Select host without image options; Runmoor manages each execution directory.")
+	}
 	fields := map[string]any{"schema_version": 1}
 	if opts.Storage != (Storage{}) {
 		fields["storage"] = opts.Storage
@@ -194,8 +200,8 @@ func initializeWithContext(ctx context.Context, path string, opts InitOptions, i
 		if opts.Target == "" || (opts.CredentialEnv == "" && opts.CredentialFile == "") {
 			return problem(ErrConfig, "Initial setup needs a GitHub target and a credential reference.", "Use --target URL and either --credential-env NAME or --credential-file PATH, or run init in a terminal.")
 		}
-		if (opts.CredentialEnv != "" && opts.CredentialFile != "") || (opts.Backend != string(Docker) && opts.Backend != string(Tart)) {
-			return problem(ErrConfig, "Invalid initial setup options.", "Choose docker or tart and exactly one credential reference.")
+		if (opts.CredentialEnv != "" && opts.CredentialFile != "") || (opts.Backend != string(Docker) && opts.Backend != string(Tart) && opts.Backend != string(Host)) {
+			return problem(ErrConfig, "Invalid initial setup options.", "Choose docker, tart or host and exactly one credential reference.")
 		}
 		credential := map[string]any{}
 		if opts.CredentialEnv != "" {
@@ -258,6 +264,6 @@ func initializeWithContext(ctx context.Context, path string, opts InitOptions, i
 	for _, p := range c.Pools {
 		fmt.Fprintf(output, "Workflow routing: runs-on: %s\n", p.ScaleSet)
 	}
-	fmt.Fprintln(output, "Run 'runmoor run' to prepare managed images and start accepting work.")
+	fmt.Fprintln(output, "Run 'runmoor run' to prepare runners and start accepting work.")
 	return nil
 }

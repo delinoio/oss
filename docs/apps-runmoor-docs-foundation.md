@@ -16,8 +16,8 @@
 ## Interfaces and Contracts
 - The content is built by the `public-docs` Rspress application; there is no standalone Runmoor documentation package or workspace.
 - Canonical production URL: `https://oss.delino.io/runmoor`.
-- Stable clean routes: `/runmoor/`, `/runmoor/install`, `/runmoor/configuration`, `/runmoor/commands`, `/runmoor/docker`, `/runmoor/tart`, and `/runmoor/operations`.
-- The overview and six guides are owned by this content section and published under `/runmoor` without removing their content, verification limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Links use the consolidated site's `/runmoor` base.
+- Stable clean routes: `/runmoor/`, `/runmoor/install`, `/runmoor/configuration`, `/runmoor/commands`, `/runmoor/docker`, `/runmoor/tart`, `/runmoor/host`, and `/runmoor/operations`.
+- The overview and seven guides are owned by this content section and published under `/runmoor` without removing their content, verification limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Links use the consolidated site's `/runmoor` base.
 - The operations guide explains that service start, stop, and uninstall use the same configuration path recorded at installation, and provides safe inspection and recovery steps for a configuration mismatch without exposing repository-internal paths.
 - Every page includes the shared site selector with Runmoor selected via `aria-current`; it must offer the root, Nodeup, binpm, async-commit-hook, and clibox subpaths.
 - Use the default Rspress theme with every stable route in the navigation and sidebar, plus visible GitHub repository links in the social navigation and footer.
@@ -113,3 +113,17 @@ and same-command interruption recovery. Preserve the stable Tart 2.x.x range,
 exact Guest Agent version, and version-specific license boundaries. Its
 published-version note must distinguish the released 0.2.0 automatic setup
 from the still-unreleased guided creation of a new Mac VM.
+
+## Host guide
+
+Issue #1312 adds `/runmoor/host` to the shared navigation, sidebar and exact
+route registry. Preserve every existing route and public-content safeguard.
+The guide describes explicit `host` selection on macOS 14+ arm64, generated
+routing labels, shared admission budgets without the Tart ceiling, disposable
+execution state and immutable runner updates. Explain that same-account jobs
+have no security boundary and require trusted workflows. Operators own tools,
+shared caches, signing, Simulators, GUI sessions and escaped-daemon lifecycle.
+Tart and Guest Agent are required only for Tart execution. Update overview,
+configuration, commands, operations, install and CLI README together. State that
+host is unreleased and actual host execution, unsigned Xcode builds and live
+GitHub jobs are unvalidated; preserve existing package/Docker/Tart evidence limits.

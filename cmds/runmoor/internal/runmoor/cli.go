@@ -39,7 +39,7 @@ Usage: runmoor [--config PATH] COMMAND [OPTIONS]
 
 All commands accept --config PATH and --no-color. NO_COLOR disables ANSI output.
 status and doctor --json use schema_version 1. Product output is English.
-GitHub live compatibility and real Tart execution have not been certified.
+GitHub live compatibility and real Tart/host execution have not been certified.
 `
 
 func printHelp(out io.Writer) {
@@ -47,6 +47,9 @@ func printHelp(out io.Writer) {
 }
 
 func Execute(args []string, out, errOut io.Writer) int {
+	if len(args) == 1 && args[0] == "__host-supervisor" {
+		return hostSupervise()
+	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "__guest-") {
 		return guestExecute(args[0], args[1:], out)
 	}
@@ -89,7 +92,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	resolved := fs.Bool("resolved", false, "show effective configuration")
 	initOpts := InitOptions{}
 	fs.StringVar(&initOpts.Target, "target", "", "GitHub repository or organization URL")
-	fs.StringVar(&initOpts.Backend, "backend", "", "docker or tart")
+	fs.StringVar(&initOpts.Backend, "backend", "", "docker, tart or host")
 	fs.StringVar(&initOpts.Auth, "auth", "", "pat or app")
 	fs.StringVar(&initOpts.CredentialEnv, "credential-env", "", "credential environment variable name")
 	fs.StringVar(&initOpts.CredentialFile, "credential-file", "", "absolute private credential file")

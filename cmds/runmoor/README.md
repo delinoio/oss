@@ -2,9 +2,9 @@
 
 Runmoor is a local manager for disposable GitHub Actions runners. One host can manage multiple repository and organization pools with GitHub App or PAT authentication. Each runner executes at most one job.
 
-Linux jobs use an operator-installed local Docker engine. macOS jobs use operator-installed Tart virtual machines. Supported hosts are **macOS 14+ on Apple Silicon** and **Ubuntu 22.04+ on amd64/arm64**. Jobs must match the host CPU architecture. Windows, Intel Macs, emulation, GHES and remote Docker engines are unsupported.
+Linux jobs use an operator-installed local Docker engine. macOS jobs use operator-installed Tart virtual machines or explicitly selected host processes. Host execution is unreleased; see the [host guide](https://oss.delino.io/runmoor/host) for its setup and trust limits. Supported hosts are **macOS 14+ on Apple Silicon** and **Ubuntu 22.04+ on amd64/arm64**. Jobs must match the host CPU architecture. Windows, Intel Macs, emulation, GHES and remote Docker engines are unsupported.
 
-**Verification limits:** automated API/lifecycle tests and local Docker integration are provided. Live GitHub repository/organization and App/PAT combinations and real Tart local execution have not been certified. This is not a promise of GitHub-hosted runner tool inventory, startup speed, throughput, or support response times.
+**Verification limits:** automated API/lifecycle tests and local Docker integration are provided. Live GitHub repository/organization and App/PAT combinations and real Tart local execution have not been certified. Actual Mac host execution, unsigned Xcode builds and live host jobs have not been validated. This is not a promise of GitHub-hosted runner tool inventory, startup speed, throughput, or support response times.
 
 ## Install and verify
 
@@ -17,7 +17,7 @@ brew install delinoio/tap/runmoor
 runmoor version
 ```
 
-Homebrew installs the prebuilt release and checks its pinned SHA-256. Tart and runner images are installed separately. Installation does not configure runners or register or start a service. Intel Macs and Linux Homebrew are not supported.
+Homebrew installs the prebuilt release and checks its pinned SHA-256. Tart and runner images are installed separately for Tart execution. Host execution requires no Tart or Guest Agent. Installation does not configure runners or register or start a service. Intel Macs and Linux Homebrew are not supported.
 
 Update with `brew update` followed by `brew upgrade delinoio/tap/runmoor`, or remove with `brew uninstall delinoio/tap/runmoor`. If you registered a Runmoor service, stop and uninstall that service before upgrading or removing the package; after upgrading, reinstall the service with the new executable and start it explicitly. See the [operations guide](https://oss.delino.io/runmoor/operations) for service commands. Your configuration and data remain yours.
 
@@ -217,7 +217,7 @@ For an App connection set `auth = "app"`, `client_id`, a positive `installation_
 
 GitHub App repository registration requires repository Administration read/write and Metadata read; organization registration requires organization Self-hosted runners read/write. Classic PATs require `repo` for repository runners or `admin:org` for organization runners. Fine-grained PATs require the target's documented Administration/Self-hosted runners permissions. Follow the [official permission guide](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api). GitHub groups and repository access rules remain authoritative.
 
-Unknown keys/schema versions, literal credentials, invalid limits, incompatible architecture, mutable image tags and impossible minimum-idle allocations are rejected. The default preparation limits are five minutes for Docker and ten for Tart; jobs default to six hours. Duration values must be positive and at most seven days.
+Unknown keys/schema versions, literal credentials, invalid limits, incompatible architecture, mutable image tags and impossible minimum-idle allocations are rejected. The default preparation limits are five minutes for Docker and host and ten for Tart; jobs default to six hours. Duration values must be positive and at most seven days.
 
 ## Route workflows and operate pools
 
@@ -401,7 +401,7 @@ before installing the service with a replacement configuration.
 Paths containing `..` that resolve through a symlink to a different file are
 also rejected; use the installed absolute configuration path directly.
 
-Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
+Manager-only restart reconciles local state with verified Docker/Tart/host execution and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 
 A recorded job completion continues through cleanup even if GitHub has already removed its ephemeral runner registration. Capacity becomes available once the owned execution is confirmed stopped, while any remaining cleanup is retried. An upgrade does not automatically recover existing quarantines. For a previously affected completed job, confirm completion in GitHub and verify the exact ownership and stopped state of its local resources before recovering the affected pool with `runmoor stop --pool NAME --force`.
 
@@ -491,3 +491,36 @@ and cleanup have been drained. See the
 Diagnostics are local, sanitized structured metadata bounded by **seven days and 256 MiB**. Completed execution history expires after seven days; unresolved ownership/cleanup remains until reconciliation. Credentials, JIT configuration, workflow secrets and raw job output are excluded. User-created sealed images remain until explicit deletion; generated runner revisions follow managed retention. There is no telemetry or Prometheus endpoint.
 
 Report reproducible issues through [GitHub Issues](https://github.com/delinoio/oss/issues). Include version, platform, safe error code and relevant sanitized status. Do not include credentials, JIT data, raw workflow logs, or private VM contents. The [Runmoor documentation site](https://oss.delino.io/runmoor) covers the same supported workflows.
+
+## macOS host execution
+
+Host execution is unreleased. Select it explicitly with `runmoor init --backend host`;
+macOS still defaults to Tart. Host requires macOS 14+ arm64 and no Docker, Tart or
+Guest Agent. New pools use `macos-host`, scale set `runmoor-macos-host`, and labels
+`runmoor-macos-host`, `macOS`, `ARM64`. Preserve existing and authored labels.
+Use plain mode and omit image, image-source, guest runner-path and daemon settings;
+image-only setup is incompatible.
+
+Host work shares global budgets and fair scheduling without Tart's two-VM ceiling.
+Omitted allocations use 2 CPUs/4096 MiB, shrinking to 1 CPU/1024 MiB; explicit values
+are never reduced. CPU/memory reservations control admission, not process usage.
+Warm capacity defaults to zero. Disk reserve is 10240 MiB unless Tart requires its
+higher reserve. `timeouts.host_preparation` defaults to `5m`; jobs default to `6h`.
+
+Each single-job execution has fresh registration, installation, HOME, temporary
+and work directories, copied from a verified immutable runner distribution.
+Latest and pinned versions use managed updates without modifying active generations.
+PATH and DEVELOPER_DIR are inherited when set; other manager variables and management
+credentials are excluded. The manager and jobs share one account. Separate
+directories provide no security boundary: trusted jobs can access account files
+and Keychains. Use a dedicated CI account.
+
+Operators install Xcode, SDKs and language tools and manage shared caches, signing,
+Simulators, GUI sessions and global tool settings. Ordinary build/tests and unsigned
+Xcode builds are intended workloads. Escaped daemons are unsupported. Existing
+control commands and launchd apply. Missing supervisors, changed identities or
+uncertain termination retain reservations and resources even during force-stop.
+Drain/stop and preserve paired state/data backups before upgrade or compatible rollback.
+Actual host execution, unsigned Xcode builds and live GitHub jobs have not been
+validated. Read the [host guide](https://oss.delino.io/runmoor/host) for setup,
+trust, cleanup, recovery and community support without a response SLA.

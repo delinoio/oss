@@ -131,7 +131,7 @@ Each project must have one project index document and one or more domain contrac
 ### runmoor
 - `docs/project-runmoor.md`
 - `docs/cmds-runmoor-foundation.md`
-- `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/operations`)
+- `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
 
 ### derun
 - `docs/project-derun.md`

@@ -49,7 +49,7 @@ export function releasePlan({ version, revision, ref, mode = "dry-run" }) {
   return { schema_version: 1, project: "runmoor", version, revision, tag, mode, prerelease: false,
     platforms, archives: archiveNames, checksums: "SHA256SUMS",
     signatures: [...archiveNames, "SHA256SUMS"].map((name) => `${name}.sigstore.json`),
-    verification_gaps: ["Live GitHub repository/organization and App/PAT compatibility", "Real Tart local execution"],
+    verification_gaps: ["Live GitHub repository/organization and App/PAT compatibility", "Real Tart local execution", "Actual macOS host execution and unsigned Xcode builds"],
   };
 }
 

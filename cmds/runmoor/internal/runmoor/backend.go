@@ -28,10 +28,12 @@ func defaultDriver(kind Backend) (Driver, error) {
 	switch kind {
 	case Docker:
 		return &DockerDriver{}, nil
+	case Host:
+		return &HostDriver{Native: nativeHost{}}, nil
 	case Tart:
 		return &TartDriver{Exec: OSCommand{}}, nil
 	default:
-		return nil, problem(ErrConfig, "Unknown backend.", "Select docker or tart.")
+		return nil, problem(ErrConfig, "Unknown backend.", "Select docker, tart or host.")
 	}
 }
 func diskCheck(c Config) error {
