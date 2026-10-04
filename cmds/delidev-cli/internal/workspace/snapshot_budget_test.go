@@ -219,3 +219,35 @@ func TestSnapshotCreateStopsAtAggregateRepositoryEntryBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotRestoredGitObservationCountsCompleteRootOnce(t *testing.T) {
+	m := manager(t)
+	input, _ := snapshotRequest(t, m, false)
+	preview := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+	cleaned := storageDo(t, m, input)
+	input.Action, input.OperationID, input.PreviousState, input.PreviousSnapshotID, input.SnapshotDigest = StorageRestore, domain.NewID(), domain.WorkspaceStored, input.SnapshotID, cleaned.Snapshot.SHA256
+	storageDo(t, m, input)
+	admin := filepath.Join(input.Manifest.Repositories[0].Path, ".git", "info")
+	for i := 0; i < 4500; i++ {
+		if err := os.WriteFile(filepath.Join(admin, fmt.Sprintf("restored-%04d", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	observed, err := m.storageObservation(context.Background(), input)
+	if err != nil || len(observed.Whole.Entries) <= MaxSnapshotEntries/2 || len(observed.Whole.Entries) >= MaxSnapshotEntries {
+		t.Fatal("valid restored inventory was charged twice", err)
+	}
+	input.Action, input.OperationID, input.PreviousState, input.PreviousSnapshotID = StoragePreview, domain.NewID(), domain.WorkspacePresent, ""
+	input.SnapshotID, input.SnapshotDigest = "", ""
+	if result := storageDo(t, m, input); result.PreviewDigest != observed.Digest {
+		t.Fatal("restored preview omitted complete root authority")
+	}
+	if err := os.WriteFile(filepath.Join(admin, "restored-0000"), []byte("changed Git state"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := m.storageObservation(context.Background(), input)
+	if err != nil || changed.Digest == observed.Digest {
+		t.Fatal("covered Git change did not invalidate observation", err)
+	}
+}

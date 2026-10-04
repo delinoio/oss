@@ -151,9 +151,6 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 			return workspace.ResultUncertain()
 		}
 	case domain.JobFailed, domain.JobCanceled:
-		if input.Action == workspace.StorageRecover {
-			return nil
-		}
 		if result.Problem == nil || accepted.Problem == nil || result.Problem.Code != accepted.Problem.Code || len(result.Output) != 0 || len(accepted.Output) != 0 {
 			return workspace.ResultUncertain()
 		}
@@ -170,7 +167,7 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 	if err != nil || domain.Decode(rawJournal, &original) != nil || !reflect.DeepEqual(original, result) {
 		return workspace.ResultUncertain()
 	}
-	if accepted.State == domain.JobUncertain {
+	if accepted.State == domain.JobUncertain || (input.Action == workspace.StorageRecover && (accepted.State == domain.JobFailed || accepted.State == domain.JobCanceled)) {
 		return discardPendingStorageRetirement(config, job, result)
 	}
 	receipt, needed, err := storageRetirementFor(job, result, false)
@@ -389,6 +386,21 @@ func replayPendingStorageReports(ctx context.Context, config Config, client deli
 		}
 		if err := validateRetriedStorageReport(receipt, result, credential, acknowledged); err != nil {
 			config.Logger.WarnContext(ctx, "storage_report_replay_unverified", "job_id", receipt.JobID, "code", domain.SafeError(err).Code)
+			continue
+		}
+		var accepted domain.Job
+		var input workspace.StorageRequest
+		if domain.Decode(acknowledged.DocumentJson, &accepted) != nil || domain.Decode(accepted.Input, &input) != nil {
+			return workspace.ResultUncertain()
+		}
+		if input.Action == workspace.StorageRecover && (accepted.State == domain.JobFailed || accepted.State == domain.JobCanceled) {
+			if err := discardPendingStorageRetirement(config, accepted, result); err != nil {
+				return err
+			}
+			result.State = journalReported
+			if err := writeJSON(filepath.Join(config.Root, "jobs", string(result.JobID)+".json"), result); err != nil {
+				return err
+			}
 			continue
 		}
 		receipt.PendingReport = false

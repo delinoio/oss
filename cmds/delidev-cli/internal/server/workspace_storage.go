@@ -322,7 +322,7 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 	if job.State == domain.JobUncertain || (input.Action == workspace.StorageRecover && job.State != domain.JobSucceeded) {
 		session.Storage.State = domain.WorkspaceStorageUncertain
 	}
-	if input.Action == workspace.StorageRecover && job.State == domain.JobCanceled {
+	if input.Action == workspace.StorageRecover && (job.State == domain.JobCanceled || job.State == domain.JobFailed) {
 		if input.Recovery == nil || input.Recovery.Original.OperationID.Validate() != nil {
 			return workspace.ResultUncertain()
 		}
@@ -334,9 +334,9 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 		if err != nil || predecessor.Type != domain.WorkspaceStorageJob || predecessor.State != domain.JobUncertain || predecessorRecord.SessionID != sr.ID || predecessor.MachineID != session.MachineID {
 			return workspace.ResultUncertain()
 		}
-		// A queued recovery has no native side effects. Restore the predecessor
-		// as the retry anchor so canceling this recovery does not strand the
-		// session behind the canceled recovery job.
+		// A failed or canceled recovery has not settled the predecessor. Keep
+		// that uncertain job as the retry anchor rather than selecting a terminal
+		// recovery job, which cannot authorize another explicit recovery.
 		session.Storage.JobID = predecessorRecord.ID
 	}
 	if job.State == domain.JobSucceeded {

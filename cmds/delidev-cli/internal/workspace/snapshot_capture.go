@@ -449,6 +449,16 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 			if i == 1 && sameNativePath(path, fields[0]) {
 				continue
 			}
+			// Restored repositories keep their independent Git store inside the
+			// workspace. The complete root inventory already covers its bytes,
+			// entries and digest; only external original stores need another walk.
+			relative, err := filepath.Rel(root, path)
+			if err != nil {
+				return storageObservationResult{}, err
+			}
+			if filepath.IsLocal(relative) {
+				continue
+			}
 			inventory, err := walkSnapshotBudget(ctx, path, "", func(path string) bool { return path == "worktrees" || strings.HasPrefix(path, "worktrees/") }, MaxSnapshotEntries, &budget)
 			if err != nil {
 				return storageObservationResult{}, err

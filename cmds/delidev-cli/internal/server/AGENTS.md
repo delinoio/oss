@@ -179,3 +179,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Worker network export/control follows `docs/cmds-delidev-network-contract.md`. Pin each pending grant to one original machine/device/recipient, preserve actor/revision receipts, and require authenticated imported-digest acknowledgement before effective generation. Recheck fresh dispatch/claim/registration under current generation while preserving original active leases and cleanup. Native route reports retain exact job/execution/instance/device/generation ownership; an observed old runtime cannot authorize another launch or fabricate current application.
 
 - Native route observation is monotonic for each immutable claimed runtime: once accepted-target traffic proves Observed, later Failed or Unverified socket reports cannot erase that proof. Distinct runtimes retain independent observations.
+
+- Failed or canceled workspace-storage recovery restores the original uncertain predecessor as the retry anchor. An uncertain recovery retains its assignment chain; terminal failure cannot become recovery authority or settle the predecessor.
