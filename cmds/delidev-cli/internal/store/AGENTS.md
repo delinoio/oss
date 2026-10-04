@@ -214,3 +214,5 @@ A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejecti
 - Parent permanent deletion capacity counts only newly created dependent journals; retained child journals preserve their exact operation/request identities without consuming a second slot.
 
 - Permanent deletion derives unpublished Sidechat child IDs only from original immutable failed/canceled Fork assignments. Persist the complete synchronized plan within its 4 MiB bound, preserving legacy omitted fields and original request/digest identities; no current child lookup can reconstruct ownership.
+
+- Sidechat storage retirement uses the strict typed storage-input decoder, including large original recovery with no dependents. Its private wrapper retains the full existing 4 MiB deletion plan plus 4 KiB fixed wrapper headroom; publication/restart use the same bound. Preserve original actor, job/input digest and every child plan identity before native storage admission.

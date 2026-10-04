@@ -22,6 +22,10 @@ import (
 // parent. The accepted storage assignment freezes the selected children and
 // actor before this private intent can pause them. Native storage dispatch stays
 // gated by the dependency index until every selected child finishes retirement.
+// The wrapper adds only fixed operation/digest fields around the existing
+// bounded complete deletion plan; ordinary entity limits remain unchanged.
+const maxSidechatStorageRetirementBytes = domain.MaxSessionDeletionBytes + (4 << 10)
+
 type sidechatStorageRetirement struct {
 	Version   uint32          `json:"version"`
 	JobID     domain.ID       `json:"job_id"`
@@ -51,7 +55,7 @@ func (s *Store) BeginSidechatStorageRetirement(ctx context.Context, operation, s
 	}
 	j, err := Decode[domain.Job](r)
 	var input workspace.StorageRequest
-	if err != nil || j.Type != domain.WorkspaceStorageJob || domain.Decode(j.Input, &input) != nil {
+	if err != nil || j.Type != domain.WorkspaceStorageJob || workspace.DecodeStorageRequest(j.Input, &input) != nil {
 		return workspace.ResultUncertain()
 	}
 	if len(input.SidechatDependents) == 0 {
@@ -66,7 +70,7 @@ func (s *Store) BeginSidechatStorageRetirement(ctx context.Context, operation, s
 	}
 	path := filepath.Join(dir, string(operation)+".json")
 	var plan sidechatStorageRetirement
-	raw, err := security.ReadPrivate(path, 1<<20)
+	raw, err := security.ReadPrivate(path, maxSidechatStorageRetirementBytes)
 	if errors.Is(err, os.ErrNotExist) {
 		f, err := os.Open(dir)
 		if err != nil {
@@ -139,7 +143,7 @@ func (s *Store) BeginSidechatStorageRetirement(ctx context.Context, operation, s
 			return domain.SessionDeletionPending()
 		}
 		raw, err = json.Marshal(plan)
-		if err != nil || len(raw) > 1<<20 {
+		if err != nil || len(raw) > maxSidechatStorageRetirementBytes {
 			return domain.SessionDeletionPending()
 		}
 		if err := security.WriteAtomic(path, raw); err != nil {
@@ -150,7 +154,7 @@ func (s *Store) BeginSidechatStorageRetirement(ctx context.Context, operation, s
 		}
 	} else if err != nil {
 		return err
-	} else if domain.Decode(raw, &plan) != nil {
+	} else if domain.DecodeWithLimit(raw, &plan, maxSidechatStorageRetirementBytes) != nil {
 		return domain.SessionDeletionPending()
 	}
 	if plan.Version != 1 || plan.JobID != operation || plan.JobDigest != deletionInputDigest(j.Input) || plan.Parent.SessionID != r.SessionID || plan.Parent.ID != operation || plan.Parent.ServerID != server || plan.Parent.Actor != *input.SidechatActor || plan.Parent.validate() != nil || len(plan.Parent.Dependents) != len(input.SidechatDependents) {

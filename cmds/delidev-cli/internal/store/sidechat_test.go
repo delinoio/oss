@@ -213,6 +213,23 @@ func TestSidechatStorageRetirementRetainsOriginalPlanAfterCancel(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, string(operation)+".json")); err != nil {
 		t.Fatal(err)
 	}
+	// Expand a retained accepted private plan, not native cleanup evidence, to
+	// exercise complete disk persistence/restart of the 4,096-copy envelope.
+	retained, _, err := s.DeleteSession(ctx, domain.NewID(), child.ID, server, child.Revision)
+	if err != nil || len(retained.Workers) != 1 {
+		t.Fatal("original child plan", err)
+	}
+	work := &retained.Workers[0].Work
+	for len(work.Copies) < 4096 {
+		work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: domain.NewID(), Type: domain.ForkSessionJob, Revision: 2, InstanceID: instance, Digest: strings.Repeat("a", 64), ExecutionID: domain.NewID(), UnpublishedSidechatID: domain.NewID()})
+	}
+	large, err := json.Marshal(retained)
+	if err != nil || len(large) <= 1<<20 || len(large) > domain.MaxSessionDeletionBytes || work.Validate() != nil {
+		t.Fatal("invalid large private plan", err)
+	}
+	if err := s.writeSessionDeletion(retained); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.BeginSidechatStorageRetirement(ctx, operation, server); err != nil {
 		t.Fatal(err)
 	}
@@ -236,6 +253,14 @@ func TestSidechatStorageRetirementRetainsOriginalPlanAfterCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
 	if err := s.AdvanceSidechatStorageRetirements(ctx, server); err != nil {
 		t.Fatal(err)
 	}
