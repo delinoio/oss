@@ -155,17 +155,18 @@ type StorageResult struct {
 	CleanupVerified       bool                         `json:"cleanup_verified"`
 }
 type snapshotManifest struct {
-	SourceInventory  snapshotInventory `json:"source_inventory"`
-	SourceBytes      uint64            `json:"source_bytes,string"`
-	SourceDigest     string            `json:"source_digest"`
-	Version          uint32            `json:"version"`
-	ID               domain.ID         `json:"id"`
-	OperationID      domain.ID         `json:"operation_id"`
-	Workspace        Manifest          `json:"workspace"`
-	Preparation      PrepareRequest    `json:"preparation"`
-	OriginalIdentity string            `json:"original_identity"`
-	Inventory        snapshotInventory `json:"inventory"`
-	CreatedAt        time.Time         `json:"created_at"`
+	SourceDirectoryIdentity string            `json:"source_directory_identity,omitempty"`
+	SourceInventory         snapshotInventory `json:"source_inventory"`
+	SourceBytes             uint64            `json:"source_bytes,string"`
+	SourceDigest            string            `json:"source_digest"`
+	Version                 uint32            `json:"version"`
+	ID                      domain.ID         `json:"id"`
+	OperationID             domain.ID         `json:"operation_id"`
+	Workspace               Manifest          `json:"workspace"`
+	Preparation             PrepareRequest    `json:"preparation"`
+	OriginalIdentity        string            `json:"original_identity"`
+	Inventory               snapshotInventory `json:"inventory"`
+	CreatedAt               time.Time         `json:"created_at"`
 }
 type restoreBinding struct {
 	DirectoryIdentity string    `json:"directory_identity,omitempty"`

@@ -11,7 +11,8 @@ import (
 
 // Directory identities survive ordinary commits, config/index rewrites and file
 // edits, but never adopt a replacement workspace or Git store at the same path.
-// Only a newly published restore may capture them; legacy proofs stay uncertain.
+// Only a newly published snapshot or restore may capture them; legacy proofs
+// retain their previous verification requirements.
 func restoredDirectoryIdentity(root string, manifest Manifest) (string, error) {
 	paths := []string{root}
 	if len(manifest.Repositories) == 0 {
@@ -55,4 +56,28 @@ func directoryPathIdentity(path string) (string, error) {
 		return "", ResultUncertain()
 	}
 	return identity, nil
+}
+
+// Publication captures the original managed directories without reading mutable
+// files or external Git stores. Recovery can settle a verified snapshot after
+// later unsupported user edits, while replacement source directories stay foreign.
+func sourceWorkspaceDirectoryIdentity(root string, manifest Manifest) (string, error) {
+	paths := []string{root}
+	if len(manifest.Repositories) == 0 {
+		paths = append(paths, filepath.Join(root, "chat"))
+	}
+	for _, repo := range manifest.Repositories {
+		paths = append(paths, filepath.Join(root, string(repo.ID)))
+	}
+	identities := make([]string, 0, len(paths))
+	for _, path := range paths {
+		identity, err := directoryPathIdentity(path)
+		if err != nil {
+			return "", err
+		}
+		identities = append(identities, identity)
+	}
+	raw, _ := json.Marshal(identities)
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:]), nil
 }

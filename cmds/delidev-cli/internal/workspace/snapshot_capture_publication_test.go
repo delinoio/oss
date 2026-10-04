@@ -4,6 +4,7 @@ package workspace
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,5 +124,89 @@ func TestSnapshotCaptureRecoveryRetainsPublishedOriginal(t *testing.T) {
 	recovered := storageDo(t, m, recoveryRequest(r))
 	if recovered.RecoveredJobState != domain.JobSucceeded || recovered.Snapshot == nil || recovered.Snapshot.ID != r.SnapshotID || recovered.WorkspaceState != domain.WorkspacePresent || !recovered.CleanupVerified {
 		t.Fatal("original published snapshot was not recovered", recovered)
+	}
+}
+
+func TestPublishedSnapshotRecoveryIgnoresLaterCopyEligibility(t *testing.T) {
+	for _, action := range []StorageAction{StorageCreate, StorageCleanup} {
+		t.Run(string(action), func(t *testing.T) {
+			m, r := snapshotPublicationFixture(t, action)
+			m.storageScratchCleanupFault = func(string) error { return os.ErrPermission }
+			if _, err := m.Storage(context.Background(), r); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal(err)
+			}
+			snapshot, metadata, err := m.inspectSnapshot(context.Background(), r.SnapshotID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Ordinary later writes can exceed the original admission inventory.
+			for n := 0; n <= MaxSnapshotEntries; n++ {
+				if err := os.WriteFile(filepath.Join(r.Manifest.PrimaryPath, fmt.Sprintf("later-%d", n)), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			m.storageScratchCleanupFault = nil
+			m.storageBeforeSnapshotPublish = func(string) { t.Fatal("recovery repeated publication") }
+			recovered := storageDo(t, m, recoveryRequest(r))
+			expected := domain.JobFailed
+			if action == StorageCreate {
+				expected = domain.JobSucceeded
+			}
+			if recovered.RecoveredJobState != expected || recovered.WorkspaceState != domain.WorkspacePresent || recovered.SourceBytes != snapshot.SourceBytes || recovered.PreviewDigest != snapshot.SourceDigest || recovered.Snapshot == nil || *recovered.Snapshot != metadata || !recovered.CleanupVerified {
+				t.Fatal("original publication not settled", recovered)
+			}
+			if _, err := os.Stat(filepath.Join(r.Manifest.PrimaryPath, "later-0")); err != nil {
+				t.Fatal("later source removed", err)
+			}
+		})
+	}
+}
+
+func TestPublishedSnapshotRecoveryRejectsReplacedSourceDirectory(t *testing.T) {
+	m, r := snapshotPublicationFixture(t, StorageCreate)
+	m.storageScratchCleanupFault = func(string) error { return os.ErrPermission }
+	if _, err := m.Storage(context.Background(), r); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal(err)
+	}
+	old := r.Manifest.PrimaryPath + "-original"
+	if err := os.Rename(r.Manifest.PrimaryPath, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(r.Manifest.PrimaryPath, 0700); err != nil {
+		t.Fatal(err)
+	}
+	m.storageScratchCleanupFault = nil
+	if _, err := m.Storage(context.Background(), recoveryRequest(r)); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("replacement adopted", err)
+	}
+	if _, err := os.Stat(filepath.Join(old, "keep")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPublishedSnapshotRecoveryIgnoresUnavailableExternalGit(t *testing.T) {
+	for _, action := range []StorageAction{StorageCreate, StorageCleanup} {
+		t.Run(string(action), func(t *testing.T) {
+			m := manager(t)
+			r, sources := snapshotRequest(t, m, false)
+			preview := storageDo(t, m, r)
+			r.OperationID, r.SnapshotID, r.Action, r.PreviewDigest = domain.NewID(), domain.NewID(), action, preview.PreviewDigest
+			m.storageScratchCleanupFault = func(string) error { return os.ErrPermission }
+			if _, err := m.Storage(context.Background(), r); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal(err)
+			}
+			if err := os.Rename(sources[0], sources[0]+"-offline"); err != nil {
+				t.Fatal(err)
+			}
+			m.storageScratchCleanupFault = nil
+			result := storageDo(t, m, recoveryRequest(r))
+			expected := domain.JobFailed
+			if action == StorageCreate {
+				expected = domain.JobSucceeded
+			}
+			if result.RecoveredJobState != expected || result.WorkspaceState != domain.WorkspacePresent || !result.CleanupVerified {
+				t.Fatal(result)
+			}
+		})
 	}
 }

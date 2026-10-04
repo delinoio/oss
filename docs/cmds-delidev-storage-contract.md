@@ -914,3 +914,7 @@ uncertainty claims have their separate eight-member bound. Terminal attempts do
 not reset the reservation count or strand an earlier still-supported successor.
 Exact request replay consumes no additional attempt; exhausting the finite
 recovery-attempt bound preserves evidence and returns explicit resource guidance.
+
+Published snapshots bind the native identities of the original managed root and its chat/repository directories. Recovery verifies that publication and those identities, then uses its pinned source bytes and digest without rewalking mutable original files or external Git stores. A published Create settles as succeeded; Cleanup with its original source still live settles as failed with source preserved. Unsupported later files and unavailable external Git do not strand that settlement. Directory replacement remains uncertain; pre-amendment snapshots retain their previous checks. Windows cross-volume original Git stores remain external observations under the same aggregate budget.
+
+The shared server workspace read scope admits new file, directory, diff, private PR and terminal reads only while storage is present. Pending, uncertain and stored state closes that scope before publication. Previously admitted responses and cleanup retain their original separate ownership checks.

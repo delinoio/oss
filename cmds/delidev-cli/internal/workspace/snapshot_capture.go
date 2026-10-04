@@ -48,6 +48,10 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 		}
 	}()
 	root := filepath.Join(m.Root, "workspaces", string(r.Preparation.SessionID))
+	sourceDirectories, err := sourceWorkspaceDirectoryIdentity(root, r.Manifest)
+	if err != nil {
+		return empty, err
+	}
 	skip := func(path string) bool {
 		for _, repo := range r.Manifest.Repositories {
 			if path == string(repo.ID)+"/.git" || strings.HasPrefix(path, string(repo.ID)+"/.git/") {
@@ -88,7 +92,11 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	if err != nil || observation.Digest != expectedDigest {
 		return empty, ResultUncertain()
 	}
-	snapshot := snapshotManifest{SourceBytes: observation.Whole.Bytes, SourceDigest: observation.Digest, SourceInventory: observation.Whole, Version: 1, ID: r.SnapshotID, OperationID: r.OperationID, Workspace: r.Manifest, Preparation: r.Preparation, OriginalIdentity: identity, Inventory: inventory, CreatedAt: time.Now().UTC()}
+	currentDirectories, err := sourceWorkspaceDirectoryIdentity(root, r.Manifest)
+	if err != nil || currentDirectories != sourceDirectories {
+		return empty, ResultUncertain()
+	}
+	snapshot := snapshotManifest{SourceDirectoryIdentity: sourceDirectories, SourceBytes: observation.Whole.Bytes, SourceDigest: observation.Digest, SourceInventory: observation.Whole, Version: 1, ID: r.SnapshotID, OperationID: r.OperationID, Workspace: r.Manifest, Preparation: r.Preparation, OriginalIdentity: identity, Inventory: inventory, CreatedAt: time.Now().UTC()}
 	raw, err := json.Marshal(snapshot)
 	if err != nil {
 		return empty, err
@@ -334,7 +342,7 @@ func (m *Manager) inspectSnapshotContent(ctx context.Context, id domain.ID) (sna
 	if err != nil {
 		return snapshot, metadata, err
 	}
-	if domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != id || snapshot.OperationID.Validate() != nil || snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !digestValid(snapshot.OriginalIdentity) || snapshot.CreatedAt.IsZero() {
+	if domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != id || snapshot.OperationID.Validate() != nil || snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !digestValid(snapshot.OriginalIdentity) || snapshot.SourceDirectoryIdentity != "" && !digestValid(snapshot.SourceDirectoryIdentity) || snapshot.CreatedAt.IsZero() {
 		return snapshot, metadata, ResultUncertain()
 	}
 	inventory, err := walkSnapshot(ctx, filepath.Join(root, "workspace"), "", nil)
@@ -459,11 +467,11 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 			// Restored repositories keep their independent Git store inside the
 			// workspace. The complete root inventory already covers its bytes,
 			// entries and digest; only external original stores need another walk.
-			relative, err := filepath.Rel(root, path)
+			external, err := snapshotExternalGitStore(root, path)
 			if err != nil {
 				return storageObservationResult{}, err
 			}
-			if filepath.IsLocal(relative) {
+			if !external {
 				continue
 			}
 			inventory, err := walkSnapshotBudget(ctx, path, "", func(path string) bool { return path == "worktrees" || strings.HasPrefix(path, "worktrees/") }, MaxSnapshotEntries, &budget)
@@ -534,4 +542,18 @@ func validateSnapshotGitConfig(ctx context.Context, git Git, path, admin string)
 		}
 	}
 	return nil
+}
+
+// Rel cannot compare Windows paths on different volumes. Only that closed case
+// denotes an external store; other relative-path failures remain errors.
+func snapshotExternalGitStore(root, path string) (bool, error) {
+	rootVolume, pathVolume := filepath.VolumeName(root), filepath.VolumeName(path)
+	if runtime.GOOS == "windows" && rootVolume != "" && pathVolume != "" && !strings.EqualFold(rootVolume, pathVolume) {
+		return true, nil
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return false, err
+	}
+	return !filepath.IsLocal(relative), nil
 }

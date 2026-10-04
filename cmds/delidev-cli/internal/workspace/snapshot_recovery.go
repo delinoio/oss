@@ -552,14 +552,26 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err != nil || manifestDigest(manifest) != manifestDigest(r.Manifest) {
 				return result, ResultUncertain()
 			}
-			if _, err := m.verifyWorkspaceIdentity(ctx, r.Preparation, manifest, continuationIdentity); err != nil {
-				return result, err
+			if snapshotExists && (original.Action == StorageCreate || original.Action == StorageCleanup) && snapshot.SourceDirectoryIdentity != "" {
+				identity, err := sourceWorkspaceDirectoryIdentity(root, manifest)
+				if err != nil || identity != snapshot.SourceDirectoryIdentity {
+					return result, ResultUncertain()
+				}
+				// The original publication claim proves the completed copy. Later
+				// mutable source eligibility cannot revoke that proof or authorize
+				// another cleanup. A live cleanup source settles as preserved/failed.
+				result.SourceBytes, result.PreviewDigest = snapshot.SourceBytes, snapshot.SourceDigest
+			} else {
+				// Pre-amendment snapshots retain their prior identity checks.
+				if _, err := m.verifyWorkspaceIdentity(ctx, r.Preparation, manifest, continuationIdentity); err != nil {
+					return result, err
+				}
+				observation, err := m.storageObservation(ctx, original)
+				if err != nil {
+					return result, err
+				}
+				result.SourceBytes, result.PreviewDigest = observation.Whole.Bytes, observation.Digest
 			}
-			observation, err := m.storageObservation(ctx, original)
-			if err != nil {
-				return result, err
-			}
-			result.SourceBytes, result.PreviewDigest = observation.Whole.Bytes, observation.Digest
 			result.WorkspaceState = domain.WorkspacePresent
 			if original.Action == StorageCreate && snapshotExists {
 				result.RecoveredJobState = domain.JobSucceeded

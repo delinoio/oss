@@ -193,3 +193,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Snapshot observations and recovery outcomes preserve every field of the accepted snapshot metadata. Only successful original deletion may transition Deleted; failed recovery projects inspection without rewriting immutable size, creation time, digest or ownership.
 
 - Storage admission reserves eight total original-group recovery attempts, counting canceled and failed accepted attempts as retained deletion obligations. Native uncertainty claims have their separate eight-member bound. Terminal attempts do not reset the reservation count or strand an earlier still-supported successor. Exact request replay consumes no additional attempt; exhausting the finite recovery-attempt bound preserves evidence and returns explicit resource guidance.
+
+- New workspace file, diff, PR and terminal reads require present storage through the shared transactional workspace read scope; pending, uncertain and stored sessions cannot publish a new read. Original admitted result/cleanup authority remains independently validated.
