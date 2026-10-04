@@ -27,6 +27,12 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+// The pinned native document retains its independent 8 MiB ceiling and the
+// accepted input retains 3 MiB. Reserve another 1 MiB for the closed ownership,
+// digest and claim metadata so either valid component can fit after mutation.
+// Keep Claude/Codex's original private checkpoint bound unchanged.
+const maxOpenCodeCompactionCheckpoint = (8 << 20) + domain.MaxCompactionInputBytes + (1 << 20)
+
 type openCodeSessionCompactionCheckpoint struct {
 	Version            uint32                        `json:"version"`
 	ServerID           domain.ID                     `json:"server_id"`
@@ -264,8 +270,8 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 	if readCompactionClaimRecords(config.Root, owner, i, p.RegistrationDigest, p.CommandDigest) != nil || readOpenCodeCompactionNativeClaims(config.Root, p) != nil {
 		return nil, domain.CompactionUncertain()
 	}
-	data, err := json.Marshal(p)
-	if err != nil || len(data) > maxCompactionCheckpoint || security.PrivateDir(filepath.Join(config.Root, "compaction-checkpoints")) != nil {
+	data, err := encodeOpenCodeCompactionDocument(p)
+	if err != nil || security.PrivateDir(filepath.Join(config.Root, "compaction-checkpoints")) != nil {
 		return nil, domain.CompactionUncertain()
 	}
 	path, err := compactionCheckpointPath(config.Root, i.ActionID)
@@ -309,9 +315,8 @@ func readOpenCodeSessionCompactionCheckpoint(ctx context.Context, root string, c
 	if err != nil {
 		return empty, err
 	}
-	raw, err := security.ReadPrivate(path, maxCompactionCheckpoint)
-	var p openCodeSessionCompactionCheckpoint
-	if err != nil || executionInputDigest(raw) != ref.CheckpointDigest || domain.DecodeWithLimit(raw, &p, maxCompactionCheckpoint) != nil || p.Version != 1 || p.Input.Validate() != nil || p.Input.Version != 3 || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID || p.SourceDigest != source.NativeReference.SHA256 || p.NativeReference.SHA256 != ref.NativeDigest || p.NativeReference.OwnerID != ref.JobID {
+	raw, p, err := readOpenCodeCompactionDocument(path)
+	if err != nil || executionInputDigest(raw) != ref.CheckpointDigest || p.Version != 1 || p.Input.Validate() != nil || p.Input.Version != 3 || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID || p.SourceDigest != source.NativeReference.SHA256 || p.NativeReference.SHA256 != ref.NativeDigest || p.NativeReference.OwnerID != ref.JobID {
 		return empty, domain.CompactionUncertain()
 	}
 	canonical, err := json.Marshal(p)
@@ -371,4 +376,29 @@ func readOpenCodeSessionCompactionCheckpoint(ctx context.Context, root string, c
 		return empty, domain.CompactionUncertain()
 	}
 	return p, nil
+}
+
+func encodeOpenCodeCompactionDocument(p openCodeSessionCompactionCheckpoint) ([]byte, error) {
+	input, err := json.Marshal(p.Input)
+	if err != nil || len(input) > domain.MaxCompactionInputBytes || len(p.Native) > 8<<20 {
+		return nil, domain.CompactionUncertain()
+	}
+	raw, err := json.Marshal(p)
+	if err != nil || len(raw) > maxOpenCodeCompactionCheckpoint {
+		return nil, domain.CompactionUncertain()
+	}
+	return raw, nil
+}
+
+func readOpenCodeCompactionDocument(path string) ([]byte, openCodeSessionCompactionCheckpoint, error) {
+	var p openCodeSessionCompactionCheckpoint
+	raw, err := security.ReadPrivate(path, maxOpenCodeCompactionCheckpoint)
+	if err != nil || domain.DecodeWithLimit(raw, &p, maxOpenCodeCompactionCheckpoint) != nil {
+		return nil, p, domain.CompactionUncertain()
+	}
+	canonical, err := encodeOpenCodeCompactionDocument(p)
+	if err != nil || !bytes.Equal(raw, canonical) {
+		return nil, p, domain.CompactionUncertain()
+	}
+	return raw, p, nil
 }
