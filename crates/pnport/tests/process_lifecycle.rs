@@ -473,10 +473,15 @@ impl Fixture {
 
     fn owner_failure_diagnostics(output: &Output) -> serde_json::Value {
         let log = String::from_utf8_lossy(&output.stderr);
-        let stages: Vec<_> = ["Registration", "Cleanup", "JournalWrite"]
-            .into_iter()
-            .filter(|stage| log.contains(&format!("stage: {stage},")))
-            .collect();
+        let stages: Vec<_> = [
+            "Registration",
+            "Cleanup",
+            "JournalWrite",
+            "AdmissionReplica",
+        ]
+        .into_iter()
+        .filter(|stage| log.contains(&format!("stage: {stage},")))
+        .collect();
         let errors: Vec<i32> = log
             .lines()
             .filter_map(|line| {
@@ -1440,6 +1445,31 @@ fn an_unclaimed_background_job_preserves_an_empty_foreground() {
     let (mut fixture, _terminal) = Fixture::terminal("background-empty");
     assert_eq!(fixture.stopped().status.code(), Some(23));
     assert!(fixture.root.path().join("terminal.preserved").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn deleted_journal_and_guardian_loss_retain_an_orphan_parent_version() {
+    let mut fixture = Fixture::new("deleted-journal", false);
+    fixture.ready();
+    let mut unrelated = Control(
+        Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap(),
+    );
+    fs::write(fixture.root.path().join("attack.release"), b"1").unwrap();
+    assert_eq!(fixture.stopped().status.code(), Some(125));
+    assert!(fixture.root.path().join("attack.deleted").is_file());
+    for role in ["root", "leaf"] {
+        assert_eq!(
+            fs::read(fixture.root.path().join(format!("{role}.signal"))).unwrap(),
+            [libc::SIGTERM as u8]
+        );
+    }
+    assert!(unrelated.0.try_wait().unwrap().is_none());
     fixture.assert_released();
 }
 

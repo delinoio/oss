@@ -25,6 +25,7 @@ use crate::macos_registry::{FailureStage, Registry};
 
 const MODE: &str = "__pnport_macos_owner";
 const SOCKET_ENV: &str = "PNPORT_MACOS_OWNER_FD";
+const REPLICA_ENV: &str = "PNPORT_MACOS_OWNER_REPLICA_FD";
 #[cfg(test)]
 const ROLE_ENV: &str = "PNPORT_MACOS_OWNER_ROLE";
 const DEADLINE: Duration = Duration::from_secs(7);
@@ -55,7 +56,7 @@ impl Role {
     }
 }
 
-fn launch(role: Role) -> Result<(Child, UnixStream)> {
+fn launch(role: Role, replica: Option<&UnixStream>) -> Result<(Child, UnixStream)> {
     let (socket, helper) = UnixStream::pair().map_err(|_| failure())?;
     socket
         .set_read_timeout(Some(DEADLINE))
@@ -64,8 +65,12 @@ fn launch(role: Role) -> Result<(Child, UnixStream)> {
         .set_write_timeout(Some(DEADLINE))
         .map_err(|_| failure())?;
     let fd = helper.as_raw_fd();
+    let replica_fd = replica.map(AsRawFd::as_raw_fd);
     let mut command = Command::new(std::env::current_exe().map_err(|_| failure())?);
     command.env_clear();
+    if let Some(replica_fd) = replica_fd {
+        command.env(REPLICA_ENV, replica_fd.to_string());
+    }
     #[cfg(not(test))]
     command.args([MODE, role.name()]);
     #[cfg(test)]
@@ -85,6 +90,11 @@ fn launch(role: Role) -> Result<(Child, UnixStream)> {
             if libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
                 return Err(io::Error::last_os_error());
             }
+            if let Some(replica_fd) = replica_fd {
+                if libc::fcntl(replica_fd, libc::F_SETFD, 0) < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
             Ok(())
         });
     }
@@ -103,6 +113,7 @@ fn failure() -> Error {
 pub struct Owner {
     child: Child,
     socket: UnixStream,
+    replica: UnixStream,
     finished: bool,
     registry: Registry,
 }
@@ -115,10 +126,19 @@ impl Owner {
             .and_then(|mut file| file.read_exact(&mut key))
             .map_err(|_| failure())?;
         let registry = Registry::create(session, key).map_err(|_| failure())?;
-        let (child, socket) = launch(Role::Guardian)?;
+        let (replica, helper_replica) = UnixStream::pair().map_err(|_| failure())?;
+        replica
+            .set_read_timeout(Some(DEADLINE))
+            .map_err(|_| failure())?;
+        replica
+            .set_write_timeout(Some(DEADLINE))
+            .map_err(|_| failure())?;
+        let (child, socket) = launch(Role::Guardian, Some(&helper_replica))?;
+        drop(helper_replica);
         let mut owner = Self {
             child,
             socket,
+            replica,
             finished: false,
             registry,
         };
@@ -152,11 +172,7 @@ impl Owner {
         self.socket
             .write_all(&identity.birth.to_be_bytes())
             .map_err(|_| failure())?;
-        let mut acknowledged = [0];
-        self.socket
-            .read_exact(&mut acknowledged)
-            .map_err(|_| failure())?;
-        if acknowledged != *b"A" {
+        if self.receive_control()? != b'A' {
             return Err(failure());
         }
         self.registry.admit(identity).map_err(|_| failure())?;
@@ -172,13 +188,96 @@ impl Owner {
         pnport_core::macos_process::encode_public_key(&self.registry.verification_key())
     }
 
+    fn drain_replica(&mut self, limit: usize) -> Result<()> {
+        for _ in 0..limit {
+            let mut byte = 0u8;
+            // Peek without blocking. EOF is handled by the control channel;
+            // normal final cleanup may close this stream before its control ACK.
+            let count = unsafe {
+                libc::recv(
+                    self.replica.as_raw_fd(),
+                    (&raw mut byte).cast(),
+                    1,
+                    libc::MSG_PEEK | libc::MSG_DONTWAIT,
+                )
+            };
+            if count == 0 {
+                return Ok(());
+            }
+            if count < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::WouldBlock {
+                    return Ok(());
+                }
+                if error.raw_os_error() == Some(libc::EINTR) {
+                    continue;
+                }
+                return Err(failure());
+            }
+            let mut size = [0; 4];
+            self.replica.read_exact(&mut size).map_err(|_| failure())?;
+            let size = u32::from_be_bytes(size) as usize;
+            if size == 0 || size > 1024 {
+                return Err(failure());
+            }
+            let mut bytes = vec![0; size];
+            self.replica.read_exact(&mut bytes).map_err(|_| failure())?;
+            let identity = serde_json::from_slice(&bytes).map_err(|_| failure())?;
+            // Only the authenticated same-image guardian holds the other end.
+            // The complete private copy was queued before its file ACK. Retain
+            // it in memory; writable/deleted journals cannot erase authority.
+            self.registry.remember(identity).map_err(|_| failure())?;
+        }
+        Ok(())
+    }
+
+    fn receive_control(&mut self) -> Result<u8> {
+        let deadline = Instant::now() + DEADLINE;
+        loop {
+            self.drain_replica(64)?;
+            let mut events = [
+                libc::pollfd {
+                    fd: self.socket.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: self.replica.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+            ];
+            let observed = unsafe { libc::poll(events.as_mut_ptr(), events.len() as _, 10) };
+            if observed < 0 {
+                if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                    continue;
+                }
+                return Err(failure());
+            }
+            if events[0].revents != 0 {
+                let mut reply = [0];
+                self.socket.read_exact(&mut reply).map_err(|_| failure())?;
+                return Ok(reply[0]);
+            }
+            if Instant::now() >= deadline {
+                return Err(failure());
+            }
+        }
+    }
+
     pub fn owns_group(&mut self, group: i32) -> Result<bool> {
         // EOF does not reap the guardian: retain the original group reservation
         // while authenticated parent recovery verifies additional tty ownership.
         match self.query_group(group) {
             Ok(owned) => Ok(owned),
             Err(_) => {
-                self.registry.recover().map_err(|_| failure())?;
+                self.drain_replica(65536)?;
+                let recovered = self.registry.recover();
+                tracing::debug!(
+                    action = "macos_owner_foreground_recovery",
+                    records_valid = recovered.is_ok(),
+                    "Retained private admitted ownership during control recovery"
+                );
                 self.registry.owns_group(group).map_err(|_| failure())
             }
         }
@@ -190,11 +289,7 @@ impl Owner {
         self.socket
             .write_all(&group.to_be_bytes())
             .map_err(|_| failure())?;
-        let mut response = [0];
-        self.socket
-            .read_exact(&mut response)
-            .map_err(|_| failure())?;
-        match response[0] {
+        match self.receive_control()? {
             b'Y' => Ok(true),
             b'N' => Ok(false),
             _ => Err(failure()),
@@ -206,9 +301,7 @@ impl Owner {
         self.socket
             .write_all(&group.to_be_bytes())
             .map_err(|_| failure())?;
-        let mut reply = [0];
-        self.socket.read_exact(&mut reply).map_err(|_| failure())?;
-        if reply != *b"J" {
+        if self.receive_control()? != b'J' {
             return Err(failure());
         }
         Ok(())
@@ -218,7 +311,8 @@ impl Owner {
         self.child.id() as i32
     }
 
-    pub fn check(&self) -> Result<()> {
+    pub fn check(&mut self) -> Result<()> {
+        self.drain_replica(64)?;
         let mut event = libc::pollfd {
             fd: self.socket.as_raw_fd(),
             events: libc::POLLIN,
@@ -240,20 +334,22 @@ impl Owner {
             signal,
             "Stopping the owned command group"
         );
+        let replicated = self.drain_replica(65536);
         let result = (|| {
             self.socket
                 .write_all(&[signal as u8])
                 .map_err(|_| failure())?;
-            let mut completed = [0];
-            self.socket
-                .read_exact(&mut completed)
-                .map_err(|_| failure())?;
-            match completed[0] {
+            match self.receive_control()? {
                 b'C' => Ok(false),
                 b'K' => Ok(true),
                 _ => Err(failure()),
             }
         })();
+        // Consume every completed copy before EOF/failure recovery, including
+        // backlog queued while this supervisor was stopped. A partial failed
+        // copy never permits guardian acknowledgement of a new user image.
+        let remaining = self.drain_replica(65536);
+        let result = result.and_then(|escalated| replicated.and(remaining).map(|()| escalated));
         tracing::debug!(
             action = "macos_owner_cleanup_acknowledged",
             escalated = matches!(&result, Ok(true)),
@@ -323,8 +419,8 @@ fn image(pid: i32) -> Option<fs::Metadata> {
     fs::metadata(Path::new(OsStr::from_bytes(&bytes[..end]))).ok()
 }
 
-fn authenticated_socket(role: Role) -> Option<UnixStream> {
-    let fd = std::env::var(SOCKET_ENV)
+fn authenticated_socket(role: Role, variable: &str) -> Option<UnixStream> {
+    let fd = std::env::var(variable)
         .ok()?
         .parse::<i32>()
         .ok()
@@ -391,7 +487,7 @@ struct Member {
 
 impl Member {
     fn start(role: Role) -> Result<Self> {
-        let (child, socket) = launch(role)?;
+        let (child, socket) = launch(role, None)?;
         let mut member = Self {
             child,
             socket,
@@ -527,7 +623,7 @@ fn cleanup_signal(
 
 fn run_helper(role: Role) -> ! {
     let result = (|| -> Option<()> {
-        let mut socket = authenticated_socket(role)?;
+        let mut socket = authenticated_socket(role, SOCKET_ENV)?;
         unsafe {
             for signal in [
                 libc::SIGINT,
@@ -553,6 +649,13 @@ fn run_helper(role: Role) -> ! {
                 _ => None,
             };
         }
+        let replica_fd = std::env::var(REPLICA_ENV).ok()?.parse::<i32>().ok()?;
+        if replica_fd == socket.as_raw_fd() {
+            return None;
+        }
+        let replica = authenticated_socket(role, REPLICA_ENV)?;
+        replica.set_read_timeout(Some(DEADLINE)).ok()?;
+        replica.set_write_timeout(Some(DEADLINE)).ok()?;
         use std::os::unix::ffi::OsStringExt;
         let mut size = [0; 4];
         socket.read_exact(&mut size).ok()?;
@@ -566,6 +669,7 @@ fn run_helper(role: Role) -> ! {
         socket.read_exact(&mut key).ok()?;
         let session = PathBuf::from(std::ffi::OsString::from_vec(path));
         let mut registry = Registry::create(&session, key).ok()?;
+        registry.attach_replica(replica);
         let group = unsafe { libc::getpid() };
         let anchor = independent_group().ok()?;
         fs::write(session.join("owner/alive"), b"1").ok()?;
@@ -596,11 +700,53 @@ fn run_helper(role: Role) -> ! {
 #[cfg(test)]
 mod tests {
     use std::{
-        io::Read,
-        os::unix::{net::UnixStream, process::CommandExt},
+        io::{Read, Write},
+        os::unix::{
+            net::UnixStream,
+            process::{CommandExt, ExitStatusExt},
+        },
         process::Command,
         time::Duration,
     };
+
+    #[test]
+    fn admission_keeps_a_private_copy_without_supervisor_polling() {
+        let session = tempfile::tempdir().unwrap();
+        let mut owner = super::Owner::start(session.path()).unwrap();
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "read ready; exec /bin/sleep 30"])
+            .stdin(std::process::Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        owner.admit_root(child.id() as i32).unwrap();
+        let previous = super::Identity::capture(child.id() as i32).unwrap();
+        child.stdin.take().unwrap().write_all(b"ready\n").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let current = loop {
+            let current = previous.refresh().unwrap().unwrap();
+            if current.version != previous.version {
+                break current;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        // No Owner polling while registration waits. A stopped supervisor must
+        // not block admission in an independently running owned group. A full
+        // private copy is queued before the signed file is made available.
+        pnport_core::macos_process::registration(
+            session.path(),
+            current,
+            &owner.registry.verification_key(),
+        )
+        .unwrap();
+        for entry in std::fs::read_dir(session.path().join("owner/accepted")).unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        owner.child.kill().unwrap();
+        assert!(owner.stop(libc::SIGTERM).is_err());
+        assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGTERM));
+    }
 
     #[test]
     fn foreground_query_recovers_after_mid_request_control_loss() {
