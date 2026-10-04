@@ -24,6 +24,9 @@ concurrency:
 
 jobs:
   prepare:
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-22.04
     outputs:
       version: ${{ steps.source.outputs.version }}
@@ -43,6 +46,7 @@ jobs:
       - name: Verify exact source and publication identity
         id: source
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_PROJECT: pnport
           REQUESTED_VERSION: ${{ inputs.version }}
           REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
@@ -54,6 +58,7 @@ jobs:
           import { nativeMatrix } from './packages/pnport/scripts/native-matrix.mjs';
           import { requirePublicationReady } from './packages/pnport/scripts/common.mjs';
           import { publicationChannel } from './packages/pnport/scripts/version.mjs';
+          import { actionsRead, requireTagDryRun } from './packages/pnport/scripts/release-dry-run.mjs';
           const source = sourceMetadata({ project: Project.Pnport, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, file => readFileSync(file, 'utf8'));
           // A newly created tag first validates without publication.
           // Publish only by an explicit exact-tag dispatch after that dry run.
@@ -62,7 +67,11 @@ jobs:
           const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
           if (revision !== process.env.GITHUB_SHA) throw new Error('Checkout revision mismatch');
           if (source.dry_run !== 'true' && (process.env.GITHUB_REPOSITORY !== 'delinoio/oss' || process.env.GITHUB_REF !== `refs/tags/${source.tag}`)) throw new Error('Publication requires exact first-party tag');
-          if (source.dry_run !== 'true') requirePublicationReady();
+          if (source.dry_run !== 'true') {
+            requirePublicationReady();
+            const runId = await requireTagDryRun({ tag: source.tag, revision }, actionsRead);
+            console.log(JSON.stringify({ event: 'pnport_tag_dry_run', tag: source.tag, revision, run_id: runId }));
+          }
           appendFileSync(process.env.GITHUB_OUTPUT, Object.entries({ ...source, ...publicationChannel(source.version), revision, tree, matrix: JSON.stringify(nativeMatrix) }).map(([key, value]) => `${key}=${value}\n`).join(''));
           JS
 

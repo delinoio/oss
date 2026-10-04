@@ -3,7 +3,7 @@
 pnport is being developed to run subprocesses in an installed Yarn 4 Plug'n'Play
 project without generating a physical `node_modules` tree.
 
-**Stable 0.1.0 is being prepared with known limitations.** Check that the exact
+**Version 0.1.0 has known limitations.** Check that the exact
 version is published before installing:
 
 ```sh
@@ -11,9 +11,8 @@ npm view @delino/pnport@0.1.0 version && npm install --global --ignore-scripts @
 ```
 
 Intermittent macOS initialization failures and cancellation returning exit 125
-instead of the signal-derived status remain unresolved. Complete feature
-acceptance is incomplete. The owner authorized this release with those limits;
-release preparation does not establish published availability. Report
+instead of the signal-derived status remain unresolved. Compatibility is not verified for every filesystem and process workflow.
+Source availability does not establish published package availability. Report
 reproducible failures with the exact version and sanitized diagnostics.
 
 Experimental `0.1.0-next.N` npm next previews are intended for external

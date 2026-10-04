@@ -12,6 +12,15 @@ skipped checks. Require `pnportReleaseReady: true` and exact
 and keep #958 and the complete Windows 0.2.0 requirements open. This amendment
 takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
 
+Public README/release notes disclose platforms and unresolved user-facing failures;
+keep approval and pipeline details in internal contracts, PRs, issues and CI.
+Before any publication outputs or write authority, the prepare job must verify
+the latest first-party tag-push run for the exact tag/revision succeeded, with
+all four native jobs and complete assembly successful and every publication
+job skipped. Discovery and job readback fail closed, including missing, pending,
+failed, ambiguous and untrusted results. Branch candidates do not grant this
+authority.
+
 ## Scope
 macOS packages and CLI admission require private companion ABI format 3 for the pending-image constructor lease protocol. Package inspection rejects older format 1/2 macOS libraries; Linux/Windows retain their independent format 1. Build and install the executable and companion together. This private protocol change retains CLI commands, doctor JSON v1 and the closed stable gate.
 `packages/pnport` owns the private npm source, launcher and four native packages for 0.1.0; the two Windows packages are deferred to 0.2.0. Native release archives include the matching interception artifacts. All distribution requirements in [#958](crates-pnport-requirements.md) remain stable release gates; the explicitly authorized experimental next channel retains the complete four-host package gates and discloses unfinished acceptance.

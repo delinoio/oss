@@ -84,7 +84,7 @@
 
 ### pnport Rules
 
-- pnport tag pushes perform credential-free dry runs only. Actual publication requires an explicit `Release pnport` dispatch at the same final tag with `dry_run=false` after its successful dry run; all npm/GitHub/Homebrew jobs require the manual event and retain complete fresh native verification.
+- pnport tag pushes perform credential-free dry runs only. Actual publication requires an explicit `Release pnport` dispatch at the same final tag with `dry_run=false` after its successful dry run. Before publication outputs/write authority, verify the latest exact-tag/revision first-party push run and its complete successful native/assembly jobs with all publication jobs skipped; missing, failed, pending or untrusted records block. All npm/GitHub/Homebrew jobs require the manual event and retain complete fresh native verification.
 
 
 - The owner-authorized 2026-10-04 amendment in `docs/project-pnport.md` permits exactly stable 0.1.0 publication with the recorded macOS initialization/SIGHUP failures, separate root clibox watch failure and full-acceptance review deferred. This version-specific exception takes precedence over earlier full-acceptance prerequisites; it does not establish a cause fix or passing skipped checks. Require `pnportReleaseReady: true` plus an exact `pnportReleaseVersion` match; version coordination preserves both fields. Retain all final four-native candidate execution/install/TypeScript/benchmark, integrity, signing, native-before-launcher and immutable-retry gates. New failures still block publication. Keep #958 open, preserve Windows 0.2.0 and immutable 0.1.0-next.1, and disclose unresolved user-facing limits. Remove the stable unreleased notice only after verified publication.

@@ -307,7 +307,8 @@ for (const version of ["0.1.0", "0.1.0-next.1"]) test(`signed GitHub ${version} 
         else {
           assert.match(body.body, /intermittent macOS initialization failures/u);
           assert.match(body.body, /exit 125 instead of the signal-derived status/u);
-          assert.match(body.body, /explicit approval to defer/u);
+          assert.match(body.body, /Compatibility is not verified/u);
+          assert.doesNotMatch(body.body, /owner|approval|review|gates|TypeScript|signing/u);
         }
         return release;
       }

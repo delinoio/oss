@@ -28,6 +28,15 @@ the unreleased notice until actual stable distribution is verified. This
 amendment takes precedence over earlier statements that full acceptance must be
 complete before the first stable publication.
 
+Public README/release notes disclose platforms and unresolved user-facing failures;
+keep approval and pipeline details in internal contracts, PRs, issues and CI.
+Before any publication outputs or write authority, the prepare job must verify
+the latest first-party tag-push run for the exact tag/revision succeeded, with
+all four native jobs and complete assembly successful and every publication
+job skipped. Discovery and job readback fail closed, including missing, pending,
+failed, ambiguous and untrusted results. Branch candidates do not grant this
+authority.
+
 ## Goal
 Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph without creating a project node_modules directory. Issue #958 defines the complete staged acceptance boundary: 0.1.0 ships macOS/glibc Linux first, and 0.2.0 adds Windows. The owner-authorized experimental npm next channel permits an exact reviewed `0.1.0-next.N` candidate for external testing, without completing stable acceptance; the original Windows requirements remain in scope.
 

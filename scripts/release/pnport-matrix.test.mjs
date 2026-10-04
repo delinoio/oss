@@ -23,7 +23,7 @@ test("CI and exact-tag release use the package-owned four native hosts", () => {
   assert.equal(release.jobs.build.strategy.matrix, "${{ fromJSON(needs.prepare.outputs.matrix) }}");
   const source = release.jobs.prepare.steps.find(({ id }) => id === "source").run;
   assert.match(source, /matrix: JSON\.stringify\(nativeMatrix\)/u);
-  assert.ok(source.includes("if (source.dry_run !== 'true') requirePublicationReady();"));
+  assert.ok(source.includes("requirePublicationReady();"));
   assert.ok(release.jobs.homebrew.if.includes("needs.prepare.outputs.channel == 'latest'"));
   for (const workflow of [ci, release]) {
     const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
@@ -92,7 +92,7 @@ test("native CI and candidates verify process and filesystem conformance against
 test("tag pushes validate without publishing and public jobs require an explicit exact-tag dispatch", () => {
   const source = release.jobs.prepare.steps.find(({ id }) => id === "source").run;
   assert.ok(source.includes("if (process.env.GITHUB_EVENT_NAME === 'push') source.dry_run = 'true';"));
-  assert(source.indexOf("source.dry_run = 'true'") < source.indexOf("if (source.dry_run !== 'true') requirePublicationReady();"));
+  assert(source.indexOf("source.dry_run = 'true'") < source.indexOf("requirePublicationReady();"));
   for (const name of ["publish-npm", "publish-release", "homebrew"]) {
     const job = release.jobs[name];
     for (const gate of ["needs.prepare.outputs.dry_run == 'false'", "github.event_name == 'workflow_dispatch'", "github.repository == 'delinoio/oss'", "refs/tags/pnport@v"]) assert.ok(job.if.includes(gate), `${name}: ${gate}`);
@@ -100,4 +100,13 @@ test("tag pushes validate without publishing and public jobs require an explicit
   assert.equal(release.permissions["contents"], "read");
   assert(!release.permissions["id-token"]);
   for (const name of ["prepare", "build", "package"]) assert(!release.jobs[name].permissions?.["id-token"]);
+});
+
+
+test("publication proves the successful exact-tag nonpublishing run before write authority", () => {
+  const prepare = release.jobs.prepare;
+  assert.deepEqual(prepare.permissions, { contents: "read", actions: "read" });
+  const source = prepare.steps.find(({ id }) => id === "source").run;
+  assert.ok(source.includes("await requireTagDryRun({ tag: source.tag, revision }, actionsRead)"));
+  assert(source.indexOf("await requireTagDryRun") < source.indexOf("appendFileSync(process.env.GITHUB_OUTPUT"));
 });
