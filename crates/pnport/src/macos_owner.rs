@@ -168,8 +168,11 @@ impl Owner {
         Ok(())
     }
 
-    pub fn resume(&mut self) -> Result<()> {
+    pub fn resume(&mut self, group: i32) -> Result<()> {
         self.socket.write_all(b"J").map_err(|_| failure())?;
+        self.socket
+            .write_all(&group.to_be_bytes())
+            .map_err(|_| failure())?;
         let mut reply = [0];
         self.socket.read_exact(&mut reply).map_err(|_| failure())?;
         if reply != *b"J" {
@@ -433,7 +436,13 @@ fn cleanup_signal(
             let mut command = [0];
             let count = socket.read(&mut command)?;
             if count == 1 && command == *b"J" {
-                registry.resume(unsafe { libc::getpid() })?;
+                let mut group = [0; 4];
+                socket.read_exact(&mut group)?;
+                let group = i32::from_be_bytes(group);
+                if group <= 0 {
+                    return Err(io::Error::other("Native job resume failed"));
+                }
+                registry.resume(unsafe { libc::getpid() }, group)?;
                 socket.write_all(b"J")?;
                 continue;
             }

@@ -27,6 +27,7 @@ struct Terminal {
 pub struct Job {
     terminal: Option<Terminal>,
     group: i32,
+    detached: bool,
 }
 
 impl Job {
@@ -38,6 +39,7 @@ impl Job {
             return Ok(Self {
                 terminal: None,
                 group,
+                detached: false,
             });
         }
         let file = match OpenOptions::new().read(true).write(true).open("/dev/tty") {
@@ -51,6 +53,7 @@ impl Job {
                 return Ok(Self {
                     terminal: None,
                     group,
+                    detached: false,
                 });
             }
             Err(_) => return Err(failure()),
@@ -81,6 +84,7 @@ impl Job {
                 previous_mask,
             }),
             group,
+            detached: false,
         };
         job.claim()?;
         Ok(job)
@@ -107,7 +111,14 @@ impl Job {
         Ok(())
     }
 
+    pub fn group(&self) -> i32 {
+        self.group
+    }
+
     fn claim(&self) -> Result<()> {
+        if self.detached {
+            return Ok(());
+        }
         match &self.terminal {
             Some(terminal) => self.transfer(terminal.caller_group, self.group),
             None => Ok(()),
@@ -122,6 +133,27 @@ impl Job {
     }
 
     pub fn poll_stop(&mut self, pid: i32) -> Result<Option<Duration>> {
+        // Root is our unreaped direct child; inspect its current native tty
+        // relationship without granting signal authority to a snapshot group.
+        let session = unsafe { libc::getsid(pid) };
+        if session >= 0 {
+            let group = unsafe { libc::getpgid(pid) };
+            if group > 0 && session == unsafe { libc::getsid(0) } {
+                self.transfer(self.group, group)?;
+                self.group = group;
+            } else if group > 0 && !self.detached {
+                // A detached root has no controlling tty. Return foreground to
+                // pnport's caller group so terminal cancellation still reaches
+                // the supervisor and its audit-bound owned-tree cleanup.
+                self.restore()?;
+                self.group = group;
+                self.detached = true;
+                tracing::debug!(
+                    action = "macos_job_detached",
+                    "Detached root released terminal foreground"
+                );
+            }
+        }
         let mut event = unsafe { mem::zeroed::<libc::siginfo_t>() };
         // Deliberately omit WEXITED: Child owns root reaping and its exit status.
         let result = unsafe {
@@ -142,16 +174,6 @@ impl Job {
         if event.si_pid == pid && event.si_code == libc::CLD_STOPPED {
             self.restore()?;
             let suspended = Instant::now();
-            // The root is our unreaped direct child. Follow its native group
-            // for tty foreground handoff only within our controlling session;
-            // detached sessions receive audit-bound resume without tty access.
-            if unsafe { libc::getsid(pid) } == unsafe { libc::getsid(0) } {
-                let group = unsafe { libc::getpgid(pid) };
-                if group <= 0 {
-                    return Err(failure());
-                }
-                self.group = group;
-            }
             tracing::debug!(action = "macos_job_stopped", "Owned command stopped");
             // The shell must observe a stopped pnport job, including a command
             // SIGSTOP and background SIGTTIN. SIGCONT resumes this exact point.

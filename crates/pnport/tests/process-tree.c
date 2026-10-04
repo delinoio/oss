@@ -90,6 +90,7 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
+    if (!strcmp(role, "root") && !strcmp(mode, "terminal-detached") && setsid() < 0) return 86;
     if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0 || strcmp(mode, "terminal-pipe") == 0 || !strcmp(mode, "terminal-group") || !strcmp(mode, "terminal-pending-pause")) {
         if (!strcmp(mode, "terminal-group") && setpgid(0, 0)) return 80;
         FILE *marker = fopen("root.group", "w");

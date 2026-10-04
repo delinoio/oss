@@ -176,9 +176,9 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
     );
     Ok(Some(Error::new(
         code,
-        if code == Code::PnportUnsupportedOperation && group_operation.is_some() {
-            "The command requested an unsupported macOS process group or session change. Run it in \
-             the foreground with daemonization disabled; owned processes were stopped."
+        if code == Code::PnportInjectionFailed && group_operation.is_some() {
+            "The macOS process owner did not acknowledge a native group or session change; owned \
+             processes were stopped."
         } else {
             "Native filesystem interception reported a runtime failure; the process tree has been \
              stopped."
@@ -458,7 +458,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                 if let Some(paused) = job.poll_stop(pid)? {
                     start += paused;
                     pending_launches.pause(paused);
-                    owner.resume()?;
+                    owner.resume(job.group())?;
                 }
             }
             for input in &view.graph.snapshot.inputs {

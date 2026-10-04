@@ -262,6 +262,7 @@ impl Fixture {
             "initialization_started",
             "macos_job_stopped",
             "macos_job_resumed",
+            "macos_job_detached",
             "descendant_injection_deadline",
             "supervisor_failed",
             "native_failure_record",
@@ -1148,11 +1149,40 @@ fn detached_native_trees_survive_owner_loss_only_until_cleanup() {
                     .spawn()
                     .unwrap(),
             );
-            // Stop each group independently, including newly detached sessions.
+            // Verify kernel stop admission before injecting owner failure. A
+            // queued SIGCONT before pnport observes the root stop can otherwise
+            // be lost before its subsequent intentional supervisor SIGSTOP.
             for pid in &fixture.pids {
                 assert_eq!(unsafe { libc::kill(*pid, libc::SIGSTOP) }, 0);
             }
-            std::thread::sleep(Duration::from_millis(100));
+            let supervisor = fixture.child.as_ref().unwrap().id() as i32;
+            for pid in fixture.pids.iter().chain(std::iter::once(&supervisor)) {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                loop {
+                    let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
+                    let size = std::mem::size_of_val(&info) as i32;
+                    assert_eq!(
+                        unsafe {
+                            libc::proc_pidinfo(
+                                *pid,
+                                libc::PROC_PIDTBSDINFO,
+                                1,
+                                (&raw mut info).cast(),
+                                size,
+                            )
+                        },
+                        size
+                    );
+                    if info.pbi_status == 4 {
+                        break;
+                    }
+                    assert!(
+                        Instant::now() < deadline,
+                        "{mode}: native stop was not admitted"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
             let start = Instant::now();
             if matches!(failure, OwnerFailure::Supervisor) {
                 fixture.signal(libc::SIGKILL);
@@ -1242,4 +1272,32 @@ fn terminal_group_changes_retain_foreground_stop_and_resume() {
 #[test]
 fn suspended_jobs_do_not_consume_pending_image_deadlines() {
     terminal_job("pending-pause");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn terminal_interrupt_stops_a_root_in_a_new_session() {
+    let (mut fixture, mut terminal) = Fixture::terminal("detached-interrupt");
+    fixture.ready();
+    fixture.assert_active();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let caller = fs::read_to_string(fixture.root.path().join("terminal.supervisor"))
+            .unwrap()
+            .parse::<i32>()
+            .unwrap();
+        if unsafe { libc::tcgetpgrp(terminal.as_raw_fd()) } == caller {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "detached root retained terminal foreground"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    terminal.write_all(&[3]).unwrap();
+    assert_eq!(fixture.stopped().status.code(), Some(130));
+    fixture.assert_signals(libc::SIGINT);
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
 }

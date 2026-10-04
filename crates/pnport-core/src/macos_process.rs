@@ -37,6 +37,7 @@ unsafe extern "C" {
 pub struct Identity {
     pub pid: i32,
     pub birth: u64,
+    pub group: i32,
     pub parent_birth: u64,
     pub version: u32,
     pub original_parent_version: u32,
@@ -63,6 +64,7 @@ impl Identity {
         Ok(Self {
             pid,
             birth: info.unique.birth,
+            group: info.bsd.pbi_pgid as i32,
             parent_birth: info.unique.parent_birth,
             version: info.unique.version as u32,
             original_parent_version: info.unique.original_parent_version as u32,

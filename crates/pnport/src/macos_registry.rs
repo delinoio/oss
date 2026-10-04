@@ -213,25 +213,55 @@ impl Registry {
         Ok(candidates)
     }
 
-    pub fn resume(&mut self, group: i32) -> io::Result<()> {
-        unsafe {
-            libc::kill(-group, libc::SIGCONT);
+    pub fn resume(&mut self, reserved: i32, foreground: i32) -> io::Result<()> {
+        if foreground == reserved {
+            unsafe {
+                libc::kill(-reserved, libc::SIGCONT);
+            }
         }
-        for identity in self.live()? {
+        for identity in self
+            .live()?
+            .into_iter()
+            .filter(|identity| identity.group == foreground)
+        {
+            send(identity, libc::SIGCONT)?;
+        }
+        Ok(())
+    }
+
+    fn terminate(
+        &self,
+        mut live: Vec<Identity>,
+        signal: i32,
+        signalled: &mut HashSet<(u64, u32)>,
+    ) -> io::Result<()> {
+        // XNU assigns increasing birth identifiers at fork. Younger descendants
+        // receive termination before their parents can exit and orphan another
+        // stopped group. Queue every signal before resuming any parked member;
+        // per-process TERM/CONT pairs allowed parent exit to win this ordering.
+        live.sort_unstable_by_key(|identity| std::cmp::Reverse(identity.birth));
+        live.retain(|identity| signalled.insert((identity.birth, identity.version)));
+        for identity in &live {
+            send(*identity, signal)?;
+        }
+        for identity in live {
             send(identity, libc::SIGCONT)?;
         }
         Ok(())
     }
 
     pub fn stop(&mut self, group: i32, signal: i32) -> io::Result<bool> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut signalled = HashSet::new();
+        let initial = self.live()?;
+        self.terminate(initial, signal, &mut signalled)?;
         unsafe {
-            // The still-unreaped guardian PID reserves this original group.
-            // Additional groups are never addressed through kill(-snapshot).
+            // The guardian PID still reserves the original group. Cover its
+            // anchor/startup members after admitted descendants have received
+            // termination; never address additional snapshot group IDs.
             libc::kill(-group, signal);
             libc::kill(-group, libc::SIGCONT);
         }
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut signalled = HashSet::new();
         loop {
             let live = self.live()?;
             if live.is_empty() {
@@ -243,17 +273,13 @@ impl Registry {
                 }
                 continue;
             }
-            for identity in live {
-                if signalled.insert((identity.birth, identity.version)) {
-                    send(identity, signal)?;
-                    send(identity, libc::SIGCONT)?;
-                }
-            }
+            self.terminate(live, signal, &mut signalled)?;
             if Instant::now() >= deadline {
                 break;
             }
             std::thread::sleep(Duration::from_millis(25));
         }
+
         let deadline = Instant::now() + Duration::from_secs(1);
         loop {
             let live = self.live()?;
@@ -349,5 +375,70 @@ mod tests {
         assert!(unrelated.try_wait().unwrap().is_none());
         unrelated.kill().unwrap();
         unrelated.wait().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod resume_tests {
+    use std::{os::unix::process::CommandExt, process::Command};
+
+    use super::*;
+
+    #[test]
+    fn job_resume_leaves_an_independent_owned_group_stopped() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut registry = Registry::create(directory.path(), [23; 32]).unwrap();
+        let mut foreground = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut background = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let foreground_identity = Identity::capture(foreground.id() as i32).unwrap();
+        let background_identity = Identity::capture(background.id() as i32).unwrap();
+        for identity in [foreground_identity, background_identity] {
+            registry.admit(identity).unwrap();
+            identity.signal(libc::SIGSTOP).unwrap();
+            let mut status = 0;
+            assert_eq!(
+                unsafe { libc::waitpid(identity.pid, &raw mut status, libc::WUNTRACED) },
+                identity.pid
+            );
+            assert!(libc::WIFSTOPPED(status));
+        }
+        registry
+            .resume(i32::MAX, foreground_identity.group)
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut status = 0;
+        while unsafe {
+            libc::waitpid(
+                foreground_identity.pid,
+                &raw mut status,
+                libc::WCONTINUED | libc::WNOHANG,
+            )
+        } == 0
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(libc::WIFCONTINUED(status));
+        assert_eq!(
+            unsafe {
+                libc::waitpid(
+                    background_identity.pid,
+                    &raw mut status,
+                    libc::WCONTINUED | libc::WNOHANG,
+                )
+            },
+            0
+        );
+        registry.stop(i32::MAX, libc::SIGTERM).unwrap();
+        assert!(!foreground.wait().unwrap().success());
+        assert!(!background.wait().unwrap().success());
     }
 }
