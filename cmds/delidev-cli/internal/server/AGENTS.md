@@ -152,3 +152,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Quota/reset-credit capabilities 18/19 and Worker observation capability 8 follow the subscription contract. Queue complete server-side refresh batches, persist original send claims before native work and retain uncertain consumption for explicit same-key reconciliation. Publish account recovery and its deduplicated account-scoped Inbox record atomically; never grant a second active credential writer.
 
 - Quota maintenance checks due eligibility read-only before mutation and rechecks it transactionally. If every candidate was concurrently queued, roll back the empty batch; do not emit recurring no-op receipts or change signals.
+
+- Joined successful native-owner cleanup settles unpublished quota reads as failed while preserving last observed values and future read/execution admission. Retain original-key uncertainty only for possible reset-credit consumption.

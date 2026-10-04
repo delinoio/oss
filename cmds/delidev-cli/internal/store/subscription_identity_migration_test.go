@@ -167,3 +167,48 @@ func TestSubscriptionRetirementRefusesNativeOwnershipWithoutPartialChanges(t *te
 		})
 	}
 }
+
+func TestSubscriptionRetirementDoesNotBoundUnrelatedHistory(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "api-only", true: "legacy"}[legacy], func(t *testing.T) {
+			s, root := openTest(t)
+			account := domain.NewID()
+			if legacy {
+				_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.legacy.large-history", nil, func(tx *Tx) (any, error) {
+					return tx.Put(domain.AccountKind, account, 0, "", "", domain.Account{Alias: "Legacy", ProviderID: domain.NewID(), Type: domain.SubscriptionAccount, Health: domain.AccountDisconnected})
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Genuine temporary SQLite history exceeds the old global limit. None of
+			// these rows grants current native ownership or changes configuration.
+			_, err := s.db.Exec(`WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<100005)
+ INSERT INTO entities(id,kind,revision,session_id,project_id,body,created_at,updated_at)
+ SELECT printf('00000000-0000-7000-8000-%012x',i),CASE WHEN i%2=0 THEN 'message' ELSE 'job' END,1,'','',CAST('{"state":"succeeded","historical":true}' AS BLOB),1,1 FROM n`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := historicalSchema(s.db, "027"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			migrated, err := Open(context.Background(), root)
+			if err != nil {
+				t.Fatal("unrelated history blocked upgrade", err)
+			}
+			defer migrated.Close()
+			var count int
+			if err := migrated.db.QueryRow("SELECT COUNT(*) FROM entities WHERE kind IN ('message','job')").Scan(&count); err != nil || count != 100005 {
+				t.Fatal("migration rewrote unrelated history", count, err)
+			}
+			if legacy {
+				if _, err := migrated.RetiredConfiguration(context.Background(), domain.AccountKind, account); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}

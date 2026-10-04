@@ -755,7 +755,16 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 							state.Observation.Phase = domain.SubscriptionObservationFailed
 							state.Observation.ErrorCode = domain.Conflict
 						} else if state.Observation.Phase == domain.SubscriptionObservationSending {
-							state.Observation.Phase = domain.SubscriptionObservationUncertain
+							if state.Observation.Action == domain.SubscriptionQuota {
+								// Quota reads consume nothing. Joined owner cleanup settles
+								// a lost publication as failure, preserving last good values
+								// without blocking future reads or native execution.
+								state.Observation.Phase = domain.SubscriptionObservationFailed
+								state.Observation.ErrorCode = domain.Unavailable
+								state.QuotaState = domain.ObservationFailed
+							} else {
+								state.Observation.Phase = domain.SubscriptionObservationUncertain
+							}
 						}
 					}
 					if a.Connection == nil {

@@ -15,6 +15,11 @@ export function quotaObservationMachine(state: Record<string, unknown>, preferre
   return Object.keys(lease).length ? text(lease.action) === "execute" ? text(lease.machine_id) : "" : preferred || text(state.owner_machine_id);
 }
 
+export function quotaAccountAvailable(data: Record<string, unknown>): boolean {
+  const state = object(data.subscription), observation = object(state.observation);
+  return data.health === "ready" && isEntityId(text(object(data.connection).id)) && isEntityId(text(state.generation)) && !data.removal && state.recovery_required !== true && !state.pending && !["queued", "sending", "uncertain"].includes(text(observation.phase));
+}
+
 export function SubscriptionQuotaControls({ current, machine, active, accepted, busyChanged }: { current: Resource; machine: string; active: boolean; accepted: (resource: Resource) => void; busyChanged: (busy: boolean) => void }) {
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const quotaSupported = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1) === true;

@@ -193,3 +193,25 @@ func TestCreditPublicationLossKeepsOriginalKeyReconciliation(t *testing.T) {
 		t.Fatal("reconciliation replaced the official operation key")
 	}
 }
+
+func TestQuotaPublicationLossSettlesReadAndAllowsNextObservation(t *testing.T) {
+	f := newQuotaFixture(t)
+	accepted := f.requestQuota()
+	lease, err := f.take(&pb.RequestSubscriptionResponse{OperationId: accepted.OperationId}, pb.SubscriptionAction_SUBSCRIPTION_ACTION_QUOTA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(lease.Bundle)
+	f.claimObservation(accepted.OperationId, lease)
+	if _, err := f.finish(lease, lease.Bundle, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	_, a := f.record()
+	if a.Subscription.Observation.Phase != domain.SubscriptionObservationFailed || a.Subscription.Observation.Active() || a.Subscription.QuotaState != domain.ObservationFailed || a.Subscription.RecoveryRequired || a.Subscription.Lease != nil {
+		t.Fatal("lost quota read retained consumption uncertainty or credential ownership")
+	}
+	next := f.requestQuota()
+	if next.OperationId == accepted.OperationId {
+		t.Fatal("explicit fresh quota read reused failed observation")
+	}
+}

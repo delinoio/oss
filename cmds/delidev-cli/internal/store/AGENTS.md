@@ -183,3 +183,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Migration 28 follows real 26/27, backs up first and atomically retires original provider-bound subscriptions without inference. Preserve original record bytes in history-only storage and forbid live Get/admission fallback. Keep tombstones/receipt redaction, configured-empty deny-all, surviving ordered weights and affected Schedule reset. Refuse unsettled original native/protected/browser ownership; only a private historical restore candidate has the explicit no-current-authority migration exemption.
 
 - Account deletion removes only its account-scoped subscription-recovery Inbox entries in the same transaction through ordinary tombstone/receipt-redaction/event publication. Preserve unrelated account and session Inbox entries and bound every read page.
+
+- Migration 28 bounds relevant configuration/device metadata, not total retained history. Check original affected account references and unsettled session/job ownership directly in SQLite without loading or charging unrelated messages/jobs against retirement bounds.

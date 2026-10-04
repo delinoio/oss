@@ -6,7 +6,7 @@ import {
   SubscriptionAction, SubscriptionObservationAction, SubscriptionQuery, SubscriptionServiceId, SystemCapability, SystemQuery,
   clientFailure, isEntityId, newRequestId, subscriptionService, subscriptionServiceNames, supportsResourceSchema, type Resource,
 } from "@delinoio/delidev-api-client";
-import { SubscriptionQuotaControls, quotaObservationMachine } from "./subscription-quota";
+import { SubscriptionQuotaControls, quotaAccountAvailable, quotaObservationMachine } from "./subscription-quota";
  import { ResourceChoice } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -115,7 +115,7 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
     const quotaMachine = quotaObservationMachine(object(data.subscription));
     return { id: row.id, alias: resourceName(row), providerName: subscriptionServiceNames[service], brand: service as unknown as SubscriptionBrand,
       connection: data.removal ? SubscriptionConnectionState.CleanupPending : object(data.subscription).recovery_required === true ? SubscriptionConnectionState.CleanupPending : text(object(data.connection).id) ? SubscriptionConnectionState.Connected : SubscriptionConnectionState.Disconnected,
-      refresh: quotaSupported && service===SubscriptionServiceId.ChatGPT && data.health==="ready" && isEntityId(quotaMachine) && !quota.busy && !quota.uncertain ? ()=>void quota.send({mutation:{requestId:newRequestId(),id:row.id,expectedRevision:row.revision},machineId:quotaMachine,action:SubscriptionObservationAction.QUOTA,connectionId:text(object(data.connection).id),generationId:text(object(data.subscription).generation)}) : undefined,
+      refresh: quotaSupported && service===SubscriptionServiceId.ChatGPT && quotaAccountAvailable(data) && isEntityId(quotaMachine) && !quota.busy && !quota.uncertain ? ()=>void quota.send({mutation:{requestId:newRequestId(),id:row.id,expectedRevision:row.revision},machineId:quotaMachine,action:SubscriptionObservationAction.QUOTA,connectionId:text(object(data.connection).id),generationId:text(object(data.subscription).generation)}) : undefined,
  health: text(data.health), enabled: data.enabled === true, providerState: "Service-native account", confirmedExhausted: data.confirmed_exhausted === true,
       windows: items(data.quota).map((entry) => { const window = object(entry); return { id: text(window.id), state: Object.values(QuotaObservationState).find((state) => state === window.state) ?? QuotaObservationState.Unknown, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) }; }),
       metadataAvailable: true, connect: service === SubscriptionServiceId.ChatGPT ? () => setSelected(row) : undefined,

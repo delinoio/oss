@@ -129,3 +129,24 @@ it("routes row quota refresh to the original active execution lease machine", as
  expect(refresh.mock.calls[0]?.[0]).toMatchObject({machineId:runner,connectionId:connection,generationId:generation});
  expect(refresh.mock.calls[0]?.[0].machineId).not.toBe(owner);
 });
+
+it.each([
+ {observation:{phase:"queued"}}, {observation:{phase:"sending"}}, {observation:{phase:"uncertain"}},
+ {pending:{id:newRequestId()}}, {recovery_required:true}, {removal:{id:newRequestId()}},
+])("disables row quota refresh while original ownership is active (%j)",async(blocker)=>{
+ const value=fixture(), row=value.accounts[0]!, {removal,...state}=blocker as Record<string,unknown>;
+ value.accounts[0]=create(ResourceSchema,{...row,documentJson:encode({alias:"Existing subscription",type:"subscription",subscription_service:"chatgpt",enabled:true,health:"ready",quota:[],connection:{id:newRequestId()},removal,subscription:{generation:newRequestId(),owner_machine_id:newRequestId(),...state}})});
+ const refresh=vi.fn(()=>({}));
+ const transport=createRouterTransport(router=>{
+  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,SystemCapability.SUBSCRIPTION_QUOTA_V1]})});
+  router.service(ResourceService,{listResources:value.list});
+  router.service(SubscriptionService,{requestSubscriptionObservation:refresh});
+ });
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SubscriptionAccounts active editAccount={()=>{}} deleteAccount={()=>{}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ await screen.findByRole("article",{name:"Existing subscription"});
+ const button=screen.getByRole("button",{name:"Refresh Existing subscription"}) as HTMLButtonElement;
+ expect(button.disabled).toBe(true);
+ fireEvent.click(button);
+ expect(refresh).not.toHaveBeenCalled();
+});

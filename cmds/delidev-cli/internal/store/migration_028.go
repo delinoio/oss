@@ -15,7 +15,7 @@ import (
 type historicalSubscriptionRetirement struct{}
 
 func migration028(ctx context.Context, tx *sql.Tx, original int) error {
-	rows, err := tx.QueryContext(ctx, "SELECT "+recordColumns+" FROM entities ORDER BY id LIMIT 100001")
+	rows, err := tx.QueryContext(ctx, "SELECT "+recordColumns+" FROM entities WHERE kind IN ('account','provider','model','agent','project','schedule','device') ORDER BY id LIMIT 100001")
 	if err != nil {
 		return storageError(err)
 	}
@@ -109,24 +109,30 @@ func migration028(ctx context.Context, tx *sql.Tx, original int) error {
 					}
 				}
 			}
-			if r.Kind == domain.SessionKind || r.Kind == domain.JobKind {
-				// JSON tree comparison uses original account references, never text or a
-				// guessed service. It covers immutable and successor selections alike.
-				var affected, unsettled bool
-				if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM json_tree(?) WHERE key IN ('account_id','initial_account_id','selected_account_id') AND value IN (SELECT value FROM json_each(?)))", r.Data, accountSet).Scan(&affected); err != nil {
-					return storageError(err)
-				}
-				if affected {
-					if err := tx.QueryRowContext(ctx, `SELECT COALESCE(json_extract(?,'$.state') IN ('claimed','uncertain'),0) OR COALESCE(json_extract(?,'$.active_execution_id'),'')<>'' OR COALESCE(json_extract(?,'$.outcome')='running',0) OR COALESCE(json_extract(?,'$.recovery') IN ('required','reconciling'),0) OR COALESCE(json_extract(?,'$.archive')='archiving',0) OR COALESCE(json_extract(?,'$.preparation.state') IN ('stopping','uncertain'),0)`, r.Data, r.Data, r.Data, r.Data, r.Data, r.Data).Scan(&unsettled); err != nil {
-						return storageError(err)
-					}
-					if unsettled {
-						return retirementOwnershipRequired()
-					}
-				}
-			}
+
 		}
 	}
+	if !historical && len(accounts) > 0 {
+		// Historical sessions/jobs are unbounded retained product history. Check
+		// original account references in SQLite without loading that history or
+		// charging it against the bounded configuration retirement inventory.
+		var unsettled bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+ SELECT 1 FROM entities e WHERE e.kind IN ('session','job')
+ AND EXISTS (SELECT 1 FROM json_tree(e.body) WHERE key IN ('account_id','initial_account_id','selected_account_id') AND value IN (SELECT value FROM json_each(?)))
+ AND (COALESCE(json_extract(e.body,'$.state') IN ('claimed','uncertain'),0)
+ OR COALESCE(json_extract(e.body,'$.active_execution_id'),'')<>''
+ OR COALESCE(json_extract(e.body,'$.outcome')='running',0)
+ OR COALESCE(json_extract(e.body,'$.recovery') IN ('required','reconciling'),0)
+ OR COALESCE(json_extract(e.body,'$.archive')='archiving',0)
+ OR COALESCE(json_extract(e.body,'$.preparation.state') IN ('stopping','uncertain'),0)))`, accountSet).Scan(&unsettled); err != nil {
+			return storageError(err)
+		}
+		if unsettled {
+			return retirementOwnershipRequired()
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, subscriptionIdentitySchema); err != nil {
 		return storageError(err)
 	}

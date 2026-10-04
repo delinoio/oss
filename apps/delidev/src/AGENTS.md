@@ -593,3 +593,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Subscription quota and reset-credit controls independently negotiate capabilities 18/19, retain exact request retries and bind explicit credit confirmation to account revision, connection/generation and inventory identity. Quota refresh is distinct from authentication refresh; uncertain consumption offers only explicit original-key reconciliation. Account-scoped recovery Inbox views grant no session/input controls.
 
 - Quota row refresh uses the active execution lease machine when present, otherwise the retained native owner. Other active lease kinds expose no quota refresh. Recovery Inbox details render only account-scoped observation metadata; they never present terminal content or grant session/input actions.
+
+- Row quota refresh requires current connection/generation, no removal/recovery/pending lifecycle owner and no queued/sending/uncertain observation. Acceptance finishing a client mutation cannot reveal a second refresh while native ownership remains active.
