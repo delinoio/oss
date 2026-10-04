@@ -422,6 +422,108 @@ fn inline_and_split_load_without_executing_javascript() {
         Code::PnportGraphChanged
     );
 }
+
+#[test]
+fn optional_node_esm_loader_is_data_only_and_revision_bound() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let manifest = root.path().join(".pnp.cjs");
+        let loader = root.path().join(".pnp.loader.mjs");
+        let without = Graph::load(&manifest).unwrap();
+        assert!(!pnport::node::Loader::from_snapshot(&without.snapshot).has_esm());
+        fs::write(&loader, "throw Error('must never execute');").unwrap();
+        let graph = Graph::load(&manifest).unwrap();
+        assert!(pnport::node::Loader::from_snapshot(&graph.snapshot).has_esm());
+        assert_eq!(graph.snapshot.inputs.len(), if split { 3 } else { 2 });
+        graph.unchanged().unwrap();
+        fs::write(&loader, "throw Error('replacement must never execute');").unwrap();
+        assert_eq!(
+            graph.unchanged().unwrap_err().code,
+            Code::PnportGraphChanged
+        );
+        let replacement = Graph::load(&manifest).unwrap();
+        fs::remove_file(&loader).unwrap();
+        assert_eq!(
+            replacement.unchanged().unwrap_err().code,
+            Code::PnportGraphChanged
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_execveat_restores_node_options_in_replacement_environments() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let source = root.path().join("node-environment.c");
+    let executable = root.path().join("node-environment");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc == 3) {
+        const char *options = getenv("NODE_OPTIONS");
+        char cwd[4096], expected[8192];
+        if (!getcwd(cwd, sizeof(cwd))) return 40;
+        snprintf(expected, sizeof(expected), "--require \"%s/.pnp.cjs\"%s",
+            cwd, argv[2][0] == '1' ? " --no-warnings" : "");
+        if (!options || strcmp(options, expected)) return 41;
+        puts("node-options-restored");
+        return 0;
+    }
+    if (argc != 2) return 42;
+    char mode[2] = { argv[1][1], 0 };
+    char *args[] = { argv[0], "child", mode, NULL };
+    char *env[] = { "NODE_OPTIONS=--no-warnings", NULL };
+    int fd = AT_FDCWD, flags = 0;
+    const char *path = argv[0];
+    if (argv[1][0] == '1') {
+        fd = open(path, O_PATH | O_CLOEXEC);
+        if (fd < 0) return 43;
+        path = "";
+        flags = AT_EMPTY_PATH;
+    }
+    syscall(SYS_execveat, fd, path, args, mode[0] == '1' ? env : NULL, flags);
+    return 44;
+}
+"#,
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .arg(&source)
+        .arg("-o")
+        .arg(&executable)
+        .status()
+        .unwrap()
+        .success());
+    for mode in ["00", "01", "10", "11"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .env_remove("NODE_OPTIONS")
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(mode)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "mode={mode} stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"node-options-restored\n");
+    }
+}
 #[test]
 fn malformed_graphs_fail_without_panic_or_input_disclosure() {
     let root = fixture();

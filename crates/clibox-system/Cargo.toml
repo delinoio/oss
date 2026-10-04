@@ -20,6 +20,7 @@ regex = "1.12.3"
 fs4 = "1.1.0"
 sha2 = "0.10"
 rand = "0.9"
+hyper = { version = "1.8.1", default-features = false }
 reqwest = { version = "0.12.28", default-features = false, features = ["blocking", "http2", "rustls-tls-no-provider"] }
 rustls = { version = "0.23.36", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8.4"

@@ -1947,10 +1947,10 @@ fn managed_service_forwards_shutdown_output_before_success() {
 
 #[test]
 fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
-    fn respond_not_ready(mut stream: std::net::TcpStream) -> std::io::Result<bool> {
+    fn read_request_headers(stream: &mut std::net::TcpStream) -> std::io::Result<bool> {
         // Darwin inherits the listener's nonblocking mode on accept. A reply
         // before complete request headers can reset the client connection and
-        // turn this timeout fixture into a terminal HTTP I/O failure.
+        // turn an expected 503 into an unintended transport failure.
         stream.set_nonblocking(false)?;
         stream.set_read_timeout(Some(Duration::from_secs(3)))?;
         stream.set_write_timeout(Some(Duration::from_secs(3)))?;
@@ -1967,7 +1967,14 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
                 Ok(0) => return Ok(false),
                 Ok(count) => received += count,
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::WouldBlock
+                    ) =>
+                {
                     return Ok(false);
                 }
                 Err(error) => return Err(error),
@@ -1976,8 +1983,14 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
                 .windows(4)
                 .any(|part| part == b"\r\n\r\n")
             {
-                break;
+                return Ok(true);
             }
+        }
+    }
+
+    fn respond_not_ready(mut stream: std::net::TcpStream) -> std::io::Result<bool> {
+        if !read_request_headers(&mut stream)? {
+            return Ok(false);
         }
         match stream.write_all(
             b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
@@ -2040,9 +2053,17 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
             );
             thread::sleep(Duration::from_millis(1));
         }
+        let mut closed_response = false;
         while !server_finished.load(Ordering::Acquire) {
             match listener.accept() {
-                Ok((stream, _)) => {
+                Ok((mut stream, _)) => {
+                    if !closed_response {
+                        // Close once after complete headers without a response
+                        // to prove temporary transport failures remain retryable.
+                        closed_response = read_request_headers(&mut stream)
+                            .expect("readiness fixture closed-connection control failed");
+                        continue;
+                    }
                     respond_not_ready(stream).expect("readiness fixture response failed");
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -2051,6 +2072,10 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
                 Err(error) => panic!("readiness fixture could not accept a request: {error}"),
             }
         }
+        assert!(
+            closed_response,
+            "the temporary closed-connection control did not run"
+        );
     });
     let output = command(
         home.path(),

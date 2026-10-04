@@ -8,6 +8,17 @@ The VoidZero MIT text from the pinned revision is copied in full to each importe
 
 ## Local changes
 
+The pnport-only macOS initializer normalizes selected relative CommonJS and ESM loaders
+against the new image's final startup cwd before Node parses `NODE_OPTIONS`.
+Parent spawn file actions remain opaque, so parent preparation adds a provisional
+absolute loader and startup removes only repeated selected loaders. Matching
+relative specifiers become absolute native paths or URLs across later cwd changes; unrelated
+relative loaders remain unchanged. Environment preparation failures retain the
+closed `install-runtime` initialization stage. No JavaScript runs during native
+initialization. Shared Node option preparation does not invoke runtime tracing
+from these pre-main constructors; supervisor/exec mediation owns its structured
+activation diagnostics. The generic fspy preload remains unchanged.
+
 The pnport-only macOS path hooks use the shared native component lookup before virtual translation. They follow native aliases into logical dependencies and managed cache backing, retain read-only classification for following mutations, and keep non-following link operations and unmanaged pathname bytes native. This extension does not change generic fspy or claim complete symlink/canonicalization acceptance.
 
 pnport-mode macOS named `dlopen` translates its library path, then releases the pnport runtime lock and recursion guard before dyld invokes user constructors. Nested ZIP-library loading, constructor filesystem access and fork callbacks retain virtualization; inner hooks still guard their own backing operations. The generic fspy side channel is unchanged. The installed pnport native conformance suite covers this local extension on both macOS architectures alongside Linux syscall-backed controls.
@@ -26,6 +37,8 @@ The macOS metadata side channel preserves final-component nofollow semantics for
 The fork joins the root Cargo workspace, uses its pinned nightly and dependency graph, and removes upstream test-only targets and subprocess fixtures. Workspace `anyhow` is pinned to the security-fixed 1.0.103 and `quote` uses wincode's minimum compatible 1.0.45. The September 2026 security update advances `anyhow` from 1.0.102 and rebaselines all six mobile dependency hashes after proving that this patch version is their only graph change; no fspy or pnport crate enters that closure. See `repository-dependency-security-contract.md` for the audit boundary. The root formatter normalizes imported source, and one nested Linux assembly macro has a scoped rustfmt skip because the pinned formatter changes its indentation on successive passes. Upstream `disallowed_*` lint expectations depend on its `.clippy.toml`, which is not applied repository-wide here; scoped allowances in `vt_str`, `vt_path`, and `fspy_nostd` preserve the permitted interop without failing this repository's `-D warnings` gate. Restore those expectations if an equivalent lint table is adopted. The upstream Linux trampoline's `invalid_runtime_symbol_definitions` allowance is removed because that lint does not exist in the pinned nightly. The macOS Oils/uutils download/build path and protected executable substitution are removed. macOS injection admission resolves symlinks and parent path components before checking the protected executable list; failed resolution also prevents launch. A macOS executable that cannot accept injection fails explicitly; the fork must not report its trace as complete. The pinned nightly requires the preload crate's `c_variadic` feature and `VaList::arg` calls.
 
 `pnport-core` owns the graph, cache, virtual path and executable admission code shared by pnport and the preload. On macOS, the `pnport` feature of `fspy_preload_unix` compiles pnport's virtualizing hooks through fspy's Mach-O interpose entry layout. It preserves the pnport preload ABI marker, descriptor tracking, read-only checks, child propagation and constructor entry/ready/failure signals. The pnport supervisor retains exit, cancellation and input-watch behavior. Linux and Windows continue to use `pnport-preload` in this change; no new runtime claim is made for those platforms.
+
+The pnport-mode child environment builder restores the selected Yarn Node loaders through `NODE_OPTIONS`, including when a caller replaces its environment. It preserves caller Node options and uses the admitted graph snapshot for loader selection. Generic fspy mode does not modify `NODE_OPTIONS`. The Linux pnport syscall backend applies the same policy to `execve` and `execveat`; this does not change generic fspy's Linux interception contract. See [automatic Node PnP API support](crates-pnport-foundation.md#automatic-node-pnp-api-support).
 
 The pnport-mode macOS `fcntl` adapter forwards rejected recursion/TLS admission through its existing typed native dispatcher before bypassing runtime bookkeeping. This preserves variadic arguments and native errors without clearing the outer guard or taking the runtime mutex. Only admitted successful descriptor duplication records logical provenance. Constructor ABI and isolated guard/state fixtures follow [the pnport conformance boundary](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates); generic fspy mode and Linux/Windows mediation are unchanged.
 

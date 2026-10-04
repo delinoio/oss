@@ -2,4 +2,4 @@
 //! tests.
 #[cfg(unix)]
 pub use pnport_core::native_path;
-pub use pnport_core::{cache, diagnostic, executable, graph, launch, view};
+pub use pnport_core::{cache, diagnostic, executable, graph, launch, node, view};

@@ -15,7 +15,10 @@ use std::{
     mem,
     os::{
         fd::{AsRawFd, FromRawFd, OwnedFd},
-        unix::{ffi::OsStrExt, process::CommandExt},
+        unix::{
+            ffi::{OsStrExt, OsStringExt},
+            process::CommandExt,
+        },
     },
     path::{Component, Path, PathBuf},
     process::{Child, Command},
@@ -1045,6 +1048,31 @@ fn child_search_path(pid: i32, envp: u64) -> Result<ChildRead<Option<OsString>>>
     }
     Ok(ChildRead::Value(None))
 }
+
+fn read_exec_string(pid: i32, address: u64) -> Result<ChildRead<Vec<u8>>> {
+    let mut result = Vec::new();
+    while result.len() < EXEC_BYTES_LIMIT {
+        let bytes = match read_exec_memory(
+            pid,
+            address + result.len() as u64,
+            (EXEC_BYTES_LIMIT - result.len()).min(256),
+        )? {
+            ChildRead::Value(bytes) => bytes,
+            ChildRead::Fault => return Ok(ChildRead::Fault),
+        };
+        if let Some(end) = bytes.iter().position(|byte| *byte == 0) {
+            result.extend_from_slice(&bytes[..end]);
+            return Ok(ChildRead::Value(result));
+        }
+        if bytes.is_empty() {
+            return Ok(ChildRead::Fault);
+        }
+        result.extend_from_slice(&bytes);
+    }
+    Err(unsupported(
+        "A child environment entry exceeded Linux's argument byte limit.",
+    ))
+}
 fn write_remote(pid: i32, address: u64, bytes: &[u8]) -> Result<()> {
     let local = libc::iovec {
         iov_base: bytes.as_ptr().cast_mut().cast(),
@@ -1261,6 +1289,89 @@ struct Trace<'a> {
 }
 
 impl Trace<'_> {
+    fn prepare_node_environment(&mut self, pid: i32, regs: &mut Registers) -> Result<bool> {
+        let call = number(regs);
+        let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
+        let env_arg = argv_arg + 1;
+        let original = match read_pointer_vector(pid, argument(regs, env_arg))? {
+            ChildRead::Value(pointers) => pointers,
+            // Preserve kernel error precedence for native execs. Translated
+            // scripts already retain the explicit unreadable-vector control.
+            ChildRead::Fault => return Ok(false),
+        };
+        let mut pointers = Vec::with_capacity(original.len() + 2);
+        let mut options = None;
+        let mut count = 0;
+        for pointer in original {
+            let prefix = match read_exec_memory(pid, pointer, b"NODE_OPTIONS=".len())? {
+                ChildRead::Value(prefix) => prefix,
+                ChildRead::Fault => return Ok(false),
+            };
+            if prefix.starts_with(b"NODE_OPTIONS=") {
+                count += 1;
+                if options.is_none() {
+                    let bytes =
+                        match read_exec_string(pid, pointer + b"NODE_OPTIONS=".len() as u64)? {
+                            ChildRead::Value(bytes) => bytes,
+                            ChildRead::Fault => return Ok(false),
+                        };
+                    options = Some(OsString::from_vec(bytes));
+                }
+            } else {
+                if prefix.len() < b"NODE_OPTIONS=".len() && !prefix.contains(&0) {
+                    return Ok(false);
+                }
+                pointers.push(pointer);
+            }
+        }
+        let loader = pnport::node::Loader::from_snapshot(&self.view.graph.snapshot);
+        let cwd = self
+            .cwd
+            .get(&Self::group(pid))
+            .cloned()
+            .or_else(|| fs::read_link(format!("/proc/{pid}/cwd")).ok());
+        let effective = loader.options_in(options.as_deref(), cwd.as_deref())?;
+        if count == 1 && options.as_deref() == Some(effective.as_os_str()) {
+            return Ok(false);
+        }
+        let mut entry = b"NODE_OPTIONS=".to_vec();
+        entry.extend_from_slice(effective.as_os_str().as_bytes());
+        entry.push(0);
+        let base = self.scratch_base(pid)?;
+        let top = base + SCRATCH_SIZE as u64;
+        let argv = argument(regs, argv_arg);
+        // Script argv rewrites occupy the high end of this task's mapping.
+        // Their pointer array is the lowest byte of that allocation. Keep
+        // environment storage below it; native argv lives outside scratch.
+        let limit = if (base..top).contains(&argv) {
+            argv
+        } else {
+            top - (2 * PATH_LIMIT + 256) as u64
+        };
+        let vector = (base + entry.len() as u64 + 15) & !15;
+        let end = vector + ((pointers.len() + 2) * mem::size_of::<u64>()) as u64;
+        if end > limit {
+            return Err(unsupported(
+                "A child environment vector exceeded its scratch mapping.",
+            ));
+        }
+        pointers.push(base);
+        pointers.push(0);
+        let raw: Vec<u8> = pointers
+            .iter()
+            .flat_map(|pointer| pointer.to_ne_bytes())
+            .collect();
+        write_remote(pid, base, &entry)?;
+        write_remote(pid, vector, &raw)?;
+        set_argument(regs, env_arg, vector);
+        set_registers(pid, regs)?;
+        tracing::debug!(
+            action = "node_runtime_restored",
+            "Restored selected Yarn loaders for descendant execution"
+        );
+        Ok(true)
+    }
+
     fn resume_cwd_waiter(&mut self, pid: i32) -> Result<()> {
         if self.pending.contains_key(&pid) {
             resume(pid, true, 0)
@@ -3101,7 +3212,7 @@ impl Trace<'_> {
             }
             return self.resume_fd_sensitive(pid);
         }
-        if self.path_call(pid, regs).inspect_err(|error| {
+        let path_handled = self.path_call(pid, regs).inspect_err(|error| {
             tracing::debug!(
                 action = "linux_path_failure",
                 pid,
@@ -3109,7 +3220,18 @@ impl Trace<'_> {
                 code = error.code.as_str(),
                 "Owned child path mediation failed"
             );
-        })? {
+        })?;
+        let mut environment_handled = false;
+        if (call == libc::SYS_execve || call == libc::SYS_execveat)
+            && !matches!(self.pending.get(&pid), Some(Pending::ForcedError(_)))
+        {
+            let mut current = registers(pid)?;
+            environment_handled = self.prepare_node_environment(pid, &mut current)?;
+            if environment_handled {
+                self.pending.entry(pid).or_insert(Pending::Ordinary);
+            }
+        }
+        if path_handled || environment_handled {
             let tracked_open = match self.pending.get(&pid) {
                 Some(Pending::Open(translation)) => {
                     translation.readonly
@@ -3885,7 +4007,7 @@ impl Trace<'_> {
     }
 }
 
-pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
+pub fn run_traced(view: &mut View, prepared: &Prepared, node_options: &OsStr) -> Result<i32> {
     probe()?;
     // Adopt descendants after their direct parent exits so the supervisor
     // can reap detached children instead of leaving zombies with container PID 1.
@@ -3906,6 +4028,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         .arg(LAUNCH_ARG)
         .arg(&prepared.program)
         .args(&prepared.args)
+        .env("NODE_OPTIONS", node_options)
         .env("PNPORT_SESSION", &view.session);
     let (child, owner) = spawn_owned_helper(&mut command)?;
     let pid = child.id() as i32;

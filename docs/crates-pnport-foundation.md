@@ -41,6 +41,57 @@ Commands are `run -- <command> [args...]`, `doctor [--json]`, and `cache path|li
 
 Read inline and split Yarn 4 data without evaluating loader JavaScript. Validate before calling pnp hydration, including its required top-level locator. Preserve aliases, fallback policy, workspaces and peer-specific virtual identity. One owned process tree uses one graph snapshot; no independent-project merging.
 
+### Automatic Node PnP API support
+
+`run` activates the selected project's Yarn runtime in Node subprocesses by
+adding its absolute `.pnp.cjs` preload to `NODE_OPTIONS`. When the project has
+`.pnp.loader.mjs`, include that ESM loader and retain its identity as a watched
+graph input. Yarn supplies `pnpapi`, `process.versions.pnp`, and
+`require('node:module').findPnpApi` through its
+[PnP runtime](https://yarnpkg.com/advanced/pnpapi). Do not substitute the reserved
+npm package named `pnpapi` or a partial API implementation.
+
+Run the selected CommonJS loader before caller `--require` preloads so those
+preloads can use `pnpapi` and ZIP-backed dependencies. Move an existing selected
+preload ahead of caller preloads when needed. Register the selected ESM loader
+before caller ESM loaders, including an existing selected loader that follows
+caller options. Later loader modules must be able to import PnP-only dependencies
+through Yarn's already registered hooks. Preserve unrelated option bytes
+and their relative order, and avoid adding a selected loader more than
+once, including equivalent normalized local file URLs. Query and fragment
+suffixes retain their distinct ESM module identities. Resolve selected relative
+CommonJS filenames and ESM specifiers against the known workload startup cwd.
+CommonJS filenames retain literal `#`, `?` and `%` characters without URL decoding.
+Bind a matching selected loader to its absolute native path or URL before a
+descendant can inherit it with a changed
+cwd; keep unrelated relative loaders unchanged. Linux exec mediation uses the
+tracee's logical cwd or its live kernel cwd. Opaque macOS spawn actions can change
+cwd, so parent environment preparation retains a provisional absolute loader;
+the new image normalizes again before Node reads `NODE_OPTIONS`, using its final
+startup cwd and removing only repeated selected loaders. When cwd is unavailable,
+retain the caller specifier and the selected absolute loader rather than guess
+its target. Restore the selected loaders on supported descendant exec/spawn paths,
+including replacement environments that remove `NODE_OPTIONS`. Selection uses
+the admitted graph, not a caller-replaced environment variable or descendant
+cwd. Non-Node programs ignore these Node options. The supervisor, `doctor`, and
+native graph hydration remain data-only; JavaScript executes only in the Node
+workload. Shared option preparation also runs in pre-main native constructors;
+keep it free of runtime tracing and retain structured activation/restoration
+diagnostics in the supervisor and exec mediation callers. Constructor failures
+retain their closed native stage/code records. Existing process ownership, graph invalidation, read-only dependency
+views, and unsupported-operation boundaries remain required.
+
+The package-owned probe verifies automatic API access from a ZIP-backed
+package's require context, direct and descendant Node execution, preserved
+options, and restoration after environment replacement. Caller preloads must
+read `pnpapi` and ZIP-backed dependencies while retaining their relative order.
+Explicit user preloads remain supported. Run probes only against prepared synthetic Yarn fixtures;
+the offline probe does not install dependencies or load private application
+code. These controls do not establish universal tool compatibility or complete
+platform acceptance.
+
+### Native filesystem contracts
+
 Hydration builds immutable indexes of hard-linked locators and package-location ancestors. Filesystem translation queries those indexes instead of scanning the complete raw registry for each source or unplugged-package access; reconstruct them when loading a serialized snapshot.
 
 Classify each traversed `node_modules` component against the package-location ancestor index and its parent's exact registered package location before treating it as an issuer dependency namespace. Unplugged installation containers retain native lookup for unregistered scoped and unscoped siblings, including ordinary missing-path errors. Continue traversing the suffix so a later package-root `node_modules` remains virtual, read-only, and subject to physical-conflict checks; registered HARD package bytes remain read-only. Ordinary source and output descendants do not acquire synthetic dependency directories. Native resolvers ascend from those descendants to their containing package root; output trees may contain and remove their own native `node_modules` and dependency symlinks without mutating the referenced package.
@@ -112,7 +163,7 @@ An extended `open_how` with nonzero bytes beyond the supported 24-byte header re
 `dlopen(NULL, flags)` delegates directly to the native loader's process/global symbol namespace. Named library paths continue through filesystem translation; the null form is not a path error.
 macOS named-library translation releases its runtime lock and recursion guard before calling dyld. User constructors, nested library loads and fork child callbacks can then perform virtual filesystem operations, while each inner hook still guards its own backing I/O. The native conformance fixture loads two compiled libraries from a ZIP, performs constructor and post-load reads/mmap/enumeration, rejects dependency writes, forks inside initialization and resolves a nested ZIP library. Separate package-bin and static Linux controls register dependency watches and verify real source-file/output-directory mutation events under inline and split PnP data. Installed native CI/candidate execution uses the packaged CLI and adjacent companion; these focused fixtures do not complete detached-tree, minimum-OS or full benchmark acceptance.
 
-Inherit cwd, environment and stdio. Never capture child output; stdout remains suitable for language-server protocols. Preserve literal arguments and child status. Owned failures use 2 (arguments), 127 (not found), 126 (not executable), or 125 (initialization/runtime/restart). Structured stable codes disambiguate owned failures from child status. Signals use conventional signal-derived status.
+Inherit cwd, stdio and caller environment, with the selected Yarn loaders added to `NODE_OPTIONS` as defined above. Never capture child output; stdout remains suitable for language-server protocols. Preserve literal arguments and child status. Owned failures use 2 (arguments), 127 (not found), 126 (not executable), or 125 (initialization/runtime/restart). Structured stable codes disambiguate owned failures from child status. Signals use conventional signal-derived status.
 
 For descendant Linux `execve` and `execveat`, virtual script admission returns `ENOENT`, `EACCES`, `ENOEXEC`, or `ELOOP` to the invoking process for missing interpreters, permissions, malformed scripts, or interpreter loops. The supervisor continues tracing that process; infrastructure and mediation failures still fail closed.
 An absolute script interpreter whose pathname is a symlink loop retains the kernel's `ELOOP` result instead of being classified as a permission failure.
@@ -125,7 +176,7 @@ The private Linux launch and capability-probe helper arguments require an inheri
 
 When a traced Linux child in pnport's foreground process group requests a job-control stop, the supervisor parks that tracee and stops itself so the shell observes the job as stopped. A foreground `SIGCONT` resumes the supervisor and child; an independently grouped descendant's stop does not park the supervisor.
 
-Graph-data or active archive changes/deletion require restart and tree termination. Source edits use native watch behavior. Cancellation and runtime failures request graceful termination, wait five seconds, then terminate/reap remaining descendants. Detached descendants cannot survive the supervisor. No normal timeout or automatic retry. Injection is tree-scoped, with explicit capability errors; no protected-executable replacement or privilege escalation.
+Selected graph input or active archive changes/deletion require restart and tree termination. Graph inputs include the CommonJS loader, split data when present, and the selected optional ESM loader. Source edits use native watch behavior. Cancellation and runtime failures request graceful termination, wait five seconds, then terminate/reap remaining descendants. Detached descendants cannot survive the supervisor. No normal timeout or automatic retry. Injection is tree-scoped, with explicit capability errors; no protected-executable replacement or privilege escalation.
 
 The macOS supervisor creates a separate same-image guardian before starting the command. The guardian first creates its own process group, starts an inert anchor in that group, and moves itself into a separate private group supplied by a short-lived bootstrap child. The bootstrap is reaped before launch acknowledgement. The command joins the original group; the live/unreaped guardian PID reserves its identifier even while the guardian runs outside it. The anchor keeps the group present before user launch. Whole-command-group SIGSTOP therefore cannot freeze the guardian's EOF recovery. All three private helper roles require an inherited Unix socket whose kernel peer PID, UID/GID and native executable identity match their parent, plus the expected initial group. Control descriptors are close-on-exec outside helper bootstrap and never supplied to user descendants. Direct or foreign-image invocation fails promptly with exit 125.
 

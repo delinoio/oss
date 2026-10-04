@@ -7,6 +7,7 @@ pub mod graph;
 pub mod launch;
 #[cfg(unix)]
 pub mod native_path;
+pub mod node;
 pub mod view;
 
 #[cfg(target_os = "macos")]
