@@ -75,3 +75,58 @@ func TestForegroundChildUsesPinnedChronologicalPage(t *testing.T) {
 		})
 	}
 }
+
+func TestForegroundChildFinalInventoryCannotBorrowFailedSettlement(t *testing.T) {
+	for _, prior := range []domain.SubagentStatus{domain.SubagentFailed, domain.SubagentInterrupted, domain.SubagentCompleted} {
+		for _, empty := range []bool{false, true} {
+			t.Run(string(prior)+"/"+map[bool]string{false: "user-only", true: "empty"}[empty], func(t *testing.T) {
+				f := newHistoryFixture(t)
+				s := f.api.session
+				childID := "ses_01960dcbe1fcABCDEFGHIJKLMN"
+				receipt := InputReceipt{RequestID: domain.NewID(), SessionID: childID, MessageID: "msg_01960dcbe1fcABCDEFGHIJKLMN", PartID: "prt_01960dcbe1fcABCDEFGHIJKLMN"}
+				rows := []any{fixtureInput(receipt, fixtureSettings(), "original child input")}
+				if empty {
+					rows = []any{}
+				}
+				session := fixtureSession(s.cwd, domain.NewID(), fixtureSettings())
+				session["id"], session["parentID"] = childID, fixtureSessionID
+				session["time"] = map[string]any{"created": 1235, "updated": 1250}
+				s.client = &http.Client{Transport: childHistoryTransport(func(r *http.Request) (*http.Response, error) {
+					if r.Method != http.MethodGet {
+						t.Fatal("inventory gained mutation authority")
+					}
+					var value any
+					switch r.URL.RequestURI() {
+					case "/session/" + fixtureSessionID + "/children":
+						value = []any{session}
+					case "/session/" + childID:
+						value = session
+					case "/session/" + childID + "/message?limit=1000":
+						value = rows
+					case "/session/status":
+						value = map[string]any{}
+					default:
+						t.Fatal("inventory escaped owned GET routes")
+					}
+					raw, _ := json.Marshal(value)
+					return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(raw)))}, nil
+				})}
+				child := &foregroundChild{published: true, task: domain.OpenCodeTaskInput{Prompt: "original child input", AgentType: "build"}, value: domain.SubagentObservation{ID: domain.NewID(), NativeID: childID, ParentID: fixtureSessionID, Status: prior}}
+				s.children = map[string]*foregroundChild{childID: child}
+				if err := s.readForegroundChildInventory(context.Background(), false); err == nil || s.childInventoryVerified || len(s.childInventoryFacts) != 0 {
+					t.Fatal("missing fresh settlement granted root completion")
+				}
+				if !empty {
+					if child.value.Status.Terminal() {
+						t.Fatal("earlier terminal state survived current user-only page")
+					}
+					// Original Stop may retain this unfinished history; only the separate
+					// joined scope-cleanup proof can subsequently project interruption.
+					if err := s.readForegroundChildInventory(context.Background(), true); err != nil || !s.childInventoryVerified || child.value.Status.Terminal() {
+						t.Fatal("unfinished Stop history gained native settlement", err)
+					}
+				}
+			})
+		}
+	}
+}

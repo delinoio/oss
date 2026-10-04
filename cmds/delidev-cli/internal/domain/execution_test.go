@@ -78,3 +78,42 @@ func managedSubscriptionExecutionConfiguration(t *testing.T, permission Permissi
 	configuration.Subscription = true
 	return configuration
 }
+
+func TestOpenCodeContextSnapshotRequiresKnownSource(t *testing.T) {
+	limit := uint64(128000)
+	agent := Agent{Name: "Fixture", Harness: OpenCode, ModelID: NewID(), Options: AgentOptions{Permission: PermissionDefault}}
+	model := Model{Name: "Fixture", NativeID: "fixture", ProviderID: NewID(), Harnesses: []Harness{OpenCode}, ContextLimit: &limit}
+	agentID := NewID()
+	for _, source := range []EvidenceSource{Unknown, Known, UserDeclared} {
+		t.Run(string(source), func(t *testing.T) {
+			model.MetadataSource = source
+			if err := model.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := ResolveExecutionConfiguration(agentID, 1, agent, 1, model, Priority, nil)
+			if err != nil || snapshot.Validate() != nil {
+				t.Fatal("saved model cannot dispatch", err)
+			}
+			if source != Unknown {
+				if snapshot.OpenCodeContext == nil || snapshot.OpenCodeContext.Tokens != limit || snapshot.OpenCodeContext.Source != source {
+					t.Fatal("known context lost")
+				}
+				return
+			}
+			if snapshot.OpenCodeContext != nil {
+				t.Fatal("unknown metadata acquired context authority")
+			}
+			model.ContextLimit = nil
+			legacy, err := ResolveExecutionConfiguration(agentID, 1, agent, 1, model, Priority, nil)
+			model.ContextLimit = &limit
+			if err != nil {
+				t.Fatal(err)
+			}
+			originalDigest, err := legacy.Digest()
+			digest, digestErr := snapshot.Digest()
+			if err != nil || digestErr != nil || digest != originalDigest {
+				t.Fatal("omitted context changed legacy digest")
+			}
+		})
+	}
+}

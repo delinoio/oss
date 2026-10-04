@@ -96,7 +96,7 @@ func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent
 			return ExecutionConfiguration{}, err
 		}
 	}
-	if agent.Harness == OpenCode && model.ContextLimit != nil {
+	if agent.Harness == OpenCode && model.ContextLimit != nil && (model.MetadataSource == Known || model.MetadataSource == UserDeclared) {
 		result.OpenCodeContext = &OpenCodeModelContext{Tokens: *model.ContextLimit, Source: model.MetadataSource, Policy: OpenCodeNativeContextV1}
 		if err := result.OpenCodeContext.Validate(); err != nil {
 			return ExecutionConfiguration{}, err

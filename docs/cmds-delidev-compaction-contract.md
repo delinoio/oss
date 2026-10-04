@@ -260,7 +260,9 @@ When present, the selected model's known or user-declared context limit is copie
 into immutable `opencode_context` execution configuration before its first digest.
 The native initializer independently checks that exact configured limit. This is
 metadata provenance, not measured provider capacity; omitted legacy limits stay
-unknown and no output-limit default is invented. Later model changes cannot
+unknown. A saved limit with an unknown metadata source is also omitted from
+the execution snapshot and preserves the legacy digest. No output-limit default
+is invented. Later model changes cannot
 rewrite that snapshot.
 
 New known/declared-limit snapshots pin closed context policy `native-v1`, enabling

@@ -245,6 +245,9 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 	value.Source, value.SourceID = source, sourceID
 	value.ObservedModel, value.Output, value.Usage = nil, nil, nil
 	if source != domain.OpenCodeTaskSource {
+		// Reconstruct status from this complete read. Prior terminal telemetry
+		// cannot supply settlement missing from the current native page.
+		value.Status = domain.SubagentPending
 		phase = "history"
 		raw, err = s.readChild(ctx, "/session/"+id+"/message?limit=1000")
 		if err != nil {
@@ -371,7 +374,7 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 				value.Status = domain.SubagentRunning
 			}
 		}
-		if !completed && value.Status == domain.SubagentCompleted {
+		if userID == "" || !completed && value.Status == domain.SubagentCompleted {
 			return nil, observerProblem()
 		}
 	}
