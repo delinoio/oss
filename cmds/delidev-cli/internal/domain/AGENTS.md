@@ -91,3 +91,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Worker network bindings/status use closed route states and exact decimal-string generations under the network contract. Separate desired/effective/native generations, original recipient scope and immutable active route copies. Public key or attachment metadata grants no pairing, execution, decrypted cache or observed native capability.
 - A terminal workspace-storage job may retain one immutable `storage_reconciled_by` reference established only while settling an uncertain original through successful explicit recovery. It authorizes no native replay; verify original device/instance, immutable assignment and the successful recovery claim before acknowledging a stale original report.
+
+- Workspace-storage recovery alone may carry a 3 MiB input containing two individually bounded original preparation/manifest copies and at most eight original claim references. The owning workspace/store decoders narrow this typed allowance; ordinary job/entity/command bounds stay unchanged.

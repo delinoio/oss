@@ -594,7 +594,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			switch job.Type {
 			case domain.WorkspaceStorageJob:
 				var expected workspace.StorageRequest
-				if domain.Decode(job.Input, &expected) != nil || validateWorkspaceStorageResult(expected, req.Msg.OutputJson) != nil {
+				if workspace.DecodeStorageRequest(job.Input, &expected) != nil || validateWorkspaceStorageResult(expected, req.Msg.OutputJson) != nil {
 					problem = workspace.ResultUncertain()
 				}
 			case domain.RecoverExecutionJob:

@@ -43,7 +43,7 @@ func storageRetirementFor(job domain.Job, result journal, pending bool) (storage
 		return storageRetirement{}, false, nil
 	}
 	var input workspace.StorageRequest
-	if domain.Decode(job.Input, &input) != nil || input.OperationID != result.JobID {
+	if workspace.DecodeStorageRequest(job.Input, &input) != nil || input.OperationID != result.JobID {
 		return storageRetirement{}, false, workspace.ResultUncertain()
 	}
 	if input.Action == workspace.StorageRecover {
@@ -128,11 +128,11 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 		return nil
 	}
 	var accepted domain.Job
-	if ack == nil || ack.Id != assigned.Id || ack.SessionId != assigned.SessionId || ack.Kind != pb.EntityKind_ENTITY_KIND_JOB || ack.SchemaVersion != 1 || ack.Revision <= assigned.Revision || domain.Decode(ack.DocumentJson, &accepted) != nil || accepted.Type != job.Type || accepted.MachineID != job.MachineID || accepted.InstanceID != job.InstanceID || !bytes.Equal(accepted.Input, job.Input) {
+	if ack == nil || ack.Id != assigned.Id || ack.SessionId != assigned.SessionId || ack.Kind != pb.EntityKind_ENTITY_KIND_JOB || ack.SchemaVersion != 1 || ack.Revision <= assigned.Revision || workspace.DecodeStorageJob(ack.DocumentJson, &accepted) != nil || accepted.Type != job.Type || accepted.MachineID != job.MachineID || accepted.InstanceID != job.InstanceID || !bytes.Equal(accepted.Input, job.Input) {
 		return workspace.ResultUncertain()
 	}
 	var input workspace.StorageRequest
-	if domain.Decode(job.Input, &input) != nil || input.OperationID != result.JobID {
+	if workspace.DecodeStorageRequest(job.Input, &input) != nil || input.OperationID != result.JobID {
 		return workspace.ResultUncertain()
 	}
 	// Acknowledged uncertainty still needs the original intent. Failed recovery
@@ -307,7 +307,7 @@ func validateRetriedStorageReport(receipt storageRetirement, result journal, cre
 		return workspace.ResultUncertain()
 	}
 	var accepted domain.Job
-	if domain.Decode(ack.DocumentJson, &accepted) != nil || accepted.Type != domain.WorkspaceStorageJob || accepted.MachineID != credential.MachineID || accepted.InstanceID != receipt.InstanceID || accepted.Input == nil {
+	if workspace.DecodeStorageJob(ack.DocumentJson, &accepted) != nil || accepted.Type != domain.WorkspaceStorageJob || accepted.MachineID != credential.MachineID || accepted.InstanceID != receipt.InstanceID || accepted.Input == nil {
 		return workspace.ResultUncertain()
 	}
 	inputDigest := sha256.Sum256(accepted.Input)
@@ -402,7 +402,7 @@ func replayPendingStorageReports(ctx context.Context, config Config, client deli
 		}
 		var accepted domain.Job
 		var input workspace.StorageRequest
-		if domain.Decode(acknowledged.DocumentJson, &accepted) != nil || domain.Decode(accepted.Input, &input) != nil {
+		if workspace.DecodeStorageJob(acknowledged.DocumentJson, &accepted) != nil || workspace.DecodeStorageRequest(accepted.Input, &input) != nil {
 			return workspace.ResultUncertain()
 		}
 		if accepted.StorageReconciledBy != "" || accepted.State == domain.JobUncertain || input.Action == workspace.StorageRecover && (accepted.State == domain.JobFailed || accepted.State == domain.JobCanceled) {

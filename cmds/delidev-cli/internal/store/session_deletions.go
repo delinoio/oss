@@ -335,7 +335,7 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 		}
 		if j.Type == domain.WorkspaceStorageJob {
 			var input workspace.StorageRequest
-			if domain.Decode(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != session || input.Preparation.MachineID != original.MachineID || (input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
+			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != session || input.Preparation.MachineID != original.MachineID || (input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
 				return v, false, domain.SessionDeletionPending()
 			}
 			copy.SnapshotID = input.SnapshotID

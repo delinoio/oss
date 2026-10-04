@@ -870,3 +870,13 @@ All snapshot namespace publication, storage inspection/restore/delete/recovery, 
 Compaction acceptance and execution credential publication require present workspace storage. Pending, uncertain or stored workspaces cannot grant native compaction authority.
 
 Recovery after the top-level removal rename may create a missing original claim only when its private namespace remains intact and matches the complete synchronized intent, and neither a claim nor its journal exists. Partial or fully absent namespaces require the preexisting original claim. Malformed or replaced claims stay uncertain.
+
+Workspace-storage recovery retains original preparation/manifest evidence twice
+and at most eight immutable claim references. Its input is capped at 3 MiB and
+its typed job entity at 4 MiB, with an 8 MiB native Connect response allowance
+for JSON/base64 overhead. Each original request retains the 1 MiB bound, and
+ordinary storage jobs/entities keep their original limits. Writes, strict reads,
+Worker dispatch, cancellation, report/receipt reconciliation and permanent
+deletion use the same ownership-specific rule. This finite exception can be
+removed only after immutable original evidence is stored by reference; it grants
+no new filesystem, execution, replay or inferred cleanup authority.

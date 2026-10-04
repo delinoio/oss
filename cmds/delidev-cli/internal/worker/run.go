@@ -196,7 +196,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	}
 	config.network = transport.runtime
 	defer transport.CloseIdleConnections()
-	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
+	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2*workspace.MaxStorageRecoveryJobBytes), connect.WithSendMaxBytes(2<<20))
 	if err := retireStorageReports(ctx, config); err != nil {
 		return err
 	}
@@ -680,7 +680,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			return err
 		}
 		var job domain.Job
-		if err := domain.Decode(resource.DocumentJson, &job); err != nil {
+		if err := decodeAssignedJob(resource.DocumentJson, &job); err != nil {
 			return err
 		}
 		if err := job.Validate(); err != nil {
@@ -776,7 +776,7 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	}
 	if job.Type == domain.WorkspaceStorageJob {
 		var input workspace.StorageRequest
-		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.OperationID != domain.ID(resource.Id) || input.Preparation.SessionID != domain.ID(resource.SessionId) || input.Preparation.MachineID != job.MachineID {
+		if workspace.DecodeStorageRequest(job.Input, &input) != nil || input.Validate() != nil || input.OperationID != domain.ID(resource.Id) || input.Preparation.SessionID != domain.ID(resource.SessionId) || input.Preparation.MachineID != job.MachineID {
 			return journal{}, workspace.ResultUncertain()
 		}
 	}
@@ -894,7 +894,7 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		return recoverExecution(ctx, config, job)
 	case domain.WorkspaceStorageJob:
 		var input workspace.StorageRequest
-		if err := domain.Decode(job.Input, &input); err != nil {
+		if err := workspace.DecodeStorageRequest(job.Input, &input); err != nil {
 			return nil, err
 		}
 		if input.Action == workspace.StorageRecover {

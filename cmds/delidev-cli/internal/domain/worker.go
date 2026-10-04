@@ -129,6 +129,10 @@ type Job struct {
 	FinishedAt          *time.Time      `json:"finished_at,omitempty"`
 }
 
+// Storage recovery duplicates bounded original preparation/manifest evidence.
+// The workspace/store owners restrict this allowance to explicit recovery.
+const MaxStorageRecoveryInputBytes = 3 << 20
+
 const (
 	maxJobDocumentBytes        = 1 << 20
 	maxCompactionJobInputBytes = 3 << 20
@@ -169,6 +173,8 @@ func (j Job) Validate() error {
 	// reference; the larger cap is still finite and applies only to this job.
 	if j.Type == CompactSessionJob {
 		maxInput = maxCompactionJobInputBytes
+	} else if j.Type == WorkspaceStorageJob {
+		maxInput = MaxStorageRecoveryInputBytes
 	}
 	if len(j.Input) > maxInput || len(j.Output) > maxJobDocumentBytes || !json.Valid(j.Input) || (len(j.Output) > 0 && !json.Valid(j.Output)) {
 		return Fail(InvalidArgument, "Invalid Worker job document.", "Use a bounded versioned job payload.")

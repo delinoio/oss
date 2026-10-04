@@ -107,7 +107,7 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 						return err
 					}
 					var operation workspace.StorageRequest
-					if domain.Decode(body.Input, &operation) != nil {
+					if workspace.DecodeStorageRequest(body.Input, &operation) != nil {
 						return workspace.ResultUncertain()
 					}
 					owned := false
@@ -183,7 +183,7 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 				return nil, err
 			}
 			var request workspace.StorageRequest
-			if domain.Decode(job.Input, &request) != nil {
+			if workspace.DecodeStorageRequest(job.Input, &request) != nil {
 				return nil, workspace.ResultUncertain()
 			}
 			if request.Action == workspace.StorageCleanup || request.Recovery != nil && request.Recovery.Original.Action == workspace.StorageCleanup {
@@ -345,7 +345,7 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 		return workspace.ResultUncertain()
 	}
 	var input workspace.StorageRequest
-	if domain.Decode(job.Input, &input) != nil {
+	if workspace.DecodeStorageRequest(job.Input, &input) != nil {
 		return workspace.ResultUncertain()
 	}
 	// An accepted operation retains its original cleanup snapshot through failures.
@@ -522,7 +522,7 @@ func storageRecoveryInput(tx *store.Tx, sessionID domain.ID, session domain.Sess
 		return workspace.ResultUncertain()
 	}
 	var original workspace.StorageRequest
-	if domain.Decode(claim.Input, &original) != nil || original.OperationID != id {
+	if workspace.DecodeStorageRequest(claim.Input, &original) != nil || original.OperationID != id {
 		return workspace.ResultUncertain()
 	}
 	a, _ := json.Marshal(original.Manifest)
@@ -693,7 +693,7 @@ func validateReconciledStorageReport(tx *store.Tx, record store.Record, job doma
 	}
 	var original, input workspace.StorageRequest
 	var output workspace.StorageResult
-	if domain.Decode(job.Input, &original) != nil || domain.Decode(recovery.Input, &input) != nil || domain.Decode(recovery.Output, &output) != nil || input.Action != workspace.StorageRecover || input.Recovery == nil || input.OperationID != recovered.ID || output.OperationID != recovered.ID || output.RecoveredJobID != input.Recovery.Original.OperationID || !output.CleanupVerified {
+	if workspace.DecodeStorageRequest(job.Input, &original) != nil || workspace.DecodeStorageRequest(recovery.Input, &input) != nil || domain.Decode(recovery.Output, &output) != nil || input.Action != workspace.StorageRecover || input.Recovery == nil || input.OperationID != recovered.ID || output.OperationID != recovered.ID || output.RecoveredJobID != input.Recovery.Original.OperationID || !output.CleanupVerified {
 		return workspace.ResultUncertain()
 	}
 	sum := sha256.Sum256(assigned.Data)

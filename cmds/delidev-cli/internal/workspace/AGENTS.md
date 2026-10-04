@@ -54,3 +54,5 @@ All snapshot namespace publication, storage inspection/restore/delete/recovery, 
 - Claimed removal accepts only immutable directory permissions or the exact writable native mode authorized by an original durable directory-mode transition. Retain that transition through journal compaction, partial recovery and failure; check directory identity and permissions again before unlink. Preserve retained-writer permission changes as unresolved recovery.
 
 - Recovery after the top-level removal rename may create a missing original claim only when its private namespace remains intact and matches the complete synchronized intent, and neither a claim nor its journal exists. Partial or fully absent namespaces require the preexisting original claim. Malformed or replaced claims stay uncertain.
+
+- Storage recovery owns a finite 3 MiB request/4 MiB job exception until original preparation/manifest evidence can be represented by immutable reference. Strict decoding preserves unknown/duplicate/trailing/UTF-8 rejection and the original request 1 MiB bound. The allowance never bypasses contextual native ownership verification or expands ordinary storage inputs.

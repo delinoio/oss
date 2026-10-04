@@ -187,3 +187,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - A stale original storage report may acknowledge only an independently completed explicit recovery, with its exact immutable assignment, original instance/device, revision, input and recovery-claim digest. Preserve the original UUID receipt through the ordinary report transaction without another state/native mutation. The Worker clears only that pending report receipt and marks its journal reported; the successful recovery owns removal-intent retirement. Uncertain or unproven originals retain their receipt and native evidence.
 
 - Compaction acceptance and execution credential publication require present workspace storage. Pending, uncertain or stored workspaces cannot grant native compaction authority.
+
+- Storage recovery retains full immutable original preparation/manifest and claim evidence within its dedicated 3 MiB input/4 MiB job bound. Read, cancellation, report validation, explicit recovery-chain settlement and original-report reconciliation use the same typed decoder; ordinary storage jobs remain bounded at 1 MiB.
