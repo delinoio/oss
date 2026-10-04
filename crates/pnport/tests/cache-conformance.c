@@ -7,8 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <utime.h>
 #ifdef __linux__
 #include <sys/inotify.h>
 #endif
@@ -88,8 +90,62 @@ int main(int argc, char **argv) {
     errno = 0; CHECK(mkdirat(copy, ".bin", 0700) == -1 && errno == EROFS);
     errno = 0; CHECK(rmdir("node_modules") == -1 && errno == EROFS);
     errno = 0; CHECK(rename("node_modules", "moved-modules") == -1 && errno == EROFS);
+    int parent = open(".", O_RDONLY | O_DIRECTORY); CHECK(parent >= 0);
+    errno = 0; CHECK(renameat(parent, "node_modules", parent, "moved-modules") == -1 && errno == EROFS);
+    errno = 0; CHECK(renameat(parent, "node_modules/.vite", parent, "node_modules/dep") == -1 && errno == EROFS);
+    errno = 0; CHECK(symlinkat("../node_modules/dep", copy, "dep") == -1 && errno == EROFS);
+    errno = 0; CHECK(symlink("../node_modules/dep", "node_modules/dep") == -1 && errno == EROFS);
+    errno = 0; CHECK(linkat(copy, "dep/file.txt", copy, ".hard-link", 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(link("node_modules/dep/file.txt", "node_modules/.hard-link") == -1 && errno == EROFS);
+    errno = 0; CHECK(fchmodat(parent, "node_modules", 0700, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(fchmodat(copy, "dep/file.txt", 0600, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(fchownat(copy, "dep/file.txt", getuid(), getgid(), 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(utimensat(copy, "dep/file.txt", NULL, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(utime("node_modules/dep/file.txt", NULL) == -1 && errno == EROFS);
+    errno = 0; CHECK(utimes("node_modules", NULL) == -1 && errno == EROFS);
+    errno = 0; CHECK(chown("node_modules", getuid(), getgid()) == -1 && errno == EROFS);
+    errno = 0; CHECK(lchown("node_modules/dep", getuid(), getgid()) == -1 && errno == EROFS);
+    errno = 0; CHECK(remove("node_modules") == -1 && errno == EROFS);
+    errno = 0; CHECK(mkfifo("node_modules/dep", 0600) == -1 && errno == EROFS);
+    errno = 0; CHECK(creat("node_modules/dep/file.txt", 0600) == -1 && errno == EROFS);
+    CHECK(renameat(copy, ".vite/results.json", copy, ".new-tool/results.json") == 0);
+    CHECK(renameat(copy, ".new-tool/results.json", copy, ".vite/results.json") == 0);
+    CHECK(symlinkat(".vite/results.json", copy, ".relative-link") == 0);
+    CHECK(fchmodat(copy, ".relative-link", 0640, 0) == 0);
+    CHECK(fchownat(copy, ".relative-link", getuid(), getgid(), AT_SYMLINK_NOFOLLOW) == 0);
+    CHECK(utimensat(copy, ".relative-link", NULL, AT_SYMLINK_NOFOLLOW) == 0);
+    CHECK(linkat(copy, ".relative-link", copy, ".hard-link", AT_SYMLINK_FOLLOW) == 0);
+    struct stat cache_metadata;
+    CHECK(fstatat(copy, ".hard-link", &cache_metadata, 0) == 0 && S_ISREG(cache_metadata.st_mode));
+    CHECK(unlinkat(copy, ".hard-link", 0) == 0);
+    CHECK(link("node_modules/.relative-link", "node_modules/.hard-link") == 0);
+    CHECK(lstat("node_modules/.hard-link", &cache_metadata) == 0);
+#ifdef __APPLE__
+    CHECK(S_ISREG(cache_metadata.st_mode));
+#else
+    CHECK(S_ISLNK(cache_metadata.st_mode));
+#endif
+    CHECK(unlinkat(copy, ".hard-link", 0) == 0);
+    CHECK(unlinkat(copy, ".relative-link", 0) == 0);
+    errno = 0; CHECK(renameat(-1, ".vite", copy, ".moved") == -1 && errno == EBADF);
+    errno = 0; CHECK(symlinkat("target", -1, ".link") == -1 && errno == EBADF);
+    errno = 0; CHECK(fchmodat(-1, ".vite", 0600, 0) == -1 && errno == EBADF);
+#ifdef __APPLE__
+    errno = 0; CHECK(renamex_np("node_modules", "moved-modules", 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(renameatx_np(parent, "node_modules", parent, "moved-modules", 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(renameatx_np(copy, ".vite", copy, "dep", RENAME_SWAP) == -1 && errno == EROFS);
+    errno = 0; CHECK(chflags("node_modules", 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(lutimes("node_modules/dep", NULL) == -1 && errno == EROFS);
+    CHECK(renamex_np("node_modules/.vite/results.json", "node_modules/.new-tool/results.json", RENAME_EXCL) == 0);
+    CHECK(renameatx_np(copy, ".new-tool/results.json", copy, ".vite/results.json", RENAME_EXCL) == 0);
+#endif
+    close(parent);
     CHECK(symlink("../node_modules/dep", "node_modules/.cache-link") == 0 || errno == EEXIST);
     errno = 0; CHECK(open("node_modules/.cache-link/file.txt", O_WRONLY) == -1 && errno == EROFS);
+    errno = 0; CHECK(linkat(copy, ".cache-link/file.txt", copy, ".hard-link", AT_SYMLINK_FOLLOW) == -1 && errno == EROFS);
+#ifdef __APPLE__
+    errno = 0; CHECK(link("node_modules/.cache-link/file.txt", "node_modules/.hard-link") == -1 && errno == EROFS);
+#endif
     CHECK(unlink("node_modules/.cache-link") == 0);
     CHECK(argc > 1 && symlink(argv[1], "node_modules/.internal-cache") == 0);
     errno = 0; CHECK(open("node_modules/.internal-cache/forbidden", O_CREAT | O_WRONLY, 0600) == -1 && errno == EROFS);

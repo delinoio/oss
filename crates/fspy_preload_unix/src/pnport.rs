@@ -1228,6 +1228,35 @@ hook!(mkdirat, pnport_mkdirat, (fd:c_int,path:*const c_char,mode:mode_t) -> c_in
 });
 path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true, true, -1);
 path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, true, -1);
+// pnport excludes fspy's generic mutation module. Every pathname mutation
+// variant must therefore apply this view's policy before entering libc.
+path_hook!(remove, pnport_remove, (path:*const c_char) -> c_int, true, false, -1);
+path_hook!(creat, pnport_creat, (path:*const c_char, mode:mode_t) -> c_int, true, true, -1);
+path_hook!(mkfifo, pnport_mkfifo, (path:*const c_char, mode:mode_t) -> c_int, true, false, -1);
+path_hook!(mknod, pnport_mknod, (path:*const c_char, mode:mode_t, device:libc::dev_t) -> c_int, true, false, -1);
+path_hook!(chown, pnport_chown, (path:*const c_char, owner:libc::uid_t, group:libc::gid_t) -> c_int, true, true, -1);
+path_hook!(lchown, pnport_lchown, (path:*const c_char, owner:libc::uid_t, group:libc::gid_t) -> c_int, true, false, -1);
+path_hook!(utime, pnport_utime, (path:*const c_char, times:*const libc::utimbuf) -> c_int, true, true, -1);
+path_hook!(utimes, pnport_utimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, true, -1);
+path_hook!(lutimes, pnport_lutimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, false, -1);
+path_hook!(chflags, pnport_chflags, (path:*const c_char, flags:libc::c_uint) -> c_int, true, true, -1);
+
+macro_rules! mutation_at_hook {
+    ($name:ident, $wrapper:ident, ($fd:ident:c_int,$path:ident:*const c_char $(,$arg:ident:$ty:ty)*), $follow:expr) => {
+        hook!($name, $wrapper, ($fd:c_int,$path:*const c_char $(,$arg:$ty)*) -> c_int, {
+            let original=original!($name,unsafe extern "C" fn(c_int,*const c_char $(,$ty)*)->c_int);
+            let Some(_guard)=Guard::enter() else {return original($fd,$path $(,$arg)*);};
+            if RUNTIME.get().is_none() {return original($fd,$path $(,$arg)*);}
+            let (path,_)=translated!($path,$fd,true,$follow,-1);
+            original(AT_FDCWD,path.as_ptr() $(,$arg)*)
+        });
+    };
+}
+mutation_at_hook!(fchmodat, pnport_fchmodat, (fd:c_int,path:*const c_char,mode:mode_t,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(fchownat, pnport_fchownat, (fd:c_int,path:*const c_char,owner:libc::uid_t,group:libc::gid_t,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(utimensat, pnport_utimensat, (fd:c_int,path:*const c_char,times:*const libc::timespec,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(mkfifoat, pnport_mkfifoat, (fd:c_int,path:*const c_char,mode:mode_t), false);
+mutation_at_hook!(mknodat, pnport_mknodat, (fd:c_int,path:*const c_char,mode:mode_t,device:libc::dev_t), false);
 hook!(fchmod, pnport_fchmod, (fd:c_int,mode:mode_t) -> c_int, {
     mutate_descriptor(fd, || libc::fchmod(fd, mode))
 });
@@ -1732,6 +1761,63 @@ hook!(rename, pnport_rename, (from:*const c_char,to:*const c_char) -> c_int, {
     let Some(_guard)=Guard::enter() else {return original(from,to);};
     if RUNTIME.get().is_none() {return original(from,to);}
     let (from,_)=translated!(from,AT_FDCWD,true,false,-1);let (to,_)=translated!(to,AT_FDCWD,true,false,-1);original(from.as_ptr(),to.as_ptr())
+});
+hook!(renameat, pnport_renameat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char) -> c_int, {
+    let original=original!(renameat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to);}
+    let (from,_)=translated!(from,from_fd,true,false,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr())
+});
+hook!(renamex_np, pnport_renamex, (from:*const c_char,to:*const c_char,flags:libc::c_uint) -> c_int, {
+    let original=original!(renamex_np,unsafe extern "C" fn(*const c_char,*const c_char,libc::c_uint)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to,flags);};
+    if RUNTIME.get().is_none() {return original(from,to,flags);}
+    let (from,_)=translated!(from,AT_FDCWD,true,false,-1);
+    let (to,_)=translated!(to,AT_FDCWD,true,false,-1);
+    original(from.as_ptr(),to.as_ptr(),flags)
+});
+hook!(renameatx_np, pnport_renameatx, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:libc::c_uint) -> c_int, {
+    let original=original!(renameatx_np,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,libc::c_uint)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let (from,_)=translated!(from,from_fd,true,false,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr(),flags)
+});
+hook!(link, pnport_link, (from:*const c_char,to:*const c_char) -> c_int, {
+    let original=original!(link,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to);};
+    if RUNTIME.get().is_none() {return original(from,to);}
+    // Creating another hard link changes the source inode's link count too.
+    // Darwin link follows the source's final symlink, unlike unflagged linkat.
+    let (from,_)=translated!(from,AT_FDCWD,true,true,-1);
+    let (to,_)=translated!(to,AT_FDCWD,true,false,-1);
+    original(from.as_ptr(),to.as_ptr())
+});
+hook!(linkat, pnport_linkat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:c_int) -> c_int, {
+    let original=original!(linkat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,c_int)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let (from,_)=translated!(from,from_fd,true,flags & libc::AT_SYMLINK_FOLLOW != 0,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr(),flags)
+});
+hook!(symlink, pnport_symlink, (target:*const c_char,path:*const c_char) -> c_int, {
+    let original=original!(symlink,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(target,path);};
+    if RUNTIME.get().is_none() {return original(target,path);}
+    // The target is stored verbatim; only the new directory entry is mutated.
+    let (path,_)=translated!(path,AT_FDCWD,true,false,-1);
+    original(target,path.as_ptr())
+});
+hook!(symlinkat, pnport_symlinkat, (target:*const c_char,fd:c_int,path:*const c_char) -> c_int, {
+    let original=original!(symlinkat,unsafe extern "C" fn(*const c_char,c_int,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(target,fd,path);};
+    if RUNTIME.get().is_none() {return original(target,fd,path);}
+    let (path,_)=translated!(path,fd,true,false,-1);
+    original(target,AT_FDCWD,path.as_ptr())
 });
 hook!(unlinkat, pnport_unlinkat, (fd:c_int,path:*const c_char,flags:c_int) -> c_int, {
     let original=original!(unlinkat,unsafe extern "C" fn(c_int,*const c_char,c_int)->c_int);
