@@ -1240,6 +1240,14 @@ path_hook!(utime, pnport_utime, (path:*const c_char, times:*const libc::utimbuf)
 path_hook!(utimes, pnport_utimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, true, -1);
 path_hook!(lutimes, pnport_lutimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, false, -1);
 path_hook!(chflags, pnport_chflags, (path:*const c_char, flags:libc::c_uint) -> c_int, true, true, -1);
+hook!(setxattr, pnport_setxattr, (path:*const c_char,name:*const c_char,value:*const c_void,size:size_t,position:u32,options:c_int) -> c_int, {
+    let original=original!(setxattr,unsafe extern "C" fn(*const c_char,*const c_char,*const c_void,size_t,u32,c_int)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(path,name,value,size,position,options);};
+    if RUNTIME.get().is_none() {return original(path,name,value,size,position,options);}
+    let (path,_)=translated!(path,AT_FDCWD,true,options & libc::XATTR_NOFOLLOW == 0,-1);
+    original(path.as_ptr(),name,value,size,position,options)
+});
+path_hook!(removexattr, pnport_removexattr, (path:*const c_char,name:*const c_char,options:c_int) -> c_int, true, options & libc::XATTR_NOFOLLOW == 0, -1);
 
 macro_rules! mutation_at_hook {
     ($name:ident, $wrapper:ident, ($fd:ident:c_int,$path:ident:*const c_char $(,$arg:ident:$ty:ty)*), $follow:expr) => {
@@ -1271,6 +1279,12 @@ hook!(futimes, pnport_futimes, (fd:c_int,times:*const libc::timeval) -> c_int, {
 });
 hook!(fchflags, pnport_fchflags, (fd:c_int,flags:libc::c_uint) -> c_int, {
     mutate_descriptor(fd, || libc::fchflags(fd, flags))
+});
+hook!(fsetxattr, pnport_fsetxattr, (fd:c_int,name:*const c_char,value:*const c_void,size:size_t,position:u32,options:c_int) -> c_int, {
+    mutate_descriptor(fd, || libc::fsetxattr(fd, name, value, size, position, options))
+});
+hook!(fremovexattr, pnport_fremovexattr, (fd:c_int,name:*const c_char,options:c_int) -> c_int, {
+    mutate_descriptor(fd, || libc::fremovexattr(fd, name, options))
 });
 hook!(dlopen, pnport_dlopen, (path:*const c_char,flags:c_int) -> *mut c_void, {
     let original = original!(dlopen, unsafe extern "C" fn(*const c_char,c_int)->*mut c_void);

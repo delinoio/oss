@@ -11,6 +11,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <utime.h>
+#ifdef __APPLE__
+#include <sys/xattr.h>
+#endif
 #ifdef __linux__
 #include <sys/inotify.h>
 #endif
@@ -121,6 +124,28 @@ int main(int argc, char **argv) {
     CHECK(link("node_modules/.relative-link", "node_modules/.hard-link") == 0);
     CHECK(lstat("node_modules/.hard-link", &cache_metadata) == 0);
 #ifdef __APPLE__
+    const char *attribute = "io.delino.pnport.cache-conformance";
+    errno = 0; CHECK(setxattr("node_modules", attribute, "cache", 5, 0, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(removexattr("node_modules", attribute, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(fsetxattr(copy, attribute, "cache", 5, 0, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(fremovexattr(copy, attribute, 0) == -1 && errno == EROFS);
+    file = openat(copy, "dep/file.txt", O_RDONLY); CHECK(file >= 0);
+    int dependency_copy = dup(file); CHECK(dependency_copy >= 0);
+    errno = 0; CHECK(setxattr("node_modules/dep/file.txt", attribute, "cache", 5, 0, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(removexattr("node_modules/dep/file.txt", attribute, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(fsetxattr(dependency_copy, attribute, "cache", 5, 0, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(fremovexattr(dependency_copy, attribute, 0) == -1 && errno == EROFS);
+    close(dependency_copy); close(file);
+    CHECK(setxattr("node_modules/.vite/results.json", attribute, "cache", 5, 0, XATTR_CREATE) == 0);
+    char attribute_bytes[8] = {0};
+    CHECK(getxattr("node_modules/.vite/results.json", attribute, attribute_bytes, sizeof(attribute_bytes), 0, 0) == 5);
+    CHECK(!strcmp(attribute_bytes, "cache"));
+    CHECK(removexattr("node_modules/.vite/results.json", attribute, 0) == 0);
+    file = openat(copy, ".vite/results.json", O_RDONLY); CHECK(file >= 0);
+    CHECK(fsetxattr(file, attribute, "native", 6, 0, XATTR_CREATE) == 0);
+    CHECK(fremovexattr(file, attribute, 0) == 0); close(file);
+    errno = 0; CHECK(fsetxattr(-1, attribute, "cache", 5, 0, 0) == -1 && errno == EBADF);
+    errno = 0; CHECK(fremovexattr(-1, attribute, 0) == -1 && errno == EBADF);
     CHECK(S_ISREG(cache_metadata.st_mode));
 #else
     CHECK(S_ISLNK(cache_metadata.st_mode));
@@ -145,6 +170,10 @@ int main(int argc, char **argv) {
     errno = 0; CHECK(linkat(copy, ".cache-link/file.txt", copy, ".hard-link", AT_SYMLINK_FOLLOW) == -1 && errno == EROFS);
 #ifdef __APPLE__
     errno = 0; CHECK(link("node_modules/.cache-link/file.txt", "node_modules/.hard-link") == -1 && errno == EROFS);
+    errno = 0; CHECK(setxattr("node_modules/.cache-link", attribute, "cache", 5, 0, 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(removexattr("node_modules/.cache-link", attribute, 0) == -1 && errno == EROFS);
+    // No-follow applies to the caller-owned link, never its managed target.
+    errno = 0; CHECK(removexattr("node_modules/.cache-link", attribute, XATTR_NOFOLLOW) == -1 && errno == ENOATTR);
 #endif
     CHECK(unlink("node_modules/.cache-link") == 0);
     CHECK(argc > 1 && symlink(argv[1], "node_modules/.internal-cache") == 0);
