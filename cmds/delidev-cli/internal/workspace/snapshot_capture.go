@@ -424,7 +424,8 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	if err != nil {
 		return storageObservationResult{}, err
 	}
-	whole, err := walkSnapshot(ctx, root, "", nil)
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes, entries: MaxSnapshotEntries}
+	whole, err := walkSnapshotBudget(ctx, root, "", nil, MaxSnapshotEntries, &budget)
 	if err != nil {
 		return storageObservationResult{}, err
 	}
@@ -442,7 +443,7 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 			if i == 1 && sameNativePath(path, fields[0]) {
 				continue
 			}
-			inventory, err := walkSnapshot(ctx, path, "", func(path string) bool { return path == "worktrees" || strings.HasPrefix(path, "worktrees/") })
+			inventory, err := walkSnapshotBudget(ctx, path, "", func(path string) bool { return path == "worktrees" || strings.HasPrefix(path, "worktrees/") }, MaxSnapshotEntries, &budget)
 			if err != nil {
 				return storageObservationResult{}, err
 			}

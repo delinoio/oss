@@ -126,6 +126,20 @@ func walkSnapshotBudget(ctx context.Context, source, destination string, skip fu
 			if err != nil {
 				return err
 			}
+			// Observation consumes the same shared allowance before opening or
+			// hashing payloads, even though it has no copy destination.
+			if budget != nil && destination == "" {
+				var size uint64
+				if before.Mode().IsRegular() {
+					if before.Size() < 0 {
+						return ResultUncertain()
+					}
+					size = uint64(before.Size())
+				}
+				if err := budget.take(size); err != nil {
+					return err
+				}
+			}
 			entry := snapshotEntry{Path: filepath.ToSlash(path), Mode: uint32(before.Mode())}
 			target := ""
 			if destination != "" {

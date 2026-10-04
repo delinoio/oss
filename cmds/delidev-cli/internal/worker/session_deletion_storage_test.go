@@ -64,9 +64,28 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				var journals []string
+				for _, copy := range work.Copies {
+					if copy.Type != domain.WorkspaceStorageJob {
+						continue
+					}
+					path := filepath.Join(config.Root, "storage-removal-claims", string(copy.JobID)+".pending")
+					if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, []byte("fixture retained path transitions"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					journals = append(journals, path)
+				}
 				proof, err := deleteSessionCopies(context.Background(), config, work)
 				if err != nil || !proof.Complete {
 					t.Fatal("storage copies blocked coordinated deletion", err)
+				}
+				for _, path := range journals {
+					if _, err := os.Lstat(path); !os.IsNotExist(err) {
+						t.Fatal("original claim journal survived deletion", err)
+					}
 				}
 				for _, path := range workspace.SessionStorageCopyPaths(config.Root, work) {
 					if _, err := os.Lstat(path); !os.IsNotExist(err) {
@@ -82,6 +101,18 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 				again, err := deleteSessionCopies(context.Background(), config, work)
 				if err != nil || again.ReportID != proof.ReportID {
 					t.Fatal("exact cleanup retry failed", err)
+				}
+				if err := os.WriteFile(journals[0], []byte("fixture reappearing journal"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+					t.Fatal("completed proof ignored reappearing claim journal")
+				}
+				if data, err := os.ReadFile(journals[0]); err != nil || string(data) != "fixture reappearing journal" {
+					t.Fatal("completed replay acquired new deletion authority", err)
+				}
+				if err := os.Remove(journals[0]); err != nil {
+					t.Fatal(err)
 				}
 				if err := os.Mkdir(snapshot, 0700); err != nil {
 					t.Fatal(err)

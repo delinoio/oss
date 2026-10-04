@@ -39,6 +39,74 @@ func TestSnapshotCopySharesByteBudgetBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestSnapshotObservationSharesBudgetBeforeHashing(t *testing.T) {
+	for _, limit := range []string{"entries", "bytes"} {
+		t.Run(limit, func(t *testing.T) {
+			budget := snapshotCopyBudget{bytes: 9, entries: 2}
+			if limit == "bytes" {
+				budget.entries = 20
+			}
+			for i := 0; i < 3; i++ {
+				source := t.TempDir()
+				path := filepath.Join(source, "payload")
+				if err := os.WriteFile(path, []byte("four"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				inventory, err := walkSnapshotBudget(context.Background(), source, "", nil, MaxSnapshotEntries, &budget)
+				if i < 2 {
+					if err != nil || inventory.Bytes != 4 || len(inventory.Entries) != 1 {
+						t.Fatal("bounded observation failed", inventory, err)
+					}
+				} else if domain.SafeError(err).Code != domain.ResourceExhausted || len(inventory.Entries) != 0 {
+					t.Fatal("aggregate observation admitted an excess payload", inventory, err)
+				}
+				if data, err := os.ReadFile(path); err != nil || string(data) != "four" {
+					t.Fatal("observation changed source", err)
+				}
+			}
+		})
+	}
+}
+
+func TestSnapshotObservationStopsAtAggregateGitInventory(t *testing.T) {
+	m := manager(t)
+	input, sources := snapshotRequest(t, m, true)
+	original := make(map[string]string)
+	for _, source := range sources {
+		data, err := os.ReadFile(filepath.Join(source, "tracked.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		original[source] = string(data)
+	}
+	git := m.Git
+	git.OwnerID, git.readOnly, git.offline = input.Preparation.SessionID, true, true
+	for _, repo := range input.Manifest.Repositories {
+		fields, err := git.revParseFields(context.Background(), repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < MaxSnapshotEntries/2; i++ {
+			if err := os.WriteFile(filepath.Join(fields[0], "info", fmt.Sprintf("observation-%04d", i)), nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	value, err := m.storageObservation(context.Background(), input)
+	if domain.SafeError(err).Code != domain.ResourceExhausted || value.Digest != "" || len(value.Data.Entries) != 0 {
+		t.Fatal("aggregate Git observation returned partial authority", err)
+	}
+	result, err := m.Storage(context.Background(), input)
+	if domain.SafeError(err).Code != domain.ResourceExhausted || result.PreviewDigest != "" || result.Snapshot != nil {
+		t.Fatal("oversized Git observation became a preview", result, err)
+	}
+	for _, source := range sources {
+		if data, err := os.ReadFile(filepath.Join(source, "tracked.txt")); err != nil || string(data) != original[source] {
+			t.Fatal("oversized observation changed original source", err)
+		}
+	}
+}
+
 func TestSnapshotCopyOverlayCountsOnlyNewDirectories(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "copy")
 	budget := snapshotCopyBudget{bytes: 4, entries: 3}
