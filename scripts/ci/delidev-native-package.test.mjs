@@ -48,5 +48,5 @@ test('workspace investigation is explicit and excludes package assembly', () => 
   assert.equal(fixtures['timeout-minutes'], 30);
   assert.equal(fixtures.steps.length, 3);
   assert.ok(fixtures.steps.some(step => step.with?.lfs === true && step.with['persist-credentials'] === false));
-  assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable)$' -count=1 -timeout=20m -v");
+  assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable|TestSnapshotCreatePublicationFailureRetainsOriginalRecovery|TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart)$' -count=1 -timeout=20m -v");
 });

@@ -976,6 +976,22 @@ func TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart(t *test
 	if raw, err := os.ReadFile(journalPath); err != nil || !bytes.Equal(raw, full) {
 		t.Fatal("canceled compaction replaced recovery proof", err)
 	}
+	// A corrupted full replay must remain untouched; capacity cannot justify
+	// dropping an undecodable transition or manufacturing a new claim.
+	malformed := bytes.Clone(full)
+	malformed[0] = '!'
+	if err := os.WriteFile(journalPath, malformed, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.appendRemovalClaimRecord(context.Background(), input, probe); err == nil {
+		t.Fatal("malformed journal granted compaction authority")
+	}
+	if raw, err := os.ReadFile(journalPath); err != nil || !bytes.Equal(raw, malformed) {
+		t.Fatal("malformed compaction changed recovery proof", err)
+	}
+	if err := os.WriteFile(journalPath, full, 0600); err != nil {
+		t.Fatal(err)
+	}
 	m = &Manager{Root: m.Root, Logger: m.Logger}
 	if err := m.appendRemovalClaimRecord(context.Background(), input, probe); err != nil {
 		t.Fatal("full settled history blocked original recovery", err)
