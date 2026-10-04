@@ -907,3 +907,10 @@ mode before capture or rename, so changing root permissions after preview
 rejects without moving the workspace or publishing a snapshot. Removal validates
 that same root-mode authority alongside the native identity and independently
 journaled child-directory mode transitions.
+
+Storage admission reserves eight total original-group recovery attempts, counting
+canceled and failed accepted attempts as retained deletion obligations. Native
+uncertainty claims have their separate eight-member bound. Terminal attempts do
+not reset the reservation count or strand an earlier still-supported successor.
+Exact request replay consumes no additional attempt; exhausting the finite
+recovery-attempt bound preserves evidence and returns explicit resource guidance.

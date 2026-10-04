@@ -463,8 +463,12 @@ func TestWorkspaceStorageAdmissionReservesPermanentDeletionJobCapacity(t *testin
 }
 
 func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
-	for _, existing := range []int{4078, 4079} {
-		t.Run(fmt.Sprint(existing), func(t *testing.T) {
+	for _, variant := range []struct {
+		existing int
+		failure  string
+	}{{4078, ""}, {4078, "queued-canceled"}, {4078, "claimed-failed"}, {4079, ""}} {
+		existing := variant.existing
+		t.Run(fmt.Sprint(existing, "/", variant.failure), func(t *testing.T) {
 			f := newStorageFixture(t)
 			preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
 			if err != nil {
@@ -508,7 +512,11 @@ func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
 			// Lose the original and seven recovery reports. The eighth recovery
 			// settles the same native operation at the exact inventory bound.
 			settleAfterLostReports := func(resource *pb.Resource) workspace.StorageResult {
-				for attempt := 0; attempt < workspace.MaxStorageRecoveryClaims; attempt++ {
+				attempts := workspace.MaxStorageRecoveryClaims
+				if variant.failure != "" {
+					attempts--
+				}
+				for attempt := 0; attempt < attempts; attempt++ {
 					assigned := f.claim(resource)
 					var original domain.Job
 					var input workspace.StorageRequest
@@ -531,6 +539,21 @@ func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
 					recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", assigned.Id)))
 					if err != nil {
 						t.Fatal("reserved recovery lineage exhausted early", attempt, err)
+					}
+					if attempt == 0 && variant.failure != "" {
+						if variant.failure == "queued-canceled" {
+							_, err = f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: recovery.Msg.Job.Id, ExpectedRevision: recovery.Msg.Job.Revision}}))
+						} else {
+							failed := f.claim(recovery.Msg.Job)
+							_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: failed.Id, ExpectedRevision: failed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.ResourceExhausted)}}))
+						}
+						if err != nil {
+							t.Fatal(err)
+						}
+						recovery, err = f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", assigned.Id)))
+						if err != nil {
+							t.Fatal("terminal recovery consumed reserved successor", err)
+						}
 					}
 					resource = recovery.Msg.Job
 				}

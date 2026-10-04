@@ -191,3 +191,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Storage recovery retains full immutable original preparation/manifest and claim evidence within its dedicated 3 MiB input/4 MiB job bound. Read, cancellation, report validation, explicit recovery-chain settlement and original-report reconciliation use the same typed decoder; ordinary storage jobs remain bounded at 1 MiB.
 
 - Snapshot observations and recovery outcomes preserve every field of the accepted snapshot metadata. Only successful original deletion may transition Deleted; failed recovery projects inspection without rewriting immutable size, creation time, digest or ownership.
+
+- Storage admission reserves eight total original-group recovery attempts, counting canceled and failed accepted attempts as retained deletion obligations. Native uncertainty claims have their separate eight-member bound. Terminal attempts do not reset the reservation count or strand an earlier still-supported successor. Exact request replay consumes no additional attempt; exhausting the finite recovery-attempt bound preserves evidence and returns explicit resource guidance.

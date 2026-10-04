@@ -11,6 +11,7 @@ import (
 // evidence and at most eight claim references. Keep this finite exception until
 // immutable preparation/manifest evidence can be stored by reference.
 const MaxStorageRecoveryClaims = 8
+const MaxStorageRecoveryAttempts = 8
 
 const MaxStorageRecoveryJobBytes = 4 << 20
 

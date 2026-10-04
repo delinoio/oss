@@ -165,7 +165,7 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		}
 		// Reserve the entire bounded lost-report lineage before native admission.
 		// Stored operations also preserve a complete restore/recovery lineage.
-		reserve := 1 + workspace.MaxStorageRecoveryClaims
+		reserve := 1 + workspace.MaxStorageRecoveryAttempts
 		if action == workspace.StorageCleanup || session.Storage != nil && session.Storage.State == domain.WorkspaceStored && action != workspace.StorageRestore && action != workspace.StorageRecover {
 			reserve *= 2
 		}
@@ -193,9 +193,16 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 			if claims >= workspace.MaxStorageRecoveryClaims {
 				return nil, workspace.ResultUncertain()
 			}
-			reserve = workspace.MaxStorageRecoveryClaims - claims
+			attempts, err := storageRecoveryAttempts(tx, sr.ID, request.OperationID)
+			if err != nil {
+				return nil, err
+			}
+			if attempts >= workspace.MaxStorageRecoveryAttempts {
+				return nil, domain.Fail(domain.ResourceExhausted, "The bounded storage recovery attempts are exhausted.", "Inspect the original operation and retain its native evidence; replay original receipts without starting another recovery.")
+			}
+			reserve = workspace.MaxStorageRecoveryAttempts - attempts
 			if request.Action == workspace.StorageCleanup || request.PreviousState == domain.WorkspaceStored && request.Action != workspace.StorageRestore {
-				reserve += 1 + workspace.MaxStorageRecoveryClaims
+				reserve += 1 + workspace.MaxStorageRecoveryAttempts
 			}
 		}
 		if err := storageIdle(tx, sr.ID, session, domain.ID(req.Msg.RecoveryJobId), reserve); err != nil {
@@ -727,4 +734,42 @@ func validateReconciledStorageReport(tx *store.Tx, record store.Record, job doma
 		return workspace.ResultUncertain()
 	}
 	return nil
+}
+
+// Every accepted attempt retains a deletion obligation, including failed/canceled
+// recoveries. Count original-group attempts independently of uncertain native
+// claims so one terminal failure cannot strand its still-reserved successor.
+func storageRecoveryAttempts(tx *store.Tx, session, original domain.ID) (int, error) {
+	after := domain.ID("")
+	count, inspected := 0, 0
+	for {
+		jobs, err := tx.List(store.Filter{Kind: domain.JobKind, SessionID: session, After: after, Limit: store.MaxPage})
+		if err != nil {
+			return 0, err
+		}
+		for _, record := range jobs {
+			inspected++
+			if inspected > 4096 {
+				return 0, workspace.ResultUncertain()
+			}
+			after = record.ID
+			job, err := store.Decode[domain.Job](record)
+			if err != nil {
+				return 0, err
+			}
+			if job.Type != domain.WorkspaceStorageJob {
+				continue
+			}
+			var input workspace.StorageRequest
+			if workspace.DecodeStorageRequest(job.Input, &input) != nil {
+				return 0, workspace.ResultUncertain()
+			}
+			if input.Action == workspace.StorageRecover && input.Recovery != nil && input.Recovery.Original.OperationID == original {
+				count++
+			}
+		}
+		if len(jobs) < store.MaxPage {
+			return count, nil
+		}
+	}
 }
