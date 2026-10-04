@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -165,34 +166,43 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			// Move the observed entry out of its replaceable name before verifying
 			// it. A writer retaining this directory can replace the original name
 			// after this claim without making the cleanup unlink that replacement.
-			privateName := ".removing-" + string(domain.NewID())
+			privateName := name
+			privateRelative := physicalEntry
+			pendingIndex := -1
+			for i, rename := range pending {
+				if rename.Original == entry.Path && rename.Private == physicalEntry && rename.Renamed {
+					pendingIndex = i
+					break
+				}
+			}
+			originalPath := filepath.Join(parent.Name(), path.Base(entry.Path))
+			if pendingIndex < 0 {
+				privateName = ".removing-" + string(domain.NewID())
+				parentRelative, err := filepath.Rel(removal, parent.Name())
+				if err != nil || len(pending) >= maxSnapshotRemovalEntries {
+					return ResultUncertain()
+				}
+				privateRelative = path.Join(filepath.ToSlash(parentRelative), privateName)
+				if parentRelative == "." {
+					privateRelative = privateName
+				}
+				pendingIndex = len(pending)
+				pending = append(pending, storageRemovalRename{Original: entry.Path, Private: privateRelative})
+				stage = "rename-prepared-journal"
+				if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenamePrepared}); err != nil {
+					return err
+				}
+				stage = "entry-rename"
+				if err := renameStorage(originalPath, filepath.Join(parent.Name(), privateName)); err != nil {
+					return ResultUncertain()
+				}
+				stage = "rename-committed-journal"
+				pending[pendingIndex].Renamed = true
+				if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameRenamed}); err != nil {
+					return err
+				}
+			}
 			privatePath := filepath.Join(parent.Name(), privateName)
-			originalPath := filepath.Join(parent.Name(), name)
-			parentRelative, err := filepath.Rel(removal, parent.Name())
-			if err != nil {
-				return ResultUncertain()
-			}
-			privateRelative := path.Join(filepath.ToSlash(parentRelative), privateName)
-			if parentRelative == "." {
-				privateRelative = privateName
-			}
-			if len(pending) >= maxSnapshotRemovalEntries {
-				return ResultUncertain()
-			}
-			pending = append(pending, storageRemovalRename{Original: entry.Path, Private: privateRelative})
-			stage = "rename-prepared-journal"
-			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenamePrepared}); err != nil {
-				return err
-			}
-			stage = "entry-rename"
-			if err := renameStorage(originalPath, privatePath); err != nil {
-				return ResultUncertain()
-			}
-			stage = "rename-committed-journal"
-			pending[len(pending)-1].Renamed = true
-			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameRenamed}); err != nil {
-				return err
-			}
 			if m.storageAfterRemovalClaim != nil {
 				m.storageAfterRemovalClaim(entry.Path)
 			}
@@ -210,24 +220,52 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			}
 			stage = "claimed-entry-verification"
 			if before.IsDir() {
-				if !os.FileMode(entry.Mode).IsDir() || !partial && uint32(before.Mode()) != entry.Mode {
-					if restoreErr := restore(); restoreErr != nil {
-						return restoreErr
+				if !os.FileMode(entry.Mode).IsDir() || !removalDirectoryModeMatches(before.Mode(), entry.Mode, pending[pendingIndex].ModePrepared) {
+					if !pending[pendingIndex].ModePrepared {
+						if restoreErr := restore(); restoreErr != nil {
+							return restoreErr
+						}
 					}
 					return ResultUncertain()
 				}
 				child, err := openVerifiedChildRoot(parent, privateName, before)
 				if err == nil {
-					// Owned directory permission changes are necessary for faithfully
-					// captured read-only trees; partial recovery retains their identity.
-					if err = child.Chmod(".", 0700); err == nil {
+					current, statErr := child.Lstat(".")
+					if statErr != nil || !removalDirectoryModeMatches(current.Mode(), entry.Mode, pending[pendingIndex].ModePrepared) {
+						err = ResultUncertain()
+					}
+				}
+				if err == nil {
+					// Record the only authorized permission transition before chmod.
+					// Recovery accepts that exact native mode, never arbitrary changes
+					// made through a writer retaining the claimed directory.
+					if !pending[pendingIndex].ModePrepared {
+						err = m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalDirectoryModePrepared})
+						if err == nil {
+							pending[pendingIndex].ModePrepared = true
+						}
+					}
+					if err == nil {
+						err = child.Chmod(".", 0700)
+					}
+					if err == nil {
 						err = remove(child, entry.Path)
+					}
+					if err == nil {
+						current, statErr := child.Lstat(".")
+						if statErr != nil || !os.SameFile(before, current) || current.Mode() != removalWritableDirectoryMode() {
+							err = ResultUncertain()
+						}
 					}
 					child.Close()
 				}
 				if err != nil {
-					if restoreErr := restore(); restoreErr != nil {
-						return restoreErr
+					// Keep the private name and mode proof together after a native
+					// chmod. Clearing either would discard original recovery authority.
+					if !pending[pendingIndex].ModePrepared {
+						if restoreErr := restore(); restoreErr != nil {
+							return restoreErr
+						}
 					}
 					return err
 				}
@@ -239,8 +277,10 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			}
 			stage = "entry-unlink"
 			if err := parent.Remove(privateName); err != nil {
-				if restoreErr := restore(); restoreErr != nil {
-					return restoreErr
+				if !before.IsDir() {
+					if restoreErr := restore(); restoreErr != nil {
+						return restoreErr
+					}
 				}
 				return ResultUncertain()
 			}
@@ -254,8 +294,9 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 		return nil
 	}
 	stage = "root-permissions"
-	if err := root.Chmod(".", 0700); err != nil {
-		return err
+	rootInfo, err := root.Lstat(".")
+	if err != nil || rootInfo.Mode() != removalWritableDirectoryMode() {
+		return ResultUncertain()
 	}
 	if err := remove(root, "."); err != nil {
 		return err
@@ -265,7 +306,8 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	}
 	stage = "final-root-identity"
 	identity, err = directoryPathIdentity(removal)
-	if err != nil || identity != claim.RootIdentity {
+	rootInfo, statErr := root.Lstat(".")
+	if err != nil || identity != claim.RootIdentity || statErr != nil || rootInfo.Mode() != removalWritableDirectoryMode() {
 		return ResultUncertain()
 	}
 	root.Close()
@@ -324,4 +366,17 @@ func verifyRemovalEntry(ctx context.Context, parent *os.Root, name string, befor
 		return ResultUncertain()
 	}
 	return nil
+}
+
+// Go exposes Windows directory permissions through the read-only attribute;
+// Unix retains the exact private 0700 permission bits used by native cleanup.
+func removalWritableDirectoryMode() os.FileMode {
+	if runtime.GOOS == "windows" {
+		return os.ModeDir | 0777
+	}
+	return os.ModeDir | 0700
+}
+
+func removalDirectoryModeMatches(current os.FileMode, pinned uint32, modePrepared bool) bool {
+	return current.IsDir() && (uint32(current) == pinned || modePrepared && current == removalWritableDirectoryMode())
 }

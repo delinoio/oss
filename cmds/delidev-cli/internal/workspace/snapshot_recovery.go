@@ -51,9 +51,10 @@ const maxStorageRemovalClaim = maxSnapshotManifest
 const maxStorageRemovalJournal = 4 * maxSnapshotManifest
 
 type storageRemovalRename struct {
-	Original string `json:"original"`
-	Private  string `json:"private"`
-	Renamed  bool   `json:"renamed"`
+	Original     string `json:"original"`
+	Private      string `json:"private"`
+	Renamed      bool   `json:"renamed"`
+	ModePrepared bool   `json:"mode_prepared,omitempty"`
 }
 
 type storageRemovalRenameRecord struct {
@@ -63,9 +64,10 @@ type storageRemovalRenameRecord struct {
 }
 
 const (
-	storageRemovalRenamePrepared = "prepared"
-	storageRemovalRenameRenamed  = "renamed"
-	storageRemovalRenameCleared  = "cleared"
+	storageRemovalRenamePrepared        = "prepared"
+	storageRemovalRenameRenamed         = "renamed"
+	storageRemovalRenameCleared         = "cleared"
+	storageRemovalDirectoryModePrepared = "directory-mode-prepared"
 )
 
 func (m *Manager) removalClaimPath(id domain.ID) string {
@@ -85,7 +87,7 @@ func removalClaimMatches(raw []byte, ref StorageRemovalReference, intent []byte)
 	seenOriginal := map[string]bool{}
 	seenPrivate := map[string]bool{}
 	for _, rename := range claim.Pending {
-		if !validRemovalRelativePath(rename.Original) || !validRemovalRelativePath(rename.Private) || rename.Original == rename.Private || seenOriginal[rename.Original] || seenPrivate[rename.Private] {
+		if !validRemovalRelativePath(rename.Original) || !validRemovalRelativePath(rename.Private) || rename.Original == rename.Private || rename.ModePrepared && !rename.Renamed || seenOriginal[rename.Original] || seenPrivate[rename.Private] {
 			return false
 		}
 		seenOriginal[rename.Original] = true
@@ -106,7 +108,7 @@ func (m *Manager) appendRemovalClaimRecord(ctx context.Context, r StorageRequest
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !validRemovalRelativePath(record.Original) || !validRemovalRelativePath(record.Private) || record.Original == record.Private || (record.State != storageRemovalRenamePrepared && record.State != storageRemovalRenameRenamed && record.State != storageRemovalRenameCleared) {
+	if !validRemovalRelativePath(record.Original) || !validRemovalRelativePath(record.Private) || record.Original == record.Private || (record.State != storageRemovalRenamePrepared && record.State != storageRemovalRenameRenamed && record.State != storageRemovalRenameCleared && record.State != storageRemovalDirectoryModePrepared) {
 		return ResultUncertain()
 	}
 	raw, err := json.Marshal(record)
@@ -180,6 +182,11 @@ func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageReque
 				return err
 			}
 		}
+		if active.ModePrepared {
+			if err := appendRecord(storageRemovalRenameRecord{Original: active.Original, Private: active.Private, State: storageRemovalDirectoryModePrepared}); err != nil {
+				return err
+			}
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -229,6 +236,12 @@ func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (stor
 				return storageRemovalClaim{}, nil, ResultUncertain()
 			}
 			current.Renamed = true
+			active[record.Original] = current
+		case storageRemovalDirectoryModePrepared:
+			if !exists || current.Private != record.Private || !current.Renamed || current.ModePrepared {
+				return storageRemovalClaim{}, nil, ResultUncertain()
+			}
+			current.ModePrepared = true
 			active[record.Original] = current
 		case storageRemovalRenameCleared:
 			if !exists || current.Private != record.Private {
@@ -399,6 +412,13 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			}
 			seen[logicalPath] = true
 			if os.FileMode(old.Mode).IsDir() && os.FileMode(entry.Mode).IsDir() {
+				modePrepared := false
+				for _, rename := range mappings {
+					modePrepared = modePrepared || rename.Original == logicalPath && rename.ModePrepared
+				}
+				if !removalDirectoryModeMatches(os.FileMode(entry.Mode), old.Mode, modePrepared) {
+					return ResultUncertain()
+				}
 				continue
 			}
 			if !reflect.DeepEqual(old, entry) {
