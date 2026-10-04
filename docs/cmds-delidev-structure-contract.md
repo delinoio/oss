@@ -170,7 +170,10 @@ accounting, request-diagnostics, subscription-retirement and OAuth ownership and
 order. No executable migration, schema declaration, generated binding or runtime
 advertisement is added by this prerequisite.
 
-Delivery uses independent PRs merged in dependency order. Establish these shared
+Delivery uses independent PRs merged in dependency order. A coherent feature PR
+may compose related complete contracts and consecutive real migrations after all
+shared reservations have reached main; the delivery boundary is not one PR per
+issue or migration. Retain every original migration owner and execution order. Establish these shared
 reservations on main before composing their dependent branches; each feature PR
 must include its complete business, authenticated RPC, CLI, client and desktop
 boundary plus applicable validation. Preserve implementation branches and record

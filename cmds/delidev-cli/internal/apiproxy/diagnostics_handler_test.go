@@ -33,33 +33,37 @@ func retainFixtureDiagnostics(t *testing.T, f *proxyFixture) *[]domain.RequestDi
 }
 
 func TestRequestDiagnosticRetainsCredentialFailureBeforeAnyHTTPAttempt(t *testing.T) {
-	f := newProxyFixture(t, domain.AnthropicMessages, []Operation{MessageCreate}, func(http.ResponseWriter, *http.Request) {
-		t.Error("credential failure reached the provider")
-	})
-	retained := retainFixtureDiagnostics(t, f)
-	f.authority.keyError = domain.Fail(domain.Unavailable, "PRIVATE_CREDENTIAL_FAILURE", "")
-	response, raw, err := f.request(t, "/messages", `{"model":"fixed-model","messages":[{"role":"user","content":"PRIVATE_BODY"}],"max_tokens":32,"service_tier":"auto","output_config":{"effort":"high"}}`, func(r *http.Request) {
-		r.Header.Del("Authorization")
-		r.Header.Set("x-api-key", fixtureToken)
-		r.Header.Set("X-Client-Request-Id", "req_private")
-	})
-	if err != nil || response.StatusCode != http.StatusServiceUnavailable || f.calls.Load() != 0 || f.authority.keys.Load() != 1 || f.authority.releases.Load() != 1 || len(*retained) != 2 {
-		t.Fatal("credential failure lost original invocation", err, len(*retained))
-	}
-	initial, terminal := (*retained)[0], (*retained)[1]
-	if initial.Revision != 0 || initial.State != domain.DiagnosticInProgress || terminal.Revision != 1 || terminal.ID != initial.ID || terminal.State != domain.RequestDiagnosticFailed || terminal.ErrorCode != domain.Unavailable || terminal.FinishedAt == nil || terminal.DurationMS == nil {
-		t.Fatal("credential failure lost metadata settlement", terminal)
-	}
-	for _, value := range *retained {
-		if value.HTTPAttempted == nil || *value.HTTPAttempted || value.RequestedEffort != nil || value.RequestedServiceTier != nil || value.NativeRequestID != "" || value.HTTPStatus != nil {
-			t.Fatal("unguarded request fields or provider attempt were manufactured", value)
-		}
-	}
-	encoded, _ := json.Marshal(*retained)
-	for _, secret := range []string{"PRIVATE_BODY", "PRIVATE_CREDENTIAL_FAILURE", "req_private", fixtureToken} {
-		if strings.Contains(string(encoded), secret) || strings.Contains(string(raw), secret) || strings.Contains(f.logs.String(), secret) {
-			t.Fatal("private failure input escaped diagnostics")
-		}
+	for _, code := range []domain.Code{domain.Unavailable, domain.ConfirmationRequired} {
+		t.Run(string(code), func(t *testing.T) {
+			f := newProxyFixture(t, domain.AnthropicMessages, []Operation{MessageCreate}, func(http.ResponseWriter, *http.Request) {
+				t.Error("credential failure reached the provider")
+			})
+			retained := retainFixtureDiagnostics(t, f)
+			f.authority.keyError = domain.Fail(code, "PRIVATE_CREDENTIAL_FAILURE", "")
+			response, raw, err := f.request(t, "/messages", `{"model":"fixed-model","messages":[{"role":"user","content":"PRIVATE_BODY"}],"max_tokens":32,"service_tier":"auto","output_config":{"effort":"high"}}`, func(r *http.Request) {
+				r.Header.Del("Authorization")
+				r.Header.Set("x-api-key", fixtureToken)
+				r.Header.Set("X-Client-Request-Id", "req_private")
+			})
+			if err != nil || response.StatusCode != errorStatus(f.authority.keyError) || f.calls.Load() != 0 || f.authority.keys.Load() != 1 || f.authority.releases.Load() != 1 || len(*retained) != 2 {
+				t.Fatal("credential failure lost original invocation", err, len(*retained))
+			}
+			initial, terminal := (*retained)[0], (*retained)[1]
+			if initial.Revision != 0 || initial.State != domain.DiagnosticInProgress || terminal.Revision != 1 || terminal.ID != initial.ID || terminal.State != domain.RequestDiagnosticFailed || terminal.ErrorCode != domain.Unavailable || terminal.FinishedAt == nil || terminal.DurationMS == nil {
+				t.Fatal("credential failure lost metadata settlement", terminal)
+			}
+			for _, value := range *retained {
+				if value.HTTPAttempted == nil || *value.HTTPAttempted || value.RequestedEffort != nil || value.RequestedServiceTier != nil || value.NativeRequestID != "" || value.HTTPStatus != nil {
+					t.Fatal("unguarded request fields or provider attempt were manufactured", value)
+				}
+			}
+			encoded, _ := json.Marshal(*retained)
+			for _, secret := range []string{"PRIVATE_BODY", "PRIVATE_CREDENTIAL_FAILURE", "req_private", fixtureToken} {
+				if strings.Contains(string(encoded), secret) || strings.Contains(string(raw), secret) || strings.Contains(f.logs.String(), secret) {
+					t.Fatal("private failure input escaped diagnostics")
+				}
+			}
+		})
 	}
 }
 
