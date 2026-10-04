@@ -124,6 +124,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session context --id ID
   session switch-account --id ID --revision N --account-id ID
   session rename --id ID --revision N --name NAME
+  snapshot list --session-id ID [--limit N] [--page-token TOKEN]
   storage preview|create --session-id ID --expected-revision N
   storage cleanup --session-id ID --expected-revision N --preview-job-id JOB --confirm
   storage inspect|restore --session-id ID --expected-revision N --snapshot-id ID

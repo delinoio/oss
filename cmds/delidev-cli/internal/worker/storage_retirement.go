@@ -314,6 +314,12 @@ func validateRetriedStorageReport(receipt storageRetirement, result journal, cre
 	if receipt.InputDigest == "" || hex.EncodeToString(inputDigest[:]) != receipt.InputDigest || accepted.Input == nil {
 		return workspace.ResultUncertain()
 	}
+	if accepted.State == domain.JobUncertain {
+		if accepted.Problem == nil || accepted.Problem.Code != domain.RecoveryRequired || len(accepted.Output) != 0 {
+			return workspace.ResultUncertain()
+		}
+		return nil
+	}
 	if receipt.ProblemCode == "" {
 		if result.Problem != nil || accepted.State != domain.JobSucceeded || accepted.Problem != nil || !bytes.Equal(accepted.Output, result.Output) {
 			return workspace.ResultUncertain()
@@ -393,7 +399,7 @@ func replayPendingStorageReports(ctx context.Context, config Config, client deli
 		if domain.Decode(acknowledged.DocumentJson, &accepted) != nil || domain.Decode(accepted.Input, &input) != nil {
 			return workspace.ResultUncertain()
 		}
-		if input.Action == workspace.StorageRecover && (accepted.State == domain.JobFailed || accepted.State == domain.JobCanceled) {
+		if accepted.State == domain.JobUncertain || input.Action == workspace.StorageRecover && (accepted.State == domain.JobFailed || accepted.State == domain.JobCanceled) {
 			if err := discardPendingStorageRetirement(config, accepted, result); err != nil {
 				return err
 			}

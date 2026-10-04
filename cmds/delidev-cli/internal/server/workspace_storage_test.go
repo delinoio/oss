@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -439,5 +440,68 @@ func TestWorkspaceStorageAdmissionReservesPermanentDeletionJobCapacity(t *testin
 	}
 	if f.sessionRecord().Revision != before {
 		t.Fatal("rejected storage changed the session")
+	}
+}
+
+func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
+	for _, existing := range []int{4094, 4095} {
+		t.Run(fmt.Sprint(existing), func(t *testing.T) {
+			f := newStorageFixture(t)
+			preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.execute(preview.Msg.Job)
+			state, err := store.Decode[domain.Session](f.sessionRecord())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = f.service.Store.Mutate(f.ownerContext, domain.NewID(), "storage.restore.capacity.fixture", nil, func(tx *store.Tx) (any, error) {
+				record, err := tx.Get(domain.JobKind, state.Preparation.JobID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](record)
+				if err != nil {
+					return nil, err
+				}
+				for i := 2; i < existing; i++ {
+					if _, err := tx.PutJob(domain.NewID(), 0, f.session, "", job); err != nil {
+						return nil, err
+					}
+				}
+				return true, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := f.sessionRecord().Revision
+			cleanup, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", preview.Msg.Job.Id, "")))
+			if existing == 4095 {
+				if connect.CodeOf(err) != connect.CodeResourceExhausted || f.sessionRecord().Revision != before {
+					t.Fatal("cleanup consumed the final restore slot", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := f.execute(cleanup.Msg.Job)
+			if output.WorkspaceState != domain.WorkspaceStored {
+				t.Fatal("fixture cleanup did not store workspace")
+			}
+			inspect, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_INSPECT, string(output.Snapshot.ID), "", "")))
+			if connect.CodeOf(err) != connect.CodeResourceExhausted || inspect != nil {
+				t.Fatal("inspection consumed reserved restore capacity", err)
+			}
+			restore, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RESTORE, string(output.Snapshot.ID), "", "")))
+			if err != nil {
+				t.Fatal("stored workspace could not use its final restore slot", err)
+			}
+			restored := f.execute(restore.Msg.Job)
+			if restored.WorkspaceState != domain.WorkspacePresent || !restored.CleanupVerified {
+				t.Fatal("last-slot restore did not complete")
+			}
+		})
 	}
 }

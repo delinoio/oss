@@ -41,6 +41,12 @@ func TestSnapshotRejectsOriginalGitAdministrationSymlink(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
+	// The OS may normalize the spelling accepted by Symlink (notably Windows).
+	// Preserve the actual native link text rather than a Git-produced path spelling.
+	originalTarget, err := os.Readlink(original)
+	if err != nil {
+		t.Fatal(err)
+	}
 	before, err := walkSnapshot(context.Background(), fields[1], "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +66,7 @@ func TestSnapshotRejectsOriginalGitAdministrationSymlink(t *testing.T) {
 	if err != nil || inventoryDigest(before) != inventoryDigest(after) {
 		t.Fatal("external administration changed", err)
 	}
-	if value, err := os.Readlink(original); err != nil || value != fields[1] {
+	if value, err := os.Readlink(original); err != nil || value != originalTarget {
 		t.Fatal("unsupported source topology was rewritten", err)
 	}
 }

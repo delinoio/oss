@@ -182,4 +182,4 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Failed or canceled workspace-storage recovery restores the original uncertain predecessor as the retry anchor. An uncertain recovery retains its assignment chain; terminal failure cannot become recovery authority or settle the predecessor.
 
-- Workspace-storage admission reserves one new job within the 4,096-job permanent deletion plan bound, including exact terminal-page boundaries. Full inventory rejects before job/session publication.
+- Workspace-storage admission reserves one new job within the 4,096-job permanent deletion plan bound, including exact terminal-page boundaries. Cleanup and cleanup recovery reserve an additional restore slot; other operations while stored preserve that slot. Full inventory rejects before job/session publication.

@@ -29,14 +29,15 @@ type failedStorageRecoveryReport struct {
 }
 
 func (s *failedStorageRecoveryReport) ReportWork(_ context.Context, req *connect.Request[pb.ReportWorkRequest]) (*connect.Response[pb.ReportWorkResponse], error) {
-	if req.Msg.Mutation.RequestId != string(s.result.ReportID) || req.Msg.Mutation.Id != string(s.result.JobID) || req.Msg.Mutation.ExpectedRevision != s.result.Revision || req.Msg.Problem == nil || req.Msg.Problem.Code != string(s.result.Problem.Code) {
+	problemMatches := req.Msg.Problem == nil && s.result.Problem == nil || req.Msg.Problem != nil && s.result.Problem != nil && req.Msg.Problem.Code == string(s.result.Problem.Code)
+	if req.Msg.Mutation.RequestId != string(s.result.ReportID) || req.Msg.Mutation.Id != string(s.result.JobID) || req.Msg.Mutation.ExpectedRevision != s.result.Revision || !problemMatches {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("original failed report identity changed"))
 	}
 	return connect.NewResponse(&pb.ReportWorkResponse{Job: s.ack}), nil
 }
 
 func TestUnsuccessfulStorageRecoveryDiscardsOnlyReportReceipt(t *testing.T) {
-	for _, state := range []domain.JobState{domain.JobFailed, domain.JobCanceled} {
+	for _, state := range []domain.JobState{domain.JobFailed, domain.JobCanceled, domain.JobUncertain} {
 		for _, replay := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/replay=%t", state, replay), func(t *testing.T) {
 				root := t.TempDir()
@@ -52,6 +53,18 @@ func TestUnsuccessfulStorageRecoveryDiscardsOnlyReportReceipt(t *testing.T) {
 					code = domain.Canceled
 				}
 				result := journal{Version: 1, JobID: recovery, InstanceID: instance, Revision: 2, Digest: strings.Repeat("a", 64), State: journalFinished, ReportID: domain.NewID(), Problem: domain.Fail(code, "The recovery did not settle the original operation.", "Retry the original uncertain operation.")}
+				if state == domain.JobUncertain {
+					// A locally clean report was accepted as uncertain before its reply
+					// was lost. The server retained no output/removal authority.
+					input.Action, input.OperationID, input.Recovery = workspace.StorageCleanup, original, nil
+					input.Preparation = workspace.PrepareRequest{SessionID: session, MachineID: machine}
+					input.SnapshotID = snapshot
+					recovery = original
+					raw, _ = json.Marshal(input)
+					job.Input = raw
+					assigned.Id = string(original)
+					result.JobID, result.Problem, result.Output = original, nil, json.RawMessage(`{"malformed":true}`)
+				}
 				if err := security.PrivateDir(filepath.Join(root, "jobs")); err != nil {
 					t.Fatal(err)
 				}
@@ -71,6 +84,9 @@ func TestUnsuccessfulStorageRecoveryDiscardsOnlyReportReceipt(t *testing.T) {
 				}
 				accepted := job
 				accepted.State, accepted.Problem = state, result.Problem
+				if state == domain.JobUncertain {
+					accepted.Problem = workspace.ResultUncertain()
+				}
 				document, _ = json.Marshal(accepted)
 				ack := &pb.Resource{Id: assigned.Id, SessionId: assigned.SessionId, Kind: assigned.Kind, SchemaVersion: 1, Revision: 3, DocumentJson: document}
 				if replay {

@@ -10,15 +10,20 @@ import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionStorageAction, SessionStorageProvider } from "./session-storage";
 
-function fixture(options: { local?: boolean; sidechat?: boolean; supported?: boolean } = {}) {
+function fixture(options: { local?: boolean; sidechat?: boolean; supported?: boolean; recoveryState?: "failed" | "canceled" } = {}) {
  const session=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:8n,documentJson:encode({name:"Original session",workspace:options.local?"local":"general-chat",...(options.sidechat?{fork:{sidechat_parent_snapshot:{}}}:{})})});
  let current=session;
  const job=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.JOB,schemaVersion:1,sessionId:session.id,revision:3n,documentJson:encode({type:"workspace-storage",state:"succeeded",input:{action:"preview"},output:{action:"preview",cleanup_verified:true,preview_digest:"a".repeat(64),source_bytes:"9007199254740993",retained_snapshot_bytes:"16",removed_source_bytes:"0",workspace_state:"present"}})});
  const cleanup={...job,id:newRequestId(),revision:2n,documentJson:encode({type:"workspace-storage",state:"claimed",input:{action:"cleanup"}})};
+ if(options.recoveryState) {
+  job.documentJson=encode({type:"workspace-storage",state:"uncertain",input:{action:"cleanup"},problem:{code:"recovery_required"}});
+  current={...session,documentJson:encode({name:"Original session",workspace:"general-chat",storage:{state:"uncertain",job_id:job.id}})};
+  cleanup.documentJson=encode({type:"workspace-storage",state:options.recoveryState,input:{action:"recover"}});
+ }
  const snapshot=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SNAPSHOT,schemaVersion:1,sessionId:session.id,revision:1n,documentJson:encode({size_bytes:"16",created_at:"2026-10-04T00:00:00Z"})});
  const deletion=create(SessionDeletionJobSchema,{id:newRequestId(),sessionId:session.id,revision:1n,state:SessionDeletionState.PENDING,workersPending:1});
  const requests:unknown[]=[];const deletes:unknown[]=[];
- const request=vi.fn(async(value:{action:WorkspaceStorageAction})=>{requests.push(value);if(requests.length===1)throw new ConnectError("lost response",Code.Unavailable);current={...session,revision:9n};return {job:value.action===WorkspaceStorageAction.CLEANUP?cleanup:job};});
+ const request=vi.fn(async(value:{action:WorkspaceStorageAction})=>{requests.push(value);if(requests.length===1)throw new ConnectError("lost response",Code.Unavailable);current={...current,revision:9n};return {job:value.action===WorkspaceStorageAction.CLEANUP || value.action===WorkspaceStorageAction.RECOVER?cleanup:job};});
  const cancel=vi.fn(async(_value:unknown)=>({job:{...cleanup,revision:3n}}));
  const remove=vi.fn(async(value:unknown)=>{deletes.push(value);if(deletes.length===1)throw new ConnectError("lost deletion response",Code.Unavailable);return {job:deletion};});
  const getDeletion=vi.fn(async()=>({job:deletion}));
@@ -80,4 +85,20 @@ it.each([{local:true},{sidechat:true},{supported:false}])("preserves Local/Sidec
  expect(screen.queryByRole("button",{name:"Preview workspace usage"})).toBeNull();
  if(options.supported===false)expect(await screen.findByText("Update the connected server to permanently delete managed sessions.")).not.toBeNull();
  expect(f.request).not.toHaveBeenCalled();expect(f.remove).not.toHaveBeenCalled();
+});
+
+it.each(["failed", "canceled"] as const)("retains the restored predecessor after %s recovery without reopening", async(recoveryState)=>{
+ const f=fixture({recoveryState});render(f.view(true));await open();
+ await screen.findByText("Storage operation: uncertain. Acceptance does not establish native cleanup.");
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Reconcile original storage operation"}) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button",{name:"Reconcile original storage operation"}));
+ fireEvent.click(screen.getByRole("button",{name:"Confirm selected storage action"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Retry the same storage request"}));
+ await screen.findByText(`Storage operation: ${recoveryState}. Acceptance does not establish native cleanup.`);
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Reconcile original storage operation"}) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button",{name:"Reconcile original storage operation"}));
+ fireEvent.click(screen.getByRole("button",{name:"Confirm selected storage action"}));
+ await waitFor(()=>expect(f.requests).toHaveLength(3));
+ expect(f.requests[2]).toMatchObject({action:WorkspaceStorageAction.RECOVER,recoveryJobId:f.job.id,mutation:{id:f.session.id,expectedRevision:9n}});
+ expect(f.requests[1]).toEqual(f.requests[0]);
 });

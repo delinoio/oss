@@ -182,6 +182,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "snapshot":
+		if len(rest) > 0 && rest[0] == "list" {
+			value, err := snapshotListCommand(ctx, c, rest[1:])
+			return emit(value, err)
+		}
 	case "storage":
 		if code, handled := dispatchStorage(ctx, c, o, rest, streams); handled {
 			return code

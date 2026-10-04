@@ -566,3 +566,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Forwarding control and traffic share the selected network runtime with the primary lane. Failure to load its protected authority cancels and joins the lane; no Direct fallback is allowed.
 - Acknowledged failed/canceled storage recovery discards only its pending report receipt after exact result/journal validation, including original report replay after response loss. Preserve predecessor removal intent and keep reported recovery failures from blocking reconnect.
+
+- Lost storage-report replies that replay an acknowledged uncertain job retire only the pending report receipt and mark the original journal reported. Validate exact assignment/input/report identities and recovery-required empty output; retain original removal intents/claims for explicit recovery, as for immediate acknowledgement.

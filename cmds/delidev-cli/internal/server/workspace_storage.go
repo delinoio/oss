@@ -48,7 +48,7 @@ func storageAction(a pb.WorkspaceStorageAction) (workspace.StorageAction, error)
 	}
 	return "", domain.Fail(domain.InvalidArgument, "Unknown workspace storage operation.", "Select preview, create, cleanup, inspect, restore, delete or recover.")
 }
-func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID) error {
+func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID, reserve int) error {
 	if s.Workspace == domain.Local {
 		return domain.Fail(domain.PermissionDenied, "Original Local checkouts cannot be cleaned.", "Use an independently owned backup workflow.")
 	}
@@ -123,7 +123,10 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 				return domain.Fail(domain.Conflict, "Dependent jobs have not confirmed cleanup.", "Settle every dependent job before parent storage operations.")
 			}
 		}
-		if len(jobs) < store.MaxPage && inspected < 4096 {
+		if inspected > 4096-reserve {
+			return domain.Fail(domain.ResourceExhausted, "Session ownership inventory exceeds its bound.", "Inspect retained work before storage cleanup.")
+		}
+		if len(jobs) < store.MaxPage {
 			return nil
 		}
 	}
@@ -158,7 +161,31 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		if sr.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before accepting storage work.")
 		}
-		if err := storageIdle(tx, sr.ID, session, domain.ID(req.Msg.RecoveryJobId)); err != nil {
+		// Cleanup must leave an admission slot for the only supported restore path.
+		// Other observations while stored cannot consume that reserved slot.
+		reserve := 1
+		if action == workspace.StorageCleanup || session.Storage != nil && session.Storage.State == domain.WorkspaceStored && action != workspace.StorageRestore && action != workspace.StorageRecover {
+			reserve = 2
+		}
+		if action == workspace.StorageRecover {
+			// Cleanup reconciliation may also finish with the live workspace removed.
+			original, err := tx.Get(domain.JobKind, domain.ID(req.Msg.RecoveryJobId))
+			if err != nil {
+				return nil, err
+			}
+			job, err := store.Decode[domain.Job](original)
+			if err != nil {
+				return nil, err
+			}
+			var request workspace.StorageRequest
+			if domain.Decode(job.Input, &request) != nil {
+				return nil, workspace.ResultUncertain()
+			}
+			if request.Action == workspace.StorageCleanup || request.Recovery != nil && request.Recovery.Original.Action == workspace.StorageCleanup {
+				reserve = 2
+			}
+		}
+		if err := storageIdle(tx, sr.ID, session, domain.ID(req.Msg.RecoveryJobId), reserve); err != nil {
 			return nil, err
 		}
 		if _, _, err := activeMachine(tx, session.MachineID); err != nil {
