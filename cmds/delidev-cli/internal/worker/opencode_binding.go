@@ -19,6 +19,7 @@ const (
 	openCodeAcceptancePending
 	openCodeAccepted
 	openCodeBindingBlocked
+	openCodeForkPrepared
 )
 
 // This publication adapter owns session binding, original stored-input
@@ -46,6 +47,7 @@ type OpenCodeBindingPublisher struct {
 	stopClaim      *opencode.SessionClaim
 	resumeClaim    *opencode.SessionClaim
 	predecessor    *openCodeExecutionCheckpoint
+	fork           *openCodeForkCheckpoint
 }
 
 // OpenOpenCodeBindingPublisher owns a fresh mutation journal for this original
@@ -86,7 +88,7 @@ func (c *OpenCodeBindingPublisher) Claim(ctx context.Context, claim opencode.Ses
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if claim.Kind == opencode.ResumeSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim == nil || *c.resumeClaim != claim) || claim.Kind == opencode.CreateSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim != nil) || claim.Kind == opencode.SubmitInputMutation && c.stage != openCodeBound {
+	if claim.Kind == opencode.ResumeSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim == nil || *c.resumeClaim != claim) || claim.Kind == opencode.CreateSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim != nil) || claim.Kind == opencode.SubmitInputMutation && c.stage != openCodeBound && c.stage != openCodeForkPrepared {
 		return openCodeClaimUncertain()
 	}
 	reply := claim.Kind == opencode.ReplyPermissionMutation || claim.Kind == opencode.ReplyQuestionMutation || claim.Kind == opencode.RejectQuestionMutation
@@ -134,7 +136,7 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 		return nil, err
 	}
 	ref := openCodeClaimReference{Version: 1, JobID: p.job, InstanceID: state.InstanceID, ServerID: state.ServerID, DeviceID: state.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, ThreadRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: state.Revision, AssignmentDigest: state.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}
-	if i.Continuation != nil {
+	if i.Continuation != nil || i.Fork != nil {
 		ref.Version = 2
 	}
 	path, err := openCodeClaimsPath(p.config.Root, p.job)
@@ -143,7 +145,7 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 	}
 	journal.mu.Lock()
 	defer journal.mu.Unlock()
-	if journal.closed || journal.failed || journal.release == nil || journal.path != path || journal.state.Reference != ref || (i.Continuation != nil) != (journal.state.Resume != nil) {
+	if journal.closed || journal.failed || journal.release == nil || journal.path != path || journal.state.Reference != ref || (i.Continuation != nil || i.Fork != nil) != (journal.state.Resume != nil) {
 		return nil, publicationUncertain()
 	}
 	if _, err := readOpenCodeClaims(p.config.Root, ref); err != nil {
@@ -216,7 +218,7 @@ func (c *OpenCodeBindingPublisher) BindSession(ctx context.Context, request doma
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.stage != openCodeUnbound {
+	if c.stage != openCodeUnbound && c.stage != openCodeForkPrepared {
 		return publicationUncertain()
 	}
 	i := c.publisher.input
@@ -227,7 +229,7 @@ func (c *OpenCodeBindingPublisher) BindSession(ctx context.Context, request doma
 	kind := opencode.CreateSessionMutation
 	if c.resumeClaim != nil {
 		kind = opencode.ResumeSessionMutation
-		if c.predecessor == nil || c.predecessor.NativeReference.SessionID != session || len(claims) == 0 || claims[0] != *c.resumeClaim {
+		if c.predecessorReference() == nil || c.predecessorReference().SessionID != session || len(claims) == 0 || claims[0] != *c.resumeClaim {
 			return c.block()
 		}
 	}
@@ -314,5 +316,49 @@ func (c *OpenCodeBindingPublisher) ReplayPending(ctx context.Context) error {
 		c.stage = openCodeAccepted
 	}
 	c.pendingRequest, c.pendingDigest = "", [sha256.Size]byte{}
+	return nil
+}
+
+func (c *OpenCodeBindingPublisher) predecessorReference() *opencode.CheckpointReference {
+	if c.predecessor != nil && c.fork == nil {
+		return &c.predecessor.NativeReference
+	}
+	if c.fork != nil && c.predecessor == nil {
+		return &c.fork.NativeReference
+	}
+	return nil
+}
+
+func openOpenCodeForkBinding(p *ExecutionPublisher, fork *openCodeForkCheckpoint, resume *opencode.SessionClaim) (*OpenCodeBindingPublisher, error) {
+	if p == nil || p.input.Fork == nil || p.input.Continuation != nil || fork == nil || resume == nil || fork.NativeReference.SessionID != resume.SessionID || fork.NativeReference.InputID != resume.MessageID || fork.NativeReference.PartID != resume.PartID || fork.NativeReference.InputRequestID != resume.InputRequestID || fork.NativeReference.CreationRequestID != fork.Requests.Fork || p.input.Fork.NativeThreadID != domain.NativeIdentity(resume.SessionID) || p.input.Fork.NativeTurnID != domain.NativeIdentity(resume.MessageID) {
+		return nil, publicationUncertain()
+	}
+	journal, err := openOpenCodeClaimsWithResume(p, resume)
+	if err != nil {
+		return nil, err
+	}
+	binding, err := newOpenCodeBindingPublisher(p, journal)
+	if err != nil {
+		_ = journal.Close()
+		return nil, err
+	}
+	binding.fork = fork
+	return binding, nil
+}
+
+// A fork's missing native agent/model is explicit private preparation state.
+// Submit only the first ordinary authorized input, then publish ThreadBound
+// after the native controller independently proves that input's real selection.
+func (c *OpenCodeBindingPublisher) prepareForkInput() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stage != openCodeUnbound || c.fork == nil || c.resumeClaim == nil || c.predecessor != nil {
+		return c.block()
+	}
+	claims, err := c.readClaims()
+	if err != nil || len(claims) != 1 || claims[0] != *c.resumeClaim {
+		return c.block()
+	}
+	c.creationClaim, c.thread, c.stage = claims[0], c.fork.NativeReference.SessionID, openCodeForkPrepared
 	return nil
 }

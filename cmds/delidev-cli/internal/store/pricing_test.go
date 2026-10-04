@@ -194,3 +194,77 @@ func TestEstimateSummaryRejectsCorruptDerivedEvidenceAndReadMutation(t *testing.
 		t.Fatal("corruption returned partial totals")
 	}
 }
+
+func TestCompactionPricingRetainsNullableCountersAndOriginalBasis(t *testing.T) {
+	for _, field := range []string{"input-only", "output-only", "missing", "unknown-cache-split"} {
+		t.Run(field, func(t *testing.T) {
+			s, root := openTest(t)
+			record := responseRecord(seedSearch(t, s, "source", domain.NotArchived))
+			record.CompactionSourceTurn = domain.NativeIdentity(record.TurnID)
+			record.TurnID = ""
+			record.Usage.Source = domain.CompactionHTTPResponse
+			record.Usage.Counts = nil
+			count := int64(10)
+			if field == "input-only" || field == "unknown-cache-split" {
+				record.Usage.Counts = &domain.NativeTokenCounts{Input: &count}
+			} else if field == "output-only" {
+				record.Usage.Counts = &domain.NativeTokenCounts{Output: &count}
+			}
+			price := preparePrice(t, s, record)
+			if field == "unknown-cache-split" {
+				basis := pricingFixture()
+				basis.InputMode = domain.CachedInputPrice
+				rate := "1"
+				basis.CachedInputPerMillion = &rate
+				_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.split", nil, func(tx *Tx) (any, error) {
+					var err error
+					price, err = tx.PutPricing(record.ModelID, price.Revision, domain.NewID(), basis)
+					return nil, err
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			id := domain.NewID()
+			if _, _, err := writeResponse(s, id, record); err != nil {
+				t.Fatal("nullable compaction was rejected after HTTP completion", err)
+			}
+			value, selected := readEstimate(t, s, id)
+			if selected == nil || selected.ID != price.ID {
+				t.Fatal("lost original compaction price")
+			}
+			switch field {
+			case "input-only":
+				if value.KnownAmount != "0.000025" || value.Coverage != domain.EstimatePartial || value.Output.State != domain.ComponentMissingUsage {
+					t.Fatal(value)
+				}
+			case "output-only":
+				if value.KnownAmount != "0.0001" || value.Coverage != domain.EstimatePartial || value.Input.State != domain.ComponentMissingUsage {
+					t.Fatal(value)
+				}
+			default:
+				if value.KnownAmount != "" || value.Coverage != domain.EstimateUnavailable {
+					t.Fatal("unavailable split became spend", value)
+				}
+			}
+			before, _ := json.Marshal(value)
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			s, err = Open(context.Background(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			if retained, replayed, err := writeResponse(s, domain.NewID(), record); err != nil || !replayed || retained != id {
+				t.Fatal("compaction replay charged again", err)
+			}
+			after, selected := readEstimate(t, s, id)
+			raw, _ := json.Marshal(after)
+			if selected.ID != price.ID || string(raw) != string(before) {
+				t.Fatal("restart rewrote nullable pricing")
+			}
+		})
+	}
+}

@@ -18,7 +18,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent") && len(body) == 0
 	valid = valid || s.reconciliationRead && method == http.MethodGet && len(body) == 0 && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent")
 	valid = valid || s.projectRead && method == http.MethodGet && len(body) == 0 && (path == "/project/current" || path == "/session?limit=2")
-	valid = valid || s.historyRead != nil && method == http.MethodGet && path == s.historyRead.path && len(body) == 0
+	valid = valid || method == http.MethodGet && s.historyRead != nil && path == s.historyRead.path && len(body) == 0
 	valid = valid || s.checkpointRead && method == http.MethodGet && len(body) == 0 && (path == "/session?limit=2" || path == "/permission" || path == "/question" || path == "/session/status")
 	if s.creationLookup && s.creation != nil && s.creation.attempted && s.input == nil && method == http.MethodGet && len(body) == 0 {
 		valid = valid || path == "/session?limit=2"
@@ -26,6 +26,13 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 			base := "/session/" + s.creationCandidate
 			valid = valid || path == base || path == base+"/message?limit=1" || path == "/session/status"
 		}
+	}
+	if f := s.forkAttempt; f != nil {
+		valid = valid || method == http.MethodGet && path == f.readPath && len(body) == 0
+		valid = valid || f.mutation != nil && method == f.mutation.method && path == f.mutation.path && mutationDigest(body) == f.mutation.digest
+	}
+	if s.compactionAttempt != nil {
+		valid = valid || s.compactionAttempt.attempted && method == http.MethodPost && path == s.compactionAttempt.path && mutationDigest(body) == s.compactionAttempt.digest
 	}
 	if s.replyAttempt != nil {
 		valid = valid || method == http.MethodPost && path == s.replyAttempt.path && mutationDigest(body) == s.replyAttempt.digest
@@ -51,7 +58,11 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	if err := s.alive(); err != nil {
 		return nil, 0, launchError(err)
 	}
-	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+	duration := 10 * time.Second
+	if s.compactionAttempt != nil && method == http.MethodPost && path == s.compactionAttempt.path {
+		duration = 15 * time.Minute
+	}
+	bounded, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	if (method == http.MethodPost || method == http.MethodPatch) && s.events != nil {
 		if problem := s.events.status(); problem != nil {
@@ -70,7 +81,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("x-opencode-directory", s.cwd)
 	request.SetBasicAuth("delidev", s.password)
-	if method == http.MethodPost || method == http.MethodPatch {
+	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodDelete {
 		request.Header.Set("Content-Type", "application/json")
 		// Prevent automatic transport replay, including for a body that net/http
 		// could otherwise reconstruct. The transport also disables keep-alives.
@@ -84,7 +95,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	if len(response.Header.Values("Content-Encoding")) != 0 || response.ContentLength > maxHTTPBody {
 		return nil, response.StatusCode, sessionProblem()
 	}
-	missingInput := method == http.MethodGet && s.input != nil && path == "/session/"+s.input.receipt.SessionID+"/message/"+s.input.receipt.MessageID && response.StatusCode == http.StatusNotFound
+	missingInput := s.forkAttempt != nil && method == http.MethodGet && path == "/session/"+s.forkAttempt.source && response.StatusCode == http.StatusNotFound && expected == http.StatusNotFound || method == http.MethodGet && s.input != nil && path == "/session/"+s.input.receipt.SessionID+"/message/"+s.input.receipt.MessageID && response.StatusCode == http.StatusNotFound
 	if response.StatusCode != expected && !missingInput {
 		return nil, response.StatusCode, sessionProblem()
 	}
@@ -117,7 +128,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 		// never become observations and are not required to infer non-rejection.
 		return nil, response.StatusCode, nil
 	}
-	if s.historyRead != nil && method == http.MethodGet && path == s.historyRead.path {
+	if method == http.MethodGet && s.historyRead != nil && path == s.historyRead.path {
 		values := response.Header.Values("X-Next-Cursor")
 		if len(values) > 1 || len(values) == 1 && !validHistoryCursor(values[0]) || len(values) == 0 && len(response.Header.Values("Link")) != 0 {
 			return nil, response.StatusCode, sessionProblem()

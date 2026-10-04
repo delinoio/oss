@@ -159,6 +159,9 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	}
 	switch event.Kind {
 	case codex.SubagentEvent:
+		if err := c.publisher.input.Configuration.ValidateCodexChildModels(event.Subagents); err != nil {
+			return true, err
+		}
 		next, err := domain.ApplySubagents(c.children, string(c.thread), event.Subagents)
 		if err != nil {
 			return true, err
@@ -205,6 +208,15 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return true, c.publishArtifact(ctx, event)
 	case codex.TurnPlanEvent, codex.TurnDiffEvent:
 		return true, c.publishProgress(ctx, event)
+	case codex.CompactionEvent:
+		if event.Compaction == nil || event.Compaction.Trigger != codex.AutomaticCompaction || event.Compaction.ActionID != "" || event.ItemID != event.Compaction.ItemID || event.TurnID != c.turn {
+			return false, publicationUncertain()
+		}
+		v := &domain.NativeCompactionObservation{Harness: domain.Codex, Trigger: domain.NativeAutomaticCompaction, Stage: domain.NativeCompactionStage(event.Compaction.Stage), NativeItemID: event.ItemID}
+		if v.Validate() != nil {
+			return false, publicationUncertain()
+		}
+		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionProgressObserved, Progress: &domain.ExecutionProgressUpdate{ID: domain.NewID(), Progress: domain.NativeProgress{Kind: domain.NativeCompactionProgress, Compaction: v}}})
 	case codex.ToolStartedEvent, codex.ToolCompletedEvent, codex.ToolOutputEvent, codex.ToolInputEvent, codex.ToolPatchEvent:
 		return true, c.publishTool(ctx, event)
 	case codex.MessageStartedEvent, codex.MessageCompletedEvent:

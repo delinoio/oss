@@ -34,6 +34,7 @@ type fixtureAuthority struct {
 	authorize                func(context.Context, ReferenceKind, string) error
 	observe                  func(context.Context, ReferenceKind, string) error
 	history                  func(context.Context, bool) error
+	responseUsage            func(context.Context, domain.ID, domain.NativeResponseUsage) error
 }
 
 func (a *fixtureAuthority) Acquire(ctx context.Context, token string) (*Lease, error) {
@@ -51,7 +52,7 @@ func (a *fixtureAuthority) Acquire(ctx context.Context, token string) (*Lease, e
 			key = fixtureKey
 		}
 		return []byte(key), ctx.Err()
-	}, AuthorizeReference: a.authorize, ObserveReference: a.observe, ObserveHistory: a.history, PublishDiagnostic: a.publishDiagnostic}, nil
+	}, AuthorizeReference: a.authorize, ObserveReference: a.observe, ObserveHistory: a.history, ObserveResponseUsage: a.responseUsage, PublishDiagnostic: a.publishDiagnostic}, nil
 }
 
 type lockedLog struct {

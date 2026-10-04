@@ -557,3 +557,27 @@ Grok meanings. See the usage contract for source-specific counts and pricing.
 ## Independent subscription service identity
 
 Activate the main-reserved `SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` only with real storage migration 28 after 26/27 and complete service-native configuration authority. The closed `SubscriptionServiceIdentity` enum preserves independent ChatGPT/Claude/Grok values; it is separate from the existing `SubscriptionService` RPC declaration. Reserved additive usage selection/group/model/pricing and request diagnostic fields retain the service without a fabricated provider. API-only documents remain schema 1; subscription Account/native Model and retired metadata projections use schema 2. Older clients receive explicit schema/support guidance. Bindings regenerate from the reconciled service-specific schemas.
+
+Issue #1208 activates the previously reserved `SystemCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 23` and `WorkerCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 12`. The existing ordered publication and session-owned resource/CLI/client boundary carries closed original task/child proof. Generated bindings come from the reconciled schema. The capability grants no child input/control, continuation or cleanup shortcut.
+
+## OpenCode native context profile
+
+The integrated #1203 implementation activates independent System capability 25,
+Worker capability 14 and SessionContext capabilities 5/6 using their original
+allocation-ledger reservations. Common compaction support does not imply an
+OpenCode installation or send authority. Existing CompactSession/GetSessionContext
+RPCs, exact mutation revisions and durable receipt identities carry closed
+version-3 OpenCode action/result JSON. Legacy Claude and Codex versions remain
+unchanged. Generated Go and TypeScript bindings come from the reconciled schema.
+The compaction contract owns original native/source/claim/report/cleanup proof.
+
+## OpenCode General Chat fork reservation (#1210)
+
+System capability 26 and Worker capability 15 independently activate the
+Unix plain-text General Chat profile through existing authenticated `ForkSession`,
+CLI and desktop surfaces. Codex capability 13 cannot imply OpenCode support.
+Every operation requires full original source, relocation, history, workspace
+and cleanup proof under the fork contract. Copied canonical messages carry
+explicit original provenance without input/accounting authority; absent native
+agent/model remains private until the first real input independently proves
+selection. No migration is allocated.

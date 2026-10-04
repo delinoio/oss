@@ -29,7 +29,7 @@ func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, creden
 	}
 	raw, err := security.ReadPrivate(path, maxOpenCodeExecutionCheckpointBytes)
 	var saved openCodeExecutionCheckpoint
-	if err != nil || executionInputDigest(raw) != c.Completion.NativeCheckpointDigest || domain.Decode(raw, &saved) != nil || saved.Version != 2 {
+	if err != nil || executionInputDigest(raw) != c.Completion.NativeCheckpointDigest || domain.DecodeWithLimit(raw, &saved, maxOpenCodeExecutionCheckpointBytes) != nil || saved.Version != 2 {
 		return empty, executionCheckpointUncertain()
 	}
 	terminal := c.Completion

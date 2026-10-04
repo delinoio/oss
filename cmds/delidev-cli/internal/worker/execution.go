@@ -85,7 +85,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if c := input.Continuation; c != nil {
-		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
+		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
+		if c.Compaction != nil {
+			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
+		}
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, previous, preparation, manifest)
 	} else {
 		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
 	}
@@ -125,6 +129,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	nativeHome := filepath.Join(home, "codex")
 	var checkpoint CodexExecutionCheckpoint
+	var compacted *codex.CompactedCheckpoint
 	if c := input.Continuation; c != nil {
 		rawDigest, err := hex.DecodeString(c.PromptDigest)
 		if err != nil || len(rawDigest) != sha256.Size {
@@ -150,6 +155,21 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		if replaced != 1 {
 			return nil, executionCheckpointUncertain()
+		}
+		if c.Compaction == nil {
+			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
+				return nil, err
+			}
+		}
+		if c.Compaction != nil {
+			retained, err := readCodexSessionCompactionCheckpoint(ctx, manager.Root, config.execution.Credential, input, *c.Compaction, checkpoint)
+			if err != nil {
+				return nil, err
+			}
+			if err := codex.VerifyCompactionRollout(ctx, nativeHome, retained); err != nil {
+				return nil, err
+			}
+			compacted = &retained
 		}
 		logger.InfoContext(ctx, "native_execution_predecessor_verified", "previous_execution_id", c.Previous.ExecutionID)
 	}
@@ -376,7 +396,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if c.Intent == domain.ContinueExplicitly {
 				intent = codex.ResumeAfterTerminal
 			}
-			_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
+			if compacted != nil {
+				_, err = client.VerifyCompactedContinuation(ctx, c.HistoryRequestID, *compacted)
+			} else {
+				_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
+			}
 		}
 	} else if f := input.Fork; f != nil {
 		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
@@ -496,6 +520,27 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		// the workspace lease's process index, then form a completion result.
 		// Read native identity and final credentials while its wire is still
 		// open; the defer only reads on earlier exits and never retries this read.
+		var contextProof *codex.ContinuationContextCheckpoint
+		if !hasChildren {
+			bindings, err := mapper.completionInputs()
+			if err != nil {
+				return nil, err
+			}
+			nativeInputs := make([]codex.HistoricalInput, len(bindings))
+			for n, binding := range bindings {
+				nativeInputs[n].ID = binding.InputID
+				bytes, err := hex.DecodeString(binding.PromptDigest)
+				if err != nil || len(bytes) != 32 {
+					return nil, executionCheckpointUncertain()
+				}
+				copy(nativeInputs[n].PromptDigest[:], bytes)
+			}
+			original := codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
+			contextProof, err = client.RetainContinuationContext(ctx, original)
+			if err != nil {
+				return nil, err
+			}
+		}
 		captureManagedBundle()
 		if err := client.Close(); err != nil {
 			return nil, err
@@ -548,7 +593,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
-		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs)
+		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs, contextProof)
 		if err != nil {
 			return nil, err
 		}

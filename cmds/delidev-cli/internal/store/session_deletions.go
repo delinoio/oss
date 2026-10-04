@@ -342,7 +342,7 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 		}
 		if j.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput
-			if domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != session {
+			if domain.DecodeCompactionInput(original.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != session {
 				return v, false, domain.SessionDeletionPending()
 			}
 			copy.ActionID = input.ActionID

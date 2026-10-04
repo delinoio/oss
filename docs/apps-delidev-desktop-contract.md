@@ -1451,3 +1451,26 @@ AI Subscription uses System capability 17 and schema-v2 service-native accounts 
 Server preferences and each Runner Device inspection provide a collapsed Network settings workspace under the existing categories. Use authenticated generated Network/Resource queries, exact revision selection and explicit uncertainty controls for profile writes/deletion. Preserve write-only proxy credentials, profile pagination and the distinct desired/effective/native route states from the [network contract](cmds-delidev-network-contract.md). A current control generation never implies native use, inference or account readiness.
 
 Encrypted Worker export starts from its bounded original public recipient and separately displays authenticated ciphertext digest. Ciphertext is transient presentation, not persistent query state. Prepare/Import/Status on this computer reaches a closed trusted-window bridge for only its already registered matching Worker; Go performs protected storage and cryptography. Other Runner Devices use their equivalent CLI. Preparation/import does not register, start, stop or replace a Worker. All asynchronous file/native/RPC results belong to the current Settings opening; leaving disposes local presentation without replay or implicit native cancellation.
+
+### Codex child configuration
+
+Native harness options capability-gate Codex child configuration with System capability 22 and original Runner Device capability 11. Preserve omitted model/effort/concurrency defaults and disabled saved values on older servers. Explicit settings use the exact registered native model under the parent's selected account and are frozen before execution; native compatibility is checked before input. Display the saved canonical child identity/revision separately from native observations and requested settings. The existing configuration RPC, CLI and generated client remain the product write boundary; reading or editing these fields never launches or controls a child.
+
+OpenCode 1.18.32 foreground children use the shared read-only Subagents disclosure under independent capability 23. Validate its complete original task/child graph and closed exact response counters before rendering a bounded page; native task content remains inert. No child controls are added. Follow the subagent contract.
+
+Session Context uses authenticated Connect queries for native observations and
+current per-profile compaction eligibility. Bind the observed exact session
+revision before accepting the action, retain the original mutation across
+navigation/response loss, and poll context resources without replaying a native
+command. Show unavailable counters explicitly, preserve uncertain action guidance
+and require independent server/Worker capabilities. The control remains outside
+Settings and does not alter ordinary conversation outcomes or queued input.
+
+Original OpenCode automatic compaction progress uses the same bounded inert
+context disclosure as Codex, retaining its own harness and native part reference.
+Show started/completed independently of current context tokens, which remain
+unavailable when unreported. Native summaries and continuation users do not
+replace the canonical conversation. The private OpenCode manual controller does
+not enable the desktop action before independently negotiated product support.
+
+OpenCode General Chat Fork additionally requires independent System 26/Worker 15 and a macOS/Linux Runner Device. Offer only completed Build plain-text root boundaries without children, context actions or native workspace activity; preserve exact mutation replay and the retained operation across navigation. Present inherited conversation/files and paused-child Resume in product terms; preparation cannot claim native model selection or new usage.

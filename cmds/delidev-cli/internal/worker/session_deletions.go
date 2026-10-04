@@ -139,9 +139,18 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
 			return proof, domain.SessionDeletionPending()
 		}
-		raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(w.Fork.RuntimeID), "fork-completion.json"), maxExecutionCheckpointBytes)
+		raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(w.Fork.RuntimeID), "fork-completion.json"), maxOpenCodeExecutionCheckpointBytes)
 		var checkpoint ForkCheckpoint
-		if err != nil || executionInputDigest(raw) != w.Fork.CheckpointDigest || domain.Decode(raw, &checkpoint) != nil || checkpoint.Version != 1 || checkpoint.JobID != w.Fork.JobID || checkpoint.JobInputDigest != w.Fork.JobInputDigest || checkpoint.RuntimeID != w.Fork.RuntimeID || checkpoint.SessionID != w.SessionID || checkpoint.MachineID != w.MachineID || string(mustForkJSON(checkpoint)) != string(raw) {
+		valid := err == nil && executionInputDigest(raw) == w.Fork.CheckpointDigest
+		if valid {
+			var native openCodeForkCheckpoint
+			if domain.DecodeWithLimit(raw, &native, maxOpenCodeExecutionCheckpointBytes) == nil && native.Version == 2 {
+				valid = native.JobID == w.Fork.JobID && native.JobInputDigest == w.Fork.JobInputDigest && native.RuntimeID == w.Fork.RuntimeID && native.SessionID == w.SessionID && native.MachineID == w.MachineID && string(mustForkJSON(native)) == string(raw)
+			} else {
+				valid = len(raw) <= maxExecutionCheckpointBytes && domain.DecodeWithLimit(raw, &checkpoint, maxExecutionCheckpointBytes) == nil && checkpoint.Version == 1 && checkpoint.JobID == w.Fork.JobID && checkpoint.JobInputDigest == w.Fork.JobInputDigest && checkpoint.RuntimeID == w.Fork.RuntimeID && checkpoint.SessionID == w.SessionID && checkpoint.MachineID == w.MachineID && string(mustForkJSON(checkpoint)) == string(raw)
+			}
+		}
+		if !valid {
 			return proof, domain.SessionDeletionPending()
 		}
 	}

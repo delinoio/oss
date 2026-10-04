@@ -13,11 +13,14 @@ import (
 // from the harness's same-process reconciliation. An unimplemented family blocks
 // terminal publication; native cleanup/reporting remains separate.
 type OpenCodeEventPublisher struct {
+	contextMessages     map[string]*openCodeContextMessage
+	contextCompactions  domain.NativeCompactionState
 	mu                  sync.Mutex
 	api                 *opencode.OwnedAPI
 	text                *OpenCodeTextPublisher
 	usage               *OpenCodeUsagePublisher
 	seen                map[string]bool
+	children            domain.SubagentState
 	final               string
 	finish              *opencode.FinishReason
 	problem             *opencode.NativeError
@@ -83,7 +86,7 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 
 // The composer lock is held across both immediate and deferred publication.
 func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o opencode.Observation) error {
-	if o.EventID == "" {
+	if o.ContextOverflow || o.ContextOnly || o.EventID == "" || o.ChildPending || len(o.Children) > 0 {
 		// Use the private, already verified read proof itself. Caller mutations
 		// of a typed snapshot cannot change the fact being published.
 		frozen, err := o.Freeze()
@@ -101,6 +104,23 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 	}
 	if keyErr != nil || c.seen[publicationKey] || len(c.seen) >= 65536 {
 		return c.fail(publicationUncertain())
+	}
+	if o.ChildPending || len(o.Children) > 0 && o.Message == nil && o.Part == nil {
+		if err := c.publishForegroundChildren(ctx, o.Children); err != nil {
+			return c.fail(err)
+		}
+		c.seen[publicationKey] = true
+		return nil
+	}
+	if o.ContextOnly {
+		if err := c.publishContext(ctx, o); err != nil {
+			return c.fail(err)
+		}
+		if err := c.publishForegroundChildren(ctx, o.Children); err != nil {
+			return c.fail(err)
+		}
+		c.seen[publicationKey] = true
+		return nil
 	}
 	text, err := c.text.PublishObservation(ctx, o)
 	if err != nil {
@@ -175,6 +195,9 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 			}
 			c.problem = &value
 		}
+	}
+	if err := c.publishForegroundChildren(ctx, o.Children); err != nil {
+		return c.fail(err)
 	}
 	c.seen[publicationKey] = true
 	return nil
@@ -256,6 +279,16 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	if err != nil {
 		return fail(err)
 	}
+	children, err := c.api.InspectForegroundChildren(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	if err := c.publishForegroundChildren(ctx, children); err != nil {
+		return fail(err)
+	}
+	if !c.children.Closed() || !c.contextCompactions.Closed() {
+		return fail(publicationUncertain())
+	}
 	if len(c.interactions) != 0 || progress.AssistantID != c.final {
 		return fail(publicationUncertain())
 	}
@@ -307,13 +340,26 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 // observer; these checks prove that publication did not skip a native family.
 func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObservation) bool {
 	t, u := c.text, c.usage
-	if len(history.Messages) != len(t.messages) {
+	if len(history.Messages) != len(t.messages)+len(c.contextMessages) {
 		return false
 	}
 	seen := map[string]bool{}
 	messages := map[string]bool{}
 	for _, message := range history.Messages {
 		owner := t.messages[message.ID]
+		if contextMessage := c.contextMessages[message.ID]; contextMessage != nil {
+			if messages[message.ID] || contextMessage.role != message.Role || contextMessage.summary && (!contextMessage.finalized || u.values[message.ID].Source != domain.OpenCodeMessageUsage) || len(contextMessage.parts) != len(message.Parts) {
+				return false
+			}
+			messages[message.ID] = true
+			for _, part := range message.Parts {
+				if seen[part.ID] || contextMessage.parts[part.ID] != part.Kind {
+					return false
+				}
+				seen[part.ID] = true
+			}
+			continue
+		}
 		if messages[message.ID] || owner == nil || message.Role == opencode.UserMessageRole && owner.role != domain.UserMessage || message.Role == opencode.AssistantMessageRole && (owner.role != domain.AssistantMessage || !owner.finalized || u.values[message.ID].Source != domain.OpenCodeMessageUsage) || message.Role != opencode.UserMessageRole && message.Role != opencode.AssistantMessageRole {
 			return false
 		}

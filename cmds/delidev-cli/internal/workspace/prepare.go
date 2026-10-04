@@ -34,6 +34,7 @@ type RepositorySpec struct {
 type PrepareRequest struct {
 	// ForkSourceID is an immutable Worker-owned copy profile. Ordinary creation
 	// never accepts it; the fork coordinator binds the original source manifest.
+	ForkProfile       ForkProfile          `json:"fork_profile,omitempty"`
 	ForkSourceID      domain.ID            `json:"fork_source_id,omitempty"`
 	ForkSourcePath    string               `json:"fork_source_path,omitempty"`
 	SessionID         domain.ID            `json:"session_id"`
@@ -146,6 +147,9 @@ func (r PrepareRequest) validate() error {
 // Server-side evidence validation cannot interpret a remote Worker's paths
 // with the server host OS. ValidateResult checks them against the Worker OS.
 func (r PrepareRequest) validateStructure() error {
+	if r.ForkProfile != "" && (r.ForkProfile != OpenCodeGeneralChatForkV1 || r.Type != domain.GeneralChat || r.ForkSourceID == "" || r.ForkSourcePath == "" || len(r.Repositories) != 0) {
+		return ResultUncertain()
+	}
 	if r.ForkSourceID != "" && (r.ForkSourceID.Validate() != nil || r.ForkSourceID == r.SessionID) {
 		return ResultUncertain()
 	}
@@ -314,7 +318,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			return failed(domain.SafeError(err))
 		}
 		if request.ForkSourceID != "" {
-			copy, err := copyForkTree(ctx, request.ForkSourcePath, manifest.PrimaryPath, false)
+			copy, err := copyForkTreeBounded(ctx, request.ForkSourcePath, manifest.PrimaryPath, false, request.forkEntryLimit())
 			if err != nil {
 				return failed(err)
 			}

@@ -30,6 +30,7 @@ type openCodeTextPart struct {
 // False means another adapter must handle the observation; it never authorizes
 // dropping native tools, usage, interactions or terminal evidence.
 type OpenCodeTextPublisher struct {
+	contextUsers  map[string]bool
 	binding       *OpenCodeBindingPublisher
 	messages      map[string]*openCodeTextMessage
 	parts         map[string]*openCodeTextPart
@@ -178,7 +179,7 @@ func (c *OpenCodeTextPublisher) observeMessage(ctx context.Context, observation 
 		if inputPart == nil || !inputPart.complete {
 			return publicationUncertain()
 		}
-		if native.Role != opencode.AssistantMessageRole || native.ID == b.turn || assistant.ParentID != b.turn || assistant.Model != settings.Model || assistant.Provider != settings.Provider || assistant.Agent != string(settings.Agent) || assistant.Mode != string(settings.Agent) || assistant.Variant != nil || observation.MessageFinalized && assistant.Completed == nil {
+		if native.Role != opencode.AssistantMessageRole || native.ID == b.turn || assistant.ParentID != b.turn && !c.contextUsers[assistant.ParentID] || assistant.Model != settings.Model || assistant.Provider != settings.Provider || assistant.Agent != string(settings.Agent) || assistant.Mode != string(settings.Agent) || assistant.Variant != nil || observation.MessageFinalized && assistant.Completed == nil {
 			return publicationUncertain()
 		}
 	} else {

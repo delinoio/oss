@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -37,8 +38,24 @@ func sameCompactionInstallation(current, assigned domain.Installation) bool {
 func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID) (domain.SessionCompactionInput, error) {
 	var empty domain.SessionCompactionInput
 	p := session.Execution
-	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified || !p.ClaudeContinuationBoundary(p.InputID) {
+	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
 		return empty, domain.CompactionUncertain()
+	}
+	h := session.InitialExecution.Configuration.Harness
+	switch h {
+	case domain.ClaudeCode:
+		if !p.ClaudeContinuationBoundary(p.InputID) {
+			return empty, domain.CompactionUncertain()
+		}
+	case domain.Codex, domain.OpenCode:
+		if session.Dispatch != domain.DispatchReady || session.Outcome != domain.ExecutionSucceeded || session.PendingInputs != 0 || session.PendingInputBytes != 0 || p.Waiting != (domain.NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.Subagents) != 0 || !p.NativeCompactions.Closed() {
+			return empty, domain.CompactionUncertain()
+		}
+	default:
+		return empty, domain.Fail(domain.Unsupported, "This harness has no supported manual compaction profile.", "Update the server and original Worker together when this profile becomes available.")
+	}
+	if err := tx.RequireNoSessionFork(sr.ID); err != nil {
+		return empty, err
 	}
 	r, err := tx.SessionExecutionJob(sr.ID, p.ExecutionID)
 	if err != nil {
@@ -59,6 +76,12 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 	_, machine, err := activeMachine(tx, session.MachineID)
 	if err != nil {
 		return empty, err
+	}
+	if h == domain.Codex && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
+		return empty, domain.Fail(domain.Unsupported, "The original Worker does not support Codex compaction.", "Update that Worker before requesting this operation.")
+	}
+	if h == domain.OpenCode && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeSessionCompactionV1)) {
+		return empty, domain.Fail(domain.Unsupported, "The original Worker does not support OpenCode compaction.", "Update that Worker before requesting this operation.")
 	}
 	instance, seen, err := tx.WorkerInstance(session.MachineID)
 	if err != nil {
@@ -89,7 +112,13 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 		}
 	}
 	restored.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *p, Completion: done, AssignmentInputDigest: continuationDigest(j.Input), InputMode: original.Input.Mode, PromptDigest: continuationDigest([]byte(original.Input.Prompt)), Intent: intent, Compaction: previous}
-	input := domain.SessionCompactionInput{Version: 1, ActionID: action, SourceJobID: r.ID, Assignment: original, Restore: restored, Completion: done, Previous: previous, Dispatch: session.Dispatch, Intent: session.NextExecutionIntent}
+	version := uint32(1)
+	if h == domain.Codex {
+		version = 2
+	} else if h == domain.OpenCode {
+		version = 3
+	}
+	input := domain.SessionCompactionInput{Version: version, ActionID: action, SourceJobID: r.ID, Assignment: original, Restore: restored, Completion: done, Previous: previous, Dispatch: session.Dispatch, Intent: session.NextExecutionIntent}
 	return input, input.Validate()
 }
 func (s *Service) CompactSession(ctx context.Context, req *connect.Request[pb.CompactSessionRequest]) (*connect.Response[pb.CompactSessionResponse], error) {
@@ -164,7 +193,7 @@ func (s *Service) CompactSession(ctx context.Context, req *connect.Request[pb.Co
 
 func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revision uint64, raw json.RawMessage, problem *domain.Error) (store.Record, error) {
 	var input domain.SessionCompactionInput
-	if domain.Decode(j.Input, &input) != nil || input.Validate() != nil {
+	if domain.DecodeCompactionInput(j.Input, &input) != nil || input.Validate() != nil {
 		return store.Record{}, domain.CompactionUncertain()
 	}
 	sr, session, err := sessionRecord(tx, r.SessionID)
@@ -176,6 +205,28 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 	}
 	var output domain.SessionCompactionResult
 	verified := problem == nil && domain.Decode(raw, &output) == nil && output.Validate() == nil && output.ActionID == input.ActionID && output.ExecutionID == input.Assignment.ExecutionID && output.Checkpoint.JobID == r.ID
+	if verified {
+		if input.Version == 3 {
+			verified = output.Version == 3 && output.Harness == domain.OpenCode && output.OpenCode != nil && output.OpenCode.NativeSessionID == input.Completion.NativeThreadID && output.OpenCode.SourceNativeInputID == input.Completion.NativeTurnID
+		} else if input.Version == 2 {
+			verified = output.Version == 2 && output.Harness == input.Assignment.Configuration.Harness && output.Codex != nil && output.Codex.NativeThreadID == input.Completion.NativeThreadID && output.Codex.SourceNativeTurnID == input.Completion.NativeTurnID
+		} else {
+			verified = output.Version == 1
+		}
+	}
+	if verified && output.Version == 3 {
+		v := input.Assignment
+		for n, usage := range output.OpenCode.Usages {
+			id := domain.NewID()
+			observation := domain.OpenCodeUsageRecord{ExecutionID: input.ActionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, ProviderID: v.Configuration.ProviderID, ModelID: v.Configuration.ModelID, Harness: domain.OpenCode, Version: v.Installation.Version, ThreadID: string(output.OpenCode.NativeSessionID), TurnID: string(output.OpenCode.UserID), Sequence: uint64(n + 1), Usage: usage}
+			if err := tx.PutOpenCodeUsage(id, sr.ID, sr.ProjectID, observation); err != nil {
+				return store.Record{}, err
+			}
+			if err := tx.PutOpenCodeAccounting(id, v.InputID, sr.ID, sr.ProjectID, observation); err != nil {
+				return store.Record{}, err
+			}
+		}
+	}
 	canceled, err := tx.JobCancellationRequested(r.ID)
 	if err != nil {
 		return store.Record{}, err

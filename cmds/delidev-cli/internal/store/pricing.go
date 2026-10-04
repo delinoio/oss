@@ -124,7 +124,7 @@ func (t *Tx) snapshotResponseEstimate(id domain.ID, record domain.ResponseUsageR
 	// A model's current provider can differ from the immutable execution. Its new
 	// rate card must never price an old-provider response under that reused UUID.
 	if basis != nil && basis.ProviderID == record.ProviderID && basis.SubscriptionService == record.SubscriptionService {
-		estimate, err = domain.EstimateResponse(basis.ID, basis.Basis, record.Usage.Counts)
+		estimate, err = domain.EstimateObservedResponse(basis.ID, basis.Basis, record.Usage)
 		if err != nil {
 			return err
 		}
@@ -183,7 +183,7 @@ func validateResponseEstimate(value domain.ResponseEstimate, record domain.Respo
 			return corrupt()
 		}
 		var err error
-		expected, err = domain.EstimateResponse(basis.ID, basis.Basis, record.Usage.Counts)
+		expected, err = domain.EstimateObservedResponse(basis.ID, basis.Basis, record.Usage)
 		if err != nil {
 			return corrupt()
 		}

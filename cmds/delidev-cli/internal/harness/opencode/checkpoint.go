@@ -51,6 +51,8 @@ type nativeCheckpoint struct {
 	Snapshot          *checkpointSnapshot        `json:"snapshot_restoration,omitempty"`
 	Tools             *checkpointToolHistory     `json:"tool_restoration,omitempty"`
 	Stop              *StopReceipt               `json:"stop,omitempty"`
+	Context           *nativeCheckpointContext   `json:"context,omitempty"`
+	Fork              *nativeCheckpointFork      `json:"fork,omitempty"`
 	Files             []checkpointFile           `json:"files"`
 }
 
@@ -90,7 +92,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 		}
 		return bytes.Clone(a.checkpointBytes), a.checkpointReference, nil
 	}
-	if !a.completionAttempted || (a.completed == nil) == (a.stoppedCompletion == nil) || s.problem != nil || s.creation == nil || s.input == nil || s.apiProfile == nil || !s.apiVerified || s.observer == nil || !canonicalDirectory(s.runtimeHome) {
+	if !a.completionAttempted || (a.completed == nil) == (a.stoppedCompletion == nil) || s.problem != nil || s.creation == nil || s.input == nil || s.apiProfile == nil || !s.apiVerified || s.observer == nil || !canonicalDirectory(s.runtimeHome) || len(s.children) != 0 || !s.childInventoryVerified {
 		return nil, CheckpointReference{}, sessionUncertain()
 	}
 	var history HistoryObservation
@@ -104,6 +106,14 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 			return nil, CheckpointReference{}, sessionUncertain()
 		}
 		stop = &value
+	}
+	contextHistory := copyHistoryObservation(history)
+	manual := s.compactionAttempt != nil
+	if manual {
+		if s.predecessor == nil || s.observer.contextManual != s.compactionAttempt.action || !s.observer.contextClosed() || len(s.observer.contextRecords) != 1 {
+			return nil, CheckpointReference{}, sessionUncertain()
+		}
+		history = copyHistoryObservation(s.predecessor.History)
 	}
 	c, i := s.creation, s.input
 	if history.RequestID != i.receipt.RequestID || history.SessionID != c.identity.id || history.InputID != i.receipt.MessageID || !validCheckpointHistory(history) {
@@ -123,7 +133,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 		return nil, CheckpointReference{}, err
 	}
 	s.observer.mu.Lock()
-	last := s.observer.messages[history.AssistantID]
+	last := s.observer.messages[contextHistory.AssistantID]
 	if last == nil || last.value.Assistant == nil || s.observer.problem != nil || s.observer.progress.NeedsRecovery {
 		s.observer.mu.Unlock()
 		return nil, CheckpointReference{}, sessionUncertain()
@@ -139,7 +149,11 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 		value.Version, value.FilesystemRoot = 2, scope.boundary
 	}
 	value.References = slices.Clone(s.apiProfile.References)
-	if s.predecessor != nil {
+	value.Fork = cloneForkProof(s.forkOrigin)
+	if value.Fork != nil {
+		value.Fork.SelectionPending = s.forkSelectionPending
+	}
+	if s.predecessor != nil && !manual {
 		value.PredecessorSHA256 = s.predecessorDigest
 		for _, prior := range checkpointHistories(*s.predecessor) {
 			value.Previous = append(value.Previous, copyHistoryObservation(prior))
@@ -153,7 +167,21 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 		copy := *s.predecessor.ProjectAdoption
 		value.ProjectAdoption = &copy
 	}
-	value.Tools = s.checkpointToolHistory(value)
+	value.Context = s.retainContext(contextHistory)
+	if manual {
+		value.Previous = slices.Clone(s.predecessor.Previous)
+		value.PredecessorSHA256 = s.predecessor.PredecessorSHA256
+		if s.predecessor.Tools != nil {
+			raw, _ := json.Marshal(s.predecessor.Tools)
+			var proof checkpointToolHistory
+			if domain.Decode(raw, &proof) != nil {
+				return nil, CheckpointReference{}, sessionUncertain()
+			}
+			value.Tools = &proof
+		}
+	} else {
+		value.Tools = s.checkpointToolHistory(value)
+	}
 	phase = "snapshot"
 	if value.NativeRoot == value.Workspace && checkpointHasSnapshotFiles(value) {
 		value.Snapshot, err = s.retainCheckpointSnapshot(ctx, value)
@@ -223,7 +251,7 @@ func InspectCheckpoint(ctx context.Context, home string, raw []byte, ref Checkpo
 
 func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeCheckpoint, error) {
 	var value nativeCheckpoint
-	if len(raw) == 0 || len(raw) > maxCheckpointBytes || !checkpointDigest(ref.SHA256) || mutationDigest(raw) != ref.SHA256 || domain.UniqueIDs([]domain.ID{ref.OwnerID, ref.CreationRequestID, ref.InputRequestID}) != nil || !nativeID(ref.SessionID, "ses") || !nativeID(ref.InputID, "msg") || !nativeID(ref.PartID, "prt") || !checkpointDigest(ref.InputSHA256) || !checkpointDigest(ref.HistorySHA256) || domain.Decode(raw, &value) != nil {
+	if len(raw) == 0 || len(raw) > maxCheckpointBytes || !checkpointDigest(ref.SHA256) || mutationDigest(raw) != ref.SHA256 || domain.UniqueIDs([]domain.ID{ref.OwnerID, ref.CreationRequestID, ref.InputRequestID}) != nil || !nativeID(ref.SessionID, "ses") || !nativeID(ref.InputID, "msg") || !nativeID(ref.PartID, "prt") || !checkpointDigest(ref.InputSHA256) || !checkpointDigest(ref.HistorySHA256) || domain.DecodeWithLimit(raw, &value, maxCheckpointBytes) != nil {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	expected := ref
@@ -254,6 +282,9 @@ func checkpointHistories(value nativeCheckpoint) []HistoryObservation {
 }
 
 func validCheckpointLineage(value nativeCheckpoint) bool {
+	if !validCheckpointFork(value) || !validCheckpointContext(value) {
+		return false
+	}
 	if len(value.Previous) >= maxObservedMessages/2 || (len(value.Previous) == 0) != (value.PredecessorSHA256 == "") || len(value.Previous) > 0 && !checkpointDigest(value.PredecessorSHA256) || !validCheckpointTools(value) {
 		return false
 	}
@@ -302,8 +333,8 @@ func validCheckpointHistory(h HistoryObservation) bool {
 	}
 	seen := map[string]bool{}
 	parts := 0
-	for index, m := range h.Messages {
-		if !nativeID(m.ID, "msg") || seen[m.ID] || !checkpointDigest(m.Digest) || index > 0 && m.Role != AssistantMessageRole || m.Parts == nil {
+	for _, m := range h.Messages {
+		if !nativeID(m.ID, "msg") || seen[m.ID] || !checkpointDigest(m.Digest) || m.Role != AssistantMessageRole && m.Role != UserMessageRole || m.Parts == nil {
 			return false
 		}
 		seen[m.ID] = true
@@ -370,7 +401,8 @@ func checkpointSettingsForAgent(s *sessionAPI, agent PrimaryAgent) (string, erro
 		TitleSHA256, RelaySHA256  string
 		Sources                   []instruction
 		References                []WorkspaceReference `json:",omitempty"`
-	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References})
+		Prune                     bool                 `json:",omitempty"`
+	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References, p.Prune})
 	if err != nil {
 		return "", sessionUncertain()
 	}

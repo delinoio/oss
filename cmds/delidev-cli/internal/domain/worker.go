@@ -88,6 +88,8 @@ const (
 	GenerateSessionTitleJob JobType = "generate-session-title"
 )
 
+const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configuration-v1"
+
 type WorkerCapability string
 
 const (
@@ -97,6 +99,10 @@ const (
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
 	SubscriptionObservationsV1     WorkerCapability = "subscription-observations-v1"
+	NativeSessionCompactionV1      WorkerCapability = "native-session-compaction-v1"
+	CodexSessionCompactionV1       WorkerCapability = "codex-session-compaction-v1"
+	OpenCodeGeneralChatForkV1      WorkerCapability = "opencode-general-chat-fork-v1"
+	OpenCodeSessionCompactionV1    WorkerCapability = "opencode-session-compaction-v1"
 	NetworkBootstrapV1             WorkerCapability = "network-bootstrap-v1"
 	CodexAPIProxyV1                WorkerCapability = "codex-api-proxy-v1"
 )
@@ -134,8 +140,9 @@ type Job struct {
 const MaxStorageRecoveryInputBytes = 3 << 20
 
 const (
-	maxJobDocumentBytes        = 1 << 20
-	maxCompactionJobInputBytes = 3 << 20
+	MaxWorkerJobOutputBytes    = 1 << 20
+	maxJobDocumentBytes        = MaxWorkerJobOutputBytes
+	maxCompactionJobInputBytes = MaxCompactionInputBytes
 )
 
 func (j Job) Validate() error {

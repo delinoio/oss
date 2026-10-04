@@ -51,13 +51,17 @@ type SessionCompactionInput struct {
 
 func (i SessionCompactionInput) Validate() error {
 	a, done := i.Assignment, i.Completion
-	if i.Version != 1 || UniqueIDs([]ID{i.ActionID, i.SourceJobID, a.ExecutionID, a.InputID, a.SessionID}) != nil || a.Validate() != nil || a.Configuration.Harness != ClaudeCode || a.Installation.Version != ClaudeProtocolVersion || done.ValidateForHarness(ClaudeCode) != nil || done.Version != 2 || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || done.Outcome != ExecutionSucceeded {
+	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && a.Installation.Version == ClaudeProtocolVersion || i.Version == 2 && a.Configuration.Harness == Codex && a.Installation.Version == CodexProtocolVersion || i.Version == 3 && a.Configuration.Harness == OpenCode && a.Installation.Version == OpenCodeProtocolVersion
+	if !profile || UniqueIDs([]ID{i.ActionID, i.SourceJobID, a.ExecutionID, a.InputID, a.SessionID}) != nil || a.Validate() != nil || done.ValidateForHarness(a.Configuration.Harness) != nil || done.Version != 2 || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || done.Outcome != ExecutionSucceeded {
 		return CompactionUncertain()
 	}
 	if i.Restore.Validate() != nil || i.Restore.ExecutionID != i.ActionID || i.Restore.Continuation == nil || i.Restore.Continuation.Previous.JobID != i.SourceJobID || i.Restore.Continuation.Completion != i.Completion || i.Restore.ConfigurationDigest != a.ConfigurationDigest || i.Restore.SessionID != a.SessionID || i.Restore.AccountID != a.AccountID || i.Restore.ConnectionID != a.ConnectionID {
 		return CompactionUncertain()
 	}
 	if i.Previous != nil && (i.Previous.Validate() != nil || i.Previous.ExecutionID != a.ExecutionID) {
+		return CompactionUncertain()
+	}
+	if (a.Configuration.Harness == Codex || a.Configuration.Harness == OpenCode) && (i.Dispatch != DispatchReady || i.Previous != nil && i.Previous.RequiresResume || len(i.Restore.Continuation.Previous.Subagents) != 0 || !i.Restore.Continuation.Previous.NativeCompactions.Closed()) {
 		return CompactionUncertain()
 	}
 	if i.Dispatch != DispatchReady && i.Dispatch != DispatchPaused && i.Dispatch != DispatchBlocked {
@@ -89,6 +93,9 @@ func compactionDigest(raw []byte) string {
 }
 
 type SessionCompactionResult struct {
+	Harness            Harness                   `json:"harness,omitempty"`
+	Codex              *CodexCompactionResult    `json:"codex,omitempty"`
+	OpenCode           *OpenCodeCompactionResult `json:"opencode,omitempty"`
 	Version            uint32                    `json:"version"`
 	ActionID           ID                        `json:"action_id"`
 	ExecutionID        ID                        `json:"execution_id"`
@@ -107,7 +114,43 @@ type SessionCompactionResult struct {
 	Checkpoint         SessionCompactionRef      `json:"checkpoint"`
 }
 
+type CodexCompactionResult struct {
+	NativeThreadID     NativeIdentity        `json:"native_thread_id"`
+	SourceNativeTurnID NativeIdentity        `json:"source_native_turn_id"`
+	NativeTurnID       NativeIdentity        `json:"native_turn_id"`
+	LiveItemID         string                `json:"live_item_id"`
+	HistoryItemID      string                `json:"history_item_id"`
+	HistoryDigest      string                `json:"history_digest"`
+	Actions            uint32                `json:"actions"`
+	Acknowledged       bool                  `json:"acknowledged"`
+	LifecycleCompleted bool                  `json:"lifecycle_completed"`
+	ResponseUsages     []NativeResponseUsage `json:"response_usages"`
+}
+
 func (r SessionCompactionResult) Validate() error {
+	if r.Version == 3 {
+		return r.validateOpenCode()
+	}
+	if r.Version == 2 {
+		if r.OpenCode != nil || r.Harness != Codex || r.Codex == nil || r.Outcome != CompactionSucceeded || r.OuterKind != "" || r.OuterError || r.CommandEchoID != "" || r.ResultID != "" || r.CommandCompletedID != "" || r.IdleID != "" || r.BoundaryID != "" || r.SummaryID != "" || r.Boundary != nil || r.Summary != nil || !r.CleanupVerified || r.Checkpoint.Validate() != nil || r.Checkpoint.ActionID != r.ActionID || r.Checkpoint.ExecutionID != r.ExecutionID || r.Checkpoint.RequiresResume {
+			return CompactionUncertain()
+		}
+		p := r.Codex
+		if p.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || p.NativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || p.SourceNativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || p.NativeTurnID == p.SourceNativeTurnID || Text(p.LiveItemID, "native context item", 1024, true) != nil || Text(p.HistoryItemID, "native durable context item", 1024, true) != nil || !validCompactionDigest(p.HistoryDigest) || p.Actions == 0 || p.Actions > 128 || !p.Acknowledged || !p.LifecycleCompleted || p.ResponseUsages == nil || len(p.ResponseUsages) > 128 {
+			return CompactionUncertain()
+		}
+		seen := map[string]bool{}
+		for _, usage := range p.ResponseUsages {
+			if usage.Source != "" || usage.Validate() != nil || seen[usage.ResponseDigest] {
+				return CompactionUncertain()
+			}
+			seen[usage.ResponseDigest] = true
+		}
+		return nil
+	}
+	if r.Harness != "" || r.Codex != nil || r.OpenCode != nil {
+		return CompactionUncertain()
+	}
 	if r.OuterKind != ClaudeResultSuccess || r.OuterError || r.Version != 1 || r.Checkpoint.Validate() != nil || r.ActionID != r.Checkpoint.ActionID || r.ExecutionID != r.Checkpoint.ExecutionID || !r.CleanupVerified || r.CommandEchoID != string(r.ActionID) {
 		return CompactionUncertain()
 	}

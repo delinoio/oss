@@ -1,6 +1,6 @@
 import { object } from "./documents";
 
-enum Builtin { Write = "write", Edit = "edit", ApplyPatch = "apply_patch", Glob = "glob", Grep = "grep", Question = "question" }
+enum Builtin { Write = "write", Edit = "edit", ApplyPatch = "apply_patch", Glob = "glob", Grep = "grep", Question = "question", Task = "task" }
 enum ToolState { Pending = "pending", Running = "running", Completed = "completed", Failed = "failed" }
 enum FileEvent { Edited = "file-edited", Added = "file-added", Changed = "file-changed", Unlinked = "file-unlinked" }
 const encoder = new TextEncoder();
@@ -24,7 +24,11 @@ function snapshot(value: unknown): Snapshot | undefined {
     if (b.raw != null || !count(timing.start)) return;
     if (status === ToolState.Running && (timing.end != null || b.output != null || b.error != null)) return;
     if (status === ToolState.Completed && (!count(timing.end) || !bounded(b.title) || !bounded(b.output) || !objectJSON(b.metadata_json) || b.error != null)) return;
-    if (status === ToolState.Failed && (!count(timing.end) || !bounded(b.error) || b.title != null || b.output != null)) return;
+    if (status === ToolState.Failed) {
+      if (!count(timing.end) || !bounded(b.error) || b.output != null) return;
+      // Only the original interrupted task preserves its running title.
+      if (b.title != null && (b.name !== Builtin.Task || !objectJSON(b.metadata_json) || object(JSON.parse(b.metadata_json)).interrupted !== true)) return;
+    }
   }
   return { name: b.name as Builtin, status, call: b.call_id, input: b.input_json, metadata: b.metadata_json as string | undefined, raw: b.raw as string | undefined, title: b.title as string | undefined, output: b.output as string | undefined, error: b.error as string | undefined, start: timing.start as number | undefined, provider: b.provider_executed as boolean | undefined };
 }
@@ -42,12 +46,13 @@ function retained(tool: Record<string, unknown>, state: string): Snapshot[] | un
   for (let i = 1; i < values.length; i++) {
     const prior = values[i - 1]!, next = values[i]!;
     if (prior.name !== next.name || prior.call !== next.call || prior.provider !== next.provider) return;
+    if (next.status === ToolState.Failed && next.title !== undefined && next.title !== prior.title) return;
     if (prior.status === ToolState.Pending) { if (next.status === ToolState.Completed) return; }
     else if (prior.status !== ToolState.Running || next.status === ToolState.Pending || prior.start !== next.start || prior.input !== next.input) return;
   }
   return values;
 }
-const labels: Record<Builtin, string> = { write: "Write", edit: "Edit", apply_patch: "Apply Patch", glob: "Glob", grep: "Grep", question: "Question tool" };
+const labels: Record<Builtin, string> = { write: "Write", edit: "Edit", apply_patch: "Apply Patch", glob: "Glob", grep: "Grep", question: "Question tool", task: "Foreground task" };
 
 // JSON stays original text: do not round native numbers, discard metadata, or
 // convert parameters into a new executable command or file-reading action.

@@ -75,20 +75,22 @@ type SubagentTask struct {
 }
 
 type SubagentObservation struct {
-	Tool           *ClaudeToolReference `json:"tool,omitempty"`
-	Tools          []SubagentTool       `json:"tools,omitempty"`
-	Task           *SubagentTask        `json:"task,omitempty"`
-	ID             ID                   `json:"id"`
-	NativeID       string               `json:"native_id"`
-	ParentID       string               `json:"parent_id"`
-	ParentToolID   string               `json:"parent_tool_id,omitempty"`
-	Source         SubagentSource       `json:"source"`
-	SourceID       string               `json:"source_id"`
-	Status         SubagentStatus       `json:"status"`
-	RequestedModel *string              `json:"requested_model"`
-	ObservedModel  *string              `json:"observed_model"`
-	Output         *SubagentOutput      `json:"output"`
-	Usage          *SubagentUsage       `json:"usage"`
+	OpenCodeCleanup *OpenCodeStopObservation `json:"opencode_cleanup,omitempty"`
+	OpenCodeTool    *OpenCodeParentTool      `json:"opencode_tool,omitempty"`
+	Tool            *ClaudeToolReference     `json:"tool,omitempty"`
+	Tools           []SubagentTool           `json:"tools,omitempty"`
+	Task            *SubagentTask            `json:"task,omitempty"`
+	ID              ID                       `json:"id"`
+	NativeID        string                   `json:"native_id"`
+	ParentID        string                   `json:"parent_id"`
+	ParentToolID    string                   `json:"parent_tool_id,omitempty"`
+	Source          SubagentSource           `json:"source"`
+	SourceID        string                   `json:"source_id"`
+	Status          SubagentStatus           `json:"status"`
+	RequestedModel  *string                  `json:"requested_model"`
+	ObservedModel   *string                  `json:"observed_model"`
+	Output          *SubagentOutput          `json:"output"`
+	Usage           *SubagentUsage           `json:"usage"`
 }
 
 type SubagentRecord struct {
@@ -111,6 +113,7 @@ type SubagentEvidence struct {
 // Current execution metadata excludes output, prompts and counters. Immutable
 // publication receipts and the retained resource preserve each observation.
 type SubagentOwner struct {
+	OpenCodeTool *OpenCodeParentTool  `json:"opencode_tool,omitempty"`
 	Tool         *ClaudeToolReference `json:"tool,omitempty"`
 	Tools        []SubagentTool       `json:"tools,omitempty"`
 	ID           ID                   `json:"id"`
@@ -159,9 +162,16 @@ func (o SubagentObservation) Validate() error {
 		if o.ObservedModel != nil || o.Output != nil && len(o.Output.Blocks) != 0 {
 			return invalidSubagent()
 		}
+	case OpenCodeTaskSource, OpenCodeChildContentSource, OpenCodeChildHistorySource, OpenCodeChildCleanupSource:
+		if validateOpenCodeSubagent(o) != nil {
+			return invalidSubagent()
+		}
 	case CodexHistorySource, ClaudeContentSource, ClaudeHistorySource:
 		// These sources can supply independently verified output and model.
 	default:
+		return invalidSubagent()
+	}
+	if (o.OpenCodeTool != nil || o.OpenCodeCleanup != nil) && o.Source != OpenCodeTaskSource && o.Source != OpenCodeChildContentSource && o.Source != OpenCodeChildHistorySource && o.Source != OpenCodeChildCleanupSource {
 		return invalidSubagent()
 	}
 	if o.Tool != nil && (o.Tool.Validate() != nil || o.Tool.NativeID != o.ParentToolID || o.Tool.Name != "Agent" && o.Tool.Name != "Task") {
@@ -187,7 +197,7 @@ func (o SubagentObservation) Validate() error {
 			return invalidSubagent()
 		}
 	}
-	if o.ID.Validate() != nil || o.NativeID == o.ParentID || !slices.Contains([]SubagentStatus{SubagentPending, SubagentRunning, SubagentPaused, SubagentCompleted, SubagentFailed, SubagentInterrupted, SubagentShutdown, SubagentUnavailable}, o.Status) || !slices.Contains([]SubagentSource{CodexCollaborationSource, CodexActivitySource, CodexHistorySource, ClaudeTaskSource, ClaudeContentSource, ClaudeHistorySource}, o.Source) {
+	if o.ID.Validate() != nil || o.NativeID == o.ParentID || !slices.Contains([]SubagentStatus{SubagentPending, SubagentRunning, SubagentPaused, SubagentCompleted, SubagentFailed, SubagentInterrupted, SubagentShutdown, SubagentUnavailable}, o.Status) || !slices.Contains([]SubagentSource{CodexCollaborationSource, CodexActivitySource, CodexHistorySource, ClaudeTaskSource, ClaudeContentSource, ClaudeHistorySource, OpenCodeTaskSource, OpenCodeChildContentSource, OpenCodeChildHistorySource, OpenCodeChildCleanupSource}, o.Source) {
 		return invalidSubagent()
 	}
 	for _, value := range []string{o.NativeID, o.ParentID, o.SourceID} {
@@ -259,6 +269,9 @@ func ApplySubagents(prior SubagentState, root string, batch []SubagentObservatio
 			if old.ID != o.ID || old.ParentID != o.ParentID || old.ParentToolID != o.ParentToolID || old.Status.Terminal() && o.Status != old.Status && o.Status != SubagentShutdown {
 				return nil, invalidSubagent()
 			}
+			if old.OpenCodeTool != nil && (o.OpenCodeTool == nil || *old.OpenCodeTool != *o.OpenCodeTool) {
+				return nil, invalidSubagent()
+			}
 			if old.Tool != nil && o.Tool != nil && *old.Tool != *o.Tool {
 				return nil, invalidSubagent()
 			}
@@ -280,7 +293,7 @@ func ApplySubagents(prior SubagentState, root string, batch []SubagentObservatio
 				}
 			}
 		}
-		owner := SubagentOwner{ID: o.ID, ParentID: o.ParentID, ParentToolID: o.ParentToolID, Status: o.Status, Tool: o.Tool, Tools: slices.Clone(next[o.NativeID].Tools)}
+		owner := SubagentOwner{ID: o.ID, ParentID: o.ParentID, ParentToolID: o.ParentToolID, Status: o.Status, Tool: o.Tool, OpenCodeTool: o.OpenCodeTool, Tools: slices.Clone(next[o.NativeID].Tools)}
 		if owner.Tool == nil {
 			owner.Tool = next[o.NativeID].Tool
 		}

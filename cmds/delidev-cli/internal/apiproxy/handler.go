@@ -202,6 +202,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if lease.Scope.Purpose == domain.SessionTitleUsage {
 		raw, stream, err = validateTitleRequest(raw, lease.Scope)
 	} else {
+		if lease.BindModel != nil {
+			object, decodeErr := document(raw, secretGuard{})
+			var model string
+			if decodeErr != nil || json.Unmarshal(object["model"], &model) != nil {
+				fail(http.StatusBadRequest, domain.InvalidArgument)
+				return
+			}
+			lease, err = lease.BindModel(ctx, model, operation)
+			if err != nil {
+				fail(errorStatus(err), safeCode(err))
+				return
+			}
+		}
 		stream, err = validateRequest(ctx, raw, lease, operation)
 	}
 	if err != nil {
@@ -423,10 +436,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadGateway, code)
 		return
 	}
+	if operation == ChatCompletion && lease.Scope.Harness == domain.OpenCode && validateForegroundToolResponse(object) != nil {
+		code = domain.Unsupported
+		fail(http.StatusBadGateway, code)
+		return
+	}
 	if err = observeReference(ctx, lease, operation, object); err != nil {
 		code = safeCode(err)
 		fail(http.StatusBadGateway, code)
 		return
+	}
+	if operation == ResponseCreate || operation == ResponseCompact {
+		if err = observeResponseUsage(ctx, lease, domain.ID(correlation), object); err != nil {
+			code = safeCode(err)
+			fail(http.StatusBadGateway, code)
+			return
+		}
 	}
 	diagnosticResponse(object, &observations, guard)
 	if ctx.Err() != nil {

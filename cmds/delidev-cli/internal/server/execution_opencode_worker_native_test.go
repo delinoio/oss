@@ -30,22 +30,27 @@ import (
 type openCodeWorkerScenario string
 
 const (
-	openCodeWorkerBuild              openCodeWorkerScenario = "build"
-	openCodeWorkerPlan               openCodeWorkerScenario = "plan"
-	openCodeWorkerStop               openCodeWorkerScenario = "stop"
-	openCodeWorkerArchive            openCodeWorkerScenario = "archive"
-	openCodeWorkerQuestion           openCodeWorkerScenario = "question"
-	openCodeWorkerPermission         openCodeWorkerScenario = "permission"
-	openCodeWorkerQuestionStop       openCodeWorkerScenario = "question-stop"
-	openCodeWorkerPermissionStop     openCodeWorkerScenario = "permission-stop"
-	openCodeWorkerReportLoss         openCodeWorkerScenario = "report-loss"
-	openCodeWorkerRevocation         openCodeWorkerScenario = "worker-revocation"
-	openCodeWorkerCheckpointConflict openCodeWorkerScenario = "checkpoint-conflict"
+	openCodeWorkerAutomaticCompaction openCodeWorkerScenario = "automatic-compaction"
+	openCodeWorkerBuild               openCodeWorkerScenario = "build"
+	openCodeWorkerPlan                openCodeWorkerScenario = "plan"
+	openCodeWorkerStop                openCodeWorkerScenario = "stop"
+	openCodeWorkerArchive             openCodeWorkerScenario = "archive"
+	openCodeWorkerQuestion            openCodeWorkerScenario = "question"
+	openCodeWorkerPermission          openCodeWorkerScenario = "permission"
+	openCodeWorkerQuestionStop        openCodeWorkerScenario = "question-stop"
+	openCodeWorkerPermissionStop      openCodeWorkerScenario = "permission-stop"
+	openCodeWorkerReportLoss          openCodeWorkerScenario = "report-loss"
+	openCodeWorkerRevocation          openCodeWorkerScenario = "worker-revocation"
+	openCodeWorkerCheckpointConflict  openCodeWorkerScenario = "checkpoint-conflict"
 )
 
 // These fixtures execute worker.Run and its real outbound job/control stream.
 // Account readiness and initial assignment are seeded; no hosted inference or
 // user account is used, and first-dispatch acceptance needs its own evidence.
+func TestManualNativeOpenCodeWorkerAutomaticCompaction(t *testing.T) {
+	nativeOpenCodeWorker(t, openCodeWorkerAutomaticCompaction)
+}
+
 func TestManualNativeOpenCodeWorkerExecutesOriginalAssignment(t *testing.T) {
 	for _, scenario := range []openCodeWorkerScenario{openCodeWorkerBuild, openCodeWorkerPlan, openCodeWorkerStop, openCodeWorkerArchive, openCodeWorkerQuestion, openCodeWorkerPermission, openCodeWorkerQuestionStop, openCodeWorkerPermissionStop, openCodeWorkerReportLoss, openCodeWorkerRevocation, openCodeWorkerCheckpointConflict} {
 		t.Run(string(scenario), func(t *testing.T) { nativeOpenCodeWorker(t, scenario) })
@@ -85,7 +90,7 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 				Content json.RawMessage `json:"content"`
 			} `json:"messages"`
 		}
-		if err != nil || json.Unmarshal(raw, &request) != nil || request.Model != "fixture-model" || !request.Stream || !strings.Contains(string(raw), "Fixture prompt") || r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer "+fixtureKey {
+		if err != nil || json.Unmarshal(raw, &request) != nil || request.Model != "fixture-model" || !request.Stream || scenario != openCodeWorkerAutomaticCompaction && !strings.Contains(string(raw), "Fixture prompt") || r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer "+fixtureKey {
 			t.Error("original Worker provider/input authority changed")
 			http.Error(w, "unsupported fixture request", http.StatusForbidden)
 			return
@@ -95,9 +100,25 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 			value := map[string]any{"id": "chatcmpl-worker", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
 			if finish != nil {
 				value["usage"] = map[string]int{"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24}
+				if scenario == openCodeWorkerAutomaticCompaction && call == 1 {
+					value["usage"] = map[string]int{"prompt_tokens": 79000, "completion_tokens": 4, "total_tokens": 79004}
+				}
 			}
 			raw, _ := json.Marshal(value)
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
+		}
+		if scenario == openCodeWorkerAutomaticCompaction {
+			if call > 3 {
+				t.Error("automatic compaction replayed original native inference")
+			}
+			text := "Original Worker complete."
+			if call == 2 {
+				text = "Private native Worker compaction summary."
+			}
+			chunk(map[string]any{"role": "assistant", "content": text}, nil)
+			chunk(map[string]any{}, "stop")
+			io.WriteString(w, "data: [DONE]\n\n")
+			return
 		}
 		if interaction && call == 1 {
 			name := "question"
@@ -144,6 +165,10 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 	defer upstream.Close()
 	manager := &workspace.Manager{Root: filepath.Join(t.TempDir(), "worker")}
 	f := publicationFixtureFromAuthority(t, newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) {
+		if scenario == openCodeWorkerAutomaticCompaction {
+			input.Configuration.OpenCodeContext = &domain.OpenCodeModelContext{Tokens: 80000, Source: domain.UserDeclared}
+			input.ConfigurationDigest, _ = input.Configuration.Digest()
+		}
 		if scenario == openCodeWorkerPlan {
 			input.Input.Mode = domain.PlanMode
 		}
@@ -276,6 +301,9 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 				t.Fatal("Stop/Archive state did not survive original cleanup")
 			}
 			expectedCalls := int64(1)
+			if scenario == openCodeWorkerAutomaticCompaction {
+				expectedCalls = 3
+			}
 			if interaction && !stopping {
 				expectedCalls = 2
 			}
@@ -300,6 +328,35 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 			}
 			if err := opencode.InspectCheckpoint(ctx, filepath.Join(manager.Root, "runtimes", string(f.input.ExecutionID)), retainedCheckpoint.Native, retainedCheckpoint.NativeReference); err != nil {
 				t.Fatal("Worker envelope changed the closed original runtime inventory", err)
+			}
+			if scenario == openCodeWorkerAutomaticCompaction {
+				records, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 100})
+				if err != nil {
+					t.Fatal(err)
+				}
+				started, completed, users := 0, 0, 0
+				for _, record := range records {
+					message, err := store.Decode[domain.ExecutionMessage](record)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if message.Role == domain.UserMessage {
+						users++
+					}
+					if strings.Contains(message.Text, "Private native Worker compaction summary.") {
+						t.Fatal("native summary entered canonical conversation")
+					}
+					if message.Progress != nil && message.Progress.Compaction != nil {
+						if message.Progress.Compaction.Stage == domain.NativeCompactionStarted {
+							started++
+						} else {
+							completed++
+						}
+					}
+				}
+				if started != 1 || completed != 1 || users != 1 {
+					t.Fatal("automatic compaction lost original context or created another input", started, completed, users)
+				}
 			}
 			if scenario == openCodeWorkerReportLoss {
 				select {
@@ -425,6 +482,8 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 		}
 		select {
 		case <-changed:
+		case <-done:
+			t.Fatal("original Worker exited before settlement", domain.SafeError(workerErr))
 		case <-ctx.Done():
 			t.Fatal("original Worker did not settle before its fixture deadline")
 		}

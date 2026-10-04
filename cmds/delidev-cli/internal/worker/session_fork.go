@@ -77,6 +77,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		logger.InfoContext(ctx, "session_fork_finished", "job_id", owner, "code", code)
 	}()
 	assignment := input.SourceAssignment
+	if assignment.Configuration.Harness == domain.OpenCode {
+		return forkOpenCodeSession(ctx, config, owner, job, input)
+	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
 	if domain.Decode(assignment.Preparation, &preparation) != nil || domain.Decode(assignment.Manifest, &manifest) != nil || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {

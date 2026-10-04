@@ -133,13 +133,30 @@ func pricedComponent(tokens *int64, rate *string) EstimateComponent {
 	return value
 }
 
+// EstimateObservedResponse retains the nullable counters of the closed
+// compaction HTTP profile. Ordinary native responses retain their full-count
+// validation; unavailable splits never become measured zero.
+func EstimateObservedResponse(id ID, price TokenPricing, usage NativeResponseUsage) (ResponseEstimate, error) {
+	if err := usage.Validate(); err != nil {
+		return ResponseEstimate{}, err
+	}
+	if usage.Source == CompactionHTTPResponse {
+		return estimateResponse(id, price, usage.Counts)
+	}
+	return EstimateResponse(id, price, usage.Counts)
+}
+
 func EstimateResponse(id ID, price TokenPricing, counts *NativeTokenCounts) (ResponseEstimate, error) {
+	if counts != nil && (NativeTokenUsage{Total: *counts, Last: *counts}).Validate() != nil {
+		return ResponseEstimate{}, invalidObservation()
+	}
+	return estimateResponse(id, price, counts)
+}
+
+func estimateResponse(id ID, price TokenPricing, counts *NativeTokenCounts) (ResponseEstimate, error) {
 	result := ResponseEstimate{PricingID: id, Currency: price.Currency, Input: EstimateComponent{State: ComponentMissingUsage}, CachedInput: EstimateComponent{State: ComponentNotApplicable}, Output: EstimateComponent{State: ComponentMissingUsage}, Coverage: EstimateUnavailable}
 	if id.Validate() != nil || price.Validate() != nil {
 		return result, invalidPricing()
-	}
-	if counts != nil && (NativeTokenUsage{Total: *counts, Last: *counts}).Validate() != nil {
-		return result, invalidObservation()
 	}
 	if counts == nil {
 		counts = &NativeTokenCounts{}

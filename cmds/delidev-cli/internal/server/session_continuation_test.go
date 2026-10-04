@@ -25,12 +25,27 @@ type continuationFixture struct {
 
 func newContinuationFixture(t *testing.T, outcome domain.ExecutionOutcome) *continuationFixture {
 	t.Helper()
-	f := &continuationFixture{firstDispatchFixture: newFirstDispatchFixture(t), thread: domain.NewID()}
+	return newContinuationFixtureProfile(t, outcome, domain.Codex)
+}
+func newContinuationFixtureProfile(t *testing.T, outcome domain.ExecutionOutcome, harness domain.Harness) *continuationFixture {
+	t.Helper()
+	var base *firstDispatchFixture
+	if harness == domain.OpenCode {
+		base = newFirstDispatchFixtureForHarness(t, harness, domain.ExecuteMode)
+	} else {
+		base = newFirstDispatchFixtureForHarness(t, harness)
+	}
+	f := &continuationFixture{firstDispatchFixture: base, thread: domain.NewID()}
 	if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
 		t.Fatal(err)
 	}
 	f.claim(t)
-	f.complete(t, outcome)
+	if harness == domain.OpenCode {
+		f.thread, f.turn = "ses_01960dcbe1faabcdefghijklmn", "msg_01960dcbe1faABCDEFGHIJKLMN"
+		f.completeOpenCode(t, outcome)
+	} else {
+		f.complete(t, outcome)
+	}
 	return f
 }
 
@@ -58,6 +73,9 @@ func (f *continuationFixture) publish(t *testing.T, kind domain.ExecutionEventKi
 	if kind == domain.ExecutionThreadBound {
 		event.NativeTurnID = ""
 		event.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}
+		if f.input.Configuration.Harness == domain.OpenCode {
+			event.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionDefault, OpenCodeAgent: domain.OpenCodeBuildAgent}
+		}
 	}
 	raw, _ := json.Marshal(event)
 	req := &pb.PublishExecutionRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, EventJson: raw}
@@ -72,6 +90,30 @@ func (f *continuationFixture) complete(t *testing.T, outcome domain.ExecutionOut
 	f.publish(t, domain.ExecutionThreadBound, 1, "")
 	f.publish(t, domain.ExecutionInputAccepted, 2, "")
 	return f.finish(t, outcome)
+}
+
+func (f *continuationFixture) completeOpenCode(t *testing.T, outcome domain.ExecutionOutcome) {
+	t.Helper()
+	f.publish(t, domain.ExecutionThreadBound, 1, "")
+	f.publish(t, domain.ExecutionInputAccepted, 2, "")
+	pf := &publicationFixture{authorityFixture: &authorityFixture{service: f.service, client: f.workerClient, workerToken: f.workerIdentity.Token, job: domain.ID(f.job.Id), device: f.workerDevice, instance: domain.ID(f.workerInstance), input: f.input}, revision: f.job.Revision, thread: f.thread, turn: f.turn}
+	u := originalOpenCodeUsage()
+	u.Source, u.NativeID = domain.OpenCodeMessageUsage, u.NativeParentID
+	e := pf.event(domain.ExecutionOpenCodeUsageObserved, 3)
+	e.ObservationID, e.OpenCodeUsage = domain.NewID(), &u
+	pf.publish(t, e)
+	message := domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: "prt_01960dcbe1fbabcdefghijklmn", NativeParentID: string(f.turn), InputID: f.input.InputID, Role: domain.UserMessage, Text: f.input.Input.Prompt}
+	for n, kind := range []domain.ExecutionEventKind{domain.ExecutionMessageStarted, domain.ExecutionMessageCompleted} {
+		e = pf.event(kind, uint64(4+n))
+		e.Message = &message
+		pf.publish(t, e)
+	}
+	f.publish(t, domain.ExecutionTurnFinished, 6, outcome)
+	completion := domain.ExecutionCompletion{Version: 2, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, NativeThreadID: domain.NativeIdentity(f.thread), NativeTurnID: domain.NativeIdentity(f.turn), LastSequence: 6, Outcome: outcome, CleanupVerified: true, NativeCheckpointDigest: strings.Repeat("ab", 32)}
+	raw, _ := json.Marshal(completion)
+	if _, err := f.workerClient.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw})); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (f *continuationFixture) finish(t *testing.T, outcome domain.ExecutionOutcome) *pb.ReportWorkRequest {
