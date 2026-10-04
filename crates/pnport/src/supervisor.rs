@@ -347,6 +347,10 @@ extern "C" fn signal_handler(signal: i32) {
 pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString]) -> Result<i32> {
     let prepared =
         pnport::executable::prepare(view, executable, args, std::env::var_os("PATH").as_deref())?;
+    tracing::debug!(
+        action = "command_prepared",
+        "Prepared the owned command image"
+    );
     #[cfg(unix)]
     install_signal_handlers();
     #[cfg(target_os = "linux")]
@@ -364,6 +368,11 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                     "The executable cannot accept macOS filesystem injection.",
                 )
             })?;
+        #[cfg(target_os = "macos")]
+        tracing::debug!(
+            action = "native_image_admitted",
+            "Admitted the native command image"
+        );
         #[cfg(target_os = "macos")]
         let admitted_program = &admission.path;
         #[cfg(not(target_os = "macos"))]
