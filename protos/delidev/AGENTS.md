@@ -186,3 +186,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Each OAuth RPC has its own standard-named response schema. The ten reserved `ACCOUNT_OAUTH_STATE_*` names retain their original allocation spelling with value-local Buf acronym-prefix comments; do not broaden lint exceptions or rename their contract to accommodate acronym splitting.
 
 - Signed updates and SSH Worker setup follow `docs/cmds-delidev-updates-contract.md` and `docs/cmds-delidev-ssh-setup-contract.md`. Preserve compiled release authority, exact confirmed host identity, protected credentials, original registration/workspaces, once-only remote effects and joined Worker replacement. Never replace live server/harness binaries or treat fixtures as installed-platform acceptance.
+
+- `PollWorkerUpdateRequest.original_update_id = 2` is a Worker-only exact original observation under the current device/instance. It grants no idle admission, claim, report or installation and must not substitute another pending/latest update.

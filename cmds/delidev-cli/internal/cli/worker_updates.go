@@ -25,7 +25,7 @@ func workerUpdateFailure() error {
 }
 func updateEnvironment() []string {
 	values := []string{}
-	for _, key := range []string{"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "SystemRoot", "WINDIR", "COMSPEC", "LOCALAPPDATA", "APPDATA", "USERPROFILE", "LANG", "LC_ALL", "CARGO_HOME", "RUSTUP_HOME"} {
+	for _, key := range []string{"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "SystemRoot", "WINDIR", "COMSPEC", "LOCALAPPDATA", "APPDATA", "USERPROFILE", "LANG", "LC_ALL", "CARGO_HOME", "RUSTUP_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"} {
 		if value, ok := os.LookupEnv(key); ok {
 			values = append(values, key+"="+value)
 		}
