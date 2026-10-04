@@ -135,6 +135,13 @@ the same `--config` path and the same storage environment. Do not start a second
 setup process while the first one still owns the VM. Resume repeats the boot
 check and seals only after your confirmation and successful guest validation.
 
+For a pending setup created by 0.2.3, correct Guest Agent and resume with the
+same Runmoor version first. Newer builds require an embedded VM ownership
+identity that older setups may lack. If an upgraded binary returns
+`OWNERSHIP_AMBIGUOUS`, preserve the original VM and records and follow
+[Tart ownership recovery](#tart-ownership-recovery). Do not add or rewrite an
+ownership marker to make the upgrade accept an older VM.
+
 Builds with the setup diagnostic fix report guest readiness failures separately
 from request timeouts and cancellations, and end the wizard if its setup
 manager exits. A rejected guest version or image after confirmation also ends

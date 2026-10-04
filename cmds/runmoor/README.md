@@ -110,6 +110,9 @@ In 0.2.3, the manager-unavailable message can also indicate a Guest Agent probe
 timeout. Preserve the VM and pending setup files, correct the guest setup, and
 resume `runmoor init` with the same configuration and storage environment after
 the original process exits. See [setup recovery](https://oss.delino.io/runmoor/tart#recover-setup-that-waits-after-enter).
+Resume a pending 0.2.3 setup with the same version after correcting Guest Agent.
+Newer ownership checks can reject an older VM without an embedded identity;
+preserve that VM and use the guide's ownership recovery instead of editing markers.
 Builds with the diagnostic fix distinguish request interruption from connection
 failure and stop waiting when the temporary manager exits or the confirmed
 guest is rejected. TOML, SQLite and JSON schema versions are unchanged.

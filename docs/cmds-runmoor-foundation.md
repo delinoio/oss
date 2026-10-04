@@ -384,3 +384,7 @@ managed preparation and cleanup.
   PATH, uses `--run-agent`, and requires the non-root runner account to log in
   after headless reboot. Guidance preserves existing agent definitions and
   pending setup state, and does not imply that host Tart installs guest RPC.
+  A pending 0.2.3 setup without the newer embedded identity is not eligible for
+  automatic upgrade adoption. Operators correct the guest and resume with the
+  original release, or use the existing ownership-recovery workflow; never
+  fabricate an identity marker to bypass the upgraded ownership checks.
