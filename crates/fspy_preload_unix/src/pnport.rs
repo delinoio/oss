@@ -899,6 +899,9 @@ unsafe extern "C" fn initialize() {
         let bytes = fs::read(session.join("graph.json")).map_err(|_| Stage::ReadGraph)?;
         let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
         let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
+        NODE_LOADER
+            .set(pnport_core::node::Loader::from_snapshot(&graph.snapshot))
+            .ok();
         initialize_owner()?;
         let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
         let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
@@ -1776,6 +1779,7 @@ const _: () = {
 };
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
+static NODE_LOADER: OnceLock<pnport_core::node::Loader> = OnceLock::new();
 fn child_exec_error(error: &Error) -> c_int {
     // A failed native exec is recoverable by its caller (and libc's PATH
     // search). It did not launch an unmediated image. Only admission/runtime
@@ -1891,9 +1895,17 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
         return Err(EFAULT);
     }
     let mut result = Vec::new();
+    let mut node_options = None;
     let mut i = 0;
     while !(*envp.add(i)).is_null() {
         let value = CStr::from_ptr(*envp.add(i));
+        if let Some(options) = value.to_bytes().strip_prefix(b"NODE_OPTIONS=") {
+            if node_options.is_none() {
+                node_options = Some(OsString::from_vec(options.to_vec()));
+            }
+            i += 1;
+            continue;
+        }
         if ![
             b"PNPORT_SESSION=".as_slice(),
             b"PNPORT_CACHE=",
@@ -1915,6 +1927,14 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
     } else {
         return Err(EIO);
     }
+    let options = NODE_LOADER
+        .get()
+        .ok_or(EIO)?
+        .options(node_options.as_deref())
+        .map_err(|_| EINVAL)?;
+    let mut entry = b"NODE_OPTIONS=".to_vec();
+    entry.extend_from_slice(options.as_os_str().as_bytes());
+    result.push(CString::new(entry).map_err(|_| EINVAL)?);
     Ok(result)
 }
 hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*const *const c_char)->c_int,{

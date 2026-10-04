@@ -352,6 +352,13 @@ extern "C" fn signal_handler(signal: i32) {
 }
 
 pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString]) -> Result<i32> {
+    let node_loader = pnport::node::Loader::from_snapshot(&view.graph.snapshot);
+    let node_options = node_loader.options(std::env::var_os("NODE_OPTIONS").as_deref())?;
+    tracing::debug!(
+        action = "node_runtime_prepared",
+        esm = node_loader.has_esm(),
+        "Prepared automatic Yarn runtime activation for Node workloads"
+    );
     let prepared =
         pnport::executable::prepare(view, executable, args, std::env::var_os("PATH").as_deref())?;
     tracing::debug!(
@@ -363,7 +370,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
     #[cfg(target_os = "linux")]
     {
         let _ = artifact;
-        crate::linux::run_traced(view, &prepared)
+        crate::linux::run_traced(view, &prepared, &node_options)
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -389,6 +396,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             .args(&prepared.args)
             .env("PNPORT_SESSION", &view.session)
             .env("PNPORT_CACHE", &view.cache.root)
+            .env("NODE_OPTIONS", &node_options)
             .env_remove("PNPORT_LAUNCH_TOKEN");
         let variable = if cfg!(target_os = "macos") {
             "DYLD_INSERT_LIBRARIES"

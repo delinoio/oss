@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -12,35 +12,45 @@ const probe = `
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {createRequire, findPnpApi} = require('node:module');
-const filename = require.resolve(process.argv[1]);
+if (process.env.PNPORT_TEST_PRELOAD) assert.equal(globalThis.__pnportTestPreload, 'preserved');
+const issuer = (process.argv[2] ?? process.cwd()) + '/probe.cjs';
+const filename = createRequire(issuer).resolve(process.argv[1]);
 assert.equal(typeof JSON.parse(fs.readFileSync(filename, 'utf8')).name, 'string');
 const zipBacked = filename.replaceAll('\\\\', '/').includes('.zip/');
 assert(zipBacked, 'The probe requires a ZIP-backed package manifest');
-let api;
-try { api = createRequire(filename)('pnpapi'); }
-catch (error) {
-  if (error.code !== 'MODULE_NOT_FOUND') throw error;
-  assert.match(error.message, /^Cannot find module 'pnpapi'/);
-  process.stdout.write(JSON.stringify({code: error.code, zipBacked,
-    pnp: process.versions.pnp ?? null, findPnpApi: typeof findPnpApi === 'function'}));
-  process.exit(1);
-}
+const api = createRequire(filename)('pnpapi');
 assert.equal(String(api.VERSIONS.std), process.versions.pnp);
 assert.equal(findPnpApi(filename), api);
 assert(api.findPackageLocator(filename));
-const resolved = api.resolveRequest(process.argv[1], process.cwd() + '/probe.cjs');
+const resolved = api.resolveRequest(process.argv[1], issuer);
 assert.equal(fs.readFileSync(resolved, 'utf8'), fs.readFileSync(filename, 'utf8'));
 process.stdout.write(JSON.stringify({code: 'PNP_API_READY', zipBacked,
   pnp: process.versions.pnp, findPnpApi: true}));
 `;
 
-function descendant(removeOptions) {
+const esmProbe = `
+import assert from 'node:assert/strict';
+import api from 'pnpapi';
+import Module from 'node:module';
+const {findPnpApi, createRequire} = Module;
+const require = createRequire(process.cwd() + '/probe.mjs');
+const filename = require.resolve(process.argv[1]);
+const manifest = await import(process.argv[1], {with: {type: 'json'}});
+assert.equal(typeof manifest.default.name, 'string');
+assert(filename.replaceAll('\\\\', '/').includes('.zip/'));
+assert.equal(String(api.VERSIONS.std), process.versions.pnp);
+assert.deepEqual(findPnpApi(filename).findPackageLocator(filename), api.findPackageLocator(filename));
+assert.equal(api.resolveRequest(process.argv[1], process.cwd() + '/probe.mjs'), filename);
+process.stdout.write(JSON.stringify({code: 'PNP_API_READY', zipBacked: true,
+  pnp: process.versions.pnp, findPnpApi: true}));
+`;
+
+function descendant(environment, source = probe, module = false, cwd) {
   return `
 const {spawnSync} = require('node:child_process');
-const env = {...process.env};
-${removeOptions ? "delete env.NODE_OPTIONS;" : ""}
-const child = spawnSync(process.execPath, ['--eval', ${JSON.stringify(probe)}, process.argv[1]],
-  {env, stdio: 'inherit'});
+${environment}
+const child = spawnSync(process.execPath, [${module ? "'--input-type=module', " : ""}'--eval', ${JSON.stringify(source)}, process.argv[1], process.argv[2]],
+  {env, stdio: 'inherit'${cwd ? `, cwd: ${JSON.stringify(cwd)}` : ""}});
 if (child.error) throw child.error;
 process.exit(child.status ?? 1);
 `;
@@ -51,25 +61,39 @@ export function pnpApiConformance({ binary, root, cache, environment = process.e
   assert(existsSync(loader), "An already prepared Yarn PnP fixture is required");
   const env = { ...environment };
   delete env.NODE_OPTIONS;
-  const nodeOptions = { ...env, NODE_OPTIONS: `--require ${JSON.stringify(loader)}` };
+  const quote = (value) => `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+  const nodeOptions = { ...env, NODE_OPTIONS: `--require ${quote(loader)}` };
+  const temporary = mkdtempSync(join(tmpdir(), "pnport-preload-options-"));
+  const custom = join(temporary, "preload with spaces.cjs");
+  writeFileSync(custom, "globalThis.__pnportTestPreload = 'preserved';\n");
+  const customOptions = `--no-warnings --require=${quote(custom)}`;
+  const inheritedCustom = { ...env, NODE_OPTIONS: customOptions, PNPORT_TEST_PRELOAD: "1" };
   const cases = [
-    ["filesystemOnly", ["--eval", probe, dependency], env, false],
-    ["explicitRequire", ["--require", loader, "--eval", probe, dependency], env, true],
-    ["requireNotInherited", ["--require", loader, "--eval", descendant(false), dependency], env, false],
-    ["nodeOptionsInherited", ["--eval", descendant(false), dependency], nodeOptions, true],
-    ["nodeOptionsRemoved", ["--eval", descendant(true), dependency], nodeOptions, false],
+    ["automatic", ["--eval", probe, dependency], env],
+    ["explicitRequire", ["--require", loader, "--eval", probe, dependency], env],
+    ["automaticDescendant", ["--eval", descendant("const env = {...process.env};"), dependency], env],
+    ["nodeOptionsInherited", ["--eval", descendant("const env = {...process.env};"), dependency], nodeOptions],
+    ["nodeOptionsRemoved", ["--eval", descendant("const env = {...process.env}; delete env.NODE_OPTIONS;"), dependency], nodeOptions],
+    ["environmentReplaced", ["--eval", descendant("const env = {};"), dependency], env],
+    ["descendantOutsideProject", ["--eval", descendant("const env = {};", probe, false, temporary), dependency], env],
+    ["callerPreloadPreserved", ["--eval", probe, dependency], inheritedCustom],
+    ["descendantOptionsReplaced", ["--eval", descendant(`const env = {NODE_OPTIONS: ${JSON.stringify(customOptions)}, PNPORT_TEST_PRELOAD: '1'};`), dependency], env],
   ];
-  const outcomes = {};
-  for (const [name, args, childEnv, available] of cases) {
-    const result = spawnSync(binary, ["--cache-dir", cache, "--color", "never", "run", "--", process.execPath, ...args],
-      { cwd: root, env: childEnv, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
-    assert.ifError(result.error);
-    assert.equal(result.status, available ? 0 : 1, `${name}: ${result.stdout}\n${result.stderr}`);
-    assert.deepEqual(JSON.parse(result.stdout), available
-      ? { code: "PNP_API_READY", zipBacked: true, pnp: "3", findPnpApi: true }
-      : { code: "MODULE_NOT_FOUND", zipBacked: true, pnp: null, findPnpApi: false }, name);
-    outcomes[name] = { apiAvailable: available, exitCode: result.status };
+  if (existsSync(join(root, ".pnp.loader.mjs"))) {
+    cases.push(["automaticEsm", ["--input-type=module", "--eval", esmProbe, dependency], env]);
+    cases.push(["descendantEsmOptionsRemoved", ["--eval", descendant("const env = {};", esmProbe, true), dependency], env]);
   }
+  const outcomes = {};
+  try {
+    for (const [name, args, childEnv] of cases) {
+      const result = spawnSync(binary, ["--cache-dir", cache, "--color", "never", "run", "--", process.execPath, ...args, resolve(root)],
+        { cwd: root, env: childEnv, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, `${name}: ${result.stdout}\n${result.stderr}`);
+      assert.deepEqual(JSON.parse(result.stdout), { code: "PNP_API_READY", zipBacked: true, pnp: "3", findPnpApi: true }, name);
+      outcomes[name] = { apiAvailable: true, exitCode: result.status };
+    }
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
   assert(!existsSync(join(root, "node_modules")), "Do not generate a physical dependency tree");
   return { node: process.version, outcomes };
 }

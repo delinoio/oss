@@ -64,15 +64,19 @@ Candidate hosts additionally repeat the internally concurrent fork/child-callbac
 
 ### Official native TypeScript conformance
 
-Offline inline/split execution also runs the synthetic Node PnP API boundary
-probe. Reading a ZIP-backed package manifest must work without the Yarn loader,
-while `pnpapi` remains unavailable. Explicit `--require` enables the API in that
-Node process; inherited `NODE_OPTIONS` enables it in a fresh Node descendant.
-Retain negative controls for an uninherited command-line preload and a child
-environment that removes `NODE_OPTIONS`. Evidence contains the Node version,
-typed availability outcomes and exit codes, without package paths or child
-streams. These controls describe 0.1.0 behavior and do not implement automatic
-loader activation or complete JavaScript/ESM acceptance.
+Offline inline/split execution also runs the synthetic Node PnP API probe.
+The source implementation activates the selected original Yarn CommonJS loader
+automatically through `NODE_OPTIONS`. When Yarn generated `.pnp.loader.mjs`,
+pnport tracks its digest with the graph and activates it for ESM imports too.
+The probe requires `pnpapi` from a ZIP-backed package's require context, verifies
+`process.versions.pnp`, `module.findPnpApi`, locator lookup and request resolution,
+and imports both `pnpapi` and the package manifest through ESM. Fresh descendants
+must retain these behaviors after removing `NODE_OPTIONS` or replacing the whole
+environment. Caller preload options and replacement descendant options must
+still execute. Explicit `--require` and inherited loader options remain supported.
+Evidence contains the Node version, typed availability outcomes and exit codes,
+without package paths or child streams. This regression gate does not establish
+complete JavaScript/ESM compatibility or change published 0.1.0 availability.
 
 The same offline probe can run independently against a prepared synthetic
 fixture with a ZIP-backed package manifest:
