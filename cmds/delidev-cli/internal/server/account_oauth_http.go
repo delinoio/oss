@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
@@ -64,8 +65,8 @@ func exchangeOAuthHTTP(ctx context.Context, code, verifier []byte, transport htt
 		return nil, oauthProblem()
 	}
 	body := buffer[:n]
-	var fields map[string]json.RawMessage
-	if domain.Decode(body, &fields) != nil {
+	fields, err := decodeOAuthSecretObject(body, 0)
+	if err != nil {
 		return nil, oauthProblem()
 	}
 	defer func() {
@@ -160,4 +161,94 @@ func decodeOAuthASCIIKey(raw []byte) (key []byte, returned error) {
 		return key, oauthProblem()
 	}
 	return key, nil
+}
+
+// Decode secret response values exclusively as owned RawMessage bytes. Decoder
+// tokens are limited to public object field names and structural delimiters;
+// credential values never pass through Token or domain's string-backed reader.
+func decodeOAuthSecretObject(raw []byte, depth int) (fields map[string]json.RawMessage, returned error) {
+	fields = make(map[string]json.RawMessage)
+	defer func() {
+		if returned != nil {
+			for _, value := range fields {
+				clear(value)
+			}
+			fields = nil
+		}
+	}()
+	if depth > 64 || !utf8.Valid(raw) || !json.Valid(raw) {
+		return fields, oauthProblem()
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	token, err := d.Token()
+	if err != nil || token != json.Delim('{') {
+		return fields, oauthProblem()
+	}
+	for d.More() {
+		token, err := d.Token()
+		name, ok := token.(string)
+		if err != nil || !ok {
+			return fields, oauthProblem()
+		}
+		if _, exists := fields[name]; exists {
+			return fields, oauthProblem()
+		}
+		var value json.RawMessage
+		if d.Decode(&value) != nil {
+			clear(value)
+			return fields, oauthProblem()
+		}
+		fields[name] = value
+		if checkOAuthSecretJSON(value, depth+1) != nil {
+			return fields, oauthProblem()
+		}
+	}
+	token, err = d.Token()
+	if err != nil || token != json.Delim('}') {
+		return fields, oauthProblem()
+	}
+	var extra json.RawMessage
+	defer clear(extra)
+	if d.Decode(&extra) != io.EOF {
+		return fields, oauthProblem()
+	}
+	return fields, nil
+}
+func checkOAuthSecretJSON(raw []byte, depth int) error {
+	if depth > 64 {
+		return oauthProblem()
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return oauthProblem()
+	}
+	if raw[0] == '{' {
+		fields, err := decodeOAuthSecretObject(raw, depth)
+		for _, value := range fields {
+			clear(value)
+		}
+		return err
+	}
+	if raw[0] == '[' {
+		d := json.NewDecoder(bytes.NewReader(raw))
+		if _, err := d.Token(); err != nil {
+			return oauthProblem()
+		}
+		for d.More() {
+			var value json.RawMessage
+			err := d.Decode(&value)
+			if err == nil {
+				err = checkOAuthSecretJSON(value, depth+1)
+			}
+			clear(value)
+			if err != nil {
+				return oauthProblem()
+			}
+		}
+		token, err := d.Token()
+		if err != nil || token != json.Delim(']') {
+			return oauthProblem()
+		}
+	}
+	return nil
 }

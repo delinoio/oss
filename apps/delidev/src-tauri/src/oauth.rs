@@ -233,7 +233,18 @@ impl OAuthHost {
             OAuthAction::BindOpen => {
                 canonical_id(attempt_id)?;
                 if !original.attempt.is_empty() {
-                    return Err(NativeFailure::Busy);
+                    if original.attempt != attempt_id
+                        || original.authorization.as_str() != authorization
+                    {
+                        return Err(NativeFailure::InvalidEvidence);
+                    }
+                    // Exact binding replay settles pre/post-admission uncertainty
+                    // without dispatching another browser. Reopen remains explicit.
+                    return Ok(OAuthResult {
+                        generation: generation.into(),
+                        callback_url: String::new(),
+                        code: None,
+                    });
                 }
                 validate_authorization(authorization, &original.callback)?;
                 original.attempt = attempt_id.into();
@@ -646,7 +657,7 @@ mod tests {
                     &auth,
                     |_, _| panic!("duplicate opener")
                 )
-                .is_err()
+                .is_ok()
             );
             let response = request(
                 port,
@@ -786,6 +797,26 @@ mod tests {
         )
         .err()
         .unwrap();
+        host.control_with_opener(
+            scope.clone(),
+            OAuthAction::BindOpen,
+            &initial.generation,
+            &id,
+            &auth,
+            |_, _| panic!("binding replay opened twice"),
+        )
+        .unwrap();
+        assert!(
+            host.control_with_opener(
+                scope.clone(),
+                OAuthAction::BindOpen,
+                &initial.generation,
+                &uuid::Uuid::now_v7().to_string(),
+                &auth,
+                |_, _| panic!("foreign binding replay opened"),
+            )
+            .is_err()
+        );
         host.control_with_opener(
             scope.clone(),
             OAuthAction::Reopen,

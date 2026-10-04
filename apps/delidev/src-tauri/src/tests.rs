@@ -935,3 +935,41 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
     fresh_host.stop();
     assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
 }
+
+#[test]
+fn oauth_polling_uses_original_verified_descriptor_without_sidecar_or_command_gate() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    fs::create_dir_all(root.join("desktop-client")).unwrap();
+    let path = root.join("desktop-client/device.json");
+    let original = metadata();
+    fs::write(&path, document(&original)).unwrap();
+    let connector = Connector::new(temporary.path().join("missing-sidecar"), root).unwrap();
+    assert_eq!(
+        connector.oauth_server_identity(),
+        Err(NativeFailure::CredentialUnavailable)
+    );
+    *connector.oauth_identity.lock().unwrap() = Some(original.clone());
+    let _unrelated_command = connector.gate.lock().unwrap();
+    for _ in 0..20 {
+        assert_eq!(
+            connector.oauth_server_identity().unwrap(),
+            original.server_id
+        );
+    }
+    fs::write(&path, document(&metadata())).unwrap();
+    assert_eq!(
+        connector.oauth_server_identity(),
+        Err(NativeFailure::InvalidEvidence)
+    );
+    fs::write(&path, document(&original)).unwrap();
+    assert_eq!(
+        connector.oauth_server_identity().unwrap(),
+        original.server_id
+    );
+    connector.exiting.store(true, Ordering::Release);
+    assert_eq!(
+        connector.oauth_server_identity(),
+        Err(NativeFailure::Stopped)
+    );
+}

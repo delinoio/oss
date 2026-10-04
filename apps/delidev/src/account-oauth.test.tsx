@@ -113,3 +113,23 @@ it("a native preparation failure allows explicit cleanup and manual fallback bef
   fireEvent.click(screen.getByRole("button", { name: "Use an API key instead" })); await waitFor(() => expect(f.manual).toHaveBeenCalledTimes(1));
   expect(f.start).not.toHaveBeenCalled(); expect(f.cancel).not.toHaveBeenCalled();
 });
+
+it("retries the exact browser binding after a native failure before admission", async () => {
+ let binds = 0;
+ const generation = newRequestId();
+ const f = fixture({ native: async (_opening, action, current) => {
+  if (action === OAuthNativeAction.Begin) return { generation, callback_url: `http://localhost:55451/oauth/openrouter/${"c".repeat(64)}` };
+  if (action === OAuthNativeAction.BindOpen && ++binds === 1) throw new Error("native identity temporarily busy");
+  return { generation: current };
+ }});
+ fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
+ await screen.findByRole("alert");
+ fireEvent.click(screen.getByRole("button", { name: "Open browser again" }));
+ await waitFor(() => expect(binds).toBe(2));
+ expect(f.start).toHaveBeenCalledTimes(2);
+ expect(f.start.mock.calls[0][0].provider?.requestId).toBe(f.start.mock.calls[1][0].provider?.requestId);
+ expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Reopen)).toHaveLength(0);
+ fireEvent.click(screen.getByRole("button", { name: "Open browser again" }));
+ await waitFor(() => expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Reopen)).toHaveLength(1));
+ expect(f.complete).not.toHaveBeenCalled();
+});

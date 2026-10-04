@@ -176,3 +176,18 @@ func TestOAuthOwnedByteJSONEscapesAndClosedASCIIKey(t *testing.T) {
 	}
 	clear(decoded)
 }
+
+func TestOAuthSecretResponseRejectsDuplicateNestedKeysWithoutValueStrings(t *testing.T) {
+	for _, raw := range []string{`{"key":"fixture","key":"other"}`, `{"key":"fixture","metadata":{"a":1,"a":2}}`, `{"key":"fixture","metadata":[{"a":1,"a":2}]}`, `{"key":"fixture"} {}`} {
+		if fields, err := decodeOAuthSecretObject([]byte(raw), 0); err == nil || fields != nil {
+			t.Fatal("ambiguous secret response accepted")
+		}
+	}
+	fields, err := decodeOAuthSecretObject([]byte(`{"key":"fixture","metadata":["private",{"number":1}]}`), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range fields {
+		clear(raw)
+	}
+}

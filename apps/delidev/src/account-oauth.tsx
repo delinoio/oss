@@ -100,8 +100,7 @@ export function useOpenRouterOAuth() {
       value.attempt = checkedAttempt(result.attempt, value);
       setView({ provider: value.provider, stage: stage(value.attempt.state), attempt: value.attempt });
       if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && result.authorizationUrl && !value.bound) {
-        value.bound = true;
-        try { await native(value.nativeOpening, OAuthNativeAction.BindOpen, value.generation, value.attempt.id, result.authorizationUrl); }
+        try { await native(value.nativeOpening, OAuthNativeAction.BindOpen, value.generation, value.attempt.id, result.authorizationUrl); value.bound = true; value.openFailed = false; value.problem = undefined; }
         catch { value.openFailed = true; failure(value, "The browser could not be opened. Open it again deliberately or cancel this connection."); }
       }
     } catch { failure(value, "Authorization could not be confirmed. Retry only the original start or inspect the original attempt before starting another connection."); }
@@ -176,6 +175,7 @@ export function useOpenRouterOAuth() {
   };
   const reopen = async () => {
     const value = pending.current; if (!native || !value?.attempt || !current(value) || value.busy || value.completion) return;
+    if (!value.bound) { await startOriginal(value); return; }
     try { await native(value.nativeOpening, OAuthNativeAction.Reopen, value.generation, value.attempt.id, ""); value.problem = undefined; value.openFailed = false; if (current(value)) setView(previous => previous ? { ...previous, openFailed: false, problem: undefined } : previous); }
     catch { failure(value, "The browser could not be opened for this original live attempt. Cancel before starting another."); }
   };

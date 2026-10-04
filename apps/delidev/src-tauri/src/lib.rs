@@ -98,7 +98,7 @@ enum DeviceType {
     Worker,
 }
 
-#[derive(Deserialize, PartialEq, Eq)]
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct DeviceMetadata {
     version: u32,
@@ -135,30 +135,56 @@ pub struct Connector {
     executable: PathBuf,
     root: PathBuf,
     gate: Mutex<()>,
+    oauth_identity: Mutex<Option<DeviceMetadata>>,
     command_timeout: Duration,
     listen: String,
     exiting: AtomicBool,
 }
 
 impl Connector {
-    // Read-only original local identity; never starts, pairs or replaces a server.
+    // The verified local connection captures non-secret authority once. Empty
+    // callback polling rechecks that fixed descriptor without starting a CLI or
+    // competing with unrelated connector commands. Changed descriptors require
+    // a new Go-verified connection before receiving callback authority.
     pub fn oauth_server_identity(&self) -> Result<String> {
-        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
-        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
-            "device".into(),
-            "inspect".into(),
-            "--device-dir".into(),
-            self.root.join("desktop-client").into_os_string(),
-        ])?)
-        .map_err(|_| NativeFailure::InvalidEvidence)?;
-        if metadata.kind != DeviceType::Client
-            || !metadata.machine_id.is_empty()
-            || metadata.endpoint != "http://127.0.0.1:46310"
+        if self.exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        let original = self
+            .oauth_identity
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?;
+        let original = original
+            .as_ref()
+            .ok_or(NativeFailure::CredentialUnavailable)?;
+        let path = self.root.join("desktop-client").join("device.json");
+        let file = fs::symlink_metadata(&path).map_err(|_| NativeFailure::CredentialUnavailable)?;
+        if !file.is_file() || file.file_type().is_symlink() || file.len() > 16 << 10 {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let bytes = Zeroizing::new(read_bounded(
+            File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
+            16 << 10,
+        )?);
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Descriptor {
+            #[serde(flatten)]
+            metadata: DeviceMetadata,
+            #[serde(rename = "token")]
+            _token: serde::de::IgnoredAny,
+        }
+        let current: Descriptor =
+            serde_json::from_slice(&bytes).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if current.metadata != *original
+            || original.kind != DeviceType::Client
+            || !original.machine_id.is_empty()
+            || original.endpoint != "http://127.0.0.1:46310"
         {
             return Err(NativeFailure::InvalidEvidence);
         }
-        canonical_id(&metadata.server_id)?;
-        Ok(metadata.server_id)
+        canonical_id(&original.server_id)?;
+        Ok(original.server_id.clone())
     }
 
     pub fn open_provider_guidance(
@@ -208,6 +234,7 @@ impl Connector {
             executable,
             root,
             gate: Mutex::new(()),
+            oauth_identity: Mutex::new(None),
             command_timeout: COMMAND_TIMEOUT,
             listen: "127.0.0.1:46310".into(),
             exiting: AtomicBool::new(false),
@@ -389,7 +416,12 @@ impl Connector {
             File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
             16 << 10,
         )?);
-        connection_from_bytes(&bytes, &metadata)
+        let connection = connection_from_bytes(&bytes, &metadata)?;
+        *self
+            .oauth_identity
+            .lock()
+            .map_err(|_| NativeFailure::Busy)? = Some(metadata);
+        Ok(connection)
     }
 
     fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
