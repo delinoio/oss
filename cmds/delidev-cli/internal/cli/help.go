@@ -126,7 +126,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session rename --id ID --revision N --name NAME
   storage preview|create --session-id ID --expected-revision N
   storage cleanup --session-id ID --expected-revision N --preview-job-id JOB --confirm
-  storage inspect|restore|delete --session-id ID --expected-revision N --snapshot-id ID [--confirm]
+  storage inspect|restore --session-id ID --expected-revision N --snapshot-id ID
+  storage delete --session-id ID --expected-revision N --snapshot-id ID --confirm
   storage recover --session-id ID --expected-revision N --recovery-job-id JOB
   storage operation --id JOB
   storage cancel --id JOB --expected-revision N

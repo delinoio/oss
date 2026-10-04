@@ -873,3 +873,137 @@ func TestSnapshotCancellationBeforeRemovalClaimPreservesBothCopies(t *testing.T)
 		t.Fatal("unreported intent lost", err)
 	}
 }
+
+func TestSnapshotCreatePublicationFailureRetainsOriginalRecovery(t *testing.T) {
+	m := manager(t)
+	captureStorageFailureLogs(t, m)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+	foreign := filepath.Join(m.Root, "workspaces", string(prepare.SessionID), "foreign-entry")
+	m.storageBeforeSnapshotPublish = func(string) {
+		if err := os.WriteFile(foreign, []byte("uncaptured source"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := m.Storage(context.Background(), input)
+	if domain.SafeError(err).Code != domain.RecoveryRequired || result.Snapshot == nil || result.CleanupVerified || result.RemovedSourceBytes != 0 {
+		t.Fatal("published create lost recovery ownership", result, err)
+	}
+	if raw, err := os.ReadFile(foreign); err != nil || string(raw) != "uncaptured source" {
+		t.Fatal("late source was removed", err)
+	}
+	// Remove only the fixture-owned interference. A fresh owner must inspect the
+	// original publication; it cannot create another snapshot to settle this job.
+	if err := os.Remove(foreign); err != nil {
+		t.Fatal(err)
+	}
+	m = &Manager{Root: m.Root, Logger: m.Logger}
+	recovered := storageDo(t, m, recoveryRequest(input))
+	if recovered.RecoveredJobID != input.OperationID || recovered.RecoveredJobState != domain.JobSucceeded || recovered.Snapshot == nil || recovered.Snapshot.ID != input.SnapshotID || recovered.Snapshot.SHA256 != result.Snapshot.SHA256 {
+		t.Fatal("create recovery replaced its original publication", recovered)
+	}
+}
+
+func TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart(t *testing.T) {
+	m := manager(t)
+	captureStorageFailureLogs(t, m)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+	created := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotDigest, input.SnapshotMetadata = StorageDelete, domain.NewID(), created.Snapshot.SHA256, created.Snapshot
+	ctx, cancel := context.WithCancel(context.Background())
+	m.storageAfterRemovalClaim = func(name string) {
+		if name == "workspace" {
+			cancel()
+		}
+	}
+	if _, err := m.Storage(ctx, input); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("missing original partial deletion", err)
+	}
+	cancel()
+	intent, err := os.ReadFile(m.removalIntentPath(input.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	header, err := os.ReadFile(m.removalClaimPath(input.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, active, err := m.readRemovalClaimPending(input, intent)
+	if err != nil || len(active) != 1 || active[0].Original != "workspace" || !active[0].Renamed {
+		t.Fatal("missing original active claim", active, err)
+	}
+	journalPath := m.removalClaimJournalPath(input.OperationID)
+	activeRaw, err := os.ReadFile(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fill the bounded replay with long-path settled transitions. They grant no
+	// remaining unlink authority; compaction must retain the independent live claim.
+	var cycle []byte
+	for _, state := range []string{storageRemovalRenamePrepared, storageRemovalRenameRenamed, storageRemovalRenameCleared} {
+		raw, err := json.Marshal(storageRemovalRenameRecord{Original: strings.Repeat("part/", 700) + "old", Private: strings.Repeat("part/", 700) + ".removing-old", State: state})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cycle = append(cycle, raw...)
+		cycle = append(cycle, '\n')
+	}
+	full := bytes.Repeat(cycle, (maxStorageRemovalJournal-len(activeRaw))/len(cycle))
+	full = append(full, bytes.TrimSuffix(activeRaw, []byte("\n"))...)
+	full = append(full, bytes.Repeat([]byte(" "), maxStorageRemovalJournal-len(full)-1)...)
+	full = append(full, '\n')
+	if err := os.WriteFile(journalPath, full, 0600); err != nil {
+		t.Fatal(err)
+	}
+	probe := storageRemovalRenameRecord{Original: "workspace/chat/keep", Private: active[0].Private + "/chat/.removing-probe", State: storageRemovalRenamePrepared}
+	canceled, stop := context.WithCancel(context.Background())
+	stop()
+	if err := m.appendRemovalClaimRecord(canceled, input, probe); err == nil {
+		t.Fatal("canceled compaction acquired a claim")
+	}
+	if raw, err := os.ReadFile(journalPath); err != nil || !bytes.Equal(raw, full) {
+		t.Fatal("canceled compaction replaced recovery proof", err)
+	}
+	m = &Manager{Root: m.Root, Logger: m.Logger}
+	if err := m.appendRemovalClaimRecord(context.Background(), input, probe); err != nil {
+		t.Fatal("full settled history blocked original recovery", err)
+	}
+	_, retained, err := m.readRemovalClaimPending(input, intent)
+	if err != nil || len(retained) != 2 {
+		t.Fatal("compaction changed active proof", retained, err)
+	}
+	found := false
+	for _, value := range retained {
+		if value == active[0] {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("compaction lost original renamed ownership")
+	}
+	if raw, err := os.ReadFile(m.removalClaimPath(input.OperationID)); err != nil || !bytes.Equal(raw, header) {
+		t.Fatal("compaction replaced immutable root proof", err)
+	}
+	if info, err := os.Stat(journalPath); err != nil || info.Size() >= 1<<20 {
+		t.Fatal("settled history did not compact", err)
+	}
+	recovered := storageDo(t, m, recoveryRequest(input))
+	if recovered.RecoveredJobState != domain.JobSucceeded || recovered.Snapshot == nil || !recovered.Snapshot.Deleted || !recovered.CleanupVerified {
+		t.Fatal("compacted original deletion did not recover", recovered)
+	}
+	if raw, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, "keep")); err != nil || string(raw) != "original" {
+		t.Fatal("snapshot recovery removed live source", err)
+	}
+}

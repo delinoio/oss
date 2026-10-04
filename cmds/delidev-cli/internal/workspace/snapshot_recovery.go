@@ -11,6 +11,7 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -41,6 +42,12 @@ type storageRemovalClaim struct {
 // its children are being removed. Keep the claim within the private manifest
 // bound so recovery can inspect it without trusting an unbounded journal.
 const maxStorageRemovalClaim = maxSnapshotManifest
+
+// Journal records repeat two encoded paths for each transition. The immutable
+// manifest bounds the original path inventory; the larger journal ceiling holds
+// its active prepared/renamed projection plus the bounded header baseline.
+// Settled history is compacted atomically before admitting another record.
+const maxStorageRemovalJournal = 4 * maxSnapshotManifest
 
 type storageRemovalRename struct {
 	Original string `json:"original"`
@@ -111,13 +118,76 @@ func (m *Manager) appendRemovalClaimRecord(ctx context.Context, r StorageRequest
 	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return ResultUncertain()
 	}
-	if statErr == nil && (!info.Mode().IsRegular() || info.Size() < 0 || info.Size()+int64(len(raw)) > maxStorageRemovalClaim) {
-		return ResultUncertain()
+	if statErr == nil {
+		if !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxStorageRemovalJournal {
+			return ResultUncertain()
+		}
+		if info.Size()+int64(len(raw)) > maxStorageRemovalJournal {
+			if err := m.compactRemovalClaimJournal(ctx, r); err != nil {
+				return err
+			}
+			info, err = os.Lstat(path)
+			if err != nil || !info.Mode().IsRegular() || info.Size()+int64(len(raw)) > maxStorageRemovalJournal {
+				return ResultUncertain()
+			}
+		}
 	}
-	if statErr != nil && int64(len(raw)) > maxStorageRemovalClaim {
+	if int64(len(raw)) > maxStorageRemovalJournal {
 		return ResultUncertain()
 	}
 	return security.AppendPrivate(path, raw)
+}
+
+// Replace only the append journal, never the immutable claim. Atomic publication
+// makes either the full old replay or the equivalent compact replay recoverable.
+func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageRequest) error {
+	intent, err := security.ReadPrivate(m.removalIntentPath(r.OperationID), maxSnapshotManifest)
+	if err != nil {
+		return ResultUncertain()
+	}
+	claim, pending, err := m.readRemovalClaimPending(r, intent)
+	if err != nil {
+		return err
+	}
+	sort.Slice(pending, func(i, j int) bool { return pending[i].Original < pending[j].Original })
+	var raw []byte
+	appendRecord := func(record storageRemovalRenameRecord) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		part, err := json.Marshal(record)
+		if err != nil || len(raw)+len(part)+1 > maxStorageRemovalJournal {
+			return ResultUncertain()
+		}
+		raw = append(raw, part...)
+		raw = append(raw, '\n')
+		return nil
+	}
+	// Retain compatibility with a bounded nonempty original header baseline:
+	// clear it in the replay before reconstructing the current active claims.
+	for _, prior := range claim.Pending {
+		if err := appendRecord(storageRemovalRenameRecord{Original: prior.Original, Private: prior.Private, State: storageRemovalRenameCleared}); err != nil {
+			return err
+		}
+	}
+	for _, active := range pending {
+		if err := appendRecord(storageRemovalRenameRecord{Original: active.Original, Private: active.Private, State: storageRemovalRenamePrepared}); err != nil {
+			return err
+		}
+		if active.Renamed {
+			if err := appendRecord(storageRemovalRenameRecord{Original: active.Original, Private: active.Private, State: storageRemovalRenameRenamed}); err != nil {
+				return err
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := security.WriteAtomic(m.removalClaimJournalPath(r.OperationID), raw); err != nil {
+		return err
+	}
+	m.Logger.InfoContext(ctx, "workspace_removal_journal_compacted", "operation_id", r.OperationID, "active_claims", len(pending), "journal_bytes", len(raw))
+	return nil
 }
 
 func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (storageRemovalClaim, []storageRemovalRename, error) {
@@ -130,7 +200,7 @@ func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (stor
 	for _, rename := range claim.Pending {
 		active[rename.Original] = rename
 	}
-	raw, err := security.ReadPrivate(m.removalClaimJournalPath(r.OperationID), maxStorageRemovalClaim)
+	raw, err := security.ReadPrivate(m.removalClaimJournalPath(r.OperationID), maxStorageRemovalJournal)
 	if errors.Is(err, os.ErrNotExist) {
 		return claim, append([]storageRemovalRename(nil), claim.Pending...), nil
 	}

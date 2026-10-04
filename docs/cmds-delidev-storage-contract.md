@@ -848,3 +848,5 @@ acknowledgments retain original wire requests in the connection mutation registr
 explicit retries use identical UUID/revision/selection bytes. A replacement
 connection follows the existing connection-memory lifetime and never adopts
 another server's operation.
+
+Removal append journals have a separate 32 MiB bound because each transition repeats original and private paths; immutable manifests and claims retain the 8 MiB bound. Capacity-triggered atomic journal compaction drops settled transitions while preserving the exact active prepared/renamed replay against the unchanged original header. Failure/cancellation cannot replace a journal with partial proof. Snapshot publication by either create or cleanup makes later failure recovery-required; original recovery must retain that published snapshot before reporting settlement. CLI snapshot deletion requires explicit `--confirm`.

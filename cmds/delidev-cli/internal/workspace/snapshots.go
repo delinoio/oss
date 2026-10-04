@@ -232,7 +232,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			// Publication is already a native side effect, even before source
 			// removal. Preserve recovery ownership so cancellation/failure cannot
 			// orphan the verified snapshot outside server metadata.
-			if r.Action == StorageCleanup && result.Snapshot != nil {
+			if (r.Action == StorageCreate || r.Action == StorageCleanup) && result.Snapshot != nil {
 				returned = ResultUncertain()
 			}
 			if storageFull(returned) {
