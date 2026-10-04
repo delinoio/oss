@@ -5482,6 +5482,14 @@
     {
       "issue": 964,
       "kind": "message",
+      "declaration": "PollWorkerUpdateRequest",
+      "member": "original_update_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
       "declaration": "PollWorkerUpdateResponse",
       "member": "update",
       "number": 1,
