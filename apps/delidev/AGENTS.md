@@ -49,3 +49,5 @@ Unsupported-schema Agent display names/aliases are projected only within the exi
 - All 35 API presets use the shared closed client identity/order mapping and authenticated inventory. Keep regional/subscription-key guidance, connection, explicit validation, discovery and selected native harness compatibility separate. Follow the catalog and provider inspection contracts.
 
 - Signed desktop updates are available under Connection & diagnostics outside disposable Settings, with native confirmation and original outcome inspection. Runner Device updates expose pending/draining/uncertain states and explicit cancellation before claim. Generated Connect Query reads/mutations retain original IDs, and missing System/Worker capabilities show an update requirement before effects.
+
+- Retained local desktop installation inspection stays available in Connection & diagnostics independently of live server support. Pass only the exact original ID/revision to native read-only inspection; it grants no preparation, installation or restart.

@@ -1,6 +1,16 @@
 {
   "schemaVersion": 1,
   "baseline": {
+    "ForkSessionRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1,
+        "expected_turn_id": 2,
+        "name": 3,
+        "workspace": 4,
+        "local_worker_token": 5
+      }
+    },
     "RespondQuestionRequest": {
       "kind": "message",
       "members": {
