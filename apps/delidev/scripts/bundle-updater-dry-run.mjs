@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { selectTarget, acquireNativeBuildLock, verifyPackageRevision, prepareCefCredits, binaryArchitecture, verifyAppImagePayload, verifyNotices, packageResources } from './native-package.mjs';
+import { selectTarget, acquireNativeBuildLock, verifyPackageRevision, prepareCefCredits, binaryArchitecture, verifyAppImagePayload, verifyNotices, cefResourcePath, packageResources } from './native-package.mjs';
 import { nativeEnvironment } from './bundle-native-dry-run.mjs';
 import { artifactName } from '../../../scripts/release/generate-delidev-updater.mjs';
 export function updaterTarget(selected) {return `${selected.platform==='win32'?'windows':selected.platform}-${selected.arch==='x64'?'amd64':'arm64'}`;}
@@ -47,7 +47,7 @@ export async function main(args) {
    // bin symlink without its share target. Supply that exact original native
    // binary so sharun can resolve it; remove when upstream copies share itself.
    const appimage=selected.platform==='linux'?{linux:{appimage:{files:{'share/DeliDev/delidev-desktop':join(root,'target',selected.target,'release/delidev-desktop')}}}}:{};
-   const config=JSON.stringify({bundle:{resources:{[credits]:'notices/Chromium-CREDITS.html'},...appimage}});
+   const config=JSON.stringify({bundle:{resources:{[cefResourcePath(app,root,selected,credits)]:'notices/Chromium-CREDITS.html'},...appimage}});
    run('cargo',['run','--locked','--manifest-path','src-tauri/Cargo.toml','--features','cli','--bin','delidev-tauri-cli','--','build','--target',selected.target,'--bundles',kind,'--features','desktop-host,custom-protocol,tauri/cef','--config',config],true);
    const directory=join(root,'target',selected.target,'release/bundle',kind),extension=selected.platform==='win32'?'.exe':'.AppImage';
    const files=readdirSync(directory).filter(v=>v.endsWith(extension));if(files.length!==1)throw new Error('One unambiguous native updater artifact is required.');copyFileSync(join(directory,files[0]),desktop);

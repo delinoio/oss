@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { accessSync, constants, lstatSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, join } from "node:path";
-import { targets, prepareCefCredits, packageResources, verifyNotices } from "./native-package.mjs";
+import { targets, prepareCefCredits, cefResourcePath, packageResources, verifyNotices } from "./native-package.mjs";
 import { prepareAssets } from "./prepare-assets.mjs";
 import { exitLikeChild } from "../../../scripts/spawn-dev-server.mjs";
 
@@ -89,7 +89,7 @@ async function main() {
   const credits = prepareCefCredits(selected, env, build);
   const resources = packageResources(app, root, credits);
   const dryRunConfig = JSON.parse(readFileSync(join(app, "src-tauri/tauri.dry-run.conf.json"), "utf8"));
-  const config = JSON.stringify({ ...dryRunConfig, bundle: { ...dryRunConfig.bundle, resources: { [credits]: "notices/Chromium-CREDITS.html" } } });
+  const config = JSON.stringify({ ...dryRunConfig, bundle: { ...dryRunConfig.bundle, resources: { [cefResourcePath(app, root, selected, credits)]: "notices/Chromium-CREDITS.html" } } });
   build("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--bundles", "app", "--features", "desktop-host,custom-protocol,tauri/cef", "--config", config]);
   const bundle = join(root, "target/release/bundle/macos/DeliDev.app");
   const run = (command, args) => {

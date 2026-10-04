@@ -1,6 +1,6 @@
-import { openSync, readSync, closeSync, lstatSync, readdirSync, readFileSync, realpathSync, mkdirSync, rmSync } from "node:fs";
+import { openSync, readSync, closeSync, lstatSync, readdirSync, readFileSync, realpathSync, mkdirSync, rmSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 export const targets = Object.freeze([
   { target: "x86_64-apple-darwin", platform: "darwin", arch: "x64", runner: "macos-15-intel", cef: "cef_macos_x86_64" },
@@ -54,6 +54,17 @@ export function prepareCefCredits(selected, environment, build, home = homedir()
   const target = selected.platform === "darwin" ? [] : ["--target", selected.target];
   build("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--no-bundle", ...target, "--features", "desktop-host,custom-protocol,tauri/cef"]);
   return cefCredits(selected, environment, home);
+}
+
+// The pinned Windows resource resolver strips a drive prefix from absolute
+// source keys. Stage the unchanged original notices on the checkout drive and
+// pass a relative key until upstream preserves cross-drive source paths.
+export function cefResourcePath(app, root, selected, credits) {
+  const directory = join(root, "target/delidev-package-notices", selected.target);
+  mkdirSync(directory, { recursive: true });
+  const staged = join(directory, "Chromium-CREDITS.html");
+  copyFileSync(credits, staged);
+  return relative(join(app, "src-tauri"), staged);
 }
 
 export function packageResources(app, root, credits) {

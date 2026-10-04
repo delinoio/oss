@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { targets, selectTarget, binaryArchitecture, acquireNativeBuildLock, verifyPackageRevision, verifyAppImagePayload, cefCredits, prepareCefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
+import { targets, selectTarget, binaryArchitecture, acquireNativeBuildLock, verifyPackageRevision, verifyAppImagePayload, cefResourcePath, cefCredits, prepareCefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
 import { nativeEnvironment } from "./bundle-native-dry-run.mjs";
 
 function fixture(t) {
@@ -166,4 +166,19 @@ test("AppImage inspection distinguishes native product bytes from sharun launche
   write(root, "shared/bin/delidev", binary("linux", "x64"));
   write(root, "bin/libcef.so", binary("linux", "arm64"));
   assert.throws(() => verifyAppImagePayload(root, selected), /foreign CEF/);
+});
+
+
+test("original CEF notices use a checkout-relative source key for Windows drive safety", t => {
+  const root = fixture(t), app = join(root, "apps/delidev"), selected = targets[2];
+  const original = write(root, "external-cache/CREDITS.html", "unchanged Chromium notices");
+  const source = cefResourcePath(app, root, selected, original);
+  assert.equal(source, join("../../..", "target/delidev-package-notices", selected.target, "Chromium-CREDITS.html"));
+  const staged = join(app, "src-tauri", source);
+  const resources = { [original]: "notices/Chromium-CREDITS.html" };
+  write(root, "payload/notices/Chromium-CREDITS.html", "unchanged Chromium notices");
+  verifyNotices(join(root, "payload"), resources);
+  // The staging key must point to a byte-identical original, independent of
+  // the caller's platform-specific absolute cache prefix.
+  assert.deepEqual(readFileSync(staged), readFileSync(original));
 });
