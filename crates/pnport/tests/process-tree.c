@@ -136,7 +136,6 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(role, "root") && !strcmp(mode, "terminal-detached") && setsid() < 0) return 86;
     if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0 || strcmp(mode, "terminal-pipe") == 0 || !strcmp(mode, "terminal-group") || !strcmp(mode, "terminal-pending-pause")) {
-        if (!strcmp(mode, "terminal-group") && setpgid(0, 0)) return 80;
         FILE *marker = fopen("root.group", "w");
         if (!marker) return 67;
         fprintf(marker, "%d", getpgrp());
@@ -153,6 +152,18 @@ int main(int argc, char **argv) {
             if (terminal < 0 || tcgetpgrp(terminal) != getppid()) return 76;
             close(terminal);
         } else if (tcgetpgrp(0) != getpgrp()) return 70;
+        if (!strcmp(mode, "terminal-group")) {
+            if (setpgid(0, 0)) return 80;
+            marker = fopen("root.group", "w");
+            if (!marker) return 103;
+            fprintf(marker, "%d", getpgrp());
+            fclose(marker);
+            // Do not depend on an incidental background SIGTTIN. The native
+            // supervisor may claim the new group before its first read. Wait
+            // for actual foreground placement before the test sends Ctrl+Z.
+            for (int attempt = 0; attempt < 500 && tcgetpgrp(0) != getpgrp(); attempt++) usleep(10000);
+            if (tcgetpgrp(0) != getpgrp()) return 104;
+        }
         marker = fopen("terminal.first", "w");
         if (!marker) return 71;
         fputs("1", marker);

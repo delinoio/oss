@@ -751,7 +751,7 @@ fn terminal_job(mode: &str) {
     if mode == "interrupt" {
         terminal.write_all(&[3]).unwrap();
     } else {
-        if mode == "stop" {
+        if matches!(mode, "stop" | "new-group") {
             terminal.write_all(&[26]).unwrap();
         }
         fixture.wait_marker("terminal.stopped");

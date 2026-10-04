@@ -333,3 +333,4 @@
 
 - pnport constructor-lease unit controls must isolate exact open-description lifetime assertions from concurrent test forks, while leaving the parent suite parallel. Retain an explicit inherited pre-exec descriptor control so an initializing lease is never mislabeled abandoned.
 - pnport root missing-entry rejection rechecks current entry/readiness and native failure records at the rejection boundary. Log only closed deadline actions and state flags; passing later runs does not establish the cause of intermittent startup failures. Native signal-marker fixtures must block concurrent handled termination signals until the first handler completes its marker and exit.
+- pnport new-group terminal fixtures must verify native foreground placement before issuing explicit Ctrl+Z. Do not rely on an incidental background-read SIGTTIN that can disappear when supervisor placement wins scheduling; retain the independent background-read control.
