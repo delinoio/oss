@@ -82,6 +82,15 @@ export function pnpApiConformance({ binary, root, cache, environment = process.e
   if (existsSync(join(root, ".pnp.loader.mjs"))) {
     cases.push(["automaticEsm", ["--input-type=module", "--eval", esmProbe, dependency], env]);
     cases.push(["descendantEsmOptionsRemoved", ["--eval", descendant("const env = {};", esmProbe, true), dependency], env]);
+    const selectedUrl = pathToFileURL(join(resolve(root), ".pnp.loader.mjs")).href;
+    const singleLoaderProbe = `${esmProbe}\nassert.equal((process.env.NODE_OPTIONS.match(/--(?:experimental-)?loader(?:=| )/g) ?? []).length, 1);`;
+    for (const [name, url] of [
+      ["esmUppercaseScheme", selectedUrl.replace(/^file:/, "FILE:")],
+      ["esmUppercaseLocalhost", selectedUrl.replace(/^file:\/\//, "file://LOCALHOST")],
+    ]) {
+      cases.push([name, ["--input-type=module", "--eval", singleLoaderProbe, dependency],
+        { ...nodeOptions, NODE_OPTIONS: `${nodeOptions.NODE_OPTIONS} --loader=${quote(url)}` }]);
+    }
   }
   const outcomes = {};
   try {

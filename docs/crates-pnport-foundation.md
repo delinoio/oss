@@ -52,7 +52,9 @@ graph input. Yarn supplies `pnpapi`, `process.versions.pnp`, and
 npm package named `pnpapi` or a partial API implementation.
 
 Preserve existing Node options and avoid adding a selected loader more than
-once. Restore the selected loaders on supported descendant exec/spawn paths,
+once, including equivalent normalized local file URLs. Query and fragment
+suffixes retain their distinct ESM module identities. Restore the selected
+loaders on supported descendant exec/spawn paths,
 including replacement environments that remove `NODE_OPTIONS`. Selection uses
 the admitted graph, not a caller-replaced environment variable or descendant
 cwd. Non-Node programs ignore these Node options. The supervisor, `doctor`, and

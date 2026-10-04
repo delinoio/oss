@@ -9204,6 +9204,7 @@ dependencies = [
  "shell-words",
  "tempfile",
  "tracing",
+ "url",
  "zip 2.4.2",
 ]
 

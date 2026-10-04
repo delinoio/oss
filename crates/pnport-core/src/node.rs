@@ -149,26 +149,28 @@ fn contains_loader(tokens: &[Vec<u8>], flag: &str, path: &[u8]) -> bool {
 }
 
 fn file_url_path(value: &[u8]) -> Option<Vec<u8>> {
-    let mut source = value.strip_prefix(b"file://")?;
-    if source.starts_with(b"localhost/") {
-        source = &source[b"localhost".len()..];
-    } else if !source.starts_with(b"/") {
+    let url = url::Url::parse(std::str::from_utf8(value).ok()?).ok()?;
+    if url.scheme() != "file"
+        || url.host_str().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
         return None;
     }
-    let mut result = Vec::new();
-    let mut i = 0;
-    while i < source.len() {
-        if source[i] == b'%' {
-            let high = (*source.get(i + 1)? as char).to_digit(16)?;
-            let low = (*source.get(i + 2)? as char).to_digit(16)?;
-            result.push((high * 16 + low) as u8);
-            i += 3;
-        } else {
-            result.push(source[i]);
-            i += 1;
-        }
+    // Node normalizes file URLs before loading ESM, but rejects encoded path
+    // separators. Queries/fragments identify separate modules and must remain
+    // separate from the selected, untagged loader.
+    if url
+        .path()
+        .as_bytes()
+        .windows(3)
+        .any(|part| part.eq_ignore_ascii_case(b"%2f") || part.eq_ignore_ascii_case(b"%5c"))
+    {
+        return None;
     }
-    Some(result)
+    let path = url.to_file_path().ok()?;
+    let bytes = path.as_os_str().as_encoded_bytes();
+    (!bytes.contains(&0)).then(|| bytes.to_vec())
 }
 
 #[cfg(test)]
@@ -203,7 +205,13 @@ mod tests {
             .unwrap()
             .starts_with(original.to_str().unwrap()));
         assert_eq!(loader.options(Some(&options)).unwrap(), options);
+        #[cfg(unix)]
         let alternate = OsStr::new("-r \"/project with spaces/.pnp.cjs\" --loader=file:///project%20with%20spaces/.pnp.loader.mjs");
+        #[cfg(windows)]
+        let alternate = OsStr::new(
+            "-r \"/project with spaces/.pnp.cjs\" --loader=\"/project with \
+             spaces/.pnp.loader.mjs\"",
+        );
         assert_eq!(loader.options(Some(alternate)).unwrap(), alternate);
     }
 
@@ -236,11 +244,48 @@ mod tests {
             "--experimental-loader \"file:///space%20%23%3F%25%E9%9B%AA/.pnp.loader.mjs\""
         ));
         assert_eq!(loader.options(Some(&options)).unwrap(), options);
+        #[cfg(unix)]
         assert_eq!(
             file_url_path(b"file://localhost/project%20with%20spaces/.pnp.loader.mjs"),
             Some(b"/project with spaces/.pnp.loader.mjs".to_vec())
         );
         assert!(file_url_path(b"file://remote/project/.pnp.loader.mjs").is_none());
         assert!(file_url_path(b"file://localhost-other/project/.pnp.loader.mjs").is_none());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn deduplicates_normalized_file_urls_without_merging_distinct_modules() {
+        let loader = loader(true);
+        for url in [
+            "FILE:///project%20with%20spaces/.pnp.loader.mjs",
+            "file://LOCALHOST/project%20with%20spaces/.pnp.loader.mjs",
+            "file:/project%20with%20spaces/child/../.pnp.loader.mjs",
+        ] {
+            let options = format!("--require \"/project with spaces/.pnp.cjs\" --loader={url}");
+            assert_eq!(
+                loader.options(Some(OsStr::new(&options))).unwrap(),
+                OsStr::new(&options)
+            );
+        }
+        for url in [
+            "file:///project%20with%20spaces/.pnp.loader.mjs?tag",
+            "file:///project%20with%20spaces/.pnp.loader.mjs#tag",
+            "file:///project%20with%20spaces%2f.pnp.loader.mjs",
+            "file:///project%20with%20spaces%5C.pnp.loader.mjs",
+            "file:///project%20with%20spaces/.pnp.loader.mjs%00",
+            "https://localhost/project%20with%20spaces/.pnp.loader.mjs",
+        ] {
+            assert!(file_url_path(url.as_bytes()).is_none(), "{url}");
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn normalizes_windows_local_file_urls() {
+        assert_eq!(
+            file_url_path(b"FILE://LOCALHOST/C:/project%20with%20spaces/.pnp.loader.mjs"),
+            Some(br"C:\project with spaces\.pnp.loader.mjs".to_vec())
+        );
     }
 }
