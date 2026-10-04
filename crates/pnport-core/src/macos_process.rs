@@ -329,7 +329,12 @@ mod tests {
         );
         assert!(libc::WIFSTOPPED(status));
         identity.signal(libc::SIGTERM).unwrap();
-        identity.signal(libc::SIGCONT).unwrap();
+        // An unhandled termination can exit a stopped process before CONT.
+        // ESRCH proves that the captured image is already gone, not a failure
+        // to resume it. Still require the native wait result to prove TERM.
+        if let Err(error) = identity.signal(libc::SIGCONT) {
+            assert_eq!(error.raw_os_error(), Some(libc::ESRCH));
+        }
         assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGTERM));
         assert!(identity.refresh().unwrap().is_none());
         assert_eq!(
