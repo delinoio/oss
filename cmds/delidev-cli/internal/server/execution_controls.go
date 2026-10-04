@@ -124,7 +124,7 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			}
 			if job.Type == domain.CompactSessionJob {
 				var input domain.SessionCompactionInput
-				if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.AccountID != account {
+				if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.AccountID != account {
 					return domain.CompactionUncertain()
 				}
 				sr, session, err := sessionRecord(tx, r.SessionID)

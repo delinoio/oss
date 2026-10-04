@@ -463,7 +463,7 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 			}
 		case domain.CompactSessionJob:
 			var input domain.SessionCompactionInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.Configuration.Harness != domain.Codex || input.Assignment.Configuration.Subscription || input.ActionID != value.ExecutionID {
+			if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.Configuration.Harness != domain.Codex || input.Assignment.Configuration.Subscription || input.ActionID != value.ExecutionID {
 				return nil, executionDenied()
 			}
 		case domain.GenerateSessionTitleJob:

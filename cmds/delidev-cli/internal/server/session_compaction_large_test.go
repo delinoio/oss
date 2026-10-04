@@ -5,30 +5,35 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"filippo.io/age"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
-	"net/http"
 )
 
 func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *testing.T) {
 	for _, profile := range []struct {
-		harness domain.Harness
-		managed bool
-	}{{domain.Codex, false}, {domain.OpenCode, false}, {domain.Codex, true}} {
+		harness    domain.Harness
+		managed    bool
+		disconnect bool
+	}{{domain.Codex, false, false}, {domain.OpenCode, false, false}, {domain.Codex, true, false}, {domain.Codex, false, true}} {
 		harness, managed := profile.harness, profile.managed
 		name := string(harness)
 		if managed {
 			name += "-subscription"
+		}
+		if profile.disconnect {
+			name += "-disconnect"
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -100,10 +105,15 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 			claimed := claimQueuedCompaction(t, f, r.Msg.Job)
 			// Exercise every fresh authority reader at the admitted large bound.
 			// Codex also uses a synchronized non-Direct route, without upstream I/O.
+			routeID := domain.NewID()
 			if harness == domain.Codex && !managed {
+				identity, err := age.GenerateX25519Identity()
+				if err != nil {
+					t.Fatal(err)
+				}
+				keyID := domain.NewID()
 				_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.large-compaction-route", nil, func(tx *store.Tx) (any, error) {
-					routeID := domain.NewID()
-					_, err := tx.Put(domain.NetworkRouteKind, routeID, 0, "", "", domain.NetworkRoute{MachineID: f.selection.MachineID, Profile: domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Fixture", Mode: domain.ProxyHTTP, Host: "127.0.0.1", Port: 3128}}})
+					_, err := tx.Put(domain.NetworkRouteKind, routeID, 0, "", "", domain.NetworkRoute{MachineID: f.selection.MachineID, Profile: domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Fixture", Mode: domain.ProxyHTTP, Host: "127.0.0.1", Port: 3128}}, Binding: &domain.WorkerNetworkBinding{DeviceID: f.workerDevice, PairingID: domain.NewID(), KeyID: keyID, Recipient: identity.Recipient().String(), Endpoint: f.endpoint.URL}})
 					if err != nil {
 						return nil, err
 					}
@@ -111,7 +121,8 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 					if err != nil {
 						return nil, err
 					}
-					machine.Network = &domain.WorkerNetworkState{InstanceID: domain.ID(f.workerInstance), RouteID: routeID, EffectiveGeneration: 1, NativeState: domain.WorkerRouteNotApplied, ObservedAt: time.Now().UTC()}
+					machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.CodexAPIProxyV1)
+					machine.Network = &domain.WorkerNetworkState{KeyID: keyID, Recipient: identity.Recipient().String(), InstanceID: domain.ID(f.workerInstance), RouteID: routeID, EffectiveGeneration: 1, NativeState: domain.WorkerRouteNotApplied, ObservedAt: time.Now().UTC()}
 					return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
 				})
 				if err != nil {
@@ -138,6 +149,20 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 			if err != nil {
 				t.Fatal("large action registration", err)
 			}
+			if harness == domain.Codex {
+				request := &pb.ReportWorkerNativeRouteRequest{Mutation: acctMutation(claimed, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, ExecutionId: string(input.ActionID), RouteId: string(routeID), Generation: 1, State: pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_UNVERIFIED}
+				if _, err := f.workerClient.ReportWorkerNativeRoute(ctx, ownerRequest(f.workerIdentity, request)); err != nil {
+					t.Fatal("large action native route launch pin", err)
+				}
+				replay, err := f.workerClient.ReportWorkerNativeRoute(ctx, ownerRequest(f.workerIdentity, request))
+				if err != nil || !replay.Msg.Replayed {
+					t.Fatal("large action native route receipt", err)
+				}
+				request.Mutation.RequestId, request.State = string(domain.NewID()), pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_OBSERVED
+				if _, err := f.workerClient.ReportWorkerNativeRoute(ctx, ownerRequest(f.workerIdentity, request)); err != nil {
+					t.Fatal("large action native route observation", err)
+				}
+			}
 			lease, err := f.service.executionAuthority.Acquire(ctx, token)
 			if err != nil {
 				t.Fatal("large action authority", err)
@@ -158,6 +183,24 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 				}
 			}
 			lease.Release()
+			if profile.disconnect {
+				account, err := f.service.Store.Get(ctx, domain.AccountKind, input.Assignment.AccountID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.accounts.DisconnectAccount(ctx, ownerRequest(f.identity, &pb.DisconnectAccountRequest{Mutation: acctMutation(resourceForTest(account), domain.NewID())})); err != nil {
+					t.Fatal("large action disconnect", err)
+				}
+				if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+					canceled, err := tx.JobCancellationRequested(domain.ID(claimed.Id))
+					if err != nil || !canceled {
+						t.Fatal("large native action was not canceled", err)
+					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			output := publicCompactionResult(input, domain.ID(claimed.Id), false)
 			if harness == domain.Codex {
 				output = domain.SessionCompactionResult{Version: 2, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: output.Checkpoint, Codex: &domain.CodexCompactionResult{NativeThreadID: input.Completion.NativeThreadID, SourceNativeTurnID: input.Completion.NativeTurnID, NativeTurnID: domain.NativeIdentity(domain.NewID()), LiveItemID: "original-live-context", HistoryItemID: "item-0", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, ResponseUsages: []domain.NativeResponseUsage{}}}
@@ -174,7 +217,11 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 			if err != nil {
 				t.Fatal("large action settlement was stranded", err)
 			}
-			assertContext(domain.JobSucceeded)
+			if profile.disconnect {
+				assertContext(domain.JobUncertain)
+			} else {
+				assertContext(domain.JobSucceeded)
+			}
 		})
 	}
 }
