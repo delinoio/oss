@@ -147,6 +147,9 @@ that historical map. Generated service/query facades retain both services.
 The allocation ledger reserves the complete remaining-feature dependency closure
 before independent implementation PRs. It retains every existing main assignment
 and original owner; reservations grant no capability or native authority.
+The closed WorkspaceStorageAction enum retains original PR #1121 ownership
+alongside its existing System capability 11. Its eight values remain reserved
+until the complete workspace snapshot/restore/cleanup implementation.
 Accounting kinds/summary fields and metadata-only diagnostics precede independent
 subscription-service attribution. Quota/reset-credit observations, encrypted Worker
 bootstrap and native routes, Codex child settings, OpenCode foreground children,
