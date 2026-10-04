@@ -260,6 +260,7 @@ impl Fixture {
             "macos_owner_recovery",
             "spawn",
             "initialization_started",
+            "root_injection_deadline",
             "macos_job_stopped",
             "macos_job_resumed",
             "macos_job_detached",
@@ -1216,7 +1217,7 @@ fn detached_native_trees_survive_owner_loss_only_until_cleanup() {
                         fs::read(fixture.root.path().join(format!("{role}.signal"))).unwrap();
                     assert!(
                         delivered == [libc::SIGTERM as u8] || delivered == [libc::SIGHUP as u8],
-                        "{mode}, {failure:?}: unexpected {role} termination signal"
+                        "{mode}, {failure:?}: unexpected {role} termination signal: {delivered:?}"
                     );
                 }
             }

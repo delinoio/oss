@@ -531,8 +531,21 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             }
             if start.elapsed() > Duration::from_secs(5)
                 && !initialization_started
+                // Entry can be published after this loop's earlier observation.
+                // Recheck at rejection, as for pending descendant images, so a
+                // legitimate constructor/cache wait keeps its existing lease.
+                && !starting.is_file()
                 && !ready.is_file()
             {
+                if let Some(error) = runtime_failure(&view.session)? {
+                    return Err(error);
+                }
+                tracing::debug!(
+                    action = "root_injection_deadline",
+                    constructor_entered = false,
+                    acknowledged = false,
+                    "Root native initialization did not enter before its active deadline"
+                );
                 return Err(Error::new(
                     Code::PnportInjectionFailed,
                     "The executable did not acknowledge native injection; execution was stopped.",

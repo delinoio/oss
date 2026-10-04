@@ -151,6 +151,12 @@ int main(int argc, char **argv) {
     if (signal_file < 0) return 45;
     struct sigaction action = {0};
     sigemptyset(&action.sa_mask);
+    // Forced parent loss can queue native SIGHUP alongside pnport's SIGTERM.
+    // Keep the first handler's write/exit indivisible with respect to the other
+    // fixture handlers, so one termination cannot publish two signal bytes.
+    sigaddset(&action.sa_mask, SIGINT);
+    sigaddset(&action.sa_mask, SIGTERM);
+    sigaddset(&action.sa_mask, SIGHUP);
     action.sa_handler = strstr(mode, "ignore") ? SIG_IGN : stopped;
     for (int index = 0; index < 3; index++) {
         int signals[] = {SIGINT, SIGTERM, SIGHUP};
