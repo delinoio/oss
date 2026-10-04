@@ -63,6 +63,11 @@ pub async fn desktop_update_context(
     .replace("macos-", "darwin-");
     Ok(serde_json::json!({"current_version":env!("CARGO_PKG_VERSION"),"target":target}))
 }
+// Tauri injects the independent native owners alongside the fixed renderer
+// schema. Limit this exception to the IPC boundary; internal operations use
+// cohesive requests. Remove it if native injection can be grouped without
+// changing the existing command schema or weakening owner/lifetime checks.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn desktop_update_native(
     window: WebviewWindow<Cef>,
