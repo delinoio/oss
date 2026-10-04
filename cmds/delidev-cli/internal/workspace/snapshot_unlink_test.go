@@ -3,8 +3,10 @@ package workspace
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -13,7 +15,11 @@ import (
 
 func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 	for _, action := range []StorageAction{StorageCleanup, StorageDelete} {
-		for _, mutation := range []string{"add-root", "add-child", "replace", "modify", "replace-after-claim", "last-root"} {
+		mutations := []string{"add-root", "add-child", "replace", "modify", "replace-after-claim", "last-root"}
+		if runtime.GOOS == "windows" {
+			mutations = append(mutations, "blocked-descendant")
+		}
+		for _, mutation := range mutations {
 			t.Run(string(action)+"/"+mutation, func(t *testing.T) {
 				m, prepare, manifest := chatExecutionFixture(t)
 				captureStorageFailureLogs(t, m)
@@ -72,6 +78,11 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 						openedComponents++
 					}
 				}
+				if mutation == "blocked-descendant" {
+					for index := range components {
+						openWriterParent(strings.Join(components[:index+1], "/"))
+					}
+				}
 				raced := false
 				m.storageBeforeRemovalUnlink = func(relative string) {
 					openWriterParent(relative)
@@ -107,12 +118,50 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 					}
 				}
 				result, err := m.Storage(context.Background(), input)
+				if mutation == "blocked-descendant" {
+					if err == nil || raced || result.CleanupVerified || result.RemovedSourceBytes != 0 {
+						t.Fatal("blocked namespace move was reported as removal")
+					}
+					if raw, readErr := os.ReadFile(filepath.Join(source, filepath.FromSlash(changed))); readErr != nil || string(raw) != "original" {
+						t.Fatal("blocked rename changed source bytes", readErr)
+					}
+					if _, statErr := os.Stat(filepath.Join(m.Root, "workspace-removals", string(input.OperationID))); !os.IsNotExist(statErr) {
+						t.Fatal("blocked rename published a removal namespace", statErr)
+					}
+					if _, _, inspectErr := m.inspectSnapshot(context.Background(), input.SnapshotID); inspectErr != nil {
+						t.Fatal("blocked rename changed the recoverable snapshot", inspectErr)
+					}
+					return
+				}
 				if !raced || domain.SafeError(err).Code != domain.RecoveryRequired || result.CleanupVerified || result.RemovedSourceBytes != 0 {
 					t.Fatal("uncaptured mutation completed removal", result, err)
 				}
 				removal := filepath.Join(m.Root, "workspace-removals", string(input.OperationID))
-				if raw, err := os.ReadFile(filepath.Join(removal, filepath.FromSlash(changed))); err != nil || string(raw) != "uncaptured writer bytes" {
+				reader := heldParent
+				if mutation == "add-root" || mutation == "last-root" {
+					reader = held
+				}
+				if raw, err := reader.ReadFile(filepath.Base(changed)); err != nil || string(raw) != "uncaptured writer bytes" {
 					t.Fatal("uncaptured bytes were removed", err)
+				}
+				// A retained Windows descendant may block restoration of an ancestor
+				// name. Recovery must retain its private journaled name instead. Prove
+				// bytes remain reachable on disk as well as through the original writer.
+				found := false
+				if err := filepath.WalkDir(removal, func(name string, entry fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if entry.Type().IsRegular() {
+						raw, err := os.ReadFile(name)
+						if err != nil {
+							return err
+						}
+						found = found || string(raw) == "uncaptured writer bytes"
+					}
+					return nil
+				}); err != nil || !found {
+					t.Fatal("uncaptured bytes lost durable removal ownership", err)
 				}
 				if _, err := m.Storage(context.Background(), recoveryRequest(input)); domain.SafeError(err).Code != domain.RecoveryRequired {
 					t.Fatal("recovery adopted uncaptured bytes", err)
