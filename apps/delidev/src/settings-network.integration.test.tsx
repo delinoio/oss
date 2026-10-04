@@ -22,9 +22,15 @@ it("selects one real exact route after response loss and exports a pending recip
   const helper = join(directory, "public-recipient.go");
   await writeFile(helper, 'package main\nimport("fmt";"filippo.io/age")\nfunc main(){key,err:=age.GenerateX25519Identity();if err!=nil{panic("fixture recipient")};fmt.Println(key.Recipient().String())}\n', { mode: 0o600 });
   const { stdout } = await promisify(execFile)("go", ["run", helper], { cwd: resolve(process.cwd(), "../.."), timeout: 60000 });
-  let lost = false;
+  let lost = false, profileSaved = false;
+  let releaseRouteRead!: () => void;
+  const routeRead = new Promise<void>(resolve => { releaseRouteRead = resolve; });
   const scoped: Transport = { ...transport, async unary(method, signal, timeout, headers, input, context) {
     const response = await transport.unary(method, signal, timeout, headers, input, context);
+    if (method.parent.typeName === NetworkService.typeName) {
+      if (method.name === "SaveNetworkProfile") profileSaved = true;
+      if (method.name === "GetNetworkRoute" && profileSaved) await routeRead;
+    }
     if (!lost && method.parent.typeName === NetworkService.typeName && method.name === "SelectNetworkProfile") { lost = true; throw new ConnectError("Fixture lost accepted response", Code.Unavailable); }
     return response;
   } };
@@ -37,8 +43,15 @@ it("selects one real exact route after response loss and exports a pending recip
   fireEvent.change(screen.getByLabelText("Profile name"), { target: { value: "Integration Direct" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   const option = await screen.findByRole("option", { name: "Integration Direct · Revision 1" });
+  const selectButton = screen.getByRole("button", { name: "Select this revision" }) as HTMLButtonElement;
+  // New profile rows can arrive before the independent route refetch. Wait for
+  // its authoritative read instead of clicking an ancestor-disabled control.
+  // The held real RPC makes this ordering deterministic without a sleep.
+  expect(selectButton.closest("fieldset")?.disabled).toBe(true);
+  releaseRouteRead();
+  await waitFor(() => expect(selectButton.closest("fieldset")?.disabled).toBe(false));
   fireEvent.change(screen.getByLabelText("Profile to select"), { target: { value: (option as HTMLOptionElement).value } });
-  fireEvent.click(screen.getByRole("button", { name: "Select this revision" }));
+  fireEvent.click(selectButton);
   fireEvent.click(await screen.findByRole("button", { name: "Retry original route selection" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original route selection" })).toBeNull());
   const network = createClient(NetworkService, transport);
