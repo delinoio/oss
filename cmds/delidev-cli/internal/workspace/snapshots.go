@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -377,9 +378,11 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 				return result, err
 			}
 			if err := renameStorage(root, removal); err != nil {
+				m.logStorageClaimFailure(ctx, r, "source-rename", err)
 				return result, err
 			}
 			if err := m.confirmRemoval(ctx, r, removal, false); err != nil {
+				m.logStorageClaimFailure(ctx, r, "claim-verification", err)
 				// No unlink occurred. Preserve raced user bytes at their original
 				// name when possible; a foreign replacement keeps the claim private.
 				if restoreErr := renameStorage(removal, root); restoreErr != nil {
@@ -483,9 +486,11 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 				return result, err
 			}
 			if err := renameStorage(m.snapshotPath(r.SnapshotID), removal); err != nil {
+				m.logStorageClaimFailure(ctx, r, "snapshot-rename", err)
 				return result, err
 			}
 			if err := m.confirmRemoval(ctx, r, removal, false); err != nil {
+				m.logStorageClaimFailure(ctx, r, "claim-verification", err)
 				return result, ResultUncertain()
 			}
 			if err := m.removeClaimedSnapshotTree(ctx, r, removal, false); err != nil {
@@ -543,4 +548,12 @@ func renameStorage(from, to string) error {
 		return ResultUncertain()
 	}
 	return nil
+}
+
+// Native errno is bounded troubleshooting metadata. Error strings can include
+// private paths, so only the stable product code and numeric OS code are logged.
+func (m *Manager) logStorageClaimFailure(ctx context.Context, r StorageRequest, stage string, err error) {
+	var native syscall.Errno
+	errors.As(err, &native)
+	m.Logger.WarnContext(ctx, "workspace_storage_claim_failed", "operation_id", r.OperationID, "action", r.Action, "stage", stage, "code", domain.SafeError(err).Code, "native_errno", uint64(native))
 }
