@@ -11,7 +11,7 @@ brew install delinoio/tap/runmoor
 runmoor version
 ```
 
-Homebrew installs the prebuilt release and checks its pinned SHA-256. Tart and runner images are installed separately. Installation does not configure runners or register or start a service. Intel Macs and Linux Homebrew are not supported.
+Homebrew installs the prebuilt release and checks its pinned SHA-256. Tart and runner images are installed separately for Tart execution. The unreleased [host backend](./host) requires no Docker, Tart or Guest Agent; operators install their own Xcode, SDKs and language tools. Installation does not configure runners or register or start a service. Intel Macs and Linux Homebrew are not supported.
 
 To update an installation:
 

@@ -414,7 +414,11 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 		})
 		return
 	}
-	buildCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	preparationTimeout := 30 * time.Minute
+	if desired.Backend == Host {
+		preparationTimeout = s.Requested.Preparation(Host)
+	}
+	buildCtx, cancel := context.WithTimeout(ctx, preparationTimeout)
 	resolved, err := m.RunnerBuilder.Prepare(buildCtx, s.Requested, desired, artifact, selected)
 	if err == nil {
 		err = m.validateManagedImage(buildCtx, s.Requested, resolved, m.Store.View())

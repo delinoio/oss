@@ -22,6 +22,7 @@ const runmoorPages = [
   { text: "Commands and Routing", link: "/runmoor/commands" },
   { text: "Docker", link: "/runmoor/docker" },
   { text: "Tart Images", link: "/runmoor/tart" },
+  { text: "macOS Host Runners", link: "/runmoor/host" },
   { text: "Operations and Recovery", link: "/runmoor/operations" },
 ];
 

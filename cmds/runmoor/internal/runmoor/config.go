@@ -2,6 +2,7 @@ package runmoor
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -57,6 +58,7 @@ type Budget struct {
 	MinFreeDiskMiB int64 `toml:"min_free_disk_mib" json:"min_free_disk_mib"`
 }
 type Timeouts struct {
+	HostPreparation   string `toml:"host_preparation" json:"host_preparation"`
 	DockerPreparation string `toml:"docker_preparation" json:"docker_preparation"`
 	TartPreparation   string `toml:"tart_preparation" json:"tart_preparation"`
 	Job               string `toml:"job" json:"job"`
@@ -133,6 +135,21 @@ func LoadConfig(path string) (Config, error) {
 	return resolveDefaults(c, capacity)
 }
 func NormalizeConfig(c Config) (Config, error) {
+	c, err := normalizeConfig(c, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return c, err
+	}
+	for _, p := range c.Pools {
+		if p.Backend == Host {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return c, hostPlatform(ctx)
+		}
+	}
+	return c, nil
+}
+
+func normalizeConfig(c Config, hostOS, hostArch string) (Config, error) {
 	fail := func(s string) (Config, error) {
 		return c, problem(ErrConfig, s, "Edit the configuration and run 'runmoor config validate'.")
 	}
@@ -161,10 +178,13 @@ func NormalizeConfig(c Config) (Config, error) {
 	if c.Timeouts.TartPreparation == "" {
 		c.Timeouts.TartPreparation = "10m"
 	}
+	if c.Timeouts.HostPreparation == "" {
+		c.Timeouts.HostPreparation = "5m"
+	}
 	if c.Timeouts.Job == "" {
 		c.Timeouts.Job = "6h"
 	}
-	for _, s := range []string{c.Timeouts.DockerPreparation, c.Timeouts.TartPreparation, c.Timeouts.Job} {
+	for _, s := range []string{c.Timeouts.DockerPreparation, c.Timeouts.TartPreparation, c.Timeouts.HostPreparation, c.Timeouts.Job} {
 		d, e := time.ParseDuration(s)
 		if e != nil || d <= 0 || d > 7*24*time.Hour {
 			return fail("Timeouts must be positive durations no longer than seven days.")
@@ -248,7 +268,7 @@ func NormalizeConfig(c Config) (Config, error) {
 		if p.Arch != "amd64" && p.Arch != "arm64" {
 			return fail("Pool arch must be amd64 or arm64.")
 		}
-		if p.Arch != runtime.GOARCH {
+		if p.Arch != hostArch {
 			return fail("CPU emulation is unsupported; pool architecture must match the host.")
 		}
 		if p.Mode == "" {
@@ -257,19 +277,25 @@ func NormalizeConfig(c Config) (Config, error) {
 		if p.Mode != Plain && p.Mode != DinD {
 			return fail("Execution mode must be plain or dind.")
 		}
-		if p.Backend != Docker && p.Backend != Tart {
-			return fail("Backend must be docker or tart.")
+		if p.Backend != Docker && p.Backend != Tart && p.Backend != Host {
+			return fail("Backend must be docker, tart or host.")
 		}
-		if p.Backend == Tart && (runtime.GOOS != "darwin" || p.Arch != "arm64" || p.Mode != Plain) {
+		if p.Backend == Tart && (hostOS != "darwin" || p.Arch != "arm64" || p.Mode != Plain) {
 			return fail("Tart requires macOS arm64 and plain execution mode.")
 		}
-		if p.RunnerPath == "" {
+		if p.Backend == Host && (hostOS != "darwin" || p.Arch != "arm64") {
+			return c, problem(ErrPlatform, "Host execution requires macOS 14+ Apple Silicon.", "Select Docker on Ubuntu or use a supported Mac.")
+		}
+		if p.Backend == Host && (p.Mode != Plain || p.Image != "" || p.ImageSource != nil || p.RunnerPath != "") {
+			return fail("Host pools require plain mode and Runmoor-owned paths; image, image_source and runner_path are incompatible.")
+		}
+		if p.Backend != Host && p.RunnerPath == "" {
 			p.RunnerPath = "/home/runner"
 			if p.Backend == Tart {
 				p.RunnerPath = "/Users/runner/actions-runner"
 			}
 		}
-		if !validRunnerPath(p.RunnerPath) {
+		if p.Backend != Host && !validRunnerPath(p.RunnerPath) {
 			return fail("runner_path must be an absolute clean guest path.")
 		}
 		if p.RunnerVersion == "" {
@@ -352,6 +378,9 @@ func (c Config) Preparation(b Backend) time.Duration {
 	s := c.Timeouts.DockerPreparation
 	if b == Tart {
 		s = c.Timeouts.TartPreparation
+	}
+	if b == Host {
+		s = c.Timeouts.HostPreparation
 	}
 	d, _ := time.ParseDuration(s)
 	return d

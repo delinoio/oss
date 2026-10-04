@@ -74,7 +74,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = db.Exec("PRAGMA user_version=4"); e != nil {
+	if _, e = db.Exec("PRAGMA user_version=5"); e != nil {
 		t.Fatal(e)
 	}
 	db.Close()
@@ -84,7 +84,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	defer db.Close()
 	var version int
 	db.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 4 {
+	if version != 5 {
 		t.Fatal("future database modified")
 	}
 }
@@ -409,11 +409,11 @@ func TestStateMigratesV1AtomicallyAndReadOnlyInspectionDoesNotMigrate(t *testing
 	}
 	defer migrated.Close()
 	after := migrated.View()
-	if after.SchemaVersion != 3 || after.Installation != snapshot.Installation || fingerprint(after.Runners[id]) != fingerprint(snapshot.Runners[id]) || fingerprint(after.Requested) != fingerprint(snapshot.Config) {
+	if after.SchemaVersion != 4 || after.Installation != snapshot.Installation || fingerprint(after.Runners[id]) != fingerprint(snapshot.Runners[id]) || fingerprint(after.Requested) != fingerprint(snapshot.Config) {
 		t.Fatal("migration lost original state")
 	}
 	var version int
-	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 4 {
 		t.Fatal("snapshot and database schema differ")
 	}
 }
@@ -445,11 +445,11 @@ func TestStateMigratesV2ToV3WithPrivateTartProcessIdentityState(t *testing.T) {
 	}
 	defer migrated.Close()
 	after := migrated.View()
-	if after.SchemaVersion != 3 || after.ImageTartPIDs[id] != 4242 || after.ImageTartStarts[id] != "" {
+	if after.SchemaVersion != 4 || after.ImageTartPIDs[id] != 4242 || after.ImageTartStarts[id] != "" {
 		t.Fatal("v2 migration did not preserve the legacy PID conservatively", after.SchemaVersion, after.ImageTartPIDs, after.ImageTartStarts)
 	}
 	var version int
-	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 4 {
 		t.Fatal("snapshot and database schema differ after v2 migration")
 	}
 }

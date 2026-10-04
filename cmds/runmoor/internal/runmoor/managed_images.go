@@ -38,6 +38,9 @@ func (b *ManagedImageBuilder) Prepare(ctx context.Context, c Config, p Pool, a R
 	if err := diskCheck(c); err != nil {
 		return p, err
 	}
+	if p.Backend == Host {
+		return b.prepareHost(ctx, c, p, a, r)
+	}
 	if !managedPathValid(p.RunnerPath) {
 		return p, problem(ErrConfig, "Automatic installation requires a dedicated clean runner directory.", "Use the default runner_path or another dedicated absolute directory.")
 	}
@@ -397,6 +400,9 @@ func (b *ManagedImageBuilder) installTartArchive(ctx context.Context, c Config, 
 }
 func (b *ManagedImageBuilder) Cleanup(ctx context.Context, c Config, a RunnerArtifact) error {
 	b.log("runner_artifact_cleanup", a)
+	if a.Backend == Host {
+		return b.cleanupHost(ctx, c, a)
+	}
 	if a.Backend == Docker {
 		cli, err := dockerClient(ctx, c)
 		if err != nil {
