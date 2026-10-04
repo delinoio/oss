@@ -12,6 +12,11 @@ skipped checks. Require `pnportReleaseReady: true` and exact
 and keep #958 and the complete Windows 0.2.0 requirements open. This amendment
 takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
 
+Stable 0.1.0 is published for all four macOS/glibc Linux targets. The retained
+final native candidate gates passed; publication does not complete the deferred
+acceptance or resolve the recorded failures. Keep the immutable preview and
+Windows 0.2.0 requirements separate from stable availability.
+
 Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete. The owner-approved 2026-10-03 amendment raises the macOS support floor to 15; both native CI architectures must execute on that supported floor.
 
 ## Summary

@@ -9,18 +9,6 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { targets } = require("../src/platforms.cjs");
 
-// First-time npm staging creates public 0.0.0-stage placeholders. The registry
-// currently rejects removing their latest tags with HTTP 400, even with another
-// tag present. Preserve only these inspected immutable bootstrap bytes; remove
-// this exception once every package's latest points to an accepted stable release.
-const bootstrapIntegrities = Object.freeze({
-  "@delino/pnport-darwin-x64": "sha512-lkIEGnFuMa8WQ7C5BJRIKQKiaqXB5W0byU+4ZO3l4MbT9zR/kainVJpsr64lfs4VlHmBEJ7kLKGlhwA9SMCsLA==",
-  "@delino/pnport-darwin-arm64": "sha512-TEqq7E3U7k+ItNK+bvdogzdU6v3Fhon9amP+Y3aZ7uMrWcVmc2pQi7k5hvKNybzYJrBsdbNeqPbVCHPJ97Gkdw==",
-  "@delino/pnport-linux-x64-gnu": "sha512-l2az+wPUYylaaqjwu3ZODZl7YaO8WNE7gtyIE+qJwFpqxEwX7uxw4buPiufje6ictw/iwDkXGOEgjA7XkRiJNw==",
-  "@delino/pnport-linux-arm64-gnu": "sha512-GwHjQWInbgv4IubJyPFuw9p0OEMwrtvNkzhP6qqWh4FKvm8C5npMWI5NJ/JGJZbt/IYtuFgxChCoom4oAKnLZQ==",
-  "@delino/pnport": "sha512-2rsp47hGeDF0hUQ6N5HDSmzVVt4249qECxd9nDqOZHJ/WUDW3UyjmjgPWr4H1MZMRTz14fzLRClmgQ0opekvAw==",
-});
-
 export async function registryIntegrity(artifact, request = fetch) {
   const response = await request(`${registry}/${encodeURIComponent(artifact.name)}/${artifact.version}`, { redirect: "error", signal: AbortSignal.timeout(30000) });
   if (response.status === 404) return null;
@@ -52,14 +40,7 @@ export function validatePreviewTags(tags, version) {
 export async function registryPreviewTags(name, version, request = fetch) {
   const metadata = await registryMetadata(name, request);
   const tags = metadata?.["dist-tags"] ?? {};
-  if (tags.latest === "0.0.0-stage") {
-    // npm's compact version endpoint drops stub; the full packument retains it.
-    const placeholder = metadata.versions?.[tags.latest];
-    ensure(Object.hasOwn(bootstrapIntegrities, name) && placeholder?.name === name && placeholder.version === tags.latest && placeholder.stub === true && placeholder.description === "Temporary package placeholder for staged publishing" && placeholder.dist?.integrity === bootstrapIntegrities[name], "Unrecognized npm bootstrap placeholder");
-    // Validate next independently while returning the untouched latest tag for
-    // the same strict post-publication readback used by ordinary stable latest.
-    validatePreviewTags({ ...tags, latest: undefined }, version);
-  } else validatePreviewTags(tags, version);
+  validatePreviewTags(tags, version);
   return tags;
 }
 

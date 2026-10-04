@@ -45,7 +45,7 @@ and forbidden paths in HTML resources and CSS `url()` values.
 - `docs/projects-overview.md`: High-level public project catalog.
 - `docs/documentation-lifecycle.md`: Rules for updating internal and public docs together.
 - `docs/clibox/`: Twelve clibox user guides, including the complete command index.
-- `docs/pnport/`: Ten pnport guides, published before 0.1.0 with explicit unreleased status.
+- `docs/pnport/`: Eleven pnport guides for published 0.1.0, with known limits and separate immutable preview instructions.
 - `docs/react-forge/`: Fourteen guides for the public library, formats, Office editing, Figma, CLI, and local MCP.
 - `docs/cargo-mono.md`: Public project guide for `cargo-mono`.
 - `docs/derun.md`: Public project guide for `derun`.
