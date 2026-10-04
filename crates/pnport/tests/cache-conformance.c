@@ -147,6 +147,14 @@ int main(int argc, char **argv) {
         CHECK(fd >= 0); close(fd);
         while (access("go", F_OK)) usleep(1000);
         struct stat metadata;
+        // A later namespace conflict cannot erase an earlier lookup failure.
+        errno = 0; CHECK(stat("missing/../node_modules/dep/file.txt", &metadata) == -1 && errno == ENOENT);
+        fd = open("file-prefix", O_CREAT | O_WRONLY, 0600); CHECK(fd >= 0); close(fd);
+        errno = 0; CHECK(stat("file-prefix/../node_modules/dep/file.txt", &metadata) == -1 && errno == ENOTDIR);
+        CHECK(symlink("missing", "missing-parent-link") == 0);
+        errno = 0; CHECK(stat("missing-parent-link/../node_modules/dep/file.txt", &metadata) == -1 && errno == ENOENT);
+        CHECK(unlink("missing-parent-link") == 0 && unlink("file-prefix") == 0);
+        puts("cache-parent-errors-ok"); fflush(stdout);
         (void)stat(argc > 2 ? argv[2] : "node_modules/dep/file.txt", &metadata);
         return 2;
     }

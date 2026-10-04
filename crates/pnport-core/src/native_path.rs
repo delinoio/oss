@@ -56,12 +56,6 @@ impl ResolvedLookup {
         self,
         mut translate: impl FnMut(&Path) -> Result<Translation>,
     ) -> Result<Lookup> {
-        if self.conflict {
-            return Err(Error::new(
-                Code::PnportFilesystemConflict,
-                "A physical entry conflicts with the virtual dependency directory.",
-            ));
-        }
         for parent in self.parents {
             let (physical, errno) = match translate(&parent.directory) {
                 Ok(translation) => {
@@ -84,6 +78,14 @@ impl ResolvedLookup {
                 path: physical.join("..").join(parent.remaining),
                 errno,
             });
+        }
+        // The kernel cannot reach a later namespace when an earlier '..'
+        // traversal already failed. Preserve that native lookup error first.
+        if self.conflict {
+            return Err(Error::new(
+                Code::PnportFilesystemConflict,
+                "A physical entry conflicts with the virtual dependency directory.",
+            ));
         }
         if let Some(failure) = self.native_failure {
             return Ok(failure);

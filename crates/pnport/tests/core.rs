@@ -5837,6 +5837,7 @@ fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
                 String::from_utf8_lossy(&result.stderr)
             );
             assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_FILESYSTEM_CONFLICT"));
+            assert_eq!(result.stdout, b"cache-parent-errors-ok\n");
             match name {
                 "namespace-file" | "namespace-link" => {
                     if name == "namespace-file" {
