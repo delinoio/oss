@@ -255,7 +255,10 @@ mod tests {
     use crate::graph::Input;
 
     fn loader(esm: bool) -> Loader {
+        #[cfg(unix)]
         let path = PathBuf::from("/project with spaces/.pnp.cjs");
+        #[cfg(windows)]
+        let path = PathBuf::from(r"C:\project with spaces\.pnp.cjs");
         Loader::from_snapshot(&Snapshot {
             schema_version: 1,
             manifest_path: path.clone(),
@@ -285,8 +288,8 @@ mod tests {
         let alternate = OsStr::new("-r \"/project with spaces/.pnp.cjs\" --loader=file:///project%20with%20spaces/.pnp.loader.mjs");
         #[cfg(windows)]
         let alternate = OsStr::new(
-            "-r \"/project with spaces/.pnp.cjs\" --loader=\"/project with \
-             spaces/.pnp.loader.mjs\"",
+            "-r \"C:\\\\project with spaces\\\\.pnp.cjs\" \
+             --loader=file:///C:/project%20with%20spaces/.pnp.loader.mjs",
         );
         assert_eq!(loader.options(Some(alternate)).unwrap(), alternate);
     }
@@ -318,10 +321,12 @@ mod tests {
     #[test]
     fn activates_yarn_before_caller_preloads_and_moves_existing_selected_requires() {
         let loader = loader(false);
-        let original = "--no-warnings --require=\"/first preload.cjs\"  -r \"/project with \
-                        spaces/.pnp.cjs\" --require=/second.cjs -r=\"/project with \
-                        spaces/.pnp.cjs\"";
-        let options = loader.options(Some(OsStr::new(original))).unwrap();
+        let selected = loader.commonjs.to_str().unwrap().replace('\\', "\\\\");
+        let original = format!(
+            "--no-warnings --require=\"/first preload.cjs\"  -r \"{selected}\" \
+             --require=/second.cjs -r=\"{selected}\""
+        );
+        let options = loader.options(Some(OsStr::new(&original))).unwrap();
         let parsed = tokens(options.as_encoded_bytes()).unwrap();
         let requires: Vec<_> = parsed
             .iter()
@@ -331,7 +336,7 @@ mod tests {
         assert_eq!(
             requires,
             vec![
-                b"/project with spaces/.pnp.cjs".as_slice(),
+                loader.commonjs.as_os_str().as_encoded_bytes(),
                 b"/first preload.cjs",
                 b"/second.cjs"
             ]
@@ -344,6 +349,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn esm_paths_preserve_url_significant_and_unicode_characters() {
         let mut loader = loader(true);
         loader.esm = Some(PathBuf::from("/space #?%雪/.pnp.loader.mjs"));
