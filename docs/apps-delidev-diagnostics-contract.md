@@ -79,3 +79,5 @@ Update this presentation contract, the desktop/diagnostics links and scoped fron
 - [Issue #1144](https://github.com/delinoio/oss/issues/1144)
 
 The first-session prerequisite validator accepts all 29 current stored resource kinds, including `subagent` and `forward`, with an allowlist-derived maximum and exact uint64 count strings. Unknown kinds, duplicate kind rows and invalid counts still make that strict enclosing report unavailable; retained resources never grant execution readiness.
+
+Title requests commit their once-only HTTP send claim and diagnostic send revision in one Go-owned transaction. A failed diagnostic publication rolls back the claim. A committed claim still does not prove provider acceptance. Stream frames with a present malformed or null response ID invalidate the response identity and effective settings; absent ID fields do not change the retained identity.

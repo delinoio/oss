@@ -61,6 +61,9 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 		}
 		result.AccountingProfile = req.Msg.AccountingProfile
 		result.Totals = usageTotals(summary.Totals)
+		for _, value := range summary.NativeAccounting {
+			result.NativeAccounting = append(result.NativeAccounting, nativeSummary(value))
+		}
 		result.Estimates = estimateTotals(summary.Estimates)
 		for _, value := range summary.Estimates.Currencies {
 			if value.KnownAmount != "" {

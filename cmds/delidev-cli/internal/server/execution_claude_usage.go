@@ -42,5 +42,8 @@ func publishClaudeUsage(tx *store.Tx, input domain.ExecutionJobInput, session st
 		}
 	}
 	observation := domain.ClaudeUsageRecord{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *u}
-	return tx.PutClaudeUsage(event.ObservationID, session.ID, session.ProjectID, observation)
+	if err := tx.PutClaudeUsage(event.ObservationID, session.ID, session.ProjectID, observation); err != nil {
+		return err
+	}
+	return tx.PutClaudeAccounting(event.ObservationID, input.InputID, session.ID, session.ProjectID, observation)
 }

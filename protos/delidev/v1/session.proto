@@ -8,6 +8,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc ListRequestDiagnostics(ListRequestDiagnosticsRequest) returns (ListRequestDiagnosticsResponse);
   rpc ForkSession(ForkSessionRequest) returns (ForkSessionResponse);
   rpc GetSessionFork(GetSessionForkRequest) returns (GetSessionForkResponse);
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
@@ -242,6 +243,9 @@ message BudgetEvidence {
   uint64 complete_responses = 3;
   uint64 partial_responses = 4;
   uint64 unavailable_responses = 5;
+  uint64 complete_native_units = 6;
+  uint64 partial_native_units = 7;
+  uint64 unavailable_native_units = 8;
 }
 
 message SessionBudgetView {
@@ -253,6 +257,8 @@ message SessionBudgetView {
   uint64 unpriced_responses = 5;
   uint64 other_currency_responses = 6;
   UsageCoverage coverage = 7;
+  uint64 unpriced_native_units = 8;
+  uint64 other_currency_native_units = 9;
 }
 
 message GetSessionBudgetRequest {
@@ -412,4 +418,71 @@ message SwitchSessionAccountRequest {
 
 message SwitchSessionAccountResponse {
   SessionChange change = 1;
+}
+
+// Metadata-only observations. Native inputs and proxy HTTP attempts are separate.
+enum RequestDiagnosticSource {
+  REQUEST_DIAGNOSTIC_SOURCE_UNSPECIFIED = 0;
+  REQUEST_DIAGNOSTIC_SOURCE_NATIVE_INPUT = 1;
+  REQUEST_DIAGNOSTIC_SOURCE_PROXY_HTTP = 2;
+}
+enum RequestDiagnosticState {
+  REQUEST_DIAGNOSTIC_STATE_UNSPECIFIED = 0;
+  REQUEST_DIAGNOSTIC_STATE_IN_PROGRESS = 1;
+  REQUEST_DIAGNOSTIC_STATE_SUCCEEDED = 2;
+  REQUEST_DIAGNOSTIC_STATE_FAILED = 3;
+  REQUEST_DIAGNOSTIC_STATE_CANCELED = 4;
+}
+enum RequestDiagnosticOperation {
+  REQUEST_DIAGNOSTIC_OPERATION_UNSPECIFIED = 0;
+  REQUEST_DIAGNOSTIC_OPERATION_INPUT = 1;
+  REQUEST_DIAGNOSTIC_OPERATION_CHAT = 2;
+  REQUEST_DIAGNOSTIC_OPERATION_RESPONSE = 3;
+  REQUEST_DIAGNOSTIC_OPERATION_COMPACT = 4;
+  REQUEST_DIAGNOSTIC_OPERATION_MESSAGE = 5;
+  REQUEST_DIAGNOSTIC_OPERATION_COUNT = 6;
+}
+message RequestDiagnostic {
+  string id = 1;
+  uint64 revision = 2;
+  string session_id = 3;
+  string execution_id = 4;
+  string account_id = 5;
+  string connection_id = 6;
+  string provider_id = 7;
+  string model_id = 8;
+  RequestDiagnosticSource source = 9;
+  RequestDiagnosticOperation operation = 10;
+  RequestDiagnosticState state = 11;
+  string purpose = 12;
+  string harness = 13;
+  string input_id = 14;
+  string publication_request_id = 15;
+  string correlation_id = 16;
+  string native_request_id = 17;
+  string native_response_id = 18;
+  string native_thread_id = 19;
+  string native_turn_id = 20;
+  optional string requested_effort = 21;
+  optional string requested_service_tier = 22;
+  optional string effective_effort = 23;
+  optional string effective_service_tier = 24;
+  string observed_at = 25;
+  optional string finished_at = 26;
+  optional uint64 duration_ms = 27;
+  optional bool http_attempted = 28;
+  optional uint32 http_status = 29;
+  // Closed DeliDev error code; never original diagnostic text.
+  string error_code = 30;
+  string provider_request_id = 31;
+}
+message ListRequestDiagnosticsRequest {
+  string session_id = 1;
+  string execution_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListRequestDiagnosticsResponse {
+  repeated RequestDiagnostic records = 1;
+  string next_page_token = 2;
 }

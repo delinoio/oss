@@ -88,6 +88,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err := applyExecutionEvent(tx, jobRecord, input, actor.DeviceID, sr, &session, ir, &queued, event); err != nil {
 			return nil, err
 		}
+		if err := projectNativeDiagnostic(tx, input, event, domain.ID(meta.RequestId)); err != nil {
+			return nil, err
+		}
 		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 			return nil, err
 		}
@@ -503,6 +506,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			} else if event.Kind == domain.ExecutionOpenCodeUsageObserved {
 				observation := domain.OpenCodeUsageRecord{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.OpenCodeUsage}
 				if err := tx.PutOpenCodeUsage(event.ObservationID, sr.ID, sr.ProjectID, observation); err != nil {
+					return err
+				}
+				if err := tx.PutOpenCodeAccounting(event.ObservationID, input.InputID, sr.ID, sr.ProjectID, observation); err != nil {
 					return err
 				}
 				progress.LatestUsageID = event.ObservationID

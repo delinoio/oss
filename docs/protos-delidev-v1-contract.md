@@ -1,5 +1,10 @@
 # DeliDev v1 Connect contract
 
+## Metadata-only request diagnostics
+
+Issue #1103 adds owner/paired-client `SessionService.ListRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1`, with additive generated Go/TypeScript/Connect Query bindings. Typed source/state/operation enums distinguish native input publications from individual proxy HTTP send claims. Optional settings, latency, HTTP status/attempt and completion time preserve unavailable versus measured zero/false. Exact uint64 revisions/durations remain precise. Original opaque IDs are bounded validated projections, never arbitrary native JSON. Signed pages bind session, optional exact execution and page size (default 50, maximum 100). Worker credentials cannot read this product surface. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for immutable attribution, publication, secret filtering, retention and evidence limits; this is not another usage source.
+
+
 Source schemas are service-specific under `protos/delidev/v1`; shared types have
 one common owner. The historical `delidev.proto` forwards imports. Existing wire
 names and numbers remain unchanged. `protos/delidev/allocations.json` records main
@@ -524,3 +529,9 @@ the original job and optional published child; an accepted job is not a child.
 remain excluded from these product methods and complete their original job via
 existing authenticated `WatchWork`/`ReportWork`. See the
 [fork contract](cmds-delidev-forks-contract.md). No destructive migration occurs.
+
+Native input accounting activates original capability 8, coverage 2, summary field
+13 and the reserved native budget coverage fields. AccountingUnitKind 3 and 4 are
+Claude main-loop input and OpenCode step, respectively. Negotiated native-units-v1
+returns their independent repeated summaries, retaining all existing response and
+Grok meanings. See the usage contract for source-specific counts and pricing.

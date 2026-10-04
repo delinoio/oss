@@ -5,6 +5,11 @@
 import { SessionService } from "./session_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.ListRequestDiagnostics
+ */
+export const listRequestDiagnostics = SessionService.method.listRequestDiagnostics;
+
+/**
  * @generated from rpc delidev.v1.SessionService.ForkSession
  */
 export const forkSession = SessionService.method.forkSession;

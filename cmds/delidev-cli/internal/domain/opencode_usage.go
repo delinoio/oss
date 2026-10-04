@@ -66,8 +66,8 @@ func (u OpenCodeUsageObservation) Validate() error {
 	return nil
 }
 
-// This separately typed UsageKind record never enters the response ledger,
-// token-price estimates or session budgets. Step and message sources overlap.
+// The original observation stays outside the response ledger. Only step-finish
+// parts enter the separate accounting ledger; finalized assistants overlap.
 type OpenCodeUsageRecord struct {
 	ExecutionID  ID                       `json:"execution_id"`
 	AccountID    ID                       `json:"account_id"`

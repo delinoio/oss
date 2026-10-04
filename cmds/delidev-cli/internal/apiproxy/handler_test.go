@@ -25,6 +25,8 @@ var fixtureToken = TokenPrefix + base64.RawURLEncoding.EncodeToString(bytes.Repe
 
 type fixtureAuthority struct {
 	key                      string
+	keyError                 error
+	publishDiagnostic        func(context.Context, domain.RequestDiagnostic) error
 	scope                    Scope
 	ctx                      context.Context
 	cancel                   context.CancelFunc
@@ -41,12 +43,15 @@ func (a *fixtureAuthority) Acquire(ctx context.Context, token string) (*Lease, e
 	}
 	return &Lease{Scope: a.scope, Context: a.ctx, Release: func() { a.releases.Add(1) }, Key: func(ctx context.Context) ([]byte, error) {
 		a.keys.Add(1)
+		if a.keyError != nil {
+			return nil, a.keyError
+		}
 		key := a.key
 		if key == "" {
 			key = fixtureKey
 		}
 		return []byte(key), ctx.Err()
-	}, AuthorizeReference: a.authorize, ObserveReference: a.observe, ObserveHistory: a.history}, nil
+	}, AuthorizeReference: a.authorize, ObserveReference: a.observe, ObserveHistory: a.history, PublishDiagnostic: a.publishDiagnostic}, nil
 }
 
 type lockedLog struct {

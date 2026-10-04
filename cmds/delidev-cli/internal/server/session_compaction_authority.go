@@ -54,7 +54,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	v := i.Assignment
-	scope := apiproxy.Scope{ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, ProviderID: v.Configuration.ProviderID, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Provider: p, Operations: []apiproxy.Operation{apiproxy.MessageCreate}}
+	scope := apiproxy.Scope{ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, ProviderID: v.Configuration.ProviderID, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Provider: p, Harness: v.Configuration.Harness, Operations: []apiproxy.Operation{apiproxy.MessageCreate}}
 	if scope.Validate() != nil {
 		return denied()
 	}

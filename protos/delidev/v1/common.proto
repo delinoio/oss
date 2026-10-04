@@ -64,6 +64,8 @@ enum UsageCoverage {
   USAGE_COVERAGE_UNSPECIFIED = 0;
   // Exact known subtotals only. Missing/legacy/child telemetry is not zero.
   USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES = 1;
+  // Distinct native input/step units; inherited history is excluded.
+  USAGE_COVERAGE_OBSERVED_ROOT_ACCOUNTING_UNITS = 2;
 }
 
 message ForwardChange {

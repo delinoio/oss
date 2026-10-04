@@ -39,6 +39,8 @@ var migrations = []migrationDefinition{
 	{23, migration023},
 	{24, migration024},
 	{25, migration025},
+	{26, migration026},
+	{27, migration027},
 }
 
 func validateMigrations(definitions []migrationDefinition) error {
