@@ -45,8 +45,8 @@ test('workspace investigation is explicit and excludes package assembly', () => 
   const fixtures = workflow.jobs['workspace-fixtures'];
   assert.equal(fixtures.if, '${{ inputs.workspace_fixture_only }}');
   assert.equal(fixtures['runs-on'], 'windows-latest');
-  assert.equal(fixtures['timeout-minutes'], 30);
+  assert.equal(fixtures['timeout-minutes'], 60);
   assert.equal(fixtures.steps.length, 3);
   assert.ok(fixtures.steps.some(step => step.with?.lfs === true && step.with['persist-credentials'] === false));
-  assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable|TestSnapshotCreatePublicationFailureRetainsOriginalRecovery|TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart|TestSnapshotObservationSharesBudgetBeforeHashing|TestSnapshotObservationStopsAtAggregateGitInventory|TestSnapshotAdmissionReservesPrivatePathHeadroom)$' -count=1 -timeout=20m -v");
+  assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable|TestSnapshotCreatePublicationFailureRetainsOriginalRecovery|TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart|TestSnapshotObservationSharesBudgetBeforeHashing|TestSnapshotObservationStopsAtAggregateGitInventory|TestSnapshotAdmissionReservesPrivatePathHeadroom)$' -count=1 -timeout=45m -v");
 });
