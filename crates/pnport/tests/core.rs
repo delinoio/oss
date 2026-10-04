@@ -4555,7 +4555,7 @@ fn macos_rejects_mismatched_companions_before_user_launch() {
     let executable = root.path().join("pnport");
     fs::copy(native, &executable).unwrap();
     let bytes = fs::read(native.parent().unwrap().join("libfspy_preload_unix.dylib")).unwrap();
-    let current = b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY";
+    let current = b"PNPORT_PRELOAD_0.1.0_FORMAT_3_READY";
     let offset = bytes
         .windows(current.len())
         .position(|window| window == current)
@@ -4584,7 +4584,7 @@ fn macos_rejects_mismatched_companions_before_user_launch() {
         let mut companion = bytes.clone();
         match mismatch {
             Mismatch::Abi => companion[offset..offset + current.len()]
-                .copy_from_slice(b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY"),
+                .copy_from_slice(b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY"),
             Mismatch::Cpu => {
                 let other_cpu: u32 = if cfg!(target_arch = "aarch64") {
                     0x0100_0007

@@ -2,10 +2,12 @@
 //! Foreground terminal ownership uses the caller's existing controlling tty.
 
 use std::{
+    cell::Cell,
     fs::{File, OpenOptions},
     io, mem,
     os::{fd::AsRawFd, unix::process::CommandExt},
     process::Command,
+    time::{Duration, Instant},
 };
 
 use pnport::diagnostic::{Code, Error, Result};
@@ -26,6 +28,8 @@ struct Terminal {
 pub struct Job {
     terminal: Option<Terminal>,
     group: i32,
+    detached: bool,
+    claimed_foreground: Cell<bool>,
 }
 
 impl Job {
@@ -37,6 +41,8 @@ impl Job {
             return Ok(Self {
                 terminal: None,
                 group,
+                detached: false,
+                claimed_foreground: Cell::new(false),
             });
         }
         let file = match OpenOptions::new().read(true).write(true).open("/dev/tty") {
@@ -50,6 +56,8 @@ impl Job {
                 return Ok(Self {
                     terminal: None,
                     group,
+                    detached: false,
+                    claimed_foreground: Cell::new(false),
                 });
             }
             Err(_) => return Err(failure()),
@@ -80,6 +88,8 @@ impl Job {
                 previous_mask,
             }),
             group,
+            detached: false,
+            claimed_foreground: Cell::new(false),
         };
         job.claim()?;
         Ok(job)
@@ -100,13 +110,25 @@ impl Job {
                 Err(failure())
             };
         }
-        if foreground == from && unsafe { libc::tcsetpgrp(fd, to) } != 0 {
-            return Err(failure());
+        if foreground == from {
+            if unsafe { libc::tcsetpgrp(fd, to) } != 0 {
+                return Err(failure());
+            }
+            if from == terminal.caller_group && to == self.group {
+                self.claimed_foreground.set(true);
+            }
         }
         Ok(())
     }
 
+    pub fn group(&self) -> i32 {
+        self.group
+    }
+
     fn claim(&self) -> Result<()> {
+        if self.detached {
+            return Ok(());
+        }
         match &self.terminal {
             Some(terminal) => self.transfer(terminal.caller_group, self.group),
             None => Ok(()),
@@ -120,7 +142,62 @@ impl Job {
         }
     }
 
-    pub fn poll_stop(&self, pid: i32) -> Result<()> {
+    pub fn restore_owned(&self, owner: &mut crate::macos_owner::Owner) -> Result<()> {
+        if let Some(terminal) = &self.terminal {
+            let foreground = unsafe { libc::tcgetpgrp(terminal.file.as_raw_fd()) };
+            if foreground > 0 && foreground != self.group && foreground != terminal.caller_group {
+                // Darwin's tty retains a reference to an exited group's object
+                // and reserves its PGID until foreground is replaced. Signal 0
+                // is only an existence probe: reclaim a vacant foreground only
+                // after this job actually claimed the tty, never from a live
+                // unrelated job or from a background launch that never did.
+                let vacant = self.claimed_foreground.get()
+                    && unsafe { libc::kill(-foreground, 0) } == -1
+                    && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+                if vacant || owner.owns_group(foreground)? {
+                    self.transfer(foreground, terminal.caller_group)?;
+                    if vacant {
+                        tracing::debug!(
+                            action = "macos_job_vacant_foreground_restored",
+                            "Restored the caller after foreground exit"
+                        );
+                    }
+                    self.claimed_foreground.set(false);
+                    return Ok(());
+                }
+            }
+        }
+        self.restore()?;
+        self.claimed_foreground.set(false);
+        Ok(())
+    }
+
+    pub fn poll_stop(
+        &mut self,
+        pid: i32,
+        owner: &mut crate::macos_owner::Owner,
+    ) -> Result<Option<Duration>> {
+        // Root is our unreaped direct child; inspect its current native tty
+        // relationship without granting signal authority to a snapshot group.
+        let session = unsafe { libc::getsid(pid) };
+        if session >= 0 {
+            let group = unsafe { libc::getpgid(pid) };
+            if group > 0 && session == unsafe { libc::getsid(0) } {
+                self.transfer(self.group, group)?;
+                self.group = group;
+            } else if group > 0 && !self.detached {
+                // A detached root has no controlling tty. Return foreground to
+                // pnport's caller group so terminal cancellation still reaches
+                // the supervisor and its audit-bound owned-tree cleanup.
+                self.restore_owned(owner)?;
+                self.group = group;
+                self.detached = true;
+                tracing::debug!(
+                    action = "macos_job_detached",
+                    "Detached root released terminal foreground"
+                );
+            }
+        }
         let mut event = unsafe { mem::zeroed::<libc::siginfo_t>() };
         // Deliberately omit WEXITED: Child owns root reaping and its exit status.
         let result = unsafe {
@@ -133,13 +210,14 @@ impl Job {
         };
         if result != 0 {
             return if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
-                Ok(())
+                Ok(None)
             } else {
                 Err(failure())
             };
         }
         if event.si_pid == pid && event.si_code == libc::CLD_STOPPED {
-            self.restore()?;
+            self.restore_owned(owner)?;
+            let suspended = Instant::now();
             tracing::debug!(action = "macos_job_stopped", "Owned command stopped");
             // The shell must observe a stopped pnport job, including a command
             // SIGSTOP and background SIGTTIN. SIGCONT resumes this exact point.
@@ -147,12 +225,10 @@ impl Job {
                 return Err(failure());
             }
             self.claim()?;
-            if unsafe { libc::kill(-self.group, libc::SIGCONT) } != 0 {
-                return Err(failure());
-            }
             tracing::debug!(action = "macos_job_resumed", "Owned command resumed");
+            return Ok(Some(suspended.elapsed()));
         }
-        Ok(())
+        Ok(None)
     }
 }
 

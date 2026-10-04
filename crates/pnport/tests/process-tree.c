@@ -90,7 +90,77 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
-    if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0 || strcmp(mode, "terminal-pipe") == 0) {
+    if (!strcmp(mode, "terminal-background-empty")) {
+        FILE *group = fopen("root.group", "w");
+        if (!group) return 109;
+        fprintf(group, "%d", getpgrp());
+        fclose(group);
+        return 23;
+    }
+    if (!strcmp(mode, "terminal-child-group") || !strcmp(mode, "terminal-child-exit") || !strcmp(mode, "terminal-unrelated-group")) {
+        if (!strcmp(role, "leaf")) {
+            char ready;
+            if (read(9, &ready, 1) != 1) return 99;
+            close(9);
+            FILE *marker = fopen("leaf.pid", "w");
+            if (!marker) return 91;
+            fprintf(marker, "%d", getpid());
+            fclose(marker);
+            char line[32];
+            if (!terminal_line(line, sizeof(line)) || strcmp(line, "first\n")) return 92;
+            marker = fopen("terminal.first", "w");
+            if (!marker) return 93;
+            fclose(marker);
+            if (strcmp(mode, "terminal-child-group")) return 0;
+            for (;;) pause();
+        }
+        FILE *marker = fopen("root.group", "w");
+        if (!marker) return 94;
+        fprintf(marker, "%d", getpgrp());
+        fclose(marker);
+        pid_t worker;
+        int start[2];
+        if (pipe(start) || fcntl(start[0], F_SETFD, FD_CLOEXEC) || fcntl(start[1], F_SETFD, FD_CLOEXEC)) return 100;
+        posix_spawn_file_actions_t actions;
+        if (posix_spawn_file_actions_init(&actions) || posix_spawn_file_actions_adddup2(&actions, start[0], 9)) return 101;
+        posix_spawnattr_t attributes;
+        char *args[] = {argv[0], "leaf", argv[2], NULL};
+        char *environment[] = {"PNPORT_TEST_ENV=replacement", NULL};
+        if (posix_spawnattr_init(&attributes) || posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP) ||
+            posix_spawnattr_setpgroup(&attributes, 0) || posix_spawn(&worker, argv[0], &actions, &attributes, args, environment)) return 95;
+        posix_spawn_file_actions_destroy(&actions);
+        posix_spawnattr_destroy(&attributes);
+        close(start[0]);
+        if (tcsetpgrp(0, worker)) return 96;
+        // Release the worker only after native tty placement; a speculative
+        // SIGCONT before an initial SIGTTIN stop would create a fixture race.
+        if (write(start[1], "1", 1) != 1) return 97;
+        close(start[1]);
+        if (strcmp(mode, "terminal-child-group")) {
+            int status;
+            if (waitpid(worker, &status, 0) != worker || !WIFEXITED(status) || WEXITSTATUS(status)) return 105;
+            // Native Darwin retains the tty's reference to an empty group.
+            // Establish that state before the root exits, independent of any
+            // timing in pnport's ownership inventory or cleanup.
+            errno = 0;
+            if (tcgetpgrp(0) != worker || !kill(-worker, 0) || errno != ESRCH) return 106;
+            marker = fopen("terminal.empty-group", "w");
+            if (!marker) return 107;
+            fclose(marker);
+            if (!strcmp(mode, "terminal-unrelated-group")) {
+                for (int attempt = 0; attempt < 500 && access("terminal.foreign", F_OK); attempt++) usleep(10000);
+                if (access("terminal.foreign", F_OK)) return 108;
+            }
+            return 23;
+        }
+        for (int attempt = 0; attempt < 1000; attempt++) {
+            if (!access("terminal.first", F_OK)) return 23;
+            usleep(10000);
+        }
+        return 98;
+    }
+    if (!strcmp(role, "root") && !strcmp(mode, "terminal-detached") && setsid() < 0) return 86;
+    if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0 || strcmp(mode, "terminal-pipe") == 0 || !strcmp(mode, "terminal-group") || !strcmp(mode, "terminal-pending-pause")) {
         FILE *marker = fopen("root.group", "w");
         if (!marker) return 67;
         fprintf(marker, "%d", getpgrp());
@@ -107,10 +177,38 @@ int main(int argc, char **argv) {
             if (terminal < 0 || tcgetpgrp(terminal) != getppid()) return 76;
             close(terminal);
         } else if (tcgetpgrp(0) != getpgrp()) return 70;
+        if (!strcmp(mode, "terminal-group")) {
+            if (setpgid(0, 0)) return 80;
+            marker = fopen("root.group", "w");
+            if (!marker) return 103;
+            fprintf(marker, "%d", getpgrp());
+            fclose(marker);
+            // Do not depend on an incidental background SIGTTIN. The native
+            // supervisor may claim the new group before its first read. Wait
+            // for actual foreground placement before the test sends Ctrl+Z.
+            for (int attempt = 0; attempt < 500 && tcgetpgrp(0) != getpgrp(); attempt++) usleep(10000);
+            if (tcgetpgrp(0) != getpgrp()) return 104;
+        }
         marker = fopen("terminal.first", "w");
         if (!marker) return 71;
         fputs("1", marker);
         fclose(marker);
+        if (!strcmp(mode, "terminal-pending-pause")) {
+            // Synthetic pending image: it deliberately has no constructor
+            // acknowledgement while the shell suspends the whole job.
+            char pending[4096];
+            const char *session = getenv("PNPORT_SESSION");
+            if (!session || snprintf(pending, sizeof(pending), "%s/pending", session) >= (int)sizeof(pending)) return 81;
+            if (mkdir(pending, 0700) && errno != EEXIST) return 82;
+            if (snprintf(pending, sizeof(pending), "%s/pending/pnport-paused-image", session) >= (int)sizeof(pending)) return 83;
+            int token = open(pending, O_CREAT | O_WRONLY | O_EXCL, 0600);
+            if (token < 0) return 84;
+            close(token);
+            usleep(300000);
+            raise(SIGSTOP);
+            usleep(300000);
+            if (unlink(pending)) return 85;
+        }
         if (strcmp(mode, "terminal-stop") == 0) raise(SIGSTOP);
         if (!terminal_line(line, sizeof(line)) || strcmp(line, "second\n")) return 72;
         return dependency() ? 73 : 23;
@@ -122,22 +220,32 @@ int main(int argc, char **argv) {
         fclose(group);
         return concurrent_fork();
     }
-    if (strcmp(role, "middle") == 0 && strcmp(mode, "detached") == 0 && setsid() < 0)
-        return 44;
+    int detached = !strncmp(mode, "detached", 8);
+    if (!strcmp(role, "middle") && detached && !strstr(mode, "spawn-")) {
+        int changed = strstr(mode, "group") ? setpgid(0, 0) : setsid();
+        if (changed < 0) return 44;
+    }
     char name[64];
     snprintf(name, sizeof(name), "%s.signal", role);
     signal_file = open(name, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (signal_file < 0) return 45;
     struct sigaction action = {0};
     sigemptyset(&action.sa_mask);
-    action.sa_handler = strcmp(mode, "ignore") == 0 ? SIG_IGN : stopped;
+    // Forced parent loss can queue native SIGHUP alongside pnport's SIGTERM.
+    // Keep the first handler's write/exit indivisible with respect to the other
+    // fixture handlers, so one termination cannot publish two signal bytes.
+    sigaddset(&action.sa_mask, SIGINT);
+    sigaddset(&action.sa_mask, SIGTERM);
+    sigaddset(&action.sa_mask, SIGHUP);
+    action.sa_handler = strstr(mode, "ignore") ? SIG_IGN : stopped;
     for (int index = 0; index < 3; index++) {
         int signals[] = {SIGINT, SIGTERM, SIGHUP};
         if (sigaction(signals[index], &action, NULL) != 0) return 46;
     }
     if (strcmp(role, "leaf") != 0) {
         char *args[] = {argv[0], strcmp(role, "root") == 0 ? "middle" : "leaf", argv[2], NULL};
-        char *environment[] = {"PNPORT_TEST_ENV=replacement", "PATH=/absent-child-path", NULL};
+        char *environment[] = {"PNPORT_TEST_ENV=replacement", "PATH=/absent-child-path", NULL, NULL};
+        if (!strcmp(mode, "spoof-key")) environment[2] = "PNPORT_MACOS_OWNER_KEY=0000000000000000000000000000000000000000000000000000000000000000";
         pid_t child;
         if (strcmp(mode, "spawnp") == 0) {
             char cwd[4096], path[16384];
@@ -161,11 +269,29 @@ int main(int argc, char **argv) {
             posix_spawnattr_destroy(&attributes);
             posix_spawn_file_actions_destroy(&actions);
             if (result) return 63;
+        } else if (detached && strstr(mode, "spawn-")) {
+            posix_spawnattr_t attributes;
+            short flags = strstr(mode, "session") ? POSIX_SPAWN_SETSID : POSIX_SPAWN_SETPGROUP;
+            if (posix_spawnattr_init(&attributes) || posix_spawnattr_setflags(&attributes, flags) ||
+                (flags == POSIX_SPAWN_SETPGROUP && posix_spawnattr_setpgroup(&attributes, 0))) return 77;
+            result = posix_spawn(&child, argv[0], NULL, &attributes, args, environment);
+            posix_spawnattr_destroy(&attributes);
+            if (result) return 78;
         } else {
             child = fork();
             if (child < 0) return 47;
         }
         if (child == 0) {
+            if (!strcmp(role, "middle") && !strcmp(mode, "detached-orphan")) {
+                // Stop before exec/constructor registration. After the middle
+                // exits, only the kernel's original-parent version proves this
+                // child belongs to the tree; current PPID becomes launchd.
+                FILE *parked = fopen("parked.pid", "w");
+                if (!parked) _exit(79);
+                fprintf(parked, "%d", getpid());
+                fclose(parked);
+                raise(SIGSTOP);
+            }
             execve(argv[0], args, environment);
             _exit(48);
         }
@@ -180,7 +306,11 @@ int main(int argc, char **argv) {
     if (!marker) return 49;
     fprintf(marker, "%d", getpid());
     fclose(marker);
-    if (strcmp(role, "root") == 0 && strcmp(mode, "exit") == 0) {
+    if (!strcmp(role, "middle") && !strcmp(mode, "detached-orphan")) {
+        while (access("orphan-release", F_OK)) usleep(10000);
+        return 0;
+    }
+    if (strcmp(role, "root") == 0 && (!strcmp(mode, "exit") || !strcmp(mode, "detached-exit"))) {
         struct stat info;
         for (int attempt = 0; attempt < 1000; attempt++) {
             if (stat("leaf.pid", &info) == 0 && info.st_size > 0) return 23;

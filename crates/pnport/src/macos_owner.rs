@@ -13,12 +13,15 @@ use std::{
         fd::{AsRawFd, FromRawFd},
         unix::{fs::MetadataExt, net::UnixStream, process::CommandExt},
     },
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
 
 use pnport::diagnostic::{Code, Error, Result};
+use pnport_core::macos_process::Identity;
+
+use crate::macos_registry::{FailureStage, Registry};
 
 const MODE: &str = "__pnport_macos_owner";
 const SOCKET_ENV: &str = "PNPORT_MACOS_OWNER_FD";
@@ -101,16 +104,31 @@ pub struct Owner {
     child: Child,
     socket: UnixStream,
     finished: bool,
+    registry: Registry,
 }
 
 impl Owner {
-    pub fn start() -> Result<Self> {
+    pub fn start(session: &Path) -> Result<Self> {
+        use std::os::unix::ffi::OsStrExt;
+        let mut key = [0; 32];
+        fs::File::open("/dev/urandom")
+            .and_then(|mut file| file.read_exact(&mut key))
+            .map_err(|_| failure())?;
+        let registry = Registry::create(session, key).map_err(|_| failure())?;
         let (child, socket) = launch(Role::Guardian)?;
         let mut owner = Self {
             child,
             socket,
             finished: false,
+            registry,
         };
+        let path = session.as_os_str().as_bytes();
+        owner
+            .socket
+            .write_all(&(path.len() as u32).to_be_bytes())
+            .map_err(|_| failure())?;
+        owner.socket.write_all(path).map_err(|_| failure())?;
+        owner.socket.write_all(&key).map_err(|_| failure())?;
         let mut ready = [0];
         owner.socket.read_exact(&mut ready).map_err(|_| failure())?;
         if ready != *b"R" {
@@ -121,6 +139,79 @@ impl Owner {
             "Private process-group ownership is ready"
         );
         Ok(owner)
+    }
+
+    pub fn admit_root(&mut self, pid: i32) -> Result<()> {
+        let identity = Identity::capture(pid).map_err(|_| failure())?;
+        // Only the trusted supervisor control socket can seed a root birth.
+        // Preload files cannot promote an unrelated process to a root.
+        self.socket.write_all(b"A").map_err(|_| failure())?;
+        self.socket
+            .write_all(&pid.to_be_bytes())
+            .map_err(|_| failure())?;
+        self.socket
+            .write_all(&identity.birth.to_be_bytes())
+            .map_err(|_| failure())?;
+        let mut acknowledged = [0];
+        self.socket
+            .read_exact(&mut acknowledged)
+            .map_err(|_| failure())?;
+        if acknowledged != *b"A" {
+            return Err(failure());
+        }
+        self.registry.admit(identity).map_err(|_| failure())?;
+        self.registry.recover().map_err(|_| failure())?;
+        tracing::debug!(
+            action = "macos_root_admitted",
+            "Native root ownership is committed"
+        );
+        Ok(())
+    }
+
+    pub fn verification_key(&self) -> String {
+        pnport_core::macos_process::encode_public_key(&self.registry.verification_key())
+    }
+
+    pub fn owns_group(&mut self, group: i32) -> Result<bool> {
+        // EOF does not reap the guardian: retain the original group reservation
+        // while authenticated parent recovery verifies additional tty ownership.
+        match self.query_group(group) {
+            Ok(owned) => Ok(owned),
+            Err(_) => {
+                self.registry.recover().map_err(|_| failure())?;
+                self.registry.owns_group(group).map_err(|_| failure())
+            }
+        }
+    }
+
+    fn query_group(&mut self, group: i32) -> Result<bool> {
+        self.check()?;
+        self.socket.write_all(b"T").map_err(|_| failure())?;
+        self.socket
+            .write_all(&group.to_be_bytes())
+            .map_err(|_| failure())?;
+        let mut response = [0];
+        self.socket
+            .read_exact(&mut response)
+            .map_err(|_| failure())?;
+        match response[0] {
+            b'Y' => Ok(true),
+            b'N' => Ok(false),
+            _ => Err(failure()),
+        }
+    }
+
+    pub fn resume(&mut self, group: i32) -> Result<()> {
+        self.socket.write_all(b"J").map_err(|_| failure())?;
+        self.socket
+            .write_all(&group.to_be_bytes())
+            .map_err(|_| failure())?;
+        let mut reply = [0];
+        self.socket.read_exact(&mut reply).map_err(|_| failure())?;
+        if reply != *b"J" {
+            return Err(failure());
+        }
+        Ok(())
     }
 
     pub fn group(&self) -> i32 {
@@ -137,6 +228,7 @@ impl Owner {
         if observed < 0 && io::Error::last_os_error().raw_os_error() != Some(libc::EINTR)
             || event.revents != 0
         {
+            tracing::debug!(action = "macos_owner_unavailable", stage = ?self.registry.failure_stage(), "Native process owner became unavailable");
             return Err(failure());
         }
         Ok(())
@@ -166,8 +258,19 @@ impl Owner {
             action = "macos_owner_cleanup_acknowledged",
             escalated = matches!(&result, Ok(true)),
             failed = result.is_err(),
+            stage = ?self.registry.failure_stage(),
             "Private process owner reported its cleanup outcome"
         );
+        if result.is_err() {
+            let recovered = self.registry.recover();
+            let stopped = self.registry.stop(self.group(), signal);
+            tracing::debug!(
+                action = "macos_owner_recovery",
+                records_valid = recovered.is_ok(),
+                cleaned = stopped.is_ok(),
+                "Attempted authenticated owner recovery"
+            );
+        }
         if !matches!(&result, Ok(false)) {
             // Repeat escalation before reaping the direct guardian child. Its
             // PID reserves the command PGID even though it runs outside it.
@@ -265,93 +368,6 @@ fn authenticated_socket(role: Role) -> Option<UnixStream> {
     Some(unsafe { UnixStream::from_raw_fd(fd) })
 }
 
-fn members(group: i32) -> io::Result<Vec<i32>> {
-    let mut pids = vec![0i32; 64];
-    loop {
-        let bytes = (pids.len() * mem::size_of::<i32>()) as i32;
-        let count = unsafe { libc::proc_listpgrppids(group, pids.as_mut_ptr().cast(), bytes) };
-        if count <= 0 || count as usize > pids.len() {
-            return Err(io::Error::last_os_error());
-        }
-        if count as usize == pids.len() {
-            if pids.len() >= 4096 {
-                return Err(io::Error::other("Owned group inventory is unavailable"));
-            }
-            pids.resize(pids.len() * 2, 0);
-            continue;
-        }
-        pids.truncate(count as usize);
-        return Ok(pids);
-    }
-}
-
-fn running(pid: i32, group: i32, anchor: i32) -> io::Result<bool> {
-    if pid == anchor || pid <= 0 {
-        return Ok(false);
-    }
-    let mut info = mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
-    let size = mem::size_of::<libc::proc_bsdinfo>() as i32;
-    let count = unsafe {
-        libc::proc_pidinfo(
-            pid,
-            libc::PROC_PIDTBSDINFO,
-            1,
-            info.as_mut_ptr().cast(),
-            size,
-        )
-    };
-    if count == size {
-        let info = unsafe { info.assume_init() };
-        return Ok(info.pbi_pgid == group as u32 && info.pbi_status != 5);
-    }
-    // A process may disappear between the group inventory and this query.
-    // Other failures cannot establish that it stopped and must fail closed.
-    let error = io::Error::last_os_error();
-    if error.raw_os_error() == Some(libc::ESRCH) {
-        Ok(false)
-    } else {
-        Err(error)
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Cleanup {
-    Complete,
-    Escalate,
-}
-
-fn stop_group(group: i32, anchor: i32, signal: i32) -> io::Result<Cleanup> {
-    unsafe {
-        if libc::kill(-group, signal) != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // Queue termination before resuming stopped members so their handlers
-        // receive the original signal during the unchanged five-second grace.
-        if libc::kill(-group, libc::SIGCONT) != 0 {
-            return Err(io::Error::last_os_error());
-        }
-    }
-    let live = || -> io::Result<Vec<i32>> {
-        members(group)?
-            .into_iter()
-            .filter_map(|pid| match running(pid, group, anchor) {
-                Ok(true) => Some(Ok(pid)),
-                Ok(false) => None,
-                Err(error) => Some(Err(error)),
-            })
-            .collect()
-    };
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !live()?.is_empty() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    Ok(if live()?.is_empty() {
-        Cleanup::Complete
-    } else {
-        Cleanup::Escalate
-    })
-}
-
 pub fn dispatch_helper() {
     let mut args = std::env::args_os();
     args.next();
@@ -422,7 +438,11 @@ fn independent_group() -> Result<Member> {
     Ok(anchor)
 }
 
-fn cleanup_signal(socket: &mut UnixStream, anchor: &Member) -> io::Result<i32> {
+fn cleanup_signal(
+    socket: &mut UnixStream,
+    anchor: &Member,
+    registry: &mut Registry,
+) -> io::Result<i32> {
     let mut events = [
         libc::pollfd {
             fd: socket.as_raw_fd(),
@@ -436,7 +456,7 @@ fn cleanup_signal(socket: &mut UnixStream, anchor: &Member) -> io::Result<i32> {
         },
     ];
     loop {
-        if unsafe { libc::poll(events.as_mut_ptr(), events.len() as _, -1) } < 0 {
+        if unsafe { libc::poll(events.as_mut_ptr(), events.len() as _, 10) } < 0 {
             let error = io::Error::last_os_error();
             if error.raw_os_error() == Some(libc::EINTR) {
                 continue;
@@ -448,17 +468,59 @@ fn cleanup_signal(socket: &mut UnixStream, anchor: &Member) -> io::Result<i32> {
         }
         if events[0].revents != 0 {
             let mut command = [0];
-            return Ok(match socket.read(&mut command) {
-                Ok(1)
-                    if matches!(
-                        i32::from(command[0]),
-                        libc::SIGINT | libc::SIGTERM | libc::SIGHUP
-                    ) =>
+            let count = socket.read(&mut command)?;
+            if count == 1 && command == *b"T" {
+                let mut group = [0; 4];
+                socket.read_exact(&mut group)?;
+                let group = i32::from_be_bytes(group);
+                if group <= 0 {
+                    return Err(io::Error::other("Native foreground is invalid"));
+                }
+                socket.write_all(if registry.owns_group(group)? {
+                    b"Y"
+                } else {
+                    b"N"
+                })?;
+                continue;
+            }
+            if count == 1 && command == *b"J" {
+                let mut group = [0; 4];
+                socket.read_exact(&mut group)?;
+                let group = i32::from_be_bytes(group);
+                if group <= 0 {
+                    return Err(io::Error::other("Native job resume failed"));
+                }
+                registry.resume(unsafe { libc::getpid() }, group)?;
+                socket.write_all(b"J")?;
+                continue;
+            }
+            if count == 1 && command == *b"A" {
+                let mut pid = [0; 4];
+                let mut birth = [0; 8];
+                socket.read_exact(&mut pid)?;
+                socket.read_exact(&mut birth)?;
+                let identity = Identity::capture(i32::from_be_bytes(pid))?;
+                if identity.birth != u64::from_be_bytes(birth) || !registry.empty() {
+                    return Err(io::Error::other("Native root admission failed"));
+                }
+                registry.admit(identity)?;
+                socket.write_all(b"A")?;
+                continue;
+            }
+            return Ok(match count {
+                1 if matches!(
+                    i32::from(command[0]),
+                    libc::SIGINT | libc::SIGTERM | libc::SIGHUP
+                ) =>
                 {
                     i32::from(command[0])
                 }
                 _ => libc::SIGTERM,
             });
+        }
+        if let Err(error) = registry.requests() {
+            registry.record_error(FailureStage::Registration, Some(&error));
+            return Err(error);
         }
     }
 }
@@ -491,22 +553,36 @@ fn run_helper(role: Role) -> ! {
                 _ => None,
             };
         }
+        use std::os::unix::ffi::OsStringExt;
+        let mut size = [0; 4];
+        socket.read_exact(&mut size).ok()?;
+        let size = u32::from_be_bytes(size) as usize;
+        if size == 0 || size > 4096 {
+            return None;
+        }
+        let mut path = vec![0; size];
+        let mut key = [0; 32];
+        socket.read_exact(&mut path).ok()?;
+        socket.read_exact(&mut key).ok()?;
+        let session = PathBuf::from(std::ffi::OsString::from_vec(path));
+        let mut registry = Registry::create(&session, key).ok()?;
         let group = unsafe { libc::getpid() };
         let anchor = independent_group().ok()?;
+        fs::write(session.join("owner/alive"), b"1").ok()?;
         socket.write_all(b"R").ok()?;
-        let signal = cleanup_signal(&mut socket, &anchor);
-        let stopped = stop_group(
-            group,
-            anchor.child.id() as i32,
-            *signal.as_ref().unwrap_or(&libc::SIGTERM),
-        );
+        let signal = cleanup_signal(&mut socket, &anchor, &mut registry);
+        let stopped = registry.stop(group, *signal.as_ref().unwrap_or(&libc::SIGTERM));
+        if let Err(error) = &stopped {
+            registry.record_error(FailureStage::Cleanup, Some(error));
+        }
+        let _ = fs::remove_file(session.join("owner/alive"));
         // The guardian is outside this group and retains its PID reservation
         // through the final group signal, member reaping and acknowledgement.
         let killed = unsafe { libc::kill(-group, libc::SIGKILL) } == 0;
         drop(anchor);
         let completed = match (&signal, &stopped, killed) {
-            (Ok(_), Ok(Cleanup::Complete), true) => b'C',
-            (Ok(_), Ok(Cleanup::Escalate), true) => b'K',
+            (Ok(_), Ok(false), true) => b'C',
+            (Ok(_), Ok(true), true) => b'K',
             _ => b'F',
         };
         socket.write_all(&[completed]).ok();
@@ -519,6 +595,62 @@ fn run_helper(role: Role) -> ! {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::Read,
+        os::unix::{net::UnixStream, process::CommandExt},
+        process::Command,
+        time::Duration,
+    };
+
+    #[test]
+    fn foreground_query_recovers_after_mid_request_control_loss() {
+        let session = tempfile::tempdir().unwrap();
+        let mut owner = super::Owner::start(session.path()).unwrap();
+        let mut owned = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut unrelated = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        owner.admit_root(owned.id() as i32).unwrap();
+        let group = super::Identity::capture(owned.id() as i32).unwrap().group;
+        let unrelated_group = super::Identity::capture(unrelated.id() as i32)
+            .unwrap()
+            .group;
+        let (replacement, mut peer) = UnixStream::pair().unwrap();
+        replacement
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        replacement
+            .set_write_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        // The real guardian and its reservation stay alive. This transport
+        // control closes only after receiving the complete foreground request,
+        // proving loss after the initial readiness check rather than before it.
+        let original = std::mem::replace(&mut owner.socket, replacement);
+        let failed_peer = std::thread::spawn(move || {
+            let mut request = [0; 5];
+            peer.read_exact(&mut request).unwrap();
+            assert_eq!(request[0], b'T');
+            assert_eq!(i32::from_be_bytes(request[1..].try_into().unwrap()), group);
+            peer.shutdown(std::net::Shutdown::Both).unwrap();
+        });
+        owner.check().unwrap();
+        assert!(owner.owns_group(group).unwrap());
+        failed_peer.join().unwrap();
+        assert!(!owner.owns_group(unrelated_group).unwrap());
+        assert!(unrelated.try_wait().unwrap().is_none());
+        drop(original);
+        assert!(owner.stop(libc::SIGTERM).is_err());
+        assert!(!owned.wait().unwrap().success());
+        unrelated.kill().unwrap();
+        unrelated.wait().unwrap();
+    }
+
     #[test]
     fn private_owner_entrypoint() {
         // Unit scenarios run the supervisor inside a fresh copy of the test

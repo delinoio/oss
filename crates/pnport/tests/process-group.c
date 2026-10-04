@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Native controls distinguish rejected group creation from successful joining.
+// Native controls compare admitted group/session creation and existing joins.
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -51,6 +51,31 @@ int main(int argc, char **argv) {
         puts("owned group control");
         return 0;
     }
+    if (!strcmp(argv[1], "exit-target")) {
+        for (int attempt = 0; attempt < 64; ++attempt) {
+            int barrier[2];
+            if (pipe(barrier)) return 92;
+            pid_t target = fork();
+            if (target < 0) return 93;
+            if (!target) {
+                close(barrier[1]);
+                char release;
+                int result = read(barrier[0], &release, 1) == 1 ? 0 : 94;
+                _exit(result);
+            }
+            close(barrier[0]);
+            if (write(barrier[1], "1", 1) != 1) return 95;
+            close(barrier[1]);
+            // Race an ordinary group operation with native target exit. Both
+            // successful admission and ESRCH are valid; neither may poison the
+            // virtual filesystem or cause a supervisor-wide injection failure.
+            if (setpgid(target, target) && errno != ESRCH) return 96;
+            if (reaped(target)) return 97;
+            errno = 0;
+            if (setpgid(target, target) != -1 || errno != ESRCH) return 98;
+        }
+        return !strcmp(argv[2], "virtual") ? dependency() : 0;
+    }
     if (!strcmp(argv[1], "spawn-new") || !strcmp(argv[1], "spawn-same") ||
         !strcmp(argv[1], "spawn-session")) {
         posix_spawnattr_t attributes;
@@ -68,7 +93,7 @@ int main(int argc, char **argv) {
         if (result) return result == ENOTSUP ? 0 : 86;
         if (marker("spawn-created")) return 87;
         result = reaped(child);
-        if (!result && !strcmp(argv[1], "spawn-same")) puts("owned group control");
+        if (!result) puts("owned group control");
         return result;
     }
     pid_t child = fork();

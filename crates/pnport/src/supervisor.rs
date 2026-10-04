@@ -117,7 +117,7 @@ pub fn artifact() -> Result<PathBuf> {
         }
     }
     let marker = if cfg!(target_os = "macos") {
-        b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY"
+        b"PNPORT_PRELOAD_0.1.0_FORMAT_3_READY"
     } else {
         b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY"
     };
@@ -176,9 +176,9 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
     );
     Ok(Some(Error::new(
         code,
-        if code == Code::PnportUnsupportedOperation && group_operation.is_some() {
-            "The command requested an unsupported macOS process group or session change. Run it in \
-             the foreground with daemonization disabled; owned processes were stopped."
+        if code == Code::PnportInjectionFailed && group_operation.is_some() {
+            "The macOS process owner did not acknowledge a native group or session change; owned \
+             processes were stopped."
         } else {
             "Native filesystem interception reported a runtime failure; the process tree has been \
              stopped."
@@ -236,6 +236,13 @@ fn pending_entry_state(
 
 #[cfg(not(target_os = "linux"))]
 impl PendingLaunches {
+    #[cfg(target_os = "macos")]
+    fn pause(&mut self, duration: Duration) {
+        for (_, observed) in self.observed.values_mut() {
+            *observed += duration;
+        }
+    }
+
     fn observe(&mut self, session: &Path) -> Result<bool> {
         let entries = match fs::read_dir(session.join("pending")) {
             Ok(entries) => entries,
@@ -400,20 +407,21 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         #[cfg(not(target_os = "macos"))]
         command.env(variable, artifact);
         #[cfg(target_os = "macos")]
-        let mut owner = crate::macos_owner::Owner::start()?;
+        let mut owner = crate::macos_owner::Owner::start(&view.session)?;
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
             #[cfg(target_os = "macos")]
             command
                 .process_group(owner.group())
-                .env("PNPORT_MACOS_GROUP", owner.group().to_string());
+                .env("PNPORT_MACOS_GROUP", owner.group().to_string())
+                .env("PNPORT_MACOS_OWNER_KEY", owner.verification_key());
             #[cfg(not(target_os = "macos"))]
             command.process_group(0);
         }
         tracing::debug!(action = "spawn", "Starting the owned process tree");
         #[cfg(target_os = "macos")]
-        let job = crate::macos_job::Job::start(owner.group(), &mut command)?;
+        let mut job = crate::macos_job::Job::start(owner.group(), &mut command)?;
         #[cfg(target_os = "macos")]
         admission.verify_at_launch()?;
         let mut child = command.spawn().map_err(|e| {
@@ -427,7 +435,11 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             )
         })?;
         let pid = child.id() as i32;
+        #[cfg(target_os = "macos")]
+        owner.admit_root(pid)?;
         let start = Instant::now();
+        #[cfg(target_os = "macos")]
+        let mut start = start;
         let mut status = None;
         let mut root_exited_at = None;
         let mut watch = crate::input_watch::InputWatch::default();
@@ -444,7 +456,11 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             }
             #[cfg(target_os = "macos")]
             if status.is_none() {
-                job.poll_stop(pid)?;
+                if let Some(paused) = job.poll_stop(pid, &mut owner)? {
+                    start += paused;
+                    pending_launches.pause(paused);
+                    owner.resume(job.group())?;
+                }
             }
             for input in &view.graph.snapshot.inputs {
                 watch.register(input)?;
@@ -516,8 +532,21 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             }
             if start.elapsed() > Duration::from_secs(5)
                 && !initialization_started
+                // Entry can be published after this loop's earlier observation.
+                // Recheck at rejection, as for pending descendant images, so a
+                // legitimate constructor/cache wait retains its admission.
+                && !starting.is_file()
                 && !ready.is_file()
             {
+                if let Some(error) = runtime_failure(&view.session)? {
+                    return Err(error);
+                }
+                tracing::debug!(
+                    action = "root_injection_deadline",
+                    constructor_entered = false,
+                    acknowledged = false,
+                    "Root native initialization did not enter before its active deadline"
+                );
                 return Err(Error::new(
                     Code::PnportInjectionFailed,
                     "The executable did not acknowledge native injection; execution was stopped.",
@@ -537,7 +566,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         #[cfg(target_os = "macos")]
         let cleanup = {
             use std::os::unix::process::ExitStatusExt;
-            let terminal = job.restore();
+            let terminal = job.restore_owned(&mut owner);
             let signal = match SIGNAL.load(Ordering::SeqCst) {
                 signal @ (libc::SIGINT | libc::SIGTERM | libc::SIGHUP) => signal,
                 _ => match status.and_then(|exit| exit.signal()) {
@@ -629,6 +658,24 @@ mod pending_launch_tests {
 
     #[test]
     fn abandoned_entry_retains_a_failure_published_after_the_first_read() {
+        const ISOLATED: &str = "PNPORT_TEST_PENDING_ABANDONED";
+        if std::env::var_os(ISOLATED).as_deref() != Some(std::ffi::OsStr::new("1")) {
+            // Parallel owner tests fork real native children. Their temporary
+            // inherited open descriptions legitimately retain this lease until
+            // exec, so an immediate abandoned assertion needs its own process.
+            // Keep the parent suite parallel and the explicit inherited-lease
+            // control in pnport-core rather than retrying a timing assertion.
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args(["supervisor::pending_launch_tests::abandoned_entry_retains_a_failure_published_after_the_first_read", "--exact"])
+                .env(ISOLATED, "1").output().unwrap();
+            assert!(
+                output.status.success(),
+                "isolated pending failure control failed: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
         let session = tempfile::tempdir().unwrap();
         fs::create_dir(session.path().join("pending")).unwrap();
         fs::write(session.path().join("pending/pnport-test"), b"").unwrap();

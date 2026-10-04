@@ -104,7 +104,7 @@ export function inspectTarball(file, version, sourceRevision) {
   if (target) {
     const preload = entries.get(`bin/${companion(target)}`)?.bytes;
     ensure(preload?.length > 0, "Missing native companion");
-    if (target.os === "darwin") ensure(preload.includes(Buffer.from("PNPORT_PRELOAD_0.1.0_FORMAT_2_READY")), "fspy companion ABI mismatch");
+    if (target.os === "darwin") ensure(preload.includes(Buffer.from("PNPORT_PRELOAD_0.1.0_FORMAT_3_READY")), "fspy companion ABI mismatch");
   }
   else for (const name of mainFiles) ensure(entries.get(name).bytes.equals(Buffer.from(sourceText(`packages/pnport/${name}`))), `Launcher source mismatch: ${name}`);
   for (const [name, source] of [["LICENSE", "crates/pnport/LICENSE"], ["README.md", "packages/pnport/README.md"], ...(target && target.os !== "win32" ? [["LICENSE.fspy", "crates/fspy/LICENSE"]] : [])]) ensure(entries.get(name).bytes.equals(Buffer.from(sourceText(source))), `${name} source mismatch`);

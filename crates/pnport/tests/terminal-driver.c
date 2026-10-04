@@ -16,13 +16,53 @@ static void marker(const char *name) {
     fclose(file);
 }
 
+static pid_t foreign_group(int immediate_exit) {
+    int barrier[2];
+    if (pipe(barrier) || fcntl(barrier[0], F_SETFD, FD_CLOEXEC) || fcntl(barrier[1], F_SETFD, FD_CLOEXEC)) return -1;
+    pid_t child = fork();
+    if (child < 0) return -1;
+    if (!child) {
+        // Test-owned, unreaped identity; even a failed driver leaves no daemon.
+        alarm(15);
+        close(barrier[1]);
+        char release;
+        if (read(barrier[0], &release, 1) != 1) _exit(92);
+        close(barrier[0]);
+        if (immediate_exit) _exit(0);
+        for (;;) pause();
+    }
+    close(barrier[0]);
+    if (setpgid(child, child) || (immediate_exit && tcsetpgrp(0, child)) || write(barrier[1], "1", 1) != 1) return -1;
+    close(barrier[1]);
+    if (immediate_exit) {
+        int status;
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status)) return -1;
+        errno = 0;
+        if (tcgetpgrp(0) != child || !kill(-child, 0) || errno != ESRCH) return -1;
+    }
+    return child;
+}
+
 int main(int argc, char **argv) {
     if (argc != 4) return 71;
     marker("terminal.driver");
     signal(SIGTTOU, SIG_IGN);
+    int background_empty = !strcmp(argv[3], "background-empty");
+    int unrelated = !strcmp(argv[3], "unrelated-foreground");
+    pid_t foreign = background_empty || unrelated ? foreign_group(background_empty) : 0;
+    if (foreign < 0) return 93;
     int input[2] = {-1, -1};
     int redirected = strcmp(argv[3], "redirected") == 0;
     if (redirected && pipe(input)) return 85;
+    const char *command_mode = redirected ? "terminal-pipe" :
+        !strcmp(argv[3], "child-group") ? "terminal-child-group" :
+        !strcmp(argv[3], "child-exit") ? "terminal-child-exit" :
+        background_empty ? "terminal-background-empty" :
+        unrelated ? "terminal-unrelated-group" :
+        !strcmp(argv[3], "detached-interrupt") ? "terminal-detached" :
+        !strcmp(argv[3], "new-group") ? "terminal-group" :
+        !strcmp(argv[3], "pending-pause") ? "terminal-pending-pause" :
+        !strcmp(argv[3], "self-stop") ? "terminal-stop" : "terminal";
     int launch[2];
     if (pipe(launch)) return 83;
     pid_t child = fork();
@@ -55,11 +95,11 @@ int main(int argc, char **argv) {
             if (log < 0 || dup2(log, STDERR_FILENO) < 0) _exit(88);
             close(log);
             execl(argv[1], argv[1], "--log-level", "debug", "--cache-dir", "store", "run", "--", argv[2],
-                  "root", redirected ? "terminal-pipe" : strcmp(argv[3], "self-stop") == 0 ? "terminal-stop" : "terminal", (char *)NULL);
+                  "root", command_mode, (char *)NULL);
             _exit(74);
         }
         execl(argv[1], argv[1], "--cache-dir", "store", "run", "--", argv[2],
-              "root", redirected ? "terminal-pipe" : strcmp(argv[3], "self-stop") == 0 ? "terminal-stop" : "terminal", (char *)NULL);
+              "root", command_mode, (char *)NULL);
         _exit(74);
     }
     int status;
@@ -75,11 +115,19 @@ int main(int argc, char **argv) {
     close(launch[0]);
     if (setpgid(child, child)) return 75;
     marker("terminal.launching");
-    if (strcmp(argv[3], "background") != 0 && tcsetpgrp(0, child)) return 76;
+    if (strcmp(argv[3], "background") != 0 && !background_empty && tcsetpgrp(0, child)) return 76;
     if (write(launch[1], "1", 1) != 1) return 77;
     close(launch[1]);
     marker("terminal.running");
-    if (strcmp(argv[3], "interrupt") != 0 &&
+    if (unrelated) {
+        for (int attempt = 0; attempt < 500 && access("terminal.empty-group", F_OK); attempt++) usleep(10000);
+        if (access("terminal.empty-group", F_OK) || tcsetpgrp(0, foreign)) return 94;
+        marker("terminal.foreign");
+    }
+    if (strcmp(argv[3], "interrupt") != 0 && strcmp(argv[3], "detached-interrupt") != 0 &&
+        strcmp(argv[3], "child-group") != 0 &&
+        strcmp(argv[3], "child-exit") != 0 &&
+        !background_empty && !unrelated &&
         strcmp(argv[3], "missing-image") != 0 &&
         strcmp(argv[3], "invalid-image") != 0 && !redirected) {
         pid_t waited = waitpid(child, &status, WUNTRACED);
@@ -97,9 +145,18 @@ int main(int argc, char **argv) {
         pid_t expected = strcmp(argv[3], "background") == 0 ? getpgrp() : child;
         if (tcgetpgrp(0) != expected) return 79;
         marker("terminal.stopped");
+        if (!strcmp(argv[3], "pending-pause")) sleep(6);
         if (tcsetpgrp(0, child) || kill(-child, SIGCONT)) return 80;
     }
     if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return 81;
+    if (background_empty || unrelated) {
+        if (tcgetpgrp(0) != foreign || (unrelated && kill(foreign, 0)) || tcsetpgrp(0, getpgrp())) return 95;
+        marker("terminal.preserved");
+        if (unrelated) {
+            if (kill(foreign, SIGTERM) || waitpid(foreign, NULL, 0) != foreign) return 96;
+        }
+        return WEXITSTATUS(status);
+    }
     // pnport must return the terminal to its caller group before completion.
     if (tcgetpgrp(0) != child || tcsetpgrp(0, getpgrp())) return 82;
     marker("terminal.restored");
