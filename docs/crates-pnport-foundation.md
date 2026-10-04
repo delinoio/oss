@@ -51,7 +51,10 @@ graph input. Yarn supplies `pnpapi`, `process.versions.pnp`, and
 [PnP runtime](https://yarnpkg.com/advanced/pnpapi). Do not substitute the reserved
 npm package named `pnpapi` or a partial API implementation.
 
-Preserve existing Node options and avoid adding a selected loader more than
+Run the selected CommonJS loader before caller `--require` preloads so those
+preloads can use `pnpapi` and ZIP-backed dependencies. Move an existing selected
+preload ahead of caller preloads when needed. Preserve unrelated option bytes
+and their relative order, and avoid adding a selected loader more than
 once, including equivalent normalized local file URLs. Query and fragment
 suffixes retain their distinct ESM module identities. Restore the selected
 loaders on supported descendant exec/spawn paths,
@@ -64,8 +67,9 @@ views, and unsupported-operation boundaries remain required.
 
 The package-owned probe verifies automatic API access from a ZIP-backed
 package's require context, direct and descendant Node execution, preserved
-options, and restoration after environment replacement. Explicit user preloads
-remain supported. Run probes only against prepared synthetic Yarn fixtures;
+options, and restoration after environment replacement. Caller preloads must
+read `pnpapi` and ZIP-backed dependencies while retaining their relative order.
+Explicit user preloads remain supported. Run probes only against prepared synthetic Yarn fixtures;
 the offline probe does not install dependencies or load private application
 code. These controls do not establish universal tool compatibility or complete
 platform acceptance.

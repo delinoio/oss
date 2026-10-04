@@ -12,7 +12,10 @@ const probe = `
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {createRequire, findPnpApi} = require('node:module');
-if (process.env.PNPORT_TEST_PRELOAD) assert.equal(globalThis.__pnportTestPreload, 'preserved');
+if (process.env.PNPORT_TEST_PRELOAD) {
+  assert.equal(globalThis.__pnportTestPreload, 'preserved');
+  assert.deepEqual(globalThis.__pnportTestPreloadOrder, ['first', 'second']);
+}
 const issuer = (process.argv[2] ?? process.cwd()) + '/probe.cjs';
 const filename = createRequire(issuer).resolve(process.argv[1]);
 assert.equal(typeof JSON.parse(fs.readFileSync(filename, 'utf8')).name, 'string');
@@ -65,8 +68,17 @@ export function pnpApiConformance({ binary, root, cache, environment = process.e
   const nodeOptions = { ...env, NODE_OPTIONS: `--require ${quote(loader)}` };
   const temporary = mkdtempSync(join(tmpdir(), "pnport-preload-options-"));
   const custom = join(temporary, "preload with spaces.cjs");
-  writeFileSync(custom, "globalThis.__pnportTestPreload = 'preserved';\n");
-  const customOptions = `--no-warnings --require=${quote(custom)}`;
+  const second = join(temporary, "second preload.cjs");
+  writeFileSync(custom, `
+const assert = require('node:assert/strict');
+const projectRequire = require('node:module').createRequire(${JSON.stringify(join(resolve(root), "caller.cjs"))});
+assert.equal(projectRequire('pnpapi').VERSIONS.std, 3);
+assert.equal(typeof projectRequire(${JSON.stringify(dependency)}).name, 'string');
+globalThis.__pnportTestPreload = 'preserved';
+globalThis.__pnportTestPreloadOrder = ['first'];
+`);
+  writeFileSync(second, "require('node:assert/strict').deepEqual(globalThis.__pnportTestPreloadOrder, ['first']);\nglobalThis.__pnportTestPreloadOrder.push('second');\n");
+  const customOptions = `--no-warnings --require=${quote(custom)} --require ${quote(second)}`;
   const inheritedCustom = { ...env, NODE_OPTIONS: customOptions, PNPORT_TEST_PRELOAD: "1" };
   const cases = [
     ["automatic", ["--eval", probe, dependency], env],
@@ -77,6 +89,8 @@ export function pnpApiConformance({ binary, root, cache, environment = process.e
     ["environmentReplaced", ["--eval", descendant("const env = {};"), dependency], env],
     ["descendantOutsideProject", ["--eval", descendant("const env = {};", probe, false, temporary), dependency], env],
     ["callerPreloadPreserved", ["--eval", probe, dependency], inheritedCustom],
+    ["callerPreloadBeforeExplicitLoader", ["--eval", probe, dependency],
+      { ...inheritedCustom, NODE_OPTIONS: `${customOptions} -r ${quote(loader)}` }],
     ["descendantOptionsReplaced", ["--eval", descendant(`const env = {NODE_OPTIONS: ${JSON.stringify(customOptions)}, PNPORT_TEST_PRELOAD: '1'};`), dependency], env],
   ];
   if (existsSync(join(root, ".pnp.loader.mjs"))) {

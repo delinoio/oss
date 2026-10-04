@@ -471,8 +471,8 @@ int main(int argc, char **argv) {
         const char *options = getenv("NODE_OPTIONS");
         char cwd[4096], expected[8192];
         if (!getcwd(cwd, sizeof(cwd))) return 40;
-        snprintf(expected, sizeof(expected), "%s--require \"%s/.pnp.cjs\"",
-            argv[2][0] == '1' ? "--no-warnings " : "", cwd);
+        snprintf(expected, sizeof(expected), "--require \"%s/.pnp.cjs\"%s",
+            cwd, argv[2][0] == '1' ? " --no-warnings" : "");
         if (!options || strcmp(options, expected)) return 41;
         puts("node-options-restored");
         return 0;

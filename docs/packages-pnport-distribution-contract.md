@@ -72,7 +72,9 @@ The probe requires `pnpapi` from a ZIP-backed package's require context, verifie
 `process.versions.pnp`, `module.findPnpApi`, locator lookup and request resolution,
 and imports both `pnpapi` and the package manifest through ESM. Fresh descendants
 must retain these behaviors after removing `NODE_OPTIONS` or replacing the whole
-environment. Caller preload options and replacement descendant options must
+environment. Caller preloads must run after Yarn initialization and be able to
+read `pnpapi` and ZIP-backed dependencies in their original relative order.
+Caller preload options and replacement descendant options must
 still execute. Explicit `--require` and inherited loader options remain supported.
 Evidence contains the Node version, typed availability outcomes and exit codes,
 without package paths or child streams. This regression gate does not establish

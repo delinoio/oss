@@ -33,50 +33,93 @@ impl Loader {
         self.esm.is_some()
     }
 
-    /// Preserve caller options byte-for-byte and add only missing selected
-    /// loaders. Node processes consume the result; native programs ignore it.
+    /// Activate Yarn before caller preloads, retaining unrelated option bytes
+    /// and their order. Native programs ignore these Node options.
     pub fn options(&self, inherited: Option<&OsStr>) -> Result<OsString> {
         let inherited = inherited.unwrap_or_else(|| OsStr::new(""));
-        let mut result = inherited.to_owned();
         let tokens = tokens(inherited.as_encoded_bytes());
         // Keep malformed caller options malformed. Node must retain its own
         // diagnostic instead of pnport repairing or reinterpreting them.
         if tokens.is_none() {
-            return Ok(result);
+            return Ok(inherited.to_owned());
         }
         let tokens = tokens.unwrap();
-        for (flag, path) in [
-            ("--require", Some(&self.commonjs)),
-            ("--experimental-loader", self.esm.as_ref()),
-        ] {
-            let Some(path) = path else { continue };
-            if contains_loader(&tokens, flag, path.as_os_str().as_encoded_bytes()) {
-                continue;
+        let requires: Vec<_> = tokens
+            .iter()
+            .enumerate()
+            .filter_map(|(index, _)| require_token(&tokens, index))
+            .collect();
+        let selected: Vec<_> = requires
+            .iter()
+            .filter(|(value, _)| *value == self.commonjs.as_os_str().as_encoded_bytes())
+            .map(|(_, span)| span.clone())
+            .collect();
+        let mut result = if selected.len() == 1
+            && requires
+                .first()
+                .is_some_and(|(_, span)| *span == selected[0])
+        {
+            inherited.to_owned()
+        } else {
+            // Move only the selected loader. Requoting every caller argument
+            // would change its spelling and could change Node's diagnostics.
+            let mut result = OsString::new();
+            append_loader(&mut result, "--require", loader_path(&self.commonjs)?);
+            let bytes = inherited.as_encoded_bytes();
+            let mut cursor = 0;
+            for span in selected {
+                append_option_bytes(&mut result, &bytes[cursor..span.start]);
+                cursor = span.end;
             }
-            let path = path.to_str().ok_or_else(|| {
-                Error::new(
-                    Code::PnportUnsupportedOperation,
-                    "The selected Node loader path cannot be encoded.",
-                )
-            })?;
-            let value = if flag == "--require" {
-                path.to_owned()
-            } else {
+            append_option_bytes(&mut result, &bytes[cursor..]);
+            result
+        };
+        if let Some(path) = &self.esm {
+            if !contains_loader(
+                &tokens,
+                "--experimental-loader",
+                path.as_os_str().as_encoded_bytes(),
+            ) {
                 // ESM treats loader specifiers as URLs. Encode path characters
                 // such as '#', '?' and '%' rather than changing their meaning.
-                file_url(path)
-            };
-            if !result.is_empty() {
-                result.push(" ");
+                append_loader(
+                    &mut result,
+                    "--experimental-loader",
+                    &file_url(loader_path(path)?),
+                );
             }
-            result.push(flag);
-            result.push(" \"");
-            // NODE_OPTIONS uses double quotes and backslash escapes inside
-            // them. JSON escaping would change literal tabs/newlines in paths.
-            result.push(value.replace('\\', "\\\\").replace('"', "\\\""));
-            result.push("\"");
         }
         Ok(result)
+    }
+}
+
+fn loader_path(path: &std::path::Path) -> Result<&str> {
+    path.to_str().ok_or_else(|| {
+        Error::new(
+            Code::PnportUnsupportedOperation,
+            "The selected Node loader path cannot be encoded.",
+        )
+    })
+}
+
+fn append_loader(result: &mut OsString, flag: &str, value: &str) {
+    if !result.is_empty() {
+        result.push(" ");
+    }
+    result.push(flag);
+    result.push(" \"");
+    // NODE_OPTIONS uses double quotes and backslash escapes inside them.
+    // JSON escaping would change literal tabs/newlines in paths.
+    result.push(value.replace('\\', "\\\\").replace('"', "\\\""));
+    result.push("\"");
+}
+
+fn append_option_bytes(result: &mut OsString, bytes: &[u8]) {
+    if !bytes.is_empty() {
+        result.push(" ");
+        // Token spans end at ASCII separators in the original OsStr encoding.
+        // Slicing at those boundaries preserves its platform encoding.
+        result.push(unsafe { OsStr::from_encoded_bytes_unchecked(bytes) });
     }
 }
 
@@ -100,36 +143,69 @@ fn file_url(path: &str) -> String {
 
 // Match Node's ParseNodeOptionsEnvVar: only spaces delimit arguments, only
 // double quotes group them, and backslashes escape inside double quotes.
-fn tokens(value: &[u8]) -> Option<Vec<Vec<u8>>> {
-    let mut result: Vec<Vec<u8>> = Vec::new();
-    let mut quoted = false;
-    let mut new_argument = true;
-    let mut i = 0;
-    while i < value.len() {
-        let mut byte = value[i];
-        if byte == b'\\' && quoted {
-            i += 1;
-            byte = *value.get(i)?;
-        } else if byte == b' ' && !quoted {
-            new_argument = true;
-            i += 1;
-            continue;
-        } else if byte == b'"' {
-            quoted = !quoted;
-            i += 1;
-            continue;
-        }
-        if new_argument {
-            result.push(Vec::new());
-            new_argument = false;
-        }
-        result.last_mut()?.push(byte);
-        i += 1;
-    }
-    (!quoted).then_some(result)
+struct Token {
+    value: Vec<u8>,
+    span: std::ops::Range<usize>,
 }
 
-fn contains_loader(tokens: &[Vec<u8>], flag: &str, path: &[u8]) -> bool {
+fn tokens(value: &[u8]) -> Option<Vec<Token>> {
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i < value.len() {
+        if value[i] == b' ' {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        let mut decoded = Vec::new();
+        let mut quoted = false;
+        while i < value.len() {
+            let mut byte = value[i];
+            if byte == b'\\' && quoted {
+                i += 1;
+                byte = *value.get(i)?;
+            } else if byte == b' ' && !quoted {
+                break;
+            } else if byte == b'"' {
+                quoted = !quoted;
+                i += 1;
+                continue;
+            }
+            decoded.push(byte);
+            i += 1;
+        }
+        if quoted {
+            return None;
+        }
+        if !decoded.is_empty() {
+            result.push(Token {
+                value: decoded,
+                span: start..i,
+            });
+        }
+    }
+    Some(result)
+}
+
+fn require_token(tokens: &[Token], index: usize) -> Option<(&[u8], std::ops::Range<usize>)> {
+    let token = &tokens[index];
+    for flag in [b"--require".as_slice(), b"-r".as_slice()] {
+        if token.value == flag {
+            let argument = tokens.get(index + 1)?;
+            return Some((&argument.value, token.span.start..argument.span.end));
+        }
+        if let Some(value) = token
+            .value
+            .strip_prefix(flag)
+            .and_then(|value| value.strip_prefix(b"="))
+        {
+            return Some((value, token.span.clone()));
+        }
+    }
+    None
+}
+
+fn contains_loader(tokens: &[Token], flag: &str, path: &[u8]) -> bool {
     let flags: &[&str] = if flag == "--require" {
         &["--require", "-r"]
     } else {
@@ -137,10 +213,10 @@ fn contains_loader(tokens: &[Vec<u8>], flag: &str, path: &[u8]) -> bool {
     };
     tokens.iter().enumerate().any(|(index, token)| {
         flags.iter().any(|flag| {
-            let value = if token == flag.as_bytes() {
-                tokens.get(index + 1).map(Vec::as_slice)
+            let value = if token.value == flag.as_bytes() {
+                tokens.get(index + 1).map(|token| token.value.as_slice())
             } else {
-                token.strip_prefix(format!("{flag}=").as_bytes())
+                token.value.strip_prefix(format!("{flag}=").as_bytes())
             };
             value
                 .is_some_and(|value| value == path || file_url_path(value).as_deref() == Some(path))
@@ -203,7 +279,7 @@ mod tests {
         assert!(options
             .to_str()
             .unwrap()
-            .starts_with(original.to_str().unwrap()));
+            .contains(original.to_str().unwrap()));
         assert_eq!(loader.options(Some(&options)).unwrap(), options);
         #[cfg(unix)]
         let alternate = OsStr::new("-r \"/project with spaces/.pnp.cjs\" --loader=file:///project%20with%20spaces/.pnp.loader.mjs");
@@ -221,7 +297,11 @@ mod tests {
         loader.commonjs = PathBuf::from("/quote\"slash\\tab\tline\n雪/.pnp.cjs");
         let options = loader.options(None).unwrap();
         assert_eq!(
-            tokens(options.as_encoded_bytes()).unwrap(),
+            tokens(options.as_encoded_bytes())
+                .unwrap()
+                .into_iter()
+                .map(|token| token.value)
+                .collect::<Vec<_>>(),
             vec![
                 b"--require".to_vec(),
                 loader.commonjs.as_os_str().as_encoded_bytes().to_vec()
@@ -233,6 +313,34 @@ mod tests {
                 malformed
             );
         }
+    }
+
+    #[test]
+    fn activates_yarn_before_caller_preloads_and_moves_existing_selected_requires() {
+        let loader = loader(false);
+        let original = "--no-warnings --require=\"/first preload.cjs\"  -r \"/project with \
+                        spaces/.pnp.cjs\" --require=/second.cjs -r=\"/project with \
+                        spaces/.pnp.cjs\"";
+        let options = loader.options(Some(OsStr::new(original))).unwrap();
+        let parsed = tokens(options.as_encoded_bytes()).unwrap();
+        let requires: Vec<_> = parsed
+            .iter()
+            .enumerate()
+            .filter_map(|(index, _)| require_token(&parsed, index).map(|(value, _)| value))
+            .collect();
+        assert_eq!(
+            requires,
+            vec![
+                b"/project with spaces/.pnp.cjs".as_slice(),
+                b"/first preload.cjs",
+                b"/second.cjs"
+            ]
+        );
+        assert!(options
+            .to_str()
+            .unwrap()
+            .contains("--no-warnings --require=\"/first preload.cjs\""));
+        assert_eq!(loader.options(Some(&options)).unwrap(), options);
     }
 
     #[test]
