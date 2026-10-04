@@ -62,8 +62,32 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 			if err != nil || !replay.Msg.Replayed || replay.Msg.Job.Id != r.Msg.Job.Id {
 				t.Fatal("large action acceptance replay", err)
 			}
+			assertContext := func(state domain.JobState) {
+				t.Helper()
+				response, err := sessionClient(f.accountFixture).GetSessionContext(ctx, ownerRequest(f.identity, &pb.GetSessionContextRequest{SessionId: f.change.Session.Id}))
+				var view sessionContextView
+				if err != nil || domain.Decode(response.Msg.DocumentJson, &view) != nil || view.ManualAction == nil {
+					t.Fatal("large action context unavailable", err)
+				}
+				var action struct {
+					ActionID domain.ID       `json:"action_id"`
+					State    domain.JobState `json:"state"`
+				}
+				if json.Unmarshal(view.ManualAction.Document, &action) != nil || action.ActionID != input.ActionID || action.State != state {
+					t.Fatal("context lost accepted action", action)
+				}
+			}
+			assertContext(domain.JobQueued)
 			claimed := claimQueuedCompaction(t, f, r.Msg.Job)
 			output := publicCompactionResult(input, domain.ID(claimed.Id), false)
+			if harness == domain.Codex {
+				output = domain.SessionCompactionResult{Version: 2, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: output.Checkpoint, Codex: &domain.CodexCompactionResult{NativeThreadID: input.Completion.NativeThreadID, SourceNativeTurnID: input.Completion.NativeTurnID, NativeTurnID: domain.NativeIdentity(domain.NewID()), LiveItemID: "original-live-context", HistoryItemID: "item-0", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, ResponseUsages: []domain.NativeResponseUsage{}}}
+			} else {
+				output = domain.SessionCompactionResult{Version: 3, Harness: domain.OpenCode, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: output.Checkpoint, OpenCode: &domain.OpenCodeCompactionResult{NativeSessionID: input.Completion.NativeThreadID, SourceNativeInputID: input.Completion.NativeTurnID, UserID: "msg_01960dcbe1fcABCDEFGHIJKLMN", PartID: "prt_01960dcbe1fcABCDEFGHIJKLMN", SummaryID: "msg_01960dcbe1fdABCDEFGHIJKLMN", CompletedEventID: "evt_01960dcbe1fdABCDEFGHIJKLMN", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, Usages: []domain.OpenCodeUsageObservation{}}}
+			}
+			if err := output.Validate(); err != nil {
+				t.Fatal("invalid native result fixture", err)
+			}
 			raw, _ := json.Marshal(output)
 			// Controlled native result fixture exercises real authenticated
 			// settlement; it does not establish native history/account acceptance.
@@ -71,6 +95,7 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 			if err != nil {
 				t.Fatal("large action settlement was stranded", err)
 			}
+			assertContext(domain.JobSucceeded)
 		})
 	}
 }

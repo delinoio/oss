@@ -123,7 +123,7 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 				return domain.CompactionUncertain()
 			}
 			var input domain.SessionCompactionInput
-			if domain.Decode(j.Input, &input) != nil || input.Validate() != nil {
+			if domain.DecodeCompactionInput(j.Input, &input) != nil || input.Validate() != nil {
 				return domain.CompactionUncertain()
 			}
 			document, err := json.Marshal(struct {

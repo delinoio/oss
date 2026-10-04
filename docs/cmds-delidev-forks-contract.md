@@ -328,3 +328,5 @@ Submit refreshes the profile and does not use stale success after read failure.
 These reads grant no child/native authority: Go independently validates complete
 canonical history at acceptance/publication, and the Worker verifies complete
 native history before exposing the child.
+
+OpenCode source and child checkpoint readers use the strict 9 MiB private checkpoint ceiling while retaining canonical and native identity verification. Before copying the workspace or claiming any native mutation, the Worker verifies the complete source identity inventory and reserves the full serialized result, including a 64 KiB closed General Chat manifest envelope, under the existing 1 MiB job output limit. Sources whose complete mappings do not fit return ResourceExhausted with the original session preserved. The native history inspection maxima do not waive this publication bound; mappings are never truncated.

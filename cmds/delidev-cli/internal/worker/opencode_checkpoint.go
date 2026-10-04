@@ -216,7 +216,7 @@ func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openC
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
 	var value openCodeExecutionCheckpoint
-	if domain.Decode(raw, &value) != nil || !value.matches(ref) {
+	if domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || !value.matches(ref) {
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
 	canonical, err := json.Marshal(value)

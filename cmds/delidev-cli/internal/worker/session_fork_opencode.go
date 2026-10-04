@@ -57,7 +57,7 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 	}
 	raw, err := security.ReadPrivate(path, maxOpenCodeExecutionCheckpointBytes)
 	var saved openCodeExecutionCheckpoint
-	if err != nil || executionInputDigest(raw) != i.Completion.NativeCheckpointDigest || domain.Decode(raw, &saved) != nil || saved.Version != 2 {
+	if err != nil || executionInputDigest(raw) != i.Completion.NativeCheckpointDigest || domain.DecodeWithLimit(raw, &saved, maxOpenCodeExecutionCheckpointBytes) != nil || saved.Version != 2 {
 		return empty, executionCheckpointUncertain()
 	}
 	terminal := i.Completion
@@ -121,6 +121,13 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 		return nil, err
 	}
 	childPrep.ForkProfile = workspace.OpenCodeGeneralChatForkV1
+	inventory, err := opencode.InspectForkSourceInventory(ctx, filepath.Join(config.Root, "runtimes", string(a.ExecutionID)), source.Native, source.NativeReference)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkOpenCodeForkResultCapacity(i, mustForkJSON(childPrep), inventory); err != nil {
+		return nil, err
+	}
 	snapshot, err := manager.InspectForkSnapshot(ctx, manifest, childPrep)
 	if err != nil {
 		return nil, err
@@ -128,6 +135,9 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	childManifest, err := manager.PrepareFork(ctx, childPrep, snapshot)
 	if err != nil {
 		return nil, err
+	}
+	if len(mustForkJSON(childManifest)) > maxOpenCodeForkWorkspaceDocumentBytes {
+		return nil, executionCheckpointUncertain()
 	}
 	// A ready unpublished copy now exists. Any later uncertain native/profile
 	// failure retains this original job's source reservation and owned evidence.
@@ -257,7 +267,11 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	if result.ValidateIdentity(i) != nil {
 		return nil, executionCheckpointUncertain()
 	}
-	return json.Marshal(result)
+	encoded, err := json.Marshal(result)
+	if err != nil || len(encoded) > domain.MaxWorkerJobOutputBytes {
+		return nil, executionCheckpointUncertain()
+	}
+	return encoded, nil
 }
 
 func readOpenCodeForkCheckpoint(ctx context.Context, root string, credential Credential, i domain.ExecutionJobInput) (openCodeForkCheckpoint, error) {
@@ -271,7 +285,7 @@ func readOpenCodeForkCheckpoint(ctx context.Context, root string, credential Cre
 	}
 	home := filepath.Join(root, "runtimes", string(f.RuntimeID))
 	raw, err := security.ReadPrivate(filepath.Join(home, "fork-completion.json"), maxOpenCodeExecutionCheckpointBytes)
-	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &value) != nil || value.Version != 2 || !bytes.Equal(mustForkJSON(value), raw) || value.JobID != f.JobID || value.ServerID != credential.ServerID || value.DeviceID != credential.DeviceID || value.SessionID != i.SessionID || value.MachineID != i.MachineID || credential.MachineID != i.MachineID || value.RuntimeID != f.RuntimeID || value.ConfigurationDigest != i.ConfigurationDigest || value.AccountID != i.AccountID || value.ConnectionID != i.ConnectionID || value.ManifestDigest != executionInputDigest(i.Manifest) || value.NativeReference.SessionID != string(f.NativeThreadID) || value.NativeReference.InputID != string(f.NativeTurnID) || value.NativeReference.CreationRequestID != value.Requests.Fork || value.Requests.Validate() != nil || value.InstanceID.Validate() != nil || value.Revision == 0 || !canonicalDigest(value.AssignmentDigest) || !canonicalDigest(value.JobInputDigest) || len(value.Claims) != 5 {
+	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || value.Version != 2 || !bytes.Equal(mustForkJSON(value), raw) || value.JobID != f.JobID || value.ServerID != credential.ServerID || value.DeviceID != credential.DeviceID || value.SessionID != i.SessionID || value.MachineID != i.MachineID || credential.MachineID != i.MachineID || value.RuntimeID != f.RuntimeID || value.ConfigurationDigest != i.ConfigurationDigest || value.AccountID != i.AccountID || value.ConnectionID != i.ConnectionID || value.ManifestDigest != executionInputDigest(i.Manifest) || value.NativeReference.SessionID != string(f.NativeThreadID) || value.NativeReference.InputID != string(f.NativeTurnID) || value.NativeReference.CreationRequestID != value.Requests.Fork || value.Requests.Validate() != nil || value.InstanceID.Validate() != nil || value.Revision == 0 || !canonicalDigest(value.AssignmentDigest) || !canonicalDigest(value.JobInputDigest) || len(value.Claims) != 5 {
 		return openCodeForkCheckpoint{}, executionCheckpointUncertain()
 	}
 	ids, err := opencode.InspectForkCheckpoint(ctx, filepath.Join(home, "native"), value.Native, value.NativeReference)
@@ -302,4 +316,59 @@ func readOpenCodeForkCheckpoint(ctx context.Context, root string, credential Cre
 		}
 	}
 	return value, nil
+}
+
+// General Chat has a closed repository-free manifest. Reserve its complete
+// serialized envelope before workspace copying or any once-only native claim.
+// The full identity map must fit the existing output/store/receipt bound; native
+// inspection maxima alone do not grant capacity to publish a truncated map.
+const maxOpenCodeForkWorkspaceDocumentBytes = 64 << 10
+
+func checkOpenCodeForkResultCapacity(input domain.ForkJobInput, preparation json.RawMessage, inventory []opencode.HistoryMessage) error {
+	capacity := func() error {
+		return domain.Fail(domain.ResourceExhausted, "The complete OpenCode fork result exceeds its publication capacity.", "Keep the original session; start a new session with selected text instead of repeating Fork.")
+	}
+	if len(preparation) > maxOpenCodeForkWorkspaceDocumentBytes || len(inventory) < 2 || len(inventory) > 4096 {
+		return capacity()
+	}
+	// Pinned OpenCode IDs contain exactly 30 ASCII bytes. Placeholder children
+	// supply only the encoded byte bound, never an executable/native identity.
+	messagePlaceholder := domain.NativeIdentity("msg_000000000000abcdefghijklmn")
+	partPlaceholder := domain.NativeIdentity("prt_000000000000abcdefghijklmn")
+	mappings := make([]domain.OpenCodeForkMessageMapping, 0, len(inventory))
+	parts := 0
+	for _, message := range inventory {
+		source := domain.NativeIdentity(message.ID)
+		if source.Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || message.Parts == nil {
+			return executionCheckpointUncertain()
+		}
+		mapping := domain.OpenCodeForkMessageMapping{Source: source, Child: messagePlaceholder, Parts: []domain.OpenCodeForkPartMapping{}}
+		for _, part := range message.Parts {
+			source := domain.NativeIdentity(part.ID)
+			if source.Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+				return executionCheckpointUncertain()
+			}
+			parts++
+			if parts > 16384 {
+				return capacity()
+			}
+			mapping.Parts = append(mapping.Parts, domain.OpenCodeForkPartMapping{Source: source, Child: partPlaceholder})
+		}
+		mappings = append(mappings, mapping)
+	}
+	// Marshal RawMessage without string escaping, matching real result encoding.
+	manifest := make(json.RawMessage, maxOpenCodeForkWorkspaceDocumentBytes)
+	for index := range manifest {
+		manifest[index] = 'x'
+	}
+	manifest[0], manifest[len(manifest)-1] = '"', '"'
+	template := domain.ForkJobResult{Version: 2, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: "ses_000000000000abcdefghijklmn", NativeTurnID: messagePlaceholder, CheckpointDigest: "0000000000000000000000000000000000000000000000000000000000000000", Preparation: preparation, Manifest: manifest, CleanupVerified: true, OpenCodeMappings: mappings}
+	raw, err := json.Marshal(template)
+	if err != nil {
+		return executionCheckpointUncertain()
+	}
+	if len(raw) > domain.MaxWorkerJobOutputBytes {
+		return capacity()
+	}
+	return nil
 }

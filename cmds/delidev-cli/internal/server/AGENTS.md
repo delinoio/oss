@@ -208,3 +208,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - The independent OpenCode General Chat Fork profile requires System 26/Worker 15, a pinned Unix API-only Build/Execute source and complete plain-text history. Freeze all native operation identities at admission; recheck original account/connection, installation, Worker and source revision at claim/publication. Atomically clone only mapped complete canonical text into a paused empty-queue child with explicit inherited provenance; never copy input authority or usage. Follow `docs/cmds-delidev-forks-contract.md`.
 
 - Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `docs/cmds-delidev-compaction-contract.md`.
+
+- Session context projects retained compaction jobs through the typed 3 MiB input decoder used by admission and settlement, preserving action state even for large original assignments.

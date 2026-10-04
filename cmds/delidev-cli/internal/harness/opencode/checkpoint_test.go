@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -274,5 +275,29 @@ func TestOpenCodeCheckpointInventoryBoundsAndCancellation(t *testing.T) {
 	}
 	if _, _, err := api.RetainCheckpoint(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOpenCodeLargeCheckpointRetainsOriginalPrivateInventory(t *testing.T) {
+	api, home := completedCheckpointFixture(t)
+	for index := 0; index < 7000; index++ {
+		path := filepath.Join(home, "data", "opencode", fmt.Sprintf("original-%04d-%s", index, strings.Repeat("x", 100)))
+		if err := security.WriteAtomic(path, []byte("original bounded private bytes")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, ref, err := api.RetainCheckpoint(context.Background())
+	if err != nil || len(raw) <= 1<<20 || len(raw) > maxCheckpointBytes {
+		t.Fatal("large original checkpoint retention", len(raw), err)
+	}
+	if err := InspectCheckpoint(context.Background(), home, raw, ref); err != nil {
+		t.Fatal("large original comparison evidence rejected", err)
+	}
+	path := filepath.Join(home, "data", "opencode", fmt.Sprintf("original-%04d-%s", 6999, strings.Repeat("x", 100)))
+	if err := os.WriteFile(path, []byte("replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if InspectCheckpoint(context.Background(), home, raw, ref) == nil {
+		t.Fatal("large checkpoint adopted changed private files")
 	}
 }

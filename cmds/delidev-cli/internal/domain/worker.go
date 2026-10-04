@@ -140,7 +140,8 @@ type Job struct {
 const MaxStorageRecoveryInputBytes = 3 << 20
 
 const (
-	maxJobDocumentBytes        = 1 << 20
+	MaxWorkerJobOutputBytes    = 1 << 20
+	maxJobDocumentBytes        = MaxWorkerJobOutputBytes
 	maxCompactionJobInputBytes = MaxCompactionInputBytes
 )
 

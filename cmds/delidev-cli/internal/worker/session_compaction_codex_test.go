@@ -3,6 +3,7 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -15,9 +16,16 @@ import (
 )
 
 func TestCodexCompactionCheckpointRequiresOriginalPrivateClaimsAndJournal(t *testing.T) {
-	for _, scenario := range []string{"original", "missing-command", "missing-registration", "changed-native-source", "changed-live-item", "changed-history-item", "changed-action-count", "changed-instance", "changed-assignment", "changed-report", "uncertain-journal", "foreign-device"} {
+	for _, scenario := range []string{"original", "large-original", "missing-command", "missing-registration", "changed-native-source", "changed-live-item", "changed-history-item", "changed-action-count", "changed-instance", "changed-assignment", "changed-report", "uncertain-journal", "foreign-device"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newCheckpointFixture(t)
+			if scenario == "large-original" {
+				f.input.Input.Prompt = strings.Repeat(`"`, domain.MaxPromptBytes)
+				f.ref.PromptDigest = sha256.Sum256([]byte(f.input.Input.Prompt))
+				f.job.Input = mustForkJSON(f.input)
+				f.ref.AssignmentInputDigest = executionInputDigest(mustForkJSON(f.input))
+				f.ref.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(f.input.InputID, f.input.Input.Prompt)}
+			}
 			if err := f.retain(); err != nil {
 				t.Fatal(err)
 			}
@@ -53,6 +61,9 @@ func TestCodexCompactionCheckpointRequiresOriginalPrivateClaimsAndJournal(t *tes
 			}
 			p := codexSessionCompactionCheckpoint{Version: 1, ServerID: credential.ServerID, DeviceID: credential.DeviceID, JobID: job, AssignmentRevision: 2, InstanceID: instance, AssignmentDigest: strings.Repeat("12", 32), RegistrationDigest: compactionClaimDigest(registration), CommandDigest: compactionClaimDigest(command), Input: input, Native: native}
 			data, _ := json.Marshal(p)
+			if scenario == "large-original" && len(data) <= 1<<20 {
+				t.Fatal("fixture did not exceed generic checkpoint bound")
+			}
 			nativeBytes, _ := json.Marshal(native)
 			ref := domain.SessionCompactionRef{JobID: job, ActionID: action, ExecutionID: f.input.ExecutionID, CheckpointDigest: executionInputDigest(data), NativeDigest: executionInputDigest(nativeBytes)}
 			result := domain.SessionCompactionResult{Version: 2, Harness: domain.Codex, ActionID: action, ExecutionID: f.input.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: ref, Codex: &domain.CodexCompactionResult{NativeThreadID: domain.NativeIdentity(source.Native.ThreadID), SourceNativeTurnID: domain.NativeIdentity(source.Native.TurnID), NativeTurnID: domain.NativeIdentity(record.TurnID), LiveItemID: record.ItemID, HistoryItemID: record.HistoryItemID, HistoryDigest: native.HistoryDigest, Actions: 1, Acknowledged: true, LifecycleCompleted: true, ResponseUsages: []domain.NativeResponseUsage{}}}
@@ -94,7 +105,7 @@ func TestCodexCompactionCheckpointRequiresOriginalPrivateClaimsAndJournal(t *tes
 				t.Fatal(err)
 			}
 			restored, err := readCodexSessionCompactionCheckpoint(context.Background(), f.root, credential, restore, ref, source)
-			if scenario == "original" {
+			if scenario == "original" || scenario == "large-original" {
 				if err != nil || restored.Records[0].ActionID != action {
 					t.Fatal("original complete checkpoint refused", err)
 				}

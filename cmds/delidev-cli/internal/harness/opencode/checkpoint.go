@@ -251,7 +251,7 @@ func InspectCheckpoint(ctx context.Context, home string, raw []byte, ref Checkpo
 
 func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeCheckpoint, error) {
 	var value nativeCheckpoint
-	if len(raw) == 0 || len(raw) > maxCheckpointBytes || !checkpointDigest(ref.SHA256) || mutationDigest(raw) != ref.SHA256 || domain.UniqueIDs([]domain.ID{ref.OwnerID, ref.CreationRequestID, ref.InputRequestID}) != nil || !nativeID(ref.SessionID, "ses") || !nativeID(ref.InputID, "msg") || !nativeID(ref.PartID, "prt") || !checkpointDigest(ref.InputSHA256) || !checkpointDigest(ref.HistorySHA256) || domain.Decode(raw, &value) != nil {
+	if len(raw) == 0 || len(raw) > maxCheckpointBytes || !checkpointDigest(ref.SHA256) || mutationDigest(raw) != ref.SHA256 || domain.UniqueIDs([]domain.ID{ref.OwnerID, ref.CreationRequestID, ref.InputRequestID}) != nil || !nativeID(ref.SessionID, "ses") || !nativeID(ref.InputID, "msg") || !nativeID(ref.PartID, "prt") || !checkpointDigest(ref.InputSHA256) || !checkpointDigest(ref.HistorySHA256) || domain.DecodeWithLimit(raw, &value, maxCheckpointBytes) != nil {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	expected := ref

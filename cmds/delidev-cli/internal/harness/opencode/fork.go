@@ -49,6 +49,20 @@ func InspectForkSourceCheckpoint(ctx context.Context, home string, raw []byte, r
 	return InspectCheckpoint(ctx, home, raw, ref)
 }
 
+// InspectForkSourceInventory returns the complete content-free source identity
+// inventory only after the same independent private checkpoint/profile checks.
+// It grants no native mutation or inference authority.
+func InspectForkSourceInventory(ctx context.Context, home string, raw []byte, ref CheckpointReference) ([]HistoryMessage, error) {
+	if err := InspectForkSourceCheckpoint(ctx, home, raw, ref); err != nil {
+		return nil, err
+	}
+	source, err := decodeCheckpoint(raw, ref, home)
+	if err != nil {
+		return nil, err
+	}
+	return checkpointInventory(source), nil
+}
+
 // PrepareForkAPI has no inference authority. Config must contain a fresh valid
 // nonce that the caller never registers, plus the original immutable source
 // settings. Every mutation is durably claimed before its one original send.

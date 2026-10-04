@@ -340,3 +340,5 @@ store reads, authenticated Worker dispatch, server scope/settlement and deletion
 copy derivation. The Connect receive bound covers the finite serialized job.
 Larger ordinary execution or other jobs do not acquire this exception. Trailing
 documents, unknown fields and invalid original assignments remain rejected.
+
+Retained native compaction checkpoint readers use their strict 10 MiB ceiling without relaxing typed, canonical, claim, journal or native evidence checks. Session context uses the same typed 3 MiB compaction input decoder as acceptance and settlement, so large original assignments remain visible through queued and completed states.

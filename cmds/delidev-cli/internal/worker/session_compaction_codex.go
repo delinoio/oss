@@ -391,7 +391,7 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 		return empty, domain.CompactionUncertain()
 	}
 	var p codexSessionCompactionCheckpoint
-	if domain.Decode(data, &p) != nil || p.Version != 1 || p.Input.Validate() != nil || p.Input.Version != 2 || p.Input.Assignment.Configuration.Harness != domain.Codex || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID {
+	if domain.DecodeWithLimit(data, &p, maxCompactionCheckpoint) != nil || p.Version != 1 || p.Input.Validate() != nil || p.Input.Version != 2 || p.Input.Assignment.Configuration.Harness != domain.Codex || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID {
 		return empty, domain.CompactionUncertain()
 	}
 	canonical, err := json.Marshal(p)

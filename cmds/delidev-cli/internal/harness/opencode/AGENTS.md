@@ -12,3 +12,5 @@
 - New immutable `native-v1` context policy enables pinned native pruning, while omitted legacy policy preserves existing configuration/digests. Late pruning may be retained through the final owned API read only after atomic full-part comparison proves the completed timestamp is the sole change; never reconstruct an event or lifecycle from that read.
 
 - Issue #1210 preparation owns only bounded Unix plain-text General Chat native Fork, complete ID-clone/history proof, explicit no-change relocation and copied-source deletion. Use an unregistered fresh nonce without inference; native agent/model absence is an explicit preparation state. Claim every mutation once and reconcile exact owned native state after response loss without resend. Preserve inherited paths/usage as provenance, not filesystem or accounting authority.
+
+- Native checkpoint metadata uses the strict declared 8 MiB decoder ceiling, retaining canonical bytes and independent complete private-file inventory verification. Fork source inventory exposes content-free original IDs only after full private checkpoint/profile validation; it grants no native mutation or inference authority.
