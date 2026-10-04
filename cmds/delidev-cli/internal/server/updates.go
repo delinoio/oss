@@ -272,6 +272,30 @@ func (s *Service) PollWorkerUpdate(ctx context.Context, req *connect.Request[pb.
 		if e := currentInstance(tx, actor.MachineID, domain.ID(req.Msg.InstanceId)); e != nil {
 			return e
 		}
+		if req.Msg.OriginalUpdateId != "" {
+			id := domain.ID(req.Msg.OriginalUpdateId)
+			if e := id.Validate(); e != nil {
+				return e
+			}
+			r, e := tx.Get(domain.UpdateKind, id)
+			if e != nil {
+				return e
+			}
+			o, e := store.Decode[updateOperation](r)
+			if e != nil || o.ServerID != s.Identity.ServerID || o.Component != updates.Worker || o.DeviceID != actor.DeviceID || o.MachineID != actor.MachineID {
+				return installationFailure(domain.PermissionDenied)
+			}
+			// Historical success retains attribution after creator revocation.
+			// It grants read-only settlement, never a new side-effect authority.
+			if o.State != updates.Succeeded {
+				if e := originalInstallationActor(tx, o.Actor); e != nil {
+					return e
+				}
+			}
+			result = rpc.Resource(r)
+			// Inspection grants no idle admission, claim, report or installation.
+			return nil
+		}
 		rows, e := tx.InstallationUpdates(actor.MachineID, actor.DeviceID, "", true)
 		if e != nil {
 			return e

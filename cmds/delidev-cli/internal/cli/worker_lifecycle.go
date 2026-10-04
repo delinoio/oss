@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,35 @@ import (
 )
 
 func startDetachedWorker(ctx context.Context, o options, root string) (any, error) {
-	return startDetachedWorkerWithAdmission(ctx, o, root, nil)
+	// Select the signed installed controller before it reserves a generation.
+	// A stale bundled CLI cannot reserve its own version and then spawn another
+	// version. The selected original binary performs the ordinary local admission
+	// and independently revalidates its private update history.
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, domain.SafeError(err)
+	}
+	selected, err := worker.InstalledExecutable(root, executable)
+	if err != nil {
+		return nil, err
+	}
+	if selected == executable {
+		return startDetachedWorkerWithAdmission(ctx, o, root, nil)
+	}
+	bounded, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(bounded, selected, "--json", "--data-dir", o.dataDir, "worker", "start", "--worker-dir", root, "--detach")
+	cmd.Env = updateEnvironment()
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	err = cmd.Run()
+	status, statusError := worker.Status(root)
+	if statusError != nil {
+		return nil, statusError
+	}
+	if err != nil || status.State != worker.StateRunning {
+		return status, workerUpdateFailure()
+	}
+	return status, nil
 }
 func startDetachedWorkerWithAdmission(ctx context.Context, o options, root string, admitted func(worker.RuntimeStatus) error) (any, error) {
 	if _, err := worker.LoadCredential(root); err != nil {
@@ -40,12 +69,6 @@ func startDetachedWorkerWithAdmission(ctx context.Context, o options, root strin
 		executable, err := os.Executable()
 		if err != nil {
 			return status, domain.SafeError(err)
-		}
-		if admitted == nil {
-			executable, err = worker.InstalledExecutable(root, executable)
-			if err != nil {
-				return status, err
-			}
 		}
 		path := filepath.Join(root, "worker.log")
 		if _, err := os.Lstat(path); err == nil {

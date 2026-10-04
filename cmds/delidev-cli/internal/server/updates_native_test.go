@@ -37,15 +37,12 @@ func TestManualNativeSignedWorkerReplacement(t *testing.T) {
 	if os.Getenv("DELIDEV_NATIVE_WORKER_UPDATE") != "1" {
 		t.Skip("Opt in to temporary actual replacement binaries and test signing authority.")
 	}
-	for _, rollback := range []bool{false, true} {
-		name := "success"
-		if rollback {
-			name = "failed-start-rollback"
-		}
-		t.Run(name, func(t *testing.T) { testNativeWorkerReplacement(t, rollback) })
+	for _, mode := range []string{"success", "failed-start-rollback", "lost-claim-response", "lost-success-report"} {
+		t.Run(mode, func(t *testing.T) { testNativeWorkerReplacement(t, mode) })
 	}
 }
-func testNativeWorkerReplacement(t *testing.T, rollback bool) {
+func testNativeWorkerReplacement(t *testing.T, mode string) {
+	rollback := mode == "failed-start-rollback"
 	if os.Getenv("DELIDEV_NATIVE_WORKER_UPDATE") != "1" {
 		t.Skip("Opt in to isolated signed test-root overlay, actual binaries and detached generations.")
 	}
@@ -83,13 +80,22 @@ func testNativeWorkerReplacement(t *testing.T, rollback bool) {
 	replacementGo := filepath.Join(directory, "download.go")
 	os.WriteFile(replacementGo, []byte(patched), 0600)
 	replacements := map[string]string{filepath.Join(repo, "cmds/delidev-cli/internal/updates/trust-root.json"): replacementRoot, filepath.Join(repo, "cmds/delidev-cli/internal/updates/download.go"): replacementGo}
-	if rollback {
+	if mode != "success" {
 		file := filepath.Join(repo, "cmds/delidev-cli/internal/worker/updates.go")
 		raw, e := os.ReadFile(file)
 		if e != nil {
 			t.Fatal(e)
 		}
-		patched := strings.Replace(string(raw), "func settleUpdateOnAttach(ctx context.Context, root string, credential Credential, instance domain.ID) error {", "func settleUpdateOnAttach(ctx context.Context, root string, credential Credential, instance domain.ID) error { if rpc.Version==\"0.2.0\" {return updateFailure()}", 1)
+		patched := string(raw)
+		if rollback {
+			patched = strings.Replace(patched, "func settleUpdateOnAttach(ctx context.Context, root string, credential Credential, instance domain.ID) error {", "func settleUpdateOnAttach(ctx context.Context, root string, credential Credential, instance domain.ID) error { if rpc.Version==\"0.2.0\" {return updateFailure()}", 1)
+		}
+		if mode == "lost-claim-response" {
+			patched = strings.Replace(patched, "if claimed.Msg.Update == nil", `if problem==nil { marker:=filepath.Join(config.Root,"test-claim-response-loss");if _,e:=os.Stat(marker);os.IsNotExist(e){os.WriteFile(marker,[]byte("lost"),0600);return updateFailure()} }; if claimed.Msg.Update == nil`, 1)
+		}
+		if mode == "lost-success-report" {
+			patched = strings.Replace(patched, "j.Phase = UpdateComplete\n\treturn WriteUpdateJournal", `if j.Outcome==pb.WorkerUpdateOutcome_WORKER_UPDATE_OUTCOME_SUCCEEDED {marker:=filepath.Join(root,"test-success-report-loss");if _,e:=os.Stat(marker);os.IsNotExist(e){os.WriteFile(marker,[]byte("lost"),0600);return updateFailure()}}; j.Phase = UpdateComplete`+"\n\treturn WriteUpdateJournal", 1)
+		}
 		path := filepath.Join(directory, "worker-updates.go")
 		os.WriteFile(path, []byte(patched), 0600)
 		replacements[file] = path
@@ -230,7 +236,25 @@ func testNativeWorkerReplacement(t *testing.T, rollback bool) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	restarted := false
 	for {
+		if strings.HasPrefix(mode, "lost-") && !restarted {
+			status, problem := worker.Status(workerRoot)
+			marker := "test-claim-response-loss"
+			if mode == "lost-success-report" {
+				marker = "test-success-report-loss"
+			}
+			_, markerError := os.Stat(filepath.Join(workerRoot, marker))
+			if markerError == nil && problem == nil && status.State == worker.StateExited && status.Lifecycle.Generation != "" {
+				// Wait for the original owned helper to join after the injected
+				// response loss; an earlier idle exit is still handoff-owned.
+				time.Sleep(time.Second)
+				prior := status.Lifecycle.Generation
+				_ = run(oldPath, "worker", "start", "--worker-dir", workerRoot, "--detach")
+				now, problem := worker.Status(workerRoot)
+				restarted = problem == nil && now.Lifecycle.Generation != prior
+			}
+		}
 		current, e := uc.GetUpdate(ctx, installationTestRequest(owner, &pb.GetUpdateRequest{Id: accepted.Msg.Update.Id}))
 		if e != nil {
 			t.Fatal(e)
@@ -240,7 +264,11 @@ func testNativeWorkerReplacement(t *testing.T, rollback bool) {
 			t.Fatal("Malformed update")
 		}
 		if (!rollback && op.State == updates.Succeeded) || (rollback && op.State == updates.Failed) {
-			break
+			j, problem := worker.ReadUpdateJournal(workerRoot, domain.ID(accepted.Msg.Update.Id))
+			status, statusError := worker.Status(workerRoot)
+			if problem == nil && j.Phase == worker.UpdateComplete && statusError == nil && status.State == worker.StateRunning {
+				break
+			}
 		}
 		if op.State == updates.Failed || op.State == updates.Uncertain {
 			t.Fatalf("Original update outcome %s; %s", op.State, logs.Snapshot())
@@ -261,7 +289,7 @@ func testNativeWorkerReplacement(t *testing.T, rollback bool) {
 		t.Fatal("Replacement changed registration", e)
 	}
 	journal, e := worker.ReadUpdateJournal(workerRoot, domain.ID(accepted.Msg.Update.Id))
-	if e != nil || journal.Phase != worker.UpdateComplete || (!rollback && journal.NewGeneration != now.Lifecycle.Generation) || (rollback && journal.RollbackGeneration != now.Lifecycle.Generation) || journal.PreviousPath == "" {
+	if e != nil || journal.Phase != worker.UpdateComplete || (!rollback && mode != "lost-success-report" && journal.NewGeneration != now.Lifecycle.Generation) || (rollback && journal.RollbackGeneration != now.Lifecycle.Generation) || journal.PreviousPath == "" {
 		t.Fatal("Original native outcome missing", e)
 	}
 	expectedVersion := "0.2.0"
@@ -278,6 +306,15 @@ func testNativeWorkerReplacement(t *testing.T, rollback bool) {
 	}
 	if _, e = os.Stat(journal.PreviousPath); e != nil {
 		t.Fatal("Previous working binary lost", e)
+	}
+	// An older bundled CLI must ask the verified installed controller to admit
+	// its own version, and must reuse a live original generation without spawn.
+	if e = run(oldPath, "worker", "start", "--worker-dir", workerRoot, "--detach"); e != nil {
+		t.Fatal("Stale CLI could not reuse the installed Worker", e)
+	}
+	reused, e := worker.Status(workerRoot)
+	if e != nil || reused.Lifecycle.Generation != now.Lifecycle.Generation || reused.Lifecycle.WorkerVersion != expectedVersion {
+		t.Fatal("Stale CLI reserved a different native generation/version", e)
 	}
 	if e = run(newPath, "worker", "update-replace", "--worker-dir", workerRoot, "--operation-id", accepted.Msg.Update.Id); e == nil {
 		t.Fatal("Completed installation was resent")

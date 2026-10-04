@@ -128,6 +128,8 @@ message CancelUpdateResponse {
 // Worker-only operations require the original machine/device/current instance.
 message PollWorkerUpdateRequest {
   string instance_id = 1;
+  // Optional exact original observation; never claims or installs an update.
+  string original_update_id = 2;
 }
 message PollWorkerUpdateResponse {
   Resource update = 1;

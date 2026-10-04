@@ -1187,10 +1187,12 @@ func (x *CancelUpdateResponse) GetReplayed() bool {
 
 // Worker-only operations require the original machine/device/current instance.
 type PollWorkerUpdateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	// Optional exact original observation; never claims or installs an update.
+	OriginalUpdateId string `protobuf:"bytes,2,opt,name=original_update_id,json=originalUpdateId,proto3" json:"original_update_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PollWorkerUpdateRequest) Reset() {
@@ -1226,6 +1228,13 @@ func (*PollWorkerUpdateRequest) Descriptor() ([]byte, []int) {
 func (x *PollWorkerUpdateRequest) GetInstanceId() string {
 	if x != nil {
 		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *PollWorkerUpdateRequest) GetOriginalUpdateId() string {
+	if x != nil {
+		return x.OriginalUpdateId
 	}
 	return ""
 }
@@ -1601,10 +1610,11 @@ const file_delidev_v1_installation_proto_rawDesc = "" +
 	"\x06update\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x06update\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed\":\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"h\n" +
 	"\x17PollWorkerUpdateRequest\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
-	"instanceId\"\\\n" +
+	"instanceId\x12,\n" +
+	"\x12original_update_id\x18\x02 \x01(\tR\x10originalUpdateId\"\\\n" +
 	"\x18PollWorkerUpdateResponse\x12,\n" +
 	"\x06update\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x06update\x12\x12\n" +
 	"\x04idle\x18\x02 \x01(\bR\x04idle\"m\n" +

@@ -101,28 +101,48 @@ func watchUpdates(ctx context.Context, config Config, credential Credential, ins
 			if domain.Decode(r.DocumentJson, &operation) != nil || operation.ServerID != credential.ServerID || operation.DeviceID != credential.DeviceID || operation.MachineID != credential.MachineID {
 				return updateFailure()
 			}
-			if operation.State == updates.Waiting {
+			if operation.State == updates.Waiting || operation.State == updates.Running {
 				status, e := Status(config.Root)
 				if e != nil || status.State != StateRunning {
 					return updateFailure()
 				}
 				id := domain.ID(r.Id)
-				if _, e := ReadUpdateJournal(config.Root, id); !errors.Is(e, os.ErrNotExist) {
-					return updateFailure()
-				}
-				j := UpdateJournal{Version: 1, ID: id, Phase: UpdateClaiming, Operation: operation, ClaimID: domain.NewID(), ReportID: domain.NewID(), ExpectedRevision: r.Revision, OldGeneration: status.Lifecycle.Generation}
-				if e = WriteUpdateJournal(config.Root, j); e != nil {
-					return e
-				}
-				claimCtx, stop := context.WithTimeout(ctx, 10*time.Second)
-				claimed, e := client.ClaimWorkerUpdate(claimCtx, authenticated(credential, &pb.ClaimWorkerUpdateRequest{Mutation: &pb.Mutation{Id: r.Id, ExpectedRevision: r.Revision, RequestId: string(j.ClaimID)}, InstanceId: string(instance)}))
-				stop()
-				if e != nil {
-					config.Logger.WarnContext(ctx, "worker_update_claim_unconfirmed", "operation_id", id, "code", rpc.ClientError(e).Code)
-					return updateFailure()
-				}
-				if claimed.Msg.Update == nil || domain.Decode(claimed.Msg.Update.DocumentJson, &j.Operation) != nil || j.Operation.State != updates.Running || j.Operation.ClaimRequestID != j.ClaimID || j.Operation.ClaimedInstance != instance {
-					return updateFailure()
+				j, readErr := ReadUpdateJournal(config.Root, id)
+				recovering := operation.State == updates.Running && readErr == nil && (j.Phase == UpdateClaiming || j.Phase == UpdateClaimed || j.Phase == UpdatePrepared) && operation.ClaimRequestID == j.ClaimID && operation.ClaimedRevision != 0 && operation.DeviceID == j.Operation.DeviceID && operation.ManifestSHA256 == j.Operation.ManifestSHA256
+				if recovering {
+					j.Operation = operation
+					j.OldGeneration = status.Lifecycle.Generation
+				} else {
+					if operation.State != updates.Waiting || !errors.Is(readErr, os.ErrNotExist) {
+						return updateFailure()
+					}
+					j = UpdateJournal{Version: 1, ID: id, Phase: UpdateClaiming, Operation: operation, ClaimID: domain.NewID(), ReportID: domain.NewID(), ExpectedRevision: r.Revision, OldGeneration: status.Lifecycle.Generation}
+					if e = WriteUpdateJournal(config.Root, j); e != nil {
+						return e
+					}
+					claimCtx, stop := context.WithTimeout(ctx, 10*time.Second)
+					claimed, problem := client.ClaimWorkerUpdate(claimCtx, authenticated(credential, &pb.ClaimWorkerUpdateRequest{Mutation: &pb.Mutation{Id: r.Id, ExpectedRevision: r.Revision, RequestId: string(j.ClaimID)}, InstanceId: string(instance)}))
+					stop()
+					if problem != nil {
+						if rpc.ClientError(problem).Code == domain.Conflict {
+							// A definitive transaction rejection grants no claim.
+							// Remove only its pre-dispatch journal and wait for idle.
+							if e = os.Remove(updatePath(config.Root, id)); e != nil {
+								return e
+							}
+							select {
+							case <-ctx.Done():
+								return nil
+							case <-ticker.C:
+							}
+							continue
+						}
+						config.Logger.WarnContext(ctx, "worker_update_claim_unconfirmed", "operation_id", id, "code", rpc.ClientError(problem).Code)
+						return updateFailure()
+					}
+					if claimed.Msg.Update == nil || domain.Decode(claimed.Msg.Update.DocumentJson, &j.Operation) != nil || j.Operation.State != updates.Running || j.Operation.ClaimRequestID != j.ClaimID || j.Operation.ClaimedInstance != instance {
+						return updateFailure()
+					}
 				}
 				j.Phase = UpdateClaimed
 				if e = WriteUpdateJournal(config.Root, j); e != nil {
@@ -230,8 +250,28 @@ func settleUpdateOnAttach(ctx context.Context, root string, credential Credentia
 			outcome = pb.WorkerUpdateOutcome_WORKER_UPDATE_OUTCOME_FAILED
 			version = j.Operation.CurrentVersion
 		}
-		if expected == "" || status.Lifecycle.Generation != expected || rpc.Version != version {
+		if rpc.Version != version || expected == "" {
 			return updateFailure()
+		}
+		if status.Lifecycle.Generation != expected {
+			if j.Phase != UpdateStarting || j.Outcome != pb.WorkerUpdateOutcome_WORKER_UPDATE_OUTCOME_SUCCEEDED {
+				return updateFailure()
+			}
+			h, tr := rpc.HTTPClient()
+			client := delidevv1connect.NewInstallationServiceClient(h, credential.Endpoint)
+			bounded, stop := context.WithTimeout(ctx, 10*time.Second)
+			observed, e := client.PollWorkerUpdate(bounded, authenticated(credential, &pb.PollWorkerUpdateRequest{InstanceId: string(instance), OriginalUpdateId: string(j.ID)}))
+			stop()
+			tr.CloseIdleConnections()
+			var original updates.Operation
+			if e != nil || observed.Msg.Update == nil || observed.Msg.Update.Id != string(j.ID) || domain.Decode(observed.Msg.Update.DocumentJson, &original) != nil || original.State != updates.Succeeded || original.ClaimRequestID != j.ClaimID || original.ManifestSHA256 != j.Operation.ManifestSHA256 {
+				return updateFailure()
+			}
+			j.Phase = UpdateComplete
+			if e = WriteUpdateJournal(root, j); e != nil {
+				return e
+			}
+			continue
 		}
 		j.Outcome = outcome
 		httpClient, transport := rpc.HTTPClient()
@@ -287,17 +327,14 @@ func InstalledExecutable(root, fallback string) (string, error) {
 		if e != nil {
 			return "", e
 		}
-		if j.Phase != UpdateComplete && j.Phase != UpdateClaiming {
-			return "", updateFailure()
-		}
-		if j.Phase != UpdateComplete || j.Outcome != pb.WorkerUpdateOutcome_WORKER_UPDATE_OUTCOME_SUCCEEDED {
+		if j.Phase == UpdateClaiming || j.Phase == UpdateClaimed || j.Phase == UpdatePrepared {
 			continue
 		}
-		newer, e := updates.Newer(j.Operation.Version, version)
-		if e != nil {
-			return "", e
+		reconcile := j.Phase == UpdateStarting && j.Outcome == pb.WorkerUpdateOutcome_WORKER_UPDATE_OUTCOME_SUCCEEDED
+		if j.Phase != UpdateComplete && !reconcile {
+			return "", updateFailure()
 		}
-		if !newer {
+		if j.Outcome != pb.WorkerUpdateOutcome_WORKER_UPDATE_OUTCOME_SUCCEEDED {
 			continue
 		}
 		v, e := updates.NewVerifier()
@@ -311,6 +348,13 @@ func InstalledExecutable(root, fallback string) (string, error) {
 		artifact, e := signed.Artifact(updates.Worker, j.Operation.Target)
 		if e != nil || updates.VerifyFile(j.ArtifactPath, artifact) != nil {
 			return "", updateFailure()
+		}
+		newer, e := updates.Newer(j.Operation.Version, version)
+		if e != nil {
+			return "", e
+		}
+		if !newer {
+			continue
 		}
 		selected, version = j.ArtifactPath, j.Operation.Version
 	}

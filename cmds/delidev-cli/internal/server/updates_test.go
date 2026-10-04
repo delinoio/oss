@@ -141,3 +141,37 @@ func TestWorkerAutomaticChecksNeverRepeatCanceledAttempt(t *testing.T) {
 		t.Fatal("automatic check repeated canceled release")
 	}
 }
+
+func TestWorkerUpdateInspectionRetainsExactOriginalAndDeviceScope(t *testing.T) {
+	f, mr, device, instance, wctx := updateFixture(t)
+	original, pending, foreign := domain.NewID(), domain.NewID(), domain.NewID()
+	_, e := f.s.Store.Mutate(f.ctx, domain.NewID(), "fixture.update.exact-inspection", nil, func(tx *store.Tx) (any, error) {
+		for _, value := range []struct {
+			id     domain.ID
+			state  updates.State
+			device domain.ID
+		}{{original, updates.Succeeded, device}, {pending, updates.Waiting, device}, {foreign, updates.Succeeded, domain.NewID()}} {
+			_, e := tx.Put(domain.UpdateKind, value.id, 0, "", "", updates.Operation{ServerID: f.s.Identity.ServerID, Actor: domain.Principal{Type: domain.OwnerDevice}, Component: updates.Worker, State: value.state, MachineID: mr.ID, DeviceID: value.device})
+			if e != nil {
+				return nil, e
+			}
+		}
+		return nil, nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	read := func(id domain.ID) (*connect.Response[pb.PollWorkerUpdateResponse], error) {
+		return f.s.PollWorkerUpdate(wctx, connect.NewRequest(&pb.PollWorkerUpdateRequest{InstanceId: string(instance), OriginalUpdateId: string(id)}))
+	}
+	r, e := read(original)
+	if e != nil || r.Msg.Update == nil || r.Msg.Update.Id != string(original) || r.Msg.Idle {
+		t.Fatal("Exact original observation acquired latest/idle authority", e)
+	}
+	if _, e = read(foreign); connect.CodeOf(e) != connect.CodePermissionDenied {
+		t.Fatal("Foreign device update exposed", e)
+	}
+	if _, e = read("invalid"); connect.CodeOf(e) != connect.CodeInvalidArgument {
+		t.Fatal("Malformed original ID accepted", e)
+	}
+}

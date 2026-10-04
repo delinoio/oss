@@ -79,3 +79,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - machine ssh uses authenticated InstallationService and write-only bounded stdin. The native-only worker ssh-setup helper verifies the signed artifact identity, journals original pairing/start admission and never repeats missing progress or replaces registration/workspaces.
 
 - Authenticated update check/get/worker-request/cancel preserve original request/revision receipts and capability negotiation. Closed native update helpers select only fixed paired scopes and original server/window generations, independently verify signed bytes and persist offline installation outcomes. Worker replacement helpers retain both binaries and exact lifecycle proof, never a generic executable or shell capability.
+
+- Explicit detached starts select and independently verify the signed installed Worker controller before native version admission. A stale bundled CLI must not reserve its version and spawn a different version. Preserve the original registration and generation-bound Stop; ambiguous outcomes remain inspect-only.
