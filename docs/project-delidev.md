@@ -147,3 +147,5 @@ Desktop terminal history reads, polling, manual refresh and selection require
 advertised system terminal support. Unknown or unsupported status cannot issue
 terminal reads or expose cached terminal errors; see the
 [desktop contract](apps-delidev-desktop-contract.md).
+
+Remaining-feature delivery follows the [structure contract](cmds-delidev-structure-contract.md): establish shared numeric and migration reservations on main, then merge complete independently validated feature PRs in dependency order. Reservation support and actual native/account/platform acceptance remain distinct.
