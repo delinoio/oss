@@ -93,7 +93,7 @@ The updater-input command and separate manual updater-input workflow reuse this 
 Build tools emit their ordinary diagnostics. Verification emits bounded status
 and typed failure descriptions; its JSON contains package provenance only, never
 account data, environment dumps or signing material. A failed check must not leave
-a successful verification report.
+a successful verification report. Revision/cleanliness checks consume Git stdout only; stderr warnings are not source state. A rejected final publication emits bounded revision-change and entry counts plus at most sixteen allowlisted tracked repository source paths. Unknown/untracked names and values remain excluded.
 
 ## Build and Test
 

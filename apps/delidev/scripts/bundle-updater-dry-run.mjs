@@ -13,7 +13,7 @@ export async function main(args) {
  if(args.length!==2||args[0]!=='--target')throw new Error('Select one exact native target.');
  const selected=selectTarget(args[1],process.platform,process.arch),target=updaterTarget(selected),app=fileURLToPath(new URL('..',import.meta.url)),root=resolve(app,'../..');
  const env=nativeEnvironment(process.env,process.platform);
- const run=(program,args,inherit=false,cwd=app)=>{const result=spawnSync(program,args,{cwd,env,encoding:'utf8',timeout:120*60*1000,...(inherit?{stdio:'inherit'}:{})});if(result.error||result.status!==0)throw new Error('DeliDev updater input build failed.');return inherit?'':result.stdout+result.stderr;};
+ const run=(program,args,inherit=false,cwd=app)=>{const result=spawnSync(program,args,{cwd,env,encoding:'utf8',timeout:120*60*1000,...(inherit?{stdio:'inherit'}:{})});if(result.error||result.status!==0)throw new Error('DeliDev updater input build failed.');return inherit?'':program==='git'?result.stdout:result.stdout+result.stderr;};
  const revision=run('git',['rev-parse','HEAD']).trim();if(!/^[a-f0-9]{40}$/.test(revision)||run('git',['status','--porcelain','--untracked-files=normal']).trim())throw new Error('Commit reconciled source before building updater inputs.');
  const version=JSON.parse(readFileSync(join(app,'src-tauri/tauri.conf.json'),'utf8')).version;
  const output=join(root,'target/delidev-updater-input',selected.target,revision);if(existsSync(output))throw new Error('Retain the original updater input; do not replace it.');mkdirSync(dirname(output),{recursive:true});
