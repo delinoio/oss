@@ -78,3 +78,16 @@ it("preserves exact revision precision and native settings without inventing an 
   expect(page.records[0].revision).toBe(9007199254740993n);
   expect(page.records[0].httpAttempted).toBeUndefined();
 });
+
+it.each([
+  ["2026-09-30T00:00:00.000999999Z", "2026-09-30T00:00:00.000000001Z", false],
+  ["2026-09-30T00:00:00.000000001Z", "2026-09-30T00:00:00.000999999Z", true],
+  ["2026-09-30T00:00:00.1Z", "2026-09-30T00:00:00.100000000Z", true],
+  ["2026-09-30T00:00:00Z", "2026-09-30T00:00:00.000000001Z", true],
+  ["2026-02-30T00:00:00Z", "2026-03-02T00:00:01Z", false],
+])("compares validated UTC timestamps without losing nanoseconds: %s / %s", (observedAt, finishedAt, valid) => {
+  const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, observedAt, finishedAt });
+  const validate = () => validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema, { records: [row] }), f.session, "");
+  if (valid) expect(validate().records[0].observedAt).toBe(observedAt);
+  else expect(validate).toThrow("unavailable");
+});

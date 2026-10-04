@@ -13,6 +13,14 @@ const errors = new Set(["", "invalid_argument", "unsupported", "unauthenticated"
 const opaqueId = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:req[_-]|resp_|msg_|chatcmpl-)[a-zA-Z0-9_-]+)$/;
 const harnesses = new Set(["codex", "claude-code", "opencode", "grok-build"]);
 const utcTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+function preciseTimestamp(value: string): string | undefined {
+  if (!utcTimestamp.test(value)) return undefined;
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds) || new Date(milliseconds).toISOString().slice(0, 19) !== value.slice(0, 19)) return undefined;
+  // Canonical UTC components sort exactly; Date alone discards sub-millisecond precision.
+  const fraction = value.slice(19, -1).replace(/^\./, "").padEnd(9, "0");
+  return `${value.slice(0, 19)}.${fraction}Z`;
+}
 function nativeIdentity(value: string, harness: string, turn: boolean): boolean {
   if (harness === "opencode") return (turn ? /^msg_[0-9a-f]{12}[a-zA-Z0-9]{14}$/ : /^ses_[0-9a-f]{12}[a-zA-Z0-9]{14}$/).test(value);
   if (!turn || harness === "codex") return isEntityId(value);
@@ -32,8 +40,8 @@ export function validateDiagnosticPage(response: ListRequestDiagnosticsResponse,
     if (value.nativeThreadId && !nativeIdentity(value.nativeThreadId, value.harness, false) || value.nativeTurnId && !nativeIdentity(value.nativeTurnId, value.harness, true)) invalid();
     for (const setting of [value.requestedEffort, value.effectiveEffort]) if (setting !== undefined && !efforts.has(setting)) invalid();
     for (const setting of [value.requestedServiceTier, value.effectiveServiceTier]) if (setting !== undefined && !tiers.has(setting)) invalid();
-    const observed = Date.parse(value.observedAt), finished = value.finishedAt === undefined ? undefined : Date.parse(value.finishedAt);
-    if (!utcTimestamp.test(value.observedAt) || !Number.isFinite(observed) || finished !== undefined && (!utcTimestamp.test(value.finishedAt!) || !Number.isFinite(finished) || finished < observed) || value.durationMs !== undefined && (value.durationMs < 0n || value.durationMs > 960000n) || value.httpStatus !== undefined && (value.httpStatus < 100 || value.httpStatus > 599)) invalid();
+    const observed = preciseTimestamp(value.observedAt), finished = value.finishedAt === undefined ? undefined : preciseTimestamp(value.finishedAt);
+    if (observed === undefined || value.finishedAt !== undefined && (finished === undefined || finished < observed) || value.durationMs !== undefined && (value.durationMs < 0n || value.durationMs > 960000n) || value.httpStatus !== undefined && (value.httpStatus < 100 || value.httpStatus > 599)) invalid();
     if (value.source === Source.NATIVE_INPUT && (value.operation !== Operation.INPUT || !value.inputId || !value.nativeThreadId || value.nativeRequestId !== value.id || value.httpAttempted !== undefined || value.httpStatus !== undefined || value.durationMs !== undefined || value.correlationId || value.nativeResponseId || value.providerRequestId) || value.source === Source.PROXY_HTTP && (value.operation === Operation.INPUT || value.httpAttempted === undefined || value.correlationId !== value.id || value.inputId || value.nativeThreadId || value.nativeTurnId || value.httpStatus !== undefined && !value.httpAttempted)) invalid();
   }
   return response;

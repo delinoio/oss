@@ -47,3 +47,15 @@ it("requires explicit rebasing of a retained stale draft and sends an explicit r
  fireEvent.click(screen.getByRole("button",{name:"Use latest revision with this draft"}));fireEvent.click(screen.getByRole("button",{name:"Save session budget"}));await screen.findByText("No estimated-cost budget is configured.");
  expect(f.write.mock.calls[0][0]).toMatchObject({mutation:{expectedRevision:3n},change:{case:"remove",value:true}});
 });
+
+it.each([UsageCoverage.UNSPECIFIED, UsageCoverage.OBSERVED_ROOT_RESPONSES, 99])("keeps native budget evidence unavailable for unsupported coverage %s", async (coverage) => {
+ const f=fixture();f.view=create(SessionBudgetViewSchema,{...f.view,coverage:coverage as UsageCoverage,budget:create(EstimatedCostBudgetSchema,{currency:"USD",threshold:"1"}),state:BudgetState.ALLOW_INCOMPLETE});render(f.renderView());
+ await screen.findByText("Native budget evidence is unavailable from this server version. Update the server to view it.");
+ expect(screen.queryByText(/native units with complete categories/)).toBeNull();
+});
+
+it("renders measured zero native units only with native accounting coverage", async () => {
+ const f=fixture();f.view=create(SessionBudgetViewSchema,{...f.view,coverage:UsageCoverage.OBSERVED_ROOT_ACCOUNTING_UNITS,budget:create(EstimatedCostBudgetSchema,{currency:"USD",threshold:"1"}),state:BudgetState.ALLOW_INCOMPLETE});render(f.renderView());
+ await screen.findByText(/0 native units with complete categories/);
+ expect(screen.queryByText(/Native budget evidence is unavailable/)).toBeNull();
+});

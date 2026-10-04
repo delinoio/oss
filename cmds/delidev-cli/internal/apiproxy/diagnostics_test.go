@@ -2,6 +2,7 @@ package apiproxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -80,5 +81,26 @@ func TestRequestDiagnosticStreamConflictsRemainUnavailable(t *testing.T) {
 	observe(`{"id":"resp_original","reasoning":{"effort":"high"},"service_tier":"priority"}`)
 	if value.NativeResponseID != "" || value.EffectiveEffort != nil || value.EffectiveServiceTier != nil {
 		t.Fatal("later stream frame restored mixed response identity")
+	}
+}
+
+func TestRequestDiagnosticUnsafeStreamIdentityCannotRestoreCertainty(t *testing.T) {
+	for _, conflicting := range []string{"/private/response", "resp_PRIVATE_PROVIDER_KEY", ""} {
+		t.Run(fmt.Sprintf("case-%d", len(conflicting)), func(t *testing.T) {
+			guard := newSecretGuard([]byte("PRIVATE_PROVIDER_KEY"))
+			value := domain.RequestDiagnostic{}
+			observations := diagnosticObservations{value: &value}
+			for _, id := range []string{"resp_original", conflicting, "resp_original"} {
+				raw, _ := json.Marshal(id)
+				diagnosticResponse(map[string]json.RawMessage{"id": raw, "service_tier": json.RawMessage(`"priority"`)}, &observations, guard)
+			}
+			if !observations.identityConflict || value.NativeResponseID != "" || value.EffectiveServiceTier != nil || value.EffectiveEffort != nil {
+				t.Fatal("unsafe conflicting response restored stream certainty")
+			}
+			raw, _ := json.Marshal(value)
+			if strings.Contains(string(raw), "PRIVATE_PROVIDER_KEY") || strings.Contains(string(raw), "/private/response") {
+				t.Fatal("unsafe response identity entered diagnostic output")
+			}
+		})
 	}
 }

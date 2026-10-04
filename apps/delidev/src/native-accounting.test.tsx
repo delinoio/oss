@@ -25,3 +25,17 @@ it("provides explicit update guidance for a server without native input accounti
   render(<NativeAccounting data={create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 })} open={vi.fn()} />);
   expect(screen.getByRole("status").textContent).toContain("Update the server");
 });
+
+it.each([
+  [AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT, AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT],
+  [AccountingUnitKind.OPENCODE_STEP, AccountingUnitKind.OPENCODE_STEP],
+  [AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT, 99],
+])("rejects incomplete or duplicate native accounting families: %s / %s", (first, second) => {
+  const data = create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, nativeAccounting: [
+    { totals: { kind: first as AccountingUnitKind } }, { totals: { kind: second as AccountingUnitKind } },
+  ] });
+  render(<NativeAccounting data={data} open={vi.fn()} />);
+  expect(screen.getByRole("status").textContent).toContain("Update the server");
+  expect(screen.queryByRole("region", { name: "Claude main-loop inputs" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "OpenCode steps" })).toBeNull();
+});
