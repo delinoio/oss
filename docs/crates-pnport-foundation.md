@@ -1,5 +1,17 @@
 # pnport Rust foundation
 
+## Owner-authorized 0.1.0 publication amendment (2026-10-04)
+
+The [project amendment](project-pnport.md#owner-authorized-010-publication-amendment-2026-10-04)
+permits exactly 0.1.0 publication after the retained final four-native candidate
+gates. The owner deferred the recorded macOS initialization/SIGHUP failure
+investigations, separate root clibox watch failure and full-acceptance review.
+Keep those limits visible; this exception does not establish a fix or passing
+skipped checks. Require `pnportReleaseReady: true` and exact
+`pnportReleaseVersion: "0.1.0"`, preserve signing/integrity and immutable retries,
+and keep #958 and the complete Windows 0.2.0 requirements open. This amendment
+takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
+
 ## Scope
 `crates/pnport` owns the private CLI and process supervision. `crates/pnport-core` owns the shared data-only PnP graph, virtual filesystem, executable admission and local cache. [The complete issue requirements](crates-pnport-requirements.md) are mandatory release gates.
 

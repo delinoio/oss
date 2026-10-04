@@ -1,5 +1,33 @@
 # pnport
 
+## Owner-authorized 0.1.0 publication amendment (2026-10-04)
+
+The owner explicitly requested skipping investigation and fixes for the recorded
+macOS initialization and ordinary SIGHUP failures, the separate root clibox watch
+failure, and the complete-requirements acceptance review, then proceeding with
+formal 0.1.0 release preparation. This is a publication exception for exactly
+0.1.0, not a cause fix or a claim that the skipped checks passed. Keep their
+failure records and incomplete acceptance visible in PRs, issue #958 and release
+notes. Do not close #958; its complete requirements, including Windows 0.2.0,
+remain in scope.
+
+Set the private publication declaration to `pnportReleaseReady: true` and
+`pnportReleaseVersion: "0.1.0"`. The publisher requires both the boolean and an
+exact stable source-version match. The coordinator preserves these declarations
+and performs the normal version-only promotion from 0.1.0-next.1 to 0.1.0.
+Later versions require their own reviewed authorization.
+
+The final 0.1.0 build must still pass all four native candidate jobs on macOS 15
+and Ubuntu 22.04, installed npm/Yarn and direct-install checks, default-parallel
+installed lifecycle/native conformance, inline/split peer TypeScript, numeric
+benchmarks, complete-set integrity and a nonpublishing dry run. New failures in
+these retained gates still block publication. Preserve native-before-launcher
+npm order, provenance, signed GitHub assets and immutable retries. Keep the
+published 0.1.0-next.1 bytes and npm next channel unchanged. Public guides retain
+the unreleased notice until actual stable distribution is verified. This
+amendment takes precedence over earlier statements that full acceptance must be
+complete before the first stable publication.
+
 ## Goal
 Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph without creating a project node_modules directory. Issue #958 defines the complete staged acceptance boundary: 0.1.0 ships macOS/glibc Linux first, and 0.2.0 adds Windows. The owner-authorized experimental npm next channel permits an exact reviewed `0.1.0-next.N` candidate for external testing, without completing stable acceptance; the original Windows requirements remain in scope.
 
@@ -37,7 +65,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - Offline benchmark tooling repeats identical compiler and filesystem workloads with separate cold/warm cache conditions, source/artifact identities, sampled process-tree memory and inode-aware cache disk measurements. Keep development observations distinct from reviewed release-build benchmark acceptance; publish validation records through PRs/issues/CI artifacts rather than repository evidence documents.
 - Official native TypeScript conformance must distinguish two peer providers while sharing the same ZIP-backed consumer declarations. Preserve data-only graph inspection, correct and deliberately incorrect peer bindings, and unchanged compiler digests in inline/split execution; fixture success alone does not establish complete release acceptance.
 
-The current source provides a tested development foundation, configured distribution tooling, and public guides. Shared direct-lookup classification now also drives virtual dependency entries in macOS and Linux parent enumeration, at registered package roots, including nested dependency aliases and peer contexts. Ordinary source/output descendants retain native lookup, enumeration and cleanup; native resolvers ascend to package roots. Per-stream/shared-offset lifecycle handling does not replace the outstanding platform and tool acceptance gates. Its macOS preload synchronizes concurrent fork state, propagates injection through virtual-PATH `posix_spawnp` launches, and makes pathname and descriptor-relative link reads share logical target and native buffer semantics. Its macOS supervisor uses an authenticated guardian outside its anchored command group for native birth-bound signal forwarding and authenticated abrupt-owner recovery, including stopped additional groups/sessions, hands off the caller's controlling terminal for ordinary foreground/background stop and resume, and retains detached-tree ownership and broader terminal job-control acceptance as release gates. Its Linux owned-child syscall backend runs dynamic and static ELF children; Ubuntu 22.04 arm64 Docker execution passes native C, static Go, and official TypeScript inline/split fixtures. The arm64 host's amd64 container emulation cannot perform the required child tracing and never substitutes for native x64 CI acceptance. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining runtime acceptance work. The separate exact-tag workflow validates four-host candidates, while its reviewed publication gate stays closed until the full conformance, minimum-OS and benchmark requirements are accepted; passing candidate fixtures or preparing a version commit or tag does not authorize stable publication. Experimental publication additionally requires the exact reviewed next-version declaration and the complete four-host candidate gates. The experimental `0.1.0-next.1` version is published through npm next and signed GitHub prerelease archives. Stable 0.1.0 is not yet releasable; complete feature, minimum-OS and benchmark acceptance plus intermittent initialization failures remain open. Preview publication does not close #958 or enable Homebrew.
+The current source provides a tested development foundation, configured distribution tooling, and public guides. Shared direct-lookup classification now also drives virtual dependency entries in macOS and Linux parent enumeration, at registered package roots, including nested dependency aliases and peer contexts. Ordinary source/output descendants retain native lookup, enumeration and cleanup; native resolvers ascend to package roots. Per-stream/shared-offset lifecycle handling does not replace the outstanding platform and tool acceptance gates. Its macOS preload synchronizes concurrent fork state, propagates injection through virtual-PATH `posix_spawnp` launches, and makes pathname and descriptor-relative link reads share logical target and native buffer semantics. Its macOS supervisor uses an authenticated guardian outside its anchored command group for native birth-bound signal forwarding and authenticated abrupt-owner recovery, including stopped additional groups/sessions, hands off the caller's controlling terminal for ordinary foreground/background stop and resume, and retains detached-tree ownership and broader terminal job-control acceptance as release gates. Its Linux owned-child syscall backend runs dynamic and static ELF children; Ubuntu 22.04 arm64 Docker execution passes native C, static Go, and official TypeScript inline/split fixtures. The arm64 host's amd64 container emulation cannot perform the required child tracing and never substitutes for native x64 CI acceptance. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining runtime acceptance work. The separate exact-tag workflow validates four-host candidates, while its reviewed publication gate stays closed until the full conformance, minimum-OS and benchmark requirements are accepted; passing candidate fixtures or preparing a version commit or tag does not authorize stable publication. Experimental publication additionally requires the exact reviewed next-version declaration and the complete four-host candidate gates. The experimental `0.1.0-next.1` version is published through npm next and signed GitHub prerelease archives. Stable 0.1.0 preparation is authorized by the 2026-10-04 amendment; full acceptance and the recorded intermittent failures remain open. Actual publication still requires the retained final four-host gates. Preview publication does not close #958 or enable Homebrew.
 
 The macOS adapter preserves command-specific `fcntl` arguments during loader-constructor reentry and early TLS rejection, without runtime bookkeeping on rejected admission. Focused constructor, guard and duplication-provenance controls have native arm64 evidence; native x64 execution remains an acceptance requirement. This correction does not complete broader native-library or Next.js/Turbopack compatibility.
 

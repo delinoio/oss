@@ -189,16 +189,20 @@ test("publication rejects incomplete, duplicated, extra, or misordered native se
   }
 });
 
-test("publication stays blocked until reviewed release acceptance, independently of source version preparation", () => {
+test("stable publication requires exact reviewed authorization, independently of source version preparation", () => {
   // Exercise both states independently of the reviewed gate in the live source.
   // A legitimate release preparation must not invalidate this contract test.
   for (const pnportReleaseReady of [undefined, false, "true"]) {
-    assert.throws(() => requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady })), /publication is blocked/u);
+    assert.throws(() => requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady, pnportReleaseVersion: "0.1.0" })), /publication is blocked/u);
   }
   for (const version of [undefined, "", "0.0.0", "0.1.0-preview", "01.0.0"]) {
-    assert.throws(() => requireReleaseReady(() => JSON.stringify({ version, pnportReleaseReady: true })), /publication is blocked/u);
+    assert.throws(() => requireReleaseReady(() => JSON.stringify({ version, pnportReleaseReady: true, pnportReleaseVersion: version })), /publication is blocked/u);
   }
-  requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady: true }));
+  for (const pnportReleaseVersion of [undefined, true, "0.1.0-next.1", "0.1.1"]) {
+    assert.throws(() => requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady: true, pnportReleaseVersion })), /publication is blocked/u);
+  }
+  assert.throws(() => requireReleaseReady(() => JSON.stringify({ version: "0.1.1", pnportReleaseReady: true, pnportReleaseVersion: "0.1.0" })), /publication is blocked/u);
+  requireReleaseReady(() => JSON.stringify({ version: "0.1.0", pnportReleaseReady: true, pnportReleaseVersion: "0.1.0" }));
 });
 
 test("only the exact authorized next version bypasses stable acceptance", () => {
@@ -300,6 +304,11 @@ for (const version of ["0.1.0", "0.1.0-next.1"]) test(`signed GitHub ${version} 
       if (method === "POST") {
         assert.equal(body.prerelease, prerelease);
         if (prerelease) { assert.equal(body.make_latest, "false"); assert.match(body.body, /acceptance is incomplete/u); }
+        else {
+          assert.match(body.body, /intermittent macOS initialization failures/u);
+          assert.match(body.body, /exit 125 instead of the signal-derived status/u);
+          assert.match(body.body, /explicit approval to defer/u);
+        }
         return release;
       }
       if (method === "PATCH") { if (prerelease) assert.equal(body.make_latest, "false"); release.draft = body.draft; return release; }

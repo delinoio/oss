@@ -1,5 +1,17 @@
 # pnport 0.1 requirements
 
+## Owner-authorized 0.1.0 publication amendment (2026-10-04)
+
+The [project amendment](project-pnport.md#owner-authorized-010-publication-amendment-2026-10-04)
+permits exactly 0.1.0 publication after the retained final four-native candidate
+gates. The owner deferred the recorded macOS initialization/SIGHUP failure
+investigations, separate root clibox watch failure and full-acceptance review.
+Keep those limits visible; this exception does not establish a fix or passing
+skipped checks. Require `pnportReleaseReady: true` and exact
+`pnportReleaseVersion: "0.1.0"`, preserve signing/integrity and immutable retries,
+and keep #958 and the complete Windows 0.2.0 requirements open. This amendment
+takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
+
 Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete. The owner-approved 2026-10-03 amendment raises the macOS support floor to 15; both native CI architectures must execute on that supported floor.
 
 ## Summary
