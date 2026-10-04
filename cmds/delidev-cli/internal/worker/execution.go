@@ -307,6 +307,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
+		nativeConfig.QuotaObserver = managed.publishRollingQuota
 	}
 	// Once startup may own a process, only independently joined native cleanup
 	// may authorize removal. A definite failed Open already proves that closure;
@@ -341,6 +342,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 		}
 	}()
+	if managed != nil && config.observations != nil {
+		unregister := config.observations.register(input.AccountID, client, managed)
+		defer unregister()
+	}
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {

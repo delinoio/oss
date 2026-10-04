@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
-  SessionService, SystemService, SystemCapability, newRequestId, RequestDiagnosticSchema,
+  SubscriptionServiceIdentity, SessionService, SystemService, SystemCapability, newRequestId, RequestDiagnosticSchema,
   RequestDiagnosticSource as Source, RequestDiagnosticState as State, RequestDiagnosticOperation as Operation,
   ListRequestDiagnosticsResponseSchema,
 } from "@delinoio/delidev-api-client";
@@ -110,4 +110,13 @@ it("preserves standard-only requested capacity independently from the effective 
   expect(validateDiagnosticPage(page, f.session, "").records[0].requestedServiceTier).toBe("standard_only");
   row.effectiveServiceTier = "standard_only";
   expect(() => validateDiagnosticPage(page, f.session, "")).toThrow("unavailable");
+});
+
+it("keeps native subscription service attribution independent from API providers", () => {
+  const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, id: newRequestId(), providerId: "", subscriptionService: SubscriptionServiceIdentity.CHATGPT, source: Source.NATIVE_INPUT, operation: Operation.INPUT, inputId: newRequestId(), correlationId: "", nativeResponseId: "", httpAttempted: undefined, httpStatus: undefined, durationMs: undefined, nativeThreadId: newRequestId(), nativeTurnId: newRequestId() });
+  row.nativeRequestId = row.id;
+  expect(validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema, { records: [row] }), f.session, "").records[0].providerId).toBe("");
+  for (const wrong of [{ providerId: newRequestId() }, { subscriptionService: SubscriptionServiceIdentity.CLAUDE }, { subscriptionService: 99 as SubscriptionServiceIdentity }, { source: Source.PROXY_HTTP }]) {
+    expect(() => validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema, { records: [create(RequestDiagnosticSchema, { ...row, ...wrong })] }), f.session, "")).toThrow("unavailable");
+  }
 });

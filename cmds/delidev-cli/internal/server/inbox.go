@@ -43,6 +43,8 @@ func inboxSource(value pb.InboxSource) (domain.InboxSource, error) {
 		return "", nil
 	case pb.InboxSource_INBOX_SOURCE_INTERACTION:
 		return domain.InteractionInbox, nil
+	case pb.InboxSource_INBOX_SOURCE_SUBSCRIPTION_RECOVERY:
+		return domain.SubscriptionRecoveryInbox, nil
 	case pb.InboxSource_INBOX_SOURCE_EXECUTION_TERMINAL:
 		return domain.ExecutionTerminalInbox, nil
 	}
@@ -56,6 +58,16 @@ func currentInboxView(tx *store.Tx, record store.Record) (*pb.InboxView, error) 
 	}
 	if record.Kind != domain.InboxKind || entry.Validate() != nil {
 		return nil, domain.Fail(domain.RecoveryRequired, "The retained inbox source is inconsistent.", "Preserve the original inbox and source records for reconciliation.")
+	}
+	if entry.Source == domain.SubscriptionRecoveryInbox {
+		account, err := tx.Get(domain.AccountKind, entry.Recovery.AccountID)
+		if err != nil {
+			return nil, err
+		}
+		if record.SessionID != "" || record.ProjectID != "" {
+			return nil, domain.Fail(domain.RecoveryRequired, "Invalid recovery inbox scope.", "Preserve the original account observation.")
+		}
+		return &pb.InboxView{Entry: rpc.Resource(record), Account: rpc.Resource(account)}, nil
 	}
 	session, err := tx.Get(domain.SessionKind, record.SessionID)
 	if err != nil {

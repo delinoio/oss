@@ -13,15 +13,13 @@ actual account/private-GitHub access and platform distribution validation remain
 deferred. This document covers managed backup observation, creation/deletion and permanent
 session deletion and database restore. Worker-local snapshots remain pending.
 
-## Planned subscription retirement (issue #1235)
+## Subscription retirement (issue #1235)
 
-Migration 28 is reserved for [issue #1235](https://github.com/delinoio/oss/issues/1235)
+Migration 28 implements [issue #1235](https://github.com/delinoio/oss/issues/1235)
 after the real Claude accounting and request-diagnostics migrations at 26 and
-27. Establish this reservation and independent server capability 17 on main
-before dependent implementation. The executable sequence remains at 25; no
-empty predecessor, schema-version bump or retirement runs in this prerequisite.
+27. Reservations reached main before implementation. Complete accounting and diagnostics precede real migration 28 and independent server capability 17; no empty predecessor is permitted.
 
-The required reset must back up first and atomically retire legacy subscription
+The reset backs up first and atomically retires legacy subscription
 Accounts, native-subscription Providers and their provider-bound Models into
 read-only historical metadata with original IDs, revisions, timestamps and
 document bytes. Tombstone their IDs, exclude them from live configuration/export
@@ -46,7 +44,7 @@ managed-account ownership and cleanup boundary from issue #1095.
 Migration 29 is reserved for the private `account_oauth_attempts` table under
 [issue #1146](https://github.com/delinoio/oss/issues/1146), following real
 migrations 26–28. Establish the reservation on main before dependent
-implementation; the executable sequence still ends at 25. Do not create empty
+implementation; the executable sequence ends at 28 until OAuth is implemented. Do not create empty
 predecessors, reuse an allocated version or activate this table early.
 
 The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the
@@ -578,3 +576,11 @@ stable-PR chain. Explicit session controls retain their separate server-owned
 automation suppression bit, without changing historical outcomes or unpausing a
 failed queue. Missing or replaced source ownership cannot authorize a native claim.
 Follow the [automatic coordinator contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
+
+### Retirement storage boundary
+
+`retired_configurations` preserves the complete original record columns and document bytes independently of live `entities`. Ordinary Get, mutation, routing, catalog and export never consult it. Only explicit owner/client historical reads and usage labels may use it; their retired Resource projection has schema 2. Permanent tombstones and redacted historical receipts prevent resurrection. The schema marker is `service-accounts-v2`. The integrated migration also rebuilds the notification-delivery table, preserving every prior claim while extending its closed kind constraint to account-scoped subscription recovery. Its independent `subscription_notification_layout=account-recovery-v1` marker is required together with the identity marker; a partially composed or unrelated version-28 layout is recovery-required. This composition precedes migration 28's first main activation and does not alter historical migration 17.
+
+Before creating retirement tables or changing configuration, live upgrades reject original connections, protected generations/identity commitments, pending operations, leases, recovery fences, unremoved device browser profiles and affected claimed/uncertain native work. Failure rolls back the entire composed transaction and preserves the synchronized pre-migration backup. A private restore candidate has explicitly historical ownership without current local authority; it migrates before replacement preparation/publication, preserves original retired documents and merges current retirement/tombstone evidence. This exemption never applies to ordinary startup.
+
+Affected Agents retain names, options, templates and original model IDs with server-owned `reconfiguration_required`; ordered surviving account weights remain unchanged. Project account restrictions preserve their configured flag even when all IDs retire. Only affected Schedules disable their timer and retain accepted occurrence history with explicit reset guidance. Session/snapshot/transcript/usage bodies and their revisions remain unchanged. Pricing retains original API attribution and independently stores the service identity of newly configured native models.

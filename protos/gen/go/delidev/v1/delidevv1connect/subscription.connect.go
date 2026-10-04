@@ -33,6 +33,21 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SubscriptionServiceRequestSubscriptionObservationProcedure is the fully-qualified name of the
+	// SubscriptionService's RequestSubscriptionObservation RPC.
+	SubscriptionServiceRequestSubscriptionObservationProcedure = "/delidev.v1.SubscriptionService/RequestSubscriptionObservation"
+	// SubscriptionServiceRefreshAllSubscriptionQuotasProcedure is the fully-qualified name of the
+	// SubscriptionService's RefreshAllSubscriptionQuotas RPC.
+	SubscriptionServiceRefreshAllSubscriptionQuotasProcedure = "/delidev.v1.SubscriptionService/RefreshAllSubscriptionQuotas"
+	// SubscriptionServiceReconcileSubscriptionCreditProcedure is the fully-qualified name of the
+	// SubscriptionService's ReconcileSubscriptionCredit RPC.
+	SubscriptionServiceReconcileSubscriptionCreditProcedure = "/delidev.v1.SubscriptionService/ReconcileSubscriptionCredit"
+	// SubscriptionServiceClaimSubscriptionObservationProcedure is the fully-qualified name of the
+	// SubscriptionService's ClaimSubscriptionObservation RPC.
+	SubscriptionServiceClaimSubscriptionObservationProcedure = "/delidev.v1.SubscriptionService/ClaimSubscriptionObservation"
+	// SubscriptionServicePublishSubscriptionObservationProcedure is the fully-qualified name of the
+	// SubscriptionService's PublishSubscriptionObservation RPC.
+	SubscriptionServicePublishSubscriptionObservationProcedure = "/delidev.v1.SubscriptionService/PublishSubscriptionObservation"
 	// SubscriptionServiceRequestSubscriptionProcedure is the fully-qualified name of the
 	// SubscriptionService's RequestSubscription RPC.
 	SubscriptionServiceRequestSubscriptionProcedure = "/delidev.v1.SubscriptionService/RequestSubscription"
@@ -58,6 +73,11 @@ const (
 
 // SubscriptionServiceClient is a client for the delidev.v1.SubscriptionService service.
 type SubscriptionServiceClient interface {
+	RequestSubscriptionObservation(context.Context, *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error)
+	RefreshAllSubscriptionQuotas(context.Context, *connect.Request[v1.RefreshAllSubscriptionQuotasRequest]) (*connect.Response[v1.RefreshAllSubscriptionQuotasResponse], error)
+	ReconcileSubscriptionCredit(context.Context, *connect.Request[v1.ReconcileSubscriptionCreditRequest]) (*connect.Response[v1.ReconcileSubscriptionCreditResponse], error)
+	ClaimSubscriptionObservation(context.Context, *connect.Request[v1.ClaimSubscriptionObservationRequest]) (*connect.Response[v1.ClaimSubscriptionObservationResponse], error)
+	PublishSubscriptionObservation(context.Context, *connect.Request[v1.PublishSubscriptionObservationRequest]) (*connect.Response[v1.PublishSubscriptionObservationResponse], error)
 	RequestSubscription(context.Context, *connect.Request[v1.RequestSubscriptionRequest]) (*connect.Response[v1.RequestSubscriptionResponse], error)
 	CancelSubscription(context.Context, *connect.Request[v1.CancelSubscriptionRequest]) (*connect.Response[v1.CancelSubscriptionResponse], error)
 	GetSubscriptionProgress(context.Context, *connect.Request[v1.GetSubscriptionProgressRequest]) (*connect.Response[v1.GetSubscriptionProgressResponse], error)
@@ -78,6 +98,36 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 	baseURL = strings.TrimRight(baseURL, "/")
 	subscriptionServiceMethods := v1.File_delidev_v1_subscription_proto.Services().ByName("SubscriptionService").Methods()
 	return &subscriptionServiceClient{
+		requestSubscriptionObservation: connect.NewClient[v1.RequestSubscriptionObservationRequest, v1.RequestSubscriptionObservationResponse](
+			httpClient,
+			baseURL+SubscriptionServiceRequestSubscriptionObservationProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("RequestSubscriptionObservation")),
+			connect.WithClientOptions(opts...),
+		),
+		refreshAllSubscriptionQuotas: connect.NewClient[v1.RefreshAllSubscriptionQuotasRequest, v1.RefreshAllSubscriptionQuotasResponse](
+			httpClient,
+			baseURL+SubscriptionServiceRefreshAllSubscriptionQuotasProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("RefreshAllSubscriptionQuotas")),
+			connect.WithClientOptions(opts...),
+		),
+		reconcileSubscriptionCredit: connect.NewClient[v1.ReconcileSubscriptionCreditRequest, v1.ReconcileSubscriptionCreditResponse](
+			httpClient,
+			baseURL+SubscriptionServiceReconcileSubscriptionCreditProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("ReconcileSubscriptionCredit")),
+			connect.WithClientOptions(opts...),
+		),
+		claimSubscriptionObservation: connect.NewClient[v1.ClaimSubscriptionObservationRequest, v1.ClaimSubscriptionObservationResponse](
+			httpClient,
+			baseURL+SubscriptionServiceClaimSubscriptionObservationProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("ClaimSubscriptionObservation")),
+			connect.WithClientOptions(opts...),
+		),
+		publishSubscriptionObservation: connect.NewClient[v1.PublishSubscriptionObservationRequest, v1.PublishSubscriptionObservationResponse](
+			httpClient,
+			baseURL+SubscriptionServicePublishSubscriptionObservationProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("PublishSubscriptionObservation")),
+			connect.WithClientOptions(opts...),
+		),
 		requestSubscription: connect.NewClient[v1.RequestSubscriptionRequest, v1.RequestSubscriptionResponse](
 			httpClient,
 			baseURL+SubscriptionServiceRequestSubscriptionProcedure,
@@ -125,13 +175,45 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 
 // subscriptionServiceClient implements SubscriptionServiceClient.
 type subscriptionServiceClient struct {
-	requestSubscription         *connect.Client[v1.RequestSubscriptionRequest, v1.RequestSubscriptionResponse]
-	cancelSubscription          *connect.Client[v1.CancelSubscriptionRequest, v1.CancelSubscriptionResponse]
-	getSubscriptionProgress     *connect.Client[v1.GetSubscriptionProgressRequest, v1.GetSubscriptionProgressResponse]
-	watchSubscription           *connect.Client[v1.WatchSubscriptionRequest, v1.WatchSubscriptionResponse]
-	takeSubscription            *connect.Client[v1.TakeSubscriptionRequest, v1.TakeSubscriptionResponse]
-	publishSubscriptionProgress *connect.Client[v1.PublishSubscriptionProgressRequest, v1.PublishSubscriptionProgressResponse]
-	finishSubscription          *connect.Client[v1.FinishSubscriptionRequest, v1.FinishSubscriptionResponse]
+	requestSubscriptionObservation *connect.Client[v1.RequestSubscriptionObservationRequest, v1.RequestSubscriptionObservationResponse]
+	refreshAllSubscriptionQuotas   *connect.Client[v1.RefreshAllSubscriptionQuotasRequest, v1.RefreshAllSubscriptionQuotasResponse]
+	reconcileSubscriptionCredit    *connect.Client[v1.ReconcileSubscriptionCreditRequest, v1.ReconcileSubscriptionCreditResponse]
+	claimSubscriptionObservation   *connect.Client[v1.ClaimSubscriptionObservationRequest, v1.ClaimSubscriptionObservationResponse]
+	publishSubscriptionObservation *connect.Client[v1.PublishSubscriptionObservationRequest, v1.PublishSubscriptionObservationResponse]
+	requestSubscription            *connect.Client[v1.RequestSubscriptionRequest, v1.RequestSubscriptionResponse]
+	cancelSubscription             *connect.Client[v1.CancelSubscriptionRequest, v1.CancelSubscriptionResponse]
+	getSubscriptionProgress        *connect.Client[v1.GetSubscriptionProgressRequest, v1.GetSubscriptionProgressResponse]
+	watchSubscription              *connect.Client[v1.WatchSubscriptionRequest, v1.WatchSubscriptionResponse]
+	takeSubscription               *connect.Client[v1.TakeSubscriptionRequest, v1.TakeSubscriptionResponse]
+	publishSubscriptionProgress    *connect.Client[v1.PublishSubscriptionProgressRequest, v1.PublishSubscriptionProgressResponse]
+	finishSubscription             *connect.Client[v1.FinishSubscriptionRequest, v1.FinishSubscriptionResponse]
+}
+
+// RequestSubscriptionObservation calls
+// delidev.v1.SubscriptionService.RequestSubscriptionObservation.
+func (c *subscriptionServiceClient) RequestSubscriptionObservation(ctx context.Context, req *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error) {
+	return c.requestSubscriptionObservation.CallUnary(ctx, req)
+}
+
+// RefreshAllSubscriptionQuotas calls delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas.
+func (c *subscriptionServiceClient) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect.Request[v1.RefreshAllSubscriptionQuotasRequest]) (*connect.Response[v1.RefreshAllSubscriptionQuotasResponse], error) {
+	return c.refreshAllSubscriptionQuotas.CallUnary(ctx, req)
+}
+
+// ReconcileSubscriptionCredit calls delidev.v1.SubscriptionService.ReconcileSubscriptionCredit.
+func (c *subscriptionServiceClient) ReconcileSubscriptionCredit(ctx context.Context, req *connect.Request[v1.ReconcileSubscriptionCreditRequest]) (*connect.Response[v1.ReconcileSubscriptionCreditResponse], error) {
+	return c.reconcileSubscriptionCredit.CallUnary(ctx, req)
+}
+
+// ClaimSubscriptionObservation calls delidev.v1.SubscriptionService.ClaimSubscriptionObservation.
+func (c *subscriptionServiceClient) ClaimSubscriptionObservation(ctx context.Context, req *connect.Request[v1.ClaimSubscriptionObservationRequest]) (*connect.Response[v1.ClaimSubscriptionObservationResponse], error) {
+	return c.claimSubscriptionObservation.CallUnary(ctx, req)
+}
+
+// PublishSubscriptionObservation calls
+// delidev.v1.SubscriptionService.PublishSubscriptionObservation.
+func (c *subscriptionServiceClient) PublishSubscriptionObservation(ctx context.Context, req *connect.Request[v1.PublishSubscriptionObservationRequest]) (*connect.Response[v1.PublishSubscriptionObservationResponse], error) {
+	return c.publishSubscriptionObservation.CallUnary(ctx, req)
 }
 
 // RequestSubscription calls delidev.v1.SubscriptionService.RequestSubscription.
@@ -171,6 +253,11 @@ func (c *subscriptionServiceClient) FinishSubscription(ctx context.Context, req 
 
 // SubscriptionServiceHandler is an implementation of the delidev.v1.SubscriptionService service.
 type SubscriptionServiceHandler interface {
+	RequestSubscriptionObservation(context.Context, *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error)
+	RefreshAllSubscriptionQuotas(context.Context, *connect.Request[v1.RefreshAllSubscriptionQuotasRequest]) (*connect.Response[v1.RefreshAllSubscriptionQuotasResponse], error)
+	ReconcileSubscriptionCredit(context.Context, *connect.Request[v1.ReconcileSubscriptionCreditRequest]) (*connect.Response[v1.ReconcileSubscriptionCreditResponse], error)
+	ClaimSubscriptionObservation(context.Context, *connect.Request[v1.ClaimSubscriptionObservationRequest]) (*connect.Response[v1.ClaimSubscriptionObservationResponse], error)
+	PublishSubscriptionObservation(context.Context, *connect.Request[v1.PublishSubscriptionObservationRequest]) (*connect.Response[v1.PublishSubscriptionObservationResponse], error)
 	RequestSubscription(context.Context, *connect.Request[v1.RequestSubscriptionRequest]) (*connect.Response[v1.RequestSubscriptionResponse], error)
 	CancelSubscription(context.Context, *connect.Request[v1.CancelSubscriptionRequest]) (*connect.Response[v1.CancelSubscriptionResponse], error)
 	GetSubscriptionProgress(context.Context, *connect.Request[v1.GetSubscriptionProgressRequest]) (*connect.Response[v1.GetSubscriptionProgressResponse], error)
@@ -187,6 +274,36 @@ type SubscriptionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	subscriptionServiceMethods := v1.File_delidev_v1_subscription_proto.Services().ByName("SubscriptionService").Methods()
+	subscriptionServiceRequestSubscriptionObservationHandler := connect.NewUnaryHandler(
+		SubscriptionServiceRequestSubscriptionObservationProcedure,
+		svc.RequestSubscriptionObservation,
+		connect.WithSchema(subscriptionServiceMethods.ByName("RequestSubscriptionObservation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceRefreshAllSubscriptionQuotasHandler := connect.NewUnaryHandler(
+		SubscriptionServiceRefreshAllSubscriptionQuotasProcedure,
+		svc.RefreshAllSubscriptionQuotas,
+		connect.WithSchema(subscriptionServiceMethods.ByName("RefreshAllSubscriptionQuotas")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceReconcileSubscriptionCreditHandler := connect.NewUnaryHandler(
+		SubscriptionServiceReconcileSubscriptionCreditProcedure,
+		svc.ReconcileSubscriptionCredit,
+		connect.WithSchema(subscriptionServiceMethods.ByName("ReconcileSubscriptionCredit")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceClaimSubscriptionObservationHandler := connect.NewUnaryHandler(
+		SubscriptionServiceClaimSubscriptionObservationProcedure,
+		svc.ClaimSubscriptionObservation,
+		connect.WithSchema(subscriptionServiceMethods.ByName("ClaimSubscriptionObservation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServicePublishSubscriptionObservationHandler := connect.NewUnaryHandler(
+		SubscriptionServicePublishSubscriptionObservationProcedure,
+		svc.PublishSubscriptionObservation,
+		connect.WithSchema(subscriptionServiceMethods.ByName("PublishSubscriptionObservation")),
+		connect.WithHandlerOptions(opts...),
+	)
 	subscriptionServiceRequestSubscriptionHandler := connect.NewUnaryHandler(
 		SubscriptionServiceRequestSubscriptionProcedure,
 		svc.RequestSubscription,
@@ -231,6 +348,16 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 	)
 	return "/delidev.v1.SubscriptionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SubscriptionServiceRequestSubscriptionObservationProcedure:
+			subscriptionServiceRequestSubscriptionObservationHandler.ServeHTTP(w, r)
+		case SubscriptionServiceRefreshAllSubscriptionQuotasProcedure:
+			subscriptionServiceRefreshAllSubscriptionQuotasHandler.ServeHTTP(w, r)
+		case SubscriptionServiceReconcileSubscriptionCreditProcedure:
+			subscriptionServiceReconcileSubscriptionCreditHandler.ServeHTTP(w, r)
+		case SubscriptionServiceClaimSubscriptionObservationProcedure:
+			subscriptionServiceClaimSubscriptionObservationHandler.ServeHTTP(w, r)
+		case SubscriptionServicePublishSubscriptionObservationProcedure:
+			subscriptionServicePublishSubscriptionObservationHandler.ServeHTTP(w, r)
 		case SubscriptionServiceRequestSubscriptionProcedure:
 			subscriptionServiceRequestSubscriptionHandler.ServeHTTP(w, r)
 		case SubscriptionServiceCancelSubscriptionProcedure:
@@ -253,6 +380,26 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 
 // UnimplementedSubscriptionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSubscriptionServiceHandler struct{}
+
+func (UnimplementedSubscriptionServiceHandler) RequestSubscriptionObservation(context.Context, *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.RequestSubscriptionObservation is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) RefreshAllSubscriptionQuotas(context.Context, *connect.Request[v1.RefreshAllSubscriptionQuotasRequest]) (*connect.Response[v1.RefreshAllSubscriptionQuotasResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) ReconcileSubscriptionCredit(context.Context, *connect.Request[v1.ReconcileSubscriptionCreditRequest]) (*connect.Response[v1.ReconcileSubscriptionCreditResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.ReconcileSubscriptionCredit is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) ClaimSubscriptionObservation(context.Context, *connect.Request[v1.ClaimSubscriptionObservationRequest]) (*connect.Response[v1.ClaimSubscriptionObservationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.ClaimSubscriptionObservation is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) PublishSubscriptionObservation(context.Context, *connect.Request[v1.PublishSubscriptionObservationRequest]) (*connect.Response[v1.PublishSubscriptionObservationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.PublishSubscriptionObservation is not implemented"))
+}
 
 func (UnimplementedSubscriptionServiceHandler) RequestSubscription(context.Context, *connect.Request[v1.RequestSubscriptionRequest]) (*connect.Response[v1.RequestSubscriptionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.RequestSubscription is not implemented"))

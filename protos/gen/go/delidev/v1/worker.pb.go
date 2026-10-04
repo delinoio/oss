@@ -31,6 +31,7 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1              WorkerCapability = 4
 	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1 WorkerCapability = 6
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1   WorkerCapability = 7
+	WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1      WorkerCapability = 8
 )
 
 // Enum value maps for WorkerCapability.
@@ -43,6 +44,7 @@ var (
 		4: "WORKER_CAPABILITY_SESSION_TERMINALS_V1",
 		6: "WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1",
 		7: "WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
+		8: "WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1",
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
@@ -52,6 +54,7 @@ var (
 		"WORKER_CAPABILITY_SESSION_TERMINALS_V1":              4,
 		"WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1": 6,
 		"WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1":   7,
+		"WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1":      8,
 	}
 )
 
@@ -2536,7 +2539,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\vwork_digest\x18\x06 \x01(\tR\n" +
 	"workDigest\"Q\n" +
 	"\x1dReportSessionDeletionResponse\x120\n" +
-	"\x03job\x18\x01 \x01(\v2\x1e.delidev.v1.SessionDeletionJobR\x03job*\xe5\x02\n" +
+	"\x03job\x18\x01 \x01(\v2\x1e.delidev.v1.SessionDeletionJobR\x03job*\x99\x03\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
 	"+WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1\x10\x01\x12+\n" +
@@ -2544,7 +2547,8 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"0WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1\x10\x03\x12*\n" +
 	"&WORKER_CAPABILITY_SESSION_TERMINALS_V1\x10\x04\x127\n" +
 	"3WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1\x10\x06\x125\n" +
-	"1WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1\x10\a2\xb8\x0f\n" +
+	"1WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1\x10\a\x122\n" +
+	".WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1\x10\b2\xb8\x0f\n" +
 	"\rWorkerService\x12r\n" +
 	"\x17ListSessionDeletionWork\x12*.delidev.v1.ListSessionDeletionWorkRequest\x1a+.delidev.v1.ListSessionDeletionWorkResponse\x12l\n" +
 	"\x15ReportSessionDeletion\x12(.delidev.v1.ReportSessionDeletionRequest\x1a).delidev.v1.ReportSessionDeletionResponse\x12Y\n" +

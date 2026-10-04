@@ -5,14 +5,14 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { AccountSettings, AccountSettingsSection, type AccountProviderSummary } from "./account-settings";
 import { MutationIntents } from "./mutation";
 import { Authentication } from "./configuration-fields";
 import { encode, type Document } from "./documents";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) {
-  return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision, documentJson: encode(value) });
+  return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) });
 }
 
 function requestId(value: unknown): string {
@@ -30,7 +30,9 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
   const save = vi.fn(args.save ?? (async (request: unknown) => ({ resource: resources[0], requestId: requestId(request) })));
   const connect = vi.fn(args.connect ?? (async (request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT), requestId: requestId(request) })));
   const other = vi.fn(async () => ({}));
+  const status = vi.fn(() => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] as SystemCapability[] }));
   const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: status });
     router.service(ResourceService, { listResources: list, getResource: async (request) => ({ resource: resources.find((row) => row.id === request.id) ?? (request.kind === EntityKind.PROVIDER && request.id === providerId ? args.currentProvider ?? provider : undefined) }) });
     router.service(ConfigurationService, { saveConfiguration: save });
     router.service(AccountService, { connectAccount: connect, getAccountStatus: async (request) => ({ account: resources.find((row) => row.id === request.id) }), disconnectAccount: other, validateAccount: other });
@@ -68,7 +70,7 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     deleteAccount={callbacks.deleteAccount}
     {...overrides}
   />;
-  return { providerId, provider, providerOption, resources, list, save, connect, other, client, callbacks, view, settings };
+  return { status, providerId, provider, providerOption, resources, list, save, connect, other, client, callbacks, view, settings };
 }
 
 it("uses server-side account type and provider filters and keeps the split view disabled without its capability", async () => {
@@ -90,11 +92,11 @@ it("uses server-side account type and provider filters and keeps the split view 
   first.unmount();
   value.client.clear();
   value.list.mockClear();
-  const view = render(value.view(value.settings(AccountSettingsSection.Subscription, { accountTypeFilteringReady: false })));
-  expect(screen.getByText(/supports account-type filtering/)).toBeTruthy();
-  expect(screen.getByText(/Subscription login is not available yet/)).toBeTruthy();
+  value.status.mockReturnValue({ capabilities: [] });
+  const view = render(value.view(value.settings(AccountSettingsSection.Subscription)));
+  expect(await screen.findByText(/supports service-native subscription accounts/)).toBeTruthy();
   expect(value.list).not.toHaveBeenCalled();
-  expect(screen.getByRole("button", { name: "Add native subscription provider" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Add native subscription provider" })).toBeNull();
   view.unmount();
 
   value.client.clear();
@@ -343,50 +345,40 @@ it("requires a deliberate keyless connection and exposes provider-off state sepa
   expect(await screen.findByText(/Enable it in API Providers/)).toBeTruthy();
 });
 
-it("creates subscription metadata only and keeps its unavailable-login explanation visible", async () => {
-  const providerId = newRequestId();
-  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Native subscription", protocol: "native-subscription", authentication: "subscription", endpoint: "" }), id: providerId });
-  const account = resource(EntityKind.ACCOUNT, { alias: "Work subscription", provider_id: providerId, type: "subscription", enabled: true, health: "disconnected" });
+it("creates service-native metadata without a provider or implicit login", async () => {
+  const account = resource(EntityKind.ACCOUNT, { alias: "Work subscription", subscription_service: "chatgpt", type: "subscription", enabled: true, health: "disconnected" });
   const save = vi.fn(async (request: unknown) => ({ resource: account, requestId: requestId(request) }));
-  const value = fixture({ resources: [provider], save, providerId });
-  render(value.view(value.settings(AccountSettingsSection.Subscription, { subscriptionProviderResources: [provider] })));
-  fireEvent.change(screen.getByLabelText("Subscription provider"), { target: { value: providerId } });
+  const value = fixture({ save });
+  render(value.view(value.settings(AccountSettingsSection.Subscription)));
+  fireEvent.click(await screen.findByRole("button", { name: "ChatGPT · Add account" }));
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Work subscription" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add subscription configuration" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save subscription account" }));
   await screen.findByRole("heading", { name: "Work subscription" });
-  expect(screen.getByText(/Subscription login is not implemented yet/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /login/i })).toBeNull();
   expect(value.connect).not.toHaveBeenCalled();
-  expect(JSON.parse(new TextDecoder().decode((save.mock.calls[0][0] as { documentJson: Uint8Array }).documentJson))).toMatchObject({ type: "subscription", provider_id: providerId, alias: "Work subscription" });
+  const body = JSON.parse(new TextDecoder().decode((save.mock.calls[0][0] as { documentJson: Uint8Array }).documentJson));
+  expect(body).toMatchObject({ type: "subscription", subscription_service: "chatgpt", alias: "Work subscription", recovery_notifications: false });
+  expect(body).not.toHaveProperty("provider_id");
 });
 
-it("offers only empty-endpoint native subscription providers for metadata configuration", () => {
-  const valid = resource(EntityKind.PROVIDER, { name: "Native subscription", protocol: "native-subscription", authentication: "subscription", endpoint: "" });
-  const apiEndpoint = resource(EntityKind.PROVIDER, { name: "Subscription with endpoint", protocol: "native-subscription", authentication: "subscription", endpoint: "https://example.test" });
-  const otherProtocol = resource(EntityKind.PROVIDER, { name: "API auth", protocol: "openai-responses", authentication: "subscription", endpoint: "" });
-  const value = fixture({ resources: [valid, apiEndpoint, otherProtocol] });
-  render(value.view(value.settings(AccountSettingsSection.Subscription, { subscriptionProviderResources: [valid, apiEndpoint, otherProtocol] })));
-  const choices = screen.getByLabelText("Subscription provider") as HTMLSelectElement;
-  expect([...choices.options].map((option) => option.textContent)).toEqual(["Select a subscription provider", "Native subscription"]);
+it("offers closed service choices without provider search or setup", async () => {
+  const value = fixture(); render(value.view(value.settings(AccountSettingsSection.Subscription)));
+  await screen.findByRole("button", { name: "ChatGPT · Add account" });
+  for (const name of ["ChatGPT", "Claude", "Grok"]) expect(screen.getByRole("button", { name: `${name} · Add account` })).toBeTruthy();
+  expect(screen.queryByLabelText("Subscription provider")).toBeNull(); expect(screen.queryByLabelText("Search providers")).toBeNull();
+  expect(value.list.mock.calls.every(([request]) => request.filter?.kind === EntityKind.ACCOUNT && request.providerId === "")).toBe(true);
 });
 
-it("retries a lost subscription metadata acknowledgment byte-for-byte without starting login", async () => {
-  const providerId = newRequestId();
-  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Native subscription", protocol: "native-subscription", authentication: "subscription", endpoint: "" }), id: providerId });
-  const account = resource(EntityKind.ACCOUNT, { alias: "Work subscription", provider_id: providerId, type: "subscription", enabled: true, health: "disconnected" }, 2n);
+it("retries a lost service-native metadata acknowledgment exactly without starting login", async () => {
+  const account = resource(EntityKind.ACCOUNT, { alias: "Work subscription", subscription_service: "claude", type: "subscription", enabled: true, health: "disconnected" }, 2n);
   const save = vi.fn(async (request: unknown) => ({ resource: account, requestId: requestId(request) })).mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable));
-  const connect = vi.fn(async () => ({}));
-  const value = fixture({ resources: [provider], save, connect, providerId });
-  render(value.view(value.settings(AccountSettingsSection.Subscription, { subscriptionProviderResources: [provider] })));
-  fireEvent.change(screen.getByLabelText("Subscription provider"), { target: { value: providerId } });
+  const value = fixture({ save }); render(value.view(value.settings(AccountSettingsSection.Subscription)));
+  fireEvent.click(await screen.findByRole("button", { name: "Claude · Add account" }));
   fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Work subscription" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add subscription configuration" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Retry the same subscription configuration" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save subscription account" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry original subscription account creation" }));
   await screen.findByRole("heading", { name: "Work subscription" });
-  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
-  expect(save.mock.calls[0][0]).toEqual(save.mock.calls[1][0]);
-  expect(connect).not.toHaveBeenCalled();
-  expect(screen.getByText(/Subscription login is not implemented yet/)).toBeTruthy();
+  expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[0][0]).toEqual(save.mock.calls[1][0]);
+  expect(value.connect).not.toHaveBeenCalled(); expect(screen.getByText(/Native login for this service is unavailable/)).toBeTruthy();
 });
 
 
@@ -478,7 +470,7 @@ it("labels API entry navigation and omits empty subscription pagination", async 
   expect(await screen.findByRole("heading", { name: "No subscriptions yet" })).toBeTruthy();
   const advanced = screen.getByText("Advanced settings").closest("details")!;
   expect(advanced.open).toBe(false); advanced.open = true;
-  expect(screen.getByRole("combobox", { name: "Filter accounts by provider" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Filter accounts by provider" })).toBeNull();
   expect(screen.queryByRole("navigation", { name: "Account pages" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Add AI API key" })).toBeNull();
 });

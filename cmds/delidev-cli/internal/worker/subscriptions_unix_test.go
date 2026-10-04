@@ -4,8 +4,10 @@ package worker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -89,6 +91,26 @@ func init() {
 				}
 			}
 			write(req.ID, map[string]any{"account": map[string]string{"type": "chatgpt", "email": "fixture@example.invalid", "planType": "plus"}, "requiresOpenaiAuth": true})
+		case "account/rateLimitResetCredit/consume":
+			var input struct {
+				Key string `json:"idempotencyKey"`
+			}
+			if json.Unmarshal(req.Params, &input) != nil || domain.ID(input.Key).Validate() != nil {
+				os.Exit(37)
+			}
+			if _, err := os.Lstat(filepath.Join(home, "consume-key")); !os.IsNotExist(err) {
+				os.Exit(38)
+			}
+			if os.WriteFile(filepath.Join(home, "consume-key"), []byte(input.Key), 0600) != nil {
+				os.Exit(39)
+			}
+			outcome := string(domain.SubscriptionReset)
+			if mode == "credit-publication-uncertain" {
+				outcome = "unknown-native-outcome"
+			}
+			write(req.ID, map[string]string{"outcome": outcome})
+		case "account/rateLimits/read":
+			write(req.ID, map[string]any{"rateLimits": map[string]any{"limitId": "codex", "primary": nil, "secondary": nil}, "rateLimitsByLimitId": nil})
 		case "account/logout":
 			if os.Remove(filepath.Join(home, "auth.json")) != nil {
 				os.Exit(35)
@@ -166,6 +188,45 @@ func TestManagedWorkerNativeLifecycleAndLostWriteback(t *testing.T) {
 			}
 			if journal.State != want || !journal.Cleanup {
 				t.Fatalf("journal outcome %s", journal.State)
+			}
+			assertManagedWorkerFilesRedacted(t, root, f.bundle, f.finishBundle)
+			clear(f.bundle)
+			clear(f.finishBundle)
+		})
+	}
+}
+
+func TestManagedCreditPublicationLossPreservesCleanIdleLease(t *testing.T) {
+	for _, mode := range []string{"credit-publication-consumed", "credit-publication-uncertain"} {
+		t.Run(mode, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			binary, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			executable := filepath.Join(t.TempDir(), "codex-fixture")
+			quote := func(v string) string { return "'" + strings.ReplaceAll(v, "'", "'\"'\"'") + "'" }
+			script := "#!/bin/sh\nexec " + quote(binary) + " --managed-subscription-fixture " + quote(mode) + " \"$@\"\n"
+			if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			executable, err = filepath.EvalSymlinks(executable)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := &managedWorkerRPC{t: t, root: root, executable: executable, mode: mode, bundle: workerSubscriptionBundle("first")}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			err = runManagedAccount(ctx, Config{Root: root}, f, Credential{MachineID: domain.NewID()}, domain.NewID(), domain.NewID(), 2, domain.SubscriptionOperation{ID: domain.NewID(), Action: domain.SubscriptionResetCredit})
+			var reported *managedReportedFailure
+			if !errors.As(err, &reported) {
+				t.Fatal("publication loss did not retain its independent operation error", err)
+			}
+			if f.finish == nil || !f.finish.Succeeded || !f.finish.CleanupConfirmed || f.finish.RefreshConfirmed || !bytes.Equal(f.bundle, f.finishBundle) {
+				t.Fatal("observation uncertainty fenced an independently clean unchanged credential lease")
 			}
 			assertManagedWorkerFilesRedacted(t, root, f.bundle, f.finishBundle)
 			clear(f.bundle)

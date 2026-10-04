@@ -3,7 +3,7 @@ import { InboxService, NotificationKind, NotificationState, isEntityId, newReque
 
 export enum NativeNotificationPermission { NotDetermined = "not-determined", Granted = "granted", ServiceAvailable = "service-available", Denied = "denied", Unavailable = "unavailable" }
 export enum NativeNotificationProblem { None = "none", BundleRequired = "bundle-required", ActionsUnavailable = "actions-unavailable", OsUnavailable = "os-unavailable", Capacity = "capacity" }
-export enum NativeNotificationKind { Request = "request", Succeeded = "succeeded", Failed = "failed", Stopped = "stopped" }
+export enum NativeNotificationKind { Request = "request", Succeeded = "succeeded", Failed = "failed", Stopped = "stopped", SubscriptionRecovery = "subscription-recovery" }
 export enum NativeNotificationResult { Submitted = "submitted", Denied = "denied", Failed = "failed", Uncertain = "uncertain" }
 export interface NotificationReadiness { permission: NativeNotificationPermission; problem: NativeNotificationProblem }
 export interface NativeNotice { claim_id: string; inbox_id: string; kind: NativeNotificationKind }
@@ -14,7 +14,7 @@ export function notificationReadiness(value: unknown): NotificationReadiness {
   if (!raw || !Object.values(NativeNotificationPermission).includes(raw.permission!) || !Object.values(NativeNotificationProblem).includes(raw.problem!)) throw new Error("Native notification status is unavailable.");
   return { permission: raw.permission!, problem: raw.problem! };
 }
-const nativeKinds: Partial<Record<NotificationKind, NativeNotificationKind>> = { [NotificationKind.REQUEST]: NativeNotificationKind.Request, [NotificationKind.SUCCEEDED]: NativeNotificationKind.Succeeded, [NotificationKind.FAILED]: NativeNotificationKind.Failed, [NotificationKind.STOPPED]: NativeNotificationKind.Stopped };
+const nativeKinds: Partial<Record<NotificationKind, NativeNotificationKind>> = { [NotificationKind.SUBSCRIPTION_RECOVERY]: NativeNotificationKind.SubscriptionRecovery, [NotificationKind.REQUEST]: NativeNotificationKind.Request, [NotificationKind.SUCCEEDED]: NativeNotificationKind.Succeeded, [NotificationKind.FAILED]: NativeNotificationKind.Failed, [NotificationKind.STOPPED]: NativeNotificationKind.Stopped };
 const reportedStates: Record<NativeNotificationResult, NotificationState> = { [NativeNotificationResult.Submitted]: NotificationState.SUBMITTED, [NativeNotificationResult.Denied]: NotificationState.DENIED, [NativeNotificationResult.Failed]: NotificationState.FAILED, [NativeNotificationResult.Uncertain]: NotificationState.UNCERTAIN };
 type Service = Pick<Client<typeof InboxService>, "claimNotification" | "reportNotification">;
 
@@ -29,7 +29,7 @@ export class NotificationPump {
   constructor(private readonly service: Service, private readonly bridge: NotificationBridge, private readonly problem: (failed: boolean) => void, private readonly changed: () => void) {}
   update(values: readonly NotificationCandidate[]) {
     if (this.closed) return;
-    if (values.length > 50 || values.some((v) => !isEntityId(v.inboxId) || !isEntityId(v.sessionId) || !nativeKinds[v.kind])) { this.problem(true); return; }
+    if (values.length > 50 || values.some((v) => !isEntityId(v.inboxId) || (v.kind===NotificationKind.SUBSCRIPTION_RECOVERY ? !isEntityId(v.accountId) || Boolean(v.sessionId) : !isEntityId(v.sessionId) || Boolean(v.accountId)) || !nativeKinds[v.kind])) { this.problem(true); return; }
     this.pending = values.map((v) => ({ ...v })); void this.drain();
   }
   close() { this.closed = true; this.pending = undefined; this.abort.abort(); void this.scope?.then((scope) => this.bridge.end(scope)).catch(() => {}); }
@@ -53,7 +53,7 @@ export class NotificationPump {
           if (this.closed) return;
           if (!claim.mayPresent) continue;
           const current = claim.delivery?.candidate;
-          if (claim.replayed || claim.requestId !== requestId || claim.delivery?.claimId !== requestId || claim.delivery.state !== NotificationState.CLAIMED || current?.inboxId !== candidate.inboxId || current.sessionId !== candidate.sessionId || current.kind !== candidate.kind) throw new Error("Original notification claim could not be verified.");
+          if (claim.replayed || claim.requestId !== requestId || claim.delivery?.claimId !== requestId || claim.delivery.state !== NotificationState.CLAIMED || current?.inboxId !== candidate.inboxId || current.sessionId !== candidate.sessionId || current.kind !== candidate.kind || current.accountId!==candidate.accountId) throw new Error("Original notification claim could not be verified.");
           let result: NativeNotificationResult;
           try { result = await this.bridge.present(scope, { claim_id: requestId, inbox_id: candidate.inboxId, kind: nativeKinds[candidate.kind]! }); }
           catch { result = NativeNotificationResult.Uncertain; }

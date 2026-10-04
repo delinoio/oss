@@ -26,7 +26,8 @@ function itemLabel(view: InboxView): string {
     if (type === "native-approval") return "Native approval";
     return "Request unavailable";
   }
-  if (source === "execution-terminal") {
+  if (source==="subscription-recovery") return "Subscription quota recovered";
+ if (source === "execution-terminal") {
     const outcome = text(object(document(entry).terminal).outcome);
     if (outcome === "succeeded") return "Execution succeeded";
     if (outcome === "failed") return "Execution failed";
@@ -51,7 +52,8 @@ function itemIcon(view: InboxView): { symbol: string; tone: string } {
     if (type === "native-approval") return { symbol: "◇", tone: "approval" };
     return { symbol: "?", tone: "unknown" };
   }
-  if (data.source === "execution-terminal") {
+  if (data.source==="subscription-recovery") return {symbol:"✓",tone:"success"};
+ if (data.source === "execution-terminal") {
     const outcome = text(object(data.terminal).outcome);
     if (outcome === "succeeded") return { symbol: "✓", tone: "success" };
     if (outcome === "failed") return { symbol: "×", tone: "failure" };
@@ -238,7 +240,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
       <div className="sidebar-filter-options" aria-label="Inbox read state">
         {([[InboxReadState.UNSPECIFIED, "All items"], [InboxReadState.UNREAD, "Unread"], [InboxReadState.READ, "Read"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={draftFilters.readState === value} onClick={() => setDraftFilters((current) => ({ ...current, readState: value }))}>{label}</button>)}
       </div>
-      <label>Source<select value={draftFilters.source} onChange={(event) => setDraftFilters((current) => ({ ...current, source: Number(event.target.value) as InboxSource }))}><option value={InboxSource.UNSPECIFIED}>All sources</option><option value={InboxSource.INTERACTION}>Requests</option><option value={InboxSource.EXECUTION_TERMINAL}>Execution results</option></select></label>
+      <label>Source<select value={draftFilters.source} onChange={(event) => setDraftFilters((current) => ({ ...current, source: Number(event.target.value) as InboxSource }))}><option value={InboxSource.UNSPECIFIED}>All sources</option><option value={InboxSource.INTERACTION}>Requests</option><option value={InboxSource.SUBSCRIPTION_RECOVERY}>Quota recovery</option><option value={InboxSource.EXECUTION_TERMINAL}>Execution results</option></select></label>
       <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={draftFilters.projectId} change={(projectId) => setDraftFilters((current) => ({ ...current, projectId }))} active={active} />
       <ResourceChoice label="Session" kind={EntityKind.SESSION} value={draftFilters.sessionId} change={(sessionId) => setDraftFilters((current) => ({ ...current, sessionId }))} active={active} />
       <div className="actions"><button className="primary" onClick={() => applyFilters()}>Apply filters</button><button onClick={() => { const defaults = { ...emptyFilters }; setDraftFilters(defaults); applyFilters(defaults); }}>Reset</button></div>
@@ -259,9 +261,9 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
             const time = recordedTime(entry);
             const kind = itemLabel(view);
             const icon = itemIcon(view);
-            return <li key={entry.id}><button className="inbox-row" type="button" data-inbox-id={entry.id} aria-current={selectedId === entry.id ? "true" : undefined} aria-label={`${kind}, ${resourceName(view.session)}, ${state === "read" ? "Read" : state === "unread" ? "Unread" : "Read state unavailable"}`} onClick={(event) => selectItem(entry.id, event.detail === 0)}>
+            return <li key={entry.id}><button className="inbox-row" type="button" data-inbox-id={entry.id} aria-current={selectedId === entry.id ? "true" : undefined} aria-label={`${kind}, ${resourceName(view.account ?? view.session)}, ${state === "read" ? "Read" : state === "unread" ? "Unread" : "Read state unavailable"}`} onClick={(event) => selectItem(entry.id, event.detail === 0)}>
               <span className={`inbox-kind-icon is-${icon.tone}`} aria-hidden="true">{icon.symbol}</span>
-              <span className="inbox-row-copy"><strong>{resourceName(view.session)}</strong><span>{kind}</span><small>{time.label}</small></span>
+              <span className="inbox-row-copy"><strong>{resourceName(view.account ?? view.session)}</strong><span>{kind}</span><small>{time.label}</small></span>
               <span className={`inbox-read-label ${state === "unread" ? "is-unread" : ""}`}>{state === "unread" ? <><span className="inbox-unread-dot" aria-hidden="true" />Unread</> : state === "read" ? "Read" : "Unavailable"}</span>
             </button></li>;
           })}</ul> : null}
@@ -299,7 +301,7 @@ function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft,
   const terminal = object(data.terminal);
   return <article className="inbox-detail-content">
     {!pageContains ? <p className="inbox-outside-list">This item is outside the current list.</p> : null}
-    <h4>{resourceName(view.session)}</h4>
+    <h4>{resourceName(view.account ?? view.session)}</h4>
     <div className="inbox-detail-meta"><span className={`inbox-state-badge ${state === "unread" ? "is-unread" : ""}`}>{state === "read" ? "Read" : state === "unread" ? "Unread" : "Read state unavailable"}</span><span>Recorded <time dateTime={time.machineValue}>{time.label}</time></span></div>
     <div className="actions inbox-detail-actions"><button onClick={() => open(entry.sessionId)} disabled={!entry.sessionId}>Open session</button>{state === "read" || state === "unread" ? <button disabled={!canMutate || readMutation.busy || readMutation.uncertain} onClick={() => void readMutation.send({ mutation: { requestId: newRequestId(), id: entry.id, expectedRevision: entry.revision }, readState: mark })}>{state === "read" ? "Mark unread" : "Mark read"}</button> : null}</div>
     <Problem error={readMutation.error} />{readMutation.uncertain ? <button disabled={!canMutate || readMutation.busy} onClick={readMutation.retry}>Retry the same read-state change</button> : null}
@@ -310,7 +312,7 @@ function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft,
         {responseCurrent ? null : <p>This request is retained for inspection. Its session is paused, archived, recovering or no longer owns this execution.</p>}
         <Interaction resource={view.interaction} refresh={refresh} draft={draft} saveDraft={(editable) => saveDraft(view.interaction!, editable)} clearDraft={() => clearDraft(view.interaction!.id)} submissionAllowed={canMutate && responseCurrent && !identityChanged} receiptRetryAllowed={canMutate} />
       </section>
-    </> : <section className="inbox-terminal"><h4>Original terminal observation</h4><p>{itemLabel(view)}</p><pre>{JSON.stringify(terminal, null, 2)}</pre><p>Recorded time is the Inbox record time. It does not establish process cleanup or the current session outcome.</p></section>}
+    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label="Subscription quota recovery"><h4>Subscription quota recovery</h4><p>Account: {resourceName(view.account)}</p><p>Observed <time dateTime={text(object(data.recovery).observed_at)}>{text(object(data.recovery).observed_at)}</time></p><p>This records the account’s observed quota recovery. Read state does not change account quota or start work.</p></section> : <section className="inbox-terminal"><h4>Original terminal observation</h4><p>{itemLabel(view)}</p><pre>{JSON.stringify(terminal, null, 2)}</pre><p>Recorded time is the Inbox record time. It does not establish process cleanup or the current session outcome.</p></section>}
   </article>;
 }
 

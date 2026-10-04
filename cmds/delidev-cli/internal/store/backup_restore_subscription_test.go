@@ -25,7 +25,7 @@ func TestBackupRestoreRequiresSettledSubscriptionOwnership(t *testing.T) {
 				state.Lease = &domain.SubscriptionLease{ID: domain.NewID(), OperationID: state.Pending.ID, Revision: 1, Action: state.Pending.Action, MachineID: machine, DeviceID: domain.NewID(), InstanceID: domain.NewID(), Epoch: domain.NewID(), Generation: state.Generation, StartedAt: time.Now().UTC()}
 			}
 			state.RecoveryRequired = phase == "recovery"
-			account := domain.Account{Alias: "fixture", ProviderID: domain.NewID(), Type: domain.SubscriptionAccount, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}, Subscription: state}
+			account := domain.Account{Alias: "fixture", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}, Subscription: state}
 			if err := account.Validate(); err != nil {
 				t.Fatal("invalid subscription fixture", err)
 			}
@@ -62,7 +62,7 @@ func TestBackupRestoreRequiresSettledSubscriptionOwnership(t *testing.T) {
 func TestBackupRestoreQuarantinesHistoricalSubscriptionGeneration(t *testing.T) {
 	s, root, ctx, in, _ := restoreFixture(t)
 	id := domain.NewID()
-	original := domain.Account{Alias: "fixture", ProviderID: domain.NewID(), Type: domain.SubscriptionAccount, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}, Subscription: &domain.SubscriptionState{Generation: domain.NewID(), IdentityCommitment: strings.Repeat("a", 64)}}
+	original := domain.Account{Alias: "fixture", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}, Subscription: &domain.SubscriptionState{Generation: domain.NewID(), IdentityCommitment: strings.Repeat("a", 64)}}
 	_, err := s.Mutate(ctx, domain.NewID(), "fixture.subscription-image", nil, func(tx *Tx) (any, error) { return tx.Put(domain.AccountKind, id, 0, "", "", original) })
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestBackupRestoreClearsEmptySubscriptionState(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, root, ctx, in, _ := restoreFixture(t)
 			id := domain.NewID()
-			account := domain.Account{Alias: "fixture", ProviderID: domain.NewID(), Type: domain.SubscriptionAccount, Health: domain.AccountDisconnected}
+			account := domain.Account{Alias: "fixture", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Health: domain.AccountDisconnected}
 			if allocated {
 				account.Subscription = &domain.SubscriptionState{}
 			}

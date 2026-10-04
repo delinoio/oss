@@ -3,7 +3,7 @@ import { useState } from "react";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
@@ -12,68 +12,39 @@ import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
 
-it("keeps subscription-only metadata CRUD reachable, sends no native lifecycle RPC and resets filters on close", async () => {
+it("manages service-native subscription metadata through real authenticated RPC without Provider requests or implicit login", async () => {
   const config = createClient(ConfigurationService, fixture.transport);
-  const provider = (await config.saveConfiguration({ mutation: { requestId: newRequestId() }, kind: EntityKind.PROVIDER, schemaVersion: 1, documentJson: encode({ name: "ChatGPT editable provider", protocol: "native-subscription", authentication: "subscription", endpoint: "", enabled: true, discovery: false }) })).resource!;
-  const account = (await config.saveConfiguration({ mutation: { requestId: newRequestId() }, kind: EntityKind.ACCOUNT, schemaVersion: 1, documentJson: encode({ alias: "ChatGPT editable alias", provider_id: provider.id, type: "subscription", enabled: true, exclude_automatic: false, recovery_notifications: true, health: "disconnected", quota: [], confirmed_exhausted: false }) })).resource!;
-  const apiProvider = (await createClient(ResourceService, fixture.transport).listResources({ filter: { kind: EntityKind.PROVIDER } })).resources.find((entry) => document(entry).protocol !== "native-subscription")!;
+  const account = (await config.saveConfiguration({ mutation: { requestId: newRequestId() }, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson: encode({ alias: "ChatGPT account", subscription_service: "chatgpt", type: "subscription", enabled: true, exclude_automatic: false, recovery_notifications: false, health: "disconnected", quota: [], confirmed_exhausted: false }) })).resource!;
+  const apiProvider = (await createClient(ResourceService, fixture.transport).listResources({ filter: { kind: EntityKind.PROVIDER } })).resources[0];
   await config.saveConfiguration({ mutation: { requestId: newRequestId() }, kind: EntityKind.ACCOUNT, schemaVersion: 1, documentJson: encode({ alias: "Unrelated API account", provider_id: apiProvider.id, type: "api", enabled: true, exclude_automatic: false, recovery_notifications: true, health: "disconnected", quota: [], confirmed_exhausted: false }) });
-  const writes = vi.fn();
+  const unexpected = vi.fn();
   const transport: Transport = { ...fixture.transport, unary: (method, ...args) => {
-    if (["ConnectAccount", "DisconnectAccount", "ValidateAccount", "DiscoverModels"].includes(method.name)) writes(method.name);
+    if (method.parent.name === "ProviderService" || ["ConnectAccount", "DisconnectAccount", "ValidateAccount", "RequestSubscription"].includes(method.name) || method.name === "ListResources" && (args[3] as { filter?: { kind?: EntityKind } })?.filter?.kind === EntityKind.PROVIDER) unexpected(method.name);
     return fixture.transport.unary(method, ...args);
   } };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   function Harness() {
     const [visible, setVisible] = useState(true);
-    return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
+    return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={() => setVisible(false)}>Leave Settings fixture</button><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
   }
   render(<Harness />);
-  const subscription = await screen.findByRole("article", { name: "ChatGPT editable alias" });
-  expect(subscription.querySelector("img")).toBeNull();
-  expect(within(subscription).getByText("Disconnected")).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Unrelated API account" })).toBeNull();
-  for (const name of ["Refresh all", "Refresh ChatGPT editable alias", "Disconnect ChatGPT editable alias", "ChatGPT · Coming soon", "Claude · Coming soon", "Grok · Coming soon"]) {
-    const button = screen.getByRole("button", { name }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true); fireEvent.click(button);
-  }
-  expect(writes).not.toHaveBeenCalled();
-  const advanced = screen.getByText("Advanced settings").closest("details")!;
-  expect(advanced.open).toBe(false); fireEvent.click(screen.getByText("Advanced settings")); advanced.open = true;
-  const providerDisclosure = screen.getByText("Subscription provider configurations").closest("details")!;
-  providerDisclosure.open = true;
-  expect(screen.getByRole("button", { name: "Add native subscription provider" })).toBeTruthy();
-  expect(await screen.findByRole("button", { name: "Add subscription configuration" })).toBeTruthy();
-  fireEvent.change(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Search providers"), { target: { value: "unmatched native provider" } });
-  await waitFor(() => expect(within(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Filter accounts by provider")).queryByRole("option", { name: /ChatGPT editable provider/ })).toBeNull());
-  expect(screen.getByRole("article", { name: "ChatGPT editable alias" })).toBeTruthy();
-  fireEvent.change(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Search providers"), { target: { value: "ChatGPT" } });
-  await within(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Filter accounts by provider")).findByRole("option", { name: /ChatGPT editable provider/ });
-  fireEvent.change(within(screen.getByRole("region", { name: "AI subscription account settings" })).getByLabelText("Filter accounts by provider"), { target: { value: provider.id } });
-  expect(await screen.findByText("Provider filter: ChatGPT editable provider")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
-  fireEvent.click(screen.getByRole("button", { name: "AI Subscription" }));
-  expect(await screen.findByText("Provider filter: ChatGPT editable provider")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Clear provider filter" }));
-  await waitFor(() => expect(screen.queryByText("Provider filter: ChatGPT editable provider")).toBeNull());
-  fireEvent.click(screen.getByRole("button", { name: "More actions for ChatGPT editable alias" }));
-  fireEvent.click(screen.getByRole("button", { name: "Edit preferences" }));
-  fireEvent.change(screen.getByLabelText("Account alias"), { target: { value: "Edited subscription" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save AI account" }));
+  const subscription = await screen.findByRole("article", { name: "ChatGPT account" });
+  expect(subscription.querySelector("img")).toBeTruthy(); expect(within(subscription).getByText("Disconnected")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Unrelated API account" })).toBeNull(); expect(screen.queryByLabelText("Search providers")).toBeNull();
+  expect((screen.getByRole("button", { name: "Refresh all" }) as HTMLButtonElement).disabled).toBe(false);
+ fireEvent.click(screen.getByRole("button",{name:"Refresh all"}));
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Refresh all"}) as HTMLButtonElement).disabled).toBe(false));
+  expect(unexpected).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "More actions for ChatGPT account" })); fireEvent.click(screen.getByRole("button", { name: "Edit preferences" }));
+  expect(screen.getByText("Subscription service: ChatGPT")).toBeTruthy(); expect(screen.queryByLabelText("Provider")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Account alias"), { target: { value: "Edited subscription" } }); fireEvent.click(screen.getByRole("button", { name: "Save AI account" }));
   await screen.findByRole("article", { name: "Edited subscription" });
-  expect(document((await createClient(ResourceService, fixture.transport).getResource({ kind: EntityKind.ACCOUNT, id: account.id })).resource).alias).toBe("Edited subscription");
-  fireEvent.click(screen.getByRole("button", { name: "More actions for Edited subscription" }));
-  fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
-  // Deletion is accepted before device-owned browser cleanup is confirmed.
-  fireEvent.click(await screen.findByRole("button", { name: "Confirm configuration deletion" }));
-  await screen.findByRole("heading", { name: "Account configuration deleted" });
-  expect(await screen.findByText("0 profile cleanup obligations pending · 0 confirmed removed")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Return to accounts" }));
-  await screen.findByRole("heading", { name: "No subscriptions yet" });
-  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
-  fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
-  fireEvent.click(screen.getByRole("button", { name: "Open Settings fixture" }));
-  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
-  expect((screen.getByText("Advanced settings").closest("details") as HTMLDetailsElement).open).toBe(false);
-  expect(writes).not.toHaveBeenCalled();
+  const saved = (await createClient(ResourceService, fixture.transport).getResource({ kind: EntityKind.ACCOUNT, id: account.id })).resource!;
+  expect(saved.schemaVersion).toBe(2); expect(document(saved)).toMatchObject({ alias: "Edited subscription", subscription_service: "chatgpt", recovery_notifications: false }); expect(document(saved)).not.toHaveProperty("provider_id");
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Edited subscription" })); fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm configuration deletion" })); await screen.findByRole("heading", { name: "Account configuration deleted" });
+  expect(await screen.findByText("0 profile cleanup obligations pending · 0 confirmed removed")).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Return to accounts" })); await screen.findByRole("heading", { name: "No subscriptions yet" });
+  fireEvent.click(screen.getByRole("button", { name: "Claude · Add account" })); fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Unsaved service account" } });
+  fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" })); fireEvent.click(screen.getByRole("button", { name: "Open Settings fixture" }));
+  expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page"); expect(screen.queryByLabelText("Account name")).toBeNull(); expect(unexpected).not.toHaveBeenCalled();
 }, 30000);

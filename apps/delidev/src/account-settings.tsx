@@ -18,7 +18,7 @@ import { Authentication } from "./configuration-fields";
 import { document, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
-import { QuotaObservationState, SubscriptionConnectionState, SubscriptionReadState, SubscriptionSettingsView, type SubscriptionAccountRow } from "./subscription-settings";
+import { SubscriptionAccounts } from "./subscription-accounts";
 
 export enum AccountSettingsSection {
   Api = "api",
@@ -535,7 +535,11 @@ function AccountCreationWizard({
   </section>;
 }
 
-export function AccountSettings({
+export function AccountSettings(props: AccountSettingsProps) {
+  return props.section === AccountSettingsSection.Subscription ? <SubscriptionAccounts active={props.active} editAccount={props.editAccount} deleteAccount={props.deleteAccount} onWorkflowReadyChange={props.onWorkflowReadyChange} /> : <ApiAccountSettings {...props} />;
+}
+
+function ApiAccountSettings({
   section,
   active,
   accountTypeFilteringReady,
@@ -570,10 +574,6 @@ export function AccountSettings({
   const [wizardProvider, setWizardProvider] = useState<AccountProviderSummary>();
   const [pauseWorkflowLock, setPauseWorkflowLock] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Resource>();
-  const [subscriptionProviderId, setSubscriptionProviderId] = useState("");
-  const [subscriptionAlias, setSubscriptionAlias] = useState("");
-  const [createdSubscription, setCreatedSubscription] = useState<Resource>();
-  const [subscriptionCreateProblem, setSubscriptionCreateProblem] = useState(false);
   const lastWizardRequest = useRef("");
   const providerSummaries = useMemo(() => {
     const result = [...providers];
@@ -583,45 +583,18 @@ export function AccountSettings({
     return result;
   }, [providerHint, providers, startApiWizard]);
   const pageToken = page.section === section && page.providerId === providerIdFilter ? page.token : "";
-  const accountType = section === AccountSettingsSection.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION;
+  const accountType = AccountTypeFilter.API;
   const rows = useQuery(ResourceQuery.listResources, {
     filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken },
     providerId: providerIdFilter,
     accountType,
-  }, { enabled: active && accountTypeFilteringReady && !wizard && !selectedAccount && !createdSubscription });
+  }, { enabled: active && accountTypeFilteringReady && !wizard && !selectedAccount });
   const providersById = useMemo(() => {
     const values = new Map<string, { displayName: string; enabled: boolean }>();
     for (const provider of providerSummaries) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled });
-    for (const resource of subscriptionProviderResources) {
-      const data = document(resource);
-      values.set(resource.id, { displayName: resourceName(resource), enabled: data.enabled !== false });
-    }
     return values;
-  }, [providerSummaries, subscriptionProviderResources]);
-  const subscriptionProviders = useMemo(() => subscriptionProviderResources.filter((provider) =>
-    document(provider).protocol === "native-subscription" && document(provider).authentication === Authentication.Subscription &&
-    text(document(provider).endpoint) === "" && resourceName(provider).toLowerCase().includes(providerSearch.toLowerCase())), [providerSearch, subscriptionProviderResources]);
-  const subscriptionProvider = subscriptionProviders.find((provider) => provider.id === subscriptionProviderId);
-  const subscriptionAliasValid = subscriptionAlias.trim().length > 0 && !subscriptionAlias.includes(String.fromCharCode(0)) && new TextEncoder().encode(subscriptionAlias).byteLength <= 256;
-  const subscriptionCreate = useRetainedMutation("subscription-account-configuration:create", ConfigurationQuery.saveConfiguration, (result, request) => {
-    let expected: { providerId: string; alias: string } | undefined;
-    try {
-      const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(request.documentJson)) as Record<string, unknown>;
-      expected = { providerId: text(body.provider_id), alias: text(body.alias) };
-    } catch { /* Malformed request data cannot authorize a follow-up navigation. */ }
-    const resource = result.resource;
-    if (request.kind !== EntityKind.ACCOUNT || !request.mutation || result.requestId !== request.mutation.requestId ||
-      !expected || !resource || resource.kind !== EntityKind.ACCOUNT || resource.schemaVersion !== 1 || resource.revision < 1n ||
-      document(resource).type !== "subscription" || document(resource).provider_id !== expected.providerId ||
-      document(resource).alias !== expected.alias) {
-      setSubscriptionCreateProblem(true);
-      return;
-    }
-    setSubscriptionProviderId("");
-    setSubscriptionAlias("");
-    setCreatedSubscription(resource);
-  });
-  const workflowActive = (wizard && !pauseWorkflowLock) || Boolean(selectedAccount || createdSubscription) || Boolean(subscriptionProviderId || subscriptionAlias) || subscriptionCreate.busy || subscriptionCreate.uncertain;
+  }, [providerSummaries]);
+  const workflowActive = (wizard && !pauseWorkflowLock) || Boolean(selectedAccount);
   useEffect(() => {
     onWorkflowReadyChange?.(workflowActive);
     return () => onWorkflowReadyChange?.(false);
@@ -639,38 +612,6 @@ export function AccountSettings({
     onWorkflowReadyChange?.(true);
     setWizard(true);
   }, [onWorkflowReadyChange, providers, startApiWizard]);
-  useEffect(() => {
-    if (!subscriptionCreate.input || (!subscriptionCreate.busy && !subscriptionCreate.uncertain)) return;
-    const retained = subscriptionCreate.input as { kind?: EntityKind; documentJson?: Uint8Array };
-    if (retained.kind !== EntityKind.ACCOUNT || !retained.documentJson?.byteLength) return;
-    try {
-      const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(retained.documentJson)) as Record<string, unknown>;
-      if (text(body.type) !== "subscription") return;
-      if (!subscriptionProviderId) setSubscriptionProviderId(text(body.provider_id));
-      if (!subscriptionAlias) setSubscriptionAlias(text(body.alias));
-    } catch { /* The exact retained request remains available for inspection and retry. */ }
-  }, [subscriptionAlias, subscriptionCreate.busy, subscriptionCreate.input, subscriptionCreate.uncertain, subscriptionProviderId]);
-
-  const createSubscriptionConfiguration = () => {
-    if (!accountTypeFilteringReady || !subscriptionProvider || !subscriptionAliasValid || subscriptionCreate.busy || subscriptionCreate.uncertain) return;
-    setSubscriptionCreateProblem(false);
-    void subscriptionCreate.send({
-      mutation: { id: "", expectedRevision: 0n, requestId: newRequestId() },
-      kind: EntityKind.ACCOUNT,
-      schemaVersion: 1,
-      documentJson: new TextEncoder().encode(JSON.stringify({
-        alias: subscriptionAlias,
-        provider_id: subscriptionProvider.id,
-        type: "subscription",
-        enabled: true,
-        exclude_automatic: false,
-        recovery_notifications: true,
-        health: "disconnected",
-        quota: [],
-        confirmed_exhausted: false,
-      })),
-    });
-  };
   const browseApiProviders = () => {
     if (!wizard || pauseWorkflowLock) return;
     onWorkflowReadyChange?.(false);
@@ -681,59 +622,6 @@ export function AccountSettings({
   if (selectedAccount && section === AccountSettingsSection.Api) return <><SettingsHeading title="AI API Keys" /><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></>;
 
   if (wizard) return <AccountCreationWizard active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
-
-  if (section === AccountSettingsSection.Subscription) {
-    const readProblem = accountTypeFilteringProblem || rows.error;
-    const failure = readProblem ? clientFailure(readProblem).code : undefined;
-    const state = failure === FailureCode.PermissionDenied ? SubscriptionReadState.PermissionDenied
-      : failure === FailureCode.Unauthenticated ? SubscriptionReadState.AuthenticationExpired
-      : readProblem ? SubscriptionReadState.Failed
-      : accountTypeFilteringLoading || (accountTypeFilteringReady && !rows.data) ? SubscriptionReadState.Loading
-      : !accountTypeFilteringReady ? SubscriptionReadState.Unsupported : SubscriptionReadState.Ready;
-    const accounts: SubscriptionAccountRow[] = (rows.data?.resources ?? []).map((row) => {
-      const data = document(row), provider = providersById.get(text(data.provider_id));
-      const quota = Array.isArray(data.quota) ? data.quota : [];
-      return {
-        id: row.id, alias: resourceName(row), providerName: provider?.displayName ?? "Provider unavailable · " + text(data.provider_id),
-        // The current generated account contract has no native brand or masked
-        // identity. Never derive either from an editable alias/provider name.
-        connection: text(object(data.removal).request_id) ? SubscriptionConnectionState.CleanupPending
-          : text(object(data.connection).id) ? SubscriptionConnectionState.Connected : SubscriptionConnectionState.Disconnected,
-        health: text(data.health), enabled: data.enabled === true,
-        providerState: provider ? provider.enabled ? "Enabled" : "Off" : "Unavailable",
-        confirmedExhausted: data.confirmed_exhausted === true,
-        windows: quota.map((entry) => {
-          const window = object(entry);
-          const state = Object.values(QuotaObservationState).find((value) => value === window.state) ?? QuotaObservationState.Unknown;
-          return { id: text(window.id), state, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) };
-        }),
-        metadataAvailable: row.schemaVersion === 1,
-        details: () => { onWorkflowReadyChange?.(true); setSelectedAccount(row); },
-        edit: () => editAccount(row), delete: () => deleteAccount(row),
-      };
-    });
-    return <><div hidden={Boolean(selectedAccount || createdSubscription)}><SubscriptionSettingsView accounts={accounts} active={active && !selectedAccount && !createdSubscription} state={state} problem={<Problem error={readProblem} />}
-      retryRead={() => { if (accountTypeFilteringProblem || !accountTypeFilteringReady) retryAccountCapabilities?.(); else void rows.refetch(); }}
-      activeFilter={providerIdFilter ? providersById.get(providerIdFilter)?.displayName || providerIdFilter : undefined}
-      clearFilter={() => { setPage({ section, providerId: "", token: "" }); clearProviderFilter(); }}
-      pagination={pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label="Account pages"><button type="button" disabled={!pageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button></nav> : null}
-      advanced={<>
-      <div className="account-provider-filter"><label>Search providers<input type="search" value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} /></label><label>Filter accounts by provider<select value={providerIdFilter} onChange={(event) => {
-        const provider = providerSummaries.find((candidate) => candidate.providerId === event.target.value);
-        setPage({ section, providerId: event.target.value, token: "" });
-        setProviderFilter(event.target.value, provider);
-      }}><option value="">All providers</option>{providerSummaries.map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}{provider.enabled ? " · On" : " · Off"}</option>)}{providerIdFilter && !providerSummaries.some((provider) => provider.providerId === providerIdFilter) ? <option value={providerIdFilter}>Selected provider · {providerIdFilter}</option> : null}</select></label><button type="button" disabled={!providerFilterHasMore || providerSearchLoading} onClick={loadMoreProviderFilters}>More provider filters</button></div>
-        <Problem error={providerSearchError} />
-      <section className="subscription-account-create"><h3>Add subscription configuration</h3><p>This saves disconnected metadata only. Subscription login and system credential reuse are not available.</p>
-        {subscriptionProviders.length > 0 ? <fieldset disabled={!accountTypeFilteringReady || subscriptionCreate.busy || subscriptionCreate.uncertain}><label>Subscription provider<select value={subscriptionProviderId} onChange={(event) => setSubscriptionProviderId(event.target.value)}><option value="">Select a subscription provider</option>{subscriptionProviders.map((provider) => <option key={provider.id} value={provider.id}>{resourceName(provider)}</option>)}</select></label><label>Account name<input autoComplete="off" maxLength={256} value={subscriptionAlias} aria-invalid={subscriptionAlias.length > 0 && !subscriptionAliasValid} onChange={(event) => setSubscriptionAlias(event.target.value)} /></label>{subscriptionAlias.length > 0 && !subscriptionAliasValid ? <p role="alert">Enter a non-empty account name no longer than 256 UTF-8 bytes.</p> : null}<button type="button" disabled={!accountTypeFilteringReady || !subscriptionProvider || !subscriptionAliasValid} onClick={createSubscriptionConfiguration}>Add subscription configuration</button></fieldset> : <p>No subscription provider configuration is available. Expand Subscription provider configurations below to add one.</p>}
-        <Problem error={subscriptionCreate.error} />{subscriptionCreate.uncertain ? <button type="button" disabled={subscriptionCreate.busy} onClick={subscriptionCreate.retry}>Retry the same subscription configuration</button> : null}{subscriptionCreateProblem ? <p role="alert">The server acknowledged the request without a matching subscription account. Inspect the original request before retrying.</p> : null}
-      </section>
-        <details><summary>Subscription provider configurations</summary>{subscriptionProviderManagement}</details>
-      </>} /></div>
-      {selectedAccount ? <AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />
-        : createdSubscription ? <section><p role="status">Subscription configuration saved. Subscription login is not available yet; this account remains disconnected.</p><AccountConnection initial={createdSubscription} active={active} close={() => { setCreatedSubscription(undefined); void rows.refetch(); }} /></section> : null}
-    </>;
-  }
 
   const inventoryProblem = accountTypeFilteringProblem || providerSearchError;
   const readProblem = inventoryProblem || rows.error;

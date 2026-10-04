@@ -1,3 +1,4 @@
+import { SubscriptionServiceIdentity, subscriptionServiceLabel } from "@delinoio/delidev-api-client";
 import { useState, type KeyboardEvent } from "react";
 import type { UsageAnalytics, UsageAnalyticsDay, UsageAnalyticsModel, UsageMeasure, UsageOtherModels, UsageTotals } from "@delinoio/delidev-api-client";
 
@@ -125,17 +126,17 @@ export function DailyUsageChart({ days, timeZone }: { days: UsageAnalyticsDay[];
   </section>;
 }
 
-interface ModelBar { key: string; providerId: string; modelId: string; providerName: string; modelName: string; totals?: UsageTotals; modelCount?: number; }
+interface ModelBar { subscriptionService?: SubscriptionServiceIdentity; key: string; providerId: string; modelId: string; providerName: string; modelName: string; totals?: UsageTotals; modelCount?: number; }
 
 function modelRows(analytics: UsageAnalytics): ModelBar[] {
-  const ranked: ModelBar[] = analytics.models.filter((model) => exactTotal(model.totals?.total) !== undefined).slice(0, 5).map((model) => ({ key: `${model.providerId}:${model.modelId}`, providerId: model.providerId, modelId: model.modelId, providerName: model.providerName, modelName: model.modelName, totals: model.totals }));
+  const ranked: ModelBar[] = analytics.models.filter((model) => exactTotal(model.totals?.total) !== undefined).slice(0, 5).map((model) => ({ key: `${model.providerId}:${model.subscriptionService}:${model.modelId}`, subscriptionService: model.subscriptionService, providerId: model.providerId, modelId: model.modelId, providerName: model.providerName, modelName: model.modelName, totals: model.totals }));
   if (analytics.otherModels) ranked.push({ key: "other-models", providerId: "", modelId: "", providerName: "", modelName: "Other models", totals: analytics.otherModels.totals, modelCount: analytics.otherModels.modelCount });
   return ranked;
 }
 
 function ModelViewData({ models, otherModels, id, open }: { models: UsageAnalyticsModel[]; otherModels?: UsageOtherModels; id: string; open: boolean }) {
   return <div id={id} className="usage-chart-table" role="region" aria-label="Model usage data table; scroll horizontally to inspect original identities and all measures" tabIndex={0} hidden={!open}><table><caption>Every original provider and model group, including groups without known totals</caption><thead><tr><th scope="col">Provider ID</th><th scope="col">Provider</th><th scope="col">Model ID</th><th scope="col">Model</th><th scope="col">Responses</th>{measureColumns.map(([label, key]) => <th scope="col" key={key}>{label}</th>)}</tr></thead><tbody>
-    {models.map((model) => <tr key={`${model.providerId}:${model.modelId}`}><td>{model.providerId}</td><td>{model.providerName || "Retained provider"}</td><td>{model.modelId}</td><td>{model.modelName || "Retained model"}</td><td>{model.totals?.responses ?? 0}</td><MeasureCells totals={model.totals} /></tr>)}
+    {models.map((model) => <tr key={`${model.providerId}:${model.subscriptionService}:${model.modelId}`}><td>{model.subscriptionService ? subscriptionServiceLabel(model.subscriptionService) : model.providerId}</td><td>{model.subscriptionService ? "Subscription service" : model.providerName || "Retained provider"}</td><td>{model.modelId}</td><td>{model.modelName || "Retained model"}</td><td>{model.totals?.responses ?? 0}</td><MeasureCells totals={model.totals} /></tr>)}
     {otherModels ? <tr><td colSpan={4}>Other models ({otherModels.modelCount} measured groups)</td><td>{otherModels.totals?.responses ?? 0}</td><MeasureCells totals={otherModels.totals} /></tr> : null}
   </tbody></table><p>Unmeasured groups are excluded from ranking and remain listed above.</p></div>;
 }
@@ -163,9 +164,9 @@ export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
       })}
       <text className="usage-axis-label" x={modelPlot.left} y="270" textAnchor="start">0</text><text className="usage-axis-label" x={modelPlot.right} y="270" textAnchor="end">{axisTotal(maximum)}</text>
     </svg> : <p className="usage-chart-empty">No model group has a known total in this range.</p>}
-    {rows.length ? <ol className="usage-model-labels">{rows.map((row, index) => <li key={row.key}><span className="usage-model-label-rank">{row.modelCount ? "Other models" : `#${index + 1}`}</span><strong>{row.modelName || (row.modelCount ? "Other models" : `Model ${index + 1}`)}</strong><span>{row.modelCount ? `${row.modelCount} measured model groups · no monetary rollup` : `API ${row.providerName || row.providerId} · provider ${row.providerId} · model ${row.modelId}`}</span><span className="usage-model-value">{exactText(row.totals?.total)} tokens · {evidence(row.totals)}</span></li>)}</ol> : null}
+    {rows.length ? <ol className="usage-model-labels">{rows.map((row, index) => <li key={row.key}><span className="usage-model-label-rank">{row.modelCount ? "Other models" : `#${index + 1}`}</span><strong>{row.modelName || (row.modelCount ? "Other models" : `Model ${index + 1}`)}</strong><span>{row.modelCount ? `${row.modelCount} measured model groups · no monetary rollup` : ` ${row.subscriptionService ? `Subscription service ${subscriptionServiceLabel(row.subscriptionService)}` : `API ${row.providerName || row.providerId} · provider ${row.providerId}`} · model ${row.modelId}`}</span><span className="usage-model-value">{exactText(row.totals?.total)} tokens · {evidence(row.totals)}</span></li>)}</ol> : null}
     <p className="usage-chart-help" id="usage-model-help">Focus the chart to inspect ranked groups. Up and Down move between rows. Full identities and exact values are also available in View data.</p>
-    <p className="usage-chart-detail" role="status" aria-live="polite">{selectedRow ? <><strong>{selectedRow.modelName || selectedRow.modelId || "Other models"}</strong> · {selectedRow.modelCount ? `${selectedRow.modelCount} measured groups` : `Provider ${selectedRow.providerId} · model ${selectedRow.modelId}`} · {exactText(selectedRow.totals?.total)} tokens · {evidence(selectedRow.totals)}</> : "Move focus to a chart row to inspect its original identity and exact totals."}</p>
+    <p className="usage-chart-detail" role="status" aria-live="polite">{selectedRow ? <><strong>{selectedRow.modelName || selectedRow.modelId || "Other models"}</strong> · {selectedRow.modelCount ? `${selectedRow.modelCount} measured groups` : `${selectedRow.subscriptionService ? `Subscription service ${subscriptionServiceLabel(selectedRow.subscriptionService)}` : `Provider ${selectedRow.providerId}`} · model ${selectedRow.modelId}`} · {exactText(selectedRow.totals?.total)} tokens · {evidence(selectedRow.totals)}</> : "Move focus to a chart row to inspect its original identity and exact totals."}</p>
     <ModelViewData models={analytics.models} otherModels={analytics.otherModels} id={dataId} open={open} />
     {analytics.models.some((model) => exactTotal(model.totals?.total) === undefined) ? <p className="usage-unranked">Unmeasured models are not ranked. Their original identities remain in View data.</p> : null}
   </section>;

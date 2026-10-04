@@ -1,13 +1,16 @@
 package domain
 
+import "time"
+
 type InboxSource string
 type InboxReadState string
 
 const (
-	InteractionInbox       InboxSource    = "interaction"
-	ExecutionTerminalInbox InboxSource    = "execution-terminal"
-	InboxUnread            InboxReadState = "unread"
-	InboxRead              InboxReadState = "read"
+	InteractionInbox          InboxSource    = "interaction"
+	ExecutionTerminalInbox    InboxSource    = "execution-terminal"
+	SubscriptionRecoveryInbox InboxSource    = "subscription-recovery"
+	InboxUnread               InboxReadState = "unread"
+	InboxRead                 InboxReadState = "read"
 )
 
 func (s InboxReadState) Valid() bool { return s == InboxUnread || s == InboxRead }
@@ -15,14 +18,20 @@ func (s InboxReadState) Valid() bool { return s == InboxUnread || s == InboxRead
 // Read state has its own entity revision. Changing it must never invalidate a
 // queued response control's original interaction revision or imply approval.
 type InboxEntry struct {
-	Source    InboxSource    `json:"source"`
-	SourceID  ID             `json:"source_id"`
-	ReadState InboxReadState `json:"read_state"`
-	Terminal  *InboxTerminal `json:"terminal,omitempty"`
+	Source    InboxSource                `json:"source"`
+	SourceID  ID                         `json:"source_id"`
+	ReadState InboxReadState             `json:"read_state"`
+	Recovery  *InboxSubscriptionRecovery `json:"recovery,omitempty"`
+	Terminal  *InboxTerminal             `json:"terminal,omitempty"`
 }
 
 // This is immutable native completion evidence, not the current session
 // outcome or proof of owned process cleanup. SourceID is its execution UUID.
+type InboxSubscriptionRecovery struct {
+	AccountID    ID        `json:"account_id"`
+	ConnectionID ID        `json:"connection_id"`
+	ObservedAt   time.Time `json:"observed_at"`
+}
 type InboxTerminal struct {
 	JobID          ID               `json:"job_id"`
 	InputID        ID               `json:"input_id"`
@@ -38,16 +47,20 @@ func (e InboxEntry) Validate() error {
 	}
 	switch e.Source {
 	case InteractionInbox:
-		if e.Terminal != nil {
+		if e.Terminal != nil || e.Recovery != nil {
 			return invalidInbox()
 		}
 	case ExecutionTerminalInbox:
-		if e.Terminal == nil || e.Terminal.JobID.Validate() != nil || e.Terminal.InputID.Validate() != nil || e.Terminal.Sequence == 0 || e.Terminal.Sequence > MaxExecutionEvents || Text(e.Terminal.NativeThreadID, "native thread identity", 1024, true) != nil || Text(e.Terminal.NativeTurnID, "native turn identity", 1024, true) != nil {
+		if e.Recovery != nil || e.Terminal == nil || e.Terminal.JobID.Validate() != nil || e.Terminal.InputID.Validate() != nil || e.Terminal.Sequence == 0 || e.Terminal.Sequence > MaxExecutionEvents || Text(e.Terminal.NativeThreadID, "native thread identity", 1024, true) != nil || Text(e.Terminal.NativeTurnID, "native turn identity", 1024, true) != nil {
 			return invalidInbox()
 		}
 		switch e.Terminal.Outcome {
 		case ExecutionSucceeded, ExecutionFailed, ExecutionStopped:
 		default:
+			return invalidInbox()
+		}
+	case SubscriptionRecoveryInbox:
+		if e.Terminal != nil || e.Recovery == nil || e.Recovery.AccountID.Validate() != nil || e.Recovery.ConnectionID.Validate() != nil || e.Recovery.ObservedAt.IsZero() {
 			return invalidInbox()
 		}
 	default:

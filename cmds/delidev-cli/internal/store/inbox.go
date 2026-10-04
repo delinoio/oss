@@ -3,12 +3,13 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
 func (t *Tx) InboxBySource(source domain.InboxSource, id domain.ID) (Record, error) {
-	if id.Validate() != nil || (source != domain.InteractionInbox && source != domain.ExecutionTerminalInbox) {
+	if id.Validate() != nil || (source != domain.InteractionInbox && source != domain.ExecutionTerminalInbox && source != domain.SubscriptionRecoveryInbox) {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid inbox source.", "Use the retained interaction or execution identity.")
 	}
 	r, err := scan(t.tx.QueryRowContext(t.ctx, "SELECT "+recordColumns+" FROM entities WHERE kind='inbox' AND json_extract(body,'$.source')=? AND json_extract(body,'$.source_id')=?", source, id))
@@ -180,7 +181,7 @@ func (f InboxFilter) Validate() error {
 	if err := (Filter{Kind: domain.InboxKind, SessionID: f.SessionID, ProjectID: f.ProjectID, After: f.After, Limit: f.Limit}).validate(); err != nil {
 		return err
 	}
-	if f.Source != "" && f.Source != domain.InteractionInbox && f.Source != domain.ExecutionTerminalInbox {
+	if f.Source != "" && f.Source != domain.InteractionInbox && f.Source != domain.ExecutionTerminalInbox && f.Source != domain.SubscriptionRecoveryInbox {
 		return domain.Fail(domain.InvalidArgument, "Unknown inbox source filter.", "Select interaction or execution-terminal, or omit the filter.")
 	}
 	if f.ReadState != "" && !f.ReadState.Valid() {
@@ -218,4 +219,58 @@ func (t *Tx) InboxPage(f InboxFilter) ([]Record, bool, uint64, error) {
 	args = append(args, f.Limit+1)
 	rows, more, err := t.sessionPage(f.Limit, query, args...)
 	return rows, more, epoch, err
+}
+
+// Recovery has no session authority. Original observation identity is unique
+// through the same durable inbox source index as native execution publication.
+func (t *Tx) CreateSubscriptionRecoveryInbox(account, source, connection domain.ID, observed time.Time) (Record, error) {
+	if err := t.writeAllowed(); err != nil {
+		return Record{}, err
+	}
+	r, err := t.Get(domain.AccountKind, account)
+	if err != nil {
+		return Record{}, err
+	}
+	a, err := Decode[domain.Account](r)
+	if err != nil {
+		return Record{}, err
+	}
+	if a.SubscriptionService != domain.SubscriptionChatGPT || a.Connection == nil || a.Connection.ID != connection || a.ConfirmedExhausted || !a.RecoveryNotifications || observed.IsZero() {
+		return Record{}, inboxConflict()
+	}
+	existing, err := t.InboxBySource(domain.SubscriptionRecoveryInbox, source)
+	if err == nil {
+		return existing, nil
+	}
+	if domain.SafeError(err).Code != domain.NotFound {
+		return Record{}, err
+	}
+	entry := domain.InboxEntry{Source: domain.SubscriptionRecoveryInbox, SourceID: source, ReadState: domain.InboxUnread, Recovery: &domain.InboxSubscriptionRecovery{AccountID: account, ConnectionID: connection, ObservedAt: observed}}
+	if err := entry.Validate(); err != nil {
+		return Record{}, err
+	}
+	return t.Put(domain.InboxKind, domain.NewID(), 0, "", "", entry)
+}
+
+// Delete account-scoped recovery entries through ordinary tombstone/event
+// publication in the account deletion transaction. Session inboxes are unrelated.
+func (t *Tx) deleteAccountRecoveryInbox(account domain.ID) error {
+	for {
+		records, _, err := t.sessionPage(MaxPage, "SELECT "+recordColumns+" FROM entities WHERE kind='inbox' AND json_extract(body,'$.source')=? AND json_extract(body,'$.recovery.account_id')=? ORDER BY id LIMIT ?", domain.SubscriptionRecoveryInbox, account, MaxPage)
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			entry, err := Decode[domain.InboxEntry](record)
+			if err != nil || entry.Validate() != nil || entry.Recovery == nil || entry.Recovery.AccountID != account || record.SessionID != "" || record.ProjectID != "" {
+				return inboxConflict()
+			}
+			if err := t.Delete(domain.InboxKind, record.ID, record.Revision); err != nil {
+				return err
+			}
+		}
+		if len(records) < MaxPage {
+			return nil
+		}
+	}
 }

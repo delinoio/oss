@@ -21,25 +21,29 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
-	AgentID       ID                `json:"agent_id"`
-	AgentRevision uint64            `json:"agent_revision"`
-	Harness       Harness           `json:"harness"`
-	ModelID       ID                `json:"model_id"`
-	ModelRevision uint64            `json:"model_revision"`
-	ProviderID    ID                `json:"provider_id"`
-	NativeModel   string            `json:"native_model"`
-	Effort        string            `json:"effort,omitempty"`
-	Options       AgentOptions      `json:"options"`
-	Accounts      []WeightedAccount `json:"accounts"`
-	Routing       RoutingPolicy     `json:"routing"`
-	Templates     []AppliedTemplate `json:"templates"`
-	Instructions  string            `json:"instructions"`
-	GrokContext   *GrokModelContext `json:"grok_context,omitempty"`
-	Subscription  bool              `json:"subscription,omitempty"`
+	AgentID             ID                  `json:"agent_id"`
+	AgentRevision       uint64              `json:"agent_revision"`
+	Harness             Harness             `json:"harness"`
+	ModelID             ID                  `json:"model_id"`
+	ModelRevision       uint64              `json:"model_revision"`
+	ProviderID          ID                  `json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
+	NativeModel         string              `json:"native_model"`
+	Effort              string              `json:"effort,omitempty"`
+	Options             AgentOptions        `json:"options"`
+	Accounts            []WeightedAccount   `json:"accounts"`
+	Routing             RoutingPolicy       `json:"routing"`
+	Templates           []AppliedTemplate   `json:"templates"`
+	Instructions        string              `json:"instructions"`
+	GrokContext         *GrokModelContext   `json:"grok_context,omitempty"`
+	Subscription        bool                `json:"subscription,omitempty"`
 }
 
 func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent, modelRevision uint64, model Model, defaultPolicy RoutingPolicy, templates []AppliedTemplate) (ExecutionConfiguration, error) {
 	var result ExecutionConfiguration
+	if agent.ReconfigurationRequired {
+		return result, SubscriptionReconfigurationRequired()
+	}
 	if err := agentID.Validate(); err != nil {
 		return result, err
 	}
@@ -83,7 +87,7 @@ func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent
 		}
 		parts[i] = template.Contents
 	}
-	result = ExecutionConfiguration{AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
+	result = ExecutionConfiguration{AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, SubscriptionService: model.SubscriptionService, Subscription: model.SourceKind == SubscriptionModel, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
 	if agent.Harness == GrokBuild && model.ContextLimit != nil {
 		result.GrokContext = &GrokModelContext{Tokens: *model.ContextLimit, Source: model.MetadataSource}
 		if err := result.GrokContext.Validate(); err != nil {
@@ -103,6 +107,9 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.SubscriptionService != "" && (!c.Subscription || !c.SubscriptionService.Valid() || c.SubscriptionService.Harness() != c.Harness || c.ProviderID != "") {
+		return Fail(RecoveryRequired, "Invalid retained subscription identity.", "Preserve the original snapshot; create a new explicitly configured session.")
+	}
 	if c.Subscription && c.Harness != Codex {
 		return Fail(Unsupported, "Only Codex has a managed subscription execution profile.", "Keep other harnesses on their separately supported API profiles.")
 	}
@@ -118,6 +125,9 @@ func (c ExecutionConfiguration) Validate() error {
 	}
 	agent := Agent{Name: "Retained configuration", Harness: c.Harness, ModelID: c.ModelID, Effort: c.Effort, Options: c.Options, Accounts: c.Accounts, Routing: &c.Routing, Templates: ids}
 	model := Model{Name: "Retained model", NativeID: c.NativeModel, ProviderID: c.ProviderID, Harnesses: []Harness{c.Harness}, MetadataSource: Unknown}
+	if c.SubscriptionService != "" {
+		model.SourceKind, model.SubscriptionService = SubscriptionModel, c.SubscriptionService
+	}
 	resolved, err := ResolveExecutionConfiguration(c.AgentID, c.AgentRevision, agent, c.ModelRevision, model, c.Routing, c.Templates)
 	if err != nil {
 		return err

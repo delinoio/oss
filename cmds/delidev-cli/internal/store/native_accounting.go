@@ -122,6 +122,9 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 			args = append(args, p.id)
 		}
 	}
+	if f.SubscriptionService != "" {
+		where += " AND 0"
+	}
 	if f.GeneralChat {
 		where += " AND project_id=''"
 	}

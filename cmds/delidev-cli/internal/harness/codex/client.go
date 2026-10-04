@@ -20,6 +20,7 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
+	QuotaObserver    func(context.Context, domain.SubscriptionQuotaObservation)
 	ModelObservation bool
 	Process          process.Config
 	Version          string
@@ -30,6 +31,7 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	quotaObserver    func(context.Context, domain.SubscriptionQuotaObservation)
 	subagents        map[string]domain.SubagentObservation
 	subagentTurn     domain.ID
 	modelObservation string
@@ -202,6 +204,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation}
 	if config.ManagedAuthentication {
 		client.managedHome = home
+		client.quotaObserver = config.QuotaObserver
 		if err := client.verifyManagedConfig(ctx, config.Process.Cwd); err != nil {
 			return nil, err
 		}

@@ -24,26 +24,28 @@ func TestSubscriptionDispatchRequiresManagedWorkerCapability(t *testing.T) {
 				if err != nil {
 					return nil, err
 				}
-				pr, err := tx.Get(domain.ProviderKind, a.ProviderID)
-				if err != nil {
-					return nil, err
-				}
-				p, err := store.Decode[domain.Provider](pr)
-				if err != nil {
-					return nil, err
-				}
-				harness := domain.Codex
-				p.Endpoint, p.Protocol, p.Authentication, p.SubscriptionHarness = "", domain.NativeSubscription, domain.SubscriptionAuth, &harness
-				if _, err := tx.Put(domain.ProviderKind, pr.ID, pr.Revision, "", "", p); err != nil {
-					return nil, err
-				}
+
 				// Synthetic server-owned readiness exercises admission only; no
 				// bundle, native login or inference is created by this fixture.
+				a.ProviderID, a.SubscriptionService = "", domain.SubscriptionChatGPT
 				a.Type, a.Connection.Authentication, a.Validation = domain.SubscriptionAccount, domain.SubscriptionAuth, nil
 				a.Subscription = &domain.SubscriptionState{Generation: domain.NewID(), IdentityCommitment: strings.Repeat("a", 64)}
 				if _, err := tx.Put(domain.AccountKind, ar.ID, ar.Revision, "", "", a); err != nil {
 					return nil, err
 				}
+				models, err := tx.List(store.Filter{Kind: domain.ModelKind, Limit: 1})
+				if err != nil || len(models) != 1 {
+					return nil, err
+				}
+				model, err := store.Decode[domain.Model](models[0])
+				if err != nil {
+					return nil, err
+				}
+				model.ProviderID, model.SourceKind, model.SubscriptionService = "", domain.SubscriptionModel, domain.SubscriptionChatGPT
+				if _, err = tx.Put(domain.ModelKind, models[0].ID, models[0].Revision, "", "", model); err != nil {
+					return nil, err
+				}
+
 				mr, machine, err := activeMachine(tx, domain.ID(f.machine.Id))
 				if err != nil {
 					return nil, err
