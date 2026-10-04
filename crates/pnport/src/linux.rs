@@ -32,7 +32,7 @@ use pnport::{
     executable::Prepared,
     graph::Input,
     native_path::{resolved_lookup as resolved_caller_lookup, Lookup as NativeLookup},
-    view::{Translation, View},
+    view::{DirectoryEntry, PathKind, Translation, View},
 };
 
 use crate::input_watch::InputWatch;
@@ -1193,8 +1193,10 @@ fn resume(pid: i32, syscall_exit: bool, signal: i32) -> Result<()> {
 
 #[derive(Default)]
 struct DirectoryOffset {
-    emitted: Cell<bool>,
+    position: Cell<usize>,
     virtual_end: Cell<bool>,
+    native_position: Cell<i64>,
+    native_end: Cell<Option<i64>>,
 }
 
 #[derive(Clone)]
@@ -1214,7 +1216,8 @@ enum Pending {
     },
     DirectorySeek {
         fd: i32,
-        end: bool,
+        position: Option<usize>,
+        cookie: i64,
     },
     DirectoryEnd,
     ChangeDirectory(Option<PathBuf>),
@@ -1483,7 +1486,8 @@ impl Trace<'_> {
         if !target.is_absolute()
             || !(target.starts_with(&self.view.cache.root)
                 || target.starts_with(self.view.session.join("views"))
-                || self.view.graph.managed(&target))
+                || self.view.graph.managed(&target)
+                || self.view.graph.cache_container_path(&target))
         {
             return None;
         }
@@ -1492,6 +1496,7 @@ impl Trace<'_> {
             physical: target,
             readonly: true,
             virtual_link: false,
+            kind: PathKind::Dependency,
         })
     }
 
@@ -1508,23 +1513,17 @@ impl Trace<'_> {
         fs::read_link(live).ok()
     }
 
-    fn directory_state(&mut self, pid: i32, fd: i32) -> Result<Option<Rc<DirectoryOffset>>> {
+    fn directory_entries(&self, pid: i32, fd: i32) -> Result<Vec<DirectoryEntry>> {
         let Some(parent) = self.directory_parent(pid, fd) else {
-            return Ok(None);
+            return Ok(vec![]);
         };
-        if self.view.virtual_directory_entry(&parent)?.is_none() {
+        self.view
+            .directory_entries(&parent, Path::new(&format!("/proc/{pid}/fd/{fd}")))
+    }
+
+    fn directory_state(&mut self, pid: i32, fd: i32) -> Result<Option<Rc<DirectoryOffset>>> {
+        if self.directory_entries(pid, fd)?.is_empty() {
             return Ok(None);
-        }
-        match fs::symlink_metadata(format!("/proc/{pid}/fd/{fd}/node_modules")) {
-            Ok(metadata) if metadata.is_dir() => return Ok(None),
-            Ok(_) => {
-                return Err(Error::new(
-                    Code::PnportFilesystemConflict,
-                    "A backing entry conflicts with the virtual dependency directory.",
-                ))
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(_) => return Err(injection_failed()),
         }
         Ok(Some(
             self.directories
@@ -1549,6 +1548,7 @@ impl Trace<'_> {
         if returned < 0 {
             return Ok(());
         }
+        let entries = self.directory_entries(pid, fd)?;
         let Some(state) = self.directory_state(pid, fd)? else {
             return Ok(());
         };
@@ -1561,7 +1561,8 @@ impl Trace<'_> {
                 if header.len() != 19 {
                     return Err(injection_failed());
                 }
-                if i64::from_ne_bytes(header[8..16].try_into().unwrap()) == DIRECTORY_END {
+                let cookie = i64::from_ne_bytes(header[8..16].try_into().unwrap());
+                if cookie > DIRECTORY_END - entries.len() as i64 && cookie <= DIRECTORY_END {
                     return Err(unsupported(
                         "A native directory cookie conflicts with the virtual end position.",
                     ));
@@ -1571,39 +1572,46 @@ impl Trace<'_> {
                 if len <= name_start || offset + len > returned as usize {
                     return Err(injection_failed());
                 }
-                let record = read_remote(pid, output + offset as u64, len)?;
-                if record.get(name_start..name_start + 13) == Some(b"node_modules\0") {
-                    state.emitted.set(true);
-                }
                 offset += len;
+                state.native_position.set(cookie);
             }
             return Ok(());
         }
-        if state.emitted.get() {
+        state.native_end.set(Some(state.native_position.get()));
+        let Some(entry) = entries.get(state.position.get()) else {
             return Ok(());
-        }
-        let mut record = [0u8; 32];
-        record[..8].copy_from_slice(&1u64.to_ne_bytes());
-        record[8..16].copy_from_slice(&DIRECTORY_END.to_ne_bytes());
-        record[16..18].copy_from_slice(&32u16.to_ne_bytes());
-        let name_start = if legacy {
-            record[31] = libc::DT_DIR;
-            18
-        } else {
-            record[18] = libc::DT_DIR;
-            19
         };
-        record[name_start..name_start + 13].copy_from_slice(b"node_modules\0");
+        let name = entry.name.as_bytes();
+        if name.len() > 255 {
+            return Err(unsupported("A virtual directory name exceeds NAME_MAX."));
+        }
+        let name_start = if legacy { 18 } else { 19 };
+        let length = (name_start + name.len() + 1 + usize::from(legacy)).next_multiple_of(8);
+        let mut record = vec![0u8; length];
+        record[..8].copy_from_slice(&1u64.to_ne_bytes());
+        let position = state.position.get() + 1;
+        let cookie = DIRECTORY_END - entries.len() as i64 + position as i64;
+        record[8..16].copy_from_slice(&cookie.to_ne_bytes());
+        record[16..18].copy_from_slice(&(length as u16).to_ne_bytes());
+        let kind = if entry.directory {
+            libc::DT_DIR
+        } else {
+            libc::DT_LNK
+        };
+        if legacy {
+            record[length - 1] = kind;
+        } else {
+            record[18] = kind;
+        }
+        record[name_start..name_start + name.len()].copy_from_slice(name);
         if capacity < record.len() {
             set_result(regs, -(libc::EINVAL as i64));
         } else if write_remote_or_fault(pid, output, &record)? {
-            state.emitted.set(true);
-            state.virtual_end.set(true);
+            state.position.set(position);
+            state.virtual_end.set(position == entries.len());
             set_result(regs, record.len() as i64);
             tracing::trace!(
                 action = "linux_directory_overlay",
-                pid,
-                fd,
                 "Emitted a virtual directory entry"
             );
         } else {
@@ -1630,7 +1638,8 @@ impl Trace<'_> {
             if !target.is_absolute()
                 || !(target.starts_with(&cache_root)
                     || target.starts_with(session_root.join("views"))
-                    || self.view.graph.managed(&target))
+                    || self.view.graph.managed(&target)
+                    || self.view.graph.cache_container_path(&target))
             {
                 continue;
             }
@@ -1659,6 +1668,7 @@ impl Trace<'_> {
                     physical: target,
                     readonly: true,
                     virtual_link: false,
+                    kind: PathKind::Dependency,
                 },
             );
         }
@@ -1687,19 +1697,12 @@ impl Trace<'_> {
             let Some(parent) = self.directory_parent(pid, fd) else {
                 continue;
             };
-            if self.view.virtual_directory_entry(&parent)?.is_none() {
+            if self
+                .view
+                .directory_entries(&parent, &entry.path())?
+                .is_empty()
+            {
                 continue;
-            }
-            match fs::symlink_metadata(format!("/proc/{pid}/fd/{fd}/node_modules")) {
-                Ok(metadata) if metadata.is_dir() => continue,
-                Ok(_) => {
-                    return Err(Error::new(
-                        Code::PnportFilesystemConflict,
-                        "A backing entry conflicts with the virtual dependency directory.",
-                    ))
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(_) => return Err(injection_failed()),
             }
             eligible.push(fd);
         }
@@ -1969,6 +1972,7 @@ impl Trace<'_> {
     }
 
     fn resolved_lookup(&mut self, path: &Path, follow_last: bool) -> Result<Option<NativeLookup>> {
+        self.view.graph.check_path_conflicts(path)?;
         resolved_caller_lookup(path, follow_last, &self.view.graph)
             .map(|lookup| lookup.validate_parents(|parent| self.translate(parent)))
             .transpose()
@@ -2009,17 +2013,8 @@ impl Trace<'_> {
         Ok(libc::ENOENT)
     }
 
-    fn virtual_link_backing(
-        &mut self,
-        pid: i32,
-        dirfd: i32,
-        original: &Path,
-    ) -> Result<(PathBuf, PathBuf)> {
-        let logical = pnport::graph::normalize(&self.base(pid, dirfd, original)?);
-        let parent = self.translate_view(logical.parent().ok_or_else(injection_failed)?)?;
-        let link = parent
-            .physical
-            .join(logical.file_name().ok_or_else(injection_failed)?);
+    fn virtual_link_backing(&mut self, logical: &Path) -> Result<(PathBuf, PathBuf)> {
+        let link = self.view.dependency_link_backing(logical)?;
         if !fs::symlink_metadata(&link)
             .map_err(|_| injection_failed())?
             .file_type()
@@ -2027,7 +2022,7 @@ impl Trace<'_> {
         {
             return Err(injection_failed());
         }
-        Ok((logical, link))
+        Ok((logical.to_owned(), link))
     }
 
     fn proc_root(&self, pid: i32, path: &Path) -> Result<Option<PathBuf>> {
@@ -2687,7 +2682,7 @@ impl Trace<'_> {
                 );
                 return Ok(true);
             }
-            if writing && descriptor.readonly {
+            if writing && descriptor.readonly && exact_fd {
                 self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                 return Ok(true);
             }
@@ -2767,6 +2762,20 @@ impl Trace<'_> {
             Err(error) => return Err(error),
         };
         preserve_terminal_directory(&lookup, &mut translation, requires_directory);
+        #[cfg(target_arch = "x86_64")]
+        let creates_directory = call == libc::SYS_mkdirat || call == libc::SYS_mkdir;
+        #[cfg(target_arch = "aarch64")]
+        let creates_directory = call == libc::SYS_mkdirat;
+        if creates_directory && translation.kind == PathKind::CacheContainer {
+            if !pnport::native_path::structural_cache_root(&source, &self.view.graph) {
+                // Only a literal namespace leaf can create cache storage.
+                // Resolved '..', '.' and symlink aliases already exist.
+                self.force_error(pid, &mut regs, path_arg, libc::EEXIST)?;
+                return Ok(true);
+            }
+            translation.physical = translation.logical.clone();
+            translation.readonly = false;
+        }
         if call == libc::SYS_execve || call == libc::SYS_execveat {
             let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
             if self.prepare_script_exec(pid, &mut regs, &translation, path_arg, argv_arg, false)? {
@@ -2785,7 +2794,7 @@ impl Trace<'_> {
                         "Constrained openat2 cannot open a virtual link without following it.",
                     ));
                 }
-                let (logical, link) = self.virtual_link_backing(pid, dirfd, &original)?;
+                let (logical, link) = self.virtual_link_backing(&lookup)?;
                 self.rewrite_path(pid, &mut regs, path_arg, &link)?;
                 self.pending.insert(
                     pid,
@@ -2794,6 +2803,7 @@ impl Trace<'_> {
                         physical: link,
                         readonly: true,
                         virtual_link: true,
+                        kind: PathKind::Dependency,
                     }),
                 );
                 return Ok(true);
@@ -2803,7 +2813,7 @@ impl Trace<'_> {
             && translation.virtual_link
             && argument(&regs, 2) as u32 & libc::IN_DONT_FOLLOW != 0
         {
-            let (_, link) = self.virtual_link_backing(pid, dirfd, &original)?;
+            let (_, link) = self.virtual_link_backing(&lookup)?;
             self.rewrite_path(pid, &mut regs, path_arg, &link)?;
             self.pending.insert(pid, Pending::Ordinary);
             return Ok(true);
@@ -3008,16 +3018,40 @@ impl Trace<'_> {
         if call == libc::SYS_lseek {
             let fd = argument(&regs, 0) as i32;
             if let Some(state) = self.directory_state(pid, fd)? {
-                let current_end = state.virtual_end.get()
-                    && argument(&regs, 1) == 0
-                    && argument(&regs, 2) as i32 == libc::SEEK_CUR;
-                let end = current_end
-                    || argument(&regs, 1) as i64 == DIRECTORY_END
-                        && argument(&regs, 2) as i32 == libc::SEEK_SET;
-                if end {
-                    deny_syscall(pid, &mut regs)?;
+                let count = self.directory_entries(pid, fd)?.len();
+                let requested = argument(&regs, 1) as i64;
+                let whence = argument(&regs, 2) as i32;
+                let cookie =
+                    if state.position.get() > 0 && requested == 0 && whence == libc::SEEK_CUR {
+                        DIRECTORY_END - count as i64 + state.position.get() as i64
+                    } else {
+                        requested
+                    };
+                let position = ((whence == libc::SEEK_SET
+                    || whence == libc::SEEK_CUR && requested == 0)
+                    && cookie > DIRECTORY_END - count as i64
+                    && cookie <= DIRECTORY_END)
+                    .then(|| (cookie - (DIRECTORY_END - count as i64)) as usize);
+                if position.is_some() {
+                    let Some(native_end) = state.native_end.get() else {
+                        deny_syscall(pid, &mut regs)?;
+                        self.pending.insert(pid, Pending::ForcedError(libc::EINVAL));
+                        return resume(pid, true, 0);
+                    };
+                    // Restore the real open description to its observed EOF;
+                    // suppressing lseek would replay cache entries after rewind.
+                    set_argument(&mut regs, 1, native_end as u64);
+                    set_argument(&mut regs, 2, libc::SEEK_SET as u64);
+                    set_registers(pid, &regs)?;
                 }
-                self.pending.insert(pid, Pending::DirectorySeek { fd, end });
+                self.pending.insert(
+                    pid,
+                    Pending::DirectorySeek {
+                        fd,
+                        position,
+                        cookie,
+                    },
+                );
                 return resume(pid, true, 0);
             }
             return self.resume_fd_sensitive(pid);
@@ -3215,10 +3249,10 @@ impl Trace<'_> {
                 Some(Pending::Open(translation)) => {
                     translation.readonly
                         || (translation.physical.is_dir()
-                            && self
+                            && !self
                                 .view
-                                .virtual_directory_entry(&translation.logical)?
-                                .is_some())
+                                .directory_entries(&translation.logical, &translation.physical)?
+                                .is_empty())
                 }
                 _ => false,
             };
@@ -3457,13 +3491,20 @@ impl Trace<'_> {
                 set_result(&mut regs, 0);
                 set_registers(pid, &regs)?;
             }
-            Pending::DirectorySeek { fd, end } if returned >= 0 || end => {
+            Pending::DirectorySeek {
+                fd,
+                position,
+                cookie,
+            } if returned >= 0 => {
                 if let Some(state) = self.directory_state(pid, fd)? {
-                    state.emitted.set(end);
-                    state.virtual_end.set(end);
+                    state.native_position.set(returned);
+                    state.position.set(position.unwrap_or(0));
+                    state
+                        .virtual_end
+                        .set(position == Some(self.directory_entries(pid, fd)?.len()));
                 }
-                if end {
-                    set_result(&mut regs, DIRECTORY_END);
+                if position.is_some() {
+                    set_result(&mut regs, cookie);
                     set_registers(pid, &regs)?;
                 }
             }

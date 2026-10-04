@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -99,6 +99,11 @@ process.exit(child.status ?? 1);
 }
 
 export function pnpApiConformance({ binary, root, cache, environment = process.env, dependency = "@types/node/package.json" }) {
+  // Graph admission canonicalizes the project. Build selected-loader URL
+  // controls from that same root so macOS /tmp aliases do not add a distinct
+  // filesystem-symlink case to the normalized URL identity checks.
+  try { root = realpathSync(root); }
+  catch { throw new Error("Cannot canonicalize the prepared Yarn PnP fixture."); }
   const loader = join(resolve(root), ".pnp.cjs");
   assert(existsSync(loader), "An already prepared Yarn PnP fixture is required");
   const env = { ...environment };

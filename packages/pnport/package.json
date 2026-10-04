@@ -13,6 +13,8 @@
     "test:package": "node scripts/smoke.mjs",
     "package:npm": "node scripts/package.mjs",
     "publish:npm": "node scripts/publish.mjs",
+    "test:cache:prepare": "node scripts/cache-conformance.mjs prepare",
+    "test:cache": "node scripts/cache-conformance.mjs run",
     "test:typescript:prepare": "node scripts/typescript-conformance.mjs prepare",
     "test:typescript": "node scripts/typescript-conformance.mjs run",
     "benchmark": "node scripts/benchmark.mjs"

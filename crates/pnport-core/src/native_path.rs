@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::{
-    diagnostic::{Code, Result},
+    diagnostic::{Code, Error, Result},
     graph::Graph,
     view::Translation,
 };
@@ -48,6 +48,7 @@ pub struct ResolvedLookup {
     parents: Vec<ParentTraversal>,
     requires_directory: bool,
     native_failure: Option<Lookup>,
+    conflict: bool,
 }
 
 impl ResolvedLookup {
@@ -77,6 +78,14 @@ impl ResolvedLookup {
                 path: physical.join("..").join(parent.remaining),
                 errno,
             });
+        }
+        // The kernel cannot reach a later namespace when an earlier '..'
+        // traversal already failed. Preserve that native lookup error first.
+        if self.conflict {
+            return Err(Error::new(
+                Code::PnportFilesystemConflict,
+                "A physical entry conflicts with the virtual dependency directory.",
+            ));
         }
         if let Some(failure) = self.native_failure {
             return Ok(failure);
@@ -152,6 +161,15 @@ pub fn resolved_lookup_with_policy(
             }
             Component::Normal(name) => {
                 let candidate = resolved.join(name);
+                if name == "node_modules" && graph.check_path_conflicts(&candidate).is_err() {
+                    return Some(ResolvedLookup {
+                        path: candidate,
+                        parents,
+                        requires_directory,
+                        native_failure: None,
+                        conflict: true,
+                    });
+                }
                 match fs::symlink_metadata(&candidate) {
                     Ok(metadata) if metadata.file_type().is_symlink() => {
                         if policy == SymlinkPolicy::Reject {
@@ -159,6 +177,7 @@ pub fn resolved_lookup_with_policy(
                                 path: candidate.clone(),
                                 parents,
                                 requires_directory,
+                                conflict: false,
                                 native_failure: Some(Lookup::NativeFailure {
                                     path: candidate,
                                     errno: libc::ELOOP,
@@ -224,7 +243,20 @@ pub fn resolved_lookup_with_policy(
         parents,
         requires_directory,
         native_failure: None,
+        conflict: false,
     })
+}
+
+/// Structural cache creation requires a literal namespace leaf. Keep raw
+/// components: Path::components removes '.' and lookup resolves '..'/symlinks.
+pub fn structural_cache_root(path: &Path, graph: &Graph) -> bool {
+    path.as_os_str()
+        .as_bytes()
+        .rsplit(|byte| *byte == b'/')
+        .find(|component| !component.is_empty())
+        == Some(b"node_modules")
+        && resolved_lookup_with_policy(path, false, graph, SymlinkPolicy::Reject)
+            .is_some_and(|lookup| lookup.native_failure.is_none())
 }
 
 fn terminal_directory(path: &Path) -> bool {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,4 +58,27 @@ test("valid conformance output still reports each completed CommonJS case", (t) 
   assert.equal(result.node, process.version);
   assert.equal(Object.keys(result.outcomes).length, 15);
   for (const outcome of Object.values(result.outcomes)) assert.deepEqual(outcome, { apiAvailable: true, exitCode: 0 });
+});
+
+test("selected-loader URL controls use the admitted root through a directory alias", (t) => {
+  const { root } = fixture(t, { status: 0, stdout: JSON.stringify(expected) });
+  const alias = join(root, "project-alias");
+  symlinkSync(root, alias, process.platform === "win32" ? "junction" : "dir");
+  writeFileSync(join(root, ".pnp.loader.mjs"), "// Synthetic fixture; no child code executes.\n");
+  const result = pnpApiConformance({ binary: join(root, "binary-canary"), root: alias, cache: join(root, "cache-canary") });
+  assert.equal(Object.keys(result.outcomes).length, 27);
+  for (const call of childProcess.spawnSync.mock.calls) {
+    const [, args, options] = call.arguments;
+    assert.equal(options.cwd, realpathSync(root));
+    assert.equal(args.at(-1), realpathSync(root));
+  }
+});
+
+test("fixture canonicalization failures do not expose input paths", () => {
+  assert.throws(() => pnpApiConformance({ binary: canary, root: canary, cache: canary }), (error) => {
+    assert(!error.stack.includes(canary));
+    assert.equal(error.cause, undefined);
+    assert.equal(error.message, "Cannot canonicalize the prepared Yarn PnP fixture.");
+    return true;
+  });
 });

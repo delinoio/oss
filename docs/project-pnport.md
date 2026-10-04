@@ -38,7 +38,7 @@ failed, ambiguous and untrusted results. Branch candidates do not grant this
 authority.
 
 ## Goal
-Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph without creating a project node_modules directory. Issue #958 defines the complete staged acceptance boundary: 0.1.0 ships macOS/glibc Linux first, and 0.2.0 adds Windows. The owner-authorized experimental npm next channel permits an exact reviewed `0.1.0-next.N` candidate for external testing, without completing stable acceptance; the original Windows requirements remain in scope.
+Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph without installing a project node_modules dependency tree. Issue #958 defines the complete staged acceptance boundary: 0.1.0 ships macOS/glibc Linux first, and 0.2.0 adds Windows. The owner-authorized experimental npm next channel permits an exact reviewed `0.1.0-next.N` candidate for external testing, without completing stable acceptance; the original Windows requirements remain in scope.
 
 ## Project ID
 `Pnport = "pnport"`.
@@ -57,6 +57,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - [Public documentation](apps-pnport-docs-foundation.md)
 
 ## Cross-Domain Invariants
+- Development builds merge writable SOFT-root hidden tool caches with virtual dependencies under `node_modules`. Exclude `.bin` and graph/fallback names, preserve HARD package protection and actual package conflicts, and retain doctor JSON v1. Readers do not create project directories; cache writers may create the native container. This source change is not available in immutable 0.1.0 or 0.1.0-next.1 packages. Native and installed checks plus default-config Vitest conformance run on the four-target matrix.
 - Version 0.1.0 targets macOS 15+ and Ubuntu 22.04-equivalent glibc on x64/arm64. Version 0.2.0 adds Windows 10 22H2+ MSVC on x64/arm64 after its full native acceptance. Linux static children are a release gate. Musl hosts and mixed architectures are excluded.
 - Use Rust, as explicitly required by #958, instead of the default Go. Retain nightly-2026-01-01 and protected Tauri dependencies. All owned Cargo packages are private.
 - Use pnp exactly 0.12.12 and fork the required local fspy crates from 3aac49e31fba6905bb0b3d0e29d7755493241e9c with retained provenance and licensing. No upstream release is required.

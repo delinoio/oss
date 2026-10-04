@@ -141,6 +141,10 @@ jobs:
           node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
           PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test process_lifecycle --target "$PNPORT_TARGET"
           PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test native_conformance --target "$PNPORT_TARGET"
+          PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test core native_tool_caches_coexist_with_dependencies_and_directory_lifetimes --target "$PNPORT_TARGET"
+          cache_fixture="$RUNNER_TEMP/pnport-tool-cache"
+          pnpm --filter @delino/pnport test:cache:prepare "$cache_fixture"
+          pnpm --filter @delino/pnport test:cache "$cache_fixture" "$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport"
           node packages/pnport/scripts/evidence.mjs record --target "$PNPORT_TARGET" --base "$PNPORT_REVISION" --tree "$PNPORT_TREE" --revision "$PNPORT_REVISION"
       - name: Measure identical cold and warm candidate workloads
         shell: bash

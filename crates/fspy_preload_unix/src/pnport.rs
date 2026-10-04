@@ -40,7 +40,7 @@ use pnport_core::{
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
     native_path::{Lookup as NativeLookup, SymlinkPolicy},
-    view::{Translation, View},
+    view::{DirectoryEntry, PathKind, Translation, View},
 };
 
 thread_local! { static INSIDE: Cell<bool> = const { Cell::new(false) }; }
@@ -108,8 +108,9 @@ struct Runtime {
 struct DirectoryStream {
     logical: PathBuf,
     physical: PathBuf,
-    emitted: bool,
+    position: usize,
     virtual_end: bool,
+    native_end: Option<libc::c_long>,
     entry: Box<dirent>,
 }
 
@@ -125,8 +126,9 @@ unsafe fn track_directory(dir: *mut DIR, translation: Translation) {
             Arc::new(Mutex::new(DirectoryStream {
                 logical: translation.logical,
                 physical: translation.physical,
-                emitted: false,
+                position: 0,
                 virtual_end: false,
+                native_end: None,
                 entry: Box::new(std::mem::zeroed()),
             })),
         );
@@ -143,42 +145,52 @@ fn directory_stream(dir: *mut DIR) -> Option<Arc<Mutex<DirectoryStream>>> {
         .cloned()
 }
 
-fn directory_eligible(stream: &DirectoryStream) -> std::result::Result<bool, c_int> {
+fn directory_entries(stream: &DirectoryStream) -> std::result::Result<Vec<DirectoryEntry>, c_int> {
     let runtime = RUNTIME.get().ok_or(EIO)?.lock().map_err(|_| EIO)?;
-    let eligible = runtime
+    runtime
         .view
-        .virtual_directory_entry(&stream.logical)
-        .map(|entry| entry.is_some())
-        .map_err(|error| fail(error.code))?;
-    drop(runtime);
-    if !eligible {
-        return Ok(false);
-    }
-    // ZIP package content may already contain this directory. Its native
-    // entry works at every native seek position and needs no appended entry.
-    match fs::symlink_metadata(stream.physical.join("node_modules")) {
-        Ok(metadata) if metadata.is_dir() => Ok(false),
-        Ok(_) => Err(fail(Code::PnportFilesystemConflict)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
-        Err(_) => Err(EIO),
-    }
+        .directory_entries(&stream.logical, &stream.physical)
+        .map_err(|error| fail(error.code))
 }
 
-fn directory_entry(stream: &mut DirectoryStream) -> *mut dirent {
-    let name = b"node_modules\0";
+fn directory_cookie(position: usize, count: usize) -> libc::c_long {
+    let count =
+        libc::c_long::try_from(count).expect("Allocated directory entries fit a native cookie");
+    let position =
+        libc::c_long::try_from(position).expect("Directory position fits a native cookie");
+    DIRECTORY_END - count + position
+}
+
+fn directory_entry(
+    stream: &mut DirectoryStream,
+    entries: &[DirectoryEntry],
+) -> std::result::Result<*mut dirent, c_int> {
+    let Some(entry) = entries.get(stream.position) else {
+        return Ok(ptr::null_mut());
+    };
+    let name = entry.name.as_bytes();
+    if name.len() >= stream.entry.d_name.len() {
+        return Err(ENAMETOOLONG);
+    }
     stream.entry.d_ino = 1;
-    stream.entry.d_seekoff = DIRECTORY_END as u64;
-    stream.entry.d_type = libc::DT_DIR;
-    stream.entry.d_namlen = 12;
+    stream.entry.d_seekoff =
+        u64::try_from(directory_cookie(stream.position + 1, entries.len())).map_err(|_| EIO)?;
+    stream.entry.d_type = if entry.directory {
+        libc::DT_DIR
+    } else {
+        libc::DT_LNK
+    };
+    stream.entry.d_namlen = u16::try_from(name.len()).map_err(|_| ENAMETOOLONG)?;
     stream.entry.d_reclen =
-        u16::try_from((std::mem::offset_of!(dirent, d_name) + name.len()).next_multiple_of(4))
-            .expect("The fixed virtual dirent fits its length field");
+        u16::try_from((std::mem::offset_of!(dirent, d_name) + name.len() + 1).next_multiple_of(4))
+            .map_err(|_| ENAMETOOLONG)?;
+    stream.entry.d_name.fill(0);
     for (slot, byte) in stream.entry.d_name.iter_mut().zip(name) {
         *slot = byte.cast_signed();
     }
-    stream.emitted = true;
-    stream.virtual_end = true;
-    &raw mut *stream.entry
+    stream.position += 1;
+    stream.virtual_end = stream.position == entries.len();
+    Ok(&raw mut *stream.entry)
 }
 static RUNTIME: OnceLock<Box<ForkMutex<Runtime>>> = OnceLock::new();
 static SESSION: OnceLock<PathBuf> = OnceLock::new();
@@ -600,6 +612,7 @@ fn native_translation(logical: &Path, physical: PathBuf) -> Translation {
         physical,
         readonly: false,
         virtual_link: false,
+        kind: PathKind::Native,
     }
 }
 
@@ -608,6 +621,7 @@ fn translate_lookup(
     path: &Path,
     follow_last: bool,
 ) -> pnport_core::diagnostic::Result<Translation> {
+    runtime.view.graph.check_path_conflicts(path)?;
     let Some(lookup) =
         pnport_core::native_path::resolved_lookup(path, follow_last, &runtime.view.graph)
     else {
@@ -658,6 +672,11 @@ unsafe fn translate_following(
     };
     let mut runtime = runtime.lock().map_err(|_| EIO)?;
     let path = path_from(path, dirfd, &runtime)?;
+    runtime
+        .view
+        .graph
+        .check_path_conflicts(&path)
+        .map_err(|error| fail(error.code))?;
     let translation = if policy == SymlinkPolicy::Reject {
         match pnport_core::native_path::resolved_lookup_with_policy(
             &path,
@@ -1208,9 +1227,98 @@ path_hook!(access, pnport_access, (path:*const c_char, mode:c_int) -> c_int, mod
 
 path_hook!(unlink, pnport_unlink, (path:*const c_char) -> c_int, true, false, -1);
 path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, false, -1);
-path_hook!(mkdir, pnport_mkdir, (path:*const c_char, mode:mode_t) -> c_int, true, false, -1);
+// Creating the native cache container is the sole writable operation on the
+// merged root. Dependency entries and destructive root operations stay
+// protected.
+unsafe fn mkdir_path(path: *const c_char, fd: c_int) -> std::result::Result<CString, c_int> {
+    let (_, translation) = translate_following(path, fd, false, false, SymlinkPolicy::Allow)?;
+    if translation.kind == PathKind::CacheContainer {
+        let runtime = RUNTIME.get().ok_or(EIO)?.lock().map_err(|_| EIO)?;
+        let source = path_from(path, fd, &runtime)?;
+        if !pnport_core::native_path::structural_cache_root(&source, &runtime.view.graph) {
+            // A scope/dependency '..', terminal '.' or followed symlink names
+            // an existing virtual directory, not a new namespace leaf.
+            return Err(EEXIST);
+        }
+        return CString::new(translation.logical.as_os_str().as_bytes()).map_err(|_| EINVAL);
+    }
+    if translation.readonly {
+        return Err(EROFS);
+    }
+    CString::new(translation.physical.as_os_str().as_bytes()).map_err(|_| EINVAL)
+}
+hook!(mkdir, pnport_mkdir, (path:*const c_char, mode:mode_t) -> c_int, {
+    let original=original!(mkdir,unsafe extern "C" fn(*const c_char,mode_t)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(path,mode);};
+    if RUNTIME.get().is_none() {return original(path,mode);}
+    let path=match mkdir_path(path,AT_FDCWD) {Ok(path)=>path,Err(code)=>{errno(code);return -1;}};
+    original(path.as_ptr(),mode)
+});
+hook!(mkdirat, pnport_mkdirat, (fd:c_int,path:*const c_char,mode:mode_t) -> c_int, {
+    let original=original!(mkdirat,unsafe extern "C" fn(c_int,*const c_char,mode_t)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(fd,path,mode);};
+    if RUNTIME.get().is_none() {return original(fd,path,mode);}
+    let path=match mkdir_path(path,fd) {Ok(path)=>path,Err(code)=>{errno(code);return -1;}};
+    original(AT_FDCWD,path.as_ptr(),mode)
+});
 path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true, true, -1);
 path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, true, -1);
+// pnport excludes fspy's generic mutation module. Every pathname mutation
+// variant must therefore apply this view's policy before entering libc.
+path_hook!(remove, pnport_remove, (path:*const c_char) -> c_int, true, false, -1);
+path_hook!(creat, pnport_creat, (path:*const c_char, mode:mode_t) -> c_int, true, true, -1);
+path_hook!(mkfifo, pnport_mkfifo, (path:*const c_char, mode:mode_t) -> c_int, true, false, -1);
+path_hook!(mknod, pnport_mknod, (path:*const c_char, mode:mode_t, device:libc::dev_t) -> c_int, true, false, -1);
+path_hook!(chown, pnport_chown, (path:*const c_char, owner:libc::uid_t, group:libc::gid_t) -> c_int, true, true, -1);
+path_hook!(lchown, pnport_lchown, (path:*const c_char, owner:libc::uid_t, group:libc::gid_t) -> c_int, true, false, -1);
+path_hook!(utime, pnport_utime, (path:*const c_char, times:*const libc::utimbuf) -> c_int, true, true, -1);
+path_hook!(utimes, pnport_utimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, true, -1);
+path_hook!(lutimes, pnport_lutimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, false, -1);
+path_hook!(chflags, pnport_chflags, (path:*const c_char, flags:libc::c_uint) -> c_int, true, true, -1);
+// Rust libc omits lchflags; retain Darwin's no-follow ABI explicitly.
+unsafe extern "C" fn pnport_lchflags(path: *const c_char, flags: u32) -> c_int {
+    let Some(_guard) = Guard::enter() else {
+        return crate::libc::lchflags(path, flags);
+    };
+    if RUNTIME.get().is_none() {
+        return crate::libc::lchflags(path, flags);
+    }
+    let (path, _) = translated!(path, AT_FDCWD, true, false, -1);
+    crate::libc::lchflags(path.as_ptr(), flags)
+}
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_lchflags as *const c_void,
+        _old: crate::libc::lchflags as *const c_void,
+    };
+};
+hook!(setxattr, pnport_setxattr, (path:*const c_char,name:*const c_char,value:*const c_void,size:size_t,position:u32,options:c_int) -> c_int, {
+    let original=original!(setxattr,unsafe extern "C" fn(*const c_char,*const c_char,*const c_void,size_t,u32,c_int)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(path,name,value,size,position,options);};
+    if RUNTIME.get().is_none() {return original(path,name,value,size,position,options);}
+    let (path,_)=translated!(path,AT_FDCWD,true,options & libc::XATTR_NOFOLLOW == 0,-1);
+    original(path.as_ptr(),name,value,size,position,options)
+});
+path_hook!(removexattr, pnport_removexattr, (path:*const c_char,name:*const c_char,options:c_int) -> c_int, true, options & libc::XATTR_NOFOLLOW == 0, -1);
+
+macro_rules! mutation_at_hook {
+    ($name:ident, $wrapper:ident, ($fd:ident:c_int,$path:ident:*const c_char $(,$arg:ident:$ty:ty)*), $follow:expr) => {
+        hook!($name, $wrapper, ($fd:c_int,$path:*const c_char $(,$arg:$ty)*) -> c_int, {
+            let original=original!($name,unsafe extern "C" fn(c_int,*const c_char $(,$ty)*)->c_int);
+            let Some(_guard)=Guard::enter() else {return original($fd,$path $(,$arg)*);};
+            if RUNTIME.get().is_none() {return original($fd,$path $(,$arg)*);}
+            let (path,_)=translated!($path,$fd,true,$follow,-1);
+            original(AT_FDCWD,path.as_ptr() $(,$arg)*)
+        });
+    };
+}
+mutation_at_hook!(fchmodat, pnport_fchmodat, (fd:c_int,path:*const c_char,mode:mode_t,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(fchownat, pnport_fchownat, (fd:c_int,path:*const c_char,owner:libc::uid_t,group:libc::gid_t,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(utimensat, pnport_utimensat, (fd:c_int,path:*const c_char,times:*const libc::timespec,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(mkfifoat, pnport_mkfifoat, (fd:c_int,path:*const c_char,mode:mode_t), false);
+mutation_at_hook!(mknodat, pnport_mknodat, (fd:c_int,path:*const c_char,mode:mode_t,device:libc::dev_t), false);
 hook!(fchmod, pnport_fchmod, (fd:c_int,mode:mode_t) -> c_int, {
     mutate_descriptor(fd, || libc::fchmod(fd, mode))
 });
@@ -1223,8 +1331,17 @@ hook!(ftruncate, pnport_ftruncate, (fd:c_int,length:off_t) -> c_int, {
 hook!(futimes, pnport_futimes, (fd:c_int,times:*const libc::timeval) -> c_int, {
     mutate_descriptor(fd, || libc::futimes(fd, times))
 });
+hook!(futimens, pnport_futimens, (fd:c_int,times:*const libc::timespec) -> c_int, {
+    mutate_descriptor(fd, || libc::futimens(fd, times))
+});
 hook!(fchflags, pnport_fchflags, (fd:c_int,flags:libc::c_uint) -> c_int, {
     mutate_descriptor(fd, || libc::fchflags(fd, flags))
+});
+hook!(fsetxattr, pnport_fsetxattr, (fd:c_int,name:*const c_char,value:*const c_void,size:size_t,position:u32,options:c_int) -> c_int, {
+    mutate_descriptor(fd, || libc::fsetxattr(fd, name, value, size, position, options))
+});
+hook!(fremovexattr, pnport_fremovexattr, (fd:c_int,name:*const c_char,options:c_int) -> c_int, {
+    mutate_descriptor(fd, || libc::fremovexattr(fd, name, options))
 });
 hook!(dlopen, pnport_dlopen, (path:*const c_char,flags:c_int) -> *mut c_void, {
     let original = original!(dlopen, unsafe extern "C" fn(*const c_char,c_int)->*mut c_void);
@@ -1492,19 +1609,22 @@ hook!(readdir, pnport_readdir, (dir:*mut DIR) -> *mut dirent, {
     let Some(stream)=directory_stream(dir) else {return original(dir);};
     let saved=*__error();
     let Ok(mut stream)=stream.lock() else {errno(EIO);return ptr::null_mut();};
-    let eligible=match directory_eligible(&stream) {Ok(value)=>value,Err(code)=>{errno(code);return ptr::null_mut();}};
+    let entries=match directory_entries(&stream) {Ok(value)=>value,Err(code)=>{errno(code);return ptr::null_mut();}};
     if stream.virtual_end {errno(saved);return ptr::null_mut();}
     // Guard remains active while libc holds its stream lock. Any interposed
     // backing operations reenter only the original libc, never RUNTIME.
     errno(0);
     let entry=original(dir);
     if !entry.is_null() {
-        if eligible && CStr::from_ptr((*entry).d_name.as_ptr()).to_bytes()==b"node_modules" {stream.emitted=true;}
+
         errno(saved);return entry;
     }
     if *__error()!=0 {return entry;}
+    let native_end=libc::lseek(dirfd(dir),0,libc::SEEK_CUR);
+    if native_end<0 {return ptr::null_mut();}
+    stream.native_end=Some(native_end);
     errno(saved);
-    if eligible && !stream.emitted {directory_entry(&mut stream)} else {entry}
+    match directory_entry(&mut stream,&entries) {Ok(value)=>value,Err(code)=>{errno(code);ptr::null_mut()}}
 });
 
 hook!(readdir_r, pnport_readdir_r, (dir:*mut DIR,entry:*mut dirent,result:*mut *mut dirent) -> c_int, {
@@ -1513,15 +1633,17 @@ hook!(readdir_r, pnport_readdir_r, (dir:*mut DIR,entry:*mut dirent,result:*mut *
     let Some(stream)=directory_stream(dir) else {return original(dir,entry,result);};
     let saved=*__error();
     let Ok(mut stream)=stream.lock() else {return EIO;};
-    let eligible=match directory_eligible(&stream) {Ok(value)=>value,Err(code)=>{errno(saved);return code;}};
+    let entries=match directory_entries(&stream) {Ok(value)=>value,Err(code)=>{errno(saved);return code;}};
     if stream.virtual_end {*result=ptr::null_mut();errno(saved);return 0;}
     let code=original(dir,entry,result);
-    if code==0 {
-        if !(*result).is_null() {
-            if eligible && CStr::from_ptr((*entry).d_name.as_ptr()).to_bytes()==b"node_modules" {stream.emitted=true;}
-        } else if eligible && !stream.emitted {
-            ptr::copy_nonoverlapping(directory_entry(&mut stream),entry,1);*result=entry;
-        }
+    if code==0 && (*result).is_null() {
+            let native_end=libc::lseek(dirfd(dir),0,libc::SEEK_CUR);
+            if native_end<0 {let code=*__error();errno(saved);return code;}
+            stream.native_end=Some(native_end);
+            match directory_entry(&mut stream,&entries) {
+                Ok(value) if !value.is_null()=>{ptr::copy_nonoverlapping(value,entry,1);*result=entry;},
+                Ok(_)=>{}, Err(code)=>{errno(saved);return code;}
+            }
     }
     errno(saved);code
 });
@@ -1531,13 +1653,14 @@ hook!(rewinddir, pnport_rewinddir, (dir:*mut DIR) -> (), {
     let Some(_guard)=Guard::enter() else {return original(dir);};
     let stream=directory_stream(dir);
     let mut state=stream.as_ref().and_then(|stream|stream.lock().ok());
-    if let Some(state)=state.as_mut() {state.emitted=false;state.virtual_end=false;}
+    if let Some(state)=state.as_mut() {state.position=0;state.virtual_end=false;}
     original(dir);
 });
 hook!(telldir, pnport_telldir, (dir:*mut DIR) -> libc::c_long, {
     let original=original!(telldir,unsafe extern "C" fn(*mut DIR)->libc::c_long);
     let Some(_guard)=Guard::enter() else {return original(dir);};
-    if let Some(stream)=directory_stream(dir) && let Ok(stream)=stream.lock() && stream.virtual_end {return DIRECTORY_END;}
+    if let Some(stream)=directory_stream(dir) && let Ok(stream)=stream.lock() && stream.position>0
+        && let Ok(entries)=directory_entries(&stream) {return directory_cookie(stream.position,entries.len());}
     original(dir)
 });
 hook!(seekdir, pnport_seekdir, (dir:*mut DIR,position:libc::c_long) -> (), {
@@ -1546,9 +1669,22 @@ hook!(seekdir, pnport_seekdir, (dir:*mut DIR,position:libc::c_long) -> (), {
     let stream=directory_stream(dir);
     let mut state=stream.as_ref().and_then(|stream|stream.lock().ok());
     if let Some(state)=state.as_mut() {
-        state.emitted=position==DIRECTORY_END;
-        state.virtual_end=state.emitted;
-        if state.emitted {return;}
+        if let Ok(entries)=directory_entries(state) {
+            let begin=directory_cookie(0,entries.len());
+            if position>begin {
+                let Some(native_end)=state.native_end else {errno(EINVAL);return;};
+                // Darwin rewind invalidates opaque telldir cookies. Clear the
+                // libc buffer, then restore the observed kernel EOF directly.
+                let reset=original!(rewinddir,unsafe extern "C" fn(*mut DIR));
+                reset(dir);
+                if libc::lseek(dirfd(dir),native_end,libc::SEEK_SET)<0 {
+                    state.position=0;state.virtual_end=false;return;
+                }
+                state.position=usize::try_from(position-begin).expect("Reserved directory cookie is in range");
+                state.virtual_end=state.position==entries.len();return;
+            }
+        }
+        state.position=0;state.virtual_end=false;
     }
     original(dir,position);
 });
@@ -1561,36 +1697,84 @@ hook!(closedir, pnport_closedir, (dir:*mut DIR) -> c_int, {
     original(dir)
 });
 
+mod directory;
+
+#[derive(Clone, Copy)]
+enum DirectoryCallbacks {
+    Functions,
+    Blocks,
+}
+
+// Only the common ABI prefix is read; callbacks do not escape scandir_b.
+// https://clang.llvm.org/docs/Block-ABI-Apple.html#high-level
+#[repr(C)]
+struct DirectoryBlock<F> {
+    _isa: *const c_void,
+    _flags: c_int,
+    _reserved: c_int,
+    invoke: F,
+}
+
 unsafe extern "C" fn pnport_scandir(
     path: *const c_char,
     namelist: *mut c_void,
     select: *const c_void,
     compar: *const c_void,
 ) -> c_int {
+    scan_directory(
+        path,
+        namelist,
+        select,
+        compar,
+        DirectoryCallbacks::Functions,
+    )
+}
+
+unsafe extern "C" fn pnport_scandir_b(
+    path: *const c_char,
+    namelist: *mut c_void,
+    select: *const c_void,
+    compar: *const c_void,
+) -> c_int {
+    scan_directory(path, namelist, select, compar, DirectoryCallbacks::Blocks)
+}
+
+unsafe fn scan_directory(
+    path: *const c_char,
+    namelist: *mut c_void,
+    select: *const c_void,
+    compar: *const c_void,
+    callbacks: DirectoryCallbacks,
+) -> c_int {
+    let native = match callbacks {
+        DirectoryCallbacks::Functions => crate::libc::scandir,
+        DirectoryCallbacks::Blocks => crate::libc::scandir_b,
+    };
     let Some(_guard) = Guard::enter() else {
-        return crate::libc::scandir(path, namelist, select, compar);
+        return native(path, namelist, select, compar);
     };
     if RUNTIME.get().is_none() {
-        return crate::libc::scandir(path, namelist, select, compar);
+        return native(path, namelist, select, compar);
     }
     let (path, translation) = translated!(path, AT_FDCWD, false, -1);
     let mut stream = DirectoryStream {
         logical: translation.logical,
         physical: translation.physical,
-        emitted: false,
+        position: 0,
         virtual_end: false,
+        native_end: None,
         entry: Box::new(std::mem::zeroed()),
     };
-    let eligible = match directory_eligible(&stream) {
+    let overlay = match directory_entries(&stream) {
         Ok(value) => value,
         Err(code) => {
             errno(code);
             return -1;
         }
     };
-    if !eligible {
+    if overlay.is_empty() {
         let _callback_guard = CallbackGuard::enter();
-        return crate::libc::scandir(path.as_ptr(), namelist, select, compar);
+        return native(path.as_ptr(), namelist, select, compar);
     }
     let open = original!(opendir, unsafe extern "C" fn(*const c_char) -> *mut DIR);
     let read = original!(readdir, unsafe extern "C" fn(*mut DIR) -> *mut dirent);
@@ -1608,23 +1792,28 @@ unsafe extern "C" fn pnport_scandir(
                 if *__error() != 0 {
                     return Err(*__error());
                 }
-                if stream.emitted {
+                let overlay = directory_entries(&stream)?;
+                entry = directory_entry(&mut stream, &overlay)?;
+                if entry.is_null() {
                     break;
                 }
-                if !directory_eligible(&stream)? {
-                    break;
-                }
-                entry = directory_entry(&mut stream);
-            } else if CStr::from_ptr((*entry).d_name.as_ptr()).to_bytes() == b"node_modules" {
-                stream.emitted = true;
             }
             let keep = if select.is_null() {
                 true
             } else {
-                let callback: unsafe extern "C" fn(*const dirent) -> c_int =
-                    std::mem::transmute(select);
                 let _callback_guard = CallbackGuard::enter();
-                callback(entry) != 0
+                match callbacks {
+                    DirectoryCallbacks::Functions => {
+                        let callback: unsafe extern "C" fn(*const dirent) -> c_int =
+                            std::mem::transmute(select);
+                        callback(entry) != 0
+                    }
+                    DirectoryCallbacks::Blocks => {
+                        type Select = unsafe extern "C" fn(*const c_void, *const dirent) -> c_int;
+                        let block = &*select.cast::<DirectoryBlock<Select>>();
+                        (block.invoke)(select, entry) != 0
+                    }
+                }
             };
             if keep {
                 entries.try_reserve(1).map_err(|_| ENOMEM)?;
@@ -1652,13 +1841,14 @@ unsafe extern "C" fn pnport_scandir(
         errno(code);
         return -1;
     }
-    publish_directory_scan(entries, namelist, compar)
+    publish_directory_scan(entries, namelist, compar, callbacks)
 }
 
 unsafe fn publish_directory_scan(
     entries: Vec<*mut dirent>,
     namelist: *mut c_void,
     compar: *const c_void,
+    callbacks: DirectoryCallbacks,
 ) -> c_int {
     let Ok(count) = c_int::try_from(entries.len()) else {
         for entry in entries {
@@ -1678,15 +1868,25 @@ unsafe fn publish_directory_scan(
     if !entries.is_empty() {
         ptr::copy_nonoverlapping(entries.as_ptr(), list, entries.len());
         if !compar.is_null() {
-            let callback: unsafe extern "C" fn(*const c_void, *const c_void) -> c_int =
-                std::mem::transmute(compar);
             let _callback_guard = CallbackGuard::enter();
-            libc::qsort(
-                list.cast(),
-                entries.len(),
-                std::mem::size_of::<*mut dirent>(),
-                Some(callback),
-            );
+            match callbacks {
+                DirectoryCallbacks::Functions => {
+                    let callback: unsafe extern "C" fn(*const c_void, *const c_void) -> c_int =
+                        std::mem::transmute(compar);
+                    libc::qsort(
+                        list.cast(),
+                        entries.len(),
+                        std::mem::size_of::<*mut dirent>(),
+                        Some(callback),
+                    );
+                }
+                DirectoryCallbacks::Blocks => crate::libc::qsort_b(
+                    list.cast(),
+                    entries.len(),
+                    std::mem::size_of::<*mut dirent>(),
+                    compar,
+                ),
+            }
         }
     }
     *namelist.cast::<*mut *mut dirent>() = list;
@@ -1699,6 +1899,12 @@ const _: () = {
     static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
         _new: pnport_scandir as *const c_void,
         _old: crate::libc::scandir as *const c_void,
+    };
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut BLOCKS: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_scandir_b as *const c_void,
+        _old: crate::libc::scandir_b as *const c_void,
     };
 };
 hook!(lstat, pnport_lstat, (path:*const c_char,output:*mut stat) -> c_int, {
@@ -1714,6 +1920,158 @@ hook!(rename, pnport_rename, (from:*const c_char,to:*const c_char) -> c_int, {
     let Some(_guard)=Guard::enter() else {return original(from,to);};
     if RUNTIME.get().is_none() {return original(from,to);}
     let (from,_)=translated!(from,AT_FDCWD,true,false,-1);let (to,_)=translated!(to,AT_FDCWD,true,false,-1);original(from.as_ptr(),to.as_ptr())
+});
+hook!(renameat, pnport_renameat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char) -> c_int, {
+    let original=original!(renameat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to);}
+    let (from,_)=translated!(from,from_fd,true,false,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr())
+});
+hook!(renamex_np, pnport_renamex, (from:*const c_char,to:*const c_char,flags:libc::c_uint) -> c_int, {
+    let original=original!(renamex_np,unsafe extern "C" fn(*const c_char,*const c_char,libc::c_uint)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to,flags);};
+    if RUNTIME.get().is_none() {return original(from,to,flags);}
+    let (from,_)=translated!(from,AT_FDCWD,true,false,-1);
+    let (to,_)=translated!(to,AT_FDCWD,true,false,-1);
+    original(from.as_ptr(),to.as_ptr(),flags)
+});
+hook!(renameatx_np, pnport_renameatx, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:libc::c_uint) -> c_int, {
+    let original=original!(renameatx_np,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,libc::c_uint)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let (from,_)=translated!(from,from_fd,true,false,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr(),flags)
+});
+// Darwin's sys/clonefile.h flags are absent from Rust libc's constants.
+const CLONE_NOFOLLOW: u32 = 0x0001;
+const CLONE_NOOWNERCOPY: u32 = 0x0002;
+const CLONE_ACL: u32 = 0x0004;
+const CLONE_NOFOLLOW_ANY: u32 = 0x0008;
+const CLONE_RESOLVE_BENEATH: u32 = 0x0010;
+
+const fn clone_policy(flags: u32) -> std::result::Result<(bool, SymlinkPolicy), c_int> {
+    if flags
+        & !(CLONE_NOFOLLOW
+            | CLONE_NOOWNERCOPY
+            | CLONE_ACL
+            | CLONE_NOFOLLOW_ANY
+            | CLONE_RESOLVE_BENEATH)
+        != 0
+    {
+        return Err(EINVAL);
+    }
+    Ok((
+        flags & CLONE_NOFOLLOW == 0,
+        if flags & CLONE_NOFOLLOW_ANY != 0 {
+            SymlinkPolicy::Reject
+        } else {
+            SymlinkPolicy::Allow
+        },
+    ))
+}
+
+struct ClonePaths {
+    source: CString,
+    destination: CString,
+    native: bool,
+}
+
+const fn clone_native_path(translation: &Translation) -> bool {
+    !translation.readonly && matches!(translation.kind, PathKind::Native | PathKind::ToolCache)
+}
+
+unsafe fn clone_paths(
+    from_fd: c_int,
+    from: *const c_char,
+    to_fd: c_int,
+    to: *const c_char,
+    flags: u32,
+) -> std::result::Result<ClonePaths, c_int> {
+    let (follow, policy) = clone_policy(flags)?;
+    // Cloning reads the source without changing its inode/link count. Only
+    // destination creation needs write authority, unlike hard-link creation.
+    let (source, source_translation) = translate_following(from, from_fd, false, follow, policy)?;
+    let (destination, destination_translation) =
+        translate_following(to, to_fd, true, follow, policy)?;
+    let native =
+        clone_native_path(&source_translation) && clone_native_path(&destination_translation);
+    if flags & CLONE_RESOLVE_BENEATH != 0 && !native {
+        // Absolute backing rewrites cannot retain descriptor-relative beneath
+        // constraints. Fail without creation until bounded managed support exists.
+        return Err(ENOTSUP);
+    }
+    Ok(ClonePaths {
+        source,
+        destination,
+        native,
+    })
+}
+
+hook!(clonefile, pnport_clonefile, (from:*const c_char,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(clonefile,unsafe extern "C" fn(*const c_char,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to,flags);};
+    if RUNTIME.get().is_none() {return original(from,to,flags);}
+    let paths=match clone_paths(AT_FDCWD,from,AT_FDCWD,to,flags) {
+        Ok(paths)=>paths,Err(code)=>{errno(code);return -1;}
+    };
+    if paths.native {original(from,to,flags)}
+    else {original(paths.source.as_ptr(),paths.destination.as_ptr(),flags)}
+});
+hook!(clonefileat, pnport_clonefileat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(clonefileat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let paths=match clone_paths(from_fd,from,to_fd,to,flags) {
+        Ok(paths)=>paths,Err(code)=>{errno(code);return -1;}
+    };
+    if paths.native {original(from_fd,from,to_fd,to,flags)}
+    else {original(AT_FDCWD,paths.source.as_ptr(),AT_FDCWD,paths.destination.as_ptr(),flags)}
+});
+hook!(fclonefileat, pnport_fclonefileat, (from_fd:c_int,to_fd:c_int,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(fclonefileat,unsafe extern "C" fn(c_int,c_int,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,to_fd,to,flags);}
+    let (follow,policy)=match clone_policy(flags) {Ok(policy)=>policy,Err(code)=>{errno(code);return -1;}};
+    let (destination,translation)=translated!(to,to_fd,true,follow,policy,-1);
+    if clone_native_path(&translation) {return original(from_fd,to_fd,to,flags);}
+    if flags & CLONE_RESOLVE_BENEATH!=0 {errno(ENOTSUP);return -1;}
+    original(from_fd,AT_FDCWD,destination.as_ptr(),flags)
+});
+hook!(link, pnport_link, (from:*const c_char,to:*const c_char) -> c_int, {
+    let original=original!(link,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to);};
+    if RUNTIME.get().is_none() {return original(from,to);}
+    // Creating another hard link changes the source inode's link count too.
+    // Darwin link follows the source's final symlink, unlike unflagged linkat.
+    let (from,_)=translated!(from,AT_FDCWD,true,true,-1);
+    let (to,_)=translated!(to,AT_FDCWD,true,false,-1);
+    original(from.as_ptr(),to.as_ptr())
+});
+hook!(linkat, pnport_linkat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:c_int) -> c_int, {
+    let original=original!(linkat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,c_int)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let (from,_)=translated!(from,from_fd,true,flags & libc::AT_SYMLINK_FOLLOW != 0,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr(),flags)
+});
+hook!(symlink, pnport_symlink, (target:*const c_char,path:*const c_char) -> c_int, {
+    let original=original!(symlink,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(target,path);};
+    if RUNTIME.get().is_none() {return original(target,path);}
+    // The target is stored verbatim; only the new directory entry is mutated.
+    let (path,_)=translated!(path,AT_FDCWD,true,false,-1);
+    original(target,path.as_ptr())
+});
+hook!(symlinkat, pnport_symlinkat, (target:*const c_char,fd:c_int,path:*const c_char) -> c_int, {
+    let original=original!(symlinkat,unsafe extern "C" fn(*const c_char,c_int,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(target,fd,path);};
+    if RUNTIME.get().is_none() {return original(target,fd,path);}
+    let (path,_)=translated!(path,fd,true,false,-1);
+    original(target,AT_FDCWD,path.as_ptr())
 });
 hook!(unlinkat, pnport_unlinkat, (fd:c_int,path:*const c_char,flags:c_int) -> c_int, {
     let original=original!(unlinkat,unsafe extern "C" fn(c_int,*const c_char,c_int)->c_int);

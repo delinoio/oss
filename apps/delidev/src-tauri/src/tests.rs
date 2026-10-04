@@ -101,9 +101,7 @@ fn advanced_start_preserves_native_service_ownership_before_pairing() {
     let executable = temporary.path().join("sidecar");
     // Model the Go admission boundary: desktop Start preserves a registration;
     // ordinary explicit CLI Start has independent, unchanged semantics.
-    fs::write(
-        &executable,
-        r#"#!/bin/sh
+    let script = r#"#!/bin/sh
 case "$3:$4" in
   server:desktop-launch)
     printf '%s' '{"version":1,"result":{"state":"service-managed"}}' ;;
@@ -112,15 +110,35 @@ case "$3:$4" in
     printf '%s' '{"version":1,"error":{"code":"unavailable"}}' ;;
   *) exit 2 ;;
 esac
-"#,
-    )
-    .unwrap();
+"#;
+    // A concurrent fork can retain a parent-authored script's writable file
+    // description even after fs::write returns, causing Linux ETXTBSY at exec.
+    // Keep the writer in a joined child whose descriptors cannot reach sibling
+    // fixture children. Remove this isolation only with another lifetime proof.
+    let written = Command::new("/bin/sh")
+        .env_clear()
+        .args([
+            "-c",
+            r#"umask 077; printf '%s' "$2" > "$1""#,
+            "sidecar-fixture",
+        ])
+        .arg(&executable)
+        .arg(script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(
+        written.success(),
+        "sidecar fixture writer failed: {written}"
+    );
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
     let connector = Connector::new(executable, root.clone()).unwrap();
-    assert!(matches!(
-        connector.connect(),
-        Err(NativeFailure::ServiceManaged)
-    ));
+    assert_eq!(
+        connector.connect().err(),
+        Some(NativeFailure::ServiceManaged)
+    );
     assert!(!root.join("competitor").exists());
     assert!(!root.join("desktop-client").exists());
     assert_eq!(

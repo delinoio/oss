@@ -198,7 +198,7 @@ fn recursive_terminal_links_keep_peer_identity_and_descendant_types() {
             assert!(!translated.virtual_link && !translated.readonly);
             assert_eq!(translated.physical, root_path.join(native));
         }
-        fs::create_dir(root_path.join("node_modules")).unwrap();
+        fs::create_dir_all(root_path.join("node_modules/conflicting-package")).unwrap();
         assert_eq!(
             view.translate(&root_path.join("node_modules/outer-one/node_modules/alias"))
                 .unwrap_err()
@@ -260,7 +260,7 @@ fn recursive_terminal_links_agree_for_native_paths_and_directory_handles() {
             b"source!"
         );
         assert!(!root.path().join("node_modules").exists());
-        fs::create_dir(root.path().join("node_modules")).unwrap();
+        fs::create_dir_all(root.path().join("node_modules/conflicting-package")).unwrap();
         let conflict = run();
         assert_eq!(conflict.status.code(), Some(125));
         assert!(String::from_utf8_lossy(&conflict.stderr).contains("PNPORT_FILESYSTEM_CONFLICT"));

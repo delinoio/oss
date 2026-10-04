@@ -14,6 +14,8 @@ Run `pnport doctor` for human-readable project, platform, injection, and cache c
 | Archive or cache error | Check that the installed package archive is intact and the private cache is writable; inspect [cache management](/pnport/cache). |
 | Graph-change restart notice | Stop and start the command again after PnP data or an active archive changes. |
 
+Published 0.1.0 also reports a dependency-view conflict for an empty or cache-only physical `node_modules`, including caches left by Vitest. Unreleased development builds support hidden tool-cache coexistence; see [filesystem behavior](/pnport/filesystem-and-processes#unreleased-tool-cache-support). The doctor JSON schema and exit codes remain unchanged.
+
 ## Exit codes and streams
 
 | Status | Meaning |
