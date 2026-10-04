@@ -105,10 +105,10 @@ impl OAuthHost {
                     self.stopped.store(true, Ordering::Release);
                 }
             }
-            if let Some(original) = attempts.remove(window) {
-                if let Ok(mut disposed) = self.disposed.lock() {
-                    disposed.insert(original.scope.clone());
-                }
+            if let Some(original) = attempts.remove(window)
+                && let Ok(mut disposed) = self.disposed.lock()
+            {
+                disposed.insert(original.scope.clone());
             }
         }
     }
@@ -210,12 +210,11 @@ impl OAuthHost {
                 .lock()
                 .map_err(|_| NativeFailure::Busy)?
                 .insert(scope.clone());
-            if let Some(original) = attempts.get(&scope.window) {
-                if original.scope == scope
-                    && (generation.is_empty() || original.generation == generation)
-                {
-                    attempts.remove(&scope.window);
-                }
+            if let Some(original) = attempts.get(&scope.window)
+                && original.scope == scope
+                && (generation.is_empty() || original.generation == generation)
+            {
+                attempts.remove(&scope.window);
             }
             return Ok(OAuthResult {
                 generation: generation.into(),
