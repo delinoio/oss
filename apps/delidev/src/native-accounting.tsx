@@ -32,6 +32,7 @@ function NativeSummary({ data, timeZone, open }: { data: NativeAccountingSummary
 }
 
 export function NativeAccounting({ data, open }: { data: GetUsageSummaryResponse; open: (id: string) => void }) {
-  if (data.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 || data.nativeAccounting.length !== 2) return <p role="status">Claude and OpenCode accounting is unavailable from this server version. Update the server to view it.</p>;
-  return <>{data.nativeAccounting.filter((summary) => summary.totals?.kind === AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT || summary.totals?.kind === AccountingUnitKind.OPENCODE_STEP).map((summary) => <NativeSummary key={summary.totals?.kind} data={summary} timeZone={data.analytics?.timeZone || "UTC"} open={open} />)}</>;
+  const kinds = new Set(data.nativeAccounting.map((summary) => summary.totals?.kind));
+  if (data.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 || data.nativeAccounting.length !== 2 || kinds.size !== 2 || !kinds.has(AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT) || !kinds.has(AccountingUnitKind.OPENCODE_STEP)) return <p role="status">Claude and OpenCode accounting is unavailable from this server version. Update the server to view it.</p>;
+  return <>{data.nativeAccounting.map((summary) => <NativeSummary key={summary.totals?.kind} data={summary} timeZone={data.analytics?.timeZone || "UTC"} open={open} />)}</>;
 }

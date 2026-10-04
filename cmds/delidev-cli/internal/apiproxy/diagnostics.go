@@ -73,14 +73,14 @@ type diagnosticObservations struct {
 
 func diagnosticResponse(object map[string]json.RawMessage, observations *diagnosticObservations, guard secretGuard) {
 	value := observations.value
-	var id string
-	if json.Unmarshal(object["id"], &id) == nil && domain.SafeDiagnosticID(id) && !guard.contains(id) {
-		if !observations.identityConflict && value.NativeResponseID == "" {
-			value.NativeResponseID = id
-		} else if value.NativeResponseID != id {
+	var id *string
+	if json.Unmarshal(object["id"], &id) == nil && id != nil {
+		if !domain.SafeDiagnosticID(*id) || guard.contains(*id) || value.NativeResponseID != "" && value.NativeResponseID != *id {
 			value.NativeResponseID = ""
 			value.EffectiveEffort, value.EffectiveServiceTier = nil, nil
 			observations.identityConflict = true
+		} else if !observations.identityConflict {
+			value.NativeResponseID = *id
 		}
 	}
 	if observations.identityConflict {
