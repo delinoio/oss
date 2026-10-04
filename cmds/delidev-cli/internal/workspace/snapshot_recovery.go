@@ -48,7 +48,7 @@ const maxStorageRemovalClaim = maxSnapshotManifest
 // manifest bounds the original path inventory; the larger journal ceiling holds
 // its active prepared/renamed projection plus the bounded header baseline.
 // Settled history is compacted atomically before admitting another record.
-const maxStorageRemovalJournal = 4 * maxSnapshotManifest
+const maxStorageRemovalJournal = 8 * maxSnapshotManifest
 
 type storageRemovalRename struct {
 	Original     string `json:"original"`
@@ -428,7 +428,11 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 		for i, rename := range mappings {
 			originalPresent, privatePresent := false, false
 			for _, entry := range current.Entries {
-				if entry.Path == rename.Original {
+				logical, mapped := mappingFor(entry.Path)
+				if !mapped {
+					logical = entry.Path
+				}
+				if logical == rename.Original && entry.Path != rename.Private {
 					originalPresent = true
 				}
 				if entry.Path == rename.Private {

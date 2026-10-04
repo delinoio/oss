@@ -2,10 +2,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"reflect"
 	"time"
 
 	"connectrpc.com/connect"
@@ -552,6 +554,7 @@ func finishStorageRecovery(tx *store.Tx, input workspace.StorageRequest, output 
 	}
 	now := time.Now().UTC()
 	job.State = output.RecoveredJobState
+	job.StorageReconciledBy = input.OperationID
 	job.FinishedAt = &now
 	job.Output = nil
 	job.Problem = domain.Fail(domain.Canceled, "The original storage operation was reconciled without repeating its side effects.", "Use its successful explicit recovery job to inspect the retained workspace/snapshot state.")
@@ -585,6 +588,7 @@ func finishStorageRecovery(tx *store.Tx, input workspace.StorageRequest, output 
 			return workspace.ResultUncertain()
 		}
 		j.State = domain.JobSucceeded
+		j.StorageReconciledBy = input.OperationID
 		j.Problem = nil
 		j.FinishedAt = &now
 		comparison := output
@@ -659,4 +663,50 @@ func (s *Service) CancelWorkspaceStorageOperation(ctx context.Context, req *conn
 	response := connect.NewResponse(&pb.CancelWorkspaceStorageOperationResponse{Job: rpc.Resource(record), Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+// This is only a read acknowledgement of a successful explicit recovery. It
+// retains the original report's receipt identity, never repeats its native work
+// and cannot turn an uncertain job into a settled job.
+func validateReconciledStorageReport(tx *store.Tx, record store.Record, job domain.Job, actor domain.Principal, machine, instance domain.ID, revision uint64) error {
+	if job.Type != domain.WorkspaceStorageJob || !job.State.Terminal() || job.StorageReconciledBy.Validate() != nil || job.MachineID != machine || job.InstanceID != instance || job.AssignedDeviceID == "" || job.AssignedDeviceID != actor.DeviceID {
+		return workspace.ResultUncertain()
+	}
+	assigned, err := tx.JobAssignment(record.ID)
+	if err != nil {
+		return err
+	}
+	claim, err := store.Decode[domain.Job](assigned)
+	if err != nil || assigned.Revision != revision || assigned.SessionID != record.SessionID || assigned.ProjectID != record.ProjectID || claim.State != domain.JobClaimed || claim.MachineID != machine || claim.InstanceID != instance || claim.AssignedDeviceID != actor.DeviceID || !bytes.Equal(claim.Input, job.Input) {
+		return workspace.ResultUncertain()
+	}
+	recovered, err := tx.Get(domain.JobKind, job.StorageReconciledBy)
+	if err != nil {
+		return err
+	}
+	recovery, err := store.Decode[domain.Job](recovered)
+	if err != nil || recovery.Type != domain.WorkspaceStorageJob || recovery.State != domain.JobSucceeded || recovery.MachineID != machine || recovery.AssignedDeviceID != actor.DeviceID || recovered.SessionID != record.SessionID || recovered.ProjectID != record.ProjectID {
+		return workspace.ResultUncertain()
+	}
+	var original, input workspace.StorageRequest
+	var output workspace.StorageResult
+	if domain.Decode(job.Input, &original) != nil || domain.Decode(recovery.Input, &input) != nil || domain.Decode(recovery.Output, &output) != nil || input.Action != workspace.StorageRecover || input.Recovery == nil || input.OperationID != recovered.ID || output.OperationID != recovered.ID || output.RecoveredJobID != input.Recovery.Original.OperationID || !output.CleanupVerified {
+		return workspace.ResultUncertain()
+	}
+	sum := sha256.Sum256(assigned.Data)
+	proven := false
+	for _, pin := range input.Recovery.Claims {
+		proven = proven || pin.JobID == record.ID && pin.InstanceID == instance && pin.Revision == revision && pin.AssignmentDigest == hex.EncodeToString(sum[:])
+	}
+	if !proven {
+		return workspace.ResultUncertain()
+	}
+	if original.Action == workspace.StorageRecover {
+		if original.Recovery == nil || !reflect.DeepEqual(original.Recovery.Original, input.Recovery.Original) {
+			return workspace.ResultUncertain()
+		}
+	} else if original.OperationID != record.ID || !reflect.DeepEqual(original, input.Recovery.Original) {
+		return workspace.ResultUncertain()
+	}
+	return nil
 }

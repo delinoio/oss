@@ -177,3 +177,34 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 		}
 	}
 }
+
+func TestRemovalRecoveryClearsRestoredChildMappingUnderClaimedParent(t *testing.T) {
+	m, prepare, manifest := chatExecutionFixture(t)
+	captureStorageFailureLogs(t, m)
+	for _, name := range []string{"first", "last"} {
+		if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, name), []byte("original"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StorageCreate, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+	created := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotDigest, input.SnapshotMetadata = StorageDelete, domain.NewID(), created.Snapshot.SHA256, created.Snapshot
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.storageAfterRemovalClaim = func(name string) {
+		if name == "workspace/chat/first" {
+			cancel()
+		}
+	}
+	if _, err := m.Storage(ctx, input); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("child claim did not interrupt", err)
+	}
+	m = &Manager{Root: m.Root, Logger: m.Logger}
+	result, err := m.Storage(context.Background(), recoveryRequest(input))
+	if err != nil || !result.CleanupVerified || result.Snapshot == nil || !result.Snapshot.Deleted {
+		t.Fatal("restored child name remained falsely pending", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, "first")); err != nil || string(raw) != "original" {
+		t.Fatal("snapshot removal changed live source", err)
+	}
+}

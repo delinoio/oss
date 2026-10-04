@@ -115,17 +115,18 @@ const (
 func (s JobState) Terminal() bool { return s == JobSucceeded || s == JobFailed || s == JobCanceled }
 
 type Job struct {
-	Type             JobType         `json:"type"`
-	State            JobState        `json:"state"`
-	MachineID        ID              `json:"machine_id,omitempty"`
-	InstanceID       ID              `json:"instance_id,omitempty"`
-	AssignedDeviceID ID              `json:"assigned_device_id,omitempty"`
-	ParentID         ID              `json:"parent_id,omitempty"`
-	Input            json.RawMessage `json:"input"`
-	Output           json.RawMessage `json:"output,omitempty"`
-	Problem          *Error          `json:"problem,omitempty"`
-	AcceptedAt       time.Time       `json:"accepted_at"`
-	FinishedAt       *time.Time      `json:"finished_at,omitempty"`
+	Type                JobType         `json:"type"`
+	State               JobState        `json:"state"`
+	MachineID           ID              `json:"machine_id,omitempty"`
+	InstanceID          ID              `json:"instance_id,omitempty"`
+	AssignedDeviceID    ID              `json:"assigned_device_id,omitempty"`
+	ParentID            ID              `json:"parent_id,omitempty"`
+	StorageReconciledBy ID              `json:"storage_reconciled_by,omitempty"`
+	Input               json.RawMessage `json:"input"`
+	Output              json.RawMessage `json:"output,omitempty"`
+	Problem             *Error          `json:"problem,omitempty"`
+	AcceptedAt          time.Time       `json:"accepted_at"`
+	FinishedAt          *time.Time      `json:"finished_at,omitempty"`
 }
 
 const (
@@ -154,6 +155,11 @@ func (j Job) Validate() error {
 	}
 	if j.AssignedDeviceID != "" && (j.State == JobQueued || j.InstanceID == "") {
 		return Fail(InvalidArgument, "A Worker device requires an original claimed process.", "Bind the paired device only when claiming a queued operation.")
+	}
+	if j.StorageReconciledBy != "" {
+		if j.StorageReconciledBy.Validate() != nil || j.Type != WorkspaceStorageJob || !j.State.Terminal() {
+			return Fail(InvalidArgument, "Storage reconciliation requires a terminal original storage job.", "Preserve its successful explicit recovery reference.")
+		}
 	}
 	maxInput := maxJobDocumentBytes
 	// Compaction carries the immutable source assignment and a fresh restore

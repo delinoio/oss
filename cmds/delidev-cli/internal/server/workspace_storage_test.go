@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -106,6 +107,12 @@ func (f *storageFixture) claim(job *pb.Resource) *pb.Resource {
 		}
 		j.State = domain.JobClaimed
 		j.InstanceID = f.instance
+		digest := sha256.Sum256([]byte(f.workerIdentity.Token))
+		actor, err := tx.Authenticate(digest[:])
+		if err != nil {
+			return nil, err
+		}
+		j.AssignedDeviceID = actor.DeviceID
 		// Paired worker report authorization still independently checks its machine
 		// and current instance through the real authenticated Connect handler.
 		claimed, err = tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, j)

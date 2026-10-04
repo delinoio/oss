@@ -189,3 +189,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Migration 28 bounds relevant configuration/device metadata, not total retained history. Check original affected account references and unsettled session/job ownership directly in SQLite without loading or charging unrelated messages/jobs against retirement bounds.
 
 - Worker network transfer, pending-pairing and native-runtime pins reuse existing metadata with strict original UUID/generation/digest validation. Keep ciphertext and protected derivatives outside SQLite. Remove native job pins with ordinary/session job purge; preserve pending pairing and current routing through their independent authority and restore boundary. Periodic unchanged acknowledgements do not republish Machine state.
+
+- A terminal workspace-storage job may retain one immutable `storage_reconciled_by` reference established only while settling an uncertain original through successful explicit recovery. It authorizes no native replay; verify original device/instance, immutable assignment and the successful recovery claim before acknowledging a stale original report.

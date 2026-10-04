@@ -183,3 +183,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Failed or canceled workspace-storage recovery restores the original uncertain predecessor as the retry anchor. An uncertain recovery retains its assignment chain; terminal failure cannot become recovery authority or settle the predecessor.
 
 - Workspace-storage admission reserves one new job within the 4,096-job permanent deletion plan bound, including exact terminal-page boundaries. Cleanup and cleanup recovery reserve an additional restore slot; other operations while stored preserve that slot. Full inventory rejects before job/session publication.
+
+- A stale original storage report may acknowledge only an independently completed explicit recovery, with its exact immutable assignment, original instance/device, revision, input and recovery-claim digest. Preserve the original UUID receipt through the ordinary report transaction without another state/native mutation. The Worker clears only that pending report receipt and marks its journal reported; the successful recovery owns removal-intent retirement. Uncertain or unproven originals retain their receipt and native evidence.
