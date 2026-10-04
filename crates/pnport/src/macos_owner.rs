@@ -278,6 +278,10 @@ impl Owner {
                     records_valid = recovered.is_ok(),
                     "Retained private admitted ownership during control recovery"
                 );
+                // Private history survives deleted records, but invalid journal
+                // content must still fail the session before any tty transfer.
+                // Shutdown independently retains the proven in-memory births.
+                recovered.map_err(|_| failure())?;
                 self.registry.owns_group(group).map_err(|_| failure())
             }
         }
@@ -744,6 +748,23 @@ mod tests {
             std::fs::remove_file(entry.unwrap().path()).unwrap();
         }
         owner.child.kill().unwrap();
+        assert!(owner.stop(libc::SIGTERM).is_err());
+        assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGTERM));
+    }
+
+    #[test]
+    fn foreground_recovery_rejects_invalid_records_but_retains_cleanup() {
+        let session = tempfile::tempdir().unwrap();
+        let mut owner = super::Owner::start(session.path()).unwrap();
+        let mut child = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        owner.admit_root(child.id() as i32).unwrap();
+        std::fs::write(session.path().join("owner/accepted/invalid"), b"{}").unwrap();
+        owner.child.kill().unwrap();
+        assert!(owner.owns_group(child.id() as i32).is_err());
         assert!(owner.stop(libc::SIGTERM).is_err());
         assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGTERM));
     }
