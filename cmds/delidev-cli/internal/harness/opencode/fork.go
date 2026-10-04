@@ -46,7 +46,10 @@ func InspectForkSourceCheckpoint(ctx context.Context, home string, raw []byte, r
 	if runtime.GOOS == "windows" || forkSourceProfile(source) != nil {
 		return incompatible()
 	}
-	return InspectCheckpoint(ctx, home, raw, ref)
+	if err := InspectCheckpoint(ctx, home, raw, ref); err != nil {
+		return err
+	}
+	return checkForkCheckpointCapacity(source)
 }
 
 // InspectForkSourceInventory returns the complete content-free source identity
@@ -68,8 +71,11 @@ func InspectForkSourceInventory(ctx context.Context, home string, raw []byte, re
 // settings. Every mutation is durably claimed before its one original send.
 // Lost acknowledgments reconcile only exact state in this owned copied runtime.
 func PrepareForkAPI(ctx context.Context, config APIExecutionConfig, sourceHome string, sourceRaw []byte, sourceRef CheckpointReference, target string, requests ForkRequests) (raw []byte, ref CheckpointReference, returned error) {
-	if requests.Validate() != nil || config.Settings.Agent != BuildAgent || config.Settings.Permission == nil || len(config.Settings.Permission) != 0 || len(config.References) != 0 || !forkWorkspacesDisjoint(config.Workspace, target) || !canonicalDirectory(target) || InspectForkSourceCheckpoint(ctx, sourceHome, sourceRaw, sourceRef) != nil {
+	if requests.Validate() != nil || config.Settings.Agent != BuildAgent || config.Settings.Permission == nil || len(config.Settings.Permission) != 0 || len(config.References) != 0 || !forkWorkspacesDisjoint(config.Workspace, target) || !canonicalDirectory(target) {
 		return nil, ref, incompatible()
+	}
+	if err := InspectForkSourceCheckpoint(ctx, sourceHome, sourceRaw, sourceRef); err != nil {
+		return nil, ref, err
 	}
 	if _, err := GlobalWorkspaceRoot(target); err != nil {
 		return nil, ref, err
@@ -278,6 +284,9 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	files, err := checkpointFiles(ctx, s.runtimeHome)
 	if err != nil {
 		return nil, ref, err
+	}
+	if !validForkRuntimeInventory(files) {
+		return nil, ref, sessionUncertain()
 	}
 	proof := &nativeCheckpointFork{Version: 1, RequestID: requests.Fork, SourceReference: sourceRef, SourceWorkspace: source.Workspace, SourceHistories: checkpointHistories(source), ClonedHistories: histories, Identities: identities, SelectionPending: true}
 	ref = CheckpointReference{OwnerID: s.owner, CreationRequestID: requests.Fork, InputRequestID: last.RequestID, SessionID: identity.id, InputID: last.InputID, PartID: last.Messages[0].Parts[0].ID, InputSHA256: sourceRef.InputSHA256, HistorySHA256: last.Digest}
@@ -513,7 +522,7 @@ func forkWorkspacesDisjoint(source, target string) bool {
 // private full-file validation. It grants no restoration or mutation authority.
 func InspectForkCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference) ([]ForkMessageIdentity, error) {
 	c, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || c.Fork == nil || !c.Fork.SelectionPending || len(checkpointHistories(c)) != len(c.Fork.ClonedHistories) || InspectCheckpoint(ctx, home, raw, ref) != nil {
+	if err != nil || c.Fork == nil || !c.Fork.SelectionPending || !validForkRuntimeInventory(c.Files) || len(checkpointHistories(c)) != len(c.Fork.ClonedHistories) || InspectCheckpoint(ctx, home, raw, ref) != nil {
 		return nil, sessionUncertain()
 	}
 	return cloneForkProof(c.Fork).Identities, nil

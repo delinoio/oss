@@ -16,3 +16,5 @@
 - Native checkpoint metadata uses the strict declared 8 MiB decoder ceiling, retaining canonical bytes and independent complete private-file inventory verification. Fork source inventory exposes content-free original IDs only after full private checkpoint/profile validation; it grants no native mutation or inference authority.
 
 - The foreground child profile excludes native question tools as well as nested task tools in both live events and final independent histories. Completed historical questions cannot establish child settlement or response authority.
+
+- Fork source eligibility reserves the complete serialized child checkpoint before workspace copying or any native claim, including duplicated histories, full identities and metadata bounds under 8 MiB. Conservatively retain all source file descriptors in the estimate and reserve the separate 64 KiB fresh SQLite runtime inventory profile. Capacity exhaustion grants no mutation; unexpected native auxiliary growth cannot enlarge this profile. Follow `docs/cmds-delidev-forks-contract.md`.
