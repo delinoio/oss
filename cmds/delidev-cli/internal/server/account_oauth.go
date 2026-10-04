@@ -221,9 +221,22 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 	// Replay preserves the original attempt but cannot recover browser authority
 	// after its provider was edited or disabled.
 	if a.State == domain.OAuthAwaiting {
-		if err := s.Store.Read(ctx, func(tx *store.Tx) error { return oauthProvider(tx, a.ProviderID, a.ProviderRevision) }); err != nil {
-			s.clearOAuthLive(a.ID)
-			return nil, rpc.Error(err, c)
+		if providerErr := s.Store.Read(ctx, func(tx *store.Tx) error { return oauthProvider(tx, a.ProviderID, a.ProviderRevision) }); providerErr != nil {
+			switch domain.SafeError(providerErr).Code {
+			case domain.Unsupported, domain.NotFound, domain.PermissionDenied:
+				s.clearOAuthLive(a.ID)
+				// Admission already committed. Return its original identity so
+				// a lost Start reply cannot strand explicit cancellation when
+				// the provider changes; never recreate browser/exchange authority.
+				a, err = s.oauthUpdate(ctx, a, domain.OAuthInterrupted, func(v *domain.AccountOAuthAttempt) {
+					v.Problem = domain.Fail(domain.Conflict, "The provider changed before authorization completed.", "Cancel this original attempt and refresh the saved provider.")
+				})
+				if err != nil {
+					return nil, rpc.Error(err, c)
+				}
+			default:
+				return nil, rpc.Error(providerErr, c)
+			}
 		}
 	}
 	response := &pb.StartAccountOAuthResponse{Attempt: oauthProjection(a), RequestId: m.RequestId, Replayed: result.Replayed}

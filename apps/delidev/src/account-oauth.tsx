@@ -69,7 +69,7 @@ export function useOpenRouterOAuth() {
     value.attempt = attempt;
     if (attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_CONNECTED) { value.problem = undefined; value.openFailed = false; }
     if (current(value)) setView({ provider: value.provider, stage: stage(attempt.state), attempt, account,
-      problem: attempt.problem ? "The original result requires recovery. Inspect the OpenRouter keys dashboard; local cancellation cannot revoke a provider key. Recover only the original saved local result." : value.problem, openFailed: value.openFailed });
+      problem: attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? "Authorization is no longer available for this provider. Cancel the original attempt and refresh the provider, or use an API key instead." : "The original result requires recovery. Inspect the OpenRouter keys dashboard; local cancellation cannot revoke a provider key. Recover only the original saved local result." : value.problem, openFailed: value.openFailed });
   };
   const finish = async (value: Pending, code: Uint8Array) => {
     if (!current(value) || !value.attempt || value.completion) { code.fill(0); return; }

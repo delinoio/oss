@@ -218,3 +218,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - OAuth secret responses use byte-backed JSON parsing with duplicate-key checks at every object depth. Credentials never pass through string-backed domain readers or scalar Decoder tokens.
 
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
+
+If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.

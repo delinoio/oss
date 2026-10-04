@@ -12,7 +12,7 @@ import { SettingsLifetime } from "./settings-lifetime";
 import type { AccountProviderSummary } from "./account-settings";
 import { encode } from "./documents";
 
-function fixture(args: { complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError } = {}) {
+function fixture(args: { complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
   const providerId = newRequestId(), attemptId = newRequestId(), nativeGeneration = newRequestId();
   const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "OpenRouter", preset_id: "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
   const selected: AccountProviderSummary = { providerId, provider, displayName: "OpenRouter", enabled: true, oauthAvailable: true, keyGuidance: "", documentationUrl: "" };
@@ -20,7 +20,7 @@ function fixture(args: { complete?: (request: CompleteAccountOAuthRequest) => Pr
   let retained = attempt(), callback = false;
   const rawCode = Array.from(new TextEncoder().encode("renderer-oauth-code-sentinel"));
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 2n, documentJson: encode({ alias: "OpenRouter", provider_id: providerId, type: "api", health: "unverified", enabled: true, recovery_notifications: true }) });
-  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; return { attempt: retained, requestId: request.provider?.requestId, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
+  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; if(args.interruptedStart) {retained=attempt(State.ACCOUNT_OAUTH_STATE_INTERRUPTED,2n);retained.problem=create(ErrorDetailSchema,{code:"conflict"});return {attempt:retained,requestId:request.provider?.requestId};} return { attempt: retained, requestId: request.provider?.requestId, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
   const complete = vi.fn(async (request: CompleteAccountOAuthRequest) => { if (args.complete) await args.complete(request); retained = attempt(State.ACCOUNT_OAUTH_STATE_CONNECTED, 5n); return { attempt: retained, account, requestId: request.mutation?.requestId }; });
   const cancel = vi.fn(async (request) => { retained = attempt(State.ACCOUNT_OAUTH_STATE_CANCELED, 2n); return { attempt: retained, requestId: request.mutation?.requestId }; });
   const status = vi.fn(async () => ({ attempt: retained, account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED ? account : undefined }));
@@ -154,4 +154,14 @@ it.each([Code.Unavailable,Code.Aborted,Code.Unimplemented])("an unproven Start f
  expect(f.start.mock.calls[1][0].provider?.requestId).toBe(original);
  expect(f.native.mock.calls.filter(call=>call[1]===OAuthNativeAction.Begin)).toHaveLength(1);
  expect(f.cancel).not.toHaveBeenCalled();expect(f.manual).not.toHaveBeenCalled();
+});
+
+it("a changed-provider original Start returns interruption ownership for explicit cancellation",async()=>{
+ const f=fixture({interruptedStart:true});
+ fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
+ await screen.findByText("Authorization was interrupted");
+ expect(f.native.mock.calls.filter(call=>call[1]===OAuthNativeAction.BindOpen)).toHaveLength(0);
+ fireEvent.click(screen.getByRole("button",{name:"Use an API key instead"}));
+ await waitFor(()=>expect(f.manual).toHaveBeenCalledTimes(1));
+ expect(f.cancel).toHaveBeenCalledTimes(1);expect(f.complete).not.toHaveBeenCalled();expect(f.start).toHaveBeenCalledTimes(1);
 });

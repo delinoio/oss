@@ -445,9 +445,13 @@ func TestOAuthStartRejectedAdmissionIsDistinctFromPostAdmissionFailure(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.s.StartAccountOAuth(f.ctx, connect.NewRequest(&pb.StartAccountOAuthRequest{Provider: &pb.Mutation{Id: f.provider.Id, ExpectedRevision: f.provider.Revision, RequestId: started.RequestId}}))
-	if err == nil || rpc.ClientError(err).Cause != "" {
-		t.Fatal("post-admission replay granted abandonment", err)
+	replay, err := f.s.StartAccountOAuth(f.ctx, connect.NewRequest(&pb.StartAccountOAuthRequest{Provider: &pb.Mutation{Id: f.provider.Id, ExpectedRevision: f.provider.Revision, RequestId: started.RequestId}}))
+	if err != nil || !replay.Msg.Replayed || replay.Msg.Attempt.Id != started.Attempt.Id || replay.Msg.Attempt.State != pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_INTERRUPTED || replay.Msg.AuthorizationUrl != "" || replay.Msg.RequestId != started.RequestId {
+		t.Fatal("post-admission replay lost cancellation ownership", err)
+	}
+	canceled, err := f.s.CancelAccountOAuth(f.ctx, connect.NewRequest(&pb.CancelAccountOAuthRequest{Mutation: oauthMutation(replay.Msg.Attempt, domain.NewID())}))
+	if err != nil || canceled.Msg.Attempt.State != pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_CANCELED {
+		t.Fatal("original changed-provider attempt could not cancel", err)
 	}
 }
 
