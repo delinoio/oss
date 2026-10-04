@@ -80,9 +80,9 @@ int main(int argc, char **argv) {
     CHECK(fstatat(copy, "dep", &link_metadata, AT_SYMLINK_NOFOLLOW) == 0 && S_ISLNK(link_metadata.st_mode));
     CHECK(readlinkat(copy, "dep", bytes, sizeof(bytes)) > 0);
 #ifdef __linux__
-    int link = openat(copy, "dep", O_PATH | O_NOFOLLOW);
-    CHECK(link >= 0 && fstat(link, &link_metadata) == 0 && S_ISLNK(link_metadata.st_mode));
-    CHECK(readlinkat(link, "", bytes, sizeof(bytes)) > 0); close(link);
+    int link_fd = openat(copy, "dep", O_PATH | O_NOFOLLOW);
+    CHECK(link_fd >= 0 && fstat(link_fd, &link_metadata) == 0 && S_ISLNK(link_metadata.st_mode));
+    CHECK(readlinkat(link_fd, "", bytes, sizeof(bytes)) > 0); close(link_fd);
     int watcher = inotify_init1(IN_CLOEXEC); CHECK(watcher >= 0);
     CHECK(inotify_add_watch(watcher, "node_modules/dep", IN_ATTRIB | IN_DONT_FOLLOW) >= 0);
     close(watcher);
