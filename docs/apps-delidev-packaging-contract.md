@@ -126,3 +126,5 @@ notice sources, verification or publication boundaries change.
 - [Desktop contract](apps-delidev-desktop-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [License contract](repository-license-contract.md)
+
+The app Cargo manifest has exact-path LF checkout normalization. The pinned Tauri CLI parses and rewrites it before compilation, normalizing CRLF input even when its TOML meaning is unchanged. Packaging retains the strict source-revision and clean-worktree guard; canonical checkout bytes avoid that platform-only rewrite without accepting real source changes.
