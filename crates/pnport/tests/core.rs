@@ -5730,6 +5730,9 @@ fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
                 ))
                 .args(["-Wall", "-Wextra", "-Wno-deprecated-declarations", "-o"])
                 .arg(&executable);
+            if cfg!(target_os = "macos") {
+                compiler.arg("-fblocks");
+            }
             if static_binary {
                 compiler.arg("-static");
             }

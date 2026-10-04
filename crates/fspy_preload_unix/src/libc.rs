@@ -1,7 +1,7 @@
 #[cfg(not(all(target_os = "macos", feature = "pnport")))]
 pub use libc::*;
 #[cfg(all(target_os = "macos", feature = "pnport"))]
-use libc::{c_char, c_int, c_void};
+use libc::{c_char, c_int, c_long, c_void};
 
 unsafe extern "C" {
     // Rust libc maps close to close$NOCANCEL on macOS x64. The interpose
@@ -25,7 +25,7 @@ unsafe extern "C" {
         compar: *const c_void,
     ) -> c_int;
 
-    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[cfg(target_os = "macos")]
     #[cfg_attr(target_arch = "x86_64", link_name = "scandir_b$INODE64")]
     pub unsafe fn scandir_b(
         dirname: *const c_char,
@@ -34,7 +34,6 @@ unsafe extern "C" {
         compar: *const c_void,
     ) -> c_int;
 
-    #[cfg(not(all(target_os = "macos", feature = "pnport")))]
     pub unsafe fn getdirentries(
         fd: c_int,
         buf: *mut c_char,
@@ -98,11 +97,14 @@ unsafe extern "C" {
     #[link_name = "close$NOCANCEL"]
     pub unsafe fn close_nocancel(fd: c_int) -> c_int;
 
-    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[cfg(target_os = "macos")]
     pub unsafe fn __getdirentries64(
         fd: c_int,
         buf: *mut u8,
         buf_len: usize,
         basep: *mut i64,
     ) -> isize;
+
+    #[cfg(all(target_os = "macos", feature = "pnport"))]
+    pub unsafe fn qsort_b(base: *mut c_void, count: usize, size: usize, compar: *const c_void);
 }

@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,6 +51,96 @@ static int selected(const struct dirent *entry) {
     if (stat("node_modules/dep/file.txt", &metadata)) return 0;
     return entry->d_name[0] != '.' || !strcmp(entry->d_name, ".vite");
 }
+#ifdef __APPLE__
+// The supported Darwin ABI exports the 64-bit syscall entry point directly;
+// the public getdirentries declaration intentionally refuses 64-bit dirents.
+extern ssize_t __getdirentries64(int, void *, size_t, off_t *);
+extern int legacy_getdirentries(int, void *, int, long *) __asm("_getdirentries");
+struct legacy_dirent {
+    uint32_t ino;
+    uint16_t reclen;
+    uint8_t type;
+    uint8_t namlen;
+    char name[256];
+};
+static int buffer_listings(int fd, int legacy) {
+    const char *names[] = {".vite", ".new-tool", ".cache-file", "dep", "one", "two", "@scope", "workspace", "unplugged"};
+    int counts[9] = {0};
+    // Reserve large buffers too, exercising Darwin's out-of-band EOF flag.
+    union { struct dirent align; char bytes[4096]; } buffer;
+    off_t base = -1;
+    long legacy_base = -1;
+    ssize_t size;
+    CHECK(lseek(fd, 0, SEEK_SET) == 0);
+    for (;;) {
+        size = legacy ? legacy_getdirentries(fd, buffer.bytes, sizeof(buffer.bytes), &legacy_base)
+                      : __getdirentries64(fd, buffer.bytes, sizeof(buffer.bytes), &base);
+        CHECK(size >= 0);
+        if (!size) break;
+        for (ssize_t offset = 0; offset < size;) {
+            struct dirent *entry = (struct dirent *)(buffer.bytes + offset);
+            struct legacy_dirent *old = (struct legacy_dirent *)(buffer.bytes + offset);
+            const char *name = legacy ? old->name : entry->d_name;
+            unsigned short length = legacy ? old->reclen : entry->d_reclen;
+            unsigned char type = legacy ? old->type : entry->d_type;
+            CHECK(length && offset + length <= size);
+            for (int i = 0; i < 9; i++) if (!strcmp(name, names[i])) {
+                counts[i]++;
+                if (i >= 3) CHECK(type == (i == 6 ? DT_DIR : DT_LNK));
+            }
+            offset += length;
+        }
+        if (!legacy) {
+            unsigned flags;
+            memcpy(&flags, buffer.bytes + sizeof(buffer.bytes) - sizeof(flags), sizeof(flags));
+            // A caller may stop immediately when the native EOF bit is set.
+            if (flags & 1) break;
+        }
+    }
+    for (int i = 0; i < 9; i++) CHECK(counts[i] == 1);
+    size = legacy ? legacy_getdirentries(fd, buffer.bytes, sizeof(buffer.bytes), &legacy_base)
+                  : __getdirentries64(fd, buffer.bytes, sizeof(buffer.bytes), &base);
+    CHECK(size == 0);
+    if (!legacy) {
+        errno = 0; CHECK(__getdirentries64(fd, buffer.bytes, 0, &base) == -1 && errno == EINVAL);
+    }
+    return 0;
+}
+static int buffer_cookies(int fd) {
+    union { struct dirent align; char bytes[64]; } buffer;
+    off_t base = -1;
+    ssize_t size;
+    CHECK(lseek(fd, 0, SEEK_SET) == 0);
+    // Small buffers split the native and appended records across calls.
+    do { size = __getdirentries64(fd, buffer.bytes, sizeof(buffer.bytes), &base); CHECK(size > 0); }
+    while (strcmp(((struct dirent *)buffer.bytes)->d_name, "dep"));
+    off_t cookie = lseek(fd, 0, SEEK_CUR); CHECK(cookie > 0);
+    int copy = dup(fd); CHECK(copy >= 0);
+    size = __getdirentries64(copy, buffer.bytes, sizeof(buffer.bytes), &base); CHECK(size > 0);
+    char next[256]; snprintf(next, sizeof(next), "%s", ((struct dirent *)buffer.bytes)->d_name);
+    CHECK(lseek(copy, cookie, SEEK_SET) == cookie);
+    CHECK(__getdirentries64(fd, buffer.bytes, sizeof(buffer.bytes), &base) == size);
+    CHECK(!strcmp(((struct dirent *)buffer.bytes)->d_name, next));
+    CHECK(lseek(copy, base, SEEK_SET) == base);
+    CHECK(__getdirentries64(copy, buffer.bytes, sizeof(buffer.bytes), &base) == size);
+    CHECK(!strcmp(((struct dirent *)buffer.bytes)->d_name, next));
+    // Failed copyout must leave the overlay position available for retry.
+    CHECK(lseek(copy, cookie, SEEK_SET) == cookie);
+    errno = 0; CHECK(__getdirentries64(copy, (void *)1, sizeof(buffer.bytes), &base) == -1 && errno == EFAULT);
+    CHECK(lseek(fd, 0, SEEK_CUR) == cookie);
+    errno = 0; CHECK(__getdirentries64(copy, buffer.bytes, sizeof(buffer.bytes), NULL) == -1 && errno == EFAULT);
+    CHECK(lseek(fd, 0, SEEK_CUR) == cookie);
+    errno = 0; CHECK(__getdirentries64(copy, buffer.bytes, 1, &base) == -1 && errno == EINVAL);
+    CHECK(lseek(fd, 0, SEEK_CUR) == cookie);
+    pid_t child = fork(); CHECK(child >= 0);
+    if (!child) _exit(__getdirentries64(copy, buffer.bytes, sizeof(buffer.bytes), &base) == size
+                     && !strcmp(((struct dirent *)buffer.bytes)->d_name, next) ? 0 : 1);
+    int status; CHECK(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    CHECK(lseek(fd, 0, SEEK_CUR) > cookie);
+    close(copy);
+    return 0;
+}
+#endif
 int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "conflict")) {
         int fd = open("entered", O_CREAT | O_WRONLY, 0600);
@@ -198,6 +289,34 @@ int main(int argc, char **argv) {
     int count = scandir("node_modules", &entries, selected, alphasort); CHECK(count == 7);
     for (int i = 0; i < count; i++) { free(entries[i]); }
     free(entries);
+#ifdef __APPLE__
+    __block int selections = 0, comparisons = 0;
+    count = scandir_b("node_modules", &entries, ^int(const struct dirent *entry) {
+        selections++; return selected(entry);
+    }, ^int(const struct dirent **left, const struct dirent **right) {
+        struct stat metadata;
+        if (stat("node_modules/dep/file.txt", &metadata)) return 0;
+        comparisons++; return strcmp((*left)->d_name, (*right)->d_name);
+    });
+    CHECK(count == 7 && selections >= 9 && comparisons > 0);
+    for (int i = 0; i < count; i++) {
+        if (i) CHECK(strcmp(entries[i - 1]->d_name, entries[i]->d_name) < 0);
+    }
+    for (int i = 0; i < count; i++) free(entries[i]);
+    free(entries);
+    count = scandir_b("node_modules/.vite", &entries, ^int(const struct dirent *entry) {
+        return selected(entry);
+    }, NULL);
+    CHECK(count == 1 && !strcmp(entries[0]->d_name, "results.json"));
+    free(entries[0]); free(entries);
+    count = scandir_b("node_modules", &entries, NULL, NULL); CHECK(count >= 9);
+    for (int i = 0; i < count; i++) free(entries[i]);
+    free(entries);
+    CHECK(buffer_listings(root, 0) == 0);
+    CHECK(buffer_listings(root, 1) == 0);
+    CHECK(buffer_cookies(root) == 0);
+    errno = 0; CHECK(__getdirentries64(-1, bytes, sizeof(bytes), NULL) == -1 && errno == EBADF);
+#endif
     CHECK(lseek(root, 0, SEEK_SET) == 0);
     pid_t child = fork(); CHECK(child >= 0);
     if (!child) { DIR *shared = fdopendir(copy); _exit(shared && listings(shared) == 0 ? 0 : 1); }

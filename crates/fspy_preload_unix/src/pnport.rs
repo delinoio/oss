@@ -1626,17 +1626,64 @@ hook!(closedir, pnport_closedir, (dir:*mut DIR) -> c_int, {
     original(dir)
 });
 
+mod directory;
+
+#[derive(Clone, Copy)]
+enum DirectoryCallbacks {
+    Functions,
+    Blocks,
+}
+
+// Only the common ABI prefix is read; callbacks do not escape scandir_b.
+// https://clang.llvm.org/docs/Block-ABI-Apple.html#high-level
+#[repr(C)]
+struct DirectoryBlock<F> {
+    _isa: *const c_void,
+    _flags: c_int,
+    _reserved: c_int,
+    invoke: F,
+}
+
 unsafe extern "C" fn pnport_scandir(
     path: *const c_char,
     namelist: *mut c_void,
     select: *const c_void,
     compar: *const c_void,
 ) -> c_int {
+    scan_directory(
+        path,
+        namelist,
+        select,
+        compar,
+        DirectoryCallbacks::Functions,
+    )
+}
+
+unsafe extern "C" fn pnport_scandir_b(
+    path: *const c_char,
+    namelist: *mut c_void,
+    select: *const c_void,
+    compar: *const c_void,
+) -> c_int {
+    scan_directory(path, namelist, select, compar, DirectoryCallbacks::Blocks)
+}
+
+unsafe fn scan_directory(
+    path: *const c_char,
+    namelist: *mut c_void,
+    select: *const c_void,
+    compar: *const c_void,
+    callbacks: DirectoryCallbacks,
+) -> c_int {
+    let native = match callbacks {
+        DirectoryCallbacks::Functions => crate::libc::scandir,
+        DirectoryCallbacks::Blocks => crate::libc::scandir_b,
+    };
     let Some(_guard) = Guard::enter() else {
-        return crate::libc::scandir(path, namelist, select, compar);
+        return native(path, namelist, select, compar);
     };
     if RUNTIME.get().is_none() {
-        return crate::libc::scandir(path, namelist, select, compar);
+        return native(path, namelist, select, compar);
     }
     let (path, translation) = translated!(path, AT_FDCWD, false, -1);
     let mut stream = DirectoryStream {
@@ -1655,7 +1702,7 @@ unsafe extern "C" fn pnport_scandir(
     };
     if overlay.is_empty() {
         let _callback_guard = CallbackGuard::enter();
-        return crate::libc::scandir(path.as_ptr(), namelist, select, compar);
+        return native(path.as_ptr(), namelist, select, compar);
     }
     let open = original!(opendir, unsafe extern "C" fn(*const c_char) -> *mut DIR);
     let read = original!(readdir, unsafe extern "C" fn(*mut DIR) -> *mut dirent);
@@ -1682,10 +1729,19 @@ unsafe extern "C" fn pnport_scandir(
             let keep = if select.is_null() {
                 true
             } else {
-                let callback: unsafe extern "C" fn(*const dirent) -> c_int =
-                    std::mem::transmute(select);
                 let _callback_guard = CallbackGuard::enter();
-                callback(entry) != 0
+                match callbacks {
+                    DirectoryCallbacks::Functions => {
+                        let callback: unsafe extern "C" fn(*const dirent) -> c_int =
+                            std::mem::transmute(select);
+                        callback(entry) != 0
+                    }
+                    DirectoryCallbacks::Blocks => {
+                        type Select = unsafe extern "C" fn(*const c_void, *const dirent) -> c_int;
+                        let block = &*select.cast::<DirectoryBlock<Select>>();
+                        (block.invoke)(select, entry) != 0
+                    }
+                }
             };
             if keep {
                 entries.try_reserve(1).map_err(|_| ENOMEM)?;
@@ -1713,13 +1769,14 @@ unsafe extern "C" fn pnport_scandir(
         errno(code);
         return -1;
     }
-    publish_directory_scan(entries, namelist, compar)
+    publish_directory_scan(entries, namelist, compar, callbacks)
 }
 
 unsafe fn publish_directory_scan(
     entries: Vec<*mut dirent>,
     namelist: *mut c_void,
     compar: *const c_void,
+    callbacks: DirectoryCallbacks,
 ) -> c_int {
     let Ok(count) = c_int::try_from(entries.len()) else {
         for entry in entries {
@@ -1739,15 +1796,25 @@ unsafe fn publish_directory_scan(
     if !entries.is_empty() {
         ptr::copy_nonoverlapping(entries.as_ptr(), list, entries.len());
         if !compar.is_null() {
-            let callback: unsafe extern "C" fn(*const c_void, *const c_void) -> c_int =
-                std::mem::transmute(compar);
             let _callback_guard = CallbackGuard::enter();
-            libc::qsort(
-                list.cast(),
-                entries.len(),
-                std::mem::size_of::<*mut dirent>(),
-                Some(callback),
-            );
+            match callbacks {
+                DirectoryCallbacks::Functions => {
+                    let callback: unsafe extern "C" fn(*const c_void, *const c_void) -> c_int =
+                        std::mem::transmute(compar);
+                    libc::qsort(
+                        list.cast(),
+                        entries.len(),
+                        std::mem::size_of::<*mut dirent>(),
+                        Some(callback),
+                    );
+                }
+                DirectoryCallbacks::Blocks => crate::libc::qsort_b(
+                    list.cast(),
+                    entries.len(),
+                    std::mem::size_of::<*mut dirent>(),
+                    compar,
+                ),
+            }
         }
     }
     *namelist.cast::<*mut *mut dirent>() = list;
@@ -1760,6 +1827,12 @@ const _: () = {
     static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
         _new: pnport_scandir as *const c_void,
         _old: crate::libc::scandir as *const c_void,
+    };
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut BLOCKS: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_scandir_b as *const c_void,
+        _old: crate::libc::scandir_b as *const c_void,
     };
 };
 hook!(lstat, pnport_lstat, (path:*const c_char,output:*mut stat) -> c_int, {
