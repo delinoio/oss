@@ -506,6 +506,9 @@ Omitted allocations use 2 CPUs/4096 MiB, shrinking to 1 CPU/1024 MiB; explicit v
 are never reduced. CPU/memory reservations control admission, not process usage.
 Warm capacity defaults to zero. Disk reserve is 10240 MiB unless Tart requires its
 higher reserve. `timeouts.host_preparation` defaults to `5m`; jobs default to `6h`.
+Idle host runners do not consume their job timeout. The job timeout starts with
+assignment; if removal finds a busy job whose start is unknown, Runmoor uses the
+runner creation time as a conservative bound.
 
 Each single-job execution has fresh registration, installation, HOME, temporary
 and work directories, copied from a verified immutable runner distribution.

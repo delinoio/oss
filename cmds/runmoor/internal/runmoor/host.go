@@ -151,7 +151,7 @@ func (h *HostDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	}); err != nil {
 		return err
 	}
-	bootstrap := HostBootstrap{Directory: d, Storage: c.Storage, JIT: jit, Deadline: r.CreatedAt.Add(c.JobTimeout())}
+	bootstrap := HostBootstrap{Directory: d, Storage: c.Storage, JIT: jit, Deadline: r.Deadline}
 	err = h.native().Launch(ctx, root, bootstrap, func(process HostProcess) error {
 		return h.Store.Update(func(v *Snapshot) error {
 			e := v.HostExecutions[r.ID]

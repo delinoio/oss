@@ -648,6 +648,7 @@ type fixtureHostWorker struct {
 	started  int
 	stopped  int
 	startErr error
+	deadline func(HostBootstrap, time.Time) time.Time
 }
 
 func (f *fixtureHostWorker) Start(context.Context, *os.Root, HostBootstrap) (HostProcess, <-chan int, error) {
@@ -673,7 +674,108 @@ func (f *fixtureHostWorker) Terminate(p HostProcess, force bool) error {
 	}
 	return nil
 }
-func (f *fixtureHostWorker) Deadline(_ HostBootstrap, previous time.Time) time.Time { return previous }
+func (f *fixtureHostWorker) Deadline(in HostBootstrap, previous time.Time) time.Time {
+	if f.deadline != nil {
+		return f.deadline(in, previous)
+	}
+	return previous
+}
+
+func TestHostJobDeadlineRequiresBusyAuthority(t *testing.T) {
+	c, store, native, p := hostFixture(t)
+	p = buildHostFixture(t, c, store, native, p)
+	r := prepareHostFixture(t, c, store, native, p)
+	s := store.View()
+	in := HostBootstrap{Directory: *s.HostDirectories[r.ID]}
+	for _, phase := range []RunnerPhase{Preparing, Idle, Cleaning, Completed, Quarantined} {
+		s.Runners[r.ID].Phase = phase
+		if deadline := hostJobDeadline(in, time.Time{}, s); !deadline.IsZero() {
+			t.Fatalf("%s established a job deadline: %s", phase, deadline)
+		}
+	}
+	s.Runners[r.ID].Phase = Busy
+	assigned := time.Now().Add(6 * time.Hour).UTC()
+	s.Runners[r.ID].Deadline = assigned
+	if deadline := hostJobDeadline(in, time.Time{}, s); !deadline.Equal(assigned) {
+		t.Fatal("assignment deadline was shortened", deadline)
+	}
+	// Busy-aware removal establishes the existing conservative bound when no
+	// assignment start was observed, using the execution's original generation.
+	s.Runners[r.ID].Phase = Idle
+	s.Runners[r.ID].Generation = "original"
+	s.Generations["original"] = c
+	recordBusyRemoval(&s, r.ID, Idle, nil)
+	want := r.CreatedAt.Add(c.JobTimeout())
+	if deadline := hostJobDeadline(in, time.Time{}, s); !deadline.Equal(want) {
+		t.Fatal("unknown start lost the conservative deadline", deadline)
+	}
+	s.Runners[r.ID].Phase = Cleaning
+	if deadline := hostJobDeadline(in, want, s); !deadline.Equal(want) {
+		t.Fatal("later lifecycle cleared an established deadline")
+	}
+	s.Installation = newID()
+	if deadline := hostJobDeadline(in, time.Time{}, s); !deadline.IsZero() {
+		t.Fatal("foreign installation established a deadline")
+	}
+}
+
+func TestHostSupervisorIdleAndBusyDeadlines(t *testing.T) {
+	for _, busy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "idle", true: "busy"}[busy], func(t *testing.T) {
+			c, store, _, _ := hostFixture(t)
+			d, root, err := createHostDirectory(context.Background(), store, c, newID(), HostWorkspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			process := HostProcess{PID: 77, Start: "worker-77", Group: 77}
+			worker := &fixtureHostWorker{process: process, done: make(chan int, 1), members: []HostProcess{process}}
+			startupDeadline := time.Now().Add(1100 * time.Millisecond)
+			observed := make(chan struct{}, 1)
+			worker.deadline = func(_ HostBootstrap, previous time.Time) time.Time {
+				if !time.Now().Before(startupDeadline) {
+					select {
+					case observed <- struct{}{}:
+					default:
+					}
+					if busy {
+						return startupDeadline
+					}
+				}
+				return previous
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			finished := make(chan int, 1)
+			status := HostExecutionStatus{ID: d.ID, Token: d.Token, Supervisor: HostProcess{PID: 66, Start: "supervisor-66", Group: 66}}
+			go func() {
+				finished <- superviseHost(ctx, root, HostBootstrap{Directory: d, Deadline: startupDeadline}, status, worker)
+			}()
+			select {
+			case <-observed:
+			case <-ctx.Done():
+				t.Fatal("deadline was not observed")
+			}
+			if !busy {
+				worker.mu.Lock()
+				worker.members = nil
+				worker.mu.Unlock()
+				worker.done <- 0
+			}
+			<-finished
+			final, err := hostReadStatus(root, d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if busy && (final.Phase != HostFailed || worker.stopped == 0) {
+				t.Fatal("busy timeout left a worker alive")
+			}
+			if !busy && (final.Phase != HostFinished || worker.stopped != 0) {
+				t.Fatal("idle runner was terminated on its bootstrap deadline")
+			}
+		})
+	}
+}
 
 func TestHostSupervisorMockedExitTimeoutAndCancellation(t *testing.T) {
 	for _, scenario := range []string{"immediate exit", "start failure", "cancellation", "timeout", "normal exit"} {

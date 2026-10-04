@@ -278,12 +278,7 @@ func (nativeHostWorker) Deadline(in HostBootstrap, previous time.Time) time.Time
 	if err != nil {
 		return previous
 	}
-	r := s.Runners[in.Directory.ID]
-	d := s.HostDirectories[in.Directory.ID]
-	if r == nil || d == nil || *d != in.Directory || r.Phase != Busy || r.Deadline.IsZero() {
-		return previous
-	}
-	return r.Deadline
+	return hostJobDeadline(in, previous, s)
 }
 
 func hostSupervise() int {

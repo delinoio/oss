@@ -80,6 +80,10 @@ host_preparation = "5m"
 job = "6h"
 ```
 
+Idle runners do not consume their job timeout. The job timeout starts with
+assignment; if removal finds a busy job whose start is unknown, Runmoor uses the
+runner creation time as a conservative bound.
+
 Runmoor selects official macOS arm64 runner releases, verifies their SHA-256 and
 archive contents, and prepares an immutable distribution. Omitted or `latest`
 runner versions follow managed updates; exact versions remain pins. Existing

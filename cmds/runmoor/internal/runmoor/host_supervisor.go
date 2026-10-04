@@ -64,7 +64,9 @@ func superviseHost(ctx context.Context, root *os.Root, in HostBootstrap, status 
 	}
 	check := time.NewTicker(100 * time.Millisecond)
 	defer check.Stop()
-	jobDeadline := in.Deadline
+	// The bootstrap deadline bounds startup only. Idle runners have no job
+	// deadline until assignment or busy-aware removal establishes Busy state.
+	var jobDeadline time.Time
 	for {
 		select {
 		case code := <-done:
@@ -76,12 +78,22 @@ func superviseHost(ctx context.Context, root *os.Root, in HostBootstrap, status 
 			// Assignment resets the durable six-hour job deadline. Preparation or
 			// idle time must not shorten a subsequently observed busy job's timeout.
 			jobDeadline = worker.Deadline(in, jobDeadline)
-			if !time.Now().Before(jobDeadline) {
+			if !jobDeadline.IsZero() && !time.Now().Before(jobDeadline) {
 				return finishHostGroup(context.Background(), root, status, worker, done, true)
 			}
 		}
 	}
 }
+
+func hostJobDeadline(in HostBootstrap, previous time.Time, s Snapshot) time.Time {
+	r := s.Runners[in.Directory.ID]
+	d := s.HostDirectories[in.Directory.ID]
+	if s.Installation != in.Directory.Installation || r == nil || d == nil || *d != in.Directory || r.Phase != Busy || r.Deadline.IsZero() {
+		return previous
+	}
+	return r.Deadline
+}
+
 func finishHostGroup(ctx context.Context, root *os.Root, status HostExecutionStatus, worker HostWorkerNative, done <-chan int, failed bool) int {
 	until := time.Now().Add(5 * time.Second)
 	// Uncertain termination deliberately keeps this supervisor and its ownership

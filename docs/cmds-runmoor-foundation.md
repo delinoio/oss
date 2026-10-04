@@ -397,7 +397,11 @@ pending supervisor status within its existing deadline; ownership conflicts and
 confirmed immediate exits still fail. It observes startup
 before publishing readiness, owns a separate runner process group, and continues
 across a manager-only restart. Process identity is the kernel PID, group and OS
-start time; process names and command arguments confer no ownership. Completed,
+start time. The bootstrap deadline bounds preparation only. Idle host runners
+have no job deadline. Assignment establishes the persisted busy-job deadline;
+busy-aware removal uses the existing creation-time bound for an unknown start.
+An established job deadline remains authoritative across manager restarts. Process
+names and command arguments confer no ownership. Completed,
 cancelled and timed-out executions terminate only verified group members. Missing
 supervisors, changed process identity and uncertain termination retain reservations
 and actionable recovery. Daemons escaping the managed group are unsupported.
