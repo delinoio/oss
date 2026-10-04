@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { dryRunEnvironment, verifyBundle } from "./bundle-macos-dry-run.mjs";
-import { targets, selectTarget, cefCredits, packageResources, verifyNotices, verifyNativePayload, findOneFile } from "./native-package.mjs";
+import { targets, selectTarget, cefCredits, prepareCefCredits, packageResources, verifyNotices, verifyNativePayload, findOneFile } from "./native-package.mjs";
 import { prepareAssets } from "./prepare-assets.mjs";
 import { exitLikeChild } from "../../../scripts/spawn-dev-server.mjs";
 
@@ -85,8 +85,7 @@ async function main() {
       run(process.execPath, [pnpm, "--filter", "@delinoio/delidev-api-client", "build"], true);
       run(process.execPath, [pnpm, "build"], true);
       run(process.execPath, [join(app, "scripts/prepare-sidecar.mjs"), selected.target], true);
-      run("cargo", ["build", "--locked", "--release", "--target", selected.target, "--manifest-path", "src-tauri/Cargo.toml", "--features", "desktop-host,custom-protocol", "--bin", "delidev-desktop"], true);
-      const credits = cefCredits(selected, env);
+      const credits = prepareCefCredits(selected, env, (command, arguments_) => run(command, arguments_, true));
       resources = packageResources(app, root, credits);
       const kind = selected.platform === "win32" ? "msi" : "deb";
       const config = JSON.stringify({ bundle: { resources: { [credits]: "notices/Chromium-CREDITS.html" } } });

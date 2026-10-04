@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { accessSync, constants, lstatSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, join } from "node:path";
-import { targets, cefCredits, packageResources, verifyNotices } from "./native-package.mjs";
+import { targets, prepareCefCredits, packageResources, verifyNotices } from "./native-package.mjs";
 import { prepareAssets } from "./prepare-assets.mjs";
 import { exitLikeChild } from "../../../scripts/spawn-dev-server.mjs";
 
@@ -85,9 +85,8 @@ async function main() {
   build("pnpm", ["build"]);
   build("pnpm", ["prepare:sidecar"]);
   build("pnpm", ["prepare:widget"]);
-  build("cargo", ["build", "--locked", "--release", "--manifest-path", "src-tauri/Cargo.toml", "--features", "desktop-host,custom-protocol", "--bin", "delidev-desktop"]);
   const selected = targets.find(item => item.platform === process.platform && item.arch === process.arch);
-  const credits = cefCredits(selected, env);
+  const credits = prepareCefCredits(selected, env, build);
   const resources = packageResources(app, root, credits);
   const dryRunConfig = JSON.parse(readFileSync(join(app, "src-tauri/tauri.dry-run.conf.json"), "utf8"));
   const config = JSON.stringify({ ...dryRunConfig, bundle: { ...dryRunConfig.bundle, resources: { [credits]: "notices/Chromium-CREDITS.html" } } });

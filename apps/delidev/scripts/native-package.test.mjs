@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { targets, selectTarget, binaryArchitecture, cefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
+import { targets, selectTarget, binaryArchitecture, cefCredits, prepareCefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
 import { nativeEnvironment } from "./bundle-native-dry-run.mjs";
 
 function fixture(t) {
@@ -100,4 +100,35 @@ test("Debian verification follows only the exact packaged CEF launcher", { skip:
   rmSync(join(root, "usr/bin/delidev-desktop"));
   symlinkSync("delidev", join(root, "usr/bin/delidev-desktop"));
   assert.throws(() => verifyNativePayload(root, selected), /launcher/);
+});
+
+
+test("a clean CEF cache is prepared by the pinned CLI before notice validation", t => {
+  for (const selected of targets) {
+    const home = fixture(t);
+    const environment = { LOCALAPPDATA: join(home, "local") };
+    assert.throws(() => cefCredits(selected, environment, home), /ENOENT/);
+    const cache = selected.platform === "darwin" ? join(home, "Library/Caches")
+      : selected.platform === "win32" ? environment.LOCALAPPDATA : join(home, ".cache");
+    const distribution = selected.platform === "darwin" ? `macos${selected.arch === "arm64" ? "arm64" : "x64"}`
+      : selected.platform === "win32" ? `windows${selected.arch === "arm64" ? "arm64" : "64"}` : `linux${selected.arch === "arm64" ? "arm64" : "64"}`;
+    const directory = join(cache, "tauri-cef", "150.0.10", selected.cef);
+    let prepared = 0;
+    const credits = prepareCefCredits(selected, environment, (command, args) => {
+      assert.equal(command, "cargo");
+      assert.ok(args.includes("--locked"));
+      assert.equal(args[args.indexOf("--bin") + 1], "delidev-tauri-cli");
+      assert.ok(args.includes("--no-bundle"));
+      assert.ok(args.includes("desktop-host,custom-protocol,tauri/cef"));
+      if (selected.platform !== "darwin") assert.equal(args[args.indexOf("--target") + 1], selected.target);
+      write(directory, "archive.json", JSON.stringify({ type: "minimal", name: `cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_${distribution}_minimal.tar.bz2` }));
+      write(directory, "CREDITS.html", "original notices");
+      prepared++;
+    }, home);
+    assert.equal(prepared, 1);
+    assert.equal(credits, join(directory, "CREDITS.html"));
+    assert.throws(() => prepareCefCredits(selected, environment, () => { throw new Error("preparation failed"); }, home), /preparation failed/);
+    write(directory, "archive.json", JSON.stringify({ type: "minimal", name: "unverified.tar.bz2" }));
+    assert.throws(() => prepareCefCredits(selected, environment, () => {}, home), /pinned distribution/);
+  }
 });

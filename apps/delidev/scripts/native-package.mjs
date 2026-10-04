@@ -33,6 +33,16 @@ export function cefCredits(selected, environment, home = homedir()) {
   return credits;
 }
 
+// A bare Cargo build downloads CEF into OUT_DIR. The pinned Tauri CLI sets
+// its own versioned cache for that build; prepare it before reading or bundling
+// the original notices. Remove this extra build when upstream exposes an
+// independently verified distribution-preparation command.
+export function prepareCefCredits(selected, environment, build, home = homedir()) {
+  const target = selected.platform === "darwin" ? [] : ["--target", selected.target];
+  build("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--no-bundle", ...target, "--features", "desktop-host,custom-protocol,tauri/cef"]);
+  return cefCredits(selected, environment, home);
+}
+
 export function packageResources(app, root, credits) {
   return {
     [join(root, "LICENSE")]: "notices/LICENSE",
