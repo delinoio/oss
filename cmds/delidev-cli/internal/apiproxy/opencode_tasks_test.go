@@ -79,7 +79,7 @@ func TestOpenCodeTaskArgumentsAreCheckedBeforeExecutableFrames(t *testing.T) {
 				if err == nil || written.Len() != 0 {
 					t.Fatal("unsupported native task became executable")
 				}
-			} else if err != nil || !g.settled() || !bytes.Equal(written.Bytes(), bytes.Join([][]byte{a, b, last}, nil)) {
+			} else if err != nil || g.settled() || written.Len() != 0 || g.finish(write) != nil || !g.settled() || !bytes.Equal(written.Bytes(), bytes.Join([][]byte{a, b, last}, nil)) {
 				t.Fatal("original foreground task frames changed or remained withheld", err)
 			}
 		})
@@ -107,5 +107,33 @@ func TestOpenCodeTaskGuardRetainsOrderingAndRefusesIncompleteOrRepeatedCalls(t *
 		if err != nil || validateForegroundToolResponse(object) == nil {
 			t.Fatal("nonstream task response acquired reuse or missing-input authority")
 		}
+	}
+}
+
+func TestOpenCodeTaskFramesRemainPrivateUntilValidatedDone(t *testing.T) {
+	for _, ending := range []string{"done", "truncated", "malformed", "repeated-call"} {
+		t.Run(ending, func(t *testing.T) {
+			call, _ := foregroundFrame(t, "task", `{"description":"Original","prompt":"Original","subagent_type":"general"}`, false)
+			final, _ := foregroundFrame(t, "", "", true)
+			stream := append(append([]byte{}, call...), final...)
+			switch ending {
+			case "done":
+				stream = append(stream, []byte("data: [DONE]\n\n")...)
+			case "malformed":
+				stream = append(stream, []byte("data: {broken}\n\n")...)
+			case "repeated-call":
+				stream = append(stream, call...)
+				stream = append(stream, []byte("data: [DONE]\n\n")...)
+			}
+			writer := &delayedCancellationWriter{ResponseRecorder: httptest.NewRecorder()}
+			started, err := relayStream(context.Background(), writer, bytes.NewReader(stream), ChatCompletion, &Lease{Scope: Scope{Harness: domain.OpenCode}}, secretGuard{}, "original", &diagnosticObservations{value: &domain.RequestDiagnostic{}})
+			if ending == "done" {
+				if err != nil || !started || !bytes.Equal(writer.Body.Bytes(), stream) {
+					t.Fatal("validated task frames changed order", err)
+				}
+			} else if err == nil || started || writer.Body.Len() != 0 {
+				t.Fatal("unfinished or invalid stream exposed executable task", ending, err)
+			}
+		})
 	}
 }

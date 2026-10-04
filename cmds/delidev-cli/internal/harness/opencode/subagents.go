@@ -398,7 +398,7 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 }
 
 func supportedChildTool(name string) bool {
-	return name == "read" || name == "bash" || name == "todowrite" || name != "task" && domain.OpenCodeBuiltinName(name).Valid()
+	return name == "read" || name == "bash" || name == "todowrite" || name != string(domain.OpenCodeTask) && name != string(domain.OpenCodeQuestionTool) && domain.OpenCodeBuiltinName(name).Valid()
 }
 
 func childStatus(raw json.RawMessage) (NativeSessionStatus, error) {

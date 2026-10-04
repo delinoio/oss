@@ -137,8 +137,13 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 			continue
 		}
 		if bytes.Equal(bytes.TrimSpace(data), []byte("[DONE]")) {
-			if operation != ChatCompletion || guard.contains(string(frame)) || foreground != nil && !foreground.settled() {
+			if operation != ChatCompletion || guard.contains(string(frame)) {
 				return started, errInvalidDocument
+			}
+			if foreground != nil {
+				if err := foreground.finish(func(pending []byte) error { return fragments.deliver(bytes.Clone(pending), false, write) }); err != nil {
+					return started, err
+				}
 			}
 			err := fragments.deliver(frame, true, write)
 			return started, err

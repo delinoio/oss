@@ -16,8 +16,9 @@ type childHistoryTransport func(*http.Request) (*http.Response, error)
 func (f childHistoryTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestForegroundChildUsesPinnedChronologicalPage(t *testing.T) {
-	for _, reversed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "pinned-chronological", true: "contradictory-newest-first"}[reversed], func(t *testing.T) {
+	for _, variant := range []string{"pinned-chronological", "contradictory-newest-first", "completed-question"} {
+		t.Run(variant, func(t *testing.T) {
+			reversed := variant == "contradictory-newest-first"
 			f := newHistoryFixture(t)
 			s := f.api.session
 			childID := "ses_01960dcbe1fcABCDEFGHIJKLMN"
@@ -29,7 +30,13 @@ func TestForegroundChildUsesPinnedChronologicalPage(t *testing.T) {
 			assistant["finish"] = "stop"
 			assistant["time"].(map[string]any)["completed"] = 1250
 			answer := map[string]any{"id": "prt_01960dcbe1fdABCDEFGHIJKLMN", "sessionID": childID, "messageID": assistant["id"], "type": "text", "text": "original child answer", "time": map[string]any{"start": 1235, "end": 1250}}
-			rows := []any{user, map[string]any{"info": assistant, "parts": []any{answer}}}
+			parts := []any{answer}
+			if variant == "completed-question" {
+				question := fixtureCompletedTool()
+				question["id"], question["sessionID"], question["messageID"], question["tool"] = "prt_01960dcbe1feABCDEFGHIJKLMN", childID, assistant["id"], string(domain.OpenCodeQuestionTool)
+				parts = append(parts, question)
+			}
+			rows := []any{user, map[string]any{"info": assistant, "parts": parts}}
 			if reversed {
 				rows[0], rows[1] = rows[1], rows[0]
 			}
@@ -56,7 +63,7 @@ func TestForegroundChildUsesPinnedChronologicalPage(t *testing.T) {
 			})}
 			child := &foregroundChild{published: true, task: domain.OpenCodeTaskInput{Prompt: "original child input", AgentType: "build"}, value: domain.SubagentObservation{ID: domain.NewID(), NativeID: childID, ParentID: fixtureSessionID, Status: domain.SubagentPending}}
 			values, err := s.observeForegroundChild(context.Background(), child, "evt_01960dcbe1ffABCDEFGHIJKLMN", domain.OpenCodeChildHistorySource)
-			if reversed {
+			if reversed || variant == "completed-question" {
 				if err == nil {
 					t.Fatal("contradictory order adopted")
 				}

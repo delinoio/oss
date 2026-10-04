@@ -14,7 +14,7 @@ type foregroundToolCall struct {
 }
 
 // Tool arguments can be executable before the final provider frame arrives.
-// Retain their original frames until the complete call is validated; observing
+// Retain their original frames until the complete call and DONE are validated; observing
 // native task reuse afterwards would be too late to prevent its side effect.
 type foregroundToolGuard struct {
 	calls    map[uint32]*foregroundToolCall
@@ -79,6 +79,9 @@ func (g *foregroundToolGuard) deliver(frame []byte, object map[string]json.RawMe
 			}
 		}
 		if choice.Finish != nil && choice.Index == 0 {
+			if g.finished {
+				return errInvalidDocument
+			}
 			terminal = true
 		}
 	}
@@ -102,6 +105,16 @@ func (g *foregroundToolGuard) deliver(frame []byte, object map[string]json.RawMe
 				return errInvalidDocument
 			}
 		}
+	}
+	g.finished = true
+	return nil
+}
+
+// finish is called only after the relay validates the terminal DONE marker.
+// A valid finish_reason alone cannot publish an executable native task.
+func (g *foregroundToolGuard) finish(write func([]byte) error) error {
+	if len(g.calls) > 0 && !g.finished {
+		return errInvalidDocument
 	}
 	for _, pending := range g.frames {
 		if err := write(pending); err != nil {

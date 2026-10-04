@@ -110,3 +110,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `docs/cmds-delidev-compaction-contract.md`.
 
 - The existing 1 MiB Worker job output bound also covers the complete OpenCode Fork identity map. Worker preflight must reserve the entire serialized result before native mutation; native message/part inspection maxima cannot authorize truncation or an oversized durable output.
+
+- Active pricing retains the closed compaction HTTP source's nullable counters through immutable response estimates. Price only available components under the original selected basis; missing cache splits remain unavailable and ordinary native response validation remains unchanged.

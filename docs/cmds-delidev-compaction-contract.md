@@ -342,3 +342,5 @@ Larger ordinary execution or other jobs do not acquire this exception. Trailing
 documents, unknown fields and invalid original assignments remain rejected.
 
 Retained native compaction checkpoint readers use their strict 10 MiB ceiling without relaxing typed, canonical, claim, journal or native evidence checks. Session context uses the same typed 3 MiB compaction input decoder as acceptance and settlement, so large original assignments remain visible through queued and completed states.
+
+The closed compaction HTTP usage source retains sparse nullable token observations even when active pricing exists. Publication and historical estimate verification share source-aware validation and the immutable selected basis. Known priced components may form a partial subtotal; unknown cache splits or absent counters remain unavailable. Ordinary native response validation is unchanged, and exact replay/restart cannot charge the compaction twice or reprice history.
