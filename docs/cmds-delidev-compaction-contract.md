@@ -5,10 +5,10 @@
 This is the common boundary for issues #1093 (Claude), #1202 (Codex) and
 #1203 (OpenCode). Claude owns its implemented settled-boundary product profile.
 Codex implements its independently negotiated settled-boundary product profile.
-OpenCode retains its independent reservation; a reservation never advertises
-support or enables dispatch. The integrated implementation must join
-native adapters, durable action/checkpoint ownership, authenticated product
-interfaces and replacement-process verification before activating either profile.
+OpenCode implements its independently negotiated settled-boundary product profile.
+A reservation never advertises support or enables dispatch. Each complete native
+profile joins native adapters, durable action/checkpoint ownership, authenticated
+product interfaces and replacement-process verification before activation.
 The existing harness and session contracts retain their separate acceptance limits.
 
 Go owns acceptance, durable action/job state, native execution and recovery.
@@ -31,7 +31,7 @@ under issue #1203 with #1093 and #1202 as shared consumers:
 | SessionChange | compaction_job | 9 |
 
 The action is distinct from its Worker job and ordinary input/execution.
-The planned request uses an exact session mutation and expected predecessor
+The request uses an exact session mutation and expected predecessor
 execution identity. Its response joins the current session/job and original
 action, including reference-only receipt replay. Profile availability must be
 checked independently of the common capability; a reservation grants neither.
@@ -39,8 +39,9 @@ These allocations must be present on main before dependent implementations use
 them, as required by the structure contract.
 
 The existing schema-24 entities, jobs, receipts and cancellation tables provide
-the generic durable storage boundary. This prerequisite allocates no migration
-and does not change executable schema 24 or the existing reservations 25–27.
+the generic durable storage boundary. Compaction allocates no migration and leaves
+the independently activated accounting, diagnostic and subscription migrations
+26–28 in their original order; their historical reservations remain unchanged.
 If implementation requires additional tables or indexes, reserve that migration
 on main before using it. Never skip pending versions with empty migrations or
 reinterpret an unknown historical layout.
