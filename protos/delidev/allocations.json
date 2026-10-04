@@ -5620,6 +5620,70 @@
       "member": "replayed",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "pr": 1121,
+      "kind": "enum",
+      "declaration": "WorkspaceStorageAction",
+      "newDeclaration": true,
+      "member": "WORKSPACE_STORAGE_ACTION_UNSPECIFIED",
+      "number": 0
+    },
+    {
+      "pr": 1121,
+      "kind": "enum",
+      "declaration": "WorkspaceStorageAction",
+      "newDeclaration": true,
+      "member": "WORKSPACE_STORAGE_ACTION_PREVIEW",
+      "number": 1
+    },
+    {
+      "pr": 1121,
+      "kind": "enum",
+      "declaration": "WorkspaceStorageAction",
+      "newDeclaration": true,
+      "member": "WORKSPACE_STORAGE_ACTION_CREATE",
+      "number": 2
+    },
+    {
+      "pr": 1121,
+      "kind": "enum",
+      "declaration": "WorkspaceStorageAction",
+      "newDeclaration": true,
+      "member": "WORKSPACE_STORAGE_ACTION_CLEANUP",
+      "number": 3
+    },
+    {
+      "pr": 1121,
+      "kind": "enum",
+      "declaration": "WorkspaceStorageAction",
+      "newDeclaration": true,
+      "member": "WORKSPACE_STORAGE_ACTION_INSPECT",
+      "number": 4
+    },
+    {
+      "pr": 1121,
+      "kind": "enum",
+      "declaration": "WorkspaceStorageAction",
+      "newDeclaration": true,
+      "member": "WORKSPACE_STORAGE_ACTION_RESTORE",
+      "number": 5
+    },
+    {
+      "pr": 1121,
+      "kind": "enum",
+      "declaration": "WorkspaceStorageAction",
+      "newDeclaration": true,
+      "member": "WORKSPACE_STORAGE_ACTION_DELETE",
+      "number": 6
+    },
+    {
+      "pr": 1121,
+      "kind": "enum",
+      "declaration": "WorkspaceStorageAction",
+      "newDeclaration": true,
+      "member": "WORKSPACE_STORAGE_ACTION_RECOVER",
+      "number": 7
     }
   ]
 }
