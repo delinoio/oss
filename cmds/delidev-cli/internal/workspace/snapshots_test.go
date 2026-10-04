@@ -447,6 +447,23 @@ func TestSnapshotRecoveryContinuesOnlyVerifiedClaimedRemoval(t *testing.T) {
 	if raw, _ := os.ReadFile(filepath.Join(removal, "foreign")); string(raw) != "preserve" {
 		t.Fatal("foreign removal data lost")
 	}
+
+	intent, err := os.ReadFile(m.removalIntentPath(input.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, removed, err := m.readRemovalClaimState(input, intent)
+	if err != nil || len(removed) == 0 {
+		t.Fatal("missing settled entry proof", err)
+	}
+	if err := m.compactRemovalClaimJournal(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	m = &Manager{Root: m.Root, Logger: m.Logger}
+	_, _, retained, err := m.readRemovalClaimState(input, intent)
+	if err != nil || len(retained) != len(removed) {
+		t.Fatal("compaction lost removal proof", err)
+	}
 	os.Remove(filepath.Join(removal, "foreign"))
 	result := storageDo(t, m, recoveryRequest(input))
 	if result.WorkspaceState != domain.WorkspaceStored || !result.CleanupVerified {
@@ -1033,5 +1050,121 @@ func TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart(t *test
 	}
 	if raw, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, "keep")); err != nil || string(raw) != "original" {
 		t.Fatal("snapshot recovery removed live source", err)
+	}
+}
+
+func interruptedRemovalFixture(t *testing.T) (*Manager, StorageRequest, Manifest, []byte) {
+	t.Helper()
+	m := manager(t)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input := StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+	created := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotDigest, input.SnapshotMetadata = StorageDelete, domain.NewID(), created.Snapshot.SHA256, created.Snapshot
+	ctx, cancel := context.WithCancel(context.Background())
+	m.storageAfterRemovalClaim = func(name string) {
+		if name == "workspace" {
+			cancel()
+		}
+	}
+	if _, err := m.Storage(ctx, input); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal(err)
+	}
+	cancel()
+	m.storageAfterRemovalClaim = nil
+	intent, err := os.ReadFile(m.removalIntentPath(input.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m, input, manifest, intent
+}
+
+func TestRemovalJournalRepairsOnlyUnterminatedAppendAcrossRestart(t *testing.T) {
+	for _, state := range []string{storageRemovalRenamePrepared, storageRemovalRenameRenamed, storageRemovalRenameRemoved} {
+		t.Run(state, func(t *testing.T) {
+			m, input, manifest, intent := interruptedRemovalFixture(t)
+			journal := m.removalClaimJournalPath(input.OperationID)
+			prefix, err := os.ReadFile(journal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, _ := json.Marshal(storageRemovalRenameRecord{Original: "workspace/chat/keep", Private: "workspace/chat/.removing-tail", State: state})
+			torn := append(bytes.Clone(prefix), record[:len(record)/2]...)
+			if err := os.WriteFile(journal, torn, 0600); err != nil {
+				t.Fatal(err)
+			}
+			m = &Manager{Root: m.Root, Logger: m.Logger}
+			_, pending, err := m.readRemovalClaimPending(input, intent)
+			if err != nil || len(pending) != 1 || !pending[0].Renamed {
+				t.Fatal("lost durable prefix", pending, err)
+			}
+			actual, err := os.ReadFile(journal)
+			if err != nil || !bytes.Equal(actual, prefix) {
+				t.Fatal("tail repair was not durable", err)
+			}
+			recovered := storageDo(t, m, recoveryRequest(input))
+			if recovered.RecoveredJobState != domain.JobSucceeded || !recovered.Snapshot.Deleted {
+				t.Fatal(recovered)
+			}
+			raw, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, "keep"))
+			if err != nil || string(raw) != "original" {
+				t.Fatal("live source changed", err)
+			}
+		})
+	}
+	for _, suffix := range []string{"{bad}\n", `{"original":"unknown","private":".removing-unknown","state":"unknown"}` + "\n"} {
+		t.Run("complete-invalid", func(t *testing.T) {
+			m, input, _, intent := interruptedRemovalFixture(t)
+			journal := m.removalClaimJournalPath(input.OperationID)
+			prefix, _ := os.ReadFile(journal)
+			corrupt := append(bytes.Clone(prefix), []byte(suffix+"{torn")...)
+			os.WriteFile(journal, corrupt, 0600)
+			if _, _, err := m.readRemovalClaimPending(input, intent); err == nil {
+				t.Fatal("complete invalid record accepted")
+			}
+			actual, _ := os.ReadFile(journal)
+			if !bytes.Equal(actual, corrupt) {
+				t.Fatal("invalid journal altered")
+			}
+		})
+	}
+}
+
+func TestRemovalRecoveryPreservesUnjournaledMissingEntry(t *testing.T) {
+	m, input, _, intent := interruptedRemovalFixture(t)
+	_, pending, err := m.readRemovalClaimPending(input, intent)
+	if err != nil || len(pending) != 1 {
+		t.Fatal(err)
+	}
+	var original string
+	removal := filepath.Join(m.Root, "workspace-removals", string(input.OperationID))
+	if err := filepath.WalkDir(removal, func(p string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Name() == "keep" && !entry.IsDir() {
+			original = p
+		}
+		return nil
+	}); err != nil || original == "" {
+		t.Fatal("missing fixture file", err)
+	}
+	escaped := filepath.Join(t.TempDir(), "escaped")
+	if err := os.Rename(original, escaped); err != nil {
+		t.Fatal(err)
+	}
+	m = &Manager{Root: m.Root, Logger: m.Logger}
+	if _, err := m.Storage(context.Background(), recoveryRequest(input)); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("missing unclaimed entry settled", err)
+	}
+	raw, err := os.ReadFile(escaped)
+	if err != nil || string(raw) != "original" {
+		t.Fatal("escaped source changed", err)
 	}
 }

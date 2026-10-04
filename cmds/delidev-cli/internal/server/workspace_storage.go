@@ -501,6 +501,9 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 		if snapshot == nil || snapshot.ID != input.SnapshotID || snapshot.SessionID != output.SessionID || snapshot.MachineID != output.MachineID || !storageDigestValid(snapshot.SHA256) || snapshot.SizeBytes > workspace.MaxSnapshotBytes || snapshot.CreatedAt.IsZero() || snapshot.RepositoryCount != uint32(len(input.Manifest.Repositories)) || snapshot.Deleted != (input.Action == workspace.StorageDelete) {
 			return workspace.ResultUncertain()
 		}
+		if !snapshot.Deleted && output.RetainedSnapshotBytes < snapshot.SizeBytes {
+			return workspace.ResultUncertain()
+		}
 		if pinned := input.SnapshotMetadata; pinned != nil {
 			// Observations preserve the accepted snapshot. Deletion changes only its
 			// tombstone, never size, age or ownership.
@@ -512,7 +515,7 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 			return workspace.ResultUncertain()
 		}
 	}
-	if input.Action == workspace.StorageCleanup && output.RemovedSourceBytes != output.SourceBytes {
+	if input.Action == workspace.StorageCleanup && (output.RemovedSourceBytes != output.SourceBytes || !storageDigestValid(output.PreviewDigest) || output.PreviewDigest != input.PreviewDigest) {
 		return workspace.ResultUncertain()
 	}
 	return nil

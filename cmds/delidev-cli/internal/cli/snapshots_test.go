@@ -68,7 +68,7 @@ func TestSnapshotListCLIRoutesAuthenticatedResourcePages(t *testing.T) {
 		t.Fatal("invalid output")
 	}
 	result := value["result"].(map[string]any)
-	if result["next_page_token"] != "next-page" || result["resources"].([]any)[0].(map[string]any)["revision"] != json.Number("9007199254740993") {
+	if result["next_page_token"] != "next-page" || result["resources"].([]any)[0].(map[string]any)["revision"] != "9007199254740993" {
 		t.Fatal("inventory pagination or precision lost", result)
 	}
 }

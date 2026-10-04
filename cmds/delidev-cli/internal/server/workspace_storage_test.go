@@ -578,3 +578,51 @@ func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkspaceStorageSurvivingBytesAndCleanupPreviewAreBound(t *testing.T) {
+	for _, action := range []workspace.StorageAction{workspace.StorageCreate, workspace.StorageCleanup, workspace.StorageInspect, workspace.StorageRestore} {
+		for _, recovering := range []bool{false, true} {
+			t.Run(fmt.Sprint(action, recovering), func(t *testing.T) {
+				snapshot := &workspace.SnapshotMetadata{ID: domain.NewID(), SessionID: domain.NewID(), MachineID: domain.NewID(), SHA256: strings.Repeat("a", 64), SizeBytes: 123, CreatedAt: time.Now().UTC()}
+				input := workspace.StorageRequest{OperationID: domain.NewID(), Action: action, PreviousState: domain.WorkspacePresent, SnapshotID: snapshot.ID, PreviewDigest: strings.Repeat("b", 64), Preparation: workspace.PrepareRequest{SessionID: snapshot.SessionID, MachineID: snapshot.MachineID}}
+				output := workspace.StorageResult{Version: 1, OperationID: input.OperationID, Action: action, SessionID: snapshot.SessionID, MachineID: snapshot.MachineID, Snapshot: snapshot, CleanupVerified: true, WorkspaceState: domain.WorkspacePresent, RetainedSnapshotBytes: 123, PreviewDigest: input.PreviewDigest}
+				if action == workspace.StorageCleanup {
+					output.WorkspaceState = domain.WorkspaceStored
+					output.SourceBytes = 7
+					output.RemovedSourceBytes = 7
+				}
+				if recovering {
+					original := input
+					input.OperationID = domain.NewID()
+					input.Action = workspace.StorageRecover
+					input.Recovery = &workspace.StorageRecovery{Original: original}
+					output.OperationID = input.OperationID
+					output.Action = workspace.StorageRecover
+					output.RecoveredJobID = original.OperationID
+					output.RecoveredJobState = domain.JobSucceeded
+				}
+				check := func(v workspace.StorageResult) error {
+					raw, _ := json.Marshal(v)
+					return validateWorkspaceStorageResult(input, raw)
+				}
+				if err := check(output); err != nil {
+					t.Fatal("valid retained result", err)
+				}
+				bad := output
+				bad.RetainedSnapshotBytes = 122
+				if check(bad) == nil {
+					t.Fatal("underreported retained snapshot accepted")
+				}
+				if action == workspace.StorageCleanup {
+					for _, digest := range []string{"", strings.Repeat("c", 64), strings.ToUpper(input.PreviewDigest)} {
+						bad = output
+						bad.PreviewDigest = digest
+						if check(bad) == nil {
+							t.Fatal("unbound cleanup preview accepted", digest)
+						}
+					}
+				}
+			})
+		}
+	}
+}

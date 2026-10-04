@@ -36,7 +36,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 		return ResultUncertain()
 	}
 	stage = "claim-journal"
-	claim, pending, err := m.readRemovalClaimPending(r, raw)
+	claim, pending, removed, err := m.readRemovalClaimState(r, raw)
 	if err != nil {
 		return ResultUncertain()
 	}
@@ -159,7 +159,17 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 			stage = "entry-inspection"
 			before, err := parent.Lstat(name)
 			if os.IsNotExist(err) && partial {
+				_, proven := removed[entry.Path]
+				for _, rename := range pending {
+					proven = proven || rename.Original == entry.Path && rename.Renamed
+				}
+				if !proven {
+					return ResultUncertain()
+				}
 				continue
+			}
+			if _, settled := removed[entry.Path]; settled {
+				return ResultUncertain()
 			}
 			if err != nil {
 				return ResultUncertain()
@@ -288,7 +298,7 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 				}
 				return ResultUncertain()
 			}
-			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameCleared}); err != nil {
+			if err := m.appendRemovalClaimRecord(ctx, r, storageRemovalRenameRecord{Original: entry.Path, Private: privateRelative, State: storageRemovalRenameRemoved}); err != nil {
 				return err
 			}
 			if err := removePending(entry.Path, privateRelative); err != nil {

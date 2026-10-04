@@ -2,6 +2,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -67,6 +68,7 @@ const (
 	storageRemovalRenamePrepared        = "prepared"
 	storageRemovalRenameRenamed         = "renamed"
 	storageRemovalRenameCleared         = "cleared"
+	storageRemovalRenameRemoved         = "removed"
 	storageRemovalDirectoryModePrepared = "directory-mode-prepared"
 )
 
@@ -108,7 +110,7 @@ func (m *Manager) appendRemovalClaimRecord(ctx context.Context, r StorageRequest
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !validRemovalRelativePath(record.Original) || !validRemovalRelativePath(record.Private) || record.Original == record.Private || (record.State != storageRemovalRenamePrepared && record.State != storageRemovalRenameRenamed && record.State != storageRemovalRenameCleared && record.State != storageRemovalDirectoryModePrepared) {
+	if !validRemovalRelativePath(record.Original) || !validRemovalRelativePath(record.Private) || record.Original == record.Private || (record.State != storageRemovalRenamePrepared && record.State != storageRemovalRenameRenamed && record.State != storageRemovalRenameCleared && record.State != storageRemovalRenameRemoved && record.State != storageRemovalDirectoryModePrepared) {
 		return ResultUncertain()
 	}
 	raw, err := json.Marshal(record)
@@ -148,7 +150,7 @@ func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageReque
 	if err != nil {
 		return ResultUncertain()
 	}
-	claim, pending, err := m.readRemovalClaimPending(r, intent)
+	claim, pending, removed, err := m.readRemovalClaimState(r, intent)
 	if err != nil {
 		return err
 	}
@@ -171,6 +173,18 @@ func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageReque
 	for _, prior := range claim.Pending {
 		if err := appendRecord(storageRemovalRenameRecord{Original: prior.Original, Private: prior.Private, State: storageRemovalRenameCleared}); err != nil {
 			return err
+		}
+	}
+	settled := make([]storageRemovalRename, 0, len(removed))
+	for _, rename := range removed {
+		settled = append(settled, rename)
+	}
+	sort.Slice(settled, func(i, j int) bool { return settled[i].Original < settled[j].Original })
+	for _, rename := range settled {
+		for _, state := range []string{storageRemovalRenamePrepared, storageRemovalRenameRenamed, storageRemovalRenameRemoved} {
+			if err := appendRecord(storageRemovalRenameRecord{Original: rename.Original, Private: rename.Private, State: state}); err != nil {
+				return err
+			}
 		}
 	}
 	for _, active := range pending {
@@ -199,67 +213,92 @@ func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageReque
 }
 
 func (m *Manager) readRemovalClaimPending(r StorageRequest, intent []byte) (storageRemovalClaim, []storageRemovalRename, error) {
+	claim, pending, _, err := m.readRemovalClaimState(r, intent)
+	return claim, pending, err
+}
+
+func (m *Manager) readRemovalClaimState(r StorageRequest, intent []byte) (storageRemovalClaim, []storageRemovalRename, map[string]storageRemovalRename, error) {
 	claimRaw, err := security.ReadPrivate(m.removalClaimPath(r.OperationID), maxStorageRemovalClaim)
 	var claim storageRemovalClaim
 	if err != nil || !removalClaimMatches(claimRaw, removalReference(r), intent) || domain.Decode(claimRaw, &claim) != nil {
-		return storageRemovalClaim{}, nil, ResultUncertain()
+		return storageRemovalClaim{}, nil, nil, ResultUncertain()
 	}
+	removed := map[string]storageRemovalRename{}
 	active := make(map[string]storageRemovalRename, len(claim.Pending))
 	for _, rename := range claim.Pending {
 		active[rename.Original] = rename
 	}
 	raw, err := security.ReadPrivate(m.removalClaimJournalPath(r.OperationID), maxStorageRemovalJournal)
 	if errors.Is(err, os.ErrNotExist) {
-		return claim, append([]storageRemovalRename(nil), claim.Pending...), nil
+		return claim, append([]storageRemovalRename(nil), claim.Pending...), removed, nil
 	}
 	if err != nil {
-		return storageRemovalClaim{}, nil, ResultUncertain()
+		return storageRemovalClaim{}, nil, nil, ResultUncertain()
 	}
-	text := strings.TrimSuffix(string(raw), "\n")
-	if text == "" {
-		return claim, append([]storageRemovalRename(nil), claim.Pending...), nil
+	// A durable append is newline-framed. A torn final write grants no effect
+	// authority; validate every complete record before atomically repairing it.
+	complete := raw
+	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
+		complete = raw[:bytes.LastIndexByte(raw, '\n')+1]
 	}
-	for _, line := range strings.Split(text, "\n") {
+	text := strings.TrimSuffix(string(complete), "\n")
+	lines := []string{}
+	if text != "" {
+		lines = strings.Split(text, "\n")
+	}
+	for _, line := range lines {
 		var record storageRemovalRenameRecord
 		if domain.Decode([]byte(line), &record) != nil || !validRemovalRelativePath(record.Original) || !validRemovalRelativePath(record.Private) || record.Original == record.Private {
-			return storageRemovalClaim{}, nil, ResultUncertain()
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		}
 		current, exists := active[record.Original]
 		switch record.State {
 		case storageRemovalRenamePrepared:
-			if exists || record.Private == record.Original {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+			if exists || removed[record.Original].Original != "" || record.Private == record.Original {
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			active[record.Original] = storageRemovalRename{Original: record.Original, Private: record.Private}
 		case storageRemovalRenameRenamed:
 			if !exists || current.Private != record.Private || current.Renamed {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			current.Renamed = true
 			active[record.Original] = current
 		case storageRemovalDirectoryModePrepared:
 			if !exists || current.Private != record.Private || !current.Renamed || current.ModePrepared {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			current.ModePrepared = true
 			active[record.Original] = current
+		case storageRemovalRenameRemoved:
+			if !exists || current.Private != record.Private || !current.Renamed {
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
+			}
+			removed[record.Original] = current
+			delete(active, record.Original)
 		case storageRemovalRenameCleared:
 			if !exists || current.Private != record.Private {
-				return storageRemovalClaim{}, nil, ResultUncertain()
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
 			}
 			delete(active, record.Original)
 		default:
-			return storageRemovalClaim{}, nil, ResultUncertain()
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		}
-		if len(active) > maxSnapshotRemovalEntries {
-			return storageRemovalClaim{}, nil, ResultUncertain()
+		if len(active)+len(removed) > maxSnapshotRemovalEntries {
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		}
+	}
+	if len(complete) != len(raw) {
+		if err := security.WriteAtomicOwned(m.removalClaimJournalPath(r.OperationID), complete); err != nil {
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
+		}
+		m.Logger.Info("workspace_removal_journal_tail_repaired", "operation_id", r.OperationID, "discarded_bytes", len(raw)-len(complete))
 	}
 	pending := make([]storageRemovalRename, 0, len(active))
 	for _, rename := range active {
 		pending = append(pending, rename)
 	}
-	return claim, pending, nil
+	return claim, pending, removed, nil
 }
 
 func (m *Manager) retainRemovalClaim(ctx context.Context, r StorageRequest, intent []byte) error {
@@ -350,8 +389,9 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 		return ResultUncertain()
 	}
 	var pending []storageRemovalRename
+	var removed map[string]storageRemovalRename
 	if partial {
-		_, pending, err = m.readRemovalClaimPending(r, raw)
+		_, pending, removed, err = m.readRemovalClaimState(r, raw)
 		if err != nil {
 			// A crash may occur after the top-level rename but before its first
 			// claim publication. Only an intact namespace matching the complete
@@ -423,6 +463,9 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			if seen[logicalPath] {
 				return ResultUncertain()
 			}
+			if _, settled := removed[logicalPath]; settled {
+				return ResultUncertain()
+			}
 			seen[logicalPath] = true
 			if os.FileMode(old.Mode).IsDir() && os.FileMode(entry.Mode).IsDir() {
 				modePrepared := false
@@ -435,6 +478,18 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 				continue
 			}
 			if !reflect.DeepEqual(old, entry) {
+				return ResultUncertain()
+			}
+		}
+		for logical := range expected {
+			if seen[logical] {
+				continue
+			}
+			_, proven := removed[logical]
+			for _, rename := range mappings {
+				proven = proven || rename.Original == logical && rename.Renamed
+			}
+			if !proven {
 				return ResultUncertain()
 			}
 		}
