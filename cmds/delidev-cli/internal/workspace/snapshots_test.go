@@ -808,30 +808,42 @@ func TestSnapshotMaximumInventoryRemainsDeletable(t *testing.T) {
 		t.Fatal("fixture did not publish maximum valid inventory", err)
 	}
 	input.Action, input.OperationID, input.SnapshotDigest, input.SnapshotMetadata = StorageDelete, domain.NewID(), created.Snapshot.SHA256, created.Snapshot
-	// A maximum inventory must remain recoverable across the bounded operation
-	// lifetime. Hosted Windows can spend the entire five-minute budget on durable
-	// per-entry claims; split at an original claim rather than weakening that bound
-	// or declaring incomplete deletion successful. Both halves use real journals.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	interrupted := false
-	m.storageAfterRemovalClaim = func(name string) {
-		if filepath.Base(name) == "entry-4095" {
-			interrupted = true
-			cancel()
+	// Exercise the maximum inventory in bounded original/recovery lifetimes.
+	// Hosted Windows durable claims can exhaust five minutes before 4096 entries.
+	// Use at most the original plus eight recoveries, without extending production
+	// timeouts or treating interrupted cleanup as completion.
+	original := input
+	complete := false
+	for attempt := 0; attempt <= MaxStorageRecoveryAttempts; attempt++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		interrupted, claims := false, 0
+		m.storageAfterRemovalClaim = func(string) {
+			claims++
+			if claims == 1024 {
+				interrupted = true
+				cancel()
+			}
 		}
+		value, err := m.Storage(ctx, input)
+		cancel()
+		if err == nil {
+			if attempt == 0 || value.RecoveredJobID != original.OperationID || value.RecoveredJobState != domain.JobSucceeded || !value.CleanupVerified || value.Snapshot == nil || !value.Snapshot.Deleted {
+				t.Fatal("maximum deletion completion lacked original proof", value)
+			}
+			complete = true
+			break
+		}
+		if !interrupted || domain.SafeError(err).Code != domain.RecoveryRequired || value.CleanupVerified || value.RemovedSourceBytes != 0 || value.Snapshot != nil && value.Snapshot.Deleted {
+			t.Fatal("interrupted maximum deletion claimed completion", value, err)
+		}
+		// Fresh owners possess only the original immutable intent and journals.
+		m = &Manager{Root: m.Root, Logger: m.Logger}
+		input = recoveryRequest(original)
 	}
-	partial, err := m.Storage(ctx, input)
-	if !interrupted || domain.SafeError(err).Code != domain.RecoveryRequired || partial.CleanupVerified || partial.RemovedSourceBytes != 0 || partial.Snapshot != nil && partial.Snapshot.Deleted {
-		t.Fatal("interrupted maximum deletion claimed completion", partial, err)
+	if !complete {
+		t.Fatal("maximum inventory exhausted bounded recovery attempts")
 	}
-	// A new owner has no callback or in-memory progress authority. It must recover
-	// the exact original deletion from the persisted intent and claim journal.
-	m = &Manager{Root: m.Root, Logger: m.Logger}
-	deleted := storageDo(t, m, recoveryRequest(input))
-	if deleted.RecoveredJobID != input.OperationID || deleted.RecoveredJobState != domain.JobSucceeded || !deleted.CleanupVerified || deleted.Snapshot == nil || !deleted.Snapshot.Deleted {
-		t.Fatal("maximum valid snapshot did not recover its original deletion", deleted)
-	}
+	input = original
 	raw, err := os.ReadFile(m.removalIntentPath(input.OperationID))
 	var intent storageRemovalIntent
 	if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || len(intent.Inventory.Entries) != MaxSnapshotEntries+2 {
