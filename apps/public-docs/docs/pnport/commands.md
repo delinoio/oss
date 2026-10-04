@@ -1,6 +1,6 @@
 # Commands
 
-**pnport 0.1.0 is not published.** These are the current command names and release-contract behaviors. The experimental preview is available separately; check [installation and availability](/pnport/installation) before trying it, and retain its compatibility limits.
+**pnport 0.1.0 is available.** These are its command names and diagnostic interfaces. Check [installation and known limits](/pnport/installation), including unresolved macOS initialization and cancellation failures.
 
 | Command | Purpose |
 | --- | --- |

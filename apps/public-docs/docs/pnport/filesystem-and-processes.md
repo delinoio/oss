@@ -1,6 +1,6 @@
 # Filesystem and processes
 
-**pnport 0.1.0 remains unreleased.** This page describes the intended release behavior; current development evidence covers only a subset of the filesystem and process cases below.
+**pnport 0.1.0 is available.** This page describes its filesystem and process contracts. Complete compatibility remains unverified; check [installation and known limits](/pnport/installation), including unresolved macOS initialization and cancellation failures.
 
 ## Dependency view
 
@@ -18,8 +18,8 @@ One process tree uses one PnP graph snapshot. If PnP data or an actively used ZI
 
 ## Current limits
 
-In the published `0.1.0-next.1` preview, macOS commands that detach into a new background session or process group can leave descendants running after pnport stops. Test foreground commands with daemonization disabled. Complete detached-process cleanup remains a requirement for stable 0.1.0.
+In the published `0.1.0-next.1` preview, macOS commands that detach into a new background session or process group can leave descendants running after pnport stops. Test foreground commands with daemonization disabled. The stable 0.1.0 release includes later process-ownership changes, but complete detached-process compatibility remains unverified. Publication does not repair the immutable preview.
 
-Release acceptance still requires complete filesystem, process, watch, native loading, and installation checks on all four macOS and glibc Linux targets, including static child execution on Linux. Native preview candidate fixtures passed on macOS and glibc Linux x64 and arm64, including Linux static children. Full feature, minimum-OS and benchmark acceptance remain open; intermittent native initialization failures remain under investigation. Windows execution remains unavailable and is planned for 0.2.0 with the same full requirements. Protected or incompatible executables fail explicitly. pnport will not replace a protected executable, elevate privileges, or silently run it without virtualization. No claim of universal executable compatibility or editor-version certification is made.
+The stable 0.1.0 build passed native execution, installed-package, inline/split TypeScript and numerical benchmark checks on macOS 15 and Ubuntu 22.04 for x64 and arm64, including static Linux children. These checks do not establish complete filesystem, process, watch or native-loading compatibility. Full acceptance remains incomplete. Intermittent macOS initialization failures and cancellation returning 125 instead of the signal-derived status remain unresolved. Windows execution remains unavailable and is planned for 0.2.0 with the same full requirements. Protected or incompatible executables fail explicitly. pnport will not replace a protected executable, elevate privileges, or silently run it without virtualization. No claim of universal executable compatibility or editor-version certification is made.
 
 For an unsupported child, check [diagnostics](/pnport/diagnostics) and use the [GitHub issue tracker](https://github.com/delinoio/oss/issues) to report a reproducible case.

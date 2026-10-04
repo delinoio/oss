@@ -224,28 +224,14 @@ test("preview npm tags preserve latest and reject a newer or foreign next", asyn
   await assert.rejects(registryTags("@delino/pnport", async () => ({ ok: true, json: async () => ({ name: "@delino/pnport", "dist-tags": [] }) })), /Invalid npm/u);
 });
 
-test("preview bootstrap preserves only the inspected npm placeholder and still rejects foreign next", async () => {
-  const name = "@delino/pnport";
-  const tags = { latest: "0.0.0-stage", bootstrap: "0.0.0-stage" };
-  const placeholder = { name, version: "0.0.0-stage", stub: true, description: "Temporary package placeholder for staged publishing", dist: { integrity: "sha512-2rsp47hGeDF0hUQ6N5HDSmzVVt4249qECxd9nDqOZHJ/WUDW3UyjmjgPWr4H1MZMRTz14fzLRClmgQ0opekvAw==" } };
-  const request = (selectedTags, selectedPlaceholder, status = 200) => async (url, options) => {
-    assert.equal(options.redirect, "error");
-    return { ok: status === 200, status, json: async () => ({ name, "dist-tags": selectedTags, versions: { "0.0.0-stage": selectedPlaceholder } }) };
-  };
-  assert.deepEqual(await registryPreviewTags(name, "0.1.0-next.1", request(tags, placeholder)), tags);
-  // The generic channel check must never accept an unverified prerelease latest.
-  assert.throws(() => validatePreviewTags(tags, "0.1.0-next.1"));
-  for (const change of [{ name: "@delino/other" }, { version: "0.0.0" }, { stub: false }, { description: "Custom placeholder" }, { dist: {} }, { dist: { integrity: "sha512-foreign" } }]) {
-    await assert.rejects(registryPreviewTags(name, "0.1.0-next.1", request(tags, { ...placeholder, ...change })), /Unrecognized npm bootstrap/u);
+test("preview publication rejects bootstrap latest after stable distribution", async () => {
+  for (const name of [...targets.map(({ name }) => name), "@delino/pnport"]) {
+    const request = async () => ({ ok: true, json: async () => ({ name, "dist-tags": { latest: "0.0.0-stage", next: "0.1.0-next.1" }, versions: { "0.0.0-stage": { name, version: "0.0.0-stage", stub: true, description: "Temporary package placeholder for staged publishing" } } }) });
+    await assert.rejects(registryPreviewTags(name, "0.1.0-next.1", request), /Unsupported pnport publication version/u);
   }
-  await assert.rejects(registryPreviewTags(name, "0.1.0-next.1", request(tags, placeholder, 500)), /npm channel inspection failed/u);
-  for (const next of ["0.1.0-next.2", "0.2.0", "0.1.0-rc.1"]) await assert.rejects(registryPreviewTags(name, "0.1.0-next.1", request({ ...tags, next }, placeholder)), /newer or foreign/u);
-  assert.deepEqual(await registryPreviewTags(name, "0.1.0-next.1", request({ ...tags, next: "0.1.0-next.1" }, placeholder)), { ...tags, next: "0.1.0-next.1" });
-  const foreignName = "@delino/other";
-  await assert.rejects(registryPreviewTags(foreignName, "0.1.0-next.1", async url => ({ ok: true, status: 200, json: async () => ({ name: foreignName, "dist-tags": tags, versions: { "0.0.0-stage": { ...placeholder, name: foreignName } } }) })), /Unrecognized npm bootstrap/u);
 });
 
-test("ordinary preview channels need no bootstrap exception", async () => {
+test("preview readback preserves the stable latest channel", async () => {
   const name = "@delino/pnport";
   for (const tags of [{}, { latest: "0.1.0" }]) {
     let requests = 0;
