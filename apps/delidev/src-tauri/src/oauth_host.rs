@@ -10,6 +10,9 @@ use tauri::{Cef, WebviewWindow};
 use super::{SavedWindows, saved_binding, trusted_main};
 
 #[tauri::command]
+// Tauri injects four trusted native owners separately from the closed renderer
+// command fields. Keep this exception scoped to the native command adapter.
+#[allow(clippy::too_many_arguments)]
 pub async fn account_oauth_native(
     window: WebviewWindow<Cef>,
     connector: tauri::State<'_, Arc<Connector>>,
