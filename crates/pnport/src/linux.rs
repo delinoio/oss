@@ -1195,6 +1195,8 @@ fn resume(pid: i32, syscall_exit: bool, signal: i32) -> Result<()> {
 struct DirectoryOffset {
     position: Cell<usize>,
     virtual_end: Cell<bool>,
+    native_position: Cell<i64>,
+    native_end: Cell<Option<i64>>,
 }
 
 #[derive(Clone)]
@@ -1571,9 +1573,11 @@ impl Trace<'_> {
                     return Err(injection_failed());
                 }
                 offset += len;
+                state.native_position.set(cookie);
             }
             return Ok(());
         }
+        state.native_end.set(Some(state.native_position.get()));
         let Some(entry) = entries.get(state.position.get()) else {
             return Ok(());
         };
@@ -3029,7 +3033,16 @@ impl Trace<'_> {
                     && cookie <= DIRECTORY_END)
                     .then(|| (cookie - (DIRECTORY_END - count as i64)) as usize);
                 if position.is_some() {
-                    deny_syscall(pid, &mut regs)?;
+                    let Some(native_end) = state.native_end.get() else {
+                        deny_syscall(pid, &mut regs)?;
+                        self.pending.insert(pid, Pending::ForcedError(libc::EINVAL));
+                        return resume(pid, true, 0);
+                    };
+                    // Restore the real open description to its observed EOF;
+                    // suppressing lseek would replay cache entries after rewind.
+                    set_argument(&mut regs, 1, native_end as u64);
+                    set_argument(&mut regs, 2, libc::SEEK_SET as u64);
+                    set_registers(pid, &regs)?;
                 }
                 self.pending.insert(
                     pid,
@@ -3482,8 +3495,9 @@ impl Trace<'_> {
                 fd,
                 position,
                 cookie,
-            } if returned >= 0 || position.is_some() => {
+            } if returned >= 0 => {
                 if let Some(state) = self.directory_state(pid, fd)? {
+                    state.native_position.set(returned);
                     state.position.set(position.unwrap_or(0));
                     state
                         .virtual_end

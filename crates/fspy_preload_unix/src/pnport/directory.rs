@@ -119,6 +119,7 @@ unsafe fn merged_entries(
             physical: translation.physical,
             position,
             virtual_end: position == entries.len(),
+            native_end: None,
             entry: Box::new(std::mem::zeroed()),
         };
         let entry = directory_entry(&mut stream, &entries)?;

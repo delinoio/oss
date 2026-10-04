@@ -110,6 +110,7 @@ struct DirectoryStream {
     physical: PathBuf,
     position: usize,
     virtual_end: bool,
+    native_end: Option<libc::c_long>,
     entry: Box<dirent>,
 }
 
@@ -127,6 +128,7 @@ unsafe fn track_directory(dir: *mut DIR, translation: Translation) {
                 physical: translation.physical,
                 position: 0,
                 virtual_end: false,
+                native_end: None,
                 entry: Box::new(std::mem::zeroed()),
             })),
         );
@@ -1618,6 +1620,9 @@ hook!(readdir, pnport_readdir, (dir:*mut DIR) -> *mut dirent, {
         errno(saved);return entry;
     }
     if *__error()!=0 {return entry;}
+    let native_end=libc::lseek(dirfd(dir),0,libc::SEEK_CUR);
+    if native_end<0 {return ptr::null_mut();}
+    stream.native_end=Some(native_end);
     errno(saved);
     match directory_entry(&mut stream,&entries) {Ok(value)=>value,Err(code)=>{errno(code);ptr::null_mut()}}
 });
@@ -1632,6 +1637,9 @@ hook!(readdir_r, pnport_readdir_r, (dir:*mut DIR,entry:*mut dirent,result:*mut *
     if stream.virtual_end {*result=ptr::null_mut();errno(saved);return 0;}
     let code=original(dir,entry,result);
     if code==0 && (*result).is_null() {
+            let native_end=libc::lseek(dirfd(dir),0,libc::SEEK_CUR);
+            if native_end<0 {let code=*__error();errno(saved);return code;}
+            stream.native_end=Some(native_end);
             match directory_entry(&mut stream,&entries) {
                 Ok(value) if !value.is_null()=>{ptr::copy_nonoverlapping(value,entry,1);*result=entry;},
                 Ok(_)=>{}, Err(code)=>{errno(saved);return code;}
@@ -1664,6 +1672,14 @@ hook!(seekdir, pnport_seekdir, (dir:*mut DIR,position:libc::c_long) -> (), {
         if let Ok(entries)=directory_entries(state) {
             let begin=directory_cookie(0,entries.len());
             if position>begin {
+                let Some(native_end)=state.native_end else {errno(EINVAL);return;};
+                // Darwin rewind invalidates opaque telldir cookies. Clear the
+                // libc buffer, then restore the observed kernel EOF directly.
+                let reset=original!(rewinddir,unsafe extern "C" fn(*mut DIR));
+                reset(dir);
+                if libc::lseek(dirfd(dir),native_end,libc::SEEK_SET)<0 {
+                    state.position=0;state.virtual_end=false;return;
+                }
                 state.position=usize::try_from(position-begin).expect("Reserved directory cookie is in range");
                 state.virtual_end=state.position==entries.len();return;
             }
@@ -1746,6 +1762,7 @@ unsafe fn scan_directory(
         physical: translation.physical,
         position: 0,
         virtual_end: false,
+        native_end: None,
         entry: Box::new(std::mem::zeroed()),
     };
     let overlay = match directory_entries(&stream) {

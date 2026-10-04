@@ -44,6 +44,18 @@ static int listings(DIR *dir) {
     seekdir(dir, cookie);
     entry = readdir(dir);
     CHECK(entry && !strcmp(entry->d_name, next));
+    rewinddir(dir);
+    seekdir(dir, cookie);
+    entry = readdir(dir);
+    CHECK(entry && !strcmp(entry->d_name, next));
+    seekdir(dir, 0);
+    seekdir(dir, cookie);
+    entry = readdir(dir);
+    CHECK(entry && !strcmp(entry->d_name, next));
+    rewinddir(dir);
+    seekdir(dir, cookie);
+    struct dirent copied, *result = NULL;
+    CHECK(readdir_r(dir, &copied, &result) == 0 && result && !strcmp(result->d_name, next));
     return 0;
 }
 static int selected(const struct dirent *entry) {
@@ -119,6 +131,7 @@ static int buffer_cookies(int fd) {
     int copy = dup(fd); CHECK(copy >= 0);
     size = __getdirentries64(copy, buffer.bytes, sizeof(buffer.bytes), &base); CHECK(size > 0);
     char next[256]; snprintf(next, sizeof(next), "%s", ((struct dirent *)buffer.bytes)->d_name);
+    CHECK(lseek(copy, 0, SEEK_SET) == 0);
     CHECK(lseek(copy, cookie, SEEK_SET) == cookie);
     CHECK(__getdirentries64(fd, buffer.bytes, sizeof(buffer.bytes), &base) == size);
     CHECK(!strcmp(((struct dirent *)buffer.bytes)->d_name, next));
