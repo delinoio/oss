@@ -255,6 +255,9 @@ impl Fixture {
             "command_prepared",
             "native_image_admitted",
             "macos_owner_started",
+            "macos_root_admitted",
+            "macos_owner_unavailable",
+            "macos_owner_recovery",
             "spawn",
             "initialization_started",
             "macos_job_stopped",
@@ -493,7 +496,7 @@ fn cancellation(signal: i32) {
 }
 
 #[cfg(target_os = "macos")]
-fn group_boundary(modes: &[&str], rejected: bool) {
+fn group_boundary(modes: &[&str], changed: bool) {
     for mode in modes {
         let root = Fixture::project_source(false, "process-group.c");
         let executable = root.path().join("tree");
@@ -504,7 +507,7 @@ fn group_boundary(modes: &[&str], rejected: bool) {
             .output()
             .unwrap();
         assert_eq!(native.status.code(), Some(0));
-        if rejected {
+        if changed {
             assert!(root
                 .path()
                 .join(if mode.starts_with("spawn-") {
@@ -530,26 +533,27 @@ fn group_boundary(modes: &[&str], rejected: bool) {
             .unwrap();
         assert_eq!(
             output.status.code(),
-            Some(if rejected { 125 } else { 0 }),
+            Some(0),
             "{mode}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        if rejected {
+        if changed {
             assert!(
-                String::from_utf8_lossy(&output.stderr).contains("PNPORT_UNSUPPORTED_OPERATION")
+                root.path()
+                    .join(if mode.starts_with("spawn-") {
+                        "spawn-created"
+                    } else {
+                        "group-escaped"
+                    })
+                    .is_file(),
+                "native group operation did not execute"
             );
-            assert!(String::from_utf8_lossy(&output.stderr).contains("daemonization disabled"));
-            for marker in ["group-escaped", "spawn-created", "child-created"] {
-                assert!(
-                    !root.path().join(marker).exists(),
-                    "{mode} passed the native group boundary"
-                );
-            }
-        } else {
+        }
+        if mode.starts_with("spawn-") {
             assert_eq!(output.stdout, b"owned group control\n");
-            if *mode == "spawn-same" {
-                assert!(root.path().join("child-created").is_file());
-            }
+            assert!(root.path().join("child-created").is_file());
+        } else if *mode == "join" {
+            assert_eq!(output.stdout, b"owned group control\n");
         }
         let cache = Cache::open(cache_path).unwrap();
         let entries = cache.entries(Operation::List).unwrap();
@@ -571,13 +575,13 @@ fn group_boundary(modes: &[&str], rejected: bool) {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn session_and_group_creation_fail_before_a_descendant_escapes() {
+fn session_and_group_creation_retain_native_behavior() {
     group_boundary(&["setsid", "setpgid", "setpgrp", "spawn-new"], true);
 }
 
 #[cfg(target_os = "macos")]
 #[test]
-fn spawn_session_creation_fails_before_a_descendant_starts() {
+fn spawn_session_creation_retains_native_behavior() {
     group_boundary(&["spawn-session"], true);
 }
 
@@ -1103,4 +1107,139 @@ fn killed_supervisor_retains_grace_then_kills_unresponsive_descendants() {
     assert_eq!(fixture.stopped().status.signal(), Some(libc::SIGKILL));
     assert!(start.elapsed() >= Duration::from_secs(5));
     fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn detached_native_trees_retain_signals_and_cache_cleanup() {
+    for mode in [
+        "detached",
+        "detached-group",
+        "detached-spawn-group",
+        "detached-spawn-session",
+    ] {
+        for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+            let mut fixture = Fixture::new(mode, false);
+            fixture.ready();
+            fixture.assert_active();
+            assert_ne!(
+                fs::read(fixture.root.path().join("root.group")).unwrap(),
+                fs::read(fixture.root.path().join("middle.group")).unwrap()
+            );
+            fixture.signal(signal);
+            assert_eq!(fixture.stopped().status.code(), Some(128 + signal));
+            fixture.assert_signals(signal);
+            fixture.assert_released();
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn detached_native_trees_survive_owner_loss_only_until_cleanup() {
+    for mode in ["detached", "detached-spawn-session", "detached-ignore"] {
+        for failure in [OwnerFailure::Supervisor, OwnerFailure::Guardian] {
+            let mut fixture = Fixture::new(mode, false);
+            fixture.ready();
+            let mut unrelated = Control(
+                Command::new("/bin/sleep")
+                    .arg("30")
+                    .process_group(0)
+                    .spawn()
+                    .unwrap(),
+            );
+            // Stop each group independently, including newly detached sessions.
+            for pid in &fixture.pids {
+                assert_eq!(unsafe { libc::kill(*pid, libc::SIGSTOP) }, 0);
+            }
+            std::thread::sleep(Duration::from_millis(100));
+            let start = Instant::now();
+            if matches!(failure, OwnerFailure::Supervisor) {
+                fixture.signal(libc::SIGKILL);
+            } else {
+                assert_eq!(unsafe { libc::kill(fixture.group(), libc::SIGKILL) }, 0);
+                fixture.signal(libc::SIGCONT);
+            }
+            let output = fixture.stopped();
+            if matches!(failure, OwnerFailure::Supervisor) {
+                assert_eq!(output.status.signal(), Some(libc::SIGKILL));
+            } else {
+                assert_eq!(output.status.code(), Some(125));
+            }
+            if mode.ends_with("ignore") {
+                assert!(start.elapsed() >= Duration::from_secs(5));
+            } else {
+                fixture.assert_signals(libc::SIGTERM);
+            }
+            assert!(unrelated.0.try_wait().unwrap().is_none());
+            fixture.assert_released();
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn normal_root_exit_stops_detached_native_descendants() {
+    let mut fixture = Fixture::new("detached-exit", false);
+    fixture.ready();
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn stopped_unregistered_orphan_is_owned_after_its_parent_exits() {
+    for failure in [OwnerFailure::Supervisor, OwnerFailure::Guardian] {
+        let mut fixture = Fixture::new("detached-orphan", false);
+        for marker in ["root.pid", "middle.pid", "parked.pid"] {
+            fixture.wait_marker(marker);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                if let Ok(pid) = fs::read_to_string(fixture.root.path().join(marker))
+                    .unwrap()
+                    .parse::<i32>()
+                {
+                    fixture.pids.push(pid);
+                    break;
+                }
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        fs::write(fixture.root.path().join("orphan-release"), b"1").unwrap();
+        let middle = fixture.pids[1];
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while pnport_core::macos_process::Identity::capture(middle)
+            .is_ok_and(|identity| !identity.zombie)
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // The parked child has never reached its own image constructor.
+        assert!(!fixture.root.path().join("leaf.pid").exists());
+        if matches!(failure, OwnerFailure::Supervisor) {
+            fixture.signal(libc::SIGKILL);
+        } else {
+            assert_eq!(unsafe { libc::kill(fixture.group(), libc::SIGKILL) }, 0);
+        }
+        let output = fixture.stopped();
+        if matches!(failure, OwnerFailure::Supervisor) {
+            assert_eq!(output.status.signal(), Some(libc::SIGKILL));
+        } else {
+            assert_eq!(output.status.code(), Some(125));
+        }
+        fixture.assert_released();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn terminal_group_changes_retain_foreground_stop_and_resume() {
+    terminal_job("new-group");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn suspended_jobs_do_not_consume_pending_image_deadlines() {
+    terminal_job("pending-pause");
 }

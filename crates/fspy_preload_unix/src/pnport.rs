@@ -185,6 +185,13 @@ static SESSION: OnceLock<PathBuf> = OnceLock::new();
 static OWNED_GROUP: OnceLock<pid_t> = OnceLock::new();
 
 unsafe extern "C" fn before_fork() {
+    if RUNTIME.get().is_some() && register_owned_process(libc::getpid()).is_err() {
+        if let Some(session) = SESSION.get() {
+            record_initialization_failure(session, InitializationStage::OwnedGroup);
+            record_failure(session, Code::PnportInjectionFailed);
+        }
+        _exit(125);
+    }
     // Wait for all runtime operations to finish before libSystem copies the
     // address space. A plain Rust mutex can otherwise retain a vanished owner.
     if let Some(runtime) = RUNTIME.get()
@@ -241,13 +248,27 @@ fn record_initialization_failure(session: &Path, stage: InitializationStage) {
     }
 }
 
-fn reject_group_change(operation: ProcessGroupOperation) -> c_int {
-    if let Some(session) = SESSION.get()
-        && let Ok(bytes) = serde_json::to_vec(&operation)
-    {
-        record_bytes(session, "process-group-failure", &bytes);
-    }
-    fail(Code::PnportUnsupportedOperation)
+fn register_owned_process(pid: pid_t) -> std::io::Result<()> {
+    let _guard = Guard::enter();
+    let session = SESSION
+        .get()
+        .ok_or_else(|| std::io::Error::other("Native owner context is missing"))?;
+    let identity = pnport_core::macos_process::Identity::capture(pid)?;
+    pnport_core::macos_process::registration(session, identity)
+}
+
+fn admit_group_change(
+    pid: pid_t,
+    operation: ProcessGroupOperation,
+) -> std::result::Result<(), c_int> {
+    register_owned_process(pid).map_err(|_| {
+        if let Some(session) = SESSION.get()
+            && let Ok(bytes) = serde_json::to_vec(&operation)
+        {
+            record_bytes(session, "process-group-failure", &bytes);
+        }
+        fail(Code::PnportInjectionFailed)
+    })
 }
 
 #[cfg(test)]
@@ -847,9 +868,10 @@ unsafe extern "C" fn initialize() {
         let group = std::env::var("PNPORT_MACOS_GROUP")
             .ok()
             .and_then(|group| group.parse::<pid_t>().ok())
-            .filter(|group| *group > 0 && *group == libc::getpgrp())
+            .filter(|group| *group > 0)
             .ok_or(Stage::OwnedGroup)?;
         OWNED_GROUP.set(group).map_err(|_| Stage::OwnedGroup)?;
+        register_owned_process(getpid()).map_err(|_| Stage::OwnedGroup)?;
         let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
         let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
         let view = View::new(graph, cache, session.clone());
@@ -1676,29 +1698,34 @@ hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
     if result>=0 {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&newfd);if let Some(t)=t {runtime.descriptors.insert(newfd,t);}} result
 });
 
-// Until every additional group has a pinned native owner, permit only
-// operations that keep children in the existing owned group. Do not emulate
-// successful detachment or signal an unreserved group found by PID polling.
-// Remove this containment boundary only with complete multi-group ownership,
-// abrupt-supervisor recovery and native terminal/job-control acceptance.
+// Group/session changes keep native behavior only after the target birth is
+// durably admitted. Cleanup addresses audit generations, never new group IDs.
 hook!(setsid, pnport_setsid, () -> pid_t, {
     let original = original!(setsid, unsafe extern "C" fn()->pid_t);
     let Some(_guard) = Guard::enter() else { return original(); };
     if RUNTIME.get().is_none() || libc::getpid() == libc::getpgrp() { return original(); }
-    errno(reject_group_change(ProcessGroupOperation::Session));
-    -1
+    if let Err(error) = admit_group_change(libc::getpid(), ProcessGroupOperation::Session) { errno(error); return -1; }
+    original()
 });
 hook!(setpgid, pnport_setpgid, (pid:pid_t,group:pid_t) -> c_int, {
     let original = original!(setpgid, unsafe extern "C" fn(pid_t,pid_t)->c_int);
     let Some(_guard) = Guard::enter() else { return original(pid,group); };
     if RUNTIME.get().is_none() || pid < 0 || group < 0 { return original(pid,group); }
     let target = if pid == 0 { libc::getpid() } else { pid };
-    let destination = if group == 0 { target } else { group };
-    if OWNED_GROUP.get().is_some_and(|owned| *owned == destination) {
-        return original(pid,group);
+    // Preserve native errors for absent targets and non-child targets. Darwin
+    // cannot move an unrelated process; its PID is never admitted by this call.
+    match pnport_core::macos_process::Identity::capture(target) {
+        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return original(pid,group),
+        Ok(identity) if target != libc::getpid() => {
+            if pnport_core::macos_process::Identity::capture(libc::getpid()).is_ok_and(|current| current.birth != identity.parent_birth) {
+                return original(pid,group);
+            }
+        }
+        _ => (),
     }
-    errno(reject_group_change(ProcessGroupOperation::Group));
-    -1
+    if let Err(error) = admit_group_change(libc::getpid(), ProcessGroupOperation::Group) { errno(error); return -1; }
+    if let Err(error) = admit_group_change(target, ProcessGroupOperation::Group) { errno(error); return -1; }
+    original(pid,group)
 });
 unsafe extern "C" {
     #[link_name = "setpgrp"]
@@ -1882,11 +1909,6 @@ unsafe fn spawn_admitted(
     argv: *const *mut c_char,
     envp: *const *mut c_char,
 ) -> c_int {
-    // libc exposes the common POSIX spawn flags on macOS but not this
-    // Darwin-specific session flag. Keep the SDK-defined value local so a
-    // request for a new session is rejected before native spawn can detach
-    // the child from the supervisor's process group.
-    const MACOS_POSIX_SPAWN_SETSID: c_int = 0x0400;
     let original = original!(
         posix_spawn,
         unsafe extern "C" fn(
@@ -1898,29 +1920,11 @@ unsafe fn spawn_admitted(
             *const *mut c_char,
         ) -> c_int
     );
-    if !attributes.is_null() {
-        let mut flags = 0;
-        let result = libc::posix_spawnattr_getflags(attributes, &raw mut flags);
-        if result != 0 {
-            return result;
-        }
-        let flags = i32::from(flags);
-        if flags & MACOS_POSIX_SPAWN_SETSID != 0 {
-            return reject_group_change(ProcessGroupOperation::Session);
-        }
-        if flags & libc::POSIX_SPAWN_SETPGROUP != 0 {
-            let mut group = 0;
-            let result = libc::posix_spawnattr_getpgroup(attributes, &raw mut group);
-            if result != 0 {
-                return result;
-            }
-            if group < 0 {
-                return EINVAL;
-            }
-            if OWNED_GROUP.get().is_none_or(|owned| *owned != group) {
-                return reject_group_change(ProcessGroupOperation::SpawnGroup);
-            }
-        }
+    // Register the parent's current image before the kernel creates a child,
+    // including POSIX_SPAWN_SETSID/SETPGROUP and environment replacement. Its
+    // original-parent version proves ownership even before child initialization.
+    if let Err(error) = admit_group_change(getpid(), ProcessGroupOperation::SpawnGroup) {
+        return error;
     }
     // Opaque file actions can change the child's cwd before resolving a
     // relative image. Until the actions can be inspected, reject this shape

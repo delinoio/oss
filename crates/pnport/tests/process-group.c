@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Native controls distinguish rejected group creation from successful joining.
+// Native controls compare admitted group/session creation and existing joins.
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
         if (result) return result == ENOTSUP ? 0 : 86;
         if (marker("spawn-created")) return 87;
         result = reaped(child);
-        if (!result && !strcmp(argv[1], "spawn-same")) puts("owned group control");
+        if (!result) puts("owned group control");
         return result;
     }
     pid_t child = fork();

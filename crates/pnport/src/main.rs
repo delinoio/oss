@@ -21,6 +21,8 @@ mod linux;
 mod macos_job;
 #[cfg(target_os = "macos")]
 mod macos_owner;
+#[cfg(target_os = "macos")]
+mod macos_registry;
 mod supervisor;
 
 #[derive(Parser)]

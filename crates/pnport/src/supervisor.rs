@@ -117,7 +117,7 @@ pub fn artifact() -> Result<PathBuf> {
         }
     }
     let marker = if cfg!(target_os = "macos") {
-        b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY"
+        b"PNPORT_PRELOAD_0.1.0_FORMAT_3_READY"
     } else {
         b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY"
     };
@@ -236,6 +236,13 @@ fn pending_entry_state(
 
 #[cfg(not(target_os = "linux"))]
 impl PendingLaunches {
+    #[cfg(target_os = "macos")]
+    fn pause(&mut self, duration: Duration) {
+        for (_, observed) in self.observed.values_mut() {
+            *observed += duration;
+        }
+    }
+
     fn observe(&mut self, session: &Path) -> Result<bool> {
         let entries = match fs::read_dir(session.join("pending")) {
             Ok(entries) => entries,
@@ -400,7 +407,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         #[cfg(not(target_os = "macos"))]
         command.env(variable, artifact);
         #[cfg(target_os = "macos")]
-        let mut owner = crate::macos_owner::Owner::start()?;
+        let mut owner = crate::macos_owner::Owner::start(&view.session)?;
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -413,7 +420,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         }
         tracing::debug!(action = "spawn", "Starting the owned process tree");
         #[cfg(target_os = "macos")]
-        let job = crate::macos_job::Job::start(owner.group(), &mut command)?;
+        let mut job = crate::macos_job::Job::start(owner.group(), &mut command)?;
         #[cfg(target_os = "macos")]
         admission.verify_at_launch()?;
         let mut child = command.spawn().map_err(|e| {
@@ -427,7 +434,11 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             )
         })?;
         let pid = child.id() as i32;
+        #[cfg(target_os = "macos")]
+        owner.admit_root(pid)?;
         let start = Instant::now();
+        #[cfg(target_os = "macos")]
+        let mut start = start;
         let mut status = None;
         let mut root_exited_at = None;
         let mut watch = crate::input_watch::InputWatch::default();
@@ -444,7 +455,11 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             }
             #[cfg(target_os = "macos")]
             if status.is_none() {
-                job.poll_stop(pid)?;
+                if let Some(paused) = job.poll_stop(pid)? {
+                    start += paused;
+                    pending_launches.pause(paused);
+                    owner.resume()?;
+                }
             }
             for input in &view.graph.snapshot.inputs {
                 watch.register(input)?;

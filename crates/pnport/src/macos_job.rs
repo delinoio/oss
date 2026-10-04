@@ -6,6 +6,7 @@ use std::{
     io, mem,
     os::{fd::AsRawFd, unix::process::CommandExt},
     process::Command,
+    time::{Duration, Instant},
 };
 
 use pnport::diagnostic::{Code, Error, Result};
@@ -120,7 +121,7 @@ impl Job {
         }
     }
 
-    pub fn poll_stop(&self, pid: i32) -> Result<()> {
+    pub fn poll_stop(&mut self, pid: i32) -> Result<Option<Duration>> {
         let mut event = unsafe { mem::zeroed::<libc::siginfo_t>() };
         // Deliberately omit WEXITED: Child owns root reaping and its exit status.
         let result = unsafe {
@@ -133,13 +134,24 @@ impl Job {
         };
         if result != 0 {
             return if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
-                Ok(())
+                Ok(None)
             } else {
                 Err(failure())
             };
         }
         if event.si_pid == pid && event.si_code == libc::CLD_STOPPED {
             self.restore()?;
+            let suspended = Instant::now();
+            // The root is our unreaped direct child. Follow its native group
+            // for tty foreground handoff only within our controlling session;
+            // detached sessions receive audit-bound resume without tty access.
+            if unsafe { libc::getsid(pid) } == unsafe { libc::getsid(0) } {
+                let group = unsafe { libc::getpgid(pid) };
+                if group <= 0 {
+                    return Err(failure());
+                }
+                self.group = group;
+            }
             tracing::debug!(action = "macos_job_stopped", "Owned command stopped");
             // The shell must observe a stopped pnport job, including a command
             // SIGSTOP and background SIGTTIN. SIGCONT resumes this exact point.
@@ -147,12 +159,10 @@ impl Job {
                 return Err(failure());
             }
             self.claim()?;
-            if unsafe { libc::kill(-self.group, libc::SIGCONT) } != 0 {
-                return Err(failure());
-            }
             tracing::debug!(action = "macos_job_resumed", "Owned command resumed");
+            return Ok(Some(suspended.elapsed()));
         }
-        Ok(())
+        Ok(None)
     }
 }
 

@@ -90,7 +90,8 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
-    if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0 || strcmp(mode, "terminal-pipe") == 0) {
+    if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0 || strcmp(mode, "terminal-pipe") == 0 || !strcmp(mode, "terminal-group") || !strcmp(mode, "terminal-pending-pause")) {
+        if (!strcmp(mode, "terminal-group") && setpgid(0, 0)) return 80;
         FILE *marker = fopen("root.group", "w");
         if (!marker) return 67;
         fprintf(marker, "%d", getpgrp());
@@ -111,6 +112,22 @@ int main(int argc, char **argv) {
         if (!marker) return 71;
         fputs("1", marker);
         fclose(marker);
+        if (!strcmp(mode, "terminal-pending-pause")) {
+            // Synthetic pending image: it deliberately has no constructor
+            // acknowledgement while the shell suspends the whole job.
+            char pending[4096];
+            const char *session = getenv("PNPORT_SESSION");
+            if (!session || snprintf(pending, sizeof(pending), "%s/pending", session) >= (int)sizeof(pending)) return 81;
+            if (mkdir(pending, 0700) && errno != EEXIST) return 82;
+            if (snprintf(pending, sizeof(pending), "%s/pending/pnport-paused-image", session) >= (int)sizeof(pending)) return 83;
+            int token = open(pending, O_CREAT | O_WRONLY | O_EXCL, 0600);
+            if (token < 0) return 84;
+            close(token);
+            usleep(300000);
+            raise(SIGSTOP);
+            usleep(300000);
+            if (unlink(pending)) return 85;
+        }
         if (strcmp(mode, "terminal-stop") == 0) raise(SIGSTOP);
         if (!terminal_line(line, sizeof(line)) || strcmp(line, "second\n")) return 72;
         return dependency() ? 73 : 23;
@@ -122,15 +139,18 @@ int main(int argc, char **argv) {
         fclose(group);
         return concurrent_fork();
     }
-    if (strcmp(role, "middle") == 0 && strcmp(mode, "detached") == 0 && setsid() < 0)
-        return 44;
+    int detached = !strncmp(mode, "detached", 8);
+    if (!strcmp(role, "middle") && detached && !strstr(mode, "spawn-")) {
+        int changed = strstr(mode, "group") ? setpgid(0, 0) : setsid();
+        if (changed < 0) return 44;
+    }
     char name[64];
     snprintf(name, sizeof(name), "%s.signal", role);
     signal_file = open(name, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (signal_file < 0) return 45;
     struct sigaction action = {0};
     sigemptyset(&action.sa_mask);
-    action.sa_handler = strcmp(mode, "ignore") == 0 ? SIG_IGN : stopped;
+    action.sa_handler = strstr(mode, "ignore") ? SIG_IGN : stopped;
     for (int index = 0; index < 3; index++) {
         int signals[] = {SIGINT, SIGTERM, SIGHUP};
         if (sigaction(signals[index], &action, NULL) != 0) return 46;
@@ -161,11 +181,29 @@ int main(int argc, char **argv) {
             posix_spawnattr_destroy(&attributes);
             posix_spawn_file_actions_destroy(&actions);
             if (result) return 63;
+        } else if (detached && strstr(mode, "spawn-")) {
+            posix_spawnattr_t attributes;
+            short flags = strstr(mode, "session") ? POSIX_SPAWN_SETSID : POSIX_SPAWN_SETPGROUP;
+            if (posix_spawnattr_init(&attributes) || posix_spawnattr_setflags(&attributes, flags) ||
+                (flags == POSIX_SPAWN_SETPGROUP && posix_spawnattr_setpgroup(&attributes, 0))) return 77;
+            result = posix_spawn(&child, argv[0], NULL, &attributes, args, environment);
+            posix_spawnattr_destroy(&attributes);
+            if (result) return 78;
         } else {
             child = fork();
             if (child < 0) return 47;
         }
         if (child == 0) {
+            if (!strcmp(role, "middle") && !strcmp(mode, "detached-orphan")) {
+                // Stop before exec/constructor registration. After the middle
+                // exits, only the kernel's original-parent version proves this
+                // child belongs to the tree; current PPID becomes launchd.
+                FILE *parked = fopen("parked.pid", "w");
+                if (!parked) _exit(79);
+                fprintf(parked, "%d", getpid());
+                fclose(parked);
+                raise(SIGSTOP);
+            }
             execve(argv[0], args, environment);
             _exit(48);
         }
@@ -180,7 +218,11 @@ int main(int argc, char **argv) {
     if (!marker) return 49;
     fprintf(marker, "%d", getpid());
     fclose(marker);
-    if (strcmp(role, "root") == 0 && strcmp(mode, "exit") == 0) {
+    if (!strcmp(role, "middle") && !strcmp(mode, "detached-orphan")) {
+        while (access("orphan-release", F_OK)) usleep(10000);
+        return 0;
+    }
+    if (strcmp(role, "root") == 0 && (!strcmp(mode, "exit") || !strcmp(mode, "detached-exit"))) {
         struct stat info;
         for (int attempt = 0; attempt < 1000; attempt++) {
             if (stat("leaf.pid", &info) == 0 && info.st_size > 0) return 23;

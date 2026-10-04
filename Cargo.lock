@@ -9170,6 +9170,7 @@ dependencies = [
  "dirs 6.0.0",
  "fs2",
  "fspy_shared_unix",
+ "hmac",
  "libc",
  "plist",
  "pnp",

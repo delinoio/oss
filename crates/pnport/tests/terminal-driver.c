@@ -23,6 +23,10 @@ int main(int argc, char **argv) {
     int input[2] = {-1, -1};
     int redirected = strcmp(argv[3], "redirected") == 0;
     if (redirected && pipe(input)) return 85;
+    const char *command_mode = redirected ? "terminal-pipe" :
+        !strcmp(argv[3], "new-group") ? "terminal-group" :
+        !strcmp(argv[3], "pending-pause") ? "terminal-pending-pause" :
+        !strcmp(argv[3], "self-stop") ? "terminal-stop" : "terminal";
     int launch[2];
     if (pipe(launch)) return 83;
     pid_t child = fork();
@@ -55,11 +59,11 @@ int main(int argc, char **argv) {
             if (log < 0 || dup2(log, STDERR_FILENO) < 0) _exit(88);
             close(log);
             execl(argv[1], argv[1], "--log-level", "debug", "--cache-dir", "store", "run", "--", argv[2],
-                  "root", redirected ? "terminal-pipe" : strcmp(argv[3], "self-stop") == 0 ? "terminal-stop" : "terminal", (char *)NULL);
+                  "root", command_mode, (char *)NULL);
             _exit(74);
         }
         execl(argv[1], argv[1], "--cache-dir", "store", "run", "--", argv[2],
-              "root", redirected ? "terminal-pipe" : strcmp(argv[3], "self-stop") == 0 ? "terminal-stop" : "terminal", (char *)NULL);
+              "root", command_mode, (char *)NULL);
         _exit(74);
     }
     int status;
@@ -97,6 +101,7 @@ int main(int argc, char **argv) {
         pid_t expected = strcmp(argv[3], "background") == 0 ? getpgrp() : child;
         if (tcgetpgrp(0) != expected) return 79;
         marker("terminal.stopped");
+        if (!strcmp(argv[3], "pending-pause")) sleep(6);
         if (tcsetpgrp(0, child) || kill(-child, SIGCONT)) return 80;
     }
     if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return 81;

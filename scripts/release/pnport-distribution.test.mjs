@@ -68,7 +68,7 @@ test("preview launcher and native tarballs retain exact version and immutable id
     const preload = path.join(output, "preload-fixture");
     writeFileSync(binary, `#!/bin/sh\nprintf 'pnport ${version}\\n'\n`);
     chmodSync(binary, 0o755);
-    writeFileSync(preload, target.os === "darwin" ? "PNPORT_PRELOAD_0.1.0_FORMAT_2_READY" : "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
+    writeFileSync(preload, target.os === "darwin" ? "PNPORT_PRELOAD_0.1.0_FORMAT_3_READY" : "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
     const native = buildPackage({ target, binary, preload, output, sourceRevision: revision, read });
     assert.equal(native.version, version);
     assert.equal(inspectTarball(path.join(output, "tarballs", native.filename), version, revision).integrity, native.integrity);
@@ -107,6 +107,8 @@ test("macOS native package inspection rejects companions without constructor lea
     writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_1_READY");
     assert.throws(() => inspectTarball(pack(), version, revision), /companion ABI mismatch/u);
     writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_2_READY");
+    assert.throws(() => inspectTarball(pack(), version, revision), /companion ABI mismatch/u);
+    writeFileSync(preload, "PNPORT_PRELOAD_0.1.0_FORMAT_3_READY");
     assert.equal(inspectTarball(pack(), version, revision).name, target.name);
   }
 });
