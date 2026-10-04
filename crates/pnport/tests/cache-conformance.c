@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <utime.h>
 #ifdef __APPLE__
+#include <sys/clonefile.h>
 #include <sys/xattr.h>
 #endif
 #ifdef __linux__
@@ -298,6 +299,35 @@ int main(int argc, char **argv) {
     errno = 0; CHECK(lutimes("node_modules/dep", NULL) == -1 && errno == EROFS);
     CHECK(renamex_np("node_modules/.vite/results.json", "node_modules/.new-tool/results.json", RENAME_EXCL) == 0);
     CHECK(renameatx_np(copy, ".new-tool/results.json", copy, ".vite/results.json", RENAME_EXCL) == 0);
+#endif
+#ifdef __APPLE__
+    int clone_source = open("clone-source", O_CREAT | O_TRUNC | O_RDWR, 0600);
+    CHECK(clone_source >= 0 && write(clone_source, "clone", 5) == 5);
+    errno = 0; CHECK(clonefileat(parent, "clone-source", copy, "dep", 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(fclonefileat(clone_source, copy, ".bin", 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(fclonefileat(clone_source, copy, "dep", 0) == -1 && errno == EROFS);
+    errno = 0; CHECK(clonefile("clone-source", "node_modules/dep", 0) == -1 && errno == EROFS);
+    CHECK(clonefileat(parent, "clone-source", copy, ".clone-at", CLONE_NOOWNERCOPY) == 0);
+    CHECK(fclonefileat(clone_source, copy, ".clone-fd", 0) == 0);
+    CHECK(clonefile("node_modules/dep/file.txt", "node_modules/.clone-path", 0) == 0);
+    file = openat(copy, ".clone-fd", O_RDONLY); CHECK(file >= 0);
+    memset(bytes, 0, sizeof(bytes)); CHECK(read(file, bytes, sizeof(bytes)) == 5 && !memcmp(bytes, "clone", 5)); close(file);
+    file = open("node_modules/dep/file.txt", O_RDONLY); CHECK(file >= 0);
+    CHECK(fclonefileat(file, copy, ".clone-dep-fd", 0) == 0); close(file);
+    CHECK(symlink("clone-source", "clone-link") == 0);
+    CHECK(clonefileat(parent, "clone-link", copy, ".clone-link", CLONE_NOFOLLOW) == 0);
+    memset(bytes, 0, sizeof(bytes));
+    CHECK(readlinkat(copy, ".clone-link", bytes, sizeof(bytes)) == 12 && !memcmp(bytes, "clone-source", 12));
+    errno = 0; CHECK(clonefileat(parent, "clone-link", copy, ".clone-any", CLONE_NOFOLLOW_ANY) == -1 && errno == ELOOP);
+    errno = 0; CHECK(clonefileat(parent, "node_modules/dep/file.txt", copy, ".clone-any", CLONE_NOFOLLOW_ANY) == -1 && errno == ELOOP);
+    CHECK(clonefileat(parent, "clone-source", parent, "clone-beneath", CLONE_RESOLVE_BENEATH) == 0);
+    errno = 0; CHECK(clonefileat(parent, "clone-source", copy, ".clone-beneath", CLONE_RESOLVE_BENEATH) == -1 && errno == ENOTSUP);
+    errno = 0; CHECK(clonefileat(-1, "clone-source", copy, ".clone-invalid", 0) == -1 && errno == EBADF);
+    errno = 0; CHECK(fclonefileat(-1, copy, ".clone-invalid", 0) == -1 && errno == EBADF);
+    errno = 0; CHECK(clonefile("clone-source", "node_modules/.clone-invalid", UINT32_C(0x80000000)) == -1 && errno == EINVAL);
+    const char *clones[] = {".clone-at", ".clone-fd", ".clone-path", ".clone-dep-fd", ".clone-link"};
+    for (size_t i = 0; i < sizeof(clones) / sizeof(clones[0]); i++) CHECK(unlinkat(copy, clones[i], 0) == 0);
+    close(clone_source); CHECK(unlink("clone-source") == 0 && unlink("clone-link") == 0 && unlink("clone-beneath") == 0);
 #endif
     close(parent);
     CHECK(symlink("../node_modules/dep", "node_modules/.cache-link") == 0 || errno == EEXIST);

@@ -1901,6 +1901,98 @@ hook!(renameatx_np, pnport_renameatx, (from_fd:c_int,from:*const c_char,to_fd:c_
     let (to,_)=translated!(to,to_fd,true,false,-1);
     original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr(),flags)
 });
+// Darwin's sys/clonefile.h flags are absent from Rust libc's constants.
+const CLONE_NOFOLLOW: u32 = 0x0001;
+const CLONE_NOOWNERCOPY: u32 = 0x0002;
+const CLONE_ACL: u32 = 0x0004;
+const CLONE_NOFOLLOW_ANY: u32 = 0x0008;
+const CLONE_RESOLVE_BENEATH: u32 = 0x0010;
+
+const fn clone_policy(flags: u32) -> std::result::Result<(bool, SymlinkPolicy), c_int> {
+    if flags
+        & !(CLONE_NOFOLLOW
+            | CLONE_NOOWNERCOPY
+            | CLONE_ACL
+            | CLONE_NOFOLLOW_ANY
+            | CLONE_RESOLVE_BENEATH)
+        != 0
+    {
+        return Err(EINVAL);
+    }
+    Ok((
+        flags & CLONE_NOFOLLOW == 0,
+        if flags & CLONE_NOFOLLOW_ANY != 0 {
+            SymlinkPolicy::Reject
+        } else {
+            SymlinkPolicy::Allow
+        },
+    ))
+}
+
+struct ClonePaths {
+    source: CString,
+    destination: CString,
+    native: bool,
+}
+
+unsafe fn clone_paths(
+    from_fd: c_int,
+    from: *const c_char,
+    to_fd: c_int,
+    to: *const c_char,
+    flags: u32,
+) -> std::result::Result<ClonePaths, c_int> {
+    let (follow, policy) = clone_policy(flags)?;
+    // Cloning reads the source without changing its inode/link count. Only
+    // destination creation needs write authority, unlike hard-link creation.
+    let (source, source_translation) = translate_following(from, from_fd, false, follow, policy)?;
+    let (destination, destination_translation) =
+        translate_following(to, to_fd, true, follow, policy)?;
+    let native = source_translation.kind == PathKind::Native
+        && !source_translation.readonly
+        && destination_translation.kind == PathKind::Native;
+    if flags & CLONE_RESOLVE_BENEATH != 0 && !native {
+        // Absolute backing rewrites cannot retain descriptor-relative beneath
+        // constraints. Fail without creation until bounded managed support exists.
+        return Err(ENOTSUP);
+    }
+    Ok(ClonePaths {
+        source,
+        destination,
+        native,
+    })
+}
+
+hook!(clonefile, pnport_clonefile, (from:*const c_char,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(clonefile,unsafe extern "C" fn(*const c_char,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to,flags);};
+    if RUNTIME.get().is_none() {return original(from,to,flags);}
+    let paths=match clone_paths(AT_FDCWD,from,AT_FDCWD,to,flags) {
+        Ok(paths)=>paths,Err(code)=>{errno(code);return -1;}
+    };
+    if paths.native {original(from,to,flags)}
+    else {original(paths.source.as_ptr(),paths.destination.as_ptr(),flags)}
+});
+hook!(clonefileat, pnport_clonefileat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(clonefileat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let paths=match clone_paths(from_fd,from,to_fd,to,flags) {
+        Ok(paths)=>paths,Err(code)=>{errno(code);return -1;}
+    };
+    if paths.native {original(from_fd,from,to_fd,to,flags)}
+    else {original(AT_FDCWD,paths.source.as_ptr(),AT_FDCWD,paths.destination.as_ptr(),flags)}
+});
+hook!(fclonefileat, pnport_fclonefileat, (from_fd:c_int,to_fd:c_int,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(fclonefileat,unsafe extern "C" fn(c_int,c_int,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,to_fd,to,flags);}
+    let (follow,policy)=match clone_policy(flags) {Ok(policy)=>policy,Err(code)=>{errno(code);return -1;}};
+    let (destination,translation)=translated!(to,to_fd,true,follow,policy,-1);
+    if translation.kind==PathKind::Native {return original(from_fd,to_fd,to,flags);}
+    if flags & CLONE_RESOLVE_BENEATH!=0 {errno(ENOTSUP);return -1;}
+    original(from_fd,AT_FDCWD,destination.as_ptr(),flags)
+});
 hook!(link, pnport_link, (from:*const c_char,to:*const c_char) -> c_int, {
     let original=original!(link,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(from,to);};
