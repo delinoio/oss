@@ -358,6 +358,11 @@ func TestUnmergedVersion25LayoutsRequireRecoveryWithoutModification(t *testing.T
 	} {
 		t.Run(ddl, func(t *testing.T) {
 			s, root := openTest(t)
+			// Reconstruct the frozen version-25 layout before adding a foreign
+			// branch table. A fresh current store includes later diagnostics tables.
+			if _, err := historicalSchema(s.db, "025"); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := s.db.Exec("DELETE FROM metadata WHERE key='native_accounting_layout'"); err != nil {
 				t.Fatal(err)
 			}
