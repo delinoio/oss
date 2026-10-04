@@ -195,6 +195,9 @@ func Import(ctx context.Context, root string, vault ProtectedStore, authority Au
 			if err := save(filepath.Join(root, "network-cache.json"), previous); err != nil {
 				return zero, err
 			}
+			if err := cleanupObsoleteDerivatives(ctx, vault, authority.MachineID, previous.Reference); err != nil {
+				return previous, err
+			}
 			return previous, nil
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -215,16 +218,22 @@ func Import(ctx context.Context, root string, vault ProtectedStore, authority Au
 	}
 	// Each already running native proxy retains its own bounded Go copy. Only
 	// the new complete derivative is reloadable; old references grant no fallback.
-	refs, err := vault.UnremovedReferences(ctx, authority.MachineID)
+	return metadata, cleanupObsoleteDerivatives(ctx, vault, authority.MachineID, metadata.Reference)
+}
+
+// The committed current reference is also the durable cleanup boundary. Retry
+// reconciliation enumerates obsolete derivatives even at the same generation.
+func cleanupObsoleteDerivatives(ctx context.Context, vault ProtectedStore, owner domain.ID, current credentials.Ref) error {
+	refs, err := vault.UnremovedReferences(ctx, owner)
 	if err != nil {
-		return metadata, err
+		return err
 	}
 	for _, ref := range refs {
-		if ref.Purpose == credentials.WorkerNetworkConfig && ref != metadata.Reference {
+		if ref.Owner == owner && ref.Purpose == credentials.WorkerNetworkConfig && ref != current {
 			if err := vault.Delete(ctx, ref); err != nil {
-				return metadata, err
+				return err
 			}
 		}
 	}
-	return metadata, nil
+	return nil
 }

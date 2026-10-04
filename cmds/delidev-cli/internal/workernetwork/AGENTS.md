@@ -5,3 +5,5 @@
 - Keep recipient private keys and derivative contents in the existing OS-key-wrapped credential Vault. Ordinary metadata contains public recipient/reference, scope, generation and ciphertext digest only. No plaintext fallback, key regeneration after uncertain publication, ambient route discovery, older-profile fallback or offline readiness.
 - Preserve atomic complete cache publication and monotonic generation; same-generation conflicting authority is recovery-required. Native runtimes retain independent bounded Go copies while new control attempts adopt the newly reconciled cache.
 - Tests inject isolated protected stores and temporary state. Never read user credentials or access real proxy infrastructure.
+
+- Same-generation import reconciliation retries obsolete protected-derivative enumeration/deletion after current cache publication; retain the committed current reference through cleanup failure. Transferred bundle issuance allows at most 30 seconds of clock skew between hosts while enforcing the original absolute expiry and five-minute lifetime.

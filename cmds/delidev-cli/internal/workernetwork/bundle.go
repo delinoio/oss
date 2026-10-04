@@ -24,6 +24,9 @@ import (
 const MaxPlaintext = 48 << 10
 const MaxCiphertext = 96 << 10
 
+// Transfer spans independently clocked hosts. This allowance never extends expiry.
+const maxTransferClockSkew = 30 * time.Second
+
 // Authority is selected independently of the file being imported. Pending
 // pairing and an existing paired device retain the same exact scope.
 type Authority struct {
@@ -87,7 +90,7 @@ func (b Bundle) validate(now time.Time, fresh bool) error {
 	if err != nil || r.String() != b.Recipient {
 		return invalid()
 	}
-	if b.IssuedAt.IsZero() || !b.ExpiresAt.After(b.IssuedAt) || b.ExpiresAt.Sub(b.IssuedAt) > 5*time.Minute || b.IssuedAt.After(now.Add(time.Second)) || fresh && !b.ExpiresAt.After(now) {
+	if b.IssuedAt.IsZero() || !b.ExpiresAt.After(b.IssuedAt) || b.ExpiresAt.Sub(b.IssuedAt) > 5*time.Minute || b.IssuedAt.After(now.Add(maxTransferClockSkew)) || fresh && !b.ExpiresAt.After(now) {
 		return invalid()
 	}
 	if (b.Credential != nil) != (b.Route.Profile.CredentialGeneration != "") || b.Credential != nil && b.Credential.Validate() != nil {

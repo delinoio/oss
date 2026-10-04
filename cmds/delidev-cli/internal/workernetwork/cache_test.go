@@ -17,9 +17,11 @@ import (
 )
 
 type isolatedStore struct {
-	values  map[credentials.Ref][]byte
-	locked  bool
-	failPut bool
+	values         map[credentials.Ref][]byte
+	locked         bool
+	failPut        bool
+	failDelete     bool
+	failReferences bool
 }
 
 func (s *isolatedStore) Get(_ context.Context, r credentials.Ref) ([]byte, error) {
@@ -43,10 +45,16 @@ func (s *isolatedStore) Put(_ context.Context, r credentials.Ref, v []byte) (str
 	return "fixture-protected-reference", nil
 }
 func (s *isolatedStore) Delete(_ context.Context, r credentials.Ref) error {
+	if s.failDelete {
+		return domain.Fail(domain.Unavailable, "Fixture deletion unavailable.", "")
+	}
 	delete(s.values, r)
 	return nil
 }
 func (s *isolatedStore) UnremovedReferences(_ context.Context, owner domain.ID) ([]credentials.Ref, error) {
+	if s.failReferences {
+		return nil, domain.Fail(domain.Unavailable, "Fixture enumeration unavailable.", "")
+	}
 	var refs []credentials.Ref
 	for r := range s.values {
 		if r.Owner == owner {
@@ -202,5 +210,69 @@ func TestMissingProtectedDerivativeNeverReplacesGeneration(t *testing.T) {
 	cipher, digest, _ = Encrypt(ctx, replacement)
 	if _, err := Import(ctx, root, vault, authority, cipher, digest); domain.SafeError(err).Code != domain.RecoveryRequired {
 		t.Fatal("missing derivative was treated as absent cache", err)
+	}
+}
+
+func TestImportRetriesObsoleteCredentialCleanupAfterCachePublication(t *testing.T) {
+	for _, failure := range []string{"enumeration", "deletion"} {
+		t.Run(failure, func(t *testing.T) {
+			root, vault, authority, _, bundle := fixture(t)
+			ctx := context.Background()
+			cipher, digest, err := Encrypt(ctx, bundle)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old, err := Import(ctx, root, vault, authority, cipher, digest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundle.Generation++
+			bundle.ExportID = domain.NewID()
+			cipher, digest, err = Encrypt(ctx, bundle)
+			if err != nil {
+				t.Fatal(err)
+			}
+			vault.failReferences = failure == "enumeration"
+			vault.failDelete = failure == "deletion"
+			committed, err := Import(ctx, root, vault, authority, cipher, digest)
+			if err == nil || committed.Generation != bundle.Generation {
+				t.Fatal("cleanup failure lost committed authority", err)
+			}
+			if _, ok := vault.values[old.Reference]; !ok {
+				t.Fatal("fixture did not retain failed derivative")
+			}
+			vault.failReferences, vault.failDelete = false, false
+			again, err := Import(ctx, root, vault, authority, cipher, digest)
+			if err != nil || again.Reference != committed.Reference || again.Generation != committed.Generation {
+				t.Fatal("same-generation reconciliation changed cache", err)
+			}
+			if _, ok := vault.values[old.Reference]; ok {
+				t.Fatal("obsolete credential survived successful retry")
+			}
+			if _, ok := vault.values[committed.Reference]; !ok {
+				t.Fatal("retry deleted current credential")
+			}
+		})
+	}
+}
+
+func TestBundleAllowsBoundedClockSkewWithoutExtendingExpiry(t *testing.T) {
+	_, _, _, _, bundle := fixture(t)
+	now := time.Now().UTC()
+	bundle.IssuedAt = now.Add(maxTransferClockSkew)
+	bundle.ExpiresAt = bundle.IssuedAt.Add(5 * time.Minute)
+	if err := bundle.validate(now, true); err != nil {
+		t.Fatal("bounded host skew rejected", err)
+	}
+	if err := bundle.validate(now.Add(-time.Nanosecond), true); err == nil {
+		t.Fatal("excess future skew accepted")
+	}
+	if err := bundle.validate(bundle.ExpiresAt, true); err == nil {
+		t.Fatal("clock allowance extended expired transfer")
+	}
+	bundle.IssuedAt = now.Add(10 * time.Second)
+	bundle.ExpiresAt = bundle.IssuedAt.Add(5 * time.Minute)
+	if _, _, err := Encrypt(context.Background(), bundle); err != nil {
+		t.Fatal("realistic transfer skew rejected", err)
 	}
 }
