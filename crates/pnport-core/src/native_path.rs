@@ -247,6 +247,15 @@ pub fn resolved_lookup_with_policy(
     })
 }
 
+/// Detect a terminal `.` even when the caller adds trailing separators.
+pub fn terminal_current_directory(path: &Path) -> bool {
+    path.as_os_str()
+        .as_bytes()
+        .rsplit(|byte| *byte == b'/')
+        .find(|component| !component.is_empty())
+        == Some(b".")
+}
+
 fn terminal_directory(path: &Path) -> bool {
     let bytes = path.as_os_str().as_bytes();
     bytes.ends_with(b"/") || bytes.ends_with(b"/.")

@@ -142,6 +142,18 @@ static int buffer_cookies(int fd) {
 }
 #endif
 int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "mkdir-dot")) {
+        const char *paths[] = {"node_modules/.", "node_modules/./", "node_modules/././/"};
+        int parent = open(".", O_RDONLY | O_DIRECTORY); CHECK(parent >= 0);
+        for (int i = 0; i < 3; i++) {
+            errno = 0; CHECK(mkdir(paths[i], 0700) == -1 && errno == EEXIST);
+            errno = 0; CHECK(mkdirat(parent, paths[i], 0700) == -1 && errno == EEXIST);
+        }
+        int root = open("node_modules", O_RDONLY | O_DIRECTORY); CHECK(root >= 0);
+        errno = 0; CHECK(mkdirat(root, ".", 0700) == -1 && errno == EEXIST);
+        close(root); close(parent);
+        puts("cache-mkdir-dot-ok"); return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "conflict")) {
         int fd = open("entered", O_CREAT | O_WRONLY, 0600);
         CHECK(fd >= 0); close(fd);
@@ -158,7 +170,7 @@ int main(int argc, char **argv) {
         (void)stat(argc > 2 ? argv[2] : "node_modules/dep/file.txt", &metadata);
         return 2;
     }
-    CHECK(make("node_modules"));
+    CHECK(make("node_modules/"));
     CHECK(make("node_modules/.vite"));
     CHECK(make("node_modules/.new-tool"));
     int root = open("node_modules", O_RDONLY | O_DIRECTORY);

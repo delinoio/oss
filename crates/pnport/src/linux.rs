@@ -2652,6 +2652,12 @@ impl Trace<'_> {
         #[cfg(target_arch = "aarch64")]
         let creates_directory = call == libc::SYS_mkdirat;
         if creates_directory && translation.kind == PathKind::CacheContainer {
+            if pnport::native_path::terminal_current_directory(&original) {
+                // mkdir targets the existing virtual '.', not a new native
+                // container. Do not erase that final component on rewrite.
+                self.force_error(pid, &mut regs, path_arg, libc::EEXIST)?;
+                return Ok(true);
+            }
             translation.physical = translation.logical.clone();
             translation.readonly = false;
         }

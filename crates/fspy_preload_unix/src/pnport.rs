@@ -1205,6 +1205,14 @@ path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, false, -1);
 unsafe fn mkdir_path(path: *const c_char, fd: c_int) -> std::result::Result<CString, c_int> {
     let (_, translation) = translate_following(path, fd, false, false, SymlinkPolicy::Allow)?;
     if translation.kind == PathKind::CacheContainer {
+        let bytes = path_bytes(path)?;
+        if pnport_core::native_path::terminal_current_directory(Path::new(OsStr::from_bytes(
+            &bytes,
+        ))) {
+            // The virtual root already exists. A final '.' cannot create its
+            // absent physical cache container by losing that component.
+            return Err(EEXIST);
+        }
         return CString::new(translation.logical.as_os_str().as_bytes()).map_err(|_| EINVAL);
     }
     if translation.readonly {

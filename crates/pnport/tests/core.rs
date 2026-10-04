@@ -5737,6 +5737,35 @@ fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
                 compiler.arg("-static");
             }
             assert!(compiler.status().unwrap().success());
+            // Prove terminal-dot mkdir failures cannot materialize a native
+            // cache root, including for the Linux static child on rerun.
+            let namespace = root.path().join("node_modules");
+            let saved = root.path().join("saved-cache");
+            let retained_cache = namespace.exists();
+            if retained_cache {
+                fs::rename(&namespace, &saved).unwrap();
+            }
+            let dot_result = Command::new(
+                std::env::var_os("PNPORT_TEST_BINARY")
+                    .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
+            )
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg("mkdir-dot")
+            .output()
+            .unwrap();
+            assert!(dot_result.status.success(), "{dot_result:?}");
+            assert_eq!(dot_result.stdout, b"cache-mkdir-dot-ok\n");
+            assert!(
+                !namespace.exists(),
+                "Terminal-dot mkdir created the cache root"
+            );
+            if retained_cache {
+                fs::rename(&saved, &namespace).unwrap();
+            }
             for _ in 0..2 {
                 let result = Command::new(
                     std::env::var_os("PNPORT_TEST_BINARY")
