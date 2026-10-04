@@ -249,12 +249,14 @@ pub fn resolved_lookup_with_policy(
 
 /// Structural cache creation requires a literal namespace leaf. Keep raw
 /// components: Path::components removes '.' and lookup resolves '..'/symlinks.
-pub fn structural_cache_root(path: &Path) -> bool {
+pub fn structural_cache_root(path: &Path, graph: &Graph) -> bool {
     path.as_os_str()
         .as_bytes()
         .rsplit(|byte| *byte == b'/')
         .find(|component| !component.is_empty())
         == Some(b"node_modules")
+        && resolved_lookup_with_policy(path, false, graph, SymlinkPolicy::Reject)
+            .is_some_and(|lookup| lookup.native_failure.is_none())
 }
 
 fn terminal_directory(path: &Path) -> bool {

@@ -2763,7 +2763,7 @@ impl Trace<'_> {
         #[cfg(target_arch = "aarch64")]
         let creates_directory = call == libc::SYS_mkdirat;
         if creates_directory && translation.kind == PathKind::CacheContainer {
-            if !pnport::native_path::structural_cache_root(&original) {
+            if !pnport::native_path::structural_cache_root(&source, &self.view.graph) {
                 // Only a literal namespace leaf can create cache storage.
                 // Resolved '..', '.' and symlink aliases already exist.
                 self.force_error(pid, &mut regs, path_arg, libc::EEXIST)?;

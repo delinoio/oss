@@ -1231,8 +1231,9 @@ path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, false, -1);
 unsafe fn mkdir_path(path: *const c_char, fd: c_int) -> std::result::Result<CString, c_int> {
     let (_, translation) = translate_following(path, fd, false, false, SymlinkPolicy::Allow)?;
     if translation.kind == PathKind::CacheContainer {
-        let bytes = path_bytes(path)?;
-        if !pnport_core::native_path::structural_cache_root(Path::new(OsStr::from_bytes(&bytes))) {
+        let runtime = RUNTIME.get().ok_or(EIO)?.lock().map_err(|_| EIO)?;
+        let source = path_from(path, fd, &runtime)?;
+        if !pnport_core::native_path::structural_cache_root(&source, &runtime.view.graph) {
             // A scope/dependency '..', terminal '.' or followed symlink names
             // an existing virtual directory, not a new namespace leaf.
             return Err(EEXIST);

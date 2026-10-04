@@ -160,6 +160,10 @@ int main(int argc, char **argv) {
         CHECK(symlink("node_modules", "cache-root-link") == 0);
         errno = 0; CHECK(mkdir("cache-root-link/", 0700) == -1 && errno == EEXIST);
         CHECK(unlink("cache-root-link") == 0);
+        CHECK(symlink(".", "project-root-alias") == 0);
+        errno = 0; CHECK(mkdir("project-root-alias/node_modules", 0700) == -1 && errno == EEXIST);
+        errno = 0; CHECK(mkdirat(parent, "project-root-alias/node_modules/", 0700) == -1 && errno == EEXIST);
+        CHECK(unlink("project-root-alias") == 0);
         close(scope); close(root); close(parent);
         puts("cache-mkdir-alias-ok"); return 0;
     }
