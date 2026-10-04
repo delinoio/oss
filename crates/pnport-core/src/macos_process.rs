@@ -156,7 +156,10 @@ pub fn inventory() -> io::Result<Vec<Identity>> {
 
 #[cfg(test)]
 mod tests {
-    use std::process::{Command, Stdio};
+    use std::{
+        os::unix::process::ExitStatusExt,
+        process::{Command, Stdio},
+    };
 
     use super::*;
 
@@ -184,7 +187,7 @@ mod tests {
         assert!(libc::WIFSTOPPED(status));
         identity.signal(libc::SIGTERM).unwrap();
         identity.signal(libc::SIGCONT).unwrap();
-        assert!(!child.wait().unwrap().success());
+        assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGTERM));
         assert!(identity.refresh().unwrap().is_none());
         assert_eq!(
             identity.signal(libc::SIGKILL).unwrap_err().raw_os_error(),

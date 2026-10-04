@@ -461,7 +461,7 @@ impl Fixture {
             assert_eq!(
                 fs::read(self.root.path().join(format!("{role}.signal"))).unwrap(),
                 [signal as u8],
-                "wrong descendant termination signal"
+                "wrong {role} termination signal"
             );
         }
     }
@@ -974,7 +974,7 @@ fn private_owner_rejects_direct_invocation_and_an_untrusted_peer() {
 }
 
 #[cfg(target_os = "macos")]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum OwnerFailure {
     Supervisor,
     Guardian,
@@ -1138,8 +1138,17 @@ fn detached_native_trees_retain_signals_and_cache_cleanup() {
 #[cfg(target_os = "macos")]
 #[test]
 fn detached_native_trees_survive_owner_loss_only_until_cleanup() {
-    for mode in ["detached", "detached-spawn-session", "detached-ignore"] {
+    for mode in [
+        "detached",
+        "detached-group",
+        "detached-spawn-group",
+        "detached-spawn-session",
+        "detached-ignore",
+    ] {
         for failure in [OwnerFailure::Supervisor, OwnerFailure::Guardian] {
+            // Closed fixture values only: retain the failing variant without
+            // printing process identities, native content or environment state.
+            eprintln!("fixture_mode={mode} owner_failure={failure:?}");
             let mut fixture = Fixture::new(mode, false);
             fixture.ready();
             let mut unrelated = Control(
@@ -1199,7 +1208,17 @@ fn detached_native_trees_survive_owner_loss_only_until_cleanup() {
             if mode.ends_with("ignore") {
                 assert!(start.elapsed() >= Duration::from_secs(5));
             } else {
-                fixture.assert_signals(libc::SIGTERM);
+                // Forced owner loss can orphan a stopped group. The paired
+                // unvirtualized native control below proves XNU can deliver
+                // SIGHUP/SIGCONT independently of pnport's queued SIGTERM.
+                for role in ["root", "middle", "leaf"] {
+                    let delivered =
+                        fs::read(fixture.root.path().join(format!("{role}.signal"))).unwrap();
+                    assert!(
+                        delivered == [libc::SIGTERM as u8] || delivered == [libc::SIGHUP as u8],
+                        "{mode}, {failure:?}: unexpected {role} termination signal"
+                    );
+                }
             }
             assert!(unrelated.0.try_wait().unwrap().is_none());
             fixture.assert_released();
@@ -1300,4 +1319,30 @@ fn terminal_interrupt_stops_a_root_in_a_new_session() {
     fixture.assert_signals(libc::SIGINT);
     assert!(fixture.root.path().join("terminal.restored").is_file());
     fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn native_stopped_orphan_groups_receive_kernel_hangup() {
+    let root = Fixture::project_source(false, "process-orphan.c");
+    let child = Command::new(root.path().join("tree"))
+        .current_dir(root.path())
+        .process_group(0)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut fixture = Fixture {
+        root,
+        child: Some(child),
+        pids: Vec::new(),
+    };
+    fixture.ready();
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    for role in ["middle", "leaf"] {
+        assert_eq!(
+            fs::read(fixture.root.path().join(format!("{role}.signal"))).unwrap(),
+            [libc::SIGHUP as u8]
+        );
+    }
 }

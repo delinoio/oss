@@ -19,6 +19,7 @@ type Authentication = Hmac<Sha256>;
 pub enum FailureStage {
     Registration,
     Cleanup,
+    JournalWrite,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -33,6 +34,7 @@ pub struct Registry {
     key: [u8; 32],
     births: HashMap<u64, Identity>,
     versions: HashMap<u32, u64>,
+    journal_failed: bool,
 }
 
 fn invalid() -> io::Error {
@@ -42,14 +44,16 @@ fn invalid() -> io::Error {
 impl Registry {
     pub fn create(session: &Path, key: [u8; 32]) -> io::Result<Self> {
         let directory = session.join("owner");
+        pnport_core::cache::private_dir(&directory).map_err(|_| invalid())?;
         for child in ["requests", "accepted"] {
-            fs::create_dir_all(directory.join(child))?;
+            pnport_core::cache::private_dir(&directory.join(child)).map_err(|_| invalid())?;
         }
         Ok(Self {
             directory,
             key,
             births: HashMap::new(),
             versions: HashMap::new(),
+            journal_failed: false,
         })
     }
 
@@ -71,6 +75,7 @@ impl Registry {
     }
 
     pub fn recover(&mut self) -> io::Result<()> {
+        pnport_core::cache::private_dir(&self.directory.join("accepted")).map_err(|_| invalid())?;
         let mut failed = false;
         // Accepted files can be reached by the injected workload. Only the
         // supervisor/guardian holds this key; requests or forged records must
@@ -129,6 +134,11 @@ impl Registry {
 
     pub fn admit(&mut self, identity: Identity) -> io::Result<()> {
         self.remember(identity)?;
+        self.commit(identity)
+    }
+
+    fn commit(&self, identity: Identity) -> io::Result<()> {
+        pnport_core::cache::private_dir(&self.directory.join("accepted")).map_err(|_| invalid())?;
         let bytes = serde_json::to_vec(&identity)?;
         let mut authentication =
             Authentication::new_from_slice(&self.key).map_err(|_| invalid())?;
@@ -146,6 +156,27 @@ impl Registry {
         Ok(())
     }
 
+    fn observe_for_cleanup(&mut self, identity: Identity) -> io::Result<()> {
+        self.remember(identity)?;
+        // Native birth/ancestry authority is already established. A disk or
+        // permission failure must not block signalling that known birth during
+        // shutdown. Retain it in memory, attempt cleanup, and fail the outcome;
+        // never acknowledge a new user image through this recovery-only path.
+        if self.commit(identity).is_err() {
+            self.journal_failed = true;
+            self.record_failure(FailureStage::JournalWrite);
+        }
+        Ok(())
+    }
+
+    fn complete(&self, escalated: bool) -> io::Result<bool> {
+        if self.journal_failed {
+            Err(invalid())
+        } else {
+            Ok(escalated)
+        }
+    }
+
     fn owned(&self, identity: Identity) -> bool {
         self.births.contains_key(&identity.birth)
             || self.births.contains_key(&identity.parent_birth)
@@ -155,6 +186,7 @@ impl Registry {
     }
 
     pub fn requests(&mut self) -> io::Result<()> {
+        pnport_core::cache::private_dir(&self.directory.join("requests")).map_err(|_| invalid())?;
         // Parents wait for durable admission before fork/spawn. A child that
         // was stopped before its own callback is still discoverable by the
         // kernel's immutable original parent version after reparenting.
@@ -193,7 +225,7 @@ impl Registry {
                     && self.owned(*identity)
                     && !self.versions.contains_key(&identity.version)
                 {
-                    self.admit(*identity)?;
+                    self.observe_for_cleanup(*identity)?;
                     added = true;
                 }
             }
@@ -205,7 +237,7 @@ impl Registry {
         for previous in self.births.values().copied().collect::<Vec<_>>() {
             if let Some(current) = previous.refresh()? {
                 if !self.versions.contains_key(&current.version) {
-                    self.admit(current)?;
+                    self.observe_for_cleanup(current)?;
                 }
                 candidates.push(current);
             }
@@ -214,13 +246,16 @@ impl Registry {
     }
 
     pub fn resume(&mut self, reserved: i32, foreground: i32) -> io::Result<()> {
+        let live = self.live()?;
+        if self.journal_failed {
+            return Err(invalid());
+        }
         if foreground == reserved {
             unsafe {
                 libc::kill(-reserved, libc::SIGCONT);
             }
         }
-        for identity in self
-            .live()?
+        for identity in live
             .into_iter()
             .filter(|identity| identity.group == foreground)
         {
@@ -269,7 +304,7 @@ impl Registry {
                 // Scan again after all known parents are gone so that last
                 // child is discovered before accepting an empty tree.
                 if self.live()?.is_empty() {
-                    return Ok(false);
+                    return self.complete(false);
                 }
                 continue;
             }
@@ -285,7 +320,7 @@ impl Registry {
             let live = self.live()?;
             if live.is_empty() {
                 if self.live()?.is_empty() {
-                    return Ok(true);
+                    return self.complete(true);
                 }
                 continue;
             }
@@ -440,5 +475,46 @@ mod resume_tests {
         registry.stop(i32::MAX, libc::SIGTERM).unwrap();
         assert!(!foreground.wait().unwrap().success());
         assert!(!background.wait().unwrap().success());
+    }
+}
+
+#[cfg(test)]
+mod journal_failure_tests {
+    use std::{
+        os::unix::process::ExitStatusExt,
+        process::{Command, Stdio},
+    };
+
+    use super::*;
+
+    #[test]
+    fn lost_journal_writes_do_not_abandon_a_known_birth_after_exec() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut registry = Registry::create(directory.path(), [31; 32]).unwrap();
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "read ready; exec /bin/sleep 30"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let previous = Identity::capture(child.id() as i32).unwrap();
+        registry.admit(previous).unwrap();
+        let accepted = registry.directory.join("accepted");
+        fs::rename(&accepted, registry.directory.join("accepted-saved")).unwrap();
+        fs::write(&accepted, b"fixture directory conflict").unwrap();
+        child.stdin.take().unwrap().write_all(b"ready\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let current = Identity::capture(previous.pid).unwrap();
+            assert_eq!(current.birth, previous.birth);
+            if current.version != previous.version {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(registry.stop(i32::MAX, libc::SIGTERM).is_err());
+        assert!(registry.journal_failed);
+        assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGTERM));
+        assert!(previous.refresh().unwrap().is_none());
     }
 }

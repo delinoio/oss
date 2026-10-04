@@ -86,6 +86,23 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn constructor_lease_distinguishes_waiting_abandoned_and_completed_images() {
+        const ISOLATED: &str = "PNPORT_TEST_LAUNCH_LEASE";
+        if std::env::var_os(ISOLATED).as_deref() != Some(std::ffi::OsStr::new("1")) {
+            // Concurrent Command::spawn in another test can briefly inherit
+            // this open-description lease between fork and CLOEXEC closure.
+            // Run only this scenario in a fresh process; keep the parent suite
+            // parallel and prove inherited-lease behavior explicitly below.
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["launch::tests::constructor_lease_distinguishes_waiting_abandoned_and_completed_images", "--exact"])
+                .env(ISOLATED, "1").output().unwrap();
+            assert!(
+                output.status.success(),
+                "isolated constructor lease control failed: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
         let session = tempfile::tempdir().unwrap();
         let pending = session.path().join("pending/pnport-test");
         let entered = session.path().join("launch-starting/pnport-test");
@@ -97,7 +114,44 @@ mod tests {
         assert!(
             super::entry_state(&entered, &metadata).unwrap() == super::EntryState::Initializing
         );
+        use std::{
+            io::{Read, Write},
+            os::{
+                fd::AsRawFd,
+                unix::{net::UnixStream, process::CommandExt},
+            },
+        };
+        let (mut controller, inherited) = UnixStream::pair().unwrap();
+        controller
+            .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+            .unwrap();
+        let worker = std::thread::spawn(move || {
+            let fd = inherited.as_raw_fd();
+            let mut command = std::process::Command::new("/usr/bin/true");
+            // Only async-signal-safe descriptor operations run before exec.
+            unsafe {
+                command.pre_exec(move || {
+                    let mut byte = 0u8;
+                    if libc::write(fd, b"R".as_ptr().cast(), 1) != 1
+                        || libc::read(fd, (&raw mut byte).cast(), 1) != 1
+                    {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            command.spawn().unwrap()
+        });
+        let mut ready = [0];
+        controller.read_exact(&mut ready).unwrap();
+        assert_eq!(ready, *b"R");
         drop(entry);
+        // The child still holds the forked open description before exec.
+        assert!(
+            super::entry_state(&entered, &metadata).unwrap() == super::EntryState::Initializing
+        );
+        controller.write_all(b"X").unwrap();
+        assert!(worker.join().unwrap().wait().unwrap().success());
         assert!(super::entry_state(&entered, &metadata).unwrap() == super::EntryState::Abandoned);
         std::fs::remove_file(&entered).unwrap();
         let entry = super::Entry::begin(session.path(), "pnport-test").unwrap();
