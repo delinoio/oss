@@ -8,6 +8,7 @@ import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
 import { version as osVersion } from "node:os";
 import { npm } from "./common.mjs";
+import { pnpApiConformance } from "./pnpapi-conformance.mjs";
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
 const fixture = fileURLToPath(new URL("../test/fixtures/typescript/", import.meta.url));
@@ -158,8 +159,9 @@ if (mode === "prepare") {
     successful(run("tsc", "--noEmit", "-p", "packages/app"));
     assert(!existsSync(join(root, "node_modules")));
     assert.equal(sha256(native), originalDigest, "Never rewrite or re-sign the official compiler.");
+    const pnpApi = pnpApiConformance({ binary, root, cache, environment: env });
     successful(execute(binary, ["--cache-dir", cache, "cache", "clean"], root));
-    samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest,
+    samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest, pnpApi,
       peers: peerIdentity.peers.map(({ flavor, reference, provider, archiveSha256 }) => ({ flavor,
         locatorSha256: createHash("sha256").update(reference).digest("hex"),
         providerSha256: createHash("sha256").update(provider).digest("hex"), archiveSha256,

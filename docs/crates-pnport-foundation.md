@@ -41,6 +41,34 @@ Commands are `run -- <command> [args...]`, `doctor [--json]`, and `cache path|li
 
 Read inline and split Yarn 4 data without evaluating loader JavaScript. Validate before calling pnp hydration, including its required top-level locator. Preserve aliases, fallback policy, workspaces and peer-specific virtual identity. One owned process tree uses one graph snapshot; no independent-project merging.
 
+### Node PnP API boundary
+
+The native filesystem view does not activate Yarn's JavaScript runtime. In
+0.1.0, pnport does not supply `require('pnpapi')`, `process.versions.pnp`, or
+`require('node:module').findPnpApi` by itself. A ZIP-backed library can load
+successfully through virtual `node_modules` and then fail with
+`MODULE_NOT_FOUND` when it requires `pnpapi`. This is a child module-resolution
+failure, separate from native injection failure. Yarn supplies this contextual
+module through its [PnP runtime](https://yarnpkg.com/advanced/pnpapi); installing
+the reserved npm package named `pnpapi` does not activate that runtime.
+
+Callers that need the API must explicitly activate the selected project's
+loader in their Node workload. For a single Node process, use
+`pnport run -- node --require /absolute/project/.pnp.cjs script.cjs`. For Node
+descendants, include that absolute `--require` in the caller's `NODE_OPTIONS`,
+preserving existing options. A command-line `--require` does not automatically
+propagate to a fresh `spawn` of Node, and a replacement environment that removes
+`NODE_OPTIONS` removes the API again. Loading caller-selected JavaScript in a
+child does not change pnport's data-only native graph-loading contract.
+
+The package-owned PnP API conformance probe checks ZIP access separately from
+API availability, explicit activation, inherited activation, and removal in a
+replacement environment. Run it against an already prepared synthetic Yarn
+fixture; it does not install dependencies or evaluate private application code.
+These checks do not establish full JavaScript/ESM or tool-specific compatibility.
+
+### Native filesystem contracts
+
 Hydration builds immutable indexes of hard-linked locators and package-location ancestors. Filesystem translation queries those indexes instead of scanning the complete raw registry for each source or unplugged-package access; reconstruct them when loading a serialized snapshot.
 
 Classify each traversed `node_modules` component against the package-location ancestor index and its parent's exact registered package location before treating it as an issuer dependency namespace. Unplugged installation containers retain native lookup for unregistered scoped and unscoped siblings, including ordinary missing-path errors. Continue traversing the suffix so a later package-root `node_modules` remains virtual, read-only, and subject to physical-conflict checks; registered HARD package bytes remain read-only. Ordinary source and output descendants do not acquire synthetic dependency directories. Native resolvers ascend from those descendants to their containing package root; output trees may contain and remove their own native `node_modules` and dependency symlinks without mutating the referenced package.

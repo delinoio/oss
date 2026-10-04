@@ -64,6 +64,23 @@ Candidate hosts additionally repeat the internally concurrent fork/child-callbac
 
 ### Official native TypeScript conformance
 
+Offline inline/split execution also runs the synthetic Node PnP API boundary
+probe. Reading a ZIP-backed package manifest must work without the Yarn loader,
+while `pnpapi` remains unavailable. Explicit `--require` enables the API in that
+Node process; inherited `NODE_OPTIONS` enables it in a fresh Node descendant.
+Retain negative controls for an uninherited command-line preload and a child
+environment that removes `NODE_OPTIONS`. Evidence contains the Node version,
+typed availability outcomes and exit codes, without package paths or child
+streams. These controls describe 0.1.0 behavior and do not implement automatic
+loader activation or complete JavaScript/ESM acceptance.
+
+The same offline probe can run independently against a prepared synthetic
+fixture with a ZIP-backed package manifest:
+
+```sh
+node packages/pnport/scripts/pnpapi-conformance.mjs /temporary/prepared-fixture /path/to/pnport @types/node/package.json
+```
+
 The synthetic fixture includes blue and red workspaces consuming two different peer-provider versions through one shared ZIP-backed consumer package. Networked preparation inspects generated split graph data before producing the requested inline/split representation, without evaluating loader JavaScript. Both virtual consumer locators must differ, resolve their own peer provider, and identify identical archive bytes. Prepared identity records bind these observations to the final manifest/data digests.
 
 Offline execution builds both peer workspaces in the same native compiler build, verifies JavaScript/declaration emission, and separately runs the unchanged official native compiler in each context. Wrong-peer literal assignments must produce TS2322, and unvirtualized execution must fail to resolve the ZIP-backed consumer. Restore synthetic sources after negative controls. Numeric conformance evidence records the distinct locator/provider digests, shared archive digest and positive/negative outcomes alongside the unchanged official compiler digest; these controls do not replace remaining native/minimum-OS acceptance.

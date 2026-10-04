@@ -100,6 +100,7 @@
 
 - pnport native TypeScript conformance pins Yarn and the official compiler in its fixture and lockfile. Keep networked preparation separate from execution, disable Turbo caching for both conformance commands, and record the actual OS/architecture and compiler digest. The corrected official `typescript` package exposes `tsc`; never silently substitute it for an older `native-preview` package's `tsgo` command or rewrite its signature.
 - pnport native TypeScript conformance must retain two different peer-provider contexts for the same ZIP-backed consumer bytes. Inspect generated graph data without evaluating the loader, retain positive builds and wrong-peer/unvirtualized negative controls in both inline and split modes, and bind numeric evidence to distinct locator/provider digests and the shared archive digest.
+- pnport inline/split conformance must also separate ZIP-backed Node package access from `pnpapi` availability. Keep caller-selected explicit and inherited Yarn loader activation plus fresh-spawn and replacement-environment negative controls, and emit only typed outcomes and the Node version in evidence. Do not claim automatic Node loader activation or full JavaScript/ESM acceptance.
 
 - Run the pnport TypeScript conformance suite on glibc Linux as well as macOS. Linux checks the official native compiler's static ELF machine and runs inline/split builds offline; record Docker architecture and tracing limitations without counting emulated amd64 as native x64 release evidence.
 
