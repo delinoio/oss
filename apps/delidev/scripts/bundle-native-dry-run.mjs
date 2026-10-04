@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { closeSync, copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { dryRunEnvironment, verifyBundle } from "./bundle-macos-dry-run.mjs";
-import { targets, selectTarget, cefCredits, prepareCefCredits, packageResources, verifyNotices, verifyNativePayload, findOneFile } from "./native-package.mjs";
+import { targets, selectTarget, acquireNativeBuildLock, verifyPackageRevision, cefCredits, prepareCefCredits, packageResources, verifyNotices, verifyNativePayload, findOneFile } from "./native-package.mjs";
 import { prepareAssets } from "./prepare-assets.mjs";
 import { exitLikeChild } from "../../../scripts/spawn-dev-server.mjs";
 
@@ -57,9 +57,7 @@ async function main() {
   // A previous result is never silently replaced with different package bytes.
   mkdirSync(dirname(output), { recursive: true });
   if (existsSync(output)) throw new Error("This revision already has retained dry-run artifacts; do not replace them implicitly.");
-  const lock = join(root, "target/delidev-dry-run/.build.lock");
-  const ownership = openSync(lock, "wx", 0o600);
-  closeSync(ownership);
+  const release = acquireNativeBuildLock(root);
   let staging;
   let scratch;
   try {
@@ -111,7 +109,7 @@ async function main() {
       }
     }
     const digest = await sha256(artifact);
-    if (run("git", ["rev-parse", "HEAD"]).trim() !== revision || run("git", ["status", "--porcelain", "--untracked-files=normal"]).trim()) throw new Error("Source changed during packaging; no revision-bound result was published.");
+    verifyPackageRevision(revision, run("git", ["rev-parse", "HEAD"]), run("git", ["status", "--porcelain", "--untracked-files=normal"]));
     const report = { version: 1, sourceRevision: revision, target: selected.target, artifact: basename(artifact), bytes: statSync(artifact).size, sha256: digest, signature, cefVersion: "150.0.10", chromiumCreditsSHA256: await sha256(Object.keys(resources).find(path => resources[path] === "notices/Chromium-CREDITS.html")), runtimeAcceptance: "unverified", publication: "not-requested" };
     writeFileSync(join(staging, "verification.json"), JSON.stringify(report, null, 2) + "\n", { flag: "wx" });
     writeFileSync(join(staging, "SHA256SUMS"), `${digest}  ${basename(artifact)}\n`, { flag: "wx" });
@@ -122,7 +120,7 @@ async function main() {
       if (scratch) rmSync(scratch, { recursive: true, force: true });
     } finally {
       try { if (staging) rmSync(staging, { recursive: true, force: true }); }
-      finally { rmSync(lock); }
+      finally { release(); }
     }
   }
 }
