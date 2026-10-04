@@ -19,6 +19,19 @@ func sidechatDependencyKey(parent, child domain.ID) string {
 
 // This index and child publication share one state/event transaction. It remains
 // until independently joined native, database and backup retirement completes.
+// RequireNoSessionFork serializes the single accepted native preparation against
+// this inventory. Check capacity before admission and again at native claim.
+func (t *Tx) RequireSidechatCapacity(parent domain.ID) error {
+	ids, err := t.SidechatDependents(parent)
+	if err != nil {
+		return err
+	}
+	if len(ids) >= maxSidechatDependents {
+		return domain.Fail(domain.ResourceExhausted, "This session's Sidechat ownership inventory is full.", "Delete completed Sidechats and wait for their original cleanup.")
+	}
+	return nil
+}
+
 func (t *Tx) RegisterSidechat(parent, child domain.ID) error {
 	if domain.UniqueIDs([]domain.ID{parent, child}) != nil {
 		return domain.SidechatUnavailable()

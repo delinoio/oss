@@ -158,6 +158,9 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 			}
 		}
 		if purpose == domain.SidechatFork {
+			if err := tx.RequireSidechatCapacity(identity.Source); err != nil {
+				return nil, err
+			}
 			_, machine, err := activeMachine(tx, session.MachineID)
 			if err != nil {
 				return nil, err
@@ -285,6 +288,9 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 		return forkConflict()
 	}
 	if input.Purpose == domain.SidechatFork {
+		if err := tx.RequireSidechatCapacity(input.SourceSessionID); err != nil {
+			return err
+		}
 		_, machine, err := activeMachine(tx, source.MachineID)
 		if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) {
 			return domain.SidechatUnavailable()

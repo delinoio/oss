@@ -140,3 +140,67 @@ func TestSidechatFindingsExactSelectionReplayAndParentRevision(t *testing.T) {
 		t.Fatal("findings inferred or duplicated")
 	}
 }
+
+func TestSidechatCapacityRejectsBeforeNativeAdmissionAndSerializesLastSlot(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		t.Run(map[bool]string{false: "last-slot", true: "full"}[full], func(t *testing.T) {
+			f, _ := publishedSidechatFixture(t)
+			before := f.refresh(t)
+			capacity := 255
+			if full {
+				capacity = 256
+			}
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "test.sidechat-capacity", nil, func(tx *store.Tx) (any, error) {
+				ids, e := tx.SidechatDependents(before.ID)
+				if e != nil {
+					return nil, e
+				}
+				for i := len(ids); i < capacity; i++ {
+					if e := tx.RegisterSidechat(before.ID, domain.NewID()); e != nil {
+						return nil, e
+					}
+				}
+				return nil, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			filter := store.Filter{Kind: domain.JobKind, SessionID: before.ID, Limit: 100}
+			jobs, err := f.service.Store.List(context.Background(), filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			results := make(chan error, 2)
+			start := make(chan struct{})
+			for i := 0; i < 2; i++ {
+				go func() {
+					<-start
+					_, e := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, &pb.ForkSessionRequest{Mutation: &pb.Mutation{Id: string(before.ID), ExpectedRevision: before.Revision, RequestId: string(domain.NewID())}, ExpectedTurnId: string(f.turn), Name: "Capacity child", Purpose: pb.ForkPurpose_FORK_PURPOSE_SIDECHAT}))
+					results <- e
+				}()
+			}
+			close(start)
+			accepted := 0
+			for i := 0; i < 2; i++ {
+				e := <-results
+				if e == nil {
+					accepted++
+				} else {
+					code := rpc.ClientError(e).Code
+					if full && code != domain.ResourceExhausted || !full && code != domain.Conflict {
+						t.Fatal("unexpected refusal", e)
+					}
+				}
+			}
+			expected := 1
+			if full {
+				expected = 0
+			}
+			afterJobs, err := f.service.Store.List(context.Background(), filter)
+			after := f.refresh(t)
+			if err != nil || accepted != expected || len(afterJobs) != len(jobs)+expected || after.Revision != before.Revision {
+				t.Fatal("capacity admitted extra native work", accepted, len(afterJobs), err)
+			}
+		})
+	}
+}
