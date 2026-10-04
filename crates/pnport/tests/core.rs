@@ -5682,6 +5682,72 @@ fn writable_cache_namespaces_preserve_graph_and_conflict_boundaries() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn failed_parent_lookup_precedes_later_namespace_conflict() {
+    use pnport_core::native_path::{resolved_lookup, Lookup};
+    for split in [false, true] {
+        for conflict in [
+            "unexpected-package",
+            ".bin",
+            "namespace-file",
+            "namespace-link",
+        ] {
+            let root = directory_fixture(split);
+            let canonical = fs::canonicalize(root.path()).unwrap();
+            let graph = Graph::load(&canonical.join(".pnp.cjs")).unwrap();
+            let cache = tempfile::tempdir().unwrap();
+            let session = tempfile::tempdir().unwrap();
+            let mut view = View::new(
+                graph,
+                Cache::open(cache.path().join("cache")).unwrap(),
+                session.path().to_owned(),
+            );
+            fs::write(canonical.join("file-prefix"), b"ordinary file").unwrap();
+            std::os::unix::fs::symlink("missing", canonical.join("missing-parent-link")).unwrap();
+            let namespace = canonical.join("node_modules");
+            match conflict {
+                "namespace-file" => fs::write(&namespace, b"ordinary file").unwrap(),
+                "namespace-link" => {
+                    std::os::unix::fs::symlink("packages/app", &namespace).unwrap();
+                }
+                name => fs::create_dir_all(namespace.join(name)).unwrap(),
+            }
+            for prefix in ["missing", "missing-parent-link"] {
+                let path = canonical.join(format!("{prefix}/../node_modules/dep/file.txt"));
+                view.graph.check_path_conflicts(&path).unwrap();
+                let lookup = resolved_lookup(&path, true, &view.graph).unwrap();
+                let checked = lookup
+                    .validate_parents(|parent| view.translate(parent))
+                    .unwrap();
+                assert!(
+                    matches!(
+                        checked,
+                        Lookup::NativeFailure {
+                            errno: libc::ENOENT,
+                            ..
+                        }
+                    ),
+                    "split={split} conflict={conflict} prefix={prefix}: expected ENOENT"
+                );
+            }
+            let file_path = canonical.join("file-prefix/../node_modules/dep/file.txt");
+            view.graph.check_path_conflicts(&file_path).unwrap();
+            assert!(resolved_lookup(&file_path, true, &view.graph).is_none());
+            let reachable = canonical.join("packages/../node_modules/dep/file.txt");
+            let lookup = resolved_lookup(&reachable, true, &view.graph).unwrap();
+            assert_eq!(
+                lookup
+                    .validate_parents(|parent| view.translate(parent))
+                    .err()
+                    .unwrap()
+                    .code,
+                Code::PnportFilesystemConflict
+            );
+        }
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
@@ -5866,7 +5932,7 @@ fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
                 String::from_utf8_lossy(&result.stderr)
             );
             assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_FILESYSTEM_CONFLICT"));
-            assert_eq!(result.stdout, b"cache-parent-errors-ok\n");
+            assert!(result.stdout.is_empty());
             match name {
                 "namespace-file" | "namespace-link" => {
                     if name == "namespace-file" {
