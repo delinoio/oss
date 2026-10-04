@@ -222,6 +222,16 @@ int main(int argc, char **argv) {
     errno = 0; CHECK(fremovexattr(copy, attribute, 0) == -1 && errno == EROFS);
     file = openat(copy, "dep/file.txt", O_RDONLY); CHECK(file >= 0);
     int dependency_copy = dup(file); CHECK(dependency_copy >= 0);
+    struct stat before_timestamps, after_timestamps;
+    CHECK(fstat(dependency_copy, &before_timestamps) == 0);
+    errno = 0; CHECK(futimens(dependency_copy, NULL) == -1 && errno == EROFS);
+    CHECK(fstat(dependency_copy, &after_timestamps) == 0);
+    CHECK(before_timestamps.st_atimespec.tv_sec == after_timestamps.st_atimespec.tv_sec);
+    CHECK(before_timestamps.st_atimespec.tv_nsec == after_timestamps.st_atimespec.tv_nsec);
+    CHECK(before_timestamps.st_mtimespec.tv_sec == after_timestamps.st_mtimespec.tv_sec);
+    CHECK(before_timestamps.st_mtimespec.tv_nsec == after_timestamps.st_mtimespec.tv_nsec);
+    errno = 0; CHECK(futimens(copy, NULL) == -1 && errno == EROFS);
+    errno = 0; CHECK(lchflags(".yarn/unplugged/cachedep/node_modules/cachedep/file.txt", 0) == -1 && errno == EROFS);
     errno = 0; CHECK(setxattr("node_modules/dep/file.txt", attribute, "cache", 5, 0, 0) == -1 && errno == EROFS);
     errno = 0; CHECK(removexattr("node_modules/dep/file.txt", attribute, 0) == -1 && errno == EROFS);
     errno = 0; CHECK(fsetxattr(dependency_copy, attribute, "cache", 5, 0, 0) == -1 && errno == EROFS);
@@ -233,10 +243,15 @@ int main(int argc, char **argv) {
     CHECK(!strcmp(attribute_bytes, "cache"));
     CHECK(removexattr("node_modules/.vite/results.json", attribute, 0) == 0);
     file = openat(copy, ".vite/results.json", O_RDONLY); CHECK(file >= 0);
+    CHECK(futimens(file, NULL) == 0);
+    CHECK(lchflags("node_modules/.vite/results.json", UF_NODUMP) == 0);
+    CHECK(fstat(file, &after_timestamps) == 0 && (after_timestamps.st_flags & UF_NODUMP));
+    CHECK(lchflags("node_modules/.vite/results.json", 0) == 0);
     CHECK(fsetxattr(file, attribute, "native", 6, 0, XATTR_CREATE) == 0);
     CHECK(fremovexattr(file, attribute, 0) == 0); close(file);
     errno = 0; CHECK(fsetxattr(-1, attribute, "cache", 5, 0, 0) == -1 && errno == EBADF);
     errno = 0; CHECK(fremovexattr(-1, attribute, 0) == -1 && errno == EBADF);
+    errno = 0; CHECK(futimens(-1, NULL) == -1 && errno == EBADF);
     CHECK(S_ISREG(cache_metadata.st_mode));
 #else
     CHECK(S_ISLNK(cache_metadata.st_mode));
@@ -264,6 +279,7 @@ int main(int argc, char **argv) {
     errno = 0; CHECK(setxattr("node_modules/.cache-link", attribute, "cache", 5, 0, 0) == -1 && errno == EROFS);
     errno = 0; CHECK(removexattr("node_modules/.cache-link", attribute, 0) == -1 && errno == EROFS);
     // No-follow applies to the caller-owned link, never its managed target.
+    CHECK(lchflags("node_modules/.cache-link", 0) == 0);
     errno = 0; CHECK(removexattr("node_modules/.cache-link", attribute, XATTR_NOFOLLOW) == -1 && errno == ENOATTR);
 #endif
     CHECK(unlink("node_modules/.cache-link") == 0);

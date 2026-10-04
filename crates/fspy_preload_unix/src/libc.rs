@@ -107,4 +107,7 @@ unsafe extern "C" {
 
     #[cfg(all(target_os = "macos", feature = "pnport"))]
     pub unsafe fn qsort_b(base: *mut c_void, count: usize, size: usize, compar: *const c_void);
+
+    #[cfg(all(target_os = "macos", feature = "pnport"))]
+    pub unsafe fn lchflags(path: *const c_char, flags: u32) -> c_int;
 }

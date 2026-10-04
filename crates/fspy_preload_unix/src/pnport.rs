@@ -1240,6 +1240,25 @@ path_hook!(utime, pnport_utime, (path:*const c_char, times:*const libc::utimbuf)
 path_hook!(utimes, pnport_utimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, true, -1);
 path_hook!(lutimes, pnport_lutimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, false, -1);
 path_hook!(chflags, pnport_chflags, (path:*const c_char, flags:libc::c_uint) -> c_int, true, true, -1);
+// Rust libc omits lchflags; retain Darwin's no-follow ABI explicitly.
+unsafe extern "C" fn pnport_lchflags(path: *const c_char, flags: u32) -> c_int {
+    let Some(_guard) = Guard::enter() else {
+        return crate::libc::lchflags(path, flags);
+    };
+    if RUNTIME.get().is_none() {
+        return crate::libc::lchflags(path, flags);
+    }
+    let (path, _) = translated!(path, AT_FDCWD, true, false, -1);
+    crate::libc::lchflags(path.as_ptr(), flags)
+}
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_lchflags as *const c_void,
+        _old: crate::libc::lchflags as *const c_void,
+    };
+};
 hook!(setxattr, pnport_setxattr, (path:*const c_char,name:*const c_char,value:*const c_void,size:size_t,position:u32,options:c_int) -> c_int, {
     let original=original!(setxattr,unsafe extern "C" fn(*const c_char,*const c_char,*const c_void,size_t,u32,c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(path,name,value,size,position,options);};
@@ -1276,6 +1295,9 @@ hook!(ftruncate, pnport_ftruncate, (fd:c_int,length:off_t) -> c_int, {
 });
 hook!(futimes, pnport_futimes, (fd:c_int,times:*const libc::timeval) -> c_int, {
     mutate_descriptor(fd, || libc::futimes(fd, times))
+});
+hook!(futimens, pnport_futimens, (fd:c_int,times:*const libc::timespec) -> c_int, {
+    mutate_descriptor(fd, || libc::futimens(fd, times))
 });
 hook!(fchflags, pnport_fchflags, (fd:c_int,flags:libc::c_uint) -> c_int, {
     mutate_descriptor(fd, || libc::fchflags(fd, flags))
