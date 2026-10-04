@@ -59,6 +59,9 @@ func (f fixtureRelease) Latest(context.Context, string, time.Time) (updates.Veri
 func (f fixtureRelease) Download(context.Context, updates.Verified, updates.Component, updates.Target, string) (string, error) {
 	return f.source, nil
 }
+func (f fixtureRelease) Release(context.Context, string, time.Time) (updates.Verified, error) {
+	return f.candidate, nil
+}
 func (f fixtureRelease) Close() {}
 
 type installationSSHPeer struct {

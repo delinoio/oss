@@ -87,6 +87,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := start(ctx, o, rest, streams)
 		return emit(value, err)
 	}
+	if command == "update" && len(rest) > 0 && strings.HasPrefix(rest[0], "native-") {
+		value, err := nativeDesktopUpdate(ctx, o, rest)
+		return emit(value, err)
+	}
 	if command == "browser-storage" {
 		if len(rest) != 1 || rest[0] != "prepare" {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Select browser-storage prepare.", "The native host uses only its fixed private cache root."))
@@ -186,6 +190,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "update":
+		value, err := updateCommand(ctx, c, o, rest)
+		return emit(value, err)
 	case "storage":
 		if code, handled := dispatchStorage(ctx, c, o, rest, streams); handled {
 			return code

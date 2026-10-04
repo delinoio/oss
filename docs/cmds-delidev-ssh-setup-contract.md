@@ -18,6 +18,8 @@ Authorized owners and paired clients; original paired Workers; release maintaine
 
 Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 before dependent source changes. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. The approved integrated-PR exception applies; independent branches retain the main-first prerequisite.
 
+Initial SSH pairing installs the exact server-compatible signed Worker release, independently of a newer update candidate; it cannot weaken the ordinary pairing version gate. Non-loopback SSH targets require an explicit reachable TLS server endpoint before protected staging. Windows staging checks ancestor reparse points before creation and creates only new owner-only product directories; existing permissions are validated without rewriting them.
+
 ## Storage
 
 Credentials use the existing WorkerSSH protected vault purpose. Durable operation metadata contains only original host/port/user, fingerprint, generation, request/actor identities and typed progress. Secrets and pairing documents are transferred only inside encrypted SSH stdin, never shell arguments, logs, ordinary resources or history. Once-only remote journals reconcile uncertain installation or pairing from the original operation.

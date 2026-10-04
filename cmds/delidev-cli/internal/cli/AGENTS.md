@@ -71,3 +71,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Explicit `account oauth start|complete|status|cancel` follows the OAuth contract. Start defaults to headless mode; completion accepts exact bounded code stdin only, without trimming or secret argv. Code-free `--recover` requires the original completion request/revision and never exchanges. CLI product operations never implicitly start a server.
 
 - machine ssh uses authenticated InstallationService and write-only bounded stdin. The native-only worker ssh-setup helper verifies the signed artifact identity, journals original pairing/start admission and never repeats missing progress or replaces registration/workspaces.
+
+- Authenticated update check/get/worker-request/cancel preserve original request/revision receipts and capability negotiation. Closed native update helpers select only fixed paired scopes and original server/window generations, independently verify signed bytes and persist offline installation outcomes. Worker replacement helpers retain both binaries and exact lifecycle proof, never a generic executable or shell capability.

@@ -47,3 +47,5 @@ Unsupported-schema Agent display names/aliases are projected only within the exi
 - OpenCode Fork presentation requires the independent server capability plus the original macOS/Linux Runner Device capability and completed Build General Chat profile. Retain the accepted operation across navigation; cloned conversation is inherited context with no new input or usage. Follow `docs/cmds-delidev-forks-contract.md` and the desktop contract.
 
 - All 35 API presets use the shared closed client identity/order mapping and authenticated inventory. Keep regional/subscription-key guidance, connection, explicit validation, discovery and selected native harness compatibility separate. Follow the catalog and provider inspection contracts.
+
+- Signed desktop updates are available under Connection & diagnostics outside disposable Settings, with native confirmation and original outcome inspection. Runner Device updates expose pending/draining/uncertain states and explicit cancellation before claim. Generated Connect Query reads/mutations retain original IDs, and missing System/Worker capabilities show an update requirement before effects.

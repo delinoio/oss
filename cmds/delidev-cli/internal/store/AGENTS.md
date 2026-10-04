@@ -197,3 +197,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Migration 30 seeds only the explicit 26 added hosted IDs after real 29. Freeze historical seeds to their original six IDs; preserve existing managed UUID/Off, custom identities, original preset deletions and no-reseed startup. Validate the exact private layout marker and full-registry inventory bound with overflow/unknown/duplicate rejection. Follow the provider activation and storage contracts.
 
 - Installation entities are server-owned operation history. Restore copies current SSH/update entities rather than historical images, and blocks unsettled installation or protected cleanup. Pending projections exclude terminal history without truncating active obligations.
+
+- Worker update admission and idle checks run under the claim transaction, including original terminal/forward/subscription/deletion ownership. Filter matching pending/signed scopes before applying query bounds. Preserve current installation metadata across managed restore, and never release uncertain update fences through history pagination or restored receipts.

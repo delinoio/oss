@@ -13,7 +13,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-type installationState string
+type installationState = updates.State
 
 const (
 	installationObserved  installationState = "OBSERVED"
@@ -41,26 +41,10 @@ type sshOperation struct {
 	ProblemCode           domain.Code           `json:"problem_code,omitempty"`
 	Result                *sshsetup.SetupResult `json:"result,omitempty"`
 }
-type updateOperation struct {
-	ServerID        domain.ID         `json:"server_id"`
-	Actor           domain.Principal  `json:"actor"`
-	State           installationState `json:"state"`
-	Component       updates.Component `json:"component"`
-	Target          updates.Target    `json:"target"`
-	CurrentVersion  string            `json:"current_version"`
-	Version         string            `json:"version"`
-	Manifest        []byte            `json:"manifest"`
-	ManifestSHA256  string            `json:"manifest_sha256"`
-	MachineID       domain.ID         `json:"machine_id,omitempty"`
-	MachineRevision uint64            `json:"machine_revision,omitempty"`
-	DeviceID        domain.ID         `json:"device_id,omitempty"`
-	ClaimedInstance domain.ID         `json:"claimed_instance,omitempty"`
-	ClaimRequestID  domain.ID         `json:"claim_request_id,omitempty"`
-	ClaimedRevision uint64            `json:"claimed_revision,omitempty"`
-	ProblemCode     domain.Code       `json:"problem_code,omitempty"`
-	FinishedAt      *time.Time        `json:"finished_at,omitempty"`
-}
+type updateOperation = updates.Operation
+
 type releaseClient interface {
+	Release(context.Context, string, time.Time) (updates.Verified, error)
 	Latest(context.Context, string, time.Time) (updates.Verified, error)
 	Download(context.Context, updates.Verified, updates.Component, updates.Target, string) (string, error)
 	Close()

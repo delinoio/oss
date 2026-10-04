@@ -32,6 +32,7 @@ type Config struct {
 	network            *workerNetworkRuntime
 	observations       *managedObservationRegistry
 	inspectionMetadata bool
+	updatesEnabled     bool
 	terminals          *terminalManager
 	Root               string
 	StartupID          domain.ID
@@ -181,7 +182,10 @@ func Run(ctx context.Context, config Config) (resultErr error) {
 		if err := setPhase(config.Root, credential, lifecycle.Generation, RuntimeExited); err != nil {
 			resultErr = err
 		}
-		if resultErr != nil {
+		var handoff *UpdateHandoff
+		if errors.As(resultErr, &handoff) {
+			config.Logger.Info("worker controller drained for replacement", "operation_id", handoff.ID, "generation", lifecycle.Generation)
+		} else if resultErr != nil {
 			config.Logger.Warn("worker controller exited", "machine_id", credential.MachineID, "generation", lifecycle.Generation, "code", domain.SafeError(resultErr).Code)
 		} else {
 			config.Logger.Info("worker controller exited", "machine_id", credential.MachineID, "generation", lifecycle.Generation)
@@ -282,6 +286,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			titleCapabilityExpected = verifiedTitleProfile
 			profile := executable
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
+				profile += "\x00signed-worker-updates-v1"
+			}
 			if compactionExpected && executable != "" {
 				profile += "\x00codex-session-compaction-v1"
 			}
@@ -325,6 +332,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
+			}
 			if sidechatExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
 			}
@@ -387,6 +397,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if err := replayPendingStorageReports(ctx, config, client, credential); err != nil {
 				return err
 			}
+			if err := settleUpdateOnAttach(ctx, config.Root, credential, instance); err != nil {
+				return err
+			}
 			if !ready {
 				ready = true
 				if config.Ready != nil {
@@ -399,11 +412,16 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if titleCapabilityExpected && !auxiliary {
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
+			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
 			err = watchAttached(ctx, config, client, credential, instance, auxiliary, managedCapabilityExpected && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}
+		}
+		var handoff *UpdateHandoff
+		if errors.As(err, &handoff) {
+			return handoff
 		}
 		if ctx.Err() != nil {
 			return nil
@@ -438,9 +456,13 @@ func watchAttached(ctx context.Context, config Config, client delidevv1connect.W
 		watchSessionDeletions(watchCtx, config, client, credential, instance)
 	}()
 	defer func() { cancel(); <-deletionsDone }()
-	results := make(chan error, 4)
+	results := make(chan error, 5)
 	go func() { results <- watch(watchCtx, config, client, credential, instance) }()
 	count := 1
+	if config.updatesEnabled {
+		count++
+		go func() { results <- watchUpdates(watchCtx, config, credential, instance) }()
+	}
 	if config.network != nil {
 		count++
 		go func() { results <- maintainWorkerNetwork(watchCtx, config, client, credential, instance) }()

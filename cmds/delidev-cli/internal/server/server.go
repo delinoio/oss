@@ -8,6 +8,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
+	releaseVerifier           func([]byte, string, time.Time) (updates.Verified, error)
 	releaseFactory            func() (releaseClient, error)
 	userServiceBackend        userservice.Backend
 	StartupID                 domain.ID
@@ -43,7 +45,8 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
-	releaseFactory func() (releaseClient, error)
+	releaseVerifier func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory  func() (releaseClient, error)
 	delidevv1connect.UnimplementedInstallationServiceHandler
 	delidevv1connect.UnimplementedWorkspaceStorageServiceHandler
 	userServiceOptions userservice.ServerOptions

@@ -20,6 +20,7 @@ pub mod appearance;
 mod browser_opener;
 pub mod oauth;
 pub mod provider_guidance;
+pub mod updater;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
@@ -401,6 +402,15 @@ impl Connector {
         arguments: &[OsString],
         input: Option<Zeroizing<Vec<u8>>>,
     ) -> Result<serde_json::Value> {
+        self.run_with_input_bound(arguments, input, self.command_timeout)
+    }
+
+    fn run_with_input_bound(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+        timeout: Duration,
+    ) -> Result<serde_json::Value> {
         if self.exiting.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
         }
@@ -482,9 +492,7 @@ impl Connector {
             }
             match child.try_wait() {
                 Ok(Some(status)) => break Ok(status),
-                Ok(None) if started.elapsed() < self.command_timeout => {
-                    thread::sleep(Duration::from_millis(25))
-                }
+                Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(25)),
                 Ok(None) => break Err(NativeFailure::TimedOut),
                 Err(_) => break Err(NativeFailure::SidecarFailed),
             }

@@ -120,6 +120,9 @@ func deviceRemote(ctx context.Context, c client, o options, args []string) (any,
 	}
 }
 func deviceLocal(ctx context.Context, o options, command string, args []string, streams IO) (any, error) {
+	if command == "worker" && len(args) > 0 && (args[0] == "update-replace" || args[0] == "update-rollback") {
+		return workerReplacementCommand(ctx, o, args[1:], args[0] == "update-rollback")
+	}
 	if command == "worker" && len(args) > 0 && args[0] == "ssh-setup" {
 		return localSSHSetup(ctx, o, args[1:], streams.In)
 	}
@@ -265,6 +268,10 @@ func deviceLocal(ctx context.Context, o options, command string, args []string, 
 		err := worker.Run(ctx, worker.Config{Root: *root, StartupID: domain.ID(*startupID), Logger: slog.New(slog.NewJSONHandler(streams.Err, nil)), Ready: func(id domain.ID) {
 			_ = json.NewEncoder(streams.Out).Encode(envelope{Version: 1, Result: map[string]any{"status": "ready", "machine_id": id}})
 		}})
+		var update *worker.UpdateHandoff
+		if errors.As(err, &update) {
+			return handoffWorkerUpdate(ctx, o, *root, update.ID)
+		}
 		return map[string]any{"status": "stopped"}, err
 	default:
 		return nil, usage()
