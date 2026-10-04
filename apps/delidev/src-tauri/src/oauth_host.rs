@@ -9,6 +9,11 @@ use tauri::{Cef, WebviewWindow};
 
 use super::{SavedWindows, saved_binding, trusted_main};
 
+// Tauri injects the independent native owners alongside the fixed renderer
+// schema. Limit this exception to the IPC boundary; internal operations use
+// cohesive requests. Remove it if native injection can be grouped without
+// changing the existing command schema or weakening owner/lifetime checks.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 // Tauri injects four trusted native owners separately from the closed renderer
 // command fields. Keep this exception scoped to the native command adapter.
