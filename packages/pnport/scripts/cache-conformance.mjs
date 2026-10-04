@@ -40,7 +40,9 @@ if (mode === "prepare") {
       packageManager: `yarn@${yarn}`, devDependencies: { vitest: "5.0.1", vite: "8.3.0" } }));
     writeFileSync(join(project, ".yarnrc.yml"), `nodeLinker: pnp\nenableGlobalCache: false\nenableScripts: false\npnpEnableInlining: ${format === "inline"}\n`);
     writeFileSync(join(project, "cache.test.js"), "import { test, expect } from 'vitest';\ntest('cache', () => expect(1 + 1).toBe(2));\n");
-    npm([...yarnArgs, "install"], { cwd: project, env });
+    // These fresh temporary projects need their first lockfile even under CI.
+    // Confine the immutable-install override to fixture preparation.
+    npm([...yarnArgs, "install"], { cwd: project, env: { ...env, YARN_ENABLE_IMMUTABLE_INSTALLS: "false" } });
     assert(!existsSync(join(project, "node_modules")));
     writeFileSync(join(project, "probe.c"), `#include <fcntl.h>
 #include <stdio.h>

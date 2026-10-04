@@ -84,7 +84,7 @@
 
 ### pnport Rules
 
-- pnport cache conformance separates network preparation from offline runs. Pin Yarn/Vitest/Vite; use default Vitest cache settings and verify readiness plus native dependency reads/cache writes in inline/split forms twice. Run the prepared Vitest bin through the supplied packaged CLI's `run --` path so its workers share the matching native view. Each native host validates its packaged CLI with its matching companion. Source-only cache support must not be attributed to immutable published versions.
+- pnport cache conformance separates network preparation from offline runs. Pin Yarn/Vitest/Vite; use default Vitest cache settings and verify readiness plus native dependency reads/cache writes in inline/split forms twice. Fresh temporary fixture installs must create their lockfiles under `CI=true`; confine the immutable-install override to those preparation calls. Run the prepared Vitest bin through the supplied packaged CLI's `run --` path so its workers share the matching native view. Each native host validates its packaged CLI with its matching companion. Source-only cache support must not be attributed to immutable published versions.
 
 - pnport tag pushes perform credential-free dry runs only. Actual publication requires an explicit `Release pnport` dispatch at the same final tag with `dry_run=false` after its successful dry run. Before publication outputs/write authority, verify the latest exact-tag/revision first-party push run and its complete successful native/assembly jobs with all publication jobs skipped; missing, failed, pending or untrusted records block. All npm/GitHub/Homebrew jobs require the manual event and retain complete fresh native verification.
 
