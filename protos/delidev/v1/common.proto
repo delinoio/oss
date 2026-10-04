@@ -92,3 +92,11 @@ message SessionDeletionJob {
   // Removal is proved separately from filesystem allocation; bytes are unknown.
   bool reclaimed_bytes_known = 10;
 }
+
+// Native subscription identity is independent of API providers.
+enum SubscriptionServiceIdentity {
+  SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED = 0;
+  SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT = 1;
+  SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE = 2;
+  SUBSCRIPTION_SERVICE_IDENTITY_GROK = 3;
+}

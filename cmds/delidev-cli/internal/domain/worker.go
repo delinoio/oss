@@ -95,6 +95,9 @@ const (
 	AutomaticTitlesCodexV1         WorkerCapability = "automatic-titles-codex-v1"
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
+	SubscriptionObservationsV1     WorkerCapability = "subscription-observations-v1"
+	NetworkBootstrapV1             WorkerCapability = "network-bootstrap-v1"
+	CodexAPIProxyV1                WorkerCapability = "codex-api-proxy-v1"
 )
 
 type JobState string

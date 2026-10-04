@@ -67,6 +67,10 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1:
+			capabilities = append(capabilities, domain.NetworkBootstrapV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1:
+			capabilities = append(capabilities, domain.CodexAPIProxyV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1:
 			capabilities = append(capabilities, domain.RepositoryInspectionMetadataV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1:
@@ -77,6 +81,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			capabilities = append(capabilities, domain.SessionForwardingV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1:
 			capabilities = append(capabilities, domain.AutomaticTitlesCodexV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1:
+			capabilities = append(capabilities, domain.SubscriptionObservationsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1:
 			capabilities = append(capabilities, domain.ManagedCodexSubscriptionsV1)
 		default:
@@ -87,10 +93,13 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported a duplicate native capability.", "Report each verified capability once."), correlation)
 	}
 	input := struct {
-		Machine, Instance domain.ID
-		Version           string
-		Capabilities      []domain.WorkerCapability
-	}{machine, instance, req.Msg.Version, capabilities}
+		Machine, Instance            domain.ID
+		Version                      string
+		Capabilities                 []domain.WorkerCapability
+		NetworkGeneration            uint64
+		NetworkRouteID, NetworkKeyID string
+		NetworkRecipient             string
+	}{machine, instance, req.Msg.Version, capabilities, req.Msg.NetworkGeneration, req.Msg.NetworkRouteId, req.Msg.NetworkKeyId, req.Msg.NetworkRecipient}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "worker.attach", input, func(tx *store.Tx) (any, error) {
 		r, m, err := activeMachine(tx, machine)
 		if err != nil {
@@ -149,6 +158,16 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		if err := tx.SetWorkerInstance(machine, instance, now); err != nil {
 			return nil, err
 		}
+		if m.Network == nil || m.Network.InstanceID != instance {
+			m.Network = &domain.WorkerNetworkState{InstanceID: instance, NativeState: domain.WorkerRouteUnsupported, ObservedAt: now}
+		}
+		if req.Msg.NetworkKeyId != "" || req.Msg.NetworkRecipient != "" {
+			if domain.ValidateWorkerRecipient(domain.ID(req.Msg.NetworkKeyId), req.Msg.NetworkRecipient) != nil {
+				return nil, networkConflict()
+			}
+		}
+		// Reported configuration is observation only. Sync independently checks
+		// the issuing transfer digest before admitting an effective generation.
 		m.LastSeen, m.Version, m.WorkerCapabilities = now, req.Msg.Version, capabilities
 		return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
 	})
@@ -165,7 +184,19 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1}})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1}})
+	var networkStatus domain.WorkerNetworkStatus
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		var err error
+		networkStatus, err = workerNetworkStatus(tx, machine)
+		return err
+	}); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	response.Msg.NetworkStatusJson, _ = json.Marshal(networkStatus)
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
@@ -269,6 +300,12 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				responseControlsSent = map[domain.ID]bool{}
 				steerControlsSent = map[domain.ID]bool{}
 			}
+			if err := workerNetworkReady(tx, machine); err != nil {
+				if domain.SafeError(err).Code == domain.RecoveryRequired {
+					return nil
+				}
+				return err
+			}
 			var err error
 			records, err = tx.Jobs(machine, "", "", after, store.MaxPage)
 			return err
@@ -310,6 +347,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			steerControlsSent[domain.ID(steerControl.SteerId)] = true
 		}
 		assigned := false
+		waitForNetwork := false
 		for _, record := range records {
 			job, err := store.Decode[domain.Job](record)
 			if err != nil {
@@ -318,6 +356,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			if job.State == domain.JobQueued {
 				result, err := s.Store.Mutate(ctx, domain.NewID(), "worker.claim", struct{ Job, Instance domain.ID }{record.ID, instance}, func(tx *store.Tx) (any, error) {
 					if err := currentInstance(tx, machine, instance); err != nil {
+						return nil, err
+					}
+					if err := workerNetworkAdmission(tx, machine); err != nil {
 						return nil, err
 					}
 					r, err := tx.Get(domain.JobKind, record.ID)
@@ -360,6 +401,10 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
 				})
 				if err != nil {
+					if domain.SafeError(err).Code == domain.ResourceExhausted {
+						waitForNetwork = true
+						break
+					}
 					return rpc.Error(err, correlation)
 				}
 				if err := domain.Decode(result.Data, &record); err != nil {
@@ -392,7 +437,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			after = record.ID
 		}
-		if assigned || len(records) == store.MaxPage {
+		if assigned || len(records) == store.MaxPage && !waitForNetwork {
 			continue
 		}
 		select {

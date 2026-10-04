@@ -46,17 +46,18 @@ const (
 // Codex may reset counters or fill context totals after a limit failure; later
 // aggregation must reconcile native history instead of summing observations.
 type ExecutionUsageObservation struct {
-	ExecutionID  ID               `json:"execution_id"`
-	AccountID    ID               `json:"account_id"`
-	ConnectionID ID               `json:"connection_id"`
-	ProviderID   ID               `json:"provider_id"`
-	ModelID      ID               `json:"model_id"`
-	Harness      Harness          `json:"harness"`
-	Version      string           `json:"native_version"`
-	ThreadID     string           `json:"native_thread_id"`
-	TurnID       string           `json:"native_turn_id"`
-	Sequence     uint64           `json:"sequence"`
-	Usage        NativeTokenUsage `json:"observation"`
+	ExecutionID         ID                  `json:"execution_id"`
+	AccountID           ID                  `json:"account_id"`
+	ConnectionID        ID                  `json:"connection_id"`
+	ProviderID          ID                  `json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
+	ModelID             ID                  `json:"model_id"`
+	Harness             Harness             `json:"harness"`
+	Version             string              `json:"native_version"`
+	ThreadID            string              `json:"native_thread_id"`
+	TurnID              string              `json:"native_turn_id"`
+	Sequence            uint64              `json:"sequence"`
+	Usage               NativeTokenUsage    `json:"observation"`
 }
 
 func invalidObservation() *Error {

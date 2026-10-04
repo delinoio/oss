@@ -35,23 +35,27 @@ const (
 // Scope is an immutable server-resolved dispatch binding, never client input.
 // Credential generation and revocation belong to the execution/account owner.
 type Scope struct {
-	ExecutionID  domain.ID
-	SessionID    domain.ID
-	AccountID    domain.ID
-	ConnectionID domain.ID
-	ProviderID   domain.ID
-	ModelID      domain.ID
-	NativeModel  string
-	Purpose      domain.UsagePurpose
-	TitlePrompt  string
-	Effort       string
-	ServiceTier  string
-	Harness      domain.Harness
-	Provider     domain.Provider
-	Operations   []Operation
+	SubscriptionService domain.SubscriptionService
+	ExecutionID         domain.ID
+	SessionID           domain.ID
+	AccountID           domain.ID
+	ConnectionID        domain.ID
+	ProviderID          domain.ID
+	ModelID             domain.ID
+	NativeModel         string
+	Purpose             domain.UsagePurpose
+	TitlePrompt         string
+	Effort              string
+	ServiceTier         string
+	Harness             domain.Harness
+	Provider            domain.Provider
+	Operations          []Operation
 }
 
 func (s Scope) Validate() error {
+	if s.SubscriptionService != "" {
+		return domain.Fail(domain.PermissionDenied, "Native subscription identity grants no API relay authority.", "Use the protected native subscription lease.")
+	}
 	for _, id := range []domain.ID{s.ExecutionID, s.SessionID, s.AccountID, s.ConnectionID, s.ProviderID, s.ModelID} {
 		if err := id.Validate(); err != nil {
 			return err

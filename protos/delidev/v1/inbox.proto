@@ -28,6 +28,7 @@ enum InboxSource {
   INBOX_SOURCE_UNSPECIFIED = 0;
   INBOX_SOURCE_INTERACTION = 1;
   INBOX_SOURCE_EXECUTION_TERMINAL = 2;
+  INBOX_SOURCE_SUBSCRIPTION_RECOVERY = 3;
 }
 
 message InboxView {
@@ -35,6 +36,7 @@ message InboxView {
   Resource session = 2;
   // Present only for an interaction source; always its current original record.
   Resource interaction = 3;
+  Resource account = 4;
 }
 
 message GetInboxEntryRequest {
@@ -80,6 +82,7 @@ enum NotificationKind {
   NOTIFICATION_KIND_SUCCEEDED = 2;
   NOTIFICATION_KIND_FAILED = 3;
   NOTIFICATION_KIND_STOPPED = 4;
+  NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY = 5;
 }
 
 enum NotificationState {
@@ -102,6 +105,7 @@ message NotificationCandidate {
   string inbox_id = 1;
   string session_id = 2;
   NotificationKind kind = 3;
+  string account_id = 4;
 }
 
 message NotificationDelivery {

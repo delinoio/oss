@@ -22,6 +22,12 @@ func networkCommand(ctx context.Context, c client, o options, args []string, str
 	if len(args) == 0 {
 		return nil, usage()
 	}
+	if args[0] == "export-bundle" {
+		return exportWorkerNetworkCommand(ctx, c, o, args[1:])
+	}
+	if args[0] == "worker-status" {
+		return workerNetworkStatusCommand(ctx, c, args[1:])
+	}
 	profile := args[0] == "profile"
 	if profile {
 		args = args[1:]

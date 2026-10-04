@@ -7,8 +7,6 @@ import (
 	"os"
 )
 
-type nativeHost struct{}
-
 func hostPlatform(context.Context) error {
 	return problem(ErrPlatform, "Host execution requires macOS 14+ Apple Silicon.", "Select Docker on Ubuntu or use a supported Mac.")
 }
@@ -25,3 +23,4 @@ func (nativeHost) Group(HostProcess) ([]HostProcess, error) {
 }
 func (nativeHost) Stop(HostProcess) error { return hostPlatform(context.Background()) }
 func hostSupervise() int                  { return 2 }
+func hostExecute(string) int              { return 2 }

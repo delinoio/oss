@@ -23,6 +23,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   connection list
   connection worker-register|worker-inspect|worker-status|worker-start --id UUID
   connection worker-stop --id UUID --generation UUID
+  connection worker-network-prepare|worker-network-status --id UUID
+  connection worker-network-import --id UUID --expected-ciphertext-digest SHA256 < ciphertext
   connection pair --id UUID --name NAME --code-stdin
   connection inspect|verify|retry --id UUID
   device create-pairing --type worker|client --name NAME
@@ -34,6 +36,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   device revoke --id ID --revision N
   worker pair --worker-dir PATH --name NAME --code-stdin
   worker pair-local --worker-dir PATH
+  worker network prepare --worker-dir PATH [--name NAME --code-stdin]
+  worker network import --worker-dir PATH --input ENCRYPTED_FILE --expected-ciphertext-digest HEX
+  worker network status --worker-dir PATH
   worker inspect --worker-dir PATH
   worker status --worker-dir PATH
   worker stop --worker-dir PATH --generation UUID-V7
@@ -53,6 +58,10 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   browser-profile list [--page-size N --page-token TOKEN]
   browser-profile register --id SESSION --revision N --account-id ACCOUNT
   browser-profile confirm-removal --id PROFILE --revision N --deletion-request-id REQUEST
+  account refresh-quota --id ID --revision N --machine-id ID --connection-id ID --generation-id ID
+  account refresh-all-quotas
+  account consume-reset-credit --id ID --revision N --machine-id ID --connection-id ID --generation-id ID --credits-observation-id ID (--credit-id ID | --next-credit) --confirm
+  account reconcile-reset-credit --id ID --revision N --operation-id ORIGINAL_ID --connection-id ID --generation-id ID --confirm
   account list [--provider-id ID] [--account-type api|subscription] [--limit N] [--page-token TOKEN]
   integration create --input FILE|-
   integration edit --id ID --revision N --input FILE|-
@@ -63,6 +72,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   network select [--id ROUTE_ID --revision N] [--machine-id ID] [--profile-id ID --profile-revision N]
   network status [--machine-id ID]
   network export-metadata --machine-id ID --revision DESIRED_GENERATION
+  network export-bundle --recipient-input FILE --output ENCRYPTED_FILE [--id ROUTE_ID --revision N] [--profile-id ID --profile-revision N]
+  network worker-status --machine-id ID
   integration list|get|snapshot [--id ID]
   integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
   integration inspect-repository --repository-id ID

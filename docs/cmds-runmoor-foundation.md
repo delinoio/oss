@@ -390,14 +390,32 @@ The manager never edits an active installation or distribution. Host-only
 configurations do not probe Docker, Tart or Guest Agent.
 
 The detached native supervisor is launched through an inherited directory
-handle. JIT data travels through its private stdin pipe and remains memory-only.
+handle. Darwin private child entrypoints validate that descriptor's private
+owner marker and device/inode identity, use `fchdir`, and open the confined root
+from their resulting cwd. `/dev/fd` is never used as a traversal or cwd path;
+the manager's cwd never changes. A private runner exec helper opens the runner
+directory without following a symlink, rejects linked fixed entrypoints, and
+replaces itself with the fixed version-check or worker executable. Imported
+dependency symlinks remain subject to the existing archive/digest confinement.
+Execution HOME/temp derive from the physical descriptor-selected root, including
+after a rename. The helper retains PID/start/group identity through exec and
+rechecks durable unforced Preparing authority immediately before worker exec.
+JIT data travels through private stdin pipes and remains memory-only.
+A bounded anonymous close-on-exec outcome pipe carries only closed failure
+classifications. Subprocess stderr is discarded; structured failure logs retain
+only the action and safe reason. Execution/setup failures use existing
+`PREPARATION_FAILED` (or ownership/stale authority errors); a successful version
+command reporting a different version uses `RUNNER_VERSION_UNSUPPORTED`.
+Public CLI, TOML, SQLite and versioned JSON shapes remain unchanged.
 Each launch checks cancellation and the durable unforced Preparing phase. The
 supervisor rechecks that phase before starting the runner. Preparation retries
 pending supervisor status within its existing deadline; ownership conflicts and
 confirmed immediate exits still fail. It observes startup
 before publishing readiness, owns a separate runner process group, and continues
 across a manager-only restart. Process identity is the kernel PID, group and OS
-start time. The bootstrap deadline bounds preparation only. Idle host runners
+start time. The bootstrap deadline bounds preparation only. An empty successful
+Darwin PID sysctl result confirms process absence; actual inspection errors
+remain conservative. Idle host runners
 have no job deadline. Assignment establishes the persisted busy-job deadline;
 busy-aware removal uses the existing creation-time bound for an unknown start.
 An established job deadline remains authoritative across manager restarts. Process
@@ -447,9 +465,13 @@ stable releases retain all existing signing/package gates. Rollback requires
 drain/stop, a compatible binary and paired state/data backup; never use a v3
 binary against v4 state.
 
-Acceptance is automated contract/mocked lifecycle tests and supported-target
-builds. Actual macOS host execution, unsigned Xcode builds and live GitHub jobs,
-including the real authentication/registration matrix, are explicitly unvalidated.
+Acceptance includes automated contract/mocked lifecycle tests, native Darwin
+child-process regression fixtures and supported-target builds. The opt-in
+`RUNMOOR_HOST_VERSION_TEST=1 go test -run '^TestOfficialHostRunnerVersion$' -v ./cmds/runmoor/internal/runmoor`
+validates official ARM64 archive preparation, `--version` and digest sealing in
+temporary state, without GitHub registration or job execution. These checks do
+not establish actual macOS host job execution, unsigned Xcode builds or live
+GitHub jobs. The real authentication/registration matrix remains unvalidated.
 Existing Docker/Tart, service and distribution evidence retains its original limits.
 Record commands, source revision, results and these gaps in the PR. Public guides
 must disclose host's unreleased status until a manual release provides it.

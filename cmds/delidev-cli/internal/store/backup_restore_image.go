@@ -25,7 +25,7 @@ func migrateRestoreImage(ctx context.Context, path, root string) error {
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL"); err != nil {
 		return storageError(err)
 	}
-	return migrate(ctx, db, root)
+	return migrate(context.WithValue(ctx, historicalSubscriptionRetirement{}, true), db, root)
 }
 
 // Only the private candidate is writable. The synchronized current snapshot is
@@ -59,6 +59,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	}
 	queries := []string{
 		"INSERT OR REPLACE INTO tombstones SELECT * FROM current_state.tombstones",
+		"INSERT OR REPLACE INTO retired_configurations SELECT * FROM current_state.retired_configurations",
 		// Old grants and pairing codes never acquire fresh authority.
 		"DELETE FROM credential_verifiers",
 		"DELETE FROM pairing_verifiers",

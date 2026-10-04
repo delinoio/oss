@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/network.proto.
  */
 export const file_delidev_v1_network: GenFile = /*@__PURE__*/
-  fileDesc("ChhkZWxpZGV2L3YxL25ldHdvcmsucHJvdG8SCmRlbGlkZXYudjEipQEKGVNhdmVOZXR3b3JrUHJvZmlsZVJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhYKDnNjaGVtYV92ZXJzaW9uGAIgASgNEhUKDWRvY3VtZW50X2pzb24YAyABKAwSFwoPY3JlZGVudGlhbF9qc29uGAQgASgMEhgKEGNsZWFyX2NyZWRlbnRpYWwYBSABKAgiRQobRGVsZXRlTmV0d29ya1Byb2ZpbGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiKHAQobU2VsZWN0TmV0d29ya1Byb2ZpbGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhISCgptYWNoaW5lX2lkGAIgASgJEhIKCnByb2ZpbGVfaWQYAyABKAkSGAoQcHJvZmlsZV9yZXZpc2lvbhgEIAEoBCJ7ChpTYXZlTmV0d29ya1Byb2ZpbGVSZXNwb25zZRImCghyZXNvdXJjZRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIPCgdkZWxldGVkGAQgASgIIn0KHERlbGV0ZU5ldHdvcmtQcm9maWxlUmVzcG9uc2USJgoIcmVzb3VyY2UYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSDwoHZGVsZXRlZBgEIAEoCCJ9ChxTZWxlY3ROZXR3b3JrUHJvZmlsZVJlc3BvbnNlEiYKCHJlc291cmNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEg8KB2RlbGV0ZWQYBCABKAgiLAoWR2V0TmV0d29ya1JvdXRlUmVxdWVzdBISCgptYWNoaW5lX2lkGAEgASgJIj4KF0dldE5ldHdvcmtSb3V0ZVJlc3BvbnNlEiMKBXJvdXRlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZSJUCiJFeHBvcnRXb3JrZXJOZXR3b3JrTWV0YWRhdGFSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSGgoSZGVzaXJlZF9nZW5lcmF0aW9uGAIgASgEIlQKI0V4cG9ydFdvcmtlck5ldHdvcmtNZXRhZGF0YVJlc3BvbnNlEhUKDW1ldGFkYXRhX2pzb24YASABKAwSFgoOYXV0aGVudGljYXRpb24YAiABKAkypwQKDk5ldHdvcmtTZXJ2aWNlEmMKElNhdmVOZXR3b3JrUHJvZmlsZRIlLmRlbGlkZXYudjEuU2F2ZU5ldHdvcmtQcm9maWxlUmVxdWVzdBomLmRlbGlkZXYudjEuU2F2ZU5ldHdvcmtQcm9maWxlUmVzcG9uc2USaQoURGVsZXRlTmV0d29ya1Byb2ZpbGUSJy5kZWxpZGV2LnYxLkRlbGV0ZU5ldHdvcmtQcm9maWxlUmVxdWVzdBooLmRlbGlkZXYudjEuRGVsZXRlTmV0d29ya1Byb2ZpbGVSZXNwb25zZRJpChRTZWxlY3ROZXR3b3JrUHJvZmlsZRInLmRlbGlkZXYudjEuU2VsZWN0TmV0d29ya1Byb2ZpbGVSZXF1ZXN0GiguZGVsaWRldi52MS5TZWxlY3ROZXR3b3JrUHJvZmlsZVJlc3BvbnNlEloKD0dldE5ldHdvcmtSb3V0ZRIiLmRlbGlkZXYudjEuR2V0TmV0d29ya1JvdXRlUmVxdWVzdBojLmRlbGlkZXYudjEuR2V0TmV0d29ya1JvdXRlUmVzcG9uc2USfgobRXhwb3J0V29ya2VyTmV0d29ya01ldGFkYXRhEi4uZGVsaWRldi52MS5FeHBvcnRXb3JrZXJOZXR3b3JrTWV0YWRhdGFSZXF1ZXN0Gi8uZGVsaWRldi52MS5FeHBvcnRXb3JrZXJOZXR3b3JrTWV0YWRhdGFSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
+  fileDesc("ChhkZWxpZGV2L3YxL25ldHdvcmsucHJvdG8SCmRlbGlkZXYudjEipQEKGVNhdmVOZXR3b3JrUHJvZmlsZVJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhYKDnNjaGVtYV92ZXJzaW9uGAIgASgNEhUKDWRvY3VtZW50X2pzb24YAyABKAwSFwoPY3JlZGVudGlhbF9qc29uGAQgASgMEhgKEGNsZWFyX2NyZWRlbnRpYWwYBSABKAgiRQobRGVsZXRlTmV0d29ya1Byb2ZpbGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiKHAQobU2VsZWN0TmV0d29ya1Byb2ZpbGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhISCgptYWNoaW5lX2lkGAIgASgJEhIKCnByb2ZpbGVfaWQYAyABKAkSGAoQcHJvZmlsZV9yZXZpc2lvbhgEIAEoBCJ7ChpTYXZlTmV0d29ya1Byb2ZpbGVSZXNwb25zZRImCghyZXNvdXJjZRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIPCgdkZWxldGVkGAQgASgIIn0KHERlbGV0ZU5ldHdvcmtQcm9maWxlUmVzcG9uc2USJgoIcmVzb3VyY2UYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSDwoHZGVsZXRlZBgEIAEoCCJ9ChxTZWxlY3ROZXR3b3JrUHJvZmlsZVJlc3BvbnNlEiYKCHJlc291cmNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEg8KB2RlbGV0ZWQYBCABKAgiLAoWR2V0TmV0d29ya1JvdXRlUmVxdWVzdBISCgptYWNoaW5lX2lkGAEgASgJIj4KF0dldE5ldHdvcmtSb3V0ZVJlc3BvbnNlEiMKBXJvdXRlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZSJUCiJFeHBvcnRXb3JrZXJOZXR3b3JrTWV0YWRhdGFSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSGgoSZGVzaXJlZF9nZW5lcmF0aW9uGAIgASgEIlQKI0V4cG9ydFdvcmtlck5ldHdvcmtNZXRhZGF0YVJlc3BvbnNlEhUKDW1ldGFkYXRhX2pzb24YASABKAwSFgoOYXV0aGVudGljYXRpb24YAiABKAkihAIKIEV4cG9ydFdvcmtlck5ldHdvcmtCdW5kbGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhISCgptYWNoaW5lX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRISCgpwYWlyaW5nX2lkGAQgASgJEhAKCGVuZHBvaW50GAUgASgJEhEKCXJlY2lwaWVudBgGIAEoCRIOCgZrZXlfaWQYByABKAkSEgoKcHJvZmlsZV9pZBgIIAEoCRIYChBwcm9maWxlX3JldmlzaW9uGAkgASgEEhoKEmRlc2lyZWRfZ2VuZXJhdGlvbhgKIAEoBCKJAQohRXhwb3J0V29ya2VyTmV0d29ya0J1bmRsZVJlc3BvbnNlEhIKCmNpcGhlcnRleHQYASABKAwSGQoRY2lwaGVydGV4dF9kaWdlc3QYAiABKAkSIwoFcm91dGUYAyABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhAKCHJlcGxheWVkGAQgASgIIjMKHUdldFdvcmtlck5ldHdvcmtTdGF0dXNSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkiNQoeR2V0V29ya2VyTmV0d29ya1N0YXR1c1Jlc3BvbnNlEhMKC3N0YXR1c19qc29uGAEgASgMMpIGCg5OZXR3b3JrU2VydmljZRJ4ChlFeHBvcnRXb3JrZXJOZXR3b3JrQnVuZGxlEiwuZGVsaWRldi52MS5FeHBvcnRXb3JrZXJOZXR3b3JrQnVuZGxlUmVxdWVzdBotLmRlbGlkZXYudjEuRXhwb3J0V29ya2VyTmV0d29ya0J1bmRsZVJlc3BvbnNlEm8KFkdldFdvcmtlck5ldHdvcmtTdGF0dXMSKS5kZWxpZGV2LnYxLkdldFdvcmtlck5ldHdvcmtTdGF0dXNSZXF1ZXN0GiouZGVsaWRldi52MS5HZXRXb3JrZXJOZXR3b3JrU3RhdHVzUmVzcG9uc2USYwoSU2F2ZU5ldHdvcmtQcm9maWxlEiUuZGVsaWRldi52MS5TYXZlTmV0d29ya1Byb2ZpbGVSZXF1ZXN0GiYuZGVsaWRldi52MS5TYXZlTmV0d29ya1Byb2ZpbGVSZXNwb25zZRJpChREZWxldGVOZXR3b3JrUHJvZmlsZRInLmRlbGlkZXYudjEuRGVsZXRlTmV0d29ya1Byb2ZpbGVSZXF1ZXN0GiguZGVsaWRldi52MS5EZWxldGVOZXR3b3JrUHJvZmlsZVJlc3BvbnNlEmkKFFNlbGVjdE5ldHdvcmtQcm9maWxlEicuZGVsaWRldi52MS5TZWxlY3ROZXR3b3JrUHJvZmlsZVJlcXVlc3QaKC5kZWxpZGV2LnYxLlNlbGVjdE5ldHdvcmtQcm9maWxlUmVzcG9uc2USWgoPR2V0TmV0d29ya1JvdXRlEiIuZGVsaWRldi52MS5HZXROZXR3b3JrUm91dGVSZXF1ZXN0GiMuZGVsaWRldi52MS5HZXROZXR3b3JrUm91dGVSZXNwb25zZRJ+ChtFeHBvcnRXb3JrZXJOZXR3b3JrTWV0YWRhdGESLi5kZWxpZGV2LnYxLkV4cG9ydFdvcmtlck5ldHdvcmtNZXRhZGF0YVJlcXVlc3QaLy5kZWxpZGV2LnYxLkV4cG9ydFdvcmtlck5ldHdvcmtNZXRhZGF0YVJlc3BvbnNlQjxaOmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vZGVsaWRldi92MTtkZWxpZGV2djFiBnByb3RvMw", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.SaveNetworkProfileRequest
@@ -283,11 +283,157 @@ export const ExportWorkerNetworkMetadataResponseSchema: GenMessage<ExportWorkerN
   messageDesc(file_delidev_v1_network, 9);
 
 /**
+ * @generated from message delidev.v1.ExportWorkerNetworkBundleRequest
+ */
+export type ExportWorkerNetworkBundleRequest = Message<"delidev.v1.ExportWorkerNetworkBundleRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * @generated from field: string machine_id = 2;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string device_id = 3;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string pairing_id = 4;
+   */
+  pairingId: string;
+
+  /**
+   * @generated from field: string endpoint = 5;
+   */
+  endpoint: string;
+
+  /**
+   * @generated from field: string recipient = 6;
+   */
+  recipient: string;
+
+  /**
+   * @generated from field: string key_id = 7;
+   */
+  keyId: string;
+
+  /**
+   * @generated from field: string profile_id = 8;
+   */
+  profileId: string;
+
+  /**
+   * @generated from field: uint64 profile_revision = 9;
+   */
+  profileRevision: bigint;
+
+  /**
+   * @generated from field: uint64 desired_generation = 10;
+   */
+  desiredGeneration: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.ExportWorkerNetworkBundleRequest.
+ * Use `create(ExportWorkerNetworkBundleRequestSchema)` to create a new message.
+ */
+export const ExportWorkerNetworkBundleRequestSchema: GenMessage<ExportWorkerNetworkBundleRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_network, 10);
+
+/**
+ * @generated from message delidev.v1.ExportWorkerNetworkBundleResponse
+ */
+export type ExportWorkerNetworkBundleResponse = Message<"delidev.v1.ExportWorkerNetworkBundleResponse"> & {
+  /**
+   * @generated from field: bytes ciphertext = 1;
+   */
+  ciphertext: Uint8Array;
+
+  /**
+   * Obtain independently from this authenticated response before import.
+   *
+   * @generated from field: string ciphertext_digest = 2;
+   */
+  ciphertextDigest: string;
+
+  /**
+   * @generated from field: delidev.v1.Resource route = 3;
+   */
+  route?: Resource | undefined;
+
+  /**
+   * @generated from field: bool replayed = 4;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.ExportWorkerNetworkBundleResponse.
+ * Use `create(ExportWorkerNetworkBundleResponseSchema)` to create a new message.
+ */
+export const ExportWorkerNetworkBundleResponseSchema: GenMessage<ExportWorkerNetworkBundleResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_network, 11);
+
+/**
+ * @generated from message delidev.v1.GetWorkerNetworkStatusRequest
+ */
+export type GetWorkerNetworkStatusRequest = Message<"delidev.v1.GetWorkerNetworkStatusRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+};
+
+/**
+ * Describes the message delidev.v1.GetWorkerNetworkStatusRequest.
+ * Use `create(GetWorkerNetworkStatusRequestSchema)` to create a new message.
+ */
+export const GetWorkerNetworkStatusRequestSchema: GenMessage<GetWorkerNetworkStatusRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_network, 12);
+
+/**
+ * @generated from message delidev.v1.GetWorkerNetworkStatusResponse
+ */
+export type GetWorkerNetworkStatusResponse = Message<"delidev.v1.GetWorkerNetworkStatusResponse"> & {
+  /**
+   * @generated from field: bytes status_json = 1;
+   */
+  statusJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.GetWorkerNetworkStatusResponse.
+ * Use `create(GetWorkerNetworkStatusResponseSchema)` to create a new message.
+ */
+export const GetWorkerNetworkStatusResponseSchema: GenMessage<GetWorkerNetworkStatusResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_network, 13);
+
+/**
  * Owner/paired-client configuration only; credentials are write-only.
  *
  * @generated from service delidev.v1.NetworkService
  */
 export const NetworkService: GenService<{
+  /**
+   * @generated from rpc delidev.v1.NetworkService.ExportWorkerNetworkBundle
+   */
+  exportWorkerNetworkBundle: {
+    methodKind: "unary";
+    input: typeof ExportWorkerNetworkBundleRequestSchema;
+    output: typeof ExportWorkerNetworkBundleResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.NetworkService.GetWorkerNetworkStatus
+   */
+  getWorkerNetworkStatus: {
+    methodKind: "unary";
+    input: typeof GetWorkerNetworkStatusRequestSchema;
+    output: typeof GetWorkerNetworkStatusResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.NetworkService.SaveNetworkProfile
    */

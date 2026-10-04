@@ -64,10 +64,10 @@ func (t *Tx) SetNotificationPreferences(value domain.NotificationPreferences) (d
 // interactions; read terminal notices may be omitted without losing history.
 // Old or paused execution requests never gain authority from a retained inbox.
 const notificationCandidatesSQL = `SELECT i.id,i.session_id,
-CASE WHEN json_extract(i.body,'$.source')='interaction' THEN 'request' ELSE json_extract(i.body,'$.terminal.outcome') END
-FROM entities i JOIN entities s ON s.id=i.session_id AND s.kind='session'
+CASE WHEN json_extract(i.body,'$.source')='subscription-recovery' THEN 'subscription-recovery' WHEN json_extract(i.body,'$.source')='interaction' THEN 'request' ELSE json_extract(i.body,'$.terminal.outcome') END,COALESCE(json_extract(i.body,'$.recovery.account_id'),'')
+FROM entities i LEFT JOIN entities a ON a.id=json_extract(i.body,'$.recovery.account_id') AND a.kind='account' LEFT JOIN entities s ON s.id=i.session_id AND s.kind='session'
 LEFT JOIN entities x ON x.id=json_extract(i.body,'$.source_id') AND x.kind='interaction'
-WHERE i.kind='inbox' AND json_extract(s.body,'$.archive')='active'
+WHERE i.kind='inbox' AND (json_extract(s.body,'$.archive')='active' OR json_extract(i.body,'$.source')='subscription-recovery')
 AND NOT EXISTS(SELECT 1 FROM notification_deliveries d WHERE d.client_id=? AND d.inbox_id=i.id)
 AND ((? AND json_extract(i.body,'$.source')='interaction'
 AND x.session_id=i.session_id AND x.project_id=i.project_id
@@ -75,6 +75,7 @@ AND json_extract(x.body,'$.closure')='open'
 AND json_extract(x.body,'$.response') IS NULL AND json_extract(x.body,'$.approval_response') IS NULL
 AND json_extract(x.body,'$.execution_id')=json_extract(s.body,'$.active_execution_id')
 AND json_extract(s.body,'$.dispatch')='claimed' AND json_extract(s.body,'$.recovery')='none')
+OR (json_extract(i.body,'$.source')='subscription-recovery' AND i.session_id='' AND i.project_id='' AND json_extract(i.body,'$.read_state')='unread' AND json_extract(a.body,'$.recovery_notifications')=1 AND json_extract(a.body,'$.health')='ready' AND COALESCE(json_extract(a.body,'$.subscription.recovery_required'),0)=0 AND COALESCE(json_extract(a.body,'$.removal_required'),0)=0 AND json_extract(a.body,'$.connection.id')=json_extract(i.body,'$.recovery.connection_id'))
 OR (? AND json_extract(i.body,'$.source')='execution-terminal' AND json_extract(i.body,'$.read_state')='unread'
 AND json_extract(i.body,'$.terminal.outcome') IN ('succeeded','failed','stopped')))`
 
@@ -98,10 +99,10 @@ func (t *Tx) NotificationCandidates(limit int) ([]domain.NotificationCandidate, 
 	values := make([]domain.NotificationCandidate, 0, limit)
 	for rows.Next() {
 		var value domain.NotificationCandidate
-		if err := rows.Scan(&value.InboxID, &value.SessionID, &value.Kind); err != nil {
+		if err := rows.Scan(&value.InboxID, &value.SessionID, &value.Kind, &value.AccountID); err != nil {
 			return nil, false, storageError(err)
 		}
-		if value.InboxID.Validate() != nil || value.SessionID.Validate() != nil || !value.Kind.Valid() {
+		if value.InboxID.Validate() != nil || (value.Kind == domain.SubscriptionRecoveryNotification && (value.AccountID.Validate() != nil || value.SessionID != "") || value.Kind != domain.SubscriptionRecoveryNotification && (value.SessionID.Validate() != nil || value.AccountID != "")) || !value.Kind.Valid() {
 			return nil, false, notificationConflict()
 		}
 		values = append(values, value)
@@ -125,7 +126,7 @@ func (t *Tx) NotificationDelivery(inbox domain.ID) (domain.NotificationDelivery,
 	if err := inbox.Validate(); err != nil {
 		return value, err
 	}
-	err = t.tx.QueryRowContext(t.ctx, `SELECT d.inbox_id,i.session_id,d.kind,d.claim_id,d.state FROM notification_deliveries d JOIN entities i ON i.id=d.inbox_id AND i.kind='inbox' WHERE d.client_id=? AND d.inbox_id=?`, client, inbox).Scan(&value.InboxID, &value.SessionID, &value.Kind, &value.ClaimID, &value.State)
+	err = t.tx.QueryRowContext(t.ctx, `SELECT d.inbox_id,i.session_id,d.kind,d.claim_id,d.state,COALESCE(json_extract(i.body,'$.recovery.account_id'),'') FROM notification_deliveries d JOIN entities i ON i.id=d.inbox_id AND i.kind='inbox' WHERE d.client_id=? AND d.inbox_id=?`, client, inbox).Scan(&value.InboxID, &value.SessionID, &value.Kind, &value.ClaimID, &value.State, &value.AccountID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, domain.Fail(domain.NotFound, "No notification claim is retained for this client and inbox entry.", "Refresh this client's notification state without adopting another client's claim.")
 	}
@@ -158,7 +159,7 @@ func (t *Tx) ClaimNotification(inbox, claim domain.ID) (domain.NotificationDeliv
 	if err != nil {
 		return value, false, err
 	}
-	err = t.tx.QueryRowContext(t.ctx, notificationCandidatesSQL+` AND i.id=?`, client, preferences.Interactions, preferences.Terminals, inbox).Scan(&value.InboxID, &value.SessionID, &value.Kind)
+	err = t.tx.QueryRowContext(t.ctx, notificationCandidatesSQL+` AND i.id=?`, client, preferences.Interactions, preferences.Terminals, inbox).Scan(&value.InboxID, &value.SessionID, &value.Kind, &value.AccountID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, false, notificationConflict()
 	}

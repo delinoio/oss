@@ -376,15 +376,16 @@ func (u ClaudeUsageObservation) Validate() error {
 }
 
 type ClaudeUsageRecord struct {
-	ExecutionID  ID                     `json:"execution_id"`
-	AccountID    ID                     `json:"account_id"`
-	ConnectionID ID                     `json:"connection_id"`
-	ProviderID   ID                     `json:"provider_id"`
-	ModelID      ID                     `json:"model_id"`
-	Harness      Harness                `json:"harness"`
-	Version      string                 `json:"native_version"`
-	ThreadID     string                 `json:"native_thread_id"`
-	TurnID       string                 `json:"native_turn_id"`
-	Sequence     uint64                 `json:"sequence"`
-	Usage        ClaudeUsageObservation `json:"claude_observation"`
+	ExecutionID         ID                     `json:"execution_id"`
+	AccountID           ID                     `json:"account_id"`
+	ConnectionID        ID                     `json:"connection_id"`
+	ProviderID          ID                     `json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionService    `json:"subscription_service,omitempty"`
+	ModelID             ID                     `json:"model_id"`
+	Harness             Harness                `json:"harness"`
+	Version             string                 `json:"native_version"`
+	ThreadID            string                 `json:"native_thread_id"`
+	TurnID              string                 `json:"native_turn_id"`
+	Sequence            uint64                 `json:"sequence"`
+	Usage               ClaudeUsageObservation `json:"claude_observation"`
 }

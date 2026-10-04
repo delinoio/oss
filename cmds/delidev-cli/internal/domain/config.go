@@ -238,14 +238,15 @@ type WeightedAccount struct {
 	Weight uint32 `json:"weight"`
 }
 type Agent struct {
-	Name      string            `json:"name"`
-	Harness   Harness           `json:"harness"`
-	ModelID   ID                `json:"model_id"`
-	Effort    string            `json:"effort,omitempty"`
-	Accounts  []WeightedAccount `json:"accounts"`
-	Routing   *RoutingPolicy    `json:"routing,omitempty"`
-	Templates []ID              `json:"templates"`
-	Options   AgentOptions      `json:"options"`
+	ReconfigurationRequired bool              `json:"reconfiguration_required,omitempty"`
+	Name                    string            `json:"name"`
+	Harness                 Harness           `json:"harness"`
+	ModelID                 ID                `json:"model_id"`
+	Effort                  string            `json:"effort,omitempty"`
+	Accounts                []WeightedAccount `json:"accounts"`
+	Routing                 *RoutingPolicy    `json:"routing,omitempty"`
+	Templates               []ID              `json:"templates"`
+	Options                 AgentOptions      `json:"options"`
 }
 
 func (a Agent) Validate() error {
@@ -401,26 +402,34 @@ const (
 )
 
 type Model struct {
-	ProviderID       ID              `json:"provider_id"`
-	NativeID         string          `json:"native_id"`
-	Name             string          `json:"name"`
-	Alias            string          `json:"alias,omitempty"`
-	Harnesses        []Harness       `json:"harnesses"`
-	Hidden           bool            `json:"hidden"`
-	Order            int32           `json:"order"`
-	Manual           bool            `json:"manual"`
-	New              bool            `json:"new"`
-	ContextLimit     *uint64         `json:"context_limit,omitempty"`
-	MetadataSource   EvidenceSource  `json:"metadata_source"`
-	InputModalities  []string        `json:"input_modalities,omitempty"`
-	OutputModalities []string        `json:"output_modalities,omitempty"`
-	Tools            *bool           `json:"tools,omitempty"`
-	Reasoning        *bool           `json:"reasoning,omitempty"`
-	Discovery        *ModelDiscovery `json:"discovery,omitempty"`
+	ProviderID          ID                  `json:"provider_id,omitempty"`
+	SourceKind          ModelSourceKind     `json:"source_kind,omitempty"`
+	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
+	NativeID            string              `json:"native_id"`
+	Name                string              `json:"name"`
+	Alias               string              `json:"alias,omitempty"`
+	Harnesses           []Harness           `json:"harnesses"`
+	Hidden              bool                `json:"hidden"`
+	Order               int32               `json:"order"`
+	Manual              bool                `json:"manual"`
+	New                 bool                `json:"new"`
+	ContextLimit        *uint64             `json:"context_limit,omitempty"`
+	MetadataSource      EvidenceSource      `json:"metadata_source"`
+	InputModalities     []string            `json:"input_modalities,omitempty"`
+	OutputModalities    []string            `json:"output_modalities,omitempty"`
+	Tools               *bool               `json:"tools,omitempty"`
+	Reasoning           *bool               `json:"reasoning,omitempty"`
+	Discovery           *ModelDiscovery     `json:"discovery,omitempty"`
 }
 
 func (m Model) Validate() error {
-	if err := m.ProviderID.Validate(); err != nil {
+	if m.SourceKind == SubscriptionModel {
+		if m.ProviderID != "" || !m.SubscriptionService.Valid() || len(m.Harnesses) != 1 || m.Harnesses[0] != m.SubscriptionService.Harness() {
+			return Fail(InvalidArgument, "Invalid subscription model identity.", "Select one native subscription service and its matching harness without an API provider.")
+		}
+	} else if m.SourceKind != "" || m.SubscriptionService != "" {
+		return Fail(InvalidArgument, "Unknown model source identity.", "Use an API provider or a supported subscription service.")
+	} else if err := m.ProviderID.Validate(); err != nil {
 		return err
 	}
 	for _, s := range []string{m.NativeID, m.Name} {
@@ -492,6 +501,7 @@ const (
 )
 
 type QuotaWindow struct {
+	DurationMinutes *int64           `json:"duration_minutes,omitempty"`
 	ID              string           `json:"id"`
 	ComparisonGroup string           `json:"comparison_group"`
 	Blocking        bool             `json:"blocking"`
@@ -514,7 +524,8 @@ type AccountRemoval struct {
 }
 type Account struct {
 	Alias                 string              `json:"alias"`
-	ProviderID            ID                  `json:"provider_id"`
+	ProviderID            ID                  `json:"provider_id,omitempty"`
+	SubscriptionService   SubscriptionService `json:"subscription_service,omitempty"`
 	Type                  AccountType         `json:"type"`
 	Enabled               bool                `json:"enabled"`
 	ExcludeAutomatic      bool                `json:"exclude_automatic"`
@@ -538,7 +549,13 @@ func (a Account) Validate() error {
 	if err := Text(a.Alias, "account alias", 256, true); err != nil {
 		return err
 	}
-	if err := a.ProviderID.Validate(); err != nil {
+	if a.Type == SubscriptionAccount {
+		if a.ProviderID != "" || !a.SubscriptionService.Valid() || a.Validation != nil || a.Catalog != nil {
+			return Fail(InvalidArgument, "Invalid subscription account identity.", "Choose ChatGPT, Claude or Grok without an API provider or API observations.")
+		}
+	} else if a.SubscriptionService != "" || a.Subscription != nil {
+		return Fail(InvalidArgument, "API accounts cannot own subscription identity.", "Select an API provider without a subscription service.")
+	} else if err := a.ProviderID.Validate(); err != nil {
 		return err
 	}
 	if a.Type != APIAccount && a.Type != SubscriptionAccount {
@@ -620,18 +637,22 @@ type Installation struct {
 	Protocol         *ProtocolObservation `json:"protocol,omitempty"`
 }
 type Machine struct {
-	Name               string             `json:"name"`
-	OS                 string             `json:"os"`
-	Architecture       string             `json:"architecture"`
-	Version            string             `json:"version"`
-	Installations      []Installation     `json:"installations"`
-	WorkerCapabilities []WorkerCapability `json:"worker_capabilities,omitempty"`
-	DiscoveryRevision  uint64             `json:"discovery_revision,omitempty"`
-	LastSeen           time.Time          `json:"last_seen"`
-	Disabled           bool               `json:"disabled"`
+	Network            *WorkerNetworkState `json:"network,omitempty"`
+	Name               string              `json:"name"`
+	OS                 string              `json:"os"`
+	Architecture       string              `json:"architecture"`
+	Version            string              `json:"version"`
+	Installations      []Installation      `json:"installations"`
+	WorkerCapabilities []WorkerCapability  `json:"worker_capabilities,omitempty"`
+	DiscoveryRevision  uint64              `json:"discovery_revision,omitempty"`
+	LastSeen           time.Time           `json:"last_seen"`
+	Disabled           bool                `json:"disabled"`
 }
 
 func (m Machine) Validate() error {
+	if m.Network != nil && m.Network.Validate() != nil {
+		return Fail(InvalidArgument, "Invalid Worker network state.", "Use authenticated route synchronization.")
+	}
 	if err := Text(m.Name, "machine name", 256, true); err != nil {
 		return err
 	}
@@ -653,7 +674,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1) || seenCapabilities[capability] {
+		if (capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

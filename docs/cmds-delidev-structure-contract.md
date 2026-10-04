@@ -50,7 +50,7 @@ CLI framing/authentication and command groups have separate files. They retain
 existing order, authorization, cleanup and output behavior.
 
 The original structural change retained schema 24. The current executable registry
-implements real migrations through 27; later reserved versions remain inactive. Versioned migration
+implements real migrations through 28; later reserved versions remain inactive. Versioned migration
 definitions share creation and upgrade paths while retaining backup-first atomic
 upgrade and all recognized historical layout repairs. Historical migration tests
 start from fixed historical SQL, not a newer schema with an expanding drop list.
@@ -79,10 +79,10 @@ which owns independent temporary directories and child lifetimes per file.
 `cmds/delidev-cli/internal/store/migration-reservations.json` reserves 25 for the
 replacement of #1108, 26 for #1115, and 27 for #1117. Each originally used 25.
 The Grok replacement for issue #1100 implements reserved version 25 with the
-independent `grok-closed-input-v1` layout marker. Real migration 26 composes
-Claude/OpenCode accounting with that original ledger; real migration 27 adds
-metadata-only request diagnostics. The executable registry ends at 27, preserving
-the original predecessor order without placeholders. Unmarked historical
+independent `grok-closed-input-v1` layout marker. Complete feature PRs implement real version 26 for original Claude/OpenCode
+accounting and version 27 for metadata-only request diagnostics, followed by real
+version 28 for service-native subscription identity and its account-scoped recovery notification constraint, preserving all original delivery claims with an independent layout marker. The executable registry ends
+at 28; reserved version 29 remains inactive until the OAuth implementation. Unmarked historical
 version-25 files still require recovery without modification.
 Claude accounting must compose with the Grok accounting schema and shared usage
 meaning established by the preceding change. Request diagnostics follows both
@@ -92,10 +92,11 @@ before branching; do not insert empty migrations to skip unfinished work.
 Issue #1235 reserves migration 28 for service-native subscription identity and
 legacy configuration retirement, after the real implementations of 26 and 27.
 Its independent `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1` allocation is
-17. Both reservations must land on main before dependent implementation; neither
-activates runtime support. Migration provenance uses one original PR or owning
+17. Both reservations reached main before dependent implementation. The real
+retirement migration follows accounting and diagnostics; reservations alone never
+activate runtime support. Migration provenance uses one original PR or owning
 issue when no implementation PR exists yet, preserving that identity thereafter.
-The [storage contract](cmds-delidev-storage-contract.md#planned-subscription-retirement-issue-1235)
+The [storage contract](cmds-delidev-storage-contract.md#subscription-retirement-issue-1235)
 owns the reset boundary. Compose later account/native ownership and restore
 changes with the subscription lifecycle work for issue #1095 rather than
 replacing its unsettled-ownership and cleanup gates.
@@ -109,7 +110,7 @@ dependent implementation; no placeholder migration, active protobuf declaration,
 generated binding or OAuth capability is introduced by this prerequisite. Keep
 the existing sequence and issue open until full implementation is accepted.
 
-The storage suite covers fixed historical layouts through 26 and the recognized
+The storage suite covers fixed historical layouts through 27 and the recognized
 21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,
 retains existing seeded record/backfill/rollback tests, and verifies that three
 unidentified version-25 layouts return recovery-required without modifying bytes.

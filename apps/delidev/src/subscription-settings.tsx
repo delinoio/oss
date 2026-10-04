@@ -40,6 +40,7 @@ export interface SubscriptionAccountRow {
   confirmedExhausted: boolean;
   refreshOperation?: SubscriptionOperation;
   disconnectOperation?: SubscriptionOperation;
+  connect?: () => void;
   refresh?: () => void;
   disconnect?: () => void;
   details: () => void;
@@ -57,6 +58,7 @@ export interface SubscriptionSettingsViewProps {
   refreshAll?: () => void;
   refreshAllOperation?: SubscriptionOperation;
   lifecycleUnavailable?: string;
+  selectService?: (brand: SubscriptionBrand) => void;
   activeFilter?: string;
   clearFilter: () => void;
   advanced: ReactNode;
@@ -139,6 +141,7 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
       <div className="subscription-quota-grid">{account.windows.length ? account.windows.slice(0, 2).map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} now={now} />) : <p className="subscription-no-quota">No quota observation</p>}</div>
       <div className="subscription-row-actions">
         <button type="button" disabled={!canRefresh} title={!account.refresh ? unavailable : undefined} aria-label={`Refresh ${account.alias}`} onClick={account.refresh}>Refresh</button>
+        {account.connect ? <button type="button" disabled={blocked} aria-label={`Manage login for ${account.alias}`} onClick={account.connect}>{account.connection === SubscriptionConnectionState.Disconnected ? "Log in" : "Manage login"}</button> : null}
         <button ref={disconnectButton} type="button" disabled={!canDisconnect} title={!account.disconnect ? unavailable : undefined} aria-label={`Disconnect ${account.alias}`} onClick={() => setConfirm(true)}>Disconnect</button>
         <div className="subscription-more" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setMenu(false); }}>
           <button ref={menuButton} type="button" aria-label={`More actions for ${account.alias}`} aria-expanded={menu} aria-controls={menuId} onClick={() => setMenu(!menu)} onKeyDown={(event) => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><span aria-hidden="true">⋯</span></button>
@@ -157,7 +160,7 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
       <p>Disconnect {account.alias}? Its credentials will be removed and active executions canceled. Account preferences and history are preserved. Other accounts stay connected.</p>
       <div className="actions"><button type="button" disabled={!canDisconnect} onClick={() => { setConfirm(false); account.disconnect?.(); disconnectButton.current?.focus(); }}>Confirm disconnection</button><button type="button" onClick={closeConfirm}>Keep account connected</button></div>
     </div> : null}
-    {details ? <div id={detailsId} className="subscription-details"><h4>Account details</h4><dl><div><dt>Health</dt><dd>{account.health || "Unknown"}</dd></div><div><dt>Account</dt><dd>{account.enabled ? "Enabled" : "Disabled"}</dd></div><div><dt>Provider status</dt><dd>{account.providerState}</dd></div><div><dt>Exhaustion</dt><dd>{account.confirmedExhausted ? "Confirmed exhausted" : "Not confirmed exhausted"}</dd></div></dl>
+    {details ? <div id={detailsId} className="subscription-details"><h4>Account details</h4><dl><div><dt>Health</dt><dd>{account.health || "Unknown"}</dd></div><div><dt>Account</dt><dd>{account.enabled ? "Enabled" : "Disabled"}</dd></div><div><dt>Service status</dt><dd>{account.providerState}</dd></div><div><dt>Exhaustion</dt><dd>{account.confirmedExhausted ? "Confirmed exhausted" : "Not confirmed exhausted"}</dd></div></dl>
       {account.windows.length > 2 ? <div className="subscription-quota-grid">{account.windows.slice(2).map((window, index) => <QuotaWindow key={`${window.id}:${index + 2}`} window={window} now={now} />)}</div> : null}
       <div className="actions"><button type="button" disabled={!account.metadataAvailable} onClick={account.details}>Manage metadata</button><button type="button" onClick={() => { setDetails(false); menuButton.current?.focus(); }}>Close account details</button></div>
     </div> : null}
@@ -169,11 +172,11 @@ const readLabels: Partial<Record<SubscriptionReadState, string>> = {
   [SubscriptionReadState.Failed]: "Unable to read subscriptions or server capabilities. Try again.",
   [SubscriptionReadState.PermissionDenied]: "You do not have permission to read these subscriptions.",
   [SubscriptionReadState.AuthenticationExpired]: "Authentication expired. Reconnect to the selected server.",
-  [SubscriptionReadState.Unsupported]: "Account lists require a server that supports account-type filtering. Update the selected server to manage subscriptions.",
+  [SubscriptionReadState.Unsupported]: "Account lists require a server that supports service-native subscription accounts. Update the selected server to manage subscriptions.",
 };
 
-/** Pure presentation seam: production supplies no native lifecycle callbacks today. */
-export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = "Subscription login is not available yet. This server does not support subscription connection, quota refresh or disconnection.", activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
+/** Presentation only; the owning controller negotiates every native action. */
+export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = "Subscription login is not available yet. This server does not support subscription connection, quota refresh or disconnection.", selectService, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
   const noticeId = useId();
   const [, expireObservation] = useReducer((revision: number) => revision + 1, 0);
   const presentationNow = now ?? Date.now();
@@ -199,7 +202,7 @@ export function SubscriptionSettingsView({ accounts, state, problem, retryRead, 
       {pagination}
     </section>
     <section aria-label="Connect a subscription"><header className="subscription-section-heading"><h2>Connect a subscription</h2></header><p id={noticeId} className="subscription-unavailable">{lifecycleUnavailable}</p>
-      <div className="subscription-provider-cards">{subscriptionCatalog.map((provider) => <article className="subscription-provider-card" key={provider.brand}><ProviderMark brand={provider.brand} /><h3>{provider.name}</h3><p>{provider.purpose}</p><button type="button" disabled aria-label={`${provider.name} · Coming soon`}>Coming soon</button></article>)}</div>
+      <div className="subscription-provider-cards">{subscriptionCatalog.map((provider) => <article className="subscription-provider-card" key={provider.brand}><ProviderMark brand={provider.brand} /><h3>{provider.name}</h3><p>{provider.purpose}</p><button type="button" disabled={!selectService} aria-label={`${provider.name} · ${selectService ? "Add account" : "Coming soon"}`} onClick={() => selectService?.(provider.brand)}>{selectService ? "Add account" : "Coming soon"}</button></article>)}</div>
     </section>
     <details className="subscription-advanced"><summary>Advanced settings</summary><div>{advanced}</div></details>
   </section>;

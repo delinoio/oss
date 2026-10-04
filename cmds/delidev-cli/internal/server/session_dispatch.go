@@ -19,10 +19,13 @@ func firstDispatchConflict() error {
 
 func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain.ID, error) {
 	var providerID domain.ID
+	var subscriptionService domain.SubscriptionService
 	if session.InitialExecution != nil {
 		providerID = session.InitialExecution.Configuration.ProviderID
+		subscriptionService = session.InitialExecution.Configuration.SubscriptionService
 	} else if session.Fork != nil {
 		providerID = session.Fork.Snapshot.Configuration.ProviderID
+		subscriptionService = session.Fork.Snapshot.Configuration.SubscriptionService
 	} else {
 		agentRecord, err := tx.Get(domain.AgentKind, session.AgentID)
 		if err != nil {
@@ -40,7 +43,10 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 		if err != nil {
 			return "", err
 		}
-		providerID = model.ProviderID
+		providerID, subscriptionService = model.ProviderID, model.SubscriptionService
+	}
+	if subscriptionService.Valid() && providerID == "" {
+		return "", nil
 	}
 	providerRecord, err := tx.Get(domain.ProviderKind, providerID)
 	if err != nil {
@@ -163,7 +169,7 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 	if err != nil {
 		return empty, err
 	}
-	managed := c.Subscription && account.Type == domain.SubscriptionAccount && c.Harness == domain.Codex && account.Subscription != nil && account.Subscription.Generation != "" && !account.Subscription.RecoveryRequired && (account.Subscription.Pending == nil || account.Subscription.Pending.Action == domain.SubscriptionRefresh) && account.Connection != nil && account.Connection.Authentication == domain.SubscriptionAuth
+	managed := c.Subscription && c.SubscriptionService == domain.SubscriptionChatGPT && account.SubscriptionService == c.SubscriptionService && account.ProviderID == "" && c.ProviderID == "" && account.Type == domain.SubscriptionAccount && c.Harness == domain.Codex && account.Subscription != nil && account.Subscription.Generation != "" && !account.Subscription.RecoveryRequired && (account.Subscription.Pending == nil || account.Subscription.Pending.Action == domain.SubscriptionRefresh) && account.Connection != nil && account.Connection.Authentication == domain.SubscriptionAuth
 	if managed && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
 		return empty, domain.Fail(domain.Unsupported, "The selected Runner Device has no managed Codex capability.", "Connect a Runner Device with a verified managed authentication profile before dispatching this account.")
 	}
@@ -171,25 +177,21 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 	if !account.Enabled || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.Health != domain.AccountReady || (!managed && !apiReady) {
 		return empty, domain.Fail(domain.Unsupported, "The selected account lacks verified API execution authority.", "Connect and validate the selected API account; stored credentials or a model catalog alone do not authorize inference.")
 	}
-	pr, err := tx.Get(domain.ProviderKind, c.ProviderID)
-	if err != nil {
-		return empty, err
-	}
-	provider, err := store.Decode[domain.Provider](pr)
-	if err != nil {
-		return empty, err
-	}
-	if !provider.EnabledValue() {
-		return empty, providerDisabled()
-	}
-	if managed {
-		if provider.SubscriptionHarness == nil || *provider.SubscriptionHarness != domain.Codex {
-			return empty, subscriptionDenied()
+	if !managed {
+		pr, err := tx.Get(domain.ProviderKind, c.ProviderID)
+		if err != nil {
+			return empty, err
 		}
-		protocol = domain.NativeSubscription
-	}
-	if provider.Protocol != protocol || (!managed && (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint)) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
-		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select OpenAI Responses for Codex, Anthropic Messages for Claude or Chat Completions for OpenCode/Grok; no protocol translation is performed.")
+		provider, err := store.Decode[domain.Provider](pr)
+		if err != nil {
+			return empty, err
+		}
+		if !provider.EnabledValue() {
+			return empty, providerDisabled()
+		}
+		if provider.Protocol != protocol || (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
+			return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select the matching API protocol; no translation or subscription fallback is performed.")
+		}
 	}
 	// Recheck current restrictions without resolving changed Agent/templates or
 	// rerunning routing. Only the immutable selected account may continue.
@@ -204,7 +206,7 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 	if err != nil {
 		return empty, err
 	}
-	if model.ProviderID != c.ProviderID || !slices.Contains(model.Harnesses, c.Harness) {
+	if model.ProviderID != c.ProviderID || model.SubscriptionService != c.SubscriptionService || !model.MatchesAccount(account, c.Harness) || !slices.Contains(model.Harnesses, c.Harness) {
 		return empty, domain.Fail(domain.Unsupported, "The selected model no longer supports this execution profile.", "Restore compatibility without replacing the original session snapshot.")
 	}
 	if session.ProjectID != "" {

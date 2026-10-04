@@ -75,7 +75,7 @@ func (s *Service) authorizeRequest(r *http.Request) (*http.Request, func(), erro
 	}
 	if actor.Type == domain.WorkerDevice {
 		switch r.URL.Path {
-		case delidevv1connect.SubscriptionServiceWatchSubscriptionProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionProgressProcedure, delidevv1connect.SubscriptionServiceFinishSubscriptionProcedure, delidevv1connect.WorkerServiceWatchTerminalsProcedure, delidevv1connect.WorkerServiceClaimTerminalProcedure, delidevv1connect.WorkerServiceReportTerminalProcedure, delidevv1connect.WorkerServicePublishTerminalOutputProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
+		case delidevv1connect.WorkerServiceSyncWorkerNetworkProcedure, delidevv1connect.WorkerServiceReportWorkerNativeRouteProcedure, delidevv1connect.SubscriptionServiceClaimSubscriptionObservationProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionObservationProcedure, delidevv1connect.SubscriptionServiceWatchSubscriptionProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionProgressProcedure, delidevv1connect.SubscriptionServiceFinishSubscriptionProcedure, delidevv1connect.WorkerServiceWatchTerminalsProcedure, delidevv1connect.WorkerServiceClaimTerminalProcedure, delidevv1connect.WorkerServiceReportTerminalProcedure, delidevv1connect.WorkerServicePublishTerminalOutputProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
 		default:
 			return nil, nil, domain.Fail(domain.PermissionDenied, "Worker credentials cannot invoke owner product operations.", "Use an owner or paired client credential.")
 		}
@@ -181,7 +181,9 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[pb.PairDe
 		CredentialDigest []byte
 		MachineID        string
 		MachineJSON      json.RawMessage
-	}{req.Msg.PairingId, req.Msg.DeviceId, codeHash[:], req.Msg.CredentialDigest, req.Msg.MachineId, nil}
+		NetworkRecipient string
+		NetworkKeyID     string
+	}{req.Msg.PairingId, req.Msg.DeviceId, codeHash[:], req.Msg.CredentialDigest, req.Msg.MachineId, nil, req.Msg.NetworkRecipient, req.Msg.NetworkKeyId}
 	if len(req.Msg.MachineJson) > 0 {
 		input.MachineJSON = req.Msg.MachineJson
 	}
@@ -220,6 +222,34 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[pb.PairDe
 			if value.Version != rpc.Version {
 				return nil, domain.Fail(domain.Unsupported, "The Worker version is incompatible with the server.", "Install a matching DeliDev Worker before pairing.")
 			}
+			original, pinErr := tx.WorkerNetworkPairing(grantRecord.ID)
+			if pinErr == nil {
+				if original.MachineID != device.MachineID || original.Binding.DeviceID != domain.ID(req.Msg.DeviceId) || original.Binding.KeyID != domain.ID(req.Msg.NetworkKeyId) || original.Binding.Recipient != req.Msg.NetworkRecipient {
+					return nil, networkConflict()
+				}
+			} else if domain.SafeError(pinErr).Code != domain.NotFound {
+				return nil, pinErr
+			}
+			// The pending export pin must match the original first pairing; native
+			// recipient metadata alone cannot adopt another protected cache.
+			routeRecord, routeErr := tx.NetworkRoute(device.MachineID)
+			if routeErr == nil {
+				route, e := store.Decode[domain.NetworkRoute](routeRecord)
+				if e != nil {
+					return nil, e
+				}
+				if route.Binding != nil && (route.Binding.PairingID != grantRecord.ID || route.Binding.DeviceID != domain.ID(req.Msg.DeviceId) || route.Binding.Recipient != req.Msg.NetworkRecipient || route.Binding.KeyID != domain.ID(req.Msg.NetworkKeyId)) {
+					return nil, networkConflict()
+				}
+			} else if !store.MissingNetworkRoute(routeErr) {
+				return nil, routeErr
+			}
+			if req.Msg.NetworkRecipient != "" || req.Msg.NetworkKeyId != "" {
+				if domain.ValidateWorkerRecipient(domain.ID(req.Msg.NetworkKeyId), req.Msg.NetworkRecipient) != nil {
+					return nil, networkConflict()
+				}
+			}
+			value.Network = nil
 			value.Disabled = false
 			value.LastSeen = time.Time{}
 			value.Installations = nil
@@ -229,7 +259,7 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[pb.PairDe
 				return nil, err
 			}
 			machine = &created
-		} else if len(req.Msg.MachineJson) > 0 {
+		} else if len(req.Msg.MachineJson) > 0 || req.Msg.NetworkRecipient != "" || req.Msg.NetworkKeyId != "" {
 			return nil, domain.Fail(domain.InvalidArgument, "Client pairing cannot contain Worker metadata.", "Use a Worker-specific pairing grant.")
 		}
 		record, err := tx.Put(domain.DeviceKind, domain.ID(req.Msg.DeviceId), 0, "", "", device)

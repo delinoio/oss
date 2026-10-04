@@ -82,6 +82,31 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 			}
 		}
 		write(id, map[string]any{"account": map[string]any{"type": "chatgpt", "email": "fixture@example.invalid", "planType": "plus"}, "requiresOpenaiAuth": true})
+	case "account/rateLimits/read":
+		write(id, map[string]any{"rateLimits": map[string]any{"limitId": "codex", "primary": map[string]any{"usedPercent": 80, "windowDurationMins": 300, "resetsAt": 1900000000}, "secondary": map[string]any{"usedPercent": 20, "windowDurationMins": 10080, "resetsAt": 1900000000}}, "rateLimitsByLimitId": nil, "rateLimitResetCredits": map[string]any{"availableCount": 2, "credits": []any{map[string]any{"id": "credit_1", "resetType": "codexRateLimits", "status": "available", "grantedAt": 1700000000, "expiresAt": nil, "title": "not public", "description": "not public"}}}})
+	case "account/rateLimitResetCredit/consume":
+		var input struct {
+			Key    string  `json:"idempotencyKey"`
+			Credit *string `json:"creditId"`
+		}
+		if domain.Decode(params, &input) != nil || domain.ID(input.Key).Validate() != nil {
+			os.Exit(43)
+		}
+		keyPath := filepath.Join(home, "credit-key")
+		if old, err := os.ReadFile(keyPath); err == nil {
+			if string(old) != input.Key {
+				os.Exit(44)
+			}
+			write(id, map[string]any{"outcome": "alreadyRedeemed"})
+		} else {
+			if security.WriteAtomic(keyPath, []byte(input.Key)) != nil {
+				os.Exit(45)
+			}
+			if mode == "managed-quota-lost-response" {
+				return true
+			}
+			write(id, map[string]any{"outcome": "reset"})
+		}
 	case "account/logout":
 		_ = os.Remove(filepath.Join(home, "auth.json"))
 		write(id, struct{}{})

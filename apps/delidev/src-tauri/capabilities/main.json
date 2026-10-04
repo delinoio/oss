@@ -11,7 +11,8 @@
     "github-presentation",
     "device-appearance",
     "browser-presentation",
-    "repository-folder"
+    "repository-folder",
+    "worker-network"
   ],
   "webviews": [
     "main"

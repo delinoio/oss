@@ -7,6 +7,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 
 // Owner/paired-client configuration only; credentials are write-only.
 service NetworkService {
+  rpc ExportWorkerNetworkBundle(ExportWorkerNetworkBundleRequest) returns (ExportWorkerNetworkBundleResponse);
+  rpc GetWorkerNetworkStatus(GetWorkerNetworkStatusRequest) returns (GetWorkerNetworkStatusResponse);
   rpc SaveNetworkProfile(SaveNetworkProfileRequest) returns (SaveNetworkProfileResponse);
   rpc DeleteNetworkProfile(DeleteNetworkProfileRequest) returns (DeleteNetworkProfileResponse);
   rpc SelectNetworkProfile(SelectNetworkProfileRequest) returns (SelectNetworkProfileResponse);
@@ -64,4 +66,30 @@ message ExportWorkerNetworkMetadataRequest {
 message ExportWorkerNetworkMetadataResponse {
   bytes metadata_json = 1;
   string authentication = 2;
+}
+
+message ExportWorkerNetworkBundleRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string device_id = 3;
+  string pairing_id = 4;
+  string endpoint = 5;
+  string recipient = 6;
+  string key_id = 7;
+  string profile_id = 8;
+  uint64 profile_revision = 9;
+  uint64 desired_generation = 10;
+}
+message ExportWorkerNetworkBundleResponse {
+  bytes ciphertext = 1;
+  // Obtain independently from this authenticated response before import.
+  string ciphertext_digest = 2;
+  Resource route = 3;
+  bool replayed = 4;
+}
+message GetWorkerNetworkStatusRequest {
+  string machine_id = 1;
+}
+message GetWorkerNetworkStatusResponse {
+  bytes status_json = 1;
 }

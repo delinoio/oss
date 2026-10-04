@@ -152,3 +152,20 @@ func assertManagedWorkerFilesRedacted(t *testing.T, root string, bundles ...[]by
 		t.Fatal(err)
 	}
 }
+
+func (f *managedWorkerRPC) ClaimSubscriptionObservation(_ context.Context, req *connect.Request[pb.ClaimSubscriptionObservationRequest]) (*connect.Response[pb.ClaimSubscriptionObservationResponse], error) {
+	op := domain.SubscriptionObservationOperation{ID: domain.ID(req.Msg.OperationId), Action: domain.SubscriptionResetCredit, MachineID: domain.ID(req.Msg.MachineId), Actor: domain.Principal{Type: domain.OwnerDevice}, ConnectionID: domain.NewID(), Generation: domain.ID(req.Msg.GenerationId), Phase: domain.SubscriptionObservationSending, NextCredit: true, CreditsObservationID: domain.NewID(), RequestedAt: time.Now().UTC()}
+	raw, _ := json.Marshal(op)
+	return connect.NewResponse(&pb.ClaimSubscriptionObservationResponse{OperationJson: raw}), nil
+}
+func (f *managedWorkerRPC) PublishSubscriptionObservation(_ context.Context, req *connect.Request[pb.PublishSubscriptionObservationRequest]) (*connect.Response[pb.PublishSubscriptionObservationResponse], error) {
+	raw, err := os.ReadFile(filepath.Join(f.root, "managed-auth", string(f.lease), "codex", "consume-key"))
+	if err != nil || string(raw) != req.Msg.OperationId {
+		f.t.Fatal("native consumption did not use the original official operation key", err)
+	}
+	var result domain.SubscriptionObservationResult
+	if domain.Decode(req.Msg.ObservationJson, &result) != nil || result.ConsumeUncertain != (f.mode == "credit-publication-uncertain") || result.Quota == nil {
+		f.t.Fatal("native uncertainty or independent quota was lost")
+	}
+	return nil, connect.NewError(connect.CodeUnavailable, nil)
+}

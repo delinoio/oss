@@ -72,6 +72,9 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 		if err := currentInstance(tx, machine, instance); err != nil {
 			return nil, err
 		}
+		if err := workerNetworkAdmission(tx, machine); err != nil {
+			return nil, err
+		}
 		record, err := tx.Get(domain.JobKind, jobID)
 		if err != nil {
 			return nil, err
@@ -264,6 +267,12 @@ func (s *Service) WatchAuxiliaryWork(ctx context.Context, req *connect.Request[p
 				inFlight, cancellationSent = "", ""
 			}
 			var err error
+			if err := workerNetworkReady(tx, machine); err != nil {
+				if domain.SafeError(err).Code == domain.RecoveryRequired {
+					return nil
+				}
+				return err
+			}
 			records, err = tx.Jobs(machine, "", "", after, store.MaxPage)
 			return err
 		})
