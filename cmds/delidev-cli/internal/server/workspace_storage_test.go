@@ -451,7 +451,7 @@ func TestWorkspaceStorageAdmissionReservesPermanentDeletionJobCapacity(t *testin
 }
 
 func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
-	for _, existing := range []int{4094, 4095} {
+	for _, existing := range []int{4093, 4094} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
 			f := newStorageFixture(t)
 			preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
@@ -484,7 +484,7 @@ func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
 			}
 			before := f.sessionRecord().Revision
 			cleanup, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", preview.Msg.Job.Id, "")))
-			if existing == 4095 {
+			if existing == 4094 {
 				if connect.CodeOf(err) != connect.CodeResourceExhausted || f.sessionRecord().Revision != before {
 					t.Fatal("cleanup consumed the final restore slot", err)
 				}
@@ -505,7 +505,32 @@ func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
 			if err != nil {
 				t.Fatal("stored workspace could not use its final restore slot", err)
 			}
-			restored := f.execute(restore.Msg.Job)
+			assigned := f.claim(restore.Msg.Job)
+			var original domain.Job
+			var input workspace.StorageRequest
+			if domain.Decode(assigned.DocumentJson, &original) != nil || domain.Decode(original.Input, &input) != nil {
+				t.Fatal("invalid restore assignment")
+			}
+			if _, err := f.manager.Storage(context.Background(), input); err != nil {
+				t.Fatal(err)
+			}
+			// Native publication finished but its report was lost. Replacement
+			// attachment must preserve the reserved explicit recovery slot.
+			_, err = f.service.Store.Mutate(f.ownerContext, domain.NewID(), "fixture.restore.expired-worker", nil, func(tx *store.Tx) (any, error) {
+				return nil, tx.SetWorkerInstance(f.machine, f.instance, time.Now().UTC().Add(-2*workerLease))
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.instance = domain.NewID()
+			if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
+				t.Fatal(err)
+			}
+			recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", assigned.Id)))
+			if err != nil {
+				t.Fatal("final restore lost explicit recovery capacity", err)
+			}
+			restored := f.execute(recovery.Msg.Job)
 			if restored.WorkspaceState != domain.WorkspacePresent || !restored.CleanupVerified {
 				t.Fatal("last-slot restore did not complete")
 			}

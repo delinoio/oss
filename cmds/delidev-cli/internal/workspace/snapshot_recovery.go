@@ -353,7 +353,20 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 	if partial {
 		_, pending, err = m.readRemovalClaimPending(r, raw)
 		if err != nil {
-			return ResultUncertain()
+			// A crash may occur after the top-level rename but before its first
+			// claim publication. Only an intact namespace matching the complete
+			// synchronized intent can establish that original claim. Missing
+			// names or any existing malformed claim/journal retain uncertainty.
+			_, claimErr := security.ReadPrivate(m.removalClaimPath(r.OperationID), maxStorageRemovalClaim)
+			_, journalErr := security.ReadPrivate(m.removalClaimJournalPath(r.OperationID), maxStorageRemovalJournal)
+			if !errors.Is(claimErr, os.ErrNotExist) || !errors.Is(journalErr, os.ErrNotExist) {
+				return ResultUncertain()
+			}
+			exists, err := storageExists(path)
+			if err != nil || !exists {
+				return ResultUncertain()
+			}
+			partial = false
 		}
 		exists, err := storageExists(path)
 		if err != nil {

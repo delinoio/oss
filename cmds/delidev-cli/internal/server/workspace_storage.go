@@ -163,10 +163,13 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		if sr.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before accepting storage work.")
 		}
-		// Cleanup must leave an admission slot for the only supported restore path.
-		// Other observations while stored cannot consume that reserved slot.
+		// Cleanup preserves restore and its first explicit interrupted-restore recovery.
+		// Other observations while stored cannot consume either reserved slot.
 		reserve := 1
 		if action == workspace.StorageCleanup || session.Storage != nil && session.Storage.State == domain.WorkspaceStored && action != workspace.StorageRestore && action != workspace.StorageRecover {
+			reserve = 3
+		}
+		if action == workspace.StorageRestore {
 			reserve = 2
 		}
 		if action == workspace.StorageRecover {
@@ -184,7 +187,7 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 				return nil, workspace.ResultUncertain()
 			}
 			if request.Action == workspace.StorageCleanup || request.Recovery != nil && request.Recovery.Original.Action == workspace.StorageCleanup {
-				reserve = 2
+				reserve = 3
 			}
 		}
 		if err := storageIdle(tx, sr.ID, session, domain.ID(req.Msg.RecoveryJobId), reserve); err != nil {

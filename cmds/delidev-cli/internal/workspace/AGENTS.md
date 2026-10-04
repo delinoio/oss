@@ -52,3 +52,5 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 All snapshot namespace publication, storage inspection/restore/delete/recovery, retained inventory scans and permanent-session copy removal share the same cross-process gate after the session/observation locks. Hold it through native effects and final inventory accounting; contention fails before any effect.
 
 - Claimed removal accepts only immutable directory permissions or the exact writable native mode authorized by an original durable directory-mode transition. Retain that transition through journal compaction, partial recovery and failure; check directory identity and permissions again before unlink. Preserve retained-writer permission changes as unresolved recovery.
+
+- Recovery after the top-level removal rename may create a missing original claim only when its private namespace remains intact and matches the complete synchronized intent, and neither a claim nor its journal exists. Partial or fully absent namespaces require the preexisting original claim. Malformed or replaced claims stay uncertain.
