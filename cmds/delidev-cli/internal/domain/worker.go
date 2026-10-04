@@ -141,7 +141,7 @@ const MaxStorageRecoveryInputBytes = 3 << 20
 
 const (
 	maxJobDocumentBytes        = 1 << 20
-	maxCompactionJobInputBytes = 3 << 20
+	maxCompactionJobInputBytes = MaxCompactionInputBytes
 )
 
 func (j Job) Validate() error {

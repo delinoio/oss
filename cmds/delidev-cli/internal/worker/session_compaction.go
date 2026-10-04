@@ -188,7 +188,7 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	ctx = bounded
 	c := config.execution
 	var i domain.SessionCompactionInput
-	if c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || config.executionContext == nil || domain.Decode(job.Input, &i) != nil || i.Validate() != nil || c.Credential.MachineID != i.Assignment.MachineID || job.ParentID != i.SourceJobID || job.AssignedDeviceID != c.Credential.DeviceID || job.InstanceID != c.Instance || job.MachineID != c.Credential.MachineID || c.Assignment.Revision == 0 {
+	if c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || config.executionContext == nil || domain.DecodeCompactionInput(job.Input, &i) != nil || i.Validate() != nil || c.Credential.MachineID != i.Assignment.MachineID || job.ParentID != i.SourceJobID || job.AssignedDeviceID != c.Credential.DeviceID || job.InstanceID != c.Instance || job.MachineID != c.Credential.MachineID || c.Assignment.Revision == 0 {
 		return nil, domain.CompactionUncertain()
 	}
 	if i.Assignment.Configuration.Harness == domain.OpenCode {

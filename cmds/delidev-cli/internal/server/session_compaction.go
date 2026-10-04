@@ -193,7 +193,7 @@ func (s *Service) CompactSession(ctx context.Context, req *connect.Request[pb.Co
 
 func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revision uint64, raw json.RawMessage, problem *domain.Error) (store.Record, error) {
 	var input domain.SessionCompactionInput
-	if domain.Decode(j.Input, &input) != nil || input.Validate() != nil {
+	if domain.DecodeCompactionInput(j.Input, &input) != nil || input.Validate() != nil {
 		return store.Record{}, domain.CompactionUncertain()
 	}
 	sr, session, err := sessionRecord(tx, r.SessionID)

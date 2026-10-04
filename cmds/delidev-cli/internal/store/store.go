@@ -31,7 +31,7 @@ const MaxPage = 200
 // the immutable source and fresh restore assignments. Keep a small envelope
 // headroom here until those assignments can be stored by reference; this
 // exception applies only to the typed compaction job and remains finite.
-const maxCompactionJobEntityBytes = 4 << 20
+const maxCompactionJobEntityBytes = domain.MaxCompactionJobBytes
 
 type Store struct {
 	db                  *sql.DB

@@ -330,3 +330,13 @@ desktop requires both common and independent OpenCode support plus the exact
 server-observed eligible session revision. Actual scripted-provider native checks
 and unperformed real account/platform acceptance remain separate in PR/issue/CI
 validation records.
+
+## Complete immutable assignment decoding
+
+Compaction inputs retain the complete original execution and replacement input,
+including maximum-length escaped prompts. A strict typed decoder admits at most
+3 MiB of compaction input and 4 MiB of its job document consistently in private
+store reads, authenticated Worker dispatch, server scope/settlement and deletion
+copy derivation. The Connect receive bound covers the finite serialized job.
+Larger ordinary execution or other jobs do not acquire this exception. Trailing
+documents, unknown fields and invalid original assignments remain rejected.

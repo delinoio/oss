@@ -837,7 +837,7 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	}
 	if job.Type == domain.CompactSessionJob {
 		var input domain.SessionCompactionInput
-		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
+		if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
 			return journal{}, domain.CompactionUncertain()
 		}
 	}
