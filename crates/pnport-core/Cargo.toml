@@ -19,6 +19,7 @@ sha2 = "0.10"
 shell-words = "1.1"
 tempfile = "3.25"
 tracing = "0.1.44"
+url = "=2.5.8"
 zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

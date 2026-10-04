@@ -64,6 +64,40 @@ Candidate hosts additionally repeat the internally concurrent fork/child-callbac
 
 ### Official native TypeScript conformance
 
+Offline inline/split execution also runs the synthetic Node PnP API probe.
+The source implementation activates the selected original Yarn CommonJS loader
+automatically through `NODE_OPTIONS`. When Yarn generated `.pnp.loader.mjs`,
+pnport tracks its digest with the graph and activates it for ESM imports too.
+The probe requires `pnpapi` from a ZIP-backed package's require context, verifies
+`process.versions.pnp`, `module.findPnpApi`, locator lookup and request resolution,
+and imports both `pnpapi` and the package manifest through ESM. Fresh descendants
+must retain these behaviors after removing `NODE_OPTIONS` or replacing the whole
+environment. Caller preloads must run after Yarn initialization and be able to
+read `pnpapi` and ZIP-backed dependencies in their original relative order.
+Caller ESM loaders must import PnP-only dependencies during their initialization
+through the selected Yarn loader registered first, retaining caller loader order.
+Caller preload options and replacement descendant options must
+still execute. Explicit `--require` and inherited loader options remain supported.
+Relative selected ESM loaders must register once, remain bound across inherited
+cwd changes, and resolve replacement options against the descendant's final cwd.
+An unrelated relative loader remains active alongside the selected Yarn loader.
+Relative selected CommonJS preloads have the same directory-change guarantees,
+with native filename resolution and preservation of unrelated relative preloads.
+Evidence contains the Node version, typed availability outcomes and exit codes,
+without package paths or child streams. Failed probes report only their case
+identifier, a closed failure class and an integer or null exit code. Do not attach
+spawn errors, child streams, parsed child values or causes to failure diagnostics;
+invalid JSON and unexpected outcome fields must remain redacted. Cache-clean
+failures use the same exit classification. This regression gate does not establish
+complete JavaScript/ESM compatibility or change published 0.1.0 availability.
+
+The same offline probe can run independently against a prepared synthetic
+fixture with a ZIP-backed package manifest:
+
+```sh
+node packages/pnport/scripts/pnpapi-conformance.mjs /temporary/prepared-fixture /path/to/pnport @types/node/package.json
+```
+
 The synthetic fixture includes blue and red workspaces consuming two different peer-provider versions through one shared ZIP-backed consumer package. Networked preparation inspects generated split graph data before producing the requested inline/split representation, without evaluating loader JavaScript. Both virtual consumer locators must differ, resolve their own peer provider, and identify identical archive bytes. Prepared identity records bind these observations to the final manifest/data digests.
 
 Offline execution builds both peer workspaces in the same native compiler build, verifies JavaScript/declaration emission, and separately runs the unchanged official native compiler in each context. Wrong-peer literal assignments must produce TS2322, and unvirtualized execution must fail to resolve the ZIP-backed consumer. Restore synthetic sources after negative controls. Numeric conformance evidence records the distinct locator/provider digests, shared archive digest and positive/negative outcomes alongside the unchanged official compiler digest; these controls do not replace remaining native/minimum-OS acceptance.

@@ -171,6 +171,18 @@ impl Graph {
                 serde_json::from_slice(&bytes).map_err(|_| manifest_error())?
             }
         };
+        let esm_path = path.with_file_name(".pnp.loader.mjs");
+        match fs::symlink_metadata(&esm_path) {
+            Ok(_) => {
+                let bytes = read_manifest(&esm_path)?;
+                inputs.push(Input {
+                    path: esm_path,
+                    sha256: digest(&bytes),
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(manifest_error()),
+        }
         Self::from_snapshot(Snapshot {
             schema_version: 1,
             manifest_path: path,

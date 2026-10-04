@@ -842,6 +842,31 @@ fn initialize_owner() -> std::result::Result<(), InitializationStage> {
     register_owned_process(unsafe { getpid() }).map_err(|_| Stage::OwnedGroup)
 }
 
+fn initialize_node_loader(snapshot: &Snapshot) -> std::result::Result<(), InitializationStage> {
+    use InitializationStage as Stage;
+    let loader = pnport_core::node::Loader::from_snapshot(snapshot);
+    let inherited = std::env::var_os("NODE_OPTIONS");
+    let cwd = std::env::current_dir().ok();
+    let options = loader
+        .options_in(inherited.as_deref(), cwd.as_deref())
+        .map_err(|_| Stage::InstallRuntime)?;
+    if inherited.as_deref() != Some(options.as_os_str()) {
+        // Spawn file actions are opaque in the parent. At image startup
+        // their final cwd is available, before Node reads NODE_OPTIONS.
+        // Bind selected relative loaders and remove the provisional copy
+        // without assuming that a parent's cwd is the child's cwd.
+        let value =
+            CString::new(options.as_os_str().as_bytes()).map_err(|_| Stage::InstallRuntime)?;
+        // SAFETY: both strings are NUL-terminated, and initialization runs
+        // before application threads or Node consume the environment.
+        if unsafe { libc::setenv(c"NODE_OPTIONS".as_ptr(), value.as_ptr(), 1) } != 0 {
+            return Err(Stage::InstallRuntime);
+        }
+    }
+    NODE_LOADER.set(loader).ok();
+    Ok(())
+}
+
 unsafe extern "C" fn initialize() {
     TLS_READY.store(true, Ordering::Release);
     let Some(_guard) = Guard::enter() else {
@@ -900,6 +925,7 @@ unsafe extern "C" fn initialize() {
         let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
         let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
         initialize_owner()?;
+        initialize_node_loader(&graph.snapshot)?;
         let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
         let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
         let view = View::new(graph, cache, session.clone());
@@ -1776,6 +1802,7 @@ const _: () = {
 };
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
+static NODE_LOADER: OnceLock<pnport_core::node::Loader> = OnceLock::new();
 fn child_exec_error(error: &Error) -> c_int {
     // A failed native exec is recoverable by its caller (and libc's PATH
     // search). It did not launch an unmediated image. Only admission/runtime
@@ -1891,9 +1918,17 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
         return Err(EFAULT);
     }
     let mut result = Vec::new();
+    let mut node_options = None;
     let mut i = 0;
     while !(*envp.add(i)).is_null() {
         let value = CStr::from_ptr(*envp.add(i));
+        if let Some(options) = value.to_bytes().strip_prefix(b"NODE_OPTIONS=") {
+            if node_options.is_none() {
+                node_options = Some(OsString::from_vec(options.to_vec()));
+            }
+            i += 1;
+            continue;
+        }
         if ![
             b"PNPORT_SESSION=".as_slice(),
             b"PNPORT_CACHE=",
@@ -1915,6 +1950,14 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
     } else {
         return Err(EIO);
     }
+    let options = NODE_LOADER
+        .get()
+        .ok_or(EIO)?
+        .options(node_options.as_deref())
+        .map_err(|_| EINVAL)?;
+    let mut entry = b"NODE_OPTIONS=".to_vec();
+    entry.extend_from_slice(options.as_os_str().as_bytes());
+    result.push(CString::new(entry).map_err(|_| EINVAL)?);
     Ok(result)
 }
 hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*const *const c_char)->c_int,{
