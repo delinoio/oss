@@ -215,6 +215,11 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		return result, err
 	}
 	defer observationLock.Close()
+	publication, err := m.lockSnapshotNamespace()
+	if err != nil {
+		return result, err
+	}
+	defer publication.Close()
 	var restoreStaging string
 	defer func() {
 		if returned != nil {
@@ -296,7 +301,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		}
 		result.SourceBytes = observation.Whole.Bytes
 		result.PreviewDigest = observation.Digest
-		retained, err := m.snapshotBytes(ctx, r.Preparation.SessionID)
+		retained, err := m.snapshotBytesLocked(ctx, r.Preparation.SessionID)
 		if err != nil {
 			return result, err
 		}
@@ -483,7 +488,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			metadata.Deleted = true
 			result.Snapshot = &metadata
 		}
-		retained, err := m.snapshotBytes(ctx, r.Preparation.SessionID)
+		retained, err := m.snapshotBytesLocked(ctx, r.Preparation.SessionID)
 		if err != nil {
 			// Delete or restore may already have committed native effects. A
 			// missing inventory cannot become a successful zero-cost result.

@@ -636,7 +636,7 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 	default:
 		return result, ResultUncertain()
 	}
-	retained, err := m.snapshotBytes(ctx, r.Preparation.SessionID)
+	retained, err := m.snapshotBytesLocked(ctx, r.Preparation.SessionID)
 	if err != nil {
 		return result, err
 	}

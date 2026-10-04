@@ -48,3 +48,5 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 - Source observation counts an independent Git store already covered by the complete managed-root inventory only once. Its bytes and changes remain bound to the root digest; external original stores still consume the shared allowance.
 
 - Recovery retains the inspected snapshot logical source count. Persist that exact count in the original claim-bound removal intent before snapshot deletion; absence cannot reconstruct it from physical metadata size. Unpublished partial restore scratch cleanup uses the original external operation claim and native root identity, without requiring completed snapshot equality. Foreign or missing proof remains protected.
+
+All snapshot namespace publication, storage inspection/restore/delete/recovery, retained inventory scans and permanent-session copy removal share the same cross-process gate after the session/observation locks. Hold it through native effects and final inventory accounting; contention fails before any effect.

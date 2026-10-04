@@ -20,15 +20,7 @@ import (
 
 func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity string, sources snapshotInventory, expectedDigest string) (metadata SnapshotMetadata, returned error) {
 	var empty SnapshotMetadata
-	// Session locks alone cannot reserve a Worker-wide publication slot. Hold
-	// this fail-fast cross-process gate from admission through durable publication
-	// so concurrent sessions cannot both consume the final slot.
-	publication, err := security.TryLock(filepath.Join(m.Root, "locks", "snapshot-publication.lock"))
-	if err != nil {
-		return empty, err
-	}
-	defer publication.Close()
-	_, count, err := m.snapshotInventoryBytes(ctx, r.Preparation.SessionID)
+	_, count, err := m.snapshotInventoryBytesLocked(ctx, r.Preparation.SessionID)
 	if err != nil {
 		return empty, err
 	}
@@ -358,12 +350,27 @@ func (m *Manager) inspectSnapshotContent(ctx context.Context, id domain.ID) (sna
 	metadata = SnapshotMetadata{ID: id, SessionID: snapshot.Workspace.SessionID, MachineID: snapshot.Workspace.MachineID, SHA256: hex.EncodeToString(sum[:]), SizeBytes: inventory.Bytes + uint64(len(raw)), CreatedAt: snapshot.CreatedAt, RepositoryCount: uint32(len(snapshot.Workspace.Repositories))}
 	return snapshot, metadata, nil
 }
-func (m *Manager) snapshotBytes(ctx context.Context, session domain.ID) (uint64, error) {
-	bytes, _, err := m.snapshotInventoryBytes(ctx, session)
+func (m *Manager) snapshotBytesLocked(ctx context.Context, session domain.ID) (uint64, error) {
+	bytes, _, err := m.snapshotInventoryBytesLocked(ctx, session)
 	return bytes, err
 }
 
+func (m *Manager) lockSnapshotNamespace() (*security.Lock, error) {
+	return security.TryLock(filepath.Join(m.Root, "locks", "snapshot-publication.lock"))
+}
+
 func (m *Manager) snapshotInventoryBytes(ctx context.Context, session domain.ID) (uint64, int, error) {
+	gate, err := m.lockSnapshotNamespace()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer gate.Close()
+	return m.snapshotInventoryBytesLocked(ctx, session)
+}
+
+// The caller holds the cross-process snapshot namespace gate through both
+// native publication/removal and this observation of every retained snapshot.
+func (m *Manager) snapshotInventoryBytesLocked(ctx context.Context, session domain.ID) (uint64, int, error) {
 	root := filepath.Join(m.Root, "snapshots")
 	dir, err := os.Open(root)
 	if err != nil {
