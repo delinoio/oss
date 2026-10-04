@@ -1206,11 +1206,9 @@ unsafe fn mkdir_path(path: *const c_char, fd: c_int) -> std::result::Result<CStr
     let (_, translation) = translate_following(path, fd, false, false, SymlinkPolicy::Allow)?;
     if translation.kind == PathKind::CacheContainer {
         let bytes = path_bytes(path)?;
-        if pnport_core::native_path::terminal_current_directory(Path::new(OsStr::from_bytes(
-            &bytes,
-        ))) {
-            // The virtual root already exists. A final '.' cannot create its
-            // absent physical cache container by losing that component.
+        if !pnport_core::native_path::structural_cache_root(Path::new(OsStr::from_bytes(&bytes))) {
+            // A scope/dependency '..', terminal '.' or followed symlink names
+            // an existing virtual directory, not a new namespace leaf.
             return Err(EEXIST);
         }
         return CString::new(translation.logical.as_os_str().as_bytes()).map_err(|_| EINVAL);

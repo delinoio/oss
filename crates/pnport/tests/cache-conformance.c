@@ -142,17 +142,25 @@ static int buffer_cookies(int fd) {
 }
 #endif
 int main(int argc, char **argv) {
-    if (argc > 1 && !strcmp(argv[1], "mkdir-dot")) {
-        const char *paths[] = {"node_modules/.", "node_modules/./", "node_modules/././/"};
+    if (argc > 1 && !strcmp(argv[1], "mkdir-alias")) {
+        const char *paths[] = {"node_modules/.", "node_modules/./", "node_modules/././/",
+                               "node_modules/@scope/..", "node_modules/@scope/../",
+                               "node_modules/@scope/../@scope/..", "node_modules/dep/.."};
         int parent = open(".", O_RDONLY | O_DIRECTORY); CHECK(parent >= 0);
-        for (int i = 0; i < 3; i++) {
+        for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
             errno = 0; CHECK(mkdir(paths[i], 0700) == -1 && errno == EEXIST);
             errno = 0; CHECK(mkdirat(parent, paths[i], 0700) == -1 && errno == EEXIST);
         }
         int root = open("node_modules", O_RDONLY | O_DIRECTORY); CHECK(root >= 0);
         errno = 0; CHECK(mkdirat(root, ".", 0700) == -1 && errno == EEXIST);
-        close(root); close(parent);
-        puts("cache-mkdir-dot-ok"); return 0;
+        errno = 0; CHECK(mkdirat(root, "@scope/..", 0700) == -1 && errno == EEXIST);
+        int scope = open("node_modules/@scope", O_RDONLY | O_DIRECTORY); CHECK(scope >= 0);
+        errno = 0; CHECK(mkdirat(scope, "..", 0700) == -1 && errno == EEXIST);
+        CHECK(symlink("node_modules", "cache-root-link") == 0);
+        errno = 0; CHECK(mkdir("cache-root-link/", 0700) == -1 && errno == EEXIST);
+        CHECK(unlink("cache-root-link") == 0);
+        close(scope); close(root); close(parent);
+        puts("cache-mkdir-alias-ok"); return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "conflict")) {
         int fd = open("entered", O_CREAT | O_WRONLY, 0600);

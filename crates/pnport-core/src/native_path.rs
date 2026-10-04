@@ -247,13 +247,14 @@ pub fn resolved_lookup_with_policy(
     })
 }
 
-/// Detect a terminal `.` even when the caller adds trailing separators.
-pub fn terminal_current_directory(path: &Path) -> bool {
+/// Structural cache creation requires a literal namespace leaf. Keep raw
+/// components: Path::components removes '.' and lookup resolves '..'/symlinks.
+pub fn structural_cache_root(path: &Path) -> bool {
     path.as_os_str()
         .as_bytes()
         .rsplit(|byte| *byte == b'/')
         .find(|component| !component.is_empty())
-        == Some(b".")
+        == Some(b"node_modules")
 }
 
 fn terminal_directory(path: &Path) -> bool {

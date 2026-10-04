@@ -5803,15 +5803,15 @@ fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
                 compiler.arg("-static");
             }
             assert!(compiler.status().unwrap().success());
-            // Prove terminal-dot mkdir failures cannot materialize a native
-            // cache root, including for the Linux static child on rerun.
+            // Existing virtual-root aliases must not materialize cache
+            // storage, including for the Linux static child on rerun.
             let namespace = root.path().join("node_modules");
             let saved = root.path().join("saved-cache");
             let retained_cache = namespace.exists();
             if retained_cache {
                 fs::rename(&namespace, &saved).unwrap();
             }
-            let dot_result = Command::new(
+            let alias_result = Command::new(
                 std::env::var_os("PNPORT_TEST_BINARY")
                     .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
             )
@@ -5820,15 +5820,12 @@ fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
             .arg(cache.path().join("cache"))
             .args(["run", "--"])
             .arg(&executable)
-            .arg("mkdir-dot")
+            .arg("mkdir-alias")
             .output()
             .unwrap();
-            assert!(dot_result.status.success(), "{dot_result:?}");
-            assert_eq!(dot_result.stdout, b"cache-mkdir-dot-ok\n");
-            assert!(
-                !namespace.exists(),
-                "Terminal-dot mkdir created the cache root"
-            );
+            assert!(alias_result.status.success(), "{alias_result:?}");
+            assert_eq!(alias_result.stdout, b"cache-mkdir-alias-ok\n");
+            assert!(!namespace.exists(), "Alias mkdir created the cache root");
             if retained_cache {
                 fs::rename(&saved, &namespace).unwrap();
             }
