@@ -15,7 +15,9 @@ absolute loader and startup removes only repeated selected loaders. Matching
 relative specifiers become absolute native paths or URLs across later cwd changes; unrelated
 relative loaders remain unchanged. Environment preparation failures retain the
 closed `install-runtime` initialization stage. No JavaScript runs during native
-initialization, and the generic fspy preload remains unchanged.
+initialization. Shared Node option preparation does not invoke runtime tracing
+from these pre-main constructors; supervisor/exec mediation owns its structured
+activation diagnostics. The generic fspy preload remains unchanged.
 
 The pnport-only macOS path hooks use the shared native component lookup before virtual translation. They follow native aliases into logical dependencies and managed cache backing, retain read-only classification for following mutations, and keep non-following link operations and unmanaged pathname bytes native. This extension does not change generic fspy or claim complete symlink/canonicalization acceptance.
 

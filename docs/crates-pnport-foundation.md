@@ -75,7 +75,10 @@ including replacement environments that remove `NODE_OPTIONS`. Selection uses
 the admitted graph, not a caller-replaced environment variable or descendant
 cwd. Non-Node programs ignore these Node options. The supervisor, `doctor`, and
 native graph hydration remain data-only; JavaScript executes only in the Node
-workload. Existing process ownership, graph invalidation, read-only dependency
+workload. Shared option preparation also runs in pre-main native constructors;
+keep it free of runtime tracing and retain structured activation/restoration
+diagnostics in the supervisor and exec mediation callers. Constructor failures
+retain their closed native stage/code records. Existing process ownership, graph invalidation, read-only dependency
 views, and unsupported-operation boundaries remain required.
 
 The package-owned probe verifies automatic API access from a ZIP-backed

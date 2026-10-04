@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Automatic Yarn runtime activation in owned Node workloads.
+//! Preparation also runs in pre-main native constructors; keep runtime tracing
+//! in the supervisor and exec mediation callers.
 
 use std::{
     ffi::{OsStr, OsString},
@@ -75,7 +77,6 @@ impl Loader {
         } else {
             // Move only the selected loader. Requoting every caller argument
             // would change its spelling and could change Node's diagnostics.
-            tracing::debug!(action = "node_preload_bound", selected = selected.len());
             let mut result = OsString::new();
             append_loader(&mut result, "--require", loader_path(&self.commonjs)?);
             let bytes = inherited.as_encoded_bytes();
@@ -273,12 +274,6 @@ fn selected_esm_options(options: OsString, path: &Path, cwd: Option<&Path>) -> R
     // A selected relative loader must stay bound when a descendant changes
     // cwd. Keep unrelated relative loaders untouched and remove only repeats
     // of the selected, untagged module.
-    tracing::debug!(
-        action = "node_loader_bound",
-        relative,
-        moved_before_callers = first_loader.as_ref() != Some(&selected[0].0),
-        duplicates = selected.len() - 1
-    );
     let bytes = options.as_encoded_bytes();
     let mut result = OsString::new();
     // Node loads each later loader through earlier registered hooks. Yarn must
