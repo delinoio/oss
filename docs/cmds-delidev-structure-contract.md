@@ -106,8 +106,8 @@ replacing its unsettled-ownership and cleanup gates.
 Issue #1146 reserves migration 29 for private OpenRouter OAuth attempt metadata,
 after real migrations 26–28, together with inventory capability 5, inventory-entry
 field 9 and the exclusively owned connection-method/attempt-state enums. The
-[planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the complete
-future lifecycle and acceptance. Establish these allocations on main before
+[OAuth contract](cmds-delidev-account-oauth-contract.md) owns the complete
+implemented lifecycle and outstanding real-provider/platform acceptance. Establish these allocations on main before
 dependent implementation; no placeholder migration, active protobuf declaration,
 generated binding or OAuth capability is introduced by this prerequisite. Keep
 the existing sequence and issue open until full implementation is accepted.

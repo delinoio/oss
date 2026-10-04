@@ -5,9 +5,10 @@
 [Issue #1146](https://github.com/delinoio/oss/issues/1146) owns the server/CLI
 attempt lifecycle, protected credential coordination, native browser/callback
 infrastructure and desktop waiting/completion flow below. Reservations alone
-grant no RPC/exchange or callback authority. Complete independent feature PRs compose real migrations 26–29 in order after
-the shared reservations have reached main;
-independent implementation PRs retain the main-first prerequisite.
+grant no RPC/exchange or callback authority. The complete Go/CLI/native/desktop
+lifecycle implements real migration 29 after real 26–28. Shared reservations
+reached main first; independent feature PRs merge in dependency order. Scripted
+fixtures and builds remain separate from real-provider and platform acceptance.
 The direct-action picker prerequisite #1145 is already on main. Compose the
 UI with the current AI API Keys terminology and compact presentation
 from #1135/#1237 and fresh Settings lifetime from #1138.
