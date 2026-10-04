@@ -59,9 +59,11 @@ caller options. Later loader modules must be able to import PnP-only dependencie
 through Yarn's already registered hooks. Preserve unrelated option bytes
 and their relative order, and avoid adding a selected loader more than
 once, including equivalent normalized local file URLs. Query and fragment
-suffixes retain their distinct ESM module identities. Resolve relative ESM
-specifiers against the known workload startup cwd. Bind a matching selected
-specifier to its absolute URL before a descendant can inherit it with a changed
+suffixes retain their distinct ESM module identities. Resolve selected relative
+CommonJS filenames and ESM specifiers against the known workload startup cwd.
+CommonJS filenames retain literal `#`, `?` and `%` characters without URL decoding.
+Bind a matching selected loader to its absolute native path or URL before a
+descendant can inherit it with a changed
 cwd; keep unrelated relative loaders unchanged. Linux exec mediation uses the
 tracee's logical cwd or its live kernel cwd. Opaque macOS spawn actions can change
 cwd, so parent environment preparation retains a provisional absolute loader;

@@ -81,6 +81,8 @@ still execute. Explicit `--require` and inherited loader options remain supporte
 Relative selected ESM loaders must register once, remain bound across inherited
 cwd changes, and resolve replacement options against the descendant's final cwd.
 An unrelated relative loader remains active alongside the selected Yarn loader.
+Relative selected CommonJS preloads have the same directory-change guarantees,
+with native filename resolution and preservation of unrelated relative preloads.
 Evidence contains the Node version, typed availability outcomes and exit codes,
 without package paths or child streams. This regression gate does not establish
 complete JavaScript/ESM compatibility or change published 0.1.0 availability.

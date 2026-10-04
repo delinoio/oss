@@ -39,7 +39,7 @@ impl Loader {
         self.options_in(inherited, None)
     }
 
-    /// Bind relative selected ESM specifiers only when the workload's cwd is
+    /// Bind relative selected loaders only when the workload's cwd is
     /// known. Opaque spawn actions require another pass in the new process.
     pub fn options_in(&self, inherited: Option<&OsStr>, cwd: Option<&Path>) -> Result<OsString> {
         let inherited = inherited.unwrap_or_else(|| OsStr::new(""));
@@ -57,10 +57,16 @@ impl Loader {
             .collect();
         let selected: Vec<_> = requires
             .iter()
-            .filter(|(value, _)| *value == self.commonjs.as_os_str().as_encoded_bytes())
+            .filter(|(value, _)| {
+                *value == self.commonjs.as_os_str().as_encoded_bytes()
+                    || commonjs_path(value, cwd).as_deref() == Some(&self.commonjs)
+            })
             .map(|(_, span)| span.clone())
             .collect();
         let mut result = if selected.len() == 1
+            && requires
+                .first()
+                .is_some_and(|(value, _)| *value == self.commonjs.as_os_str().as_encoded_bytes())
             && requires
                 .first()
                 .is_some_and(|(_, span)| *span == selected[0])
@@ -69,6 +75,7 @@ impl Loader {
         } else {
             // Move only the selected loader. Requoting every caller argument
             // would change its spelling and could change Node's diagnostics.
+            tracing::debug!(action = "node_preload_bound", selected = selected.len());
             let mut result = OsString::new();
             append_loader(&mut result, "--require", loader_path(&self.commonjs)?);
             let bytes = inherited.as_encoded_bytes();
@@ -85,6 +92,25 @@ impl Loader {
         }
         Ok(result)
     }
+}
+
+fn commonjs_path(value: &[u8], cwd: Option<&Path>) -> Option<PathBuf> {
+    // Token decoding removes only ASCII option syntax from the original OsStr.
+    // CommonJS paths are native filenames, not URLs: '#', '?' and '%' stay literal.
+    let path = Path::new(unsafe { OsStr::from_encoded_bytes_unchecked(value) });
+    let relative = value.starts_with(b"./")
+        || value.starts_with(b"../")
+        || cfg!(windows) && (value.starts_with(b".\\") || value.starts_with(b"..\\"));
+    let path = if path.is_absolute() {
+        path.to_owned()
+    } else if relative {
+        cwd?.join(path)
+    } else {
+        // Bare package requests and Windows drive-relative paths need Node's
+        // module/drive lookup; do not guess their identity in native setup.
+        return None;
+    };
+    Some(crate::graph::normalize(&path))
 }
 
 fn loader_path(path: &std::path::Path) -> Result<&str> {
@@ -405,6 +431,77 @@ mod tests {
             .unwrap()
             .contains("--no-warnings --require=\"/first preload.cjs\""));
         assert_eq!(loader.options(Some(&options)).unwrap(), options);
+    }
+
+    #[test]
+    fn binds_selected_relative_commonjs_preloads_to_the_workload_cwd() {
+        let loader = loader(false);
+        let root = loader.commonjs.parent().unwrap();
+        for (specifier, cwd) in [
+            ("./.pnp.cjs", root.to_owned()),
+            ("../.pnp.cjs", root.join("child")),
+        ] {
+            let inherited = format!(
+                "--no-warnings --require=\"/first preload.cjs\"  -r \"{specifier}\" \
+                 --require=\"{specifier}\" --require=/second.cjs"
+            );
+            let provisional = loader.options(Some(OsStr::new(&inherited))).unwrap();
+            for inherited in [OsStr::new(&inherited), &provisional] {
+                let options = loader.options_in(Some(inherited), Some(&cwd)).unwrap();
+                let parsed = tokens(options.as_encoded_bytes()).unwrap();
+                let requires: Vec<_> = parsed
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, _)| require_token(&parsed, index).map(|(value, _)| value))
+                    .collect();
+                assert_eq!(
+                    requires,
+                    [
+                        loader.commonjs.as_os_str().as_encoded_bytes(),
+                        b"/first preload.cjs",
+                        b"/second.cjs"
+                    ]
+                );
+                assert!(options
+                    .to_str()
+                    .unwrap()
+                    .contains("--no-warnings --require=\"/first preload.cjs\""));
+                assert_eq!(
+                    loader
+                        .options_in(Some(&options), Some(&root.join("outside")))
+                        .unwrap(),
+                    options
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn commonjs_paths_preserve_literal_characters_and_unrelated_requests() {
+        let mut loader = loader(false);
+        loader.commonjs = loader
+            .commonjs
+            .parent()
+            .unwrap()
+            .with_file_name("project #?%雪")
+            .join(".pnp.cjs");
+        let root = loader.commonjs.parent().unwrap();
+        let bound = loader
+            .options_in(Some(OsStr::new("--require ./.pnp.cjs")), Some(root))
+            .unwrap();
+        assert!(!bound.to_str().unwrap().contains("./.pnp.cjs"));
+        for (specifier, cwd) in [
+            ("./.pnp.cjs", root.join("other")),
+            ("./.pnp.cjs?tag", root.to_owned()),
+            ("./.pnp.cjs#tag", root.to_owned()),
+            ("loader-package", root.to_owned()),
+        ] {
+            let inherited = format!("--require {specifier}");
+            let options = loader
+                .options_in(Some(OsStr::new(&inherited)), Some(&cwd))
+                .unwrap();
+            assert!(options.to_str().unwrap().contains(&inherited));
+        }
     }
 
     #[test]

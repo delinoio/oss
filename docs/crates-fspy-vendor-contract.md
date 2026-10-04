@@ -8,11 +8,11 @@ The VoidZero MIT text from the pinned revision is copied in full to each importe
 
 ## Local changes
 
-The pnport-only macOS initializer normalizes selected relative Node ESM loaders
+The pnport-only macOS initializer normalizes selected relative CommonJS and ESM loaders
 against the new image's final startup cwd before Node parses `NODE_OPTIONS`.
 Parent spawn file actions remain opaque, so parent preparation adds a provisional
 absolute loader and startup removes only repeated selected loaders. Matching
-relative specifiers become absolute URLs across later cwd changes; unrelated
+relative specifiers become absolute native paths or URLs across later cwd changes; unrelated
 relative loaders remain unchanged. Environment preparation failures retain the
 closed `install-runtime` initialization stage. No JavaScript runs during native
 initialization, and the generic fspy preload remains unchanged.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -81,6 +81,11 @@ globalThis.__pnportTestPreloadOrder = ['first'];
   writeFileSync(second, "require('node:assert/strict').deepEqual(globalThis.__pnportTestPreloadOrder, ['first']);\nglobalThis.__pnportTestPreloadOrder.push('second');\n");
   const customOptions = `--no-warnings --require=${quote(custom)} --require ${quote(second)}`;
   const inheritedCustom = { ...env, NODE_OPTIONS: customOptions, PNPORT_TEST_PRELOAD: "1" };
+  const requireCountProbe = (count) => `${probe}\nassert.equal((process.env.NODE_OPTIONS.match(/(?:--require|-r)(?:=| )/g) ?? []).length, ${count});`;
+  const relativeRequire = '--require "./.pnp.cjs"';
+  const outsideDirectory = join(temporary, "outside");
+  mkdirSync(outsideDirectory);
+  writeFileSync(join(temporary, "other preload.cjs"), "globalThis.__pnportOtherRelativePreload = true;\n");
   const cases = [
     ["automatic", ["--eval", probe, dependency], env],
     ["explicitRequire", ["--require", loader, "--eval", probe, dependency], env],
@@ -93,6 +98,15 @@ globalThis.__pnportTestPreloadOrder = ['first'];
     ["callerPreloadBeforeExplicitLoader", ["--eval", probe, dependency],
       { ...inheritedCustom, NODE_OPTIONS: `${customOptions} -r ${quote(loader)}` }],
     ["descendantOptionsReplaced", ["--eval", descendant(`const env = {NODE_OPTIONS: ${JSON.stringify(customOptions)}, PNPORT_TEST_PRELOAD: '1'};`), dependency], env],
+    ["relativeRequire", ["--eval", requireCountProbe(1), dependency], { ...env, NODE_OPTIONS: relativeRequire }],
+    ["relativeRequireAlias", ["--eval", requireCountProbe(1), dependency], { ...env, NODE_OPTIONS: '-r="./.pnp.cjs"' }],
+    ["relativeRequireBoundAcrossCwdChange", ["--eval",
+      descendant("const env = {...process.env};", requireCountProbe(1), false, outsideDirectory), dependency],
+      { ...env, NODE_OPTIONS: relativeRequire }],
+    ["relativeRequireReplacedWithChildCwd", ["--eval",
+      descendant(`const env = {NODE_OPTIONS: '--require "../.pnp.cjs"'};`, requireCountProbe(1), false, childDirectory), dependency], env],
+    ["otherRelativeRequirePreserved", ["--eval",
+      descendant(`const env = {NODE_OPTIONS: '--require "./other preload.cjs"'};`, `${requireCountProbe(2)}\nassert.equal(globalThis.__pnportOtherRelativePreload, true);`, false, temporary), dependency], env],
   ];
   if (existsSync(join(root, ".pnp.loader.mjs"))) {
     cases.push(["automaticEsm", ["--input-type=module", "--eval", esmProbe, dependency], env]);
