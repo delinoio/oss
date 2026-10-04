@@ -20,6 +20,13 @@ pub enum FailureStage {
     JournalWrite,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FailureRecord {
+    stage: FailureStage,
+    native_error: Option<i32>,
+}
+
 pub struct Registry {
     directory: PathBuf,
     key: [u8; 32],
@@ -48,16 +55,20 @@ impl Registry {
         })
     }
 
-    pub fn record_failure(&self, stage: FailureStage) {
+    pub fn record_error(&self, stage: FailureStage, error: Option<&io::Error>) {
         let Ok(mut file) = tempfile::NamedTempFile::new_in(&self.directory) else {
             return;
         };
-        if serde_json::to_writer(&mut file, &stage).is_ok() && file.flush().is_ok() {
+        let record = FailureRecord {
+            stage,
+            native_error: error.and_then(io::Error::raw_os_error),
+        };
+        if serde_json::to_writer(&mut file, &record).is_ok() && file.flush().is_ok() {
             let _ = file.persist_noclobber(self.directory.join("failure"));
         }
     }
 
-    pub fn failure_stage(&self) -> Option<FailureStage> {
+    pub fn failure_stage(&self) -> Option<FailureRecord> {
         serde_json::from_slice(&bounded_read(&self.directory.join("failure")).ok()?).ok()
     }
 
@@ -156,9 +167,9 @@ impl Registry {
         // permission failure must not block signalling that known birth during
         // shutdown. Retain it in memory, attempt cleanup, and fail the outcome;
         // never acknowledge a new user image through this recovery-only path.
-        if self.commit(identity).is_err() {
+        if let Err(error) = self.commit(identity) {
             self.journal_failed = true;
-            self.record_failure(FailureStage::JournalWrite);
+            self.record_error(FailureStage::JournalWrite, Some(&error));
         }
         Ok(())
     }

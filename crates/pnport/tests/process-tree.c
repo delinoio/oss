@@ -219,7 +219,8 @@ int main(int argc, char **argv) {
     }
     if (strcmp(role, "leaf") != 0) {
         char *args[] = {argv[0], strcmp(role, "root") == 0 ? "middle" : "leaf", argv[2], NULL};
-        char *environment[] = {"PNPORT_TEST_ENV=replacement", "PATH=/absent-child-path", NULL};
+        char *environment[] = {"PNPORT_TEST_ENV=replacement", "PATH=/absent-child-path", NULL, NULL};
+        if (!strcmp(mode, "spoof-key")) environment[2] = "PNPORT_MACOS_OWNER_KEY=0000000000000000000000000000000000000000000000000000000000000000";
         pid_t child;
         if (strcmp(mode, "spawnp") == 0) {
             char cwd[4096], path[16384];

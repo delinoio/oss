@@ -175,10 +175,17 @@ impl Owner {
     pub fn owns_group(&mut self, group: i32) -> Result<bool> {
         // EOF does not reap the guardian: retain the original group reservation
         // while authenticated parent recovery verifies additional tty ownership.
-        if self.check().is_err() {
-            self.registry.recover().map_err(|_| failure())?;
-            return self.registry.owns_group(group).map_err(|_| failure());
+        match self.query_group(group) {
+            Ok(owned) => Ok(owned),
+            Err(_) => {
+                self.registry.recover().map_err(|_| failure())?;
+                self.registry.owns_group(group).map_err(|_| failure())
+            }
         }
+    }
+
+    fn query_group(&mut self, group: i32) -> Result<bool> {
+        self.check()?;
         self.socket.write_all(b"T").map_err(|_| failure())?;
         self.socket
             .write_all(&group.to_be_bytes())
@@ -251,6 +258,7 @@ impl Owner {
             action = "macos_owner_cleanup_acknowledged",
             escalated = matches!(&result, Ok(true)),
             failed = result.is_err(),
+            stage = ?self.registry.failure_stage(),
             "Private process owner reported its cleanup outcome"
         );
         if result.is_err() {
@@ -511,7 +519,7 @@ fn cleanup_signal(
             });
         }
         if let Err(error) = registry.requests() {
-            registry.record_failure(FailureStage::Registration);
+            registry.record_error(FailureStage::Registration, Some(&error));
             return Err(error);
         }
     }
@@ -564,8 +572,8 @@ fn run_helper(role: Role) -> ! {
         socket.write_all(b"R").ok()?;
         let signal = cleanup_signal(&mut socket, &anchor, &mut registry);
         let stopped = registry.stop(group, *signal.as_ref().unwrap_or(&libc::SIGTERM));
-        if stopped.is_err() {
-            registry.record_failure(FailureStage::Cleanup);
+        if let Err(error) = &stopped {
+            registry.record_error(FailureStage::Cleanup, Some(error));
         }
         let _ = fs::remove_file(session.join("owner/alive"));
         // The guardian is outside this group and retains its PID reservation
@@ -587,6 +595,62 @@ fn run_helper(role: Role) -> ! {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::Read,
+        os::unix::{net::UnixStream, process::CommandExt},
+        process::Command,
+        time::Duration,
+    };
+
+    #[test]
+    fn foreground_query_recovers_after_mid_request_control_loss() {
+        let session = tempfile::tempdir().unwrap();
+        let mut owner = super::Owner::start(session.path()).unwrap();
+        let mut owned = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut unrelated = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        owner.admit_root(owned.id() as i32).unwrap();
+        let group = super::Identity::capture(owned.id() as i32).unwrap().group;
+        let unrelated_group = super::Identity::capture(unrelated.id() as i32)
+            .unwrap()
+            .group;
+        let (replacement, mut peer) = UnixStream::pair().unwrap();
+        replacement
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        replacement
+            .set_write_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        // The real guardian and its reservation stay alive. This transport
+        // control closes only after receiving the complete foreground request,
+        // proving loss after the initial readiness check rather than before it.
+        let original = std::mem::replace(&mut owner.socket, replacement);
+        let failed_peer = std::thread::spawn(move || {
+            let mut request = [0; 5];
+            peer.read_exact(&mut request).unwrap();
+            assert_eq!(request[0], b'T');
+            assert_eq!(i32::from_be_bytes(request[1..].try_into().unwrap()), group);
+            peer.shutdown(std::net::Shutdown::Both).unwrap();
+        });
+        owner.check().unwrap();
+        assert!(owner.owns_group(group).unwrap());
+        failed_peer.join().unwrap();
+        assert!(!owner.owns_group(unrelated_group).unwrap());
+        assert!(unrelated.try_wait().unwrap().is_none());
+        drop(original);
+        assert!(owner.stop(libc::SIGTERM).is_err());
+        assert!(!owned.wait().unwrap().success());
+        unrelated.kill().unwrap();
+        unrelated.wait().unwrap();
+    }
+
     #[test]
     fn private_owner_entrypoint() {
         // Unit scenarios run the supervisor inside a fresh copy of the test

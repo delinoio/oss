@@ -658,6 +658,24 @@ mod pending_launch_tests {
 
     #[test]
     fn abandoned_entry_retains_a_failure_published_after_the_first_read() {
+        const ISOLATED: &str = "PNPORT_TEST_PENDING_ABANDONED";
+        if std::env::var_os(ISOLATED).as_deref() != Some(std::ffi::OsStr::new("1")) {
+            // Parallel owner tests fork real native children. Their temporary
+            // inherited open descriptions legitimately retain this lease until
+            // exec, so an immediate abandoned assertion needs its own process.
+            // Keep the parent suite parallel and the explicit inherited-lease
+            // control in pnport-core rather than retrying a timing assertion.
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args(["supervisor::pending_launch_tests::abandoned_entry_retains_a_failure_published_after_the_first_read", "--exact"])
+                .env(ISOLATED, "1").output().unwrap();
+            assert!(
+                output.status.success(),
+                "isolated pending failure control failed: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
         let session = tempfile::tempdir().unwrap();
         fs::create_dir(session.path().join("pending")).unwrap();
         fs::write(session.path().join("pending/pnport-test"), b"").unwrap();

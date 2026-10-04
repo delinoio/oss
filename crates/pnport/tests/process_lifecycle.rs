@@ -110,7 +110,11 @@ impl Fixture {
     fn new(mode: &str, static_binary: bool) -> Self {
         let root = Self::project(static_binary);
         let binary = root.path().join("tree");
-        let child = Command::new(pnport_binary())
+        let mut command = Command::new(pnport_binary());
+        if std::env::var_os("PNPORT_TEST_TERMINAL_DIAGNOSTICS").is_some() {
+            command.args(["--log-level", "debug"]);
+        }
+        let child = command
             .current_dir(root.path())
             .args(["--cache-dir"])
             .arg(root.path().join("store"))
@@ -466,6 +470,29 @@ impl Fixture {
             );
         }
     }
+
+    fn owner_failure_diagnostics(output: &Output) -> serde_json::Value {
+        let log = String::from_utf8_lossy(&output.stderr);
+        let stages: Vec<_> = ["Registration", "Cleanup", "JournalWrite"]
+            .into_iter()
+            .filter(|stage| log.contains(&format!("stage: {stage},")))
+            .collect();
+        let errors: Vec<i32> = log
+            .lines()
+            .filter_map(|line| {
+                line.split("native_error: Some(")
+                    .nth(1)?
+                    .split(')')
+                    .next()?
+                    .parse()
+                    .ok()
+            })
+            .take(8)
+            .collect();
+        json!({"stages": stages, "nativeErrors": errors,
+            "injectionFailed": log.contains("PNPORT_INJECTION_FAILED"),
+            "cleanupFailed": log.contains("PNPORT_CLEANUP_FAILED")})
+    }
 }
 
 impl Drop for Fixture {
@@ -492,7 +519,12 @@ fn cancellation(signal: i32) {
     fixture.assert_active();
     fixture.signal(signal);
     let output = fixture.stopped();
-    assert_eq!(output.status.code(), Some(128 + signal));
+    assert_eq!(
+        output.status.code(),
+        Some(128 + signal),
+        "normal signal={signal}: diagnostics={}",
+        Fixture::owner_failure_diagnostics(&output)
+    );
     fixture.assert_signals(signal);
     fixture.assert_released();
 }
@@ -591,6 +623,12 @@ fn spawn_session_creation_retains_native_behavior() {
 #[test]
 fn children_can_join_and_spawn_into_the_existing_owned_group() {
     group_boundary(&["join", "spawn-same"], false);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn group_target_exit_retains_native_errors_without_poisoning_the_run() {
+    group_boundary(&["exit-target"], false);
 }
 
 #[test]
@@ -1129,7 +1167,13 @@ fn detached_native_trees_retain_signals_and_cache_cleanup() {
                 fs::read(fixture.root.path().join("middle.group")).unwrap()
             );
             fixture.signal(signal);
-            assert_eq!(fixture.stopped().status.code(), Some(128 + signal));
+            let output = fixture.stopped();
+            assert_eq!(
+                output.status.code(),
+                Some(128 + signal),
+                "{mode} signal={signal}: diagnostics={}",
+                Fixture::owner_failure_diagnostics(&output)
+            );
             fixture.assert_signals(signal);
             fixture.assert_released();
         }
@@ -1361,5 +1405,16 @@ fn descendant_foreground_group_restores_the_terminal_before_cleanup() {
     fixture.pids.push(leaf);
     assert_eq!(fixture.stopped().status.code(), Some(23));
     assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn replacement_environment_cannot_override_the_pinned_owner_key() {
+    let mut fixture = Fixture::new("spoof-key", false);
+    fixture.ready();
+    fixture.signal(libc::SIGTERM);
+    assert_eq!(fixture.stopped().status.code(), Some(143));
+    fixture.assert_signals(libc::SIGTERM);
     fixture.assert_released();
 }

@@ -250,11 +250,14 @@ fn record_initialization_failure(session: &Path, stage: InitializationStage) {
 }
 
 fn register_owned_process(pid: pid_t) -> std::io::Result<()> {
+    register_owned_identity(pnport_core::macos_process::Identity::capture(pid)?)
+}
+
+fn register_owned_identity(identity: pnport_core::macos_process::Identity) -> std::io::Result<()> {
     let _guard = Guard::enter();
     let session = SESSION
         .get()
         .ok_or_else(|| std::io::Error::other("Native owner context is missing"))?;
-    let identity = pnport_core::macos_process::Identity::capture(pid)?;
     let public = OWNER_KEY
         .get()
         .ok_or_else(|| std::io::Error::other("Native verification context is missing"))?;
@@ -265,7 +268,17 @@ fn admit_group_change(
     pid: pid_t,
     operation: ProcessGroupOperation,
 ) -> std::result::Result<(), c_int> {
-    register_owned_process(pid).map_err(|_| {
+    admit_group_identity(
+        pnport_core::macos_process::Identity::capture(pid),
+        operation,
+    )
+}
+
+fn admit_group_identity(
+    identity: std::io::Result<pnport_core::macos_process::Identity>,
+    operation: ProcessGroupOperation,
+) -> std::result::Result<(), c_int> {
+    identity.and_then(register_owned_identity).map_err(|_| {
         if let Some(session) = SESSION.get()
             && let Ok(bytes) = serde_json::to_vec(&operation)
         {
@@ -1729,7 +1742,8 @@ hook!(setpgid, pnport_setpgid, (pid:pid_t,group:pid_t) -> c_int, {
     let target = if pid == 0 { libc::getpid() } else { pid };
     // Preserve native errors for absent targets and non-child targets. Darwin
     // cannot move an unrelated process; its PID is never admitted by this call.
-    match pnport_core::macos_process::Identity::capture(target) {
+    let identity = pnport_core::macos_process::Identity::capture(target);
+    match &identity {
         Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return original(pid,group),
         Ok(identity) if target != libc::getpid() => {
             if pnport_core::macos_process::Identity::capture(libc::getpid()).is_ok_and(|current| current.birth != identity.parent_birth) {
@@ -1739,7 +1753,10 @@ hook!(setpgid, pnport_setpgid, (pid:pid_t,group:pid_t) -> c_int, {
         _ => (),
     }
     if let Err(error) = admit_group_change(libc::getpid(), ProcessGroupOperation::Group) { errno(error); return -1; }
-    if let Err(error) = admit_group_change(target, ProcessGroupOperation::Group) { errno(error); return -1; }
+    // Retain the first captured birth rather than capturing it again after
+    // caller admission. Exit/exec in that interval receives a signed terminal
+    // outcome, so libc can preserve ESRCH/EACCES without a whole-run failure.
+    if let Err(error) = admit_group_identity(identity, ProcessGroupOperation::Group) { errno(error); return -1; }
     original(pid,group)
 });
 unsafe extern "C" {
@@ -1881,6 +1898,7 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
             b"PNPORT_SESSION=".as_slice(),
             b"PNPORT_CACHE=",
             b"PNPORT_MACOS_GROUP=",
+            b"PNPORT_MACOS_OWNER_KEY=",
             b"PNPORT_LAUNCH_TOKEN=",
             b"DYLD_INSERT_LIBRARIES=",
             b"LD_PRELOAD=",
