@@ -91,3 +91,22 @@ it.each([
   if (valid) expect(validate().records[0].observedAt).toBe(observedAt);
   else expect(validate).toThrow("unavailable");
 });
+
+// A single invalid retained row invalidates the complete page, including valid siblings.
+it.each(["publication", "unsent-success", "statusless-success", "non-success-status"])("rejects diagnostic rows lacking original HTTP or receipt evidence: %s", (kind) => {
+  const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, id: newRequestId() });
+  row.correlationId = row.id;
+  if (kind === "publication") row.publicationRequestId = "";
+  if (kind === "unsent-success") { row.httpAttempted = false; row.httpStatus = undefined; }
+  if (kind === "statusless-success") row.httpStatus = undefined;
+  if (kind === "non-success-status") row.httpStatus = 503;
+  expect(() => validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema, { records: [f.row, row] }), f.session, "")).toThrow("unavailable");
+});
+
+it("preserves standard-only requested capacity independently from the effective tier", () => {
+  const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, requestedServiceTier: "standard_only", effectiveServiceTier: "standard" });
+  const page = create(ListRequestDiagnosticsResponseSchema, { records: [row] });
+  expect(validateDiagnosticPage(page, f.session, "").records[0].requestedServiceTier).toBe("standard_only");
+  row.effectiveServiceTier = "standard_only";
+  expect(() => validateDiagnosticPage(page, f.session, "")).toThrow("unavailable");
+});

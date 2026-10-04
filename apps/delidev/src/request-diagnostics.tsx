@@ -8,7 +8,8 @@ import {
 import { Problem } from "./ui";
 
 const efforts = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
-const tiers = new Set(["auto", "default", "flex", "priority", "standard"]);
+const effectiveTiers = new Set(["auto", "default", "flex", "priority", "standard"]);
+const requestedTiers = new Set([...effectiveTiers, "standard_only"]);
 const errors = new Set(["", "invalid_argument", "unsupported", "unauthenticated", "permission_denied", "resource_exhausted", "canceled", "conflict", "not_found", "recovery_required", "unavailable", "internal"]);
 const opaqueId = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:req[_-]|resp_|msg_|chatcmpl-)[a-zA-Z0-9_-]+)$/;
 const harnesses = new Set(["codex", "claude-code", "opencode", "grok-build"]);
@@ -32,17 +33,17 @@ export function validateDiagnosticPage(response: ListRequestDiagnosticsResponse,
   if (response.records.length > 50 || response.nextPageToken.length > 2048) invalid();
   const ids = new Set<string>();
   for (const value of response.records) {
-    if (![value.id, value.sessionId, value.executionId, value.accountId, value.connectionId, value.providerId, value.modelId].every(isEntityId) || ids.has(value.id) || value.sessionId !== sessionId || executionId && value.executionId !== executionId || value.revision < 1n || value.revision > 9223372036854775807n) invalid();
+    if (![value.id, value.sessionId, value.executionId, value.accountId, value.connectionId, value.providerId, value.modelId, value.publicationRequestId].every(isEntityId) || ids.has(value.id) || value.sessionId !== sessionId || executionId && value.executionId !== executionId || value.revision < 1n || value.revision > 9223372036854775807n) invalid();
     ids.add(value.id);
     if (![Source.NATIVE_INPUT, Source.PROXY_HTTP].includes(value.source) || ![State.IN_PROGRESS, State.SUCCEEDED, State.FAILED, State.CANCELED].includes(value.state) || value.operation < Operation.INPUT || value.operation > Operation.COUNT || !errors.has(value.errorCode) || !["conversation", "session-title"].includes(value.purpose) || !harnesses.has(value.harness) || (value.state === State.IN_PROGRESS) !== (value.finishedAt === undefined) || [State.IN_PROGRESS, State.SUCCEEDED].includes(value.state) && value.errorCode) invalid();
-    for (const id of [value.inputId, value.publicationRequestId, value.correlationId]) if (id && !isEntityId(id)) invalid();
+    for (const id of [value.inputId, value.correlationId]) if (id && !isEntityId(id)) invalid();
     for (const id of [value.nativeRequestId, value.providerRequestId, value.nativeResponseId]) if (id && (id.length > 128 || !opaqueId.test(id))) invalid();
     if (value.nativeThreadId && !nativeIdentity(value.nativeThreadId, value.harness, false) || value.nativeTurnId && !nativeIdentity(value.nativeTurnId, value.harness, true)) invalid();
     for (const setting of [value.requestedEffort, value.effectiveEffort]) if (setting !== undefined && !efforts.has(setting)) invalid();
-    for (const setting of [value.requestedServiceTier, value.effectiveServiceTier]) if (setting !== undefined && !tiers.has(setting)) invalid();
+    if (value.requestedServiceTier !== undefined && !requestedTiers.has(value.requestedServiceTier) || value.effectiveServiceTier !== undefined && !effectiveTiers.has(value.effectiveServiceTier)) invalid();
     const observed = preciseTimestamp(value.observedAt), finished = value.finishedAt === undefined ? undefined : preciseTimestamp(value.finishedAt);
     if (observed === undefined || value.finishedAt !== undefined && (finished === undefined || finished < observed) || value.durationMs !== undefined && (value.durationMs < 0n || value.durationMs > 960000n) || value.httpStatus !== undefined && (value.httpStatus < 100 || value.httpStatus > 599)) invalid();
-    if (value.source === Source.NATIVE_INPUT && (value.operation !== Operation.INPUT || !value.inputId || !value.nativeThreadId || value.nativeRequestId !== value.id || value.httpAttempted !== undefined || value.httpStatus !== undefined || value.durationMs !== undefined || value.correlationId || value.nativeResponseId || value.providerRequestId) || value.source === Source.PROXY_HTTP && (value.operation === Operation.INPUT || value.httpAttempted === undefined || value.correlationId !== value.id || value.inputId || value.nativeThreadId || value.nativeTurnId || value.httpStatus !== undefined && !value.httpAttempted)) invalid();
+    if (value.source === Source.NATIVE_INPUT && (value.operation !== Operation.INPUT || !value.inputId || !value.nativeThreadId || value.nativeRequestId !== value.id || value.httpAttempted !== undefined || value.httpStatus !== undefined || value.durationMs !== undefined || value.correlationId || value.nativeResponseId || value.providerRequestId) || value.source === Source.PROXY_HTTP && (value.operation === Operation.INPUT || value.httpAttempted === undefined || value.correlationId !== value.id || value.inputId || value.nativeThreadId || value.nativeTurnId || value.httpStatus !== undefined && !value.httpAttempted || value.state === State.SUCCEEDED && (!value.httpAttempted || value.httpStatus !== 200))) invalid();
   }
   return response;
 }

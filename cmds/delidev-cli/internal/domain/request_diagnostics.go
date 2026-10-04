@@ -71,6 +71,14 @@ func DiagnosticEffort(value string) *string {
 	}
 	return nil
 }
+
+// Request values describe permitted capacity, independently of the effective tier.
+func DiagnosticRequestedServiceTier(value string) *string {
+	if value == "standard_only" {
+		return &value
+	}
+	return DiagnosticServiceTier(value)
+}
 func DiagnosticServiceTier(value string) *string {
 	if slices.Contains([]string{"auto", "default", "flex", "priority", "standard"}, value) {
 		return &value
@@ -114,7 +122,7 @@ func (d RequestDiagnostic) Validate() error {
 	for _, setting := range []struct {
 		value  *string
 		filter func(string) *string
-	}{{d.RequestedEffort, DiagnosticEffort}, {d.EffectiveEffort, DiagnosticEffort}, {d.RequestedServiceTier, DiagnosticServiceTier}, {d.EffectiveServiceTier, DiagnosticServiceTier}} {
+	}{{d.RequestedEffort, DiagnosticEffort}, {d.EffectiveEffort, DiagnosticEffort}, {d.RequestedServiceTier, DiagnosticRequestedServiceTier}, {d.EffectiveServiceTier, DiagnosticServiceTier}} {
 		if setting.value != nil && setting.filter(*setting.value) == nil {
 			return invalidObservation()
 		}

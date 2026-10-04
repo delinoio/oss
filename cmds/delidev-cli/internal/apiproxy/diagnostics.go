@@ -48,7 +48,7 @@ func diagnosticRequestSettings(raw []byte, operation Operation, value *domain.Re
 	if json.Unmarshal(raw, &object) != nil {
 		return
 	}
-	value.RequestedServiceTier = diagnosticString(object["service_tier"], domain.DiagnosticServiceTier, guard)
+	value.RequestedServiceTier = diagnosticString(object["service_tier"], domain.DiagnosticRequestedServiceTier, guard)
 	if operation == ResponseCreate || operation == ResponseCompact {
 		var reasoning map[string]json.RawMessage
 		if json.Unmarshal(object["reasoning"], &reasoning) == nil {

@@ -76,7 +76,7 @@ func TestRequestDiagnosticReadsClaudeUsageTierInJSONAndSSE(t *testing.T) {
 				}
 			})
 			retained := retainFixtureDiagnostics(t, f)
-			body := fmt.Sprintf(`{"model":"fixed-model","messages":[{"role":"user","content":"fixture"}],"max_tokens":32,"stream":%t,"service_tier":"auto","output_config":{"effort":"high"}}`, stream)
+			body := fmt.Sprintf(`{"model":"fixed-model","messages":[{"role":"user","content":"fixture"}],"max_tokens":32,"stream":%t,"service_tier":"standard_only","output_config":{"effort":"high"}}`, stream)
 			response, _, err := f.request(t, "/messages", body, func(r *http.Request) {
 				r.Header.Del("Authorization")
 				r.Header.Set("x-api-key", fixtureToken)
@@ -86,7 +86,7 @@ func TestRequestDiagnosticReadsClaudeUsageTierInJSONAndSSE(t *testing.T) {
 				t.Fatal("request did not retain one guarded HTTP attempt", err, len(*retained))
 			}
 			initial, guarded, terminal := (*retained)[0], (*retained)[1], (*retained)[3]
-			if initial.RequestedEffort != nil || initial.RequestedServiceTier != nil || initial.NativeRequestID != "" || guarded.RequestedEffort == nil || *guarded.RequestedEffort != "high" || guarded.RequestedServiceTier == nil || *guarded.RequestedServiceTier != "auto" || guarded.NativeRequestID != "req_original" || *guarded.HTTPAttempted {
+			if initial.RequestedEffort != nil || initial.RequestedServiceTier != nil || initial.NativeRequestID != "" || guarded.RequestedEffort == nil || *guarded.RequestedEffort != "high" || guarded.RequestedServiceTier == nil || *guarded.RequestedServiceTier != "standard_only" || guarded.NativeRequestID != "req_original" || *guarded.HTTPAttempted {
 				t.Fatal("settings were retained before the protected guard", initial, guarded)
 			}
 			if terminal.State != domain.DiagnosticSucceeded || terminal.EffectiveServiceTier == nil || *terminal.EffectiveServiceTier != "priority" || terminal.NativeResponseID != "msg_original" || terminal.HTTPAttempted == nil || !*terminal.HTTPAttempted {
