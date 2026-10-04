@@ -104,6 +104,7 @@
 - pnport Node probes must verify selected relative ESM loader deduplication, binding across inherited cwd changes, replacement options resolved against a descendant's final cwd, and preservation of unrelated relative loaders.
 - pnport Node probes must verify the same directory-change guarantees for selected relative CommonJS preloads, using native filenames and preserving unrelated relative preloads.
 - pnport Node probes must verify caller ESM loaders importing PnP-only dependencies during initialization, their preserved registration order, and automatic selected-loader ordering after descendant option replacement.
+- pnport Node probe failures expose only the case identifier, a closed failure class and an integer or null exit code. Never emit child streams, spawn errors, parsed child values or causes, including invalid JSON, unexpected fields and cache-clean failures. Retain canary tests for these failure paths.
 
 - Run the pnport TypeScript conformance suite on glibc Linux as well as macOS. Linux checks the official native compiler's static ELF machine and runs inline/split builds offline; record Docker architecture and tracing limitations without counting emulated amd64 as native x64 release evidence.
 

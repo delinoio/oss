@@ -6,6 +6,45 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const FailureClass = Object.freeze({
+  Spawn: "spawn-failed",
+  Timeout: "timeout",
+  OutputLimit: "output-limit",
+  Signal: "signal",
+  Exit: "nonzero-exit",
+  InvalidOutput: "invalid-json",
+  UnexpectedOutput: "unexpected-outcome",
+});
+
+function failProbe(name, failureClass, result) {
+  // Child streams, parsed values and spawn errors can contain input paths or
+  // private content. Never attach them as a message, assertion value or cause.
+  throw new Error(JSON.stringify({ case: name, failureClass,
+    exitCode: Number.isInteger(result.status) ? result.status : null }));
+}
+
+function requireSuccessfulExit(name, result) {
+  if (result.error) {
+    const failureClass = result.error.code === "ETIMEDOUT" ? FailureClass.Timeout
+      : result.error.code === "ENOBUFS" ? FailureClass.OutputLimit : FailureClass.Spawn;
+    failProbe(name, failureClass, result);
+  }
+  if (result.signal) failProbe(name, FailureClass.Signal, result);
+  if (result.status !== 0) failProbe(name, FailureClass.Exit, result);
+}
+
+function requireExpectedOutcome(name, result) {
+  requireSuccessfulExit(name, result);
+  let value;
+  try { value = JSON.parse(result.stdout); }
+  catch { failProbe(name, FailureClass.InvalidOutput, result); }
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== 4 || value.code !== "PNP_API_READY"
+    || value.zipBacked !== true || value.pnp !== "3" || value.findPnpApi !== true) {
+    failProbe(name, FailureClass.UnexpectedOutput, result);
+  }
+}
+
 // Use a ZIP-backed package's require context. pnpapi is supplied by the Yarn
 // loader to every package, without a declared package dependency.
 const probe = `
@@ -170,9 +209,7 @@ export function resolve(specifier, context, nextResolve) {
     for (const [name, args, childEnv] of cases) {
       const result = spawnSync(binary, ["--cache-dir", cache, "--color", "never", "run", "--", process.execPath, ...args, resolve(root)],
         { cwd: root, env: childEnv, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
-      assert.ifError(result.error);
-      assert.equal(result.status, 0, `${name}: ${result.stdout}\n${result.stderr}`);
-      assert.deepEqual(JSON.parse(result.stdout), { code: "PNP_API_READY", zipBacked: true, pnp: "3", findPnpApi: true }, name);
+      requireExpectedOutcome(name, result);
       outcomes[name] = { apiAvailable: true, exitCode: result.status };
     }
   } finally {
@@ -196,8 +233,7 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     // The native cache command removes read-only package storage after leases
     // have ended. Recursive removal alone cannot unlink its protected files.
     const cleaned = spawnSync(binary, ["--cache-dir", cache, "cache", "clean"], { encoding: "utf8", timeout: 30_000 });
-    assert.ifError(cleaned.error);
-    assert.equal(cleaned.status, 0, "Cannot clean the synthetic conformance cache");
+    requireSuccessfulExit("cacheClean", cleaned);
     rmSync(temporary, { recursive: true, force: true });
   }
 }

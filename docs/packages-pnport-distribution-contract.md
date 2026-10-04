@@ -84,7 +84,11 @@ An unrelated relative loader remains active alongside the selected Yarn loader.
 Relative selected CommonJS preloads have the same directory-change guarantees,
 with native filename resolution and preservation of unrelated relative preloads.
 Evidence contains the Node version, typed availability outcomes and exit codes,
-without package paths or child streams. This regression gate does not establish
+without package paths or child streams. Failed probes report only their case
+identifier, a closed failure class and an integer or null exit code. Do not attach
+spawn errors, child streams, parsed child values or causes to failure diagnostics;
+invalid JSON and unexpected outcome fields must remain redacted. Cache-clean
+failures use the same exit classification. This regression gate does not establish
 complete JavaScript/ESM compatibility or change published 0.1.0 availability.
 
 The same offline probe can run independently against a prepared synthetic
