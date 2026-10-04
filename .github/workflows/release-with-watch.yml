@@ -72,7 +72,7 @@ jobs:
             asset_os: darwin
             asset_arch: amd64
             archive_ext: tar.gz
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             asset_os: darwin
             asset_arch: arm64

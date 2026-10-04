@@ -209,3 +209,14 @@ test("non-Cargo projects reach source validation and tagging without Cargo publi
     assert.equal(requiresCargoPublish(project), [Project.Binpm, Project.CargoMono, Project.Nodeup, Project.WithWatch].includes(project));
   }
 });
+
+test("Rust CLI releases retain native macOS 15 runners for both architectures", () => {
+  for (const project of [Project.Binpm, Project.CargoMono, Project.Nodeup, Project.WithWatch]) {
+    const release = yaml.load(source(`.github/workflows/release-${project}.yml`));
+    const darwin = release.jobs.build.strategy.matrix.include.filter(({ asset_os }) => asset_os === "darwin");
+    assert.deepEqual(darwin, [
+      { os: "macos-15-intel", target: "x86_64-apple-darwin", asset_os: "darwin", asset_arch: "amd64", archive_ext: "tar.gz" },
+      { os: "macos-15", target: "aarch64-apple-darwin", asset_os: "darwin", asset_arch: "arm64", archive_ext: "tar.gz" },
+    ], project);
+  }
+});

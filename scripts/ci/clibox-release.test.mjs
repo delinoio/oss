@@ -18,6 +18,8 @@ test("clibox release covers all eight native targets and Alpine consumer executi
   const matrix = release.jobs.build.strategy.matrix.include;
   assert.deepEqual(matrix.map(({ target }) => target).sort(), platforms.targets.map(({ rust }) => rust).sort());
   for (const target of platforms.targets) assert.equal(matrix.find((entry) => entry.target === target.rust).suffix, target.suffix);
+  assert.equal(matrix.find(({ target }) => target === "x86_64-apple-darwin").runner, "macos-15-intel");
+  assert.equal(matrix.find(({ target }) => target === "aarch64-apple-darwin").runner, "macos-15");
   const steps = release.jobs.build.steps;
   assert.equal(steps.flatMap(({ run }) => run?.split("\n") ?? []).filter((line) => line.trim() === 'cargo test --locked -p clibox-fspy --target "$CLIBOX_TARGET" -- --test-threads=1').length, 1);
   assert.equal(steps.flatMap(({ run }) => run?.split("\n") ?? []).filter((line) => line.trim() === 'cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target "$CLIBOX_TARGET"').length, 1);
@@ -79,7 +81,7 @@ test("macOS Homebrew validates both native architectures before obtaining tap-on
   assert.deepEqual(native.needs, ["prepare", "publish-release"]);
   assert.deepEqual(native.strategy.matrix.include, [
     { runner: "macos-15-intel", arch: "amd64", machine: "x86_64" },
-    { runner: "macos-14", arch: "arm64", machine: "arm64" },
+    { runner: "macos-15", arch: "arm64", machine: "arm64" },
   ]);
   assert.match(JSON.stringify(native.steps), /brew audit --strict/u);
   assert.match(JSON.stringify(native.steps), /brew test/u);
@@ -98,7 +100,7 @@ test("macOS Homebrew validates both native architectures before obtaining tap-on
   for (const [id, value] of Object.entries(release.jobs)) if (id !== 'homebrew') assert.doesNotMatch(JSON.stringify(value), /DELINO_RELEASE_BOT_PRIVATE_KEY/u);
   assert.equal(job.steps.filter(({ uses }) => uses?.startsWith('actions/download-artifact@')).length, 2);
   assert.deepEqual(release.jobs['homebrew-readback'].needs, ['prepare', 'homebrew']);
-  assert.deepEqual(release.jobs['homebrew-readback'].strategy.matrix.runner, ['macos-15-intel', 'macos-14']);
+  assert.deepEqual(release.jobs['homebrew-readback'].strategy.matrix.runner, ['macos-15-intel', 'macos-15']);
   assert.match(JSON.stringify(release.jobs['homebrew-readback']), /brew install delinoio\/tap\/clibox/u);
   for (const name of ['homebrew-test', 'homebrew', 'homebrew-readback']) assert.ok(release.jobs.summary.needs.includes(name));
   assert.match(JSON.stringify(release.jobs.package), /homebrew.mjs render/u);
@@ -108,7 +110,7 @@ test("clibox input changes select its aggregated consumer checks and force exter
   const id = "node-clibox-test";
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
   assert.ok(ci.jobs["ci-result"].needs.includes(id));
-  assert.deepEqual(ci.jobs[id].strategy.matrix.os, ["ubuntu-22.04", "macos-14", "windows-latest"]);
+  assert.deepEqual(ci.jobs[id].strategy.matrix.os, ["ubuntu-22.04", "macos-15", "windows-latest"]);
   assert.equal(ci.jobs[id].steps.filter(({ run }) => run === "cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait").length, 1);
   const smoke = source("packages/clibox/scripts/smoke.mjs");
   for (const command of ["text", "time", "base64", "hash"]) assert.ok(smoke.includes('invoke(["' + command + '"'));

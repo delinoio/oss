@@ -32,6 +32,10 @@ complete required CI, packaging and installed-platform acceptance.
 
 ## Continuous integration
 
+### macOS hosted runner maintenance
+
+GitHub-hosted workflows no longer select `macos-14`. The clibox native arm64 build, Homebrew installation/public readback and npm consumer CI use `macos-15`, as do the binpm, cargo-mono, nodeup and with-watch arm64 release builds. Existing `macos-15-intel` lanes retain native x64 coverage. The workflow contracts reject the retiring runner label and pin both release architectures. This runner-image migration does not change product minimum-OS requirements, deployment targets, release triggers or publication gates; minimum-OS acceptance remains a separate product requirement. pnport retains its already established macOS 15 runner and deployment-target contract.
+
 ### Git LFS assets
 
 Fourteen tracked assets use exact-path entries in the root `.gitattributes`: the two identical Noto Sans KR fonts used by Forge and DevHud, the three React Forge ROAM example PNGs, the DevHud API removal PNG, the DeliDev app-icon source PNG, and the seven AURA source PNGs. Ten files meet the 512 KiB threshold; the four smaller AURA textures remain in LFS with the rest of that texture set. The fonts share one LFS object. Imported assets retain their source and license records beside the files; the supplied DeliDev icon is repository-owned Apache-2.0 material. Future repository assets at or above this threshold require an explicit LFS entry and a hydrated checkout in every build, test, or packaging job that consumes them. Attribute changes force the CI job planner to select every event-eligible job; pull requests still defer native packaging.

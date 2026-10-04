@@ -505,3 +505,10 @@ test("workspace Rust CI excludes React Forge scene engines", () => {
     }
   }
 });
+
+test("hosted workflows do not select the retiring macOS 14 image", () => {
+  for (const file of readdirSync(`${root}/.github/workflows`).filter((file) => /\.ya?ml$/u.test(file))) {
+    const candidate = load(readFileSync(`${root}/.github/workflows/${file}`, "utf8"));
+    assert.doesNotMatch(JSON.stringify(candidate), /"macos-14"/u, file);
+  }
+});

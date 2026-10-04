@@ -1,5 +1,7 @@
 # Workflow contracts
 
+- Hosted macOS lanes must not use the retiring `macos-14` image. The clibox build, Homebrew verification and npm consumer lanes, and the binpm/cargo-mono/nodeup/with-watch arm64 release lanes use `macos-15`; preserve their `macos-15-intel` x64 lanes. Runner maintenance alone must not raise product minimum-OS requirements or change deployment targets. Follow `docs/repository-workflow-contract.md`.
+
 - Each pnport native CI/candidate host must pass installed hidden-cache native conformance and the prepared, offline default-config Vitest cache suite in inline/split forms before evidence recording. Linux includes dynamic/static children. Keep all four macOS/glibc Linux targets and existing native/benchmark/publication gates.
 
 - pnport tag pushes perform credential-free dry runs only. Actual publication requires an explicit `Release pnport` dispatch at the same final tag with `dry_run=false` after its successful dry run. Before publication outputs/write authority, verify the latest exact-tag/revision first-party push run and its complete successful native/assembly jobs with all publication jobs skipped; missing, failed, pending or untrusted records block. All npm/GitHub/Homebrew jobs require the manual event and retain complete fresh native verification.
