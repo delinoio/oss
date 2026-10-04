@@ -690,6 +690,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		if err := t.RequireBrowserProfileRemoval(id); err != nil {
 			return err
 		}
+		if err := t.deleteAccountRecoveryInbox(id); err != nil {
+			return err
+		}
 	}
 	if kind == domain.SessionKind {
 		if err := t.requireTerminalCleanup(id); err != nil {

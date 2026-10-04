@@ -312,7 +312,7 @@ function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft,
         {responseCurrent ? null : <p>This request is retained for inspection. Its session is paused, archived, recovering or no longer owns this execution.</p>}
         <Interaction resource={view.interaction} refresh={refresh} draft={draft} saveDraft={(editable) => saveDraft(view.interaction!, editable)} clearDraft={() => clearDraft(view.interaction!.id)} submissionAllowed={canMutate && responseCurrent && !identityChanged} receiptRetryAllowed={canMutate} />
       </section>
-    </> : <section className="inbox-terminal"><h4>Original terminal observation</h4><p>{itemLabel(view)}</p><pre>{JSON.stringify(terminal, null, 2)}</pre><p>Recorded time is the Inbox record time. It does not establish process cleanup or the current session outcome.</p></section>}
+    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label="Subscription quota recovery"><h4>Subscription quota recovery</h4><p>Account: {resourceName(view.account)}</p><p>Observed <time dateTime={text(object(data.recovery).observed_at)}>{text(object(data.recovery).observed_at)}</time></p><p>This records the account’s observed quota recovery. Read state does not change account quota or start work.</p></section> : <section className="inbox-terminal"><h4>Original terminal observation</h4><p>{itemLabel(view)}</p><pre>{JSON.stringify(terminal, null, 2)}</pre><p>Recorded time is the Inbox record time. It does not establish process cleanup or the current session outcome.</p></section>}
   </article>;
 }
 

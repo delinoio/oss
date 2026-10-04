@@ -251,3 +251,26 @@ func (t *Tx) CreateSubscriptionRecoveryInbox(account, source, connection domain.
 	}
 	return t.Put(domain.InboxKind, domain.NewID(), 0, "", "", entry)
 }
+
+// Delete account-scoped recovery entries through ordinary tombstone/event
+// publication in the account deletion transaction. Session inboxes are unrelated.
+func (t *Tx) deleteAccountRecoveryInbox(account domain.ID) error {
+	for {
+		records, _, err := t.sessionPage(MaxPage, "SELECT "+recordColumns+" FROM entities WHERE kind='inbox' AND json_extract(body,'$.source')=? AND json_extract(body,'$.recovery.account_id')=? ORDER BY id LIMIT ?", domain.SubscriptionRecoveryInbox, account, MaxPage)
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			entry, err := Decode[domain.InboxEntry](record)
+			if err != nil || entry.Validate() != nil || entry.Recovery == nil || entry.Recovery.AccountID != account || record.SessionID != "" || record.ProjectID != "" {
+				return inboxConflict()
+			}
+			if err := t.Delete(domain.InboxKind, record.ID, record.Revision); err != nil {
+				return err
+			}
+		}
+		if len(records) < MaxPage {
+			return nil
+		}
+	}
+}

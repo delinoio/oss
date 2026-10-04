@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"time"
 
@@ -124,12 +125,12 @@ type subscriptionQuotaBatchReceipt struct {
 	Accounts []domain.ID `json:"accounts"`
 }
 
-func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time, dueOnly bool) (subscriptionQuotaBatchReceipt, error) {
+func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool) ([]store.Record, error) {
 	records, err := all(tx, domain.AccountKind)
 	if err != nil {
-		return subscriptionQuotaBatchReceipt{}, err
+		return nil, err
 	}
-	result := subscriptionQuotaBatchReceipt{Accounts: []domain.ID{}}
+	result := []store.Record{}
 	if len(records) > 10000 {
 		return result, domain.Fail(domain.ResourceExhausted, "The native account inventory exceeds its bound.", "Reduce retained account metadata before requesting a complete refresh.")
 	}
@@ -155,13 +156,62 @@ func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time
 		if machine == "" || observationMachine(tx, machine) != nil {
 			continue
 		}
-		op := domain.SubscriptionObservationOperation{ID: domain.NewID(), Action: domain.SubscriptionQuota, MachineID: machine, Actor: actor, ConnectionID: a.Connection.ID, Generation: state.Generation, Phase: domain.SubscriptionObservationQueued, RequestedAt: now}
+		result = append(result, r)
+	}
+	return result, nil
+}
+func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time, dueOnly bool) (subscriptionQuotaBatchReceipt, error) {
+	records, err := subscriptionQuotaCandidates(tx, now, dueOnly)
+	result := subscriptionQuotaBatchReceipt{Accounts: []domain.ID{}}
+	if err != nil {
+		return result, err
+	}
+	if dueOnly && len(records) == 0 {
+		return result, errNoDueSubscriptionQuota
+	}
+	for _, r := range records {
+		a, err := store.Decode[domain.Account](r)
+		if err != nil {
+			return result, err
+		}
+		machine := a.Subscription.OwnerMachineID
+		if a.Subscription.Lease != nil {
+			machine = a.Subscription.Lease.MachineID
+		}
+		op := domain.SubscriptionObservationOperation{ID: domain.NewID(), Action: domain.SubscriptionQuota, MachineID: machine, Actor: actor, ConnectionID: a.Connection.ID, Generation: a.Subscription.Generation, Phase: domain.SubscriptionObservationQueued, RequestedAt: now}
 		if err := acceptSubscriptionObservation(tx, r, a, op); err != nil {
 			return result, err
 		}
 		result.Accounts = append(result.Accounts, r.ID)
 	}
 	return result, nil
+}
+
+// Keep this private rollback signal typed so Store.Mutate preserves its identity.
+// It never crosses RPC: only background maintenance treats it as an empty pass.
+var errNoDueSubscriptionQuota = domain.Fail(domain.Conflict, "No native quota observation is due.", "")
+
+func (s *Service) queueDueSubscriptionQuotas(ctx context.Context, now time.Time) error {
+	var due bool
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		records, err := subscriptionQuotaCandidates(tx, now, true)
+		due = len(records) > 0
+		return err
+	}); err != nil {
+		return err
+	}
+	if !due {
+		return nil
+	}
+	// Recheck inside the write transaction. A concurrent owner may have queued
+	// every candidate; roll back that no-op instead of publishing an empty receipt.
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.quota.maintenance", struct{}{}, func(tx *store.Tx) (any, error) {
+		return queueSubscriptionQuotas(tx, domain.Principal{Type: domain.OwnerDevice}, now, true)
+	})
+	if errors.Is(err, errNoDueSubscriptionQuota) {
+		return nil
+	}
+	return err
 }
 func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect.Request[pb.RefreshAllSubscriptionQuotasRequest]) (*connect.Response[pb.RefreshAllSubscriptionQuotasResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
@@ -188,9 +238,7 @@ func (s *Service) runSubscriptionQuotaMaintenance(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
-		_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.quota.maintenance", struct{}{}, func(tx *store.Tx) (any, error) {
-			return queueSubscriptionQuotas(tx, domain.Principal{Type: domain.OwnerDevice}, time.Now().UTC(), true)
-		})
+		err := s.queueDueSubscriptionQuotas(ctx, time.Now().UTC())
 		if err != nil && ctx.Err() == nil {
 			s.logger.WarnContext(ctx, "subscription_quota_maintenance_failed", "code", domain.SafeError(err).Code)
 		}

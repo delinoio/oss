@@ -10,12 +10,17 @@ import { Problem } from "./ui";
 interface CreditConfirmation { account: Resource; creditId: string; next: boolean; inventoryId: string; connection: string; generation: string }
 const outcomeLabels: Record<string, string> = { reset: "Reset credit consumed", alreadyRedeemed: "Original reset credit was already consumed", nothingToReset: "No current quota window needed a reset", noCredit: "No reset credit was available" };
 
+export function quotaObservationMachine(state: Record<string, unknown>, preferred = ""): string {
+  const lease = object(state.lease);
+  return Object.keys(lease).length ? text(lease.action) === "execute" ? text(lease.machine_id) : "" : preferred || text(state.owner_machine_id);
+}
+
 export function SubscriptionQuotaControls({ current, machine, active, accepted, busyChanged }: { current: Resource; machine: string; active: boolean; accepted: (resource: Resource) => void; busyChanged: (busy: boolean) => void }) {
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const quotaSupported = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1) === true;
   const creditsSupported = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1) === true;
   const data = document(current), state = object(data.subscription), connection = text(object(data.connection).id), generation = text(state.generation), observation = object(state.observation), inventory = object(state.reset_credits);
-  const ownerMachine = machine || text(state.owner_machine_id);
+  const ownerMachine = quotaObservationMachine(state, machine);
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
   const observe = useRetainedMutation("subscription:observe:" + current.id, SubscriptionQuery.requestSubscriptionObservation, (result) => { if (result.account) accepted(result.account); setConfirmation(undefined); }, (result, request) => result.operationId === request.mutation?.requestId && serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
   const reconcile = useRetainedMutation("subscription:credit:reconcile:" + current.id, SubscriptionQuery.reconcileSubscriptionCredit, (result) => { if (result.account) accepted(result.account); }, (result, request) => serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));

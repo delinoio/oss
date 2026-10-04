@@ -544,3 +544,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Native model discovery uses the original durable job journal and one isolated Codex runtime under `docs/cmds-delidev-native-models-contract.md`. Pin executable bytes, collect every bounded page, and confirm process/file cleanup before reporting success; reconnect or receipt replay cannot relaunch a claimed observation.
 
 - Quota/credit observation dispatch shares the original active Codex process through a joined account-owner registry. Idle observations use one short exclusive lease. Preserve official operation keys after uncertainty; quota/read and credit/consume do not perform inference or substitute for authentication refresh. Join registry users before closing the native process.
+
+- Idle quota/reset-credit observation publication failure does not itself imply credential-owner recovery. Collect the unchanged valid native bundle and independently join native/file cleanup before completing the short credential lease; retain original operation uncertainty/key for explicit credit reconciliation. Failed bundle/native/file validation still fences ownership.

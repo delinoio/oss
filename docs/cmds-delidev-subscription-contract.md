@@ -176,3 +176,5 @@ Validation must distinguish isolated native/provider processes, SQLite and
 response-loss fixtures from installed real-account credit consumption, quota
 recovery and platform notification acceptance. Keep the issues open until their
 remaining real-environment acceptance is satisfied.
+
+Quota maintenance performs a read-only due check and transactional eligibility recheck, publishing a durable receipt only for a changed batch. Account deletion transactionally removes its account-scoped recovery Inbox entries through ordinary event/tombstone publication. Idle quota/reset-credit publication uncertainty remains an original-operation problem when the unchanged valid bundle and independent native/file cleanup are confirmed; finish the credential lease without fabricating quota recovery, then permit only explicit same-key credit reconciliation. Failed credential capture or unconfirmed cleanup still fences the native owner.

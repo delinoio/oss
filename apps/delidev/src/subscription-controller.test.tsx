@@ -8,6 +8,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest";
 import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, SubscriptionService, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
+import { SubscriptionAccounts } from "./subscription-accounts";
+import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
 function fixture() {
@@ -45,7 +47,7 @@ function fixture() {
     const [visible, setVisible] = useState(true);
     return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={() => setVisible(false)}>Leave Settings fixture</button><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
   }
-  return { Harness, client, machine, list, status, provider, apiLifecycle, save, login, cancel, progress, fail: (code?: Code) => { failure = code; }, finish: () => release?.() };
+  return { Harness, client, machine, accounts, list, status, provider, apiLifecycle, save, login, cancel, progress, fail: (code?: Code) => { failure = code; }, finish: () => release?.() };
 }
 
 it.each([Code.Unavailable, Code.PermissionDenied, Code.Unauthenticated])("keeps capability failure %s retryable without granting native lifecycle", async (code) => {
@@ -107,4 +109,23 @@ it("runs only an explicit managed Codex login and retains its exact uncertain op
   await waitFor(() => expect(screen.queryByLabelText("Login address")).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   expect(value.cancel).toHaveBeenCalledTimes(1);
+});
+
+
+it("routes row quota refresh to the original active execution lease machine", async () => {
+ const value=fixture(), owner=newRequestId(), runner=newRequestId(), connection=newRequestId(), generation=newRequestId();
+ const row=value.accounts[0]!;
+ value.accounts[0]=create(ResourceSchema,{...row,documentJson:encode({alias:"Existing subscription",type:"subscription",subscription_service:"chatgpt",enabled:true,health:"ready",quota:[],connection:{id:connection},subscription:{generation,owner_machine_id:owner,lease:{action:"execute",machine_id:runner}}})});
+ const refresh=vi.fn(async request=>({account:value.accounts[0],operationId:request.mutation.requestId}));
+ const transport=createRouterTransport(router=>{
+  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,SystemCapability.SUBSCRIPTION_QUOTA_V1]})});
+  router.service(ResourceService,{listResources:value.list});
+  router.service(SubscriptionService,{requestSubscriptionObservation:refresh});
+ });
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SubscriptionAccounts active editAccount={()=>{}} deleteAccount={()=>{}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ fireEvent.click(await screen.findByRole("button",{name:"Refresh Existing subscription"}));
+ await waitFor(()=>expect(refresh).toHaveBeenCalledTimes(1));
+ expect(refresh.mock.calls[0]?.[0]).toMatchObject({machineId:runner,connectionId:connection,generationId:generation});
+ expect(refresh.mock.calls[0]?.[0].machineId).not.toBe(owner);
 });

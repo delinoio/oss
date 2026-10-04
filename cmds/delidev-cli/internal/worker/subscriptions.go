@@ -326,10 +326,12 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 			returned = subscription.Invalid()
 		}
 	}()
+	var observationErr error
 	if op.Action == domain.SubscriptionQuota || op.Action == domain.SubscriptionResetCredit {
-		if err := lease.observe(ctx, native, domain.SubscriptionObservationOperation{ID: op.ID, Action: op.Action}); err != nil {
-			return err
-		}
+		// Observation/publication uncertainty belongs to its original operation
+		// key. Still collect the unchanged credential bundle and join native/file
+		// cleanup before releasing this short idle credential lease.
+		observationErr = lease.observe(ctx, native, domain.SubscriptionObservationOperation{ID: op.ID, Action: op.Action})
 	}
 	if op.Action == domain.SubscriptionLogin {
 		progress, err := native.StartManagedLogin(ctx, op.DeviceCode)
@@ -381,7 +383,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	}
 	refresh = op.Action == domain.SubscriptionRefresh
 	success = true
-	return nil
+	return observationErr
 }
 
 func cleanupManagedHome(home string, original os.FileInfo) error {
