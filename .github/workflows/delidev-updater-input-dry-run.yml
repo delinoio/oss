@@ -1,0 +1,64 @@
+name: DeliDev updater input dry run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: delidev-updater-input-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc, package-manager-cache: false }
+      - id: targets
+        run: echo "matrix=$(node apps/delidev/scripts/bundle-native-dry-run.mjs --plan)" >> "$GITHUB_OUTPUT"
+
+  package:
+    name: ${{ matrix.target }} keyless package
+    needs: plan
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { lfs: true, persist-credentials: false }
+      - uses: pnpm/action-setup@v5
+        with: { version: 10.26.2 }
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          architecture: ${{ matrix.arch }}
+          package-manager-cache: false
+      - uses: actions/setup-go@v6
+        with: { go-version-file: go.mod, cache: false }
+      - uses: dtolnay/rust-toolchain@v1
+        with: { toolchain: nightly-2026-01-01 }
+      - name: Select the native Rust host
+        run: rustup set default-host ${{ matrix.target }}
+      - name: Install Linux build and package inspection tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libayatana-appindicator3-dev libgtk-3-dev libgbm-dev libx11-dev libxkbcommon-x11-0 libxtst-dev libssl-dev pkg-config patchelf
+      - name: Install locked build dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify package tooling
+        run: pnpm --dir apps/delidev test:bundle-dry-run
+      - name: Build verified desktop and Worker updater inputs without release credentials
+        run: pnpm --dir apps/delidev bundle:updater-dry-run --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: delidev-updater-input-${{ matrix.target }}-${{ github.sha }}
+          path: target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/
+          if-no-files-found: error
+          retention-days: 7

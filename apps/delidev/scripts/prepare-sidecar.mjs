@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
@@ -22,6 +22,11 @@ const [goos, goarch] = platform;
 const directory = resolve(app, "src-tauri/binaries");
 mkdirSync(directory, { recursive: true });
 const output = resolve(directory, `delidev-${target}${goos === "windows" ? ".exe" : ""}`);
-execFileSync("go", ["build", "-trimpath", "-o", output, "./cmds/delidev-cli"], {
+const version = JSON.parse(readFileSync(resolve(app,"src-tauri/tauri.conf.json"),"utf8")).version;
+const cargoVersion = /^version = "([^"]+)"$/m.exec(readFileSync(resolve(app,"src-tauri/Cargo.toml"),"utf8"))?.[1];
+const revision = execFileSync("git",["rev-parse","HEAD"],{cwd:root,encoding:"utf8"}).trim();
+if (!/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/.test(version) || version!==cargoVersion || !/^[a-f0-9]{40}$/.test(revision)) throw new Error("DeliDev native and sidecar release identities must match.");
+const ldflags = `-X github.com/delinoio/oss/cmds/delidev-cli/internal/rpc.Version=${version} -X github.com/delinoio/oss/cmds/delidev-cli/internal/rpc.SourceRevision=${revision}`;
+execFileSync("go", ["build", "-trimpath", "-ldflags",ldflags,"-o", output, "./cmds/delidev-cli"], {
   cwd: root, stdio: "inherit", env: { ...process.env, GOOS: goos, GOARCH: goarch, CGO_ENABLED: "0" },
 });

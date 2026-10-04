@@ -16,6 +16,7 @@ native-notifications = ["dep:tokio", "dep:mac-usernotifications", "dep:windows",
 custom-protocol = ["tauri?/custom-protocol"]
 
 [dependencies]
+sha2.workspace = true
 cef = { version = "=150.0.0", optional = true }
 rfd = { version = "=0.16.0", default-features = false, features = ["gtk3"], optional = true }
 base64 = "0.22.1"

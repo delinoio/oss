@@ -14,6 +14,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/sshsetup"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -356,7 +357,7 @@ func (s *Service) performSSHSetup(ctx context.Context, r store.Record, o sshOper
 			return e, nil
 		}
 		defer client.Close()
-		candidate, e := client.Latest(ctx, "0.0.0", time.Now().UTC())
+		candidate, e := client.Release(ctx, rpc.Version, time.Now().UTC())
 		if e != nil {
 			return e, nil
 		}

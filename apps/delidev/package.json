@@ -21,8 +21,9 @@
     "bundle:native": "pnpm prepare:assets && pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && pnpm prepare:widget && cargo run --manifest-path src-tauri/Cargo.toml --features cli --bin delidev-tauri-cli -- build --features desktop-host,custom-protocol,tauri/cef",
     "bundle:macos-dry-run": "node scripts/bundle-macos-dry-run.mjs",
     "bundle:dry-run": "node scripts/bundle-native-dry-run.mjs",
-    "test:bundle-dry-run": "node --test scripts/bundle-macos-dry-run.test.mjs scripts/native-package.test.mjs",
-    "test:desktop-launch": "node --test scripts/run-desktop.test.mjs scripts/prepare-assets.test.mjs"
+    "test:bundle-dry-run": "node --test scripts/bundle-macos-dry-run.test.mjs scripts/native-package.test.mjs scripts/bundle-updater-dry-run.test.mjs",
+    "test:desktop-launch": "node --test scripts/run-desktop.test.mjs scripts/prepare-assets.test.mjs",
+    "bundle:updater-dry-run": "node scripts/bundle-updater-dry-run.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",

@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -136,6 +138,15 @@ func (s *Service) StartSSHSetup(ctx context.Context, req *connect.Request[pb.Sta
 		})
 		if e != nil {
 			return nil, rpc.Error(e, correlation)
+		}
+		// A remote host cannot reach this server through its own loopback.
+		// Reject the incompatible product topology before protected staging.
+		if endpoint, problem := url.Parse(s.Endpoint.URL); problem == nil && endpoint.Host != "" && endpoint.Scheme == "http" {
+			host := net.ParseIP(operation.Target.Host)
+			local := operation.Target.Host == "localhost" || host != nil && host.IsLoopback()
+			if !local {
+				return nil, rpc.Error(domain.Fail(domain.Unsupported, "Remote SSH Workers require a reachable HTTPS server endpoint.", "Configure the server's explicit TLS endpoint before installing this Worker."), correlation)
+			}
 		}
 		if _, e := os.Lstat(s.sshClaimPath(input.ID)); !errors.Is(e, os.ErrNotExist) {
 			return nil, rpc.Error(installationFailure(domain.RecoveryRequired), correlation)

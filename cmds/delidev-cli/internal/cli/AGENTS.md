@@ -77,3 +77,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Sidechat creation and observation retain the native fork 145-second command deadline; selected findings submission retains the immediate ordinary deadline. A bounded wait failure returns the original accepted job identity.
 
 - machine ssh uses authenticated InstallationService and write-only bounded stdin. The native-only worker ssh-setup helper verifies the signed artifact identity, journals original pairing/start admission and never repeats missing progress or replaces registration/workspaces.
+
+- Authenticated update check/get/worker-request/cancel preserve original request/revision receipts and capability negotiation. Closed native update helpers select only fixed paired scopes and original server/window generations, independently verify signed bytes and persist offline installation outcomes. Worker replacement helpers retain both binaries and exact lifecycle proof, never a generic executable or shell capability.

@@ -84,6 +84,8 @@ construction. GitHub checkout credentials are not persisted, permissions are
 `contents: read`, and no signing environment or repository secret is referenced.
 LFS is hydrated before compilation; generated `dist` remains untracked output.
 
+The separate manual updater-input dry run reuses this verified native matrix and assembles the update formats: macOS DMG, Windows NSIS executable, Linux AppImage and one dedicated Worker executable per target. It embeds the same public version/source revision in the Go sidecar/Worker, retains exact artifact names, imported notices and immutable revision-bound input metadata, and does not use a production root or signing credentials. The [updates contract](cmds-delidev-updates-contract.md) owns production manifest readiness, independent verification and explicit maintainer publication.
+
 ## Logging
 
 Build tools emit their ordinary diagnostics. Verification emits bounded status

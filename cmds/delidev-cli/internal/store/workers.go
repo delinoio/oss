@@ -168,6 +168,21 @@ func (s *Store) Heartbeat(ctx context.Context, machine, instance domain.ID) erro
 	return storageError(sqlTx.Commit())
 }
 func (t *Tx) PutJob(id domain.ID, expected uint64, session, project domain.ID, job domain.Job) (Record, error) {
+	if job.State == domain.JobClaimed {
+		existing, err := t.Get(domain.JobKind, id)
+		if err != nil {
+			return Record{}, err
+		}
+		prior, err := Decode[domain.Job](existing)
+		if err != nil {
+			return Record{}, err
+		}
+		if prior.State != domain.JobClaimed {
+			if err := t.WorkerUpdateAdmission(job.MachineID); err != nil {
+				return Record{}, err
+			}
+		}
+	}
 	if err := job.Validate(); err != nil {
 		return Record{}, err
 	}

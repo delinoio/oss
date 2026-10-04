@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -61,12 +62,26 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	if req.Msg.Version != rpc.Version {
-		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Worker and server versions differ.", "Install a matching Worker version."), correlation)
+		actor, _ := domain.PrincipalFrom(ctx)
+		err := s.Store.Read(ctx, func(tx *store.Tx) error {
+			if err := tx.Authorize(); err != nil {
+				return err
+			}
+			if !s.signedWorkerVersion(tx, actor.MachineID, actor.DeviceID, req.Msg.Version) {
+				return installationFailure(domain.Unsupported)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
 	}
 	machine, instance := domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1:
+			capabilities = append(capabilities, domain.SignedWorkerUpdatesV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1:
 			capabilities = append(capabilities, domain.CodexReadOnlySidechatWorkerV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1:
@@ -119,12 +134,18 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		if err != nil {
 			return nil, err
 		}
+		if newer, _ := updates.Newer(m.Version, req.Msg.Version); req.Msg.Version != rpc.Version || newer {
+			a, _ := domain.PrincipalFrom(ctx)
+			if !s.signedWorkerVersion(tx, machine, a.DeviceID, req.Msg.Version) {
+				return nil, installationFailure(domain.Unsupported)
+			}
+		}
 		previous, seen, err := tx.WorkerInstance(machine)
 		if err != nil {
 			return nil, err
 		}
 		now := time.Now().UTC()
-		if previous != "" && previous != instance && now.Sub(seen) < workerLease {
+		if previous != "" && previous != instance && now.Sub(seen) < workerLease && !s.signedWorkerTransition(tx, machine, previous, func() domain.ID { a, _ := domain.PrincipalFrom(ctx); return a.DeviceID }(), req.Msg.Version) {
 			return nil, domain.Fail(domain.Conflict, "Another Worker instance still owns this machine.", "Stop that instance and wait for its connection lease to expire.")
 		}
 		if previous != "" && previous != instance {
@@ -198,7 +219,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1}})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1}})
 	var networkStatus domain.WorkerNetworkStatus
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -313,6 +334,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				cancellationSent = ""
 				responseControlsSent = map[domain.ID]bool{}
 				steerControlsSent = map[domain.ID]bool{}
+			}
+			if err := tx.WorkerUpdateAdmission(machine); err != nil {
+				return nil
 			}
 			if err := workerNetworkReady(tx, machine); err != nil {
 				if domain.SafeError(err).Code == domain.RecoveryRequired {

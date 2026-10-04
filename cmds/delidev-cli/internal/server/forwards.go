@@ -365,6 +365,9 @@ func (s *Service) ClaimForward(ctx context.Context, req *connect.Request[pb.Clai
 		if (side == 0 && v.ClientClaimed) || (side == 1 && v.WorkerClaimed) {
 			return nil, domain.Fail(domain.Conflict, "This native forward lifetime was already claimed.", "Inspect the original runtime; a new request cannot reopen it.")
 		}
+		if err := tx.WorkerUpdateAdmission(v.MachineID); err != nil {
+			return nil, err
+		}
 		if side == 0 {
 			v.ClientClaimed = true
 		} else {

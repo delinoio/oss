@@ -2818,6 +2818,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tauri",
  "tauri-build",
  "tauri-cli",

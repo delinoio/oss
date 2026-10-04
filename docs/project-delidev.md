@@ -175,5 +175,7 @@ Issue #1208 extends native subagent observation to OpenCode 1.18.32 foreground t
 
 Workspace storage exposes original-job snapshot, usage preview, cleanup, inspection, restore, deletion and recovery through authenticated Connect RPC, CLI and the connection-owned desktop controller. Preserve independent terminal/forwarding cleanup gates and logical-versus-physical byte measurements under the [storage contract](cmds-delidev-storage-contract.md); runtime/account/platform acceptance remains separate from fixtures.
 
+
+- Signed updates use independent System 28/Worker 17 admission, original device/generation receipts, joined idle replacement and retained old binaries. Desktop install requires original trusted-window confirmation and preserves live server/harness lifetimes. System 29 SSH setup pins exact host identity and the server-compatible signed Worker release, with protected credentials and original remote operation inspection. An unset production public-root declaration blocks real signing/downloads; fixture/build evidence remains separate from production account/platform acceptance. See the [updates](cmds-delidev-updates-contract.md) and [SSH setup](cmds-delidev-ssh-setup-contract.md) contracts.
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)

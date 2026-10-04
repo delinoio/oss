@@ -6,6 +6,7 @@ import { Harness, TextField } from "./configuration-fields";
 import { JobState, TrackedJob } from "./jobs";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { Updates } from "./updates";
 import { NetworkSettings } from "./network-settings";
 import type { PairingAuthority } from "./pairing-grant";
 
@@ -26,6 +27,7 @@ export function MachineSettings({ initial, active, close, authority }: { initial
       <fieldset disabled={pending}>{edit ? <><p>These selections replace all four harness paths. Empty paths explicitly use this Worker's PATH.</p>{Object.values(Harness).map((harness) => <TextField key={harness} label={`${harness} executable path`} value={edit.paths[harness]} max={4096} change={(path) => setEdit({ ...edit, paths: { ...edit.paths, [harness]: path } })} />)}<button type="button" onClick={() => setEdit(undefined)}>Discard path edits</button></> : <button type="button" onClick={() => setEdit({ revision: current.revision, paths: Object.fromEntries(items(data.installations).map(object).map((row) => [text(row.harness), text(row.explicit_path)])) })}>Edit executable paths</button>}
       <label className="checkbox"><input type="checkbox" checked={verify} onChange={(event) => setVerify(event.target.checked)} />Verify the installed native protocol without login or inference</label><button className="primary" disabled={stale || Boolean(result.error)}>Check installed harnesses</button></fieldset>{stale ? <p role="alert">Worker configuration changed elsewhere. Your path draft is retained; discard it and reopen the latest paths before saving.</p> : null}</form>}
     <Problem error={result.error || discovery.error} />{discovery.uncertain ? <button disabled={discovery.busy} onClick={discovery.retry}>Retry the same harness check</button> : null}
+    <Updates active={active} machine={current} />
     <NetworkSettings active={active} machine={initial.id} authority={authority} />
   </section>;
 }

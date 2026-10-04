@@ -762,6 +762,9 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 	if e != nil {
 		return v, e
 	}
+	if e := t.WorkerUpdateAdmission(value.MachineID); e != nil {
+		return v, e
+	}
 	if value.IsSidechat() {
 		v.SidechatParentID = value.Fork.SourceSessionID
 	}

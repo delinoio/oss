@@ -41,6 +41,12 @@ func startDetachedWorkerWithAdmission(ctx context.Context, o options, root strin
 		if err != nil {
 			return status, domain.SafeError(err)
 		}
+		if admitted == nil {
+			executable, err = worker.InstalledExecutable(root, executable)
+			if err != nil {
+				return status, err
+			}
+		}
 		path := filepath.Join(root, "worker.log")
 		if _, err := os.Lstat(path); err == nil {
 			if err := security.RegularPrivate(path); err != nil {

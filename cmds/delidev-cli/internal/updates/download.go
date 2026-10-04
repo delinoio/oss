@@ -150,7 +150,7 @@ func (c *Client) Download(ctx context.Context, v Verified, component Component, 
 	if err := security.PrivateDir(root); err != nil {
 		return "", err
 	}
-	path := filepath.Join(root, a.SHA256)
+	path := filepath.Join(root, a.SHA256+filepath.Ext(a.Name))
 	if _, err := os.Lstat(path); err == nil {
 		if err := VerifyFile(path, a); err != nil {
 			return "", err
@@ -192,17 +192,12 @@ func (c *Client) Download(ctx context.Context, v Verified, component Component, 
 		return "", failure(domain.Unavailable)
 	}
 	// Hard-link publication does not replace an existing verified generation.
-	if err := os.Link(tmp, path); err != nil {
+	if err := security.PublishImmutable(tmp, path); err != nil {
 		if VerifyFile(path, a) != nil {
 			return "", failure(domain.RecoveryRequired)
 		}
 	}
-	directory, err := os.Open(root)
-	if err != nil {
-		return "", failure(domain.Unavailable)
-	}
-	defer directory.Close()
-	if directory.Sync() != nil {
+	if security.SyncParent(path) != nil {
 		return "", failure(domain.Unavailable)
 	}
 	return path, nil
@@ -253,4 +248,21 @@ func OpenArtifact(path string, a Artifact) (*os.File, error) {
 	}
 	accepted = true
 	return f, nil
+}
+
+// Release selects the server's exact compatible Worker version for first SSH
+// pairing. It cannot weaken the ordinary exact-version gate with a latest tag.
+func (c *Client) Release(ctx context.Context, version string, now time.Time) (Verified, error) {
+	if _, e := Newer(version, "0.0.0"); e != nil {
+		return Verified{}, e
+	}
+	raw, e := c.read(ctx, ReleaseURL(version, ManifestName), ManifestLimit)
+	if e != nil {
+		return Verified{}, e
+	}
+	verified, e := c.verifier.Verify(raw, "0.0.0", now)
+	if e != nil || verified.Payload.Version != version {
+		return Verified{}, failure(domain.PermissionDenied)
+	}
+	return verified, nil
 }

@@ -2,7 +2,7 @@
 
 ## Scope
 
-`internal/updates`, server UpdateService, Worker replacement, native installation and release manifest tooling.
+`internal/updates`, server InstallationService, Worker replacement, native installation and release manifest tooling.
 
 ## Runtime and Language
 
@@ -14,9 +14,15 @@ Authorized owners and paired clients; original paired Workers; release maintaine
 
 ## Interfaces and Contracts
 
-Authenticated owner/client checks and exact candidate/revision acceptance use UpdateService and `delidev update`. Only stable `delidev-v<semver>` GitHub Releases in `delinoio/oss` supply manifests. A signed manifest covers the complete six-target desktop and six-target Worker inventory, source revision, protocol, byte lengths and SHA-256. Native installation requires a trusted-window confirmation. Worker installation waits for joined active execution, auxiliary, terminal and forwarding ownership. Neither path replaces a live server or a harness.
+Authenticated owner/client checks and exact candidate/revision acceptance use InstallationService and `delidev update`. Only stable `delidev-v<semver>` GitHub Releases in `delinoio/oss` supply manifests. A signed manifest covers the complete six-target desktop and six-target Worker inventory, source revision, protocol, byte lengths and SHA-256. Native installation requires a trusted-window confirmation. Worker installation waits for joined active execution, auxiliary, terminal and forwarding ownership. Neither path replaces a live server or a harness.
 
 Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 before dependent source changes. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. Shared reservations reached main first; complete independent feature PRs merge after their implemented dependencies.
+
+Checks retain an original signed candidate under its request ID. Worker acceptance fences new job, terminal, forward, subscription and workspace-read ownership while original cleanup continues. Idle admission covers claimed/uncertain jobs, both forwarding peers, terminal process cleanup, subscription leases and external deletion obligations. Automatic checks run after 30 seconds and then daily; a retained canceled/failed/uncertain attempt prevents automatic resubmission of that release. Pending projections filter matching scope before bounding, so completed history cannot hide live obligations.
+
+A Worker claims once under its current device/instance and journals before the RPC. It verifies and downloads independently, joins all execution and control lanes, retains the exact old binary, then journals the replacement generation before spawn. Failed starts restore only after positive exit of the exact generation and no superseding Stop. A report that might already have committed success never grants rollback. Successful signed history can verify an installed version but cannot replace a live controller; later explicit starts verify/select the installed private generation. Unknown state preserves the admission fence and both binaries.
+
+Desktop controls remain in Connection & diagnostics. Native chooses the main or exact saved-window scope, epoch and generation; renderer input contains only original opaque ID/revision and a closed action. The original trusted window confirms the concrete prepared version. Go independently verifies and claims installation, then Rust hashes the exact stream copied into exclusive native staging. Mac installation checks the fixed bundle ID/version and code signature before a same-volume atomic swap that retains the old bundle. Windows installer failure/timeout retains possible committed-install uncertainty. Linux correlates AppImage environment, mounted executable and kernel mount source before retaining a backup and replacing the image. Installation records its result offline and never restarts a server/harness. Read-only original inspection survives native process restart; installing/uncertain journals cannot be resent.
 
 ## Storage
 
@@ -33,6 +39,10 @@ Structured logs contain original operation IDs, typed phase/error code, target a
 ## Build and Test
 
 Run owning Go tests with race/vet, protocol generation checks, generated-client tests, desktop pnpm test and root cargo test after Rust changes. Tests inject temporary stores, SSH peers and signing keys. Test restart/replay, changed identities, cancellation, revocation, signature/target/length/digest rejection and failed replacement separately. Fixtures/builds never establish real remote-host, production signing or installed-platform acceptance. Record source revision, commands, results and remaining limits in PR/CI, not repository evidence files.
+
+## Release Inputs
+
+The keyless `bundle:updater-dry-run` workflow exports exact desktop DMG/NSIS/AppImage and Worker executable names for the same six-target matrix, with matching Go/Cargo/Tauri version and source revision. It retains original imported notices and revision-bound size/digest metadata. Keyless builds and temporary signatures do not grant production or installed-platform acceptance. The separate signer `--check-root` readiness gate runs before private-key access; `--input`, `--key-file` and exclusive `--output` sign a complete inventory only with the compiled matching Ed25519 root. Platform signing/notarization and publication remain explicit maintainer operations; this implementation does not create a release. Publish the signed manifest and all twelve exact artifacts only in the fixed DeliDev namespace after the required signing and target acceptance.
 
 ## Dependencies and Integrations
 

@@ -50,3 +50,11 @@ test('workspace investigation is explicit and excludes package assembly', () => 
   assert.ok(fixtures.steps.some(step => step.with?.lfs === true && step.with['persist-credentials'] === false));
   assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable|TestSnapshotCreatePublicationFailureRetainsOriginalRecovery|TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart|TestSnapshotObservationSharesBudgetBeforeHashing|TestSnapshotObservationStopsAtAggregateGitInventory|TestSnapshotAdmissionReservesPrivatePathHeadroom)$' -count=1 -timeout=45m -v");
 });
+
+test('DeliDev updater inputs retain the one six-target matrix and keyless boundary',()=>{
+ const source=readFileSync('.github/workflows/delidev-updater-input-dry-run.yml','utf8'),workflow=yaml.load(source);
+ assert.deepEqual(Object.keys(workflow.on),['workflow_dispatch']);assert.deepEqual(workflow.permissions,{contents:'read'});assert.doesNotMatch(source,/secrets\.|contents: write|id-token:|gh release|notarytool|signtool/);
+ const steps=workflow.jobs.package.steps;assert.ok(steps.some(v=>v.uses?.startsWith('actions/checkout@')&&v.with.lfs===true&&v.with['persist-credentials']===false));
+ assert.ok(steps.findIndex(v=>v.run?.includes('bundle:updater-dry-run'))<steps.findIndex(v=>v.uses?.startsWith('actions/upload-artifact@')));
+ assert.equal(steps.find(v=>v.uses?.startsWith('actions/upload-artifact@')).with.path,'target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/');
+});
