@@ -60,7 +60,7 @@ type storageRemovalRename struct {
 
 type storageRemovalRenameRecord struct {
 	Original string `json:"original"`
-	Private  string `json:"private"`
+	Private  string `json:"private,omitempty"`
 	State    string `json:"state"`
 }
 
@@ -69,6 +69,7 @@ const (
 	storageRemovalRenameRenamed         = "renamed"
 	storageRemovalRenameCleared         = "cleared"
 	storageRemovalRenameRemoved         = "removed"
+	storageRemovalRemovedProof          = "removed-proof"
 	storageRemovalDirectoryModePrepared = "directory-mode-prepared"
 )
 
@@ -181,10 +182,11 @@ func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageReque
 	}
 	sort.Slice(settled, func(i, j int) bool { return settled[i].Original < settled[j].Original })
 	for _, rename := range settled {
-		for _, state := range []string{storageRemovalRenamePrepared, storageRemovalRenameRenamed, storageRemovalRenameRemoved} {
-			if err := appendRecord(storageRemovalRenameRecord{Original: rename.Original, Private: rename.Private, State: state}); err != nil {
-				return err
-			}
+		// Settled absence needs only the original inventory operand. Generated
+		// private prefixes can grow much longer than original paths; repeating
+		// them for every removed file would strand an otherwise bounded intent.
+		if err := appendRecord(storageRemovalRenameRecord{Original: rename.Original, State: storageRemovalRemovedProof}); err != nil {
+			return err
 		}
 	}
 	for _, active := range pending {
@@ -223,6 +225,17 @@ func (m *Manager) readRemovalClaimState(r StorageRequest, intent []byte) (storag
 	if err != nil || !removalClaimMatches(claimRaw, removalReference(r), intent) || domain.Decode(claimRaw, &claim) != nil {
 		return storageRemovalClaim{}, nil, nil, ResultUncertain()
 	}
+	var original storageRemovalIntent
+	if domain.DecodeBounded(intent, &original, maxSnapshotManifest) != nil || len(original.Inventory.Entries) > maxSnapshotRemovalEntries {
+		return storageRemovalClaim{}, nil, nil, ResultUncertain()
+	}
+	inventory := map[string]bool{}
+	for _, entry := range original.Inventory.Entries {
+		if !validRemovalRelativePath(entry.Path) || inventory[entry.Path] {
+			return storageRemovalClaim{}, nil, nil, ResultUncertain()
+		}
+		inventory[entry.Path] = true
+	}
 	removed := map[string]storageRemovalRename{}
 	active := make(map[string]storageRemovalRename, len(claim.Pending))
 	for _, rename := range claim.Pending {
@@ -248,11 +261,16 @@ func (m *Manager) readRemovalClaimState(r StorageRequest, intent []byte) (storag
 	}
 	for _, line := range lines {
 		var record storageRemovalRenameRecord
-		if domain.Decode([]byte(line), &record) != nil || !validRemovalRelativePath(record.Original) || !validRemovalRelativePath(record.Private) || record.Original == record.Private {
+		if domain.Decode([]byte(line), &record) != nil || !validRemovalRelativePath(record.Original) || (record.State != storageRemovalRemovedProof && (!validRemovalRelativePath(record.Private) || record.Original == record.Private)) {
 			return storageRemovalClaim{}, nil, nil, ResultUncertain()
 		}
 		current, exists := active[record.Original]
 		switch record.State {
+		case storageRemovalRemovedProof:
+			if exists || removed[record.Original].Original != "" || record.Private != "" || !inventory[record.Original] {
+				return storageRemovalClaim{}, nil, nil, ResultUncertain()
+			}
+			removed[record.Original] = storageRemovalRename{Original: record.Original, Renamed: true}
 		case storageRemovalRenamePrepared:
 			if exists || removed[record.Original].Original != "" || record.Private == record.Original {
 				return storageRemovalClaim{}, nil, nil, ResultUncertain()
@@ -596,6 +614,9 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 					return result, ResultUncertain()
 				}
 			}
+			if original.Action == StorageCleanup && (snapshot.SourceDigest != original.PreviewDigest || !digestValid(snapshot.SourceDigest)) {
+				return result, ResultUncertain()
+			}
 			result.Snapshot = &metadata
 			result.SourceBytes = snapshot.SourceBytes
 		}
@@ -654,6 +675,10 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			}
 			result.WorkspaceState = domain.WorkspaceStored
 			result.RecoveredJobState = domain.JobSucceeded
+			if snapshot.SourceDigest != original.PreviewDigest || !digestValid(snapshot.SourceDigest) {
+				return result, ResultUncertain()
+			}
+			result.PreviewDigest = snapshot.SourceDigest
 			result.SourceBytes = snapshot.SourceBytes
 			result.RemovedSourceBytes = snapshot.SourceBytes
 		}

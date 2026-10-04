@@ -4,6 +4,8 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -14,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func captureStorageFailureLogs(t *testing.T, m *Manager) {
@@ -1166,5 +1169,81 @@ func TestRemovalRecoveryPreservesUnjournaledMissingEntry(t *testing.T) {
 	raw, err := os.ReadFile(escaped)
 	if err != nil || string(raw) != "original" {
 		t.Fatal("escaped source changed", err)
+	}
+}
+
+func TestRemovalJournalCompactsDeepPrivatePathsWithinOriginalInventoryBound(t *testing.T) {
+	m, input, _, intentRaw := interruptedRemovalFixture(t)
+	var intent storageRemovalIntent
+	if domain.DecodeBounded(intentRaw, &intent, maxSnapshotManifest) != nil {
+		t.Fatal("fixture intent")
+	}
+	intent.Inventory.Entries = nil
+	for i := 0; i < 8192; i++ {
+		intent.Inventory.Entries = append(intent.Inventory.Entries, snapshotEntry{Path: fmt.Sprintf("original/file-%04d", i)})
+	}
+	intentRaw, err := json.Marshal(intent)
+	if err != nil || len(intentRaw) > maxSnapshotManifest {
+		t.Fatal(err)
+	}
+	var claim storageRemovalClaim
+	header, _ := os.ReadFile(m.removalClaimPath(input.OperationID))
+	if domain.Decode(header, &claim) != nil {
+		t.Fatal("fixture claim")
+	}
+	digest := sha256.Sum256(intentRaw)
+	claim.IntentDigest = hex.EncodeToString(digest[:])
+	claim.Pending = nil
+	header, _ = json.Marshal(claim)
+	if err := security.WriteAtomicOwned(m.removalIntentPath(input.OperationID), intentRaw); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomicOwned(m.removalClaimPath(input.OperationID), header); err != nil {
+		t.Fatal(err)
+	}
+	journal := m.removalClaimJournalPath(input.OperationID)
+	if err := security.WriteAtomicOwned(journal, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Projection capacity fixture: deeply expanded private paths consume almost
+	// 4 KiB per transition, while each original inventory operand remains short.
+	// No native filesystem removal is inferred from these synthetic records.
+	for offset := 0; offset < 8192; offset += 2500 {
+		var batch []byte
+		for i := offset; i < min(offset+2500, 8192); i++ {
+			private := strings.Repeat("d/", 2000) + fmt.Sprintf(".removing-%04d", i)
+			for _, state := range []string{storageRemovalRenamePrepared, storageRemovalRenameRenamed, storageRemovalRenameRemoved} {
+				raw, _ := json.Marshal(storageRemovalRenameRecord{Original: intent.Inventory.Entries[i].Path, Private: private, State: state})
+				batch = append(batch, raw...)
+				batch = append(batch, '\n')
+			}
+		}
+		if err := security.AppendPrivate(journal, batch); err != nil {
+			t.Fatal(err)
+		}
+		m = &Manager{Root: m.Root, Logger: m.Logger}
+		if err := m.compactRemovalClaimJournal(context.Background(), input); err != nil {
+			t.Fatal("bounded source was stranded", err)
+		}
+		info, err := os.Stat(journal)
+		if err != nil || info.Size() > 1<<20 {
+			t.Fatal("compacted generated paths remained unbounded", err)
+		}
+	}
+	_, pending, removed, err := m.readRemovalClaimState(input, intentRaw)
+	if err != nil || len(pending) != 0 || len(removed) != 8192 {
+		t.Fatal("projection lost entry ownership", len(removed), err)
+	}
+	raw, _ := json.Marshal(storageRemovalRenameRecord{Original: "outside-intent", State: storageRemovalRemovedProof})
+	if err := security.AppendPrivate(journal, append(raw, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(journal)
+	if err := m.compactRemovalClaimJournal(context.Background(), input); err == nil {
+		t.Fatal("unknown compacted operand accepted")
+	}
+	after, _ := os.ReadFile(journal)
+	if !bytes.Equal(before, after) {
+		t.Fatal("invalid proof was rewritten")
 	}
 }

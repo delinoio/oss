@@ -139,9 +139,13 @@ func (f *storageFixture) execute(job *pb.Resource) workspace.StorageResult {
 		f.t.Fatal(err)
 	}
 	raw, _ := json.Marshal(output)
-	_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), OutputJson: raw}))
+	reported, err := f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), OutputJson: raw}))
 	if err != nil {
 		f.t.Fatal(err)
+	}
+	var final domain.Job
+	if domain.Decode(reported.Msg.Job.DocumentJson, &final) != nil || final.State != domain.JobSucceeded {
+		f.t.Fatal("native storage result did not settle accepted job", final.State)
 	}
 	return output
 }
