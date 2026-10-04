@@ -6,13 +6,13 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, AccountOAuthAttemptSchema, AccountOAuthState as State, EntityKind, ResourceSchema, newRequestId, type CompleteAccountOAuthRequest } from "@delinoio/delidev-api-client";
+import { AccountService, ErrorDetailSchema, AccountOAuthAttemptSchema, AccountOAuthState as State, EntityKind, ResourceSchema, newRequestId, type CompleteAccountOAuthRequest } from "@delinoio/delidev-api-client";
 import { OpenRouterOAuth, OAuthNativeAction, OAuthNativeProvider, useOpenRouterOAuth, type OAuthNativeControl, type OAuthNativeResult } from "./account-oauth";
 import { SettingsLifetime } from "./settings-lifetime";
 import type { AccountProviderSummary } from "./account-settings";
 import { encode } from "./documents";
 
-function fixture(args: { complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void> } = {}) {
+function fixture(args: { complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError } = {}) {
   const providerId = newRequestId(), attemptId = newRequestId(), nativeGeneration = newRequestId();
   const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "OpenRouter", preset_id: "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
   const selected: AccountProviderSummary = { providerId, provider, displayName: "OpenRouter", enabled: true, oauthAvailable: true, keyGuidance: "", documentationUrl: "" };
@@ -20,7 +20,7 @@ function fixture(args: { complete?: (request: CompleteAccountOAuthRequest) => Pr
   let retained = attempt(), callback = false;
   const rawCode = Array.from(new TextEncoder().encode("renderer-oauth-code-sentinel"));
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 2n, documentJson: encode({ alias: "OpenRouter", provider_id: providerId, type: "api", health: "unverified", enabled: true, recovery_notifications: true }) });
-  const start = vi.fn(async (request) => { await args.startDelay; return { attempt: retained, requestId: request.provider?.requestId, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
+  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; return { attempt: retained, requestId: request.provider?.requestId, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
   const complete = vi.fn(async (request: CompleteAccountOAuthRequest) => { if (args.complete) await args.complete(request); retained = attempt(State.ACCOUNT_OAUTH_STATE_CONNECTED, 5n); return { attempt: retained, account, requestId: request.mutation?.requestId }; });
   const cancel = vi.fn(async (request) => { retained = attempt(State.ACCOUNT_OAUTH_STATE_CANCELED, 2n); return { attempt: retained, requestId: request.mutation?.requestId }; });
   const status = vi.fn(async () => ({ attempt: retained, account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED ? account : undefined }));
@@ -132,4 +132,26 @@ it("retries the exact browser binding after a native failure before admission", 
  fireEvent.click(screen.getByRole("button", { name: "Open browser again" }));
  await waitFor(() => expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Reopen)).toHaveLength(1));
  expect(f.complete).not.toHaveBeenCalled();
+});
+
+it("a definitive admission rejection allows explicit native disposal and manual fallback", async () => {
+ const rejection=new ConnectError("provider changed",Code.Unimplemented,undefined,[{desc:ErrorDetailSchema,value:create(ErrorDetailSchema,{code:"unsupported",cause:"oauth_start_not_admitted"})}]);
+ const f=fixture({startError:rejection});fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
+ await screen.findByText("Authorization was not started. Cancel or return to providers to refresh this provider, or use an API key instead.");
+ fireEvent.click(screen.getByRole("button",{name:"Use an API key instead"}));
+ await waitFor(()=>expect(f.manual).toHaveBeenCalledTimes(1));
+ expect(f.cancel).not.toHaveBeenCalled();expect(f.complete).not.toHaveBeenCalled();
+ expect(f.native.mock.calls.filter(call=>call[1]===OAuthNativeAction.Dispose).length).toBeGreaterThan(0);
+});
+
+it.each([Code.Unavailable,Code.Aborted,Code.Unimplemented])("an unproven Start failure %s retains its exact receipt and blocks fallback",async code=>{
+ const f=fixture({startError:new ConnectError("unknown outcome",code)});
+ fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));await screen.findByRole("alert");
+ expect((screen.getByRole("button",{name:"Use an API key instead"}) as HTMLButtonElement).disabled).toBe(true);
+ const original=f.start.mock.calls[0][0].provider?.requestId;
+ fireEvent.click(screen.getByRole("button",{name:"Retry original start"}));
+ await waitFor(()=>expect(f.start).toHaveBeenCalledTimes(2));
+ expect(f.start.mock.calls[1][0].provider?.requestId).toBe(original);
+ expect(f.native.mock.calls.filter(call=>call[1]===OAuthNativeAction.Begin)).toHaveLength(1);
+ expect(f.cancel).not.toHaveBeenCalled();expect(f.manual).not.toHaveBeenCalled();
 });

@@ -116,6 +116,18 @@ func (s *Service) clearOAuthLive(id domain.ID) {
 		delete(s.oauthLive, id)
 	}
 }
+
+// This cause is issued only inside a new Start's rolled-back admission
+// transaction. Replay/post-commit failures never grant permission to abandon it.
+func oauthStartNotAdmitted(err error) error {
+	safe := *domain.SafeError(err)
+	switch safe.Code {
+	case domain.Unsupported, domain.Conflict, domain.NotFound, domain.ResourceExhausted, domain.PermissionDenied:
+		safe.Cause = "oauth_start_not_admitted"
+	}
+	return &safe
+}
+
 func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb.StartAccountOAuthRequest]) (*connect.Response[pb.StartAccountOAuthResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	actor, err := requireOAuthActor(ctx)
@@ -168,7 +180,7 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 		a := domain.AccountOAuthAttempt{Version: 1, ID: domain.NewID(), Revision: 1, ServerID: s.Identity.ServerID, ProviderID: input.Provider, ProviderRevision: input.Revision, Actor: actor, Generation: s.oauthGeneration, StartRequestID: domain.ID(m.RequestId), AccountID: domain.NewID(), CreateRequestID: domain.NewID(), ConnectRequestID: domain.NewID(), State: domain.OAuthAwaiting, StartedAt: now, ExpiresAt: now.Add(10 * time.Minute), UpdatedAt: now, CallbackCommitment: input.CallbackCommitment}
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "oauth.start", input, func(tx *store.Tx) (any, error) {
 			if err := oauthProvider(tx, input.Provider, input.Revision); err != nil {
-				return nil, err
+				return nil, oauthStartNotAdmitted(err)
 			}
 			if err := tx.ExpireAccountOAuth(now); err != nil {
 				return nil, err
@@ -178,7 +190,7 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 				return nil, err
 			}
 			if n >= 32 {
-				return nil, domain.Fail(domain.ResourceExhausted, "The server has too many unresolved OAuth attempts.", "Cancel or reconcile original attempts before starting another.")
+				return nil, oauthStartNotAdmitted(domain.Fail(domain.ResourceExhausted, "The server has too many unresolved OAuth attempts.", "Cancel or reconcile original attempts before starting another."))
 			}
 			if err := tx.PutAccountOAuth(a, 0); err != nil {
 				return nil, err

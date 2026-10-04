@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createClient } from "@connectrpc/connect";
+import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
-import { AccountService, AccountOAuthState, EntityKind, FailureCode, clientFailure, newRequestId, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
+import { AccountService, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
 import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
@@ -103,7 +103,15 @@ export function useOpenRouterOAuth() {
         try { await native(value.nativeOpening, OAuthNativeAction.BindOpen, value.generation, value.attempt.id, result.authorizationUrl); value.bound = true; value.openFailed = false; value.problem = undefined; }
         catch { value.openFailed = true; failure(value, "The browser could not be opened. Open it again deliberately or cancel this connection."); }
       }
-    } catch { failure(value, "Authorization could not be confirmed. Retry only the original start or inspect the original attempt before starting another connection."); }
+    } catch (error) {
+      const rejected = ConnectError.from(error).findDetails(ErrorDetailSchema).some(detail => detail.cause === "oauth_start_not_admitted");
+      if (!value.attempt && rejected) {
+        value.serverStartDispatched = false;
+        // Keep the opening until explicit Cancel/Back performs native disposal.
+        // The cause proves admission rolled back; transport errors cannot do so.
+        failure(value, "Authorization was not started. Cancel or return to providers to refresh this provider, or use an API key instead.");
+      } else failure(value, "Authorization could not be confirmed. Retry only the original start or inspect the original attempt before starting another connection.");
+    }
     finally { value.busy = false; }
   };
   const start = (provider: AccountProviderSummary) => {

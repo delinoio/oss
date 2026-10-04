@@ -19,6 +19,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -413,5 +414,106 @@ func TestAccountOAuthReturnedKeySurvivesTransportCancellation(t *testing.T) {
 	recovered, err := f.complete(started.Attempt, id, "")
 	if err != nil || !recovered.Msg.Replayed || recovered.Msg.Account == nil || recovered.Msg.Account.Id != completed.Msg.Account.Id || calls.Load() != 1 {
 		t.Fatal("original local result could not recover without exchange", err)
+	}
+}
+
+func TestOAuthStartRejectedAdmissionIsDistinctFromPostAdmissionFailure(t *testing.T) {
+	f := newOAuthFixture(t)
+	id := domain.NewID()
+	_, err := f.s.StartAccountOAuth(f.ctx, connect.NewRequest(&pb.StartAccountOAuthRequest{Provider: &pb.Mutation{Id: f.provider.Id, ExpectedRevision: f.provider.Revision + 1, RequestId: string(id)}}))
+	if rpc.ClientError(err).Cause != "oauth_start_not_admitted" {
+		t.Fatal("missing rejection proof", err)
+	}
+	var attempts int
+	if err := f.s.Store.Read(f.ctx, func(tx *store.Tx) error { var e error; attempts, e = tx.AccountOAuthPending(); return e }); err != nil || attempts != 0 {
+		t.Fatal("rejected request retained authority", err)
+	}
+	started := f.start(t)
+	_, err = f.s.Store.Mutate(f.ctx, domain.NewID(), "fixture.provider-change", nil, func(tx *store.Tx) (any, error) {
+		r, e := tx.Get(domain.ProviderKind, domain.ID(f.provider.Id))
+		if e != nil {
+			return nil, e
+		}
+		p, e := store.Decode[domain.Provider](r)
+		if e != nil {
+			return nil, e
+		}
+		disabled := false
+		p.Enabled = &disabled
+		return tx.Put(domain.ProviderKind, r.ID, r.Revision, "", "", p)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.s.StartAccountOAuth(f.ctx, connect.NewRequest(&pb.StartAccountOAuthRequest{Provider: &pb.Mutation{Id: f.provider.Id, ExpectedRevision: f.provider.Revision, RequestId: started.RequestId}}))
+	if err == nil || rpc.ClientError(err).Cause != "" {
+		t.Fatal("post-admission replay granted abandonment", err)
+	}
+}
+
+func TestBackupRestoreRetainsCurrentOAuthConnectionAndCleanup(t *testing.T) {
+	for _, historical := range []bool{false, true} {
+		t.Run(map[bool]string{false: "backup-before-account", true: "backup-with-account"}[historical], func(t *testing.T) {
+			f := newOAuthFixture(t)
+			if err := f.s.Store.BindIdentity(f.ctx, f.s.Identity.ServerID); err != nil {
+				t.Fatal(err)
+			}
+			var calls atomic.Int32
+			f.s.oauthExchange = oauthExchangeFunc(func(context.Context, []byte, []byte) ([]byte, error) {
+				calls.Add(1)
+				return []byte("restore-key-sentinel"), nil
+			})
+			var completion *connect.Response[pb.CompleteAccountOAuthResponse]
+			connectOriginal := func() {
+				a := f.start(t)
+				var err error
+				completion, err = f.complete(a.Attempt, domain.NewID(), "restore-code-sentinel")
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if historical {
+				connectOriginal()
+			}
+			backup, err := f.s.Store.Backup(f.ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inspected, err := f.s.Store.InspectBackup(f.ctx, backup, f.s.Identity.ServerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !historical {
+				connectOriginal()
+			}
+			original := accountBody(t, completion.Msg.Account)
+			revision, err := f.s.Store.RestoreRevision(f.ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := store.BackupRestoreInput{Backup: inspected.Backup, SHA256: inspected.SHA256, ServerID: f.s.Identity.ServerID, Actor: domain.Principal{Type: domain.OwnerDevice}, ExpectedRevision: revision}
+			if _, _, err = f.s.Store.RestoreBackup(f.ctx, domain.NewID(), in); err != nil {
+				t.Fatal(err)
+			}
+			f.restart(t)
+			status, err := f.s.GetAccountOAuthStatus(f.ctx, connect.NewRequest(&pb.GetAccountOAuthStatusRequest{AttemptId: completion.Msg.Attempt.Id}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status.Msg.Attempt.State != pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_CONNECTED || status.Msg.Account == nil {
+				t.Fatal("restored attempt lost account", status.Msg)
+			}
+			current := accountBody(t, status.Msg.Account)
+			if current.Connection == nil || current.Connection.ID != original.Connection.ID || current.ProviderID != original.ProviderID {
+				t.Fatal("vault connection orphaned", current)
+			}
+			if _, err = f.s.DisconnectAccount(f.ctx, connect.NewRequest(&pb.DisconnectAccountRequest{Mutation: acctMutation(status.Msg.Account, domain.NewID())})); err != nil {
+				t.Fatal(err)
+			}
+			ref := credentials.Ref{Owner: domain.ID(status.Msg.Account.Id), ID: original.Connection.ID, Purpose: credentials.AccountAPI}
+			if !f.vault.removed[ref] || calls.Load() != 1 {
+				t.Fatal("original vault ownership not cleaned or exchange repeated", calls.Load())
+			}
+		})
 	}
 }
