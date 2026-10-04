@@ -744,7 +744,7 @@ func TestHostSupervisorIdleAndBusyDeadlines(t *testing.T) {
 				}
 				return previous
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			finished := make(chan int, 1)
 			status := HostExecutionStatus{ID: d.ID, Token: d.Token, Supervisor: HostProcess{PID: 66, Start: "supervisor-66", Group: 66}}
@@ -774,6 +774,70 @@ func TestHostSupervisorIdleAndBusyDeadlines(t *testing.T) {
 				t.Fatal("idle runner was terminated on its bootstrap deadline")
 			}
 		})
+	}
+}
+
+func TestHostSupervisorDeadlinePollingBounded(t *testing.T) {
+	c, store, _, _ := hostFixture(t)
+	d, root, err := createHostDirectory(context.Background(), store, c, newID(), HostWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	process := HostProcess{PID: 77, Start: "worker-77", Group: 77}
+	worker := &fixtureHostWorker{process: process, done: make(chan int, 1), members: []HostProcess{process}}
+	reads := make(chan struct{}, 16)
+	worker.deadline = func(_ HostBootstrap, previous time.Time) time.Time {
+		reads <- struct{}{}
+		return previous
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	finished := make(chan int, 1)
+	status := HostExecutionStatus{ID: d.ID, Token: d.Token, Supervisor: HostProcess{PID: 66, Start: "supervisor-66", Group: 66}}
+	go func() {
+		finished <- superviseHost(ctx, root, HostBootstrap{Directory: d, Deadline: time.Now().Add(time.Minute)}, status, worker)
+	}()
+	select {
+	case <-reads:
+	case <-time.After(5 * time.Second):
+		cancel()
+		<-finished
+		t.Fatal("initial deadline was not read")
+	}
+	select {
+	case <-reads:
+		cancel()
+		<-finished
+		t.Fatal("idle supervisor reopened state at the process-observation cadence")
+	case <-time.After(300 * time.Millisecond):
+	}
+	cancel()
+	<-finished
+}
+
+func TestHostSupervisorCachedDeadlineTimer(t *testing.T) {
+	c, store, _, _ := hostFixture(t)
+	d, root, err := createHostDirectory(context.Background(), store, c, newID(), HostWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	process := HostProcess{PID: 77, Start: "worker-77", Group: 77}
+	worker := &fixtureHostWorker{process: process, done: make(chan int, 1), members: []HostProcess{process}}
+	var deadline time.Time
+	worker.deadline = func(_ HostBootstrap, previous time.Time) time.Time {
+		if deadline.IsZero() {
+			deadline = time.Now().Add(50 * time.Millisecond)
+		}
+		return deadline
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	status := HostExecutionStatus{ID: d.ID, Token: d.Token, Supervisor: HostProcess{PID: 66, Start: "supervisor-66", Group: 66}}
+	superviseHost(ctx, root, HostBootstrap{Directory: d, Deadline: time.Now().Add(time.Minute)}, status, worker)
+	if ctx.Err() != nil || worker.stopped == 0 {
+		t.Fatal("cached deadline waited for the next five-second state poll")
 	}
 }
 

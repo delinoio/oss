@@ -401,7 +401,10 @@ start time. The bootstrap deadline bounds preparation only. Idle host runners
 have no job deadline. Assignment establishes the persisted busy-job deadline;
 busy-aware removal uses the existing creation-time bound for an unknown start.
 An established job deadline remains authoritative across manager restarts. Process
-names and command arguments confer no ownership. Completed,
+supervision reads deadline state at startup confirmation and at most once every
+five seconds, with an additional authority check when its cached deadline timer
+fires. The timer enforces an observed deadline independently of the polling cadence.
+Process names and command arguments confer no ownership. Completed,
 cancelled and timed-out executions terminate only verified group members. Missing
 supervisors, changed process identity and uncertain termination retain reservations
 and actionable recovery. Daemons escaping the managed group are unsupported.

@@ -13,6 +13,8 @@ type HostWorkerNative interface {
 	Deadline(HostBootstrap, time.Time) time.Time
 }
 
+const hostDeadlinePollInterval = 5 * time.Second
+
 // Detached supervision continues across a manager-only restart. Completion
 // is published only after every process remaining in the owned group exits.
 func superviseHost(ctx context.Context, root *os.Root, in HostBootstrap, status HostExecutionStatus, worker HostWorkerNative) int {
@@ -62,11 +64,22 @@ func superviseHost(ctx context.Context, root *os.Root, in HostBootstrap, status 
 	if hostRootWrite(root, "status.json", status) != nil {
 		return finishHostGroup(context.Background(), root, status, worker, done, true)
 	}
-	check := time.NewTicker(100 * time.Millisecond)
+	// SQLite reads are bounded to one per interval while idle. A separate timer
+	// enforces an observed job deadline without polling the database at 10 Hz.
+	check := time.NewTicker(hostDeadlinePollInterval)
 	defer check.Stop()
 	// The bootstrap deadline bounds startup only. Idle runners have no job
 	// deadline until assignment or busy-aware removal establishes Busy state.
-	var jobDeadline time.Time
+	jobDeadline := worker.Deadline(in, time.Time{})
+	deadline.Stop()
+	var jobTimeout <-chan time.Time
+	armDeadline := func() {
+		if !jobDeadline.IsZero() {
+			deadline.Reset(time.Until(jobDeadline))
+			jobTimeout = deadline.C
+		}
+	}
+	armDeadline()
 	for {
 		select {
 		case code := <-done:
@@ -74,12 +87,19 @@ func superviseHost(ctx context.Context, root *os.Root, in HostBootstrap, status 
 			return finishHostGroup(context.Background(), root, status, worker, nil, false)
 		case <-ctx.Done():
 			return finishHostGroup(context.Background(), root, status, worker, done, true)
+		case <-jobTimeout:
+			// Recheck durable authority before enforcing the cached deadline.
+			jobDeadline = worker.Deadline(in, jobDeadline)
+			if !time.Now().Before(jobDeadline) {
+				return finishHostGroup(context.Background(), root, status, worker, done, true)
+			}
+			armDeadline()
 		case <-check.C:
 			// Assignment resets the durable six-hour job deadline. Preparation or
 			// idle time must not shorten a subsequently observed busy job's timeout.
-			jobDeadline = worker.Deadline(in, jobDeadline)
-			if !jobDeadline.IsZero() && !time.Now().Before(jobDeadline) {
-				return finishHostGroup(context.Background(), root, status, worker, done, true)
+			if next := worker.Deadline(in, jobDeadline); !next.Equal(jobDeadline) {
+				jobDeadline = next
+				armDeadline()
 			}
 		}
 	}
