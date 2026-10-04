@@ -68,7 +68,7 @@ func (r StorageRequest) Validate() error {
 		if r.Recovery == nil || r.Recovery.Original.Action == StorageRecover || r.Recovery.Original.Validate() != nil || r.Recovery.InstanceID.Validate() != nil || r.Recovery.Revision == 0 || !digestValid(r.Recovery.AssignmentDigest) || r.Recovery.Original.Preparation.SessionID != r.Preparation.SessionID || r.SnapshotID != r.Recovery.Original.SnapshotID {
 			return ResultUncertain()
 		}
-		if len(r.Recovery.Claims) < 1 || len(r.Recovery.Claims) > 8 {
+		if len(r.Recovery.Claims) < 1 || len(r.Recovery.Claims) > MaxStorageRecoveryClaims {
 			return ResultUncertain()
 		}
 		first := r.Recovery.Claims[0]
@@ -427,7 +427,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			// Pending comparison metadata grants no publication authority. Invalidate
 			// an earlier restore before claiming this operation's destination.
 			raw, _ := json.Marshal(binding)
-			if err := security.WriteAtomic(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
+			if err := security.WriteAtomicOwned(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
 				return result, err
 			}
 			if err := ctx.Err(); err != nil {
@@ -456,7 +456,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			}
 			binding.Published = true
 			raw, _ = json.Marshal(binding)
-			if err := security.WriteAtomic(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
+			if err := security.WriteAtomicOwned(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
 				m.Logger.Warn("restore_publication_proof_pending", "operation_id", r.OperationID, "code", domain.SafeError(err).Code)
 				return result, ResultUncertain()
 			}

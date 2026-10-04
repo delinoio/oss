@@ -857,7 +857,7 @@ New source capture/observation admission reserves the largest original/private n
 
 Source observation counts restored Git stores already covered by the complete managed workspace root only once. The root inventory still binds every retained Git byte and change. Failed or canceled explicit recovery restores its original uncertain predecessor as the retry anchor. Exact acknowledged failed/canceled recovery reports discard their pending replay receipts while retaining predecessor removal intent, including after response loss; these terminal attempts cannot block Worker reconnect or grant source-removal authority.
 
-Storage recovery preserves the pinned snapshot logical source bytes for inspect, restore and delete. Deletion intents retain that count before unlink under the original namespace claim; missing legacy count stays uncertain. Partial unpublished restore staging is removable only through its original external operation claim and native root identity, without completed-inventory equality. New storage admission reserves a job slot within the 4,096-job permanent deletion inventory bound and rejects atomically at capacity. Cleanup and cleanup recovery also reserve subsequent restore and its first explicit recovery slots. Restore preserves that recovery slot. While stored, inspection and other non-restore operations preserve both slots, so a lost restore report still permits original-operation recovery.
+Storage recovery preserves the pinned snapshot logical source bytes for inspect, restore and delete. Deletion intents retain that count before unlink under the original namespace claim; missing legacy count stays uncertain. Partial unpublished restore staging is removable only through its original external operation claim and native root identity, without completed-inventory equality. New storage admission reserves a job slot within the 4,096-job permanent deletion inventory bound and rejects atomically at capacity. Each new operation reserves its complete eight-claim lost-report recovery lineage. Cleanup also reserves a full restore plus its eight recoveries (18 total slots); recovery consumes only its remaining original lineage. While stored, inspection and other non-restore operations preserve the complete restore lineage. Repeated lost reports cannot exhaust restore/reconciliation capacity before the supported final recovery.
 
 The CLI snapshot inventory negotiates `WORKSPACE_STORAGE_V1`, requires the owning session UUID and preserves opaque Resource cursors through `--page-token`; `--limit` accepts 1–100. After failed/canceled explicit recovery, the desktop retains the attempt but uses the refreshed original uncertain predecessor for its next request. A lost report reply replaying acknowledged uncertainty discards only the pending report receipt and marks the journal reported, preserving original removal intent/claim ownership.
 
@@ -880,3 +880,20 @@ Worker dispatch, cancellation, report/receipt reconciliation and permanent
 deletion use the same ownership-specific rule. This finite exception can be
 removed only after immutable original evidence is stored by reference; it grants
 no new filesystem, execution, replay or inferred cleanup authority.
+
+Storage observations preserve the exact accepted snapshot ID, session, machine,
+digest, byte size, creation instant and repository count. Successful original
+deletion changes only its Deleted tombstone. Failed inspect/restore/delete recovery
+uses the same pinned metadata and cannot replace the historical record.
+
+Storage publications in shared private directories use target-attributed atomic
+temporary names: `.pending-<UUID>.json-<decimal suffix>`, plus
+`.pending-<UUID>.pending-<decimal suffix>` for claim-journal compaction. The storage
+writer exception leaves ordinary private atomic-write behavior unchanged. Permanent
+session deletion and completed-proof replay inventory those five shared namespaces
+with a separate 65,536-entry limit per directory. Original session/job target names
+retain cleanup authority even for partial contents; unrelated operations remain
+untouched. Unknown legacy names, malformed names, non-private files and overflow
+retain pending cleanup. A remnant that reappears after completion blocks receipt
+replay and is preserved. Per-operation staging/removal/snapshot directories retain
+their existing native identity and complete-inventory ownership gates.

@@ -182,10 +182,12 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Failed or canceled workspace-storage recovery restores the original uncertain predecessor as the retry anchor. An uncertain recovery retains its assignment chain; terminal failure cannot become recovery authority or settle the predecessor.
 
-- Workspace-storage admission reserves one new job within the 4,096-job permanent deletion plan bound, including exact terminal-page boundaries. Cleanup and cleanup recovery reserve both restore and its first explicit recovery slot; restore reserves its first explicit recovery slot, and other operations while stored preserve both slots. Full inventory rejects before job/session publication.
+- Workspace-storage admission reserves the new job and its complete eight-claim recovery lineage within the 4,096-job permanent deletion plan bound. Cleanup and other operations while stored also preserve the full restore/recovery lineage. Each explicit recovery consumes only its original remaining lineage capacity. Full inventory rejects before job/session publication.
 
 - A stale original storage report may acknowledge only an independently completed explicit recovery, with its exact immutable assignment, original instance/device, revision, input and recovery-claim digest. Preserve the original UUID receipt through the ordinary report transaction without another state/native mutation. The Worker clears only that pending report receipt and marks its journal reported; the successful recovery owns removal-intent retirement. Uncertain or unproven originals retain their receipt and native evidence.
 
 - Compaction acceptance and execution credential publication require present workspace storage. Pending, uncertain or stored workspaces cannot grant native compaction authority.
 
 - Storage recovery retains full immutable original preparation/manifest and claim evidence within its dedicated 3 MiB input/4 MiB job bound. Read, cancellation, report validation, explicit recovery-chain settlement and original-report reconciliation use the same typed decoder; ordinary storage jobs remain bounded at 1 MiB.
+
+- Snapshot observations and recovery outcomes preserve every field of the accepted snapshot metadata. Only successful original deletion may transition Deleted; failed recovery projects inspection without rewriting immutable size, creation time, digest or ownership.

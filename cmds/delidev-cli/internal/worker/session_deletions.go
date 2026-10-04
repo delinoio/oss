@@ -246,6 +246,11 @@ func removeSessionTree(ctx context.Context, root, path string) error {
 func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
 	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
 	paths = append(paths, workspace.SessionStorageCopyPaths(root, w)...)
+	remnants, err := workspace.SessionStorageRemnantPaths(ctx, root, w)
+	if err != nil {
+		return nil, err
+	}
+	paths = append(paths, remnants...)
 	if w.Fork != nil {
 		// The source job journal may be shared with a live parent or already gone.
 		// Only the child-bound immutable checkpoint grants ownership of this runtime.

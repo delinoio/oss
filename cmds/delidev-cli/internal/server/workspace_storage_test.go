@@ -423,8 +423,8 @@ func TestWorkspaceStorageAdmissionReservesPermanentDeletionJobCapacity(t *testin
 		if err != nil {
 			return nil, err
 		}
-		// The existing preparation plus these settled records leave one legal slot.
-		for i := 0; i < 4094; i++ {
+		// The existing preparation plus these records leave one complete recovery lineage.
+		for i := 0; i < 4086; i++ {
 			if _, err := tx.PutJob(domain.NewID(), 0, f.session, "", job); err != nil {
 				return nil, err
 			}
@@ -451,7 +451,7 @@ func TestWorkspaceStorageAdmissionReservesPermanentDeletionJobCapacity(t *testin
 }
 
 func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
-	for _, existing := range []int{4093, 4094} {
+	for _, existing := range []int{4078, 4079} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
 			f := newStorageFixture(t)
 			preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
@@ -484,7 +484,7 @@ func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
 			}
 			before := f.sessionRecord().Revision
 			cleanup, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", preview.Msg.Job.Id, "")))
-			if existing == 4094 {
+			if existing == 4079 {
 				if connect.CodeOf(err) != connect.CodeResourceExhausted || f.sessionRecord().Revision != before {
 					t.Fatal("cleanup consumed the final restore slot", err)
 				}
@@ -493,44 +493,50 @@ func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			output := f.execute(cleanup.Msg.Job)
+			// Lose the original and seven recovery reports. The eighth recovery
+			// settles the same native operation at the exact inventory bound.
+			settleAfterLostReports := func(resource *pb.Resource) workspace.StorageResult {
+				for attempt := 0; attempt < workspace.MaxStorageRecoveryClaims; attempt++ {
+					assigned := f.claim(resource)
+					var original domain.Job
+					var input workspace.StorageRequest
+					if domain.Decode(assigned.DocumentJson, &original) != nil || workspace.DecodeStorageRequest(original.Input, &input) != nil {
+						t.Fatal("invalid lost-report assignment")
+					}
+					if _, err := f.manager.Storage(context.Background(), input); err != nil {
+						t.Fatal(err)
+					}
+					_, err := f.service.Store.Mutate(f.ownerContext, domain.NewID(), "fixture.storage.expired-worker", nil, func(tx *store.Tx) (any, error) {
+						return nil, tx.SetWorkerInstance(f.machine, f.instance, time.Now().UTC().Add(-2*workerLease))
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					f.instance = domain.NewID()
+					if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
+						t.Fatal(err)
+					}
+					recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", assigned.Id)))
+					if err != nil {
+						t.Fatal("reserved recovery lineage exhausted early", attempt, err)
+					}
+					resource = recovery.Msg.Job
+				}
+				return f.execute(resource)
+			}
+			output := settleAfterLostReports(cleanup.Msg.Job)
 			if output.WorkspaceState != domain.WorkspaceStored {
 				t.Fatal("fixture cleanup did not store workspace")
 			}
 			inspect, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_INSPECT, string(output.Snapshot.ID), "", "")))
 			if connect.CodeOf(err) != connect.CodeResourceExhausted || inspect != nil {
-				t.Fatal("inspection consumed reserved restore capacity", err)
+				t.Fatal("inspection consumed reserved restore lineage", err)
 			}
 			restore, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RESTORE, string(output.Snapshot.ID), "", "")))
 			if err != nil {
-				t.Fatal("stored workspace could not use its final restore slot", err)
+				t.Fatal("stored workspace lost its full restore lineage", err)
 			}
-			assigned := f.claim(restore.Msg.Job)
-			var original domain.Job
-			var input workspace.StorageRequest
-			if domain.Decode(assigned.DocumentJson, &original) != nil || domain.Decode(original.Input, &input) != nil {
-				t.Fatal("invalid restore assignment")
-			}
-			if _, err := f.manager.Storage(context.Background(), input); err != nil {
-				t.Fatal(err)
-			}
-			// Native publication finished but its report was lost. Replacement
-			// attachment must preserve the reserved explicit recovery slot.
-			_, err = f.service.Store.Mutate(f.ownerContext, domain.NewID(), "fixture.restore.expired-worker", nil, func(tx *store.Tx) (any, error) {
-				return nil, tx.SetWorkerInstance(f.machine, f.instance, time.Now().UTC().Add(-2*workerLease))
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			f.instance = domain.NewID()
-			if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
-				t.Fatal(err)
-			}
-			recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", assigned.Id)))
-			if err != nil {
-				t.Fatal("final restore lost explicit recovery capacity", err)
-			}
-			restored := f.execute(recovery.Msg.Job)
+			restored := settleAfterLostReports(restore.Msg.Job)
 			if restored.WorkspaceState != domain.WorkspacePresent || !restored.CleanupVerified {
 				t.Fatal("last-slot restore did not complete")
 			}

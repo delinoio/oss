@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -78,9 +79,58 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 					}
 					journals = append(journals, path)
 				}
+				// Simulate process death during each atomic publication, including a
+				// partial record that cannot be decoded and a compacted claim journal.
+				var remnants []string
+				foreign := domain.NewID()
+				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+					parent := filepath.Join(config.Root, directory)
+					if err := security.PrivateDir(parent); err != nil {
+						t.Fatal(err)
+					}
+					id := input.OperationID
+					if directory == "workspace-restores" {
+						id = work.SessionID
+					}
+					for _, suffix := range []string{".json-1234", ".pending-5678"} {
+						if suffix == ".pending-5678" && directory != "storage-removal-claims" {
+							continue
+						}
+						path := filepath.Join(parent, ".pending-"+string(id)+suffix)
+						if err := os.WriteFile(path, []byte(`{"partial-private-native-state":`), 0600); err != nil {
+							t.Fatal(err)
+						}
+						remnants = append(remnants, path)
+					}
+					if err := os.WriteFile(filepath.Join(parent, ".pending-"+string(foreign)+".json-9999"), []byte("unrelated"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
 				proof, err := deleteSessionCopies(context.Background(), config, work)
 				if err != nil || !proof.Complete {
 					t.Fatal("storage copies blocked coordinated deletion", err)
+				}
+				for _, path := range remnants {
+					if _, err := os.Lstat(path); !os.IsNotExist(err) {
+						t.Fatal("interrupted atomic write survived completion", err)
+					}
+					if err := os.WriteFile(path, []byte("replacement"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+						t.Fatal("completed replay ignored a reappeared atomic write")
+					}
+					if raw, err := os.ReadFile(path); err != nil || string(raw) != "replacement" {
+						t.Fatal("replay deleted replacement", err)
+					}
+					if err := os.Remove(path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+					if raw, err := os.ReadFile(filepath.Join(config.Root, directory, ".pending-"+string(foreign)+".json-9999")); err != nil || string(raw) != "unrelated" {
+						t.Fatal("unrelated atomic write changed", err)
+					}
 				}
 				for _, path := range journals {
 					if _, err := os.Lstat(path); !os.IsNotExist(err) {
@@ -158,5 +208,27 @@ func TestSessionDeletionPreservesForeignStorageStaging(t *testing.T) {
 	}
 	if _, err := os.Stat(manifest.PrimaryPath); err != nil {
 		t.Fatal("foreign scratch did not block workspace removal", err)
+	}
+}
+
+func TestSessionDeletionPreservesUnattributedAtomicWrite(t *testing.T) {
+	for _, name := range []string{".pending-1234", ".pending-invalid.json-1234"} {
+		t.Run(name, func(t *testing.T) {
+			config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+			parent := filepath.Join(config.Root, "storage-removal-intents")
+			if err := security.PrivateDir(parent); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(parent, name)
+			if err := os.WriteFile(path, []byte("unknown-original-owner"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if proof, err := deleteSessionCopies(context.Background(), config, work); err == nil || proof.Complete {
+				t.Fatal("unattributed write ignored")
+			}
+			if raw, err := os.ReadFile(path); err != nil || string(raw) != "unknown-original-owner" {
+				t.Fatal("unattributed write removed", err)
+			}
+		})
 	}
 }

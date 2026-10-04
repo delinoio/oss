@@ -62,7 +62,7 @@ func (m *Manager) createStorageStaging(r StorageRequest) (string, error) {
 	}
 	claim := storageStagingClaim{Version: 1, Reference: removalReference(r), MachineID: r.Preparation.MachineID, PreparationDigest: r.Manifest.InputDigest, RequestDigest: storageRequestDigest(r), RootIdentity: identity}
 	raw, err := json.Marshal(claim)
-	if err != nil || security.WriteAtomic(m.stagingClaimPath(r.OperationID), raw) != nil {
+	if err != nil || security.WriteAtomicOwned(m.stagingClaimPath(r.OperationID), raw) != nil {
 		return "", ResultUncertain()
 	}
 	return path, nil

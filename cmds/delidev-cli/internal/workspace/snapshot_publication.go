@@ -20,7 +20,7 @@ func (m *Manager) retainSnapshotPublication(r StorageRequest, metadata SnapshotM
 	}
 	claim.PublishedSnapshotDigest = metadata.SHA256
 	raw, err := json.Marshal(claim)
-	if err != nil || security.WriteAtomic(m.stagingClaimPath(r.OperationID), raw) != nil {
+	if err != nil || security.WriteAtomicOwned(m.stagingClaimPath(r.OperationID), raw) != nil {
 		return ResultUncertain()
 	}
 	return nil

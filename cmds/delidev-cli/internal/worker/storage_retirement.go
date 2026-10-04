@@ -108,7 +108,7 @@ func persistStorageRetirement(config Config, receipt storageRetirement) (string,
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
-	if err := security.WriteAtomic(path, raw); err != nil {
+	if err := security.WriteAtomicOwned(path, raw); err != nil {
 		return "", err
 	}
 	return path, nil

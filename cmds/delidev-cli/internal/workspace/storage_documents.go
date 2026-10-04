@@ -10,6 +10,8 @@ import (
 // Recovery retains two copies of individually bounded original workspace
 // evidence and at most eight claim references. Keep this finite exception until
 // immutable preparation/manifest evidence can be stored by reference.
+const MaxStorageRecoveryClaims = 8
+
 const MaxStorageRecoveryJobBytes = 4 << 20
 
 func DecodeStorageRequest(raw []byte, target *StorageRequest) error {
@@ -23,7 +25,7 @@ func DecodeStorageRequest(raw []byte, target *StorageRequest) error {
 		return ResultUncertain()
 	}
 	original, err := json.Marshal(target.Recovery.Original)
-	if err != nil || len(original) > 1<<20 || len(target.Recovery.Claims) < 1 || len(target.Recovery.Claims) > 8 {
+	if err != nil || len(original) > 1<<20 || len(target.Recovery.Claims) < 1 || len(target.Recovery.Claims) > MaxStorageRecoveryClaims {
 		return ResultUncertain()
 	}
 	return nil

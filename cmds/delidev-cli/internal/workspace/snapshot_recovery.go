@@ -191,7 +191,7 @@ func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageReque
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := security.WriteAtomic(m.removalClaimJournalPath(r.OperationID), raw); err != nil {
+	if err := security.WriteAtomicOwned(m.removalClaimJournalPath(r.OperationID), raw); err != nil {
 		return err
 	}
 	m.Logger.InfoContext(ctx, "workspace_removal_journal_compacted", "operation_id", r.OperationID, "active_claims", len(pending), "journal_bytes", len(raw))
@@ -284,7 +284,7 @@ func (m *Manager) retainRemovalClaim(ctx context.Context, r StorageRequest, inte
 	if err != nil || len(raw) > maxStorageRemovalClaim {
 		return ResultUncertain()
 	}
-	return security.WriteAtomic(path, raw)
+	return security.WriteAtomicOwned(path, raw)
 }
 
 func (m *Manager) removalIntentPath(id domain.ID) string {
@@ -326,7 +326,7 @@ func (m *Manager) retainRemovalIntent(ctx context.Context, r StorageRequest, pat
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return ResultUncertain()
 	}
-	return security.WriteAtomic(m.removalIntentPath(r.OperationID), raw)
+	return security.WriteAtomicOwned(m.removalIntentPath(r.OperationID), raw)
 }
 func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path string, partial bool) error {
 	if path != filepath.Join(m.Root, "workspace-removals", string(r.OperationID)) {

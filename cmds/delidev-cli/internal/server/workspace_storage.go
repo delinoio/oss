@@ -163,17 +163,13 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		if sr.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before accepting storage work.")
 		}
-		// Cleanup preserves restore and its first explicit interrupted-restore recovery.
-		// Other observations while stored cannot consume either reserved slot.
-		reserve := 1
+		// Reserve the entire bounded lost-report lineage before native admission.
+		// Stored operations also preserve a complete restore/recovery lineage.
+		reserve := 1 + workspace.MaxStorageRecoveryClaims
 		if action == workspace.StorageCleanup || session.Storage != nil && session.Storage.State == domain.WorkspaceStored && action != workspace.StorageRestore && action != workspace.StorageRecover {
-			reserve = 3
-		}
-		if action == workspace.StorageRestore {
-			reserve = 2
+			reserve *= 2
 		}
 		if action == workspace.StorageRecover {
-			// Cleanup reconciliation may also finish with the live workspace removed.
 			original, err := tx.Get(domain.JobKind, domain.ID(req.Msg.RecoveryJobId))
 			if err != nil {
 				return nil, err
@@ -186,8 +182,20 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 			if workspace.DecodeStorageRequest(job.Input, &request) != nil {
 				return nil, workspace.ResultUncertain()
 			}
-			if request.Action == workspace.StorageCleanup || request.Recovery != nil && request.Recovery.Original.Action == workspace.StorageCleanup {
-				reserve = 3
+			claims := 0
+			if request.Action == workspace.StorageRecover {
+				if request.Recovery == nil {
+					return nil, workspace.ResultUncertain()
+				}
+				claims = len(request.Recovery.Claims)
+				request = request.Recovery.Original
+			}
+			if claims >= workspace.MaxStorageRecoveryClaims {
+				return nil, workspace.ResultUncertain()
+			}
+			reserve = workspace.MaxStorageRecoveryClaims - claims
+			if request.Action == workspace.StorageCleanup || request.PreviousState == domain.WorkspaceStored && request.Action != workspace.StorageRestore {
+				reserve += 1 + workspace.MaxStorageRecoveryClaims
 			}
 		}
 		if err := storageIdle(tx, sr.ID, session, domain.ID(req.Msg.RecoveryJobId), reserve); err != nil {
@@ -486,6 +494,13 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 		if snapshot == nil || snapshot.ID != input.SnapshotID || snapshot.SessionID != output.SessionID || snapshot.MachineID != output.MachineID || !storageDigestValid(snapshot.SHA256) || snapshot.SizeBytes > workspace.MaxSnapshotBytes || snapshot.CreatedAt.IsZero() || snapshot.RepositoryCount != uint32(len(input.Manifest.Repositories)) || snapshot.Deleted != (input.Action == workspace.StorageDelete) {
 			return workspace.ResultUncertain()
 		}
+		if pinned := input.SnapshotMetadata; pinned != nil {
+			// Observations preserve the accepted snapshot. Deletion changes only its
+			// tombstone, never size, age or ownership.
+			if snapshot.ID != pinned.ID || snapshot.SessionID != pinned.SessionID || snapshot.MachineID != pinned.MachineID || snapshot.SHA256 != pinned.SHA256 || snapshot.SizeBytes != pinned.SizeBytes || !snapshot.CreatedAt.Equal(pinned.CreatedAt) || snapshot.RepositoryCount != pinned.RepositoryCount {
+				return workspace.ResultUncertain()
+			}
+		}
 		if input.SnapshotDigest != "" && snapshot.SHA256 != input.SnapshotDigest {
 			return workspace.ResultUncertain()
 		}
@@ -534,7 +549,7 @@ func storageRecoveryInput(tx *store.Tx, sessionID domain.ID, session domain.Sess
 	claimRef := workspace.StorageJournalClaim{JobID: id, InstanceID: claim.InstanceID, Revision: assigned.Revision, AssignmentDigest: hex.EncodeToString(sum[:])}
 	claims := []workspace.StorageJournalClaim{claimRef}
 	if original.Action == workspace.StorageRecover {
-		if original.Recovery == nil || len(original.Recovery.Claims) >= 8 {
+		if original.Recovery == nil || len(original.Recovery.Claims) >= workspace.MaxStorageRecoveryClaims {
 			return workspace.ResultUncertain()
 		}
 		claims = append(claims, original.Recovery.Claims...)
