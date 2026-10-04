@@ -503,16 +503,16 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
                 120,
             )
             .is_ok()
+            && !exiting.load(Ordering::Acquire)
+            && exchange(bundle, &backup).is_ok()
         {
-            if !exiting.load(Ordering::Acquire) && exchange(bundle, &backup).is_ok() {
-                // The old bundle remains at backup; live server/harness processes
-                // are neither restarted nor overwritten by installation.
-                result = if File::open(parent).and_then(|f| f.sync_all()).is_ok() {
-                    Phase::Installed
-                } else {
-                    Phase::Uncertain
-                };
-            }
+            // The old bundle remains at backup; live server/harness processes
+            // are neither restarted nor overwritten by installation.
+            result = if File::open(parent).and_then(|f| f.sync_all()).is_ok() {
+                Phase::Installed
+            } else {
+                Phase::Uncertain
+            };
         }
     } else {
         result = Phase::Uncertain
