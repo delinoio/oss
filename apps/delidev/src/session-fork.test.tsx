@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ForkWorkspace, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
-import { encode } from "./documents";
+import { document, encode, object } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionForkAction, SessionForkProvider } from "./session-fork";
 
@@ -80,13 +80,43 @@ it.each(["worktree", "local"] as const)("offers Local sharing only for a user-ow
 
 it.each([true, false])("requires independent OpenCode server and Unix Runner Device support (%s)", async (supported) => {
   const machineId = newRequestId();
-  const source = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Original OpenCode", machine_id: machineId, workspace: "general-chat", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "opencode" } }, execution: { native_turn_id: "msg_01960dcbe1fcABCDEFGHIJKLMN", cleanup_verified: true, observed: { opencode_agent: "build" } } }) });
+  const source = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Original OpenCode", machine_id: machineId, workspace: "general-chat", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "opencode" } }, execution: { native_thread_id: "ses_01960dcbe1faABCDEFGHIJKLMN", native_turn_id: "msg_01960dcbe1fcABCDEFGHIJKLMN", cleanup_verified: true, observed: { opencode_agent: "build" } } }) });
   const machine = create(ResourceSchema, { kind: EntityKind.MACHINE, id: machineId, revision: 1n, schemaVersion: 1, documentJson: encode({ os: supported ? "darwin" : "windows", worker_capabilities: ["opencode-general-chat-fork-v1"] }) });
   const fork = vi.fn();
-  const transport = createRouterTransport((router) => { router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1] }) }); router.service(ResourceService, { getResource: (request) => ({ resource: request.kind === EntityKind.MACHINE ? machine : source }) }); router.service(SessionService, { forkSession: fork }); });
+  const transport = createRouterTransport((router) => { router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1] }) }); router.service(ResourceService, { getResource: (request) => ({ resource: request.kind === EntityKind.MACHINE ? machine : source }), listResources: () => ({resources: openCodePlainMessages(source)}) }); router.service(SessionService, { forkSession: fork }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
   if (supported) { fireEvent.click(await screen.findByRole("button", { name: "Fork session" })); expect(screen.getByText(/child keeps a separate copy/)).not.toBeNull(); }
   else { await waitFor(() => expect(client.isFetching()).toBe(0)); expect(screen.queryByRole("button", { name: "Fork session" })).toBeNull(); }
   expect(fork).not.toHaveBeenCalled();
+});
+
+function openCodePlainMessages(source: import("@delinoio/delidev-api-client").Resource) {
+ const execution = object(document(source).execution);
+ return ["user", "assistant"].map((role, index) => create(ResourceSchema, {kind:EntityKind.MESSAGE,id:newRequestId(),sessionId:source.id,schemaVersion:1,revision:1n,documentJson:encode({execution_id:newRequestId(),native_thread_id:execution.native_thread_id,native_turn_id:execution.native_turn_id,native_id:index ? "prt_01960dcbe1fbABCDEFGHIJKLMN" : "prt_01960dcbe1faABCDEFGHIJKLMN",native_parent_id:role === "user" ? execution.native_turn_id : "msg_01960dcbe1fdABCDEFGHIJKLMN",...(role === "user" ? {input_id:newRequestId()} : {}),role,text:"Original plain text",state:"complete",first_sequence:index+1,last_sequence:index+1})}));
+}
+
+it.each(["valid", "tool", "artifact", "changes", "empty-changes", "late-tool", "repeated-cursor", "changed-source"])("offers OpenCode Fork only after complete retained plain-text history: %s", async mode => {
+ const machineId = newRequestId();
+ const source = create(ResourceSchema,{kind:EntityKind.SESSION,id:newRequestId(),revision:8n,schemaVersion:1,documentJson:encode({name:"OpenCode",machine_id:machineId,workspace:"general-chat",archive:"active",recovery:"none",outcome:"succeeded",initial_execution:{configuration:{harness:"opencode"}},execution:{native_thread_id:"ses_01960dcbe1faABCDEFGHIJKLMN",native_turn_id:"msg_01960dcbe1fcABCDEFGHIJKLMN",cleanup_verified:true,observed:{opencode_agent:"build"}}})});
+ const machine = create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,revision:1n,schemaVersion:1,documentJson:encode({os:"linux",worker_capabilities:["opencode-general-chat-fork-v1"]})});
+ const messages = openCodePlainMessages(source);
+ const bad = document(messages[1]);
+ if (mode === "tool" || mode === "late-tool") bad.tool = {name:"fixture"};
+ if (mode === "artifact") bad.artifact = {kind:"fixture"};
+ messages[1]!.documentJson = encode(bad);
+ if (mode === "changes" || mode === "empty-changes") {
+  const changes: Record<string, unknown> = {...bad,role:"progress",text:"",native_id:"",first_sequence:3,last_sequence:3,progress:{kind:"opencode-changes",changes:{source:"session-diff",diffs:mode === "changes" ? [{file:"original.txt",additions:1,deletions:0}] : []}}};
+  delete changes.native_parent_id;
+  messages.push(create(ResourceSchema,{kind:EntityKind.MESSAGE,id:newRequestId(),sessionId:source.id,revision:1n,schemaVersion:1,documentJson:encode(changes)}));
+ }
+ const fork = vi.fn(); let reads = 0;
+ const list = vi.fn((request) => request.filter?.pageToken ? {resources:messages.slice(1),nextPageToken:mode === "repeated-cursor" ? "later" : ""} : {resources:messages.slice(0,1),nextPageToken:"later"});
+ const transport = createRouterTransport(router => {router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1]})});router.service(SessionService,{forkSession:fork});router.service(ResourceService,{getResource:request=>({resource:request.kind === EntityKind.MACHINE ? machine : mode === "changed-source" && ++reads > 1 ? {...source,revision:9n} : source}),listResources:list});});
+ const client = new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source}/></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ const valid = mode === "valid" || mode === "empty-changes";
+ if(valid) await screen.findByRole("button",{name:"Fork session"});
+ else {await waitFor(()=>expect(list).toHaveBeenCalled());await waitFor(()=>expect(client.isFetching()).toBe(0));expect(screen.queryByRole("button",{name:"Fork session"})).toBeNull();}
+ expect(fork).not.toHaveBeenCalled();
 });

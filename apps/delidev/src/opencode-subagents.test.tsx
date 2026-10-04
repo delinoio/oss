@@ -46,3 +46,12 @@ test.each(["parent", "tool", "model", "missing-tool", "foreign-family", "missing
   row.documentJson = encode(value);
   expect(validateSubagentPage([openCodeSubagentFixture(session), row], session)).toBeUndefined();
 });
+
+test.each(["pending", "running", "completed", "failed"])("task-only foreground child requires pending status: %s", status => {
+ const session = newRequestId(), row = openCodeSubagentFixture(session), value = document(row), child = object(value.observation);
+ value.sources = [items(value.sources)[0]]; value.last_sequence = value.first_sequence;
+ child.source = "opencode-task"; child.source_id = "original-task"; child.status = status;
+ child.observed_model = null; child.output = null; child.usage = null;
+ row.documentJson = encode(value);
+ expect(validateSubagentPage([row], session)?.length).toBe(status === "pending" ? 1 : undefined);
+});

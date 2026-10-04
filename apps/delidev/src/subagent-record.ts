@@ -100,7 +100,7 @@ function validate(resource: Resource, sessionId: string): SubagentRow | undefine
     if (evidence.usage != null) { if (!usage(evidence.usage, evidence.source as Source)) return undefined; retainedUsage = evidence.usage; retainedUsageSource = evidence.source as Source; }
   }
   const first = sources[0]!, last = sources.at(-1)!;
-  if (opencode && first.source !== Source.OpenCodeTask) return undefined;
+  if (opencode && (first.source !== Source.OpenCodeTask || last.source === Source.OpenCodeTask && child.status !== Status.Pending)) return undefined;
   if (value.first_sequence !== first.sequence || value.last_sequence !== last.sequence || child.source !== last.source || child.source_id !== last.source_id || (child.usage === null ? retainedUsage !== null : retainedUsage === null || !usage(child.usage, retainedUsageSource) || !sameUsage(child.usage, retainedUsage))) return undefined;
   // Retained fields may originate in an earlier report. Source coverage must
   // permit them; applying the latest incoming-source matrix would erase facts.

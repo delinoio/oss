@@ -5,7 +5,7 @@ const exact = (value: Document, keys: string[]) => Object.keys(value).length ===
 
 export function validNativeContextCompaction(progress: unknown): boolean {
   const p = object(progress), c = object(p.compaction);
-  return exact(p, ["kind", "compaction"]) && p.kind === "native-compaction" && exact(c, ["harness", "trigger", "stage", "native_item_id"]) && (c.harness === "codex" || c.harness === "opencode") && c.trigger === "automatic" && (c.stage === "started" || c.stage === "completed") && typeof c.native_item_id === "string" && c.native_item_id.trim().length > 0 && !c.native_item_id.includes("\0") && !/[\uD800-\uDFFF]/u.test(c.native_item_id) && new TextEncoder().encode(c.native_item_id).length <= 1024;
+  return exact(p, ["kind", "compaction"]) && p.kind === "native-compaction" && exact(c, ["harness", "trigger", "stage", "native_item_id"]) && (c.harness === "codex" || c.harness === "opencode") && (c.harness !== "opencode" || typeof c.native_item_id === "string" && /^prt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(c.native_item_id)) && c.trigger === "automatic" && (c.stage === "started" || c.stage === "completed") && typeof c.native_item_id === "string" && c.native_item_id.trim().length > 0 && !c.native_item_id.includes("\0") && !/[\uD800-\uDFFF]/u.test(c.native_item_id) && new TextEncoder().encode(c.native_item_id).length <= 1024;
 }
 
 export function NativeContextCompaction({ progress, state }: { progress: unknown; state: string }) {

@@ -318,3 +318,13 @@ exact observed state. Partial/multiple children, changed history or unproved
 cleanup remain recovery-required and block child input. Retry the original product
 receipt after server/Worker replacement without native replay. Keep native fixtures,
 real accounts and platform/package acceptance distinct in PR/issue/CI records.
+
+The desktop checks the complete retained OpenCode transcript before presenting
+Fork. Its cancellable authenticated Resource RPC read is keyed to the original
+session revision and native thread, spans at most 10,000 records/8 MiB and
+rejects repeated/incomplete pages, tool/artifact content and non-empty changes.
+An original-revision read before and after pagination detects changed sources.
+Submit refreshes the profile and does not use stale success after read failure.
+These reads grant no child/native authority: Go independently validates complete
+canonical history at acceptance/publication, and the Worker verifies complete
+native history before exposing the child.
