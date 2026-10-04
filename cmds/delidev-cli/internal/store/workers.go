@@ -168,7 +168,15 @@ func (s *Store) Heartbeat(ctx context.Context, machine, instance domain.ID) erro
 	return storageError(sqlTx.Commit())
 }
 func (t *Tx) PutJob(id domain.ID, expected uint64, session, project domain.ID, job domain.Job) (Record, error) {
-	if job.State == domain.JobClaimed {
+	if job.State == domain.JobClaimed && expected == 0 {
+		// Historical imports and atomic first publication can create a claimed
+		// job directly. They have no prior row, but still require the same update
+		// fence before acquiring new ownership.
+		if err := t.WorkerUpdateAdmission(job.MachineID); err != nil {
+			return Record{}, err
+		}
+	}
+	if job.State == domain.JobClaimed && expected > 0 {
 		existing, err := t.Get(domain.JobKind, id)
 		if err != nil {
 			return Record{}, err
