@@ -16,6 +16,8 @@ The optional boolean `workspace_fixture_only` manual input defaults to false.
 Enabling it skips package planning and assembly and runs only the Windows
 retained-writer namespace-removal and maximum-inventory regressions, using isolated
 temporary directories. Failure output retains structured closed-stage diagnostics.
+Investigation and packaging use separate per-ref concurrency groups and neither
+cancels an active run.
 This bounded investigation mode preserves read-only access and is separate from
 complete required CI, packaging and installed-platform acceptance.
 
