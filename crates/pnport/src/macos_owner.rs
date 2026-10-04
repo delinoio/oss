@@ -21,7 +21,10 @@ use std::{
 use pnport::diagnostic::{Code, Error, Result};
 use pnport_core::macos_process::Identity;
 
-use crate::macos_registry::{FailureStage, Registry};
+use crate::{
+    macos_registry::{FailureStage, Registry},
+    macos_replica::{Replica, CAPACITY},
+};
 
 const MODE: &str = "__pnport_macos_owner";
 const SOCKET_ENV: &str = "PNPORT_MACOS_OWNER_FD";
@@ -56,7 +59,7 @@ impl Role {
     }
 }
 
-fn launch(role: Role, replica: Option<&UnixStream>) -> Result<(Child, UnixStream)> {
+fn launch(role: Role, replica: Option<&Replica>) -> Result<(Child, UnixStream)> {
     let (socket, helper) = UnixStream::pair().map_err(|_| failure())?;
     socket
         .set_read_timeout(Some(DEADLINE))
@@ -65,7 +68,7 @@ fn launch(role: Role, replica: Option<&UnixStream>) -> Result<(Child, UnixStream
         .set_write_timeout(Some(DEADLINE))
         .map_err(|_| failure())?;
     let fd = helper.as_raw_fd();
-    let replica_fd = replica.map(AsRawFd::as_raw_fd);
+    let replica_fd = replica.map(Replica::descriptor);
     let mut command = Command::new(std::env::current_exe().map_err(|_| failure())?);
     command.env_clear();
     if let Some(replica_fd) = replica_fd {
@@ -113,7 +116,7 @@ fn failure() -> Error {
 pub struct Owner {
     child: Child,
     socket: UnixStream,
-    replica: UnixStream,
+    replica: Replica,
     finished: bool,
     registry: Registry,
 }
@@ -126,15 +129,8 @@ impl Owner {
             .and_then(|mut file| file.read_exact(&mut key))
             .map_err(|_| failure())?;
         let registry = Registry::create(session, key).map_err(|_| failure())?;
-        let (replica, helper_replica) = UnixStream::pair().map_err(|_| failure())?;
-        replica
-            .set_read_timeout(Some(DEADLINE))
-            .map_err(|_| failure())?;
-        replica
-            .set_write_timeout(Some(DEADLINE))
-            .map_err(|_| failure())?;
-        let (child, socket) = launch(Role::Guardian, Some(&helper_replica))?;
-        drop(helper_replica);
+        let replica = Replica::create().map_err(|_| failure())?;
+        let (child, socket) = launch(Role::Guardian, Some(&replica))?;
         let mut owner = Self {
             child,
             socket,
@@ -190,42 +186,9 @@ impl Owner {
 
     fn drain_replica(&mut self, limit: usize) -> Result<()> {
         for _ in 0..limit {
-            let mut byte = 0u8;
-            // Peek without blocking. EOF is handled by the control channel;
-            // normal final cleanup may close this stream before its control ACK.
-            let count = unsafe {
-                libc::recv(
-                    self.replica.as_raw_fd(),
-                    (&raw mut byte).cast(),
-                    1,
-                    libc::MSG_PEEK | libc::MSG_DONTWAIT,
-                )
+            let Some(identity) = self.replica.next().map_err(|_| failure())? else {
+                break;
             };
-            if count == 0 {
-                return Ok(());
-            }
-            if count < 0 {
-                let error = io::Error::last_os_error();
-                if error.kind() == io::ErrorKind::WouldBlock {
-                    return Ok(());
-                }
-                if error.raw_os_error() == Some(libc::EINTR) {
-                    continue;
-                }
-                return Err(failure());
-            }
-            let mut size = [0; 4];
-            self.replica.read_exact(&mut size).map_err(|_| failure())?;
-            let size = u32::from_be_bytes(size) as usize;
-            if size == 0 || size > 1024 {
-                return Err(failure());
-            }
-            let mut bytes = vec![0; size];
-            self.replica.read_exact(&mut bytes).map_err(|_| failure())?;
-            let identity = serde_json::from_slice(&bytes).map_err(|_| failure())?;
-            // Only the authenticated same-image guardian holds the other end.
-            // The complete private copy was queued before its file ACK. Retain
-            // it in memory; writable/deleted journals cannot erase authority.
             self.registry.remember(identity).map_err(|_| failure())?;
         }
         Ok(())
@@ -235,26 +198,19 @@ impl Owner {
         let deadline = Instant::now() + DEADLINE;
         loop {
             self.drain_replica(64)?;
-            let mut events = [
-                libc::pollfd {
-                    fd: self.socket.as_raw_fd(),
-                    events: libc::POLLIN,
-                    revents: 0,
-                },
-                libc::pollfd {
-                    fd: self.replica.as_raw_fd(),
-                    events: libc::POLLIN,
-                    revents: 0,
-                },
-            ];
-            let observed = unsafe { libc::poll(events.as_mut_ptr(), events.len() as _, 10) };
+            let mut event = libc::pollfd {
+                fd: self.socket.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let observed = unsafe { libc::poll(&mut event, 1, 10) };
             if observed < 0 {
                 if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
                     continue;
                 }
                 return Err(failure());
             }
-            if events[0].revents != 0 {
+            if event.revents != 0 {
                 let mut reply = [0];
                 self.socket.read_exact(&mut reply).map_err(|_| failure())?;
                 return Ok(reply[0]);
@@ -271,7 +227,7 @@ impl Owner {
         match self.query_group(group) {
             Ok(owned) => Ok(owned),
             Err(_) => {
-                self.drain_replica(65536)?;
+                self.drain_replica(CAPACITY)?;
                 let recovered = self.registry.recover();
                 tracing::debug!(
                     action = "macos_owner_foreground_recovery",
@@ -338,7 +294,7 @@ impl Owner {
             signal,
             "Stopping the owned command group"
         );
-        let replicated = self.drain_replica(65536);
+        let replicated = self.drain_replica(CAPACITY);
         let result = (|| {
             self.socket
                 .write_all(&[signal as u8])
@@ -352,7 +308,7 @@ impl Owner {
         // Consume every completed copy before EOF/failure recovery, including
         // backlog queued while this supervisor was stopped. A partial failed
         // copy never permits guardian acknowledgement of a new user image.
-        let remaining = self.drain_replica(65536);
+        let remaining = self.drain_replica(CAPACITY);
         let result = result.and_then(|escalated| replicated.and(remaining).map(|()| escalated));
         tracing::debug!(
             action = "macos_owner_cleanup_acknowledged",
@@ -654,12 +610,10 @@ fn run_helper(role: Role) -> ! {
             };
         }
         let replica_fd = std::env::var(REPLICA_ENV).ok()?.parse::<i32>().ok()?;
-        if replica_fd == socket.as_raw_fd() {
+        if replica_fd <= 2 || replica_fd == socket.as_raw_fd() {
             return None;
         }
-        let replica = authenticated_socket(role, REPLICA_ENV)?;
-        replica.set_read_timeout(Some(DEADLINE)).ok()?;
-        replica.set_write_timeout(Some(DEADLINE)).ok()?;
+        let replica = Replica::writer(unsafe { fs::File::from_raw_fd(replica_fd) }).ok()?;
         use std::os::unix::ffi::OsStringExt;
         let mut size = [0; 4];
         socket.read_exact(&mut size).ok()?;
@@ -717,33 +671,38 @@ mod tests {
     fn admission_keeps_a_private_copy_without_supervisor_polling() {
         let session = tempfile::tempdir().unwrap();
         let mut owner = super::Owner::start(session.path()).unwrap();
+        let script = session.path().join("exec-chain.sh");
+        std::fs::write(&script, b"read ready; exec /bin/sh \"$0\"\n").unwrap();
         let mut child = Command::new("/bin/sh")
-            .args(["-c", "read ready; exec /bin/sleep 30"])
+            .arg(&script)
             .stdin(std::process::Stdio::piped())
             .process_group(0)
             .spawn()
             .unwrap();
         owner.admit_root(child.id() as i32).unwrap();
-        let previous = super::Identity::capture(child.id() as i32).unwrap();
-        child.stdin.take().unwrap().write_all(b"ready\n").unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(3);
-        let current = loop {
-            let current = previous.refresh().unwrap().unwrap();
-            if current.version != previous.version {
-                break current;
-            }
-            assert!(std::time::Instant::now() < deadline);
-            std::thread::sleep(Duration::from_millis(10));
-        };
-        // No Owner polling while registration waits. A stopped supervisor must
-        // not block admission in an independently running owned group. A full
-        // private copy is queued before the signed file is made available.
-        pnport_core::macos_process::registration(
-            session.path(),
-            current,
-            &owner.registry.verification_key(),
-        )
-        .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        let mut previous = super::Identity::capture(child.id() as i32).unwrap();
+        // Hundreds of real exec generations exceed the former stream's queue.
+        // Owner never polls while the independently running root admits them.
+        for _ in 0..512 {
+            input.write_all(b"ready\n").unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            let current = loop {
+                let current = previous.refresh().unwrap().unwrap();
+                if current.version != previous.version {
+                    break current;
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            pnport_core::macos_process::registration(
+                session.path(),
+                current,
+                &owner.registry.verification_key(),
+            )
+            .unwrap();
+            previous = current;
+        }
         for entry in std::fs::read_dir(session.path().join("owner/accepted")).unwrap() {
             std::fs::remove_file(entry.unwrap().path()).unwrap();
         }

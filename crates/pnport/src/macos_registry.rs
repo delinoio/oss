@@ -4,7 +4,6 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     io::{self, Read, Write},
-    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -13,6 +12,8 @@ use pnport_core::macos_process::{
     acknowledgement, authenticated_read, inventory, public_key, Identity, RegistrationOutcome,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::macos_replica::{Replica, CAPACITY};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum FailureStage {
@@ -35,7 +36,7 @@ pub struct Registry {
     births: HashMap<u64, Identity>,
     versions: HashMap<u32, u64>,
     journal_failed: bool,
-    replica: Option<UnixStream>,
+    replica: Option<Replica>,
     replicated: HashSet<u32>,
 }
 
@@ -124,7 +125,7 @@ impl Registry {
         if identity.pid <= 0 || identity.birth == 0 {
             return Err(invalid());
         }
-        if self.versions.len() >= 65536 && !self.versions.contains_key(&identity.version) {
+        if self.versions.len() >= CAPACITY && !self.versions.contains_key(&identity.version) {
             return Err(invalid());
         }
         if self
@@ -148,32 +149,27 @@ impl Registry {
         self.commit(identity)
     }
 
-    pub fn attach_replica(&mut self, socket: UnixStream) {
-        self.replica = Some(socket);
+    pub fn attach_replica(&mut self, replica: Replica) {
+        self.replica = Some(replica);
     }
 
     fn replicate(&mut self, identity: Identity) -> io::Result<()> {
-        let Some(socket) = &mut self.replica else {
+        let Some(replica) = &mut self.replica else {
             return Ok(());
         };
         if self.replicated.contains(&identity.version) {
             return Ok(());
         }
-        let bytes = serde_json::to_vec(&identity)?;
-        if bytes.len() > 1024 {
-            return Err(invalid());
-        }
-        socket.write_all(&(bytes.len() as u32).to_be_bytes())?;
-        socket.write_all(&bytes)?;
+        replica.append(identity)?;
         self.replicated.insert(identity.version);
         Ok(())
     }
 
     fn commit(&mut self, identity: Identity) -> io::Result<()> {
         // The workload can delete a signed file, but cannot reach this private
-        // same-image socket. Queue a complete private copy before publishing an
-        // admission ACK. Kernel-owned receive bytes survive guardian death and
-        // do not require the supervisor to run while its shell has stopped it.
+        // same-image inherited mapping. Publish a complete immutable slot before
+        // the admission ACK. Its unlinked backing survives guardian death and
+        // has capacity for every bounded version while the supervisor is stopped.
         if let Err(error) = self.replicate(identity) {
             self.record_error(FailureStage::AdmissionReplica, Some(&error));
             return Err(error);
