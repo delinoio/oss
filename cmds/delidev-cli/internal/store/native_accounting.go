@@ -227,17 +227,17 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 				return domain.NativeAccountingSummary{}, corrupt()
 			}
 			v.Days[i].Totals.Add(u, e)
-			key := string(u.Attribution().ProviderID) + ":" + string(u.Attribution().ModelID)
-			m := models[key]
-			if m == nil {
-				if len(models) >= maxUsageGroups {
-					return domain.NativeAccountingSummary{}, usageReadLimit()
-				}
-				m = &domain.NativeAccountingGroup{ProviderID: u.Attribution().ProviderID, ModelID: u.Attribution().ModelID}
-				models[key] = m
-			}
-			m.Totals.Add(u, e)
 		}
+		modelKey := string(u.Attribution().ProviderID) + ":" + string(u.Attribution().ModelID)
+		m := models[modelKey]
+		if m == nil {
+			if len(models) >= maxUsageGroups {
+				return domain.NativeAccountingSummary{}, usageReadLimit()
+			}
+			m = &domain.NativeAccountingGroup{ProviderID: u.Attribution().ProviderID, ModelID: u.Attribution().ModelID}
+			models[modelKey] = m
+		}
+		m.Totals.Add(u, e)
 	}
 	for _, g := range groups {
 		v.Groups = append(v.Groups, *g)
