@@ -23,6 +23,8 @@ mod macos_job;
 mod macos_owner;
 #[cfg(target_os = "macos")]
 mod macos_registry;
+#[cfg(target_os = "macos")]
+mod macos_replica;
 mod supervisor;
 
 #[derive(Parser)]

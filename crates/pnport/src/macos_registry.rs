@@ -13,11 +13,14 @@ use pnport_core::macos_process::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::macos_replica::{Replica, CAPACITY};
+
 #[derive(Debug, Deserialize, Serialize)]
 pub enum FailureStage {
     Registration,
     Cleanup,
     JournalWrite,
+    AdmissionReplica,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -33,6 +36,8 @@ pub struct Registry {
     births: HashMap<u64, Identity>,
     versions: HashMap<u32, u64>,
     journal_failed: bool,
+    replica: Option<Replica>,
+    replicated: HashSet<u32>,
 }
 
 fn invalid() -> io::Error {
@@ -52,6 +57,8 @@ impl Registry {
             births: HashMap::new(),
             versions: HashMap::new(),
             journal_failed: false,
+            replica: None,
+            replicated: HashSet::new(),
         })
     }
 
@@ -114,8 +121,11 @@ impl Registry {
         }
     }
 
-    fn remember(&mut self, identity: Identity) -> io::Result<()> {
+    pub fn remember(&mut self, identity: Identity) -> io::Result<()> {
         if identity.pid <= 0 || identity.birth == 0 {
+            return Err(invalid());
+        }
+        if self.versions.len() >= CAPACITY && !self.versions.contains_key(&identity.version) {
             return Err(invalid());
         }
         if self
@@ -139,7 +149,31 @@ impl Registry {
         self.commit(identity)
     }
 
-    fn commit(&self, identity: Identity) -> io::Result<()> {
+    pub fn attach_replica(&mut self, replica: Replica) {
+        self.replica = Some(replica);
+    }
+
+    fn replicate(&mut self, identity: Identity) -> io::Result<()> {
+        let Some(replica) = &mut self.replica else {
+            return Ok(());
+        };
+        if self.replicated.contains(&identity.version) {
+            return Ok(());
+        }
+        replica.append(identity)?;
+        self.replicated.insert(identity.version);
+        Ok(())
+    }
+
+    fn commit(&mut self, identity: Identity) -> io::Result<()> {
+        // The workload can delete a signed file, but cannot reach this private
+        // same-image inherited mapping. Publish a complete immutable slot before
+        // the admission ACK. Its unlinked backing survives guardian death and
+        // has capacity for every bounded version while the supervisor is stopped.
+        if let Err(error) = self.replicate(identity) {
+            self.record_error(FailureStage::AdmissionReplica, Some(&error));
+            return Err(error);
+        }
         self.respond(identity, RegistrationOutcome::Admitted)
     }
 

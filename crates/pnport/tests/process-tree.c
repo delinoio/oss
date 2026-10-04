@@ -2,6 +2,7 @@
 // Synthetic process trees for signal, crash, lease and descendant conformance.
 #define _GNU_SOURCE
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
@@ -19,6 +20,75 @@ static void stopped(int signal) {
     unsigned char value = (unsigned char)signal;
     if (write(signal_file, &value, 1) != 1) _exit(90);
     _exit(0);
+}
+
+static int recovery_marker(const char *role) {
+    char name[64];
+    snprintf(name, sizeof(name), "%s.signal", role);
+    signal_file = open(name, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (signal_file < 0) return 110;
+    struct sigaction action = {0};
+    sigemptyset(&action.sa_mask);
+    action.sa_handler = stopped;
+    for (int index = 0; index < 3; index++) {
+        int signals[] = {SIGINT, SIGTERM, SIGHUP};
+        sigaddset(&action.sa_mask, signals[index]);
+    }
+    for (int index = 0; index < 3; index++) {
+        int signals[] = {SIGINT, SIGTERM, SIGHUP};
+        if (sigaction(signals[index], &action, NULL)) return 111;
+    }
+    snprintf(name, sizeof(name), "%s.pid", role);
+    FILE *marker = fopen(name, "w");
+    if (!marker) return 112;
+    fprintf(marker, "%d", getpid());
+    fclose(marker);
+    return 0;
+}
+
+static int deleted_journal_recovery(void) {
+    int result = recovery_marker("root");
+    if (result) return result;
+    FILE *marker = fopen("root.group", "w");
+    if (!marker) return 113;
+    fprintf(marker, "%d", getpgrp());
+    fclose(marker);
+    pid_t middle = fork();
+    if (middle < 0) return 114;
+    if (!middle) {
+        if (setsid() < 0 || recovery_marker("middle")) _exit(115);
+        pid_t leaf = fork();
+        if (leaf < 0) _exit(116);
+        if (!leaf) {
+            if (recovery_marker("leaf")) _exit(117);
+            for (;;) pause();
+        }
+        _exit(0);
+    }
+    int status;
+    if (waitpid(middle, &status, 0) != middle || !WIFEXITED(status) || WEXITSTATUS(status)) return 118;
+    // The leaf never registers an image of its own. Only its immutable original
+    // parent version can connect it after this intermediate parent is reaped.
+    for (int attempt = 0; attempt < 1500 && access("attack.release", F_OK); attempt++) usleep(10000);
+    if (access("attack.release", F_OK)) return 119;
+    char path[4096];
+    const char *session = getenv("PNPORT_SESSION"), *group = getenv("PNPORT_MACOS_GROUP");
+    if (!session || !group || snprintf(path, sizeof(path), "%s/owner/accepted", session) >= (int)sizeof(path)) return 120;
+    DIR *records = opendir(path);
+    if (!records) return 121;
+    struct dirent *entry;
+    while ((entry = readdir(records))) {
+        if (entry->d_name[0] == '.') continue;
+        char file[8192];
+        if (snprintf(file, sizeof(file), "%s/%s", path, entry->d_name) >= (int)sizeof(file) || unlink(file)) return 122;
+    }
+    closedir(records);
+    marker = fopen("attack.deleted", "w");
+    if (!marker) return 123;
+    fclose(marker);
+    pid_t guardian = (pid_t)strtol(group, NULL, 10);
+    if (guardian <= 0 || kill(guardian, SIGKILL)) return 124;
+    for (;;) pause();
 }
 
 static int dependency(void) {
@@ -90,6 +160,7 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
+    if (!strcmp(mode, "deleted-journal")) return deleted_journal_recovery();
     if (!strcmp(mode, "terminal-background-empty")) {
         FILE *group = fopen("root.group", "w");
         if (!group) return 109;
