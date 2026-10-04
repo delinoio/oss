@@ -26,6 +26,22 @@ it("provides explicit update guidance for a server without native input accounti
   expect(screen.getByRole("status").textContent).toContain("Update the server");
 });
 
+it("labels each historical category with its original currency without inventing missing amounts", () => {
+  const data = create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, nativeAccounting: [
+    { totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT }, groups: [{ sessionId: "session" }], pricing: [
+      { pricing: { id: "usd-price", revision: 1n, basis: { currency: "USD" } }, input: { knownAmount: "0.25", pricedUnits: 1 } },
+      { pricing: { id: "eur-price", revision: 2n, basis: { currency: "EUR" } }, input: { knownAmount: "0.25", pricedUnits: 1 }, output: { knownAmount: "0", pricedUnits: 1 } },
+    ] },
+    { totals: { kind: AccountingUnitKind.OPENCODE_STEP } },
+  ] });
+  render(<NativeAccounting data={data} open={vi.fn()} />);
+  const table = screen.getByRole("table", { name: "Original price versions for Claude main-loop inputs" });
+  expect(within(table).getByText(/input: USD 0.25/)).toBeTruthy();
+  expect(within(table).getByText(/input: EUR 0.25/)).toBeTruthy();
+  expect(within(table).getByText(/output: EUR 0 · 1 priced/)).toBeTruthy();
+  expect(within(table).getByText(/output: Unavailable/)).toBeTruthy();
+});
+
 it.each([
   [AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT, AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT],
   [AccountingUnitKind.OPENCODE_STEP, AccountingUnitKind.OPENCODE_STEP],

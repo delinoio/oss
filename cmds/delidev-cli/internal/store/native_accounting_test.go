@@ -36,6 +36,92 @@ func nativeSelection() domain.UsageSelection {
 	return domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour), AccountingProfile: domain.NativeUnitsV1Accounting, Granularity: domain.UsageTimeGranularityDay, TimeZone: "UTC"}
 }
 
+func TestNativeAccountingCombinedDistinctPricingBound(t *testing.T) {
+	s, _ := openTest(t)
+	r, claude, _ := nativeAccountingFixture(t, s)
+	price := preparePrice(t, s, r)
+	retain := func(tx *Tx, index int) error {
+		source, input, execution := domain.NewID(), domain.NewID(), domain.NewID()
+		switch index % 3 {
+		case 0:
+			value := r
+			value.ExecutionID, value.Usage.ResponseDigest = execution, fmt.Sprintf("%064x", index+1)
+			_, _, err := tx.PutResponseUsage(source, value)
+			return err
+		case 1:
+			value := claude
+			value.ExecutionID, value.Usage.NativeEventID = execution, string(domain.NewID())
+			if err := tx.PutClaudeUsage(source, r.SessionID, r.ProjectID, value); err != nil {
+				return err
+			}
+			return tx.PutClaudeAccounting(source, input, r.SessionID, r.ProjectID, value)
+		default:
+			value := domain.OpenCodeUsageRecord{ExecutionID: execution, AccountID: r.AccountID, ConnectionID: r.ConnectionID, ProviderID: r.ProviderID, ModelID: r.ModelID, Harness: domain.OpenCode, Version: domain.OpenCodeProtocolVersion, ThreadID: "ses_01960dcbe1faABCDEFGHIJKLMN", TurnID: "msg_01960dcbe1faABCDEFGHIJKLMN", Sequence: 3, Usage: domain.OpenCodeUsageObservation{Source: domain.OpenCodeStepUsage, NativeEstimate: "0", NativeID: fmt.Sprintf("prt_%012xABCDEFGHIJKLMN", index+1), NativeParentID: "msg_01960dcbe1faABCDEFGHIJKLMN", Counts: domain.OpenCodeTokenCounts{Input: "1", Output: "0", Reasoning: "0", CacheRead: "0", CacheWrite: "0"}}}
+			if err := tx.PutOpenCodeUsage(source, r.SessionID, r.ProjectID, value); err != nil {
+				return err
+			}
+			return tx.PutOpenCodeAccounting(source, input, r.SessionID, r.ProjectID, value)
+		}
+	}
+	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.combined-pricing", nil, func(tx *Tx) (any, error) {
+		// One original price is shared by all three families. Keep independent
+		// category projections while counting this immutable identity once.
+		for i := 0; i < maxUsageGroups+2; i++ {
+			if i >= 3 {
+				var err error
+				price, err = tx.PutPricing(r.ModelID, price.Revision, domain.NewID(), pricingFixture())
+				if err != nil {
+					return nil, err
+				}
+			}
+			if err := retain(tx, i); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, daily := range []bool{false, true} {
+		selection := nativeSelection()
+		if !daily {
+			selection.Granularity, selection.TimeZone = domain.UsageTimeGranularityUnspecified, ""
+		}
+		value, err := readUsage(s, selection)
+		if err != nil || len(value.NativeAccounting) != 2 {
+			t.Fatal("500 distinct price versions were rejected", daily, err)
+		}
+		ids := map[domain.ID]bool{}
+		rows := len(value.Pricing)
+		for _, p := range value.Pricing {
+			ids[p.Pricing.ID] = true
+		}
+		for _, family := range value.NativeAccounting {
+			rows += len(family.Pricing)
+			for _, p := range family.Pricing {
+				ids[p.Pricing.ID] = true
+			}
+		}
+		if len(ids) != maxUsageGroups || rows != maxUsageGroups+2 {
+			t.Fatal("shared pricing identity or source projections changed", len(ids), rows)
+		}
+	}
+	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.excess-pricing", nil, func(tx *Tx) (any, error) {
+		if _, err := tx.PutPricing(r.ModelID, price.Revision, domain.NewID(), pricingFixture()); err != nil {
+			return nil, err
+		}
+		return nil, retain(tx, maxUsageGroups+2)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := readUsage(s, nativeSelection())
+	if domain.SafeError(err).Code != domain.ResourceExhausted || !reflect.DeepEqual(value, domain.UsageSummary{}) {
+		t.Fatal("501 distinct price versions returned a partial summary", err)
+	}
+}
+
 func TestNativeAccountingModelGroupsWithoutDailyGranularity(t *testing.T) {
 	s, _ := openTest(t)
 	r, usage, input := nativeAccountingFixture(t, s)

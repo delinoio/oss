@@ -255,7 +255,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if code != "" {
 			diagnostic.State = domain.RequestDiagnosticFailed
 		}
-		if code == domain.Canceled || ctx.Err() != nil {
+		// Cancellation after complete downstream delivery cannot replace the
+		// observed outcome. Incomplete delivery still settles as canceled.
+		if code == domain.Canceled || (phase != phaseComplete && ctx.Err() != nil) {
 			diagnostic.State = domain.DiagnosticCanceled
 			diagnostic.ErrorCode = domain.Canceled
 		}

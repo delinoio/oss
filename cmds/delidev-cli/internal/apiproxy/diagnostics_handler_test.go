@@ -6,11 +6,85 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+type deliveryCancellationWriter struct {
+	*httptest.ResponseRecorder
+	cancel   context.CancelFunc
+	stream   bool
+	complete bool
+}
+
+func (w *deliveryCancellationWriter) SetReadDeadline(time.Time) error  { return nil }
+func (w *deliveryCancellationWriter) SetWriteDeadline(time.Time) error { return nil }
+func (w *deliveryCancellationWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseRecorder.Write(p)
+	if err == nil && (!w.stream || strings.Contains(string(p), "message_stop")) {
+		w.complete = true
+		w.cancel()
+	}
+	return n, err
+}
+
+func TestRequestDiagnosticPreservesDeliveryOutcomeBeforeCancellation(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		for _, complete := range []bool{false, true} {
+			t.Run(fmt.Sprintf("stream=%t/complete=%t", stream, complete), func(t *testing.T) {
+				f := newProxyFixture(t, domain.AnthropicMessages, []Operation{MessageCreate}, func(w http.ResponseWriter, r *http.Request) {
+					if !complete {
+						fence := r.Context().Done()
+						<-fence
+						return
+					}
+					if stream {
+						w.Header().Set("Content-Type", "text/event-stream")
+						fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_original\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+					} else {
+						w.Header().Set("Content-Type", "application/json")
+						fmt.Fprint(w, `{"id":"msg_original","type":"message","content":[],"stop_reason":"end_turn"}`)
+					}
+				})
+				retained := retainFixtureDiagnostics(t, f)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				if !complete {
+					// Cancel at the retained send claim, before a complete delivery.
+					publish := f.authority.publishDiagnostic
+					f.authority.publishDiagnostic = func(ctx context.Context, value domain.RequestDiagnostic) error {
+						err := publish(ctx, value)
+						if value.State == domain.DiagnosticInProgress && value.HTTPAttempted != nil && *value.HTTPAttempted {
+							cancel()
+						}
+						return err
+					}
+				}
+				w := &deliveryCancellationWriter{ResponseRecorder: httptest.NewRecorder(), cancel: cancel, stream: stream}
+				req := httptest.NewRequest(http.MethodPost, Prefix+"/messages", strings.NewReader(fmt.Sprintf(`{"model":"fixed-model","messages":[],"max_tokens":32,"stream":%t}`, stream))).WithContext(ctx)
+				req.RemoteAddr = "127.0.0.1:12345"
+				req.Header.Set("x-api-key", fixtureToken)
+				req.Header.Set("Content-Type", "application/json")
+				f.server.Config.Handler.ServeHTTP(w, req)
+				if len(*retained) != 4 || f.authority.releases.Load() != 1 || ctx.Err() != context.Canceled {
+					t.Fatal("original cancellation or diagnostic lifetime lost", len(*retained))
+				}
+				terminal := (*retained)[3]
+				if complete {
+					if !w.complete || f.calls.Load() != 1 || terminal.State != domain.DiagnosticSucceeded || terminal.ErrorCode != "" || terminal.HTTPStatus == nil || *terminal.HTTPStatus != 200 || terminal.NativeResponseID != "msg_original" {
+						t.Fatal("fully delivered success was replaced by cancellation", terminal)
+					}
+				} else if terminal.State != domain.DiagnosticCanceled || terminal.ErrorCode != domain.Canceled {
+					t.Fatal("incomplete delivery lost cancellation", terminal)
+				}
+			})
+		}
+	}
+}
 
 func retainFixtureDiagnostics(t *testing.T, f *proxyFixture) *[]domain.RequestDiagnostic {
 	t.Helper()

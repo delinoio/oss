@@ -54,7 +54,7 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
   return <article className="result" aria-label={`${native ? "Native input" : "HTTP request"} ${value.id}`}>
     <h3>{native ? "Native input" : Operation[value.operation].toLowerCase()} · {state}</h3>
     <dl>
-      <dt>Request</dt><dd>{value.id}</dd><dt>Execution</dt><dd>{value.executionId}</dd>
+      <dt>Request</dt><dd>{value.id}</dd><dt>Revision</dt><dd>{value.revision.toString()}</dd><dt>Execution</dt><dd>{value.executionId}</dd>
       <dt>Account at request time</dt><dd>{value.accountId}</dd><dt>Connection</dt><dd>{value.connectionId}</dd>
       <dt>Provider</dt><dd>{value.providerId}</dd><dt>Model</dt><dd>{value.modelId}</dd><dt>Purpose</dt><dd>{value.purpose}</dd>
       <dt>Observed</dt><dd>{value.observedAt}</dd><dt>Finished</dt><dd>{value.finishedAt ?? "Unavailable"}</dd>

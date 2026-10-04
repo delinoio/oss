@@ -208,6 +208,10 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 		}
 		// Count the complete inventory, including unranked response/Grok models.
 		groupCount, modelCount := len(result.Groups), len(modelGroups)
+		pricingIDs := make(map[domain.ID]struct{}, len(result.Pricing))
+		for _, price := range result.Pricing {
+			pricingIDs[price.Pricing.ID] = struct{}{}
+		}
 		for _, kind := range []domain.AccountingUnitKind{domain.ClaudeMainLoopInput, domain.OpenCodeStep} {
 			summary, err := t.nativeAccountingSummary(f, kind)
 			if err != nil {
@@ -216,7 +220,10 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			units += summary.Totals.Units
 			groupCount += len(summary.Groups)
 			modelCount += len(summary.Models)
-			if units > maxUsageResponses || groupCount > maxUsageGroups || modelCount > domain.UsageModelGroupLimit {
+			for _, price := range summary.Pricing {
+				pricingIDs[price.Pricing.ID] = struct{}{}
+			}
+			if units > maxUsageResponses || groupCount > maxUsageGroups || modelCount > domain.UsageModelGroupLimit || len(pricingIDs) > maxUsageGroups {
 				return domain.UsageSummary{}, usageReadLimit()
 			}
 			result.NativeAccounting = append(result.NativeAccounting, summary)

@@ -8,6 +8,8 @@ import { getStatus } from "../src/gen/delidev/v1/delidev-SystemService_connectqu
 import { ResourceSchema as CurrentResourceSchema } from "../src/gen/delidev/v1/common_pb.js";
 import { SystemService as CurrentSystemService } from "../src/gen/delidev/v1/system_pb.js";
 import { RequestSubscriptionRequestSchema, SubscriptionService } from "../src/gen/delidev/v1/subscription_pb.js";
+import { RequestDiagnosticSchema, ListRequestDiagnosticsRequestSchema, RequestDiagnosticStateSchema } from "../src/gen/delidev/v1/session_pb.js";
+import { NativeAccountingSummarySchema, NativeAccountingPricingSchema, UsageAccountingProfileSchema } from "../src/gen/delidev/v1/usage_pb.js";
 
 describe("historical generated imports", () => {
   it("retains declaration identity, wire names and query methods", () => {
@@ -26,6 +28,22 @@ describe("historical generated imports", () => {
     expect(SessionQuery.deleteSession).toBe(SessionService.method.deleteSession);
     expect(SessionQuery.getSessionDeletion).toBe(SessionService.method.getSessionDeletion);
   });
+});
+
+it("includes additive diagnostics and accounting declarations in both aggregate registry forms", () => {
+  const registry = createRegistry(file_delidev_v1_delidev);
+  const reconstructed = createFileRegistry(file_delidev_v1_delidev.proto, name => file_delidev_v1_delidev.dependencies.find(file => file.proto.name === name));
+  for (const schema of [RequestDiagnosticSchema, ListRequestDiagnosticsRequestSchema, NativeAccountingSummarySchema, NativeAccountingPricingSchema]) {
+    expect(file_delidev_v1_delidev.messages.find(value => value.typeName === schema.typeName)).toBe(schema);
+    expect(registry.getMessage(schema.typeName)).toBe(schema);
+    expect(reconstructed.getMessage(schema.typeName)?.proto).toEqual(schema.proto);
+  }
+  for (const schema of [RequestDiagnosticStateSchema, UsageAccountingProfileSchema]) {
+    expect(file_delidev_v1_delidev.enums.find(value => value.typeName === schema.typeName)).toBe(schema);
+    expect(registry.getEnum(schema.typeName)).toBe(schema);
+    expect(reconstructed.getEnum(schema.typeName)?.proto).toEqual(schema.proto);
+  }
+  expect(reconstructed.getService("delidev.v1.SessionService")?.method.listRequestDiagnostics.output.typeName).toBe("delidev.v1.ListRequestDiagnosticsResponse");
 });
 
 it("retains the legacy aggregate descriptor for reflection registries", () => {
