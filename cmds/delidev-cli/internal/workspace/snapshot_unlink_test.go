@@ -55,17 +55,26 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 				}
 				heldParent := held
 				parentPath := filepath.ToSlash(filepath.Dir(changed))
-				if parentPath != "." {
-					for _, component := range strings.Split(parentPath, "/") {
-						heldParent, err = heldParent.OpenRoot(component)
+				components := strings.Split(parentPath, "/")
+				openedComponents := 0
+				openWriterParent := func(relative string) {
+					// Windows forbids moving a directory with open descendants even
+					// when those descendants share deletion. Keep the original root
+					// writer across the namespace claim, then open each descendant
+					// just before that directory's own claim, never before its parent.
+					if parentPath != "." && openedComponents < len(components) && relative == strings.Join(components[:openedComponents+1], "/") {
+						heldParent, err = heldParent.OpenRoot(components[openedComponents])
 						if err != nil {
 							t.Fatal(err)
 						}
-						defer heldParent.Close()
+						writer := heldParent
+						t.Cleanup(func() { writer.Close() })
+						openedComponents++
 					}
 				}
 				raced := false
 				m.storageBeforeRemovalUnlink = func(relative string) {
+					openWriterParent(relative)
 					if raced || relative != trigger {
 						return
 					}
