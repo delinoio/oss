@@ -1947,6 +1947,55 @@ fn managed_service_forwards_shutdown_output_before_success() {
 
 #[test]
 fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
+    fn respond_not_ready(mut stream: std::net::TcpStream) -> std::io::Result<bool> {
+        // Darwin inherits the listener's nonblocking mode on accept. A reply
+        // before complete request headers can reset the client connection and
+        // turn this timeout fixture into a terminal HTTP I/O failure.
+        stream.set_nonblocking(false)?;
+        stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+        let mut request = [0u8; 4096];
+        let mut received = 0;
+        loop {
+            if received == request.len() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "readiness fixture request headers exceeded their bound",
+                ));
+            }
+            match stream.read(&mut request[received..]) {
+                Ok(0) => return Ok(false),
+                Ok(count) => received += count,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {
+                    return Ok(false);
+                }
+                Err(error) => return Err(error),
+            }
+            if request[..received]
+                .windows(4)
+                .any(|part| part == b"\r\n\r\n")
+            {
+                break;
+            }
+        }
+        match stream.write_all(
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        ) {
+            Ok(()) => Ok(true),
+            // The CLI can cancel the final probe at its readiness deadline.
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     // This process fixture must install the service's TERM trap before its
     // readiness deadline expires. Native HTTP-client setup and child scheduling
     // can consume 300ms on a loaded macOS runner; that tests pre-spawn timeout
@@ -1966,7 +2015,7 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
         // CLI startup can outlast its own readiness timeout on a loaded host.
         // Bound startup separately and keep serving 503 until the CLI exits.
         let preflight_deadline = std::time::Instant::now() + Duration::from_secs(10);
-        let (mut stream, _) = loop {
+        let (stream, _) = loop {
             match listener.accept() {
                 Ok(stream) => break stream,
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -1979,11 +2028,10 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
                 Err(error) => panic!("readiness fixture could not accept a request: {error}"),
             }
         };
-        let mut request = [0u8; 1024];
-        let _ = stream.read(&mut request);
-        stream
-            .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
-            .unwrap();
+        assert!(
+            respond_not_ready(stream).expect("readiness fixture preflight response failed"),
+            "readiness preflight closed before receiving its response"
+        );
         let service_deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !service_started.exists() {
             assert!(
@@ -1994,12 +2042,8 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
         }
         while !server_finished.load(Ordering::Acquire) {
             match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let mut request = [0u8; 1024];
-                    let _ = stream.read(&mut request);
-                    stream
-                        .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
-                        .unwrap();
+                Ok((stream, _)) => {
+                    respond_not_ready(stream).expect("readiness fixture response failed");
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(5));
