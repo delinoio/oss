@@ -45,6 +45,10 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if err != nil || identity != claim.RootIdentity {
 		return ResultUncertain()
 	}
+	claimedRootInfo, claimedStatErr := os.Lstat(removal)
+	if claimedStatErr != nil || claimedRootInfo.Mode() != removalWritableDirectoryMode() || intent.Inventory.RootMode != 0 && uint32(claimedRootInfo.Mode()) != intent.Inventory.RootMode {
+		return ResultUncertain()
+	}
 	stage = "inventory"
 	children := map[string][]snapshotEntry{}
 	known := map[string]snapshotEntry{}

@@ -607,7 +607,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			jobContext, stopJob := context.WithCancel(ctx)
 			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), approvals: make(chan *pb.ApprovalResponseControl, domain.MaxOpenInteractions), approvalIDs: map[domain.ID]responseControlIdentity{}, responses: map[domain.ID]responseControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}}
 			var envelope domain.Job
-			if domain.Decode(resource.DocumentJson, &envelope) != nil {
+			if decodeAssignedJob(resource.DocumentJson, &envelope) != nil {
 				stopJob()
 				cancel(publicationUncertain())
 				return

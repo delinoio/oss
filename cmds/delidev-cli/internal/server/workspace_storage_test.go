@@ -356,7 +356,7 @@ func TestWorkspaceStorageFailedCleanupRecoveryCannotInventStoredCopy(t *testing.
 }
 
 func TestWorkspaceStorageUnsuccessfulRecoveryRestoresPredecessor(t *testing.T) {
-	for _, outcome := range []string{"queued-canceled", "claimed-canceled", "claimed-failed"} {
+	for _, outcome := range []string{"queued-canceled", "claimed-canceled", "claimed-failed", "nested-queued-canceled", "nested-claimed-canceled", "nested-claimed-failed"} {
 		t.Run(outcome, func(t *testing.T) {
 			f := newStorageFixture(t)
 			preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
@@ -376,6 +376,18 @@ func TestWorkspaceStorageUnsuccessfulRecoveryRestoresPredecessor(t *testing.T) {
 			recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
 			if err != nil {
 				t.Fatal(err)
+			}
+			if strings.HasPrefix(outcome, "nested-") {
+				intermediate := f.claim(recovery.Msg.Job)
+				if _, err := f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: intermediate.Id, ExpectedRevision: intermediate.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.RecoveryRequired)}})); err != nil {
+					t.Fatal(err)
+				}
+				claimed = intermediate
+				recovery, err = f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				outcome = strings.TrimPrefix(outcome, "nested-")
 			}
 			if outcome == "queued-canceled" {
 				cancel, err := f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: recovery.Msg.Job.Id, ExpectedRevision: recovery.Msg.Job.Revision}}))

@@ -502,6 +502,12 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 	return result, nil
 }
 func validateStorageRoot(root string, manifest Manifest) error {
+	// The managed root has a fixed private writable mode. Reject a changed root
+	// before capture or rename; a snapshot cannot authorize a foreign mode.
+	info, err := os.Lstat(root)
+	if err != nil || info.Mode() != removalWritableDirectoryMode() || security.CheckPrivateDir(root) != nil {
+		return ResultUncertain()
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return err

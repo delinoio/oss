@@ -897,3 +897,13 @@ untouched. Unknown legacy names, malformed names, non-private files and overflow
 retain pending cleanup. A remnant that reappears after completion blocks receipt
 replay and is preserved. Per-operation staging/removal/snapshot directories retain
 their existing native identity and complete-inventory ownership gates.
+
+A failed or canceled nested recovery retains its immediate target in the first
+immutable claim/parent as the retry anchor. The flattened original remains
+historical reconciliation evidence; it does not bypass unresolved intermediate
+recovery ownership. Snapshot inventories include the original native root mode
+in their digests. Managed workspace roots require the original private writable
+mode before capture or rename, so changing root permissions after preview
+rejects without moving the workspace or publishing a snapshot. Removal validates
+that same root-mode authority alongside the native identity and independently
+journaled child-directory mode transitions.

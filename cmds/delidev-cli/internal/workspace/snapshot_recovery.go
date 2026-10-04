@@ -781,6 +781,7 @@ func snapshotRemovalInventory(ctx context.Context, r StorageRequest, path string
 			}
 			wrappers++
 		case entry.Path == "workspace":
+			contents.RootMode = entry.Mode
 			if !os.FileMode(entry.Mode).IsDir() {
 				return snapshotInventory{}, 0, ResultUncertain()
 			}

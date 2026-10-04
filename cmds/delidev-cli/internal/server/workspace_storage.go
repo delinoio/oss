@@ -363,10 +363,10 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 		session.Storage.State = domain.WorkspaceStorageUncertain
 	}
 	if input.Action == workspace.StorageRecover && (job.State == domain.JobCanceled || job.State == domain.JobFailed) {
-		if input.Recovery == nil || input.Recovery.Original.OperationID.Validate() != nil {
+		if input.Recovery == nil || len(input.Recovery.Claims) == 0 || input.Recovery.Claims[0].JobID.Validate() != nil || input.Recovery.Claims[0].JobID != job.ParentID {
 			return workspace.ResultUncertain()
 		}
-		predecessorRecord, err := tx.Get(domain.JobKind, input.Recovery.Original.OperationID)
+		predecessorRecord, err := tx.Get(domain.JobKind, input.Recovery.Claims[0].JobID)
 		if err != nil {
 			return err
 		}

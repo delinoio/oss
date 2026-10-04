@@ -73,8 +73,9 @@ type snapshotEntry struct {
 	Link     string           `json:"link,omitempty"`
 }
 type snapshotInventory struct {
-	Entries []snapshotEntry `json:"entries"`
-	Bytes   uint64          `json:"bytes"`
+	RootMode uint32          `json:"root_mode,omitempty"`
+	Entries  []snapshotEntry `json:"entries"`
+	Bytes    uint64          `json:"bytes"`
 }
 
 // One copy budget spans the workspace and every independent Git store. Reused
@@ -118,6 +119,7 @@ func walkSnapshotBudget(ctx context.Context, source, destination string, skip fu
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
 		return inventory, ResultUncertain()
 	}
+	inventory.RootMode = uint32(rootInfo.Mode())
 	root, err := os.OpenRoot(source)
 	if err != nil {
 		return inventory, err
