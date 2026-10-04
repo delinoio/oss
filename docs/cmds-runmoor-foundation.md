@@ -392,7 +392,9 @@ configurations do not probe Docker, Tart or Guest Agent.
 The detached native supervisor is launched through an inherited directory
 handle. JIT data travels through its private stdin pipe and remains memory-only.
 Each launch checks cancellation and the durable unforced Preparing phase. The
-supervisor rechecks that phase before starting the runner. It observes startup
+supervisor rechecks that phase before starting the runner. Preparation retries
+pending supervisor status within its existing deadline; ownership conflicts and
+confirmed immediate exits still fail. It observes startup
 before publishing readiness, owns a separate runner process group, and continues
 across a manager-only restart. Process identity is the kernel PID, group and OS
 start time; process names and command arguments confer no ownership. Completed,

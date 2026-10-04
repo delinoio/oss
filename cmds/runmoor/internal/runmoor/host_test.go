@@ -30,6 +30,7 @@ type fixtureHost struct {
 	phase         HostExecutionPhase
 	beforePublish func()
 	launchErr     error
+	writeStatus   func(*os.Root, HostExecutionStatus) error
 }
 
 func newFixtureHost() *fixtureHost {
@@ -68,6 +69,9 @@ func (f *fixtureHost) Launch(ctx context.Context, root *os.Root, in HostBootstra
 		f.alive[process.PID] = process
 		f.alive[worker.PID] = worker
 		f.members[worker.Group] = []HostProcess{worker}
+	}
+	if f.writeStatus != nil {
+		return f.writeStatus(clone, status)
 	}
 	return hostRootWrite(root, "status.json", status)
 }
@@ -354,6 +358,69 @@ func TestHostCancellationAndImmediateFailure(t *testing.T) {
 		})
 	}
 }
+func TestHostPreparationWaitsForDetachedStatus(t *testing.T) {
+	for _, scenario := range []string{"delayed publication", "deadline", "cancellation"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, store, native, p := hostFixture(t)
+			p = buildHostFixture(t, c, store, native, p)
+			r := seedHostFixture(t, c, store, p)
+			type publication struct {
+				root   *os.Root
+				status HostExecutionStatus
+			}
+			launched := make(chan publication, 1)
+			native.writeStatus = func(root *os.Root, status HostExecutionStatus) error {
+				launched <- publication{root, status}
+				return nil
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			driver := HostDriver{Store: store, Native: native}
+			result := make(chan error, 1)
+			go func() {
+				result <- driver.Prepare(ctx, c, p, r, store.View(), "jit", func(Handle) error { return nil })
+			}()
+			var published publication
+			select {
+			case published = <-launched:
+			case err := <-result:
+				t.Fatalf("preparation ended before launch: %v", err)
+			case <-ctx.Done():
+				t.Fatal("launch did not complete")
+			}
+			_, _, err := driver.observe(ctx, c, r, store.View())
+			requireCode(t, err, ErrCleanup)
+			select {
+			case err := <-result:
+				t.Fatalf("missing initial status failed preparation: %v", err)
+			case <-time.After(100 * time.Millisecond):
+			}
+			switch scenario {
+			case "delayed publication":
+				if err := hostRootWrite(published.root, "status.json", published.status); err != nil {
+					t.Fatal(err)
+				}
+			case "cancellation":
+				cancel()
+			}
+			err = <-result
+			if scenario == "delayed publication" {
+				if err != nil || store.View().HostExecutions[r.ID].LaunchPending {
+					t.Fatalf("delayed startup was not accepted: %v", err)
+				}
+			} else {
+				want := context.DeadlineExceeded
+				if scenario == "cancellation" {
+					want = context.Canceled
+				}
+				if !errors.Is(err, want) || !store.View().HostExecutions[r.ID].LaunchPending {
+					t.Fatalf("uncertain launch lost its deadline or reservation: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestHostOwnershipPreservesForeignAndUncertainResources(t *testing.T) {
 	for _, scenario := range []string{"PID reuse", "lost supervisor", "symlink", "replaced directory", "marker changed", "missing directory", "lost launch journal", "lost worker publication"} {
 		t.Run(scenario, func(t *testing.T) {

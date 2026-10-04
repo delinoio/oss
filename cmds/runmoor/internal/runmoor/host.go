@@ -3,6 +3,7 @@ package runmoor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -174,7 +175,16 @@ func (h *HostDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 		}
 		obs, status, err := h.observe(ctx, c, r, h.Store.View())
 		if err != nil {
-			return err
+			var pending *Problem
+			if !errors.As(err, &pending) || pending.Code != ErrCleanup {
+				return err
+			}
+			// Detached status publication is asynchronous. Uncertain observations
+			// remain reserved and retry only within the preparation context.
+			if !waitContext(ctx, 50*time.Millisecond) {
+				return ctx.Err()
+			}
+			continue
 		}
 		if status.Phase == HostRunning && obs.Running {
 			return h.Store.Update(func(v *Snapshot) error {
