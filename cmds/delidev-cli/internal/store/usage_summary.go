@@ -206,7 +206,8 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 				units += accounting.Units
 			}
 		}
-		groupCount := len(result.Groups)
+		// Count the complete inventory, including unranked response/Grok models.
+		groupCount, modelCount := len(result.Groups), len(modelGroups)
 		for _, kind := range []domain.AccountingUnitKind{domain.ClaudeMainLoopInput, domain.OpenCodeStep} {
 			summary, err := t.nativeAccountingSummary(f, kind)
 			if err != nil {
@@ -214,7 +215,8 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			}
 			units += summary.Totals.Units
 			groupCount += len(summary.Groups)
-			if units > maxUsageResponses || groupCount > maxUsageGroups {
+			modelCount += len(summary.Models)
+			if units > maxUsageResponses || groupCount > maxUsageGroups || modelCount > domain.UsageModelGroupLimit {
 				return domain.UsageSummary{}, usageReadLimit()
 			}
 			result.NativeAccounting = append(result.NativeAccounting, summary)

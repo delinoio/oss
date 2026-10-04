@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -315,5 +316,75 @@ func TestOpenCodeAccountingSourceDeduplicationAndAssistantExclusion(t *testing.T
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNativeAccountingCombinedModelInventoryBound(t *testing.T) {
+	s, _ := openTest(t)
+	r, claude, _ := nativeAccountingFixture(t, s)
+	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.combined-model-inventory", nil, func(tx *Tx) (any, error) {
+		for i := 0; i < domain.UsageModelGroupLimit; i++ {
+			model, source, input := domain.NewID(), domain.NewID(), domain.NewID()
+			switch i % 3 {
+			case 0:
+				value := r
+				value.ModelID, value.Usage.ResponseDigest = model, fmt.Sprintf("%064x", i+1)
+				if _, _, err := tx.PutResponseUsage(source, value); err != nil {
+					return nil, err
+				}
+			case 1:
+				value := claude
+				value.ExecutionID, value.ModelID, value.Usage.NativeEventID = domain.NewID(), model, string(domain.NewID())
+				if err := tx.PutClaudeUsage(source, r.SessionID, r.ProjectID, value); err != nil {
+					return nil, err
+				}
+				if err := tx.PutClaudeAccounting(source, input, r.SessionID, r.ProjectID, value); err != nil {
+					return nil, err
+				}
+			case 2:
+				value := domain.OpenCodeUsageRecord{ExecutionID: r.ExecutionID, AccountID: r.AccountID, ConnectionID: r.ConnectionID, ProviderID: r.ProviderID, ModelID: model, Harness: domain.OpenCode, Version: domain.OpenCodeProtocolVersion, ThreadID: "ses_01960dcbe1faABCDEFGHIJKLMN", TurnID: "msg_01960dcbe1faABCDEFGHIJKLMN", Sequence: 3, Usage: domain.OpenCodeUsageObservation{Source: domain.OpenCodeStepUsage, NativeID: fmt.Sprintf("prt_%012xABCDEFGHIJKLMN", i+1), NativeEstimate: "0", NativeParentID: "msg_01960dcbe1faABCDEFGHIJKLMN", Counts: domain.OpenCodeTokenCounts{Input: "1", Output: "0", Reasoning: "0", CacheRead: "0", CacheWrite: "0"}}}
+				if err := tx.PutOpenCodeUsage(source, r.SessionID, r.ProjectID, value); err != nil {
+					return nil, err
+				}
+				if err := tx.PutOpenCodeAccounting(source, input, r.SessionID, r.ProjectID, value); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, daily := range []bool{false, true} {
+		f := nativeSelection()
+		if !daily {
+			f.Granularity, f.TimeZone = domain.UsageTimeGranularityUnspecified, ""
+		}
+		v, err := readUsage(s, f)
+		if err != nil || len(v.NativeAccounting) != 2 {
+			t.Fatal("bounded combined inventory was rejected", err)
+		}
+		models := len(v.NativeAccounting[0].Models) + len(v.NativeAccounting[1].Models)
+		if daily {
+			models += len(v.Analytics.Models)
+		}
+		if daily && models != domain.UsageModelGroupLimit || !daily && models != 333 {
+			t.Fatal("complete native model inventory was truncated", models)
+		}
+	}
+	claude.ExecutionID, claude.ModelID, claude.Usage.NativeEventID = domain.NewID(), domain.NewID(), string(domain.NewID())
+	if _, err := retainNative(s, domain.NewID(), domain.NewID(), domain.NewID(), r, claude, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, daily := range []bool{false, true} {
+		f := nativeSelection()
+		if !daily {
+			f.Granularity, f.TimeZone = domain.UsageTimeGranularityUnspecified, ""
+		}
+		v, err := readUsage(s, f)
+		if domain.SafeError(err).Code != domain.ResourceExhausted || v.NativeAccounting != nil || v.Analytics != nil || v.Totals.Responses != 0 {
+			t.Fatal("over-bound inventory returned partial accounting", err, v)
+		}
 	}
 }

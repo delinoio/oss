@@ -208,10 +208,10 @@ reads with independent `native_accounting` summaries for `ClaudeMainLoopInput`
 and `OpenCodeStep`. Existing response-only fields and the Grok total keep their
 original meanings. Each summary contains original attribution, daily buckets,
 complete model groups, original price versions and category coverage. The shared
-25,000-unit and 500-group bounds apply to the combined inventory, with the existing
+25,000-unit and 500-group/model bounds apply to the combined inventory, with the existing
 authorized snapshot, two-second deadline and binary/JSON size limits. CLI JSON
 and desktop semantic tables expose the same server-owned values; missing support
-receives explicit server-update guidance.
+receives explicit server-update guidance. Native-profile CLI reads require exactly one Claude and one OpenCode summary with no duplicate or unknown families; a profile echo from an older Codex/Grok-only server is insufficient.
 
 Claude input is the arbitrary-precision sum of its three measured disjoint input
 categories. Missing primitives remain null, explicit zero stays measured and
