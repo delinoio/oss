@@ -86,7 +86,16 @@ func diagnosticResponse(object map[string]json.RawMessage, observations *diagnos
 	if observations.identityConflict {
 		return
 	}
-	diagnosticSetting(object["service_tier"], &value.EffectiveServiceTier, &observations.tierConflict, domain.DiagnosticServiceTier, guard)
+	tier := object["service_tier"]
+	if value.Operation == domain.DiagnosticMessage {
+		var usage map[string]json.RawMessage
+		if json.Unmarshal(object["usage"], &usage) == nil {
+			tier = usage["service_tier"]
+		} else {
+			tier = nil
+		}
+	}
+	diagnosticSetting(tier, &value.EffectiveServiceTier, &observations.tierConflict, domain.DiagnosticServiceTier, guard)
 	var reasoning map[string]json.RawMessage
 	if json.Unmarshal(object["reasoning"], &reasoning) == nil {
 		diagnosticSetting(reasoning["effort"], &value.EffectiveEffort, &observations.effortConflict, domain.DiagnosticEffort, guard)

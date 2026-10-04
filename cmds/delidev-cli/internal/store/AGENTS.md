@@ -199,3 +199,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Installation entities are server-owned operation history. Restore copies current SSH/update entities rather than historical images, and blocks unsettled installation or protected cleanup. Pending projections exclude terminal history without truncating active obligations.
 
 - Worker update admission and idle checks run under the claim transaction, including original terminal/forward/subscription/deletion ownership. Filter matching pending/signed scopes before applying query bounds. Preserve current installation metadata across managed restore, and never release uncertain update fences through history pagination or restored receipts.
+
+- Proxy diagnostics retain metadata before credential lookup. Only the first in-progress, unsent metadata revision may acquire guarded request settings and the safe caller request ID; send claims and terminal/later revisions preserve them exactly. Follow the diagnostics contract.

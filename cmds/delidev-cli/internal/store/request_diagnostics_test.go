@@ -16,6 +16,59 @@ func diagnosticFixture(session domain.ID) domain.RequestDiagnostic {
 	return domain.RequestDiagnostic{ID: id, CorrelationID: id, SessionID: session, ExecutionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), Source: domain.DiagnosticProxyHTTP, Operation: domain.DiagnosticResponse, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, Harness: domain.Codex, ObservedAt: time.Now().UTC(), HTTPAttempted: &attempted}
 }
 
+func TestRequestDiagnosticGuardedSettingsRefineOnlyFirstUnsentObservation(t *testing.T) {
+	for _, stage := range []string{"initial", "later-empty", "sent", "terminal"} {
+		t.Run(stage, func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			value := diagnosticFixture(domain.NewID())
+			_, err := s.Mutate(ctx, domain.NewID(), "fixture.diagnostic-initial", nil, func(tx *Tx) (any, error) {
+				if _, err := tx.Put(domain.SessionKind, value.SessionID, 0, value.SessionID, "", struct{}{}); err != nil {
+					return nil, err
+				}
+				return nil, tx.PutRequestDiagnostic(value, 0)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			write := func(expected uint64) error {
+				_, err := s.Mutate(ctx, domain.NewID(), "fixture.diagnostic-refinement", value, func(tx *Tx) (any, error) { return nil, tx.PutRequestDiagnostic(value, expected) })
+				return err
+			}
+			expected := uint64(1)
+			if stage != "initial" {
+				if stage == "sent" {
+					*value.HTTPAttempted = true
+				} else if stage == "terminal" {
+					finished, duration := time.Now().UTC(), uint64(0)
+					value.State, value.FinishedAt, value.DurationMS = domain.DiagnosticSucceeded, &finished, &duration
+				}
+				if err := write(expected); err != nil {
+					t.Fatal("could not retain original stage", err)
+				}
+				expected++
+			}
+			value.RequestedEffort = domain.DiagnosticEffort("high")
+			value.RequestedServiceTier = domain.DiagnosticServiceTier("auto")
+			value.NativeRequestID = "req_original"
+			err = write(expected)
+			if stage != "initial" {
+				if domain.SafeError(err).Code != domain.Conflict {
+					t.Fatal("late request provenance was manufactured", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("first guarded unsent observation was rejected", err)
+			}
+			value.RequestedEffort = domain.DiagnosticEffort("low")
+			if err := write(2); domain.SafeError(err).Code != domain.Conflict {
+				t.Fatal("published requested settings were replaced", err)
+			}
+		})
+	}
+}
+
 func TestRequestDiagnosticMigrationPreservesV26AndBackup(t *testing.T) {
 	s, root := openTest(t)
 	ctx := context.Background()
