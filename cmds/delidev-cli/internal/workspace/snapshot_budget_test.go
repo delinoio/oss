@@ -6,10 +6,47 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+func TestSnapshotAdmissionReservesPrivatePathHeadroom(t *testing.T) {
+	// A short original spelling can grow at every retained ancestor claim.
+	if snapshotRemovalPathFits(strings.TrimSuffix(strings.Repeat("a/", 90), "/"), 4096) {
+		t.Fatal("short source path did not reserve private ancestor spellings")
+	}
+	m := manager(t)
+	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), OriginMachineID: domain.NewID(), Type: domain.GeneralChat, Repositories: []RepositorySpec{}}
+	prepare.OriginMachineID = prepare.MachineID
+	manifest, err := m.Prepare(context.Background(), prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := manifest.PrimaryPath
+	for i := 0; i < 90; i++ {
+		path = filepath.Join(path, "a")
+	}
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(path, "payload")
+	if err := os.WriteFile(file, []byte("original deep source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
+	result, err := m.Storage(context.Background(), r)
+	if domain.SafeError(err).Code != domain.ResourceExhausted || result.PreviewDigest != "" || result.Snapshot != nil {
+		t.Fatal("insufficient rename headroom became removal authority", result, err)
+	}
+	if data, err := os.ReadFile(file); err != nil || string(data) != "original deep source" {
+		t.Fatal("headroom rejection changed source", err)
+	}
+	if _, err := os.Lstat(m.removalClaimPath(r.OperationID)); !os.IsNotExist(err) {
+		t.Fatal("headroom rejection claimed source removal", err)
+	}
+}
 
 func TestSnapshotCopySharesByteBudgetBeforeWriting(t *testing.T) {
 	budget := snapshotCopyBudget{bytes: 9, entries: 20}

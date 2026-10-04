@@ -67,7 +67,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	// Reserve bounded manifest and config-rewrite headroom before writing any
 	// payload. Git config can add core.worktree/core.bare in two copied files;
 	// 256 bytes per repository bounds those additions without touching sources.
-	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256*uint64(len(r.Manifest.Repositories)), entries: MaxSnapshotEntries}
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256*uint64(len(r.Manifest.Repositories)), entries: MaxSnapshotEntries, privatePathLimit: snapshotPrivatePathLimit(m.Root)}
 	copied, err := walkSnapshotBudget(ctx, root, filepath.Join(staging, "workspace"), skip, MaxSnapshotEntries, &budget)
 	if err != nil {
 		return empty, err
@@ -131,7 +131,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 }
 
 func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo PreparedRepository, target string) error {
-	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256, entries: MaxSnapshotEntries}
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256, entries: MaxSnapshotEntries, privatePathLimit: snapshotPrivatePathLimit(m.Root)}
 	return m.copySnapshotGitBudget(ctx, session, repo, target, &budget)
 }
 
@@ -145,6 +145,9 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	git.OwnerID = session
 	git.readOnly = true
 	git.offline = true
+	if err := validateSnapshotGitEntry(repo.Path); err != nil {
+		return err
+	}
 	fields, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
 	if err != nil {
 		return err
@@ -424,7 +427,7 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	if err != nil {
 		return storageObservationResult{}, err
 	}
-	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes, entries: MaxSnapshotEntries}
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes, entries: MaxSnapshotEntries, privatePathLimit: snapshotPrivatePathLimit(m.Root)}
 	whole, err := walkSnapshotBudget(ctx, root, "", nil, MaxSnapshotEntries, &budget)
 	if err != nil {
 		return storageObservationResult{}, err
@@ -435,6 +438,9 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	git.readOnly = true
 	git.offline = true
 	for _, repo := range r.Manifest.Repositories {
+		if err := validateSnapshotGitEntry(repo.Path); err != nil {
+			return storageObservationResult{}, err
+		}
 		fields, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
 		if err != nil {
 			return storageObservationResult{}, err
@@ -456,6 +462,24 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	}
 	sum := sha256.Sum256(raw)
 	return storageObservationResult{Data: data, Whole: whole, Digest: hex.EncodeToString(sum[:])}, nil
+}
+
+// Inspect the original entry before Git resolves its administrative paths.
+// A linked worktree's regular pointer file is supported; a symlink is not.
+func validateSnapshotGitEntry(repository string) error {
+	root, err := os.OpenRoot(repository)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	info, err := root.Lstat(".git")
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+		return snapshotUnsupported()
+	}
+	return nil
 }
 
 // Git follows links inside its administration directories. Such links cannot

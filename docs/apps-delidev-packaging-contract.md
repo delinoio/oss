@@ -98,7 +98,7 @@ Run `pnpm --dir apps/delidev test`, `pnpm ci:workflows`, `pnpm ci:contracts` and
 files and cover wrong architecture, truncation, invalid PE offsets, duplicate
 extracted executables, missing resources and launcher redirection. The workflow
 contract test guards manual dispatch, LFS hydration, read-only permissions and
-verification before upload. Full local native packaging requires a clean commit;
+verification before upload. The default-off `workspace_fixture_only` mode runs only the closed temporary Windows storage regression list for namespace claims, maximum inventory, publication/journal recovery, aggregate observation and private-path admission; it skips package planning/assembly, retains read-only credentials and never replaces complete CI or platform acceptance. Full local native packaging requires a clean commit;
 matrix source validation does not count as six successful platform builds.
 
 ## Dependencies and Integrations

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -24,6 +25,33 @@ const maxPublishedSnapshots = 4096
 // Snapshot deletion additionally inventories the workspace directory and manifest.
 const maxSnapshotRemovalEntries = MaxSnapshotEntries + 2
 const maxSnapshotManifest = 8 << 20
+
+const snapshotRemovalNameLength = len(".removing-") + 36
+
+// Every ancestor may retain its private claim name after interruption. Reserve
+// the largest original/private spelling before admitting a recoverable copy.
+func snapshotRemovalPathFits(value string, limit int) bool {
+	length := 0
+	for _, component := range strings.Split(value, "/") {
+		length += max(len(component), snapshotRemovalNameLength) + 1
+	}
+	return length-1 <= limit
+}
+
+func snapshotPrivatePathLimit(root string) int {
+	nativeLimit := 4096
+	if runtime.GOOS == "darwin" {
+		nativeLimit = 1024
+	}
+	if runtime.GOOS == "windows" {
+		nativeLimit = 32760
+	}
+	// Allow the removal root and the snapshot workspace/repository/Git wrappers
+	// to retain private names simultaneously. Recovery reads keep the original
+	// 4,096-byte wire bound; this admission bound applies only to new captures.
+	prefix := len(filepath.Join(root, "workspace-removals")) + 1 + 36 + 1
+	return min(4096, nativeLimit-prefix) - 3*(snapshotRemovalNameLength+1)
+}
 
 type snapshotLinkKind string
 
@@ -48,8 +76,9 @@ type snapshotInventory struct {
 // One copy budget spans the workspace and every independent Git store. Reused
 // administration directories consume no additional entry during an overlay.
 type snapshotCopyBudget struct {
-	bytes   uint64
-	entries int
+	bytes            uint64
+	entries          int
+	privatePathLimit int
 }
 
 func (b *snapshotCopyBudget) take(size uint64) error {
@@ -118,6 +147,9 @@ func walkSnapshotBudget(ctx context.Context, source, destination string, skip fu
 			path := filepath.Join(relative, name)
 			if skip != nil && skip(filepath.ToSlash(path)) {
 				continue
+			}
+			if budget != nil && budget.privatePathLimit != 0 && !snapshotRemovalPathFits(filepath.ToSlash(path), budget.privatePathLimit) {
+				return domain.Fail(domain.ResourceExhausted, "Workspace paths exceed cleanup headroom.", "Shorten directory names or nesting before snapshot creation; source files remain intact.")
 			}
 			if len(inventory.Entries) >= entryLimit || !utf8.ValidString(path) || len(path) > 4096 {
 				return domain.Fail(domain.ResourceExhausted, "Workspace inventory exceeds its bound.", "Reduce the workspace; no files were removed.")
