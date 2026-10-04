@@ -46,7 +46,7 @@ it("retains preview retries across navigation and binds cleanup/cancellation to 
  expect(f.requests[1]).toEqual(f.requests[0]);
  await waitFor(()=>expect((screen.getByRole("button",{name:"Store and clean workspace"}) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(screen.getByRole("button",{name:"Store and clean workspace"}));
- expect(screen.getByText(/Dependent Sidechats will be permanently retired first/)).not.toBeNull();
+ expect(screen.getByText(/Original independent cleanup must complete first/)).not.toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Confirm selected storage action"}));
  await waitFor(()=>expect(f.request).toHaveBeenCalledTimes(3));
  expect(f.requests[2]).toMatchObject({action:WorkspaceStorageAction.CLEANUP,previewJobId:f.job.id,mutation:{id:f.session.id,expectedRevision:9n}});
