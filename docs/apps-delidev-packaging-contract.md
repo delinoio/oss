@@ -56,6 +56,8 @@ The pinned Debian bundler moves the main binary to
 `/usr/bin/delidev`. Native sidecar resolution recognizes only that exact installed
 layout; development/AppImage paths retain adjacent resolution with no PATH lookup.
 
+Before notice inspection, both dry-run paths run the pinned package-local Tauri CLI build with `--no-bundle`. That CLI owns the versioned `tauri-cef` cache; a bare Cargo build downloads into its own build output and cannot prove the package cache is prepared. Preparation failure stops the sequence. The later installer build retains full original distribution identity and notice-byte verification.
+
 Every verified package contains unchanged Apache `LICENSE`/`NOTICE`, the original
 CEF license and the exact distribution's Chromium `CREDITS.html`. Distribution
 identity and complete packaged notice bytes are checked; the report also records
