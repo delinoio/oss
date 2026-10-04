@@ -278,6 +278,18 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				if _, err := a.scope(tx, grant); err != nil {
 					return nil, err
 				}
+				if scope.Purpose == domain.SessionTitleUsage && value.HTTPAttempted != nil && *value.HTTPAttempted {
+					if value.Operation != domain.DiagnosticResponse {
+						return nil, executionDenied()
+					}
+					claimed, err := tx.ClaimTitleHTTPRequest(grant.JobID)
+					if err != nil {
+						return nil, err
+					}
+					if !claimed {
+						return nil, executionDenied()
+					}
+				}
 			} else if value.Revision == 0 {
 				return nil, executionDenied()
 			}
@@ -292,14 +304,9 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		return err
 	}
 
-	if scope.Purpose == domain.SessionTitleUsage {
-		lease.BeforeSubmit = func(ctx context.Context, operation apiproxy.Operation) error {
-			if leaseContext.Err() != nil {
-				return executionDenied()
-			}
-			return a.claimTitleHTTPRequest(ctx, grant, operation)
-		}
-	}
+	// Title HTTP ownership and diagnostic send publication commit together.
+	// No separate BeforeSubmit mutation can consume title authority if metadata
+	// persistence fails before the upstream request is sent.
 	lease.Release = func() {
 		once.Do(func() {
 			cancel()

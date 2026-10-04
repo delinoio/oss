@@ -45,8 +45,8 @@ func (t *Tx) TitleHTTPRequestClaimed(jobID domain.ID) (bool, error) {
 	return claimed, storageError(err)
 }
 
-// ClaimTitleHTTPRequest prevents native request retries after inference reaches
-// the upstream provider, even if the Worker loses the response or RPC report.
+// ClaimTitleHTTPRequest reserves the original upstream-send boundary. Its
+// transaction also retains send metadata; neither proves provider acceptance.
 func (t *Tx) ClaimTitleHTTPRequest(jobID domain.ID) (bool, error) {
 	if err := t.writeAllowed(); err != nil {
 		return false, err

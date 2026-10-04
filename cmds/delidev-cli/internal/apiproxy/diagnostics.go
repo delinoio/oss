@@ -74,8 +74,8 @@ type diagnosticObservations struct {
 func diagnosticResponse(object map[string]json.RawMessage, observations *diagnosticObservations, guard secretGuard) {
 	value := observations.value
 	var id *string
-	if json.Unmarshal(object["id"], &id) == nil && id != nil {
-		if !domain.SafeDiagnosticID(*id) || guard.contains(*id) || value.NativeResponseID != "" && value.NativeResponseID != *id {
+	if raw, present := object["id"]; present {
+		if json.Unmarshal(raw, &id) != nil || id == nil || !domain.SafeDiagnosticID(*id) || guard.contains(*id) || value.NativeResponseID != "" && value.NativeResponseID != *id {
 			value.NativeResponseID = ""
 			value.EffectiveEffort, value.EffectiveServiceTier = nil, nil
 			observations.identityConflict = true

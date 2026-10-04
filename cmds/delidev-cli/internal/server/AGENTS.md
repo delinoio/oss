@@ -145,3 +145,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Native input accounting capability 8 composes Claude main-loop inputs and OpenCode step-finish sources with negotiated native-units-v1 reads. Preserve response-only fields, original failed-input usage, combined source/group/wire bounds and separate budget unit coverage. No native source IDs, content or credentials enter aggregates.
 
 - Request diagnostics follow the diagnostics contract. Publish native-input projections with original Worker events; proxy observations belong only to the original joined lease. Initial/send claims recheck authority, terminal settlement preserves original provenance after Stop/revocation, and reads remain owner/client-only. A send claim does not establish provider acceptance.
+
+- Proxy title requests commit the original once-only title HTTP claim with their diagnostic send revision and event in one transaction. Diagnostic publication failure cannot consume title authority before transmission. A committed send claim is not provider acceptance.

@@ -104,3 +104,24 @@ func TestRequestDiagnosticUnsafeStreamIdentityCannotRestoreCertainty(t *testing.
 		})
 	}
 }
+
+func TestRequestDiagnosticMalformedStreamIdentityCannotRestoreCertainty(t *testing.T) {
+	for _, rawID := range []string{"null", "42", "true", "{}", "[]"} {
+		t.Run(rawID, func(t *testing.T) {
+			value := domain.RequestDiagnostic{}
+			observations := diagnosticObservations{value: &value}
+			guard := newSecretGuard(nil, nil)
+			valid := map[string]json.RawMessage{"id": json.RawMessage(`"resp_original"`), "service_tier": json.RawMessage(`"priority"`)}
+			diagnosticResponse(valid, &observations, guard)
+			diagnosticResponse(map[string]json.RawMessage{}, &observations, guard)
+			if observations.identityConflict || value.NativeResponseID != "resp_original" {
+				t.Fatal("absent ID changed original identity")
+			}
+			diagnosticResponse(map[string]json.RawMessage{"id": json.RawMessage(rawID)}, &observations, guard)
+			diagnosticResponse(valid, &observations, guard)
+			if !observations.identityConflict || value.NativeResponseID != "" || value.EffectiveEffort != nil || value.EffectiveServiceTier != nil {
+				t.Fatal("malformed ID restored certainty", value)
+			}
+		})
+	}
+}

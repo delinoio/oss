@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"slices"
 	"time"
 
@@ -112,39 +111,4 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 		return denied()
 	}
 	return scope, nil
-}
-
-func (a *executionAuthority) claimTitleHTTPRequest(ctx context.Context, grant store.ExecutionGrant, operation apiproxy.Operation) error {
-	if operation != apiproxy.ResponseCreate {
-		return executionDenied()
-	}
-	_, err := a.service.Store.Mutate(ctx, domain.NewID(), "execution.title-request.claim", struct {
-		JobID    domain.ID
-		Instance domain.ID
-		Epoch    domain.ID
-	}{grant.JobID, grant.InstanceID, grant.ServerEpoch}, func(tx *store.Tx) (any, error) {
-		record, err := tx.Get(domain.JobKind, grant.JobID)
-		if err != nil {
-			return nil, err
-		}
-		job, err := store.Decode[domain.Job](record)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := a.titleScope(tx, grant, record, job); err != nil {
-			return nil, err
-		}
-		claimed, err := tx.ClaimTitleHTTPRequest(grant.JobID)
-		if err != nil {
-			return nil, err
-		}
-		if !claimed {
-			return nil, executionDenied()
-		}
-		return struct{ JobID domain.ID }{grant.JobID}, nil
-	})
-	if err != nil {
-		return executionDenied()
-	}
-	return nil
 }
