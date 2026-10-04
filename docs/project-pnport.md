@@ -15,7 +15,7 @@ Set the private publication declaration to `pnportReleaseReady: true` and
 `pnportReleaseVersion: "0.1.0"`. The publisher requires both the boolean and an
 exact stable source-version match. The coordinator preserves these declarations
 and performs the normal version-only promotion from 0.1.0-next.1 to 0.1.0.
-Later versions require their own reviewed authorization.
+Later versions require their own reviewed authorization. Tag pushes run credential-free dry runs only. After the final tag passes, publish by an explicit `Release pnport` dispatch at that same tag with `dry_run=false`; all publication jobs require the dispatch event and retain fresh native verification.
 
 The final 0.1.0 build must still pass all four native candidate jobs on macOS 15
 and Ubuntu 22.04, installed npm/Yarn and direct-install checks, default-parallel

@@ -55,6 +55,9 @@ jobs:
           import { requirePublicationReady } from './packages/pnport/scripts/common.mjs';
           import { publicationChannel } from './packages/pnport/scripts/version.mjs';
           const source = sourceMetadata({ project: Project.Pnport, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, file => readFileSync(file, 'utf8'));
+          // A newly created tag first validates without publication.
+          // Publish only by an explicit exact-tag dispatch after that dry run.
+          if (process.env.GITHUB_EVENT_NAME === 'push') source.dry_run = 'true';
           const revision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
           const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
           if (revision !== process.env.GITHUB_SHA) throw new Error('Checkout revision mismatch');
@@ -187,7 +190,7 @@ jobs:
 
   publish-npm:
     needs: [prepare, package]
-    if: needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
+    if: needs.prepare.outputs.dry_run == 'false' && github.event_name == 'workflow_dispatch' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -210,7 +213,7 @@ jobs:
 
   publish-release:
     needs: [prepare, package, publish-npm]
-    if: needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
+    if: needs.prepare.outputs.dry_run == 'false' && github.event_name == 'workflow_dispatch' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -235,7 +238,7 @@ jobs:
 
   homebrew:
     needs: [prepare, package, publish-release]
-    if: needs.prepare.outputs.dry_run == 'false' && needs.prepare.outputs.channel == 'latest' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
+    if: needs.prepare.outputs.dry_run == 'false' && github.event_name == 'workflow_dispatch' && needs.prepare.outputs.channel == 'latest' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -289,7 +292,7 @@ jobs:
           const fs = require('node:fs');
           const jobs = JSON.parse(process.env.RESULTS);
           const lines = ['## pnport release', '', `Version: ${jobs.prepare.outputs.version || 'unresolved'}`, `Commit: ${jobs.prepare.outputs.revision || 'unresolved'}`, '', '| Phase | Result |', '| --- | --- |', ...Object.entries(jobs).map(([name, value]) => `| ${name} | ${value.result} |`), ''];
-          if (process.env.DRY_RUN === 'true') lines.push('Dry run: no publication was attempted.');
+          if (process.env.DRY_RUN === 'true') lines.push('Dry run: no publication was attempted. After success at the final tag, dispatch this workflow at that same tag with dry_run=false to publish.');
           if (jobs.build.result !== 'success' || jobs.package.result !== 'success') lines.push('Four-target execution or complete-set validation failed; publication is blocked.');
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
           JS
