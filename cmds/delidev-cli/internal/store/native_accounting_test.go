@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -32,6 +33,27 @@ func retainNative(s *Store, request, source, input domain.ID, r domain.ResponseU
 }
 func nativeSelection() domain.UsageSelection {
 	return domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour), AccountingProfile: domain.NativeUnitsV1Accounting, Granularity: domain.UsageTimeGranularityDay, TimeZone: "UTC"}
+}
+
+func TestNativeAccountingModelGroupsWithoutDailyGranularity(t *testing.T) {
+	s, _ := openTest(t)
+	r, usage, input := nativeAccountingFixture(t, s)
+	if _, err := retainNative(s, domain.NewID(), domain.NewID(), input, r, usage, false); err != nil {
+		t.Fatal(err)
+	}
+	daily, err := readUsage(s, nativeSelection())
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := nativeSelection()
+	selection.Granularity, selection.TimeZone = domain.UsageTimeGranularityUnspecified, ""
+	summary, err := readUsage(s, selection)
+	if err != nil || len(summary.NativeAccounting) != 2 || len(summary.NativeAccounting[0].Days) != 0 || len(summary.NativeAccounting[0].Models) != 1 || summary.NativeAccounting[0].Models[0].ModelID != r.ModelID || summary.NativeAccounting[0].Models[0].ProviderID != r.ProviderID || summary.NativeAccounting[0].Models[0].Totals.Units != 1 {
+		t.Fatal("default granularity lost original model accounting", summary, err)
+	}
+	if !reflect.DeepEqual(summary.NativeAccounting[0].Models, daily.NativeAccounting[0].Models) {
+		t.Fatal("daily granularity changed model attribution or counters")
+	}
 }
 
 func TestNativeAccountingAtomicRetentionReplayRestartPriceAndBudget(t *testing.T) {
