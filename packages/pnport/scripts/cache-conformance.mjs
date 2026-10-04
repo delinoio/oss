@@ -75,7 +75,9 @@ int main(void) {
       const doctor = () => JSON.parse(execute(binary, [...base, "doctor", "--json"], project));
       assert.equal(doctor().ready, true);
       if (retained) assert.equal(cacheSnapshot(vitestCache), retained);
-      npm([...yarnArgs, "vitest", "run"], { cwd: project, env, timeout: 60_000 });
+      // Resolve the prepared package bin through pnport so Vitest and its
+      // workers share the matching native view without an npm/Yarn wrapper.
+      execute(binary, [...base, "run", "--", "vitest", "run"], project);
       assert(existsSync(vitestCache), "Default Vitest cache must exist.");
       retained = cacheSnapshot(vitestCache);
       assert.equal(doctor().ready, true);
