@@ -136,7 +136,12 @@ setup process while the first one still owns the VM. Resume repeats the boot
 check and seals only after your confirmation and successful guest validation.
 
 For a pending setup created by 0.2.3, correct Guest Agent and resume with the
-same Runmoor version first. Newer builds require an embedded VM ownership
+same Runmoor version first. Before trying an upgraded binary, stop the original
+manager and back up its complete state and VM data together. Newer builds can
+upgrade SQLite state; 0.2.3 refuses the upgraded database, so switching the
+binary back is insufficient. Do not downgrade the database.
+
+Newer builds require an embedded VM ownership
 identity that older setups may lack. If an upgraded binary returns
 `OWNERSHIP_AMBIGUOUS`, preserve the original VM and records and follow
 [Tart ownership recovery](#tart-ownership-recovery). Do not add or rewrite an

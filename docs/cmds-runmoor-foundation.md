@@ -388,3 +388,14 @@ managed preparation and cleanup.
   automatic upgrade adoption. Operators correct the guest and resume with the
   original release, or use the existing ownership-recovery workflow; never
   fabricate an identity marker to bypass the upgraded ownership checks.
+  A complete paired state/data backup must precede upgrade: 0.2.3 accepts
+  SQLite schemas 1/2 and refuses the schema 3 produced by newer builds.
+  Binary rollback alone is not pending-setup recovery.
+- Native Tart acceptance requires actual child-process traversal through the
+  pinned VM binding, independently of fixture command success. The current
+  `/dev/fd/3` directory alias does not expose VM children on the tested macOS
+  host, blocking post-create configuration with Tart 2.38.0. This setup
+  diagnostic change does not replace that ownership adapter or certify native
+  readiness, headless reboot, runner installation, sealing or final publication.
+  Preserve the failed image/journal and the existing ownership gates; do not
+  replace the alias with an ordinary VM path to make an acceptance run pass.
