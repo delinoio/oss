@@ -154,3 +154,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Quota maintenance checks due eligibility read-only before mutation and rechecks it transactionally. If every candidate was concurrently queued, roll back the empty batch; do not emit recurring no-op receipts or change signals.
 
 - Joined successful native-owner cleanup settles unpublished quota reads as failed while preserving last observed values and future read/execution admission. Retain original-key uncertainty only for possible reset-credit consumption.
+
+- Worker network export/control follows `docs/cmds-delidev-network-contract.md`. Pin each pending grant to one original machine/device/recipient, preserve actor/revision receipts, and require authenticated imported-digest acknowledgement before effective generation. Recheck fresh dispatch/claim/registration under current generation while preserving original active leases and cleanup. Native route reports retain exact job/execution/instance/device/generation ownership; an observed old runtime cannot authorize another launch or fabricate current application.
+
+- Native route observation is monotonic for each immutable claimed runtime: once accepted-target traffic proves Observed, later Failed or Unverified socket reports cannot erase that proof. Distinct runtimes retain independent observations.

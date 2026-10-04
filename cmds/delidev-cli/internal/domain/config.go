@@ -637,18 +637,22 @@ type Installation struct {
 	Protocol         *ProtocolObservation `json:"protocol,omitempty"`
 }
 type Machine struct {
-	Name               string             `json:"name"`
-	OS                 string             `json:"os"`
-	Architecture       string             `json:"architecture"`
-	Version            string             `json:"version"`
-	Installations      []Installation     `json:"installations"`
-	WorkerCapabilities []WorkerCapability `json:"worker_capabilities,omitempty"`
-	DiscoveryRevision  uint64             `json:"discovery_revision,omitempty"`
-	LastSeen           time.Time          `json:"last_seen"`
-	Disabled           bool               `json:"disabled"`
+	Network            *WorkerNetworkState `json:"network,omitempty"`
+	Name               string              `json:"name"`
+	OS                 string              `json:"os"`
+	Architecture       string              `json:"architecture"`
+	Version            string              `json:"version"`
+	Installations      []Installation      `json:"installations"`
+	WorkerCapabilities []WorkerCapability  `json:"worker_capabilities,omitempty"`
+	DiscoveryRevision  uint64              `json:"discovery_revision,omitempty"`
+	LastSeen           time.Time           `json:"last_seen"`
+	Disabled           bool                `json:"disabled"`
 }
 
 func (m Machine) Validate() error {
+	if m.Network != nil && m.Network.Validate() != nil {
+		return Fail(InvalidArgument, "Invalid Worker network state.", "Use authenticated route synchronization.")
+	}
 	if err := Text(m.Name, "machine name", 256, true); err != nil {
 		return err
 	}
@@ -670,7 +674,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

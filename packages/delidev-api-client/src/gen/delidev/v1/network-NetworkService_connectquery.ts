@@ -5,6 +5,16 @@
 import { NetworkService } from "./network_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.NetworkService.ExportWorkerNetworkBundle
+ */
+export const exportWorkerNetworkBundle = NetworkService.method.exportWorkerNetworkBundle;
+
+/**
+ * @generated from rpc delidev.v1.NetworkService.GetWorkerNetworkStatus
+ */
+export const getWorkerNetworkStatus = NetworkService.method.getWorkerNetworkStatus;
+
+/**
  * @generated from rpc delidev.v1.NetworkService.SaveNetworkProfile
  */
 export const saveNetworkProfile = NetworkService.method.saveNetworkProfile;

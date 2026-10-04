@@ -30,6 +30,30 @@ func unavailable() error {
 	return domain.Fail(domain.Unavailable, "The selected outbound proxy could not complete the connection.", "Check the selected proxy; routing never falls back to direct or another profile.")
 }
 
+// DialPinned is for the separately owned native API tunnel. Its caller has
+// already authenticated and restricted the exact destination. Bypass remains
+// a positive configuration decision; a failed proxy never selects Direct.
+func DialPinned(ctx context.Context, profile domain.NetworkProfile, credential *domain.ProxyCredential, address string, tlsConfig *tls.Config) (net.Conn, error) {
+	if profile.Validate() != nil || profile.CredentialGeneration != "" && (credential == nil || credential.Validate() != nil) || profile.CredentialGeneration == "" && credential != nil {
+		return nil, unavailable()
+	}
+	if profile.Mode == domain.ProxyDirect || profile.Bypasses(address) {
+		return DirectDial(ctx, "tcp", address)
+	}
+	var value domain.ProxyCredential
+	if credential != nil {
+		value = *credential
+	}
+	connection, err := dialProxy(ctx, profile, value, "tcp", address, tlsConfig)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, domain.SafeError(ctx.Err())
+		}
+		return nil, unavailable()
+	}
+	return connection, nil
+}
+
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	p, raw, err := t.Resolve(req.Context())
 	defer clear(raw)

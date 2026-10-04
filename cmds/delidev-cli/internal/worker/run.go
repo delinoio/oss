@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 )
 
 type Config struct {
+	network            *workerNetworkRuntime
 	observations       *managedObservationRegistry
 	inspectionMetadata bool
 	terminals          *terminalManager
@@ -188,10 +190,15 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			return err
 		}
 	}
-	httpClient, transport := rpc.HTTPClient()
+	httpClient, transport, err := networkHTTPClient(ctx, config.Root, credential)
+	if err != nil {
+		return err
+	}
+	config.network = transport.runtime
 	defer transport.CloseIdleConnections()
 	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
 	instance, attachID := domain.NewID(), domain.NewID()
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -202,7 +209,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
 		// Terminal support belongs to this process, independently of the slower
 		// title probe. Reconnect must preserve existing shells' capability gates.
-		attached, err := client.AttachWorker(attempt, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}))
+		attached, err := client.AttachWorker(attempt, authenticated(credential, initialAttach))
 		cancel()
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
@@ -211,6 +218,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
 		if err == nil {
+			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
+			proxyExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1)
+			if config.network != nil && (!networkExpected || !proxyExpected) {
+				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
+			}
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			executable := codexTitleExecutable(attached.Msg.Machine)
 			verifiedTitleProfile := false
@@ -251,10 +263,26 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if metadataExpected {
 				profile += "\x00inspection-metadata-v1"
 			}
+			if networkExpected {
+				profile += "\x00network-bootstrap-v1"
+			}
+			if proxyExpected {
+				profile += "\x00codex-api-proxy-v1"
+			}
+			if config.network != nil {
+				current := config.network.current()
+				profile += "\x00network-generation-" + strconv.FormatUint(current.metadata.Generation, 10) + "-" + string(current.metadata.RouteID)
+			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if networkExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
+			}
+			if proxyExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1)
+			}
 			if managedCapabilityExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1)
 			}
@@ -265,7 +293,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			}
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
-			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}))
+			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}, config)))
 			stopNegotiation()
 			err = negotiateErr
 			if err == nil && negotiated.Msg.ServerId != string(credential.ServerID) {
@@ -273,6 +301,17 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if err == nil {
 				attached = negotiated
+			}
+		}
+		if err == nil && config.network != nil {
+			bounded, stop := context.WithTimeout(ctx, 30*time.Second)
+			err = config.network.sync(bounded, client, credential, instance)
+			stop()
+		}
+		if err == nil && config.network == nil {
+			var network domain.WorkerNetworkStatus
+			if len(attached.Msg.NetworkStatusJson) != 0 && (domain.Decode(attached.Msg.NetworkStatusJson, &network) != nil || network.ControlState != domain.WorkerRouteObserved) {
+				return domain.Fail(domain.RecoveryRequired, "The server requires current protected Worker network configuration.", "Prepare the original recipient, export/import its encrypted generation and reconnect before execution.")
 			}
 		}
 		if err == nil {
@@ -327,9 +366,13 @@ func watchAttached(ctx context.Context, config Config, client delidevv1connect.W
 		watchSessionDeletions(watchCtx, config, client, credential, instance)
 	}()
 	defer func() { cancel(); <-deletionsDone }()
-	results := make(chan error, 3)
+	results := make(chan error, 4)
 	go func() { results <- watch(watchCtx, config, client, credential, instance) }()
 	count := 1
+	if config.network != nil {
+		count++
+		go func() { results <- maintainWorkerNetwork(watchCtx, config, client, credential, instance) }()
+	}
 	if auxiliary {
 		count++
 		go func() { results <- watchAuxiliary(watchCtx, config, client, credential, instance) }()
@@ -596,7 +639,12 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		}
 	}()
 	forwardsDone := make(chan struct{})
-	go func() { defer close(forwardsDone); watchForwards(ctx, config, credential, instance) }()
+	go func() {
+		defer close(forwardsDone)
+		if err := watchForwards(ctx, config, credential, instance); err != nil {
+			cancel(err)
+		}
+	}()
 	readsDone := make(chan struct{})
 	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
 	defer func() {

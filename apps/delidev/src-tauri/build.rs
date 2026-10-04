@@ -18,6 +18,7 @@ fn main() {
             "local_server_status",
             "local_worker_proof",
             "local_worker_control",
+            "worker_network_control",
             "connection_context",
             "saved_connections",
             "removed_connections",

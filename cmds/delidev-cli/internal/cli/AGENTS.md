@@ -59,3 +59,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `session diagnostics` uses authenticated SessionService with exact session/execution IDs and bounded original page cursors. Preserve unavailable metadata and precise counters without native side effects or implicit retry.
 
 - Generic JSON configuration selects schema 2 only for service-native subscription accounts/models or retired Agent repair, preserving API schema 1 and the version-1 result envelope. Subscription list requests never combine a Provider selector. Follow the independent subscription identity and portable bundle contracts.
+
+- Worker network prepare/import and owner export/status preserve the original protected recipient scope. Bound public recipient input and encrypted transfers; require separately supplied ciphertext digest, private atomic output and original exact route revision. No stdin secret, decrypted derivative, private key or proxy credential may enter ordinary JSON output or logs.
+
+- Saved Worker network commands derive the exact private root and original credential from the saved connection. Ciphertext may enter bounded stdin independently of its authenticated digest, never alongside token/pairing input. Import output contains only public original IDs, exact decimal generation and ciphertext digest; omit vault references and reject future/malformed status shapes.

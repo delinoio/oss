@@ -523,6 +523,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 	}{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, req.Msg.CredentialDigest}
 	grant := store.ExecutionGrant{JobID: identity.Job, MachineID: identity.Machine, InstanceID: identity.Instance, DeviceID: identity.Device, ServerEpoch: s.executionAuthority.epoch, Digest: identity.Digest}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "execution.register", identity, func(tx *store.Tx) (any, error) {
+		if err := workerNetworkReady(tx, identity.Machine); err != nil {
+			return nil, err
+		}
 		r, err := tx.Get(domain.JobKind, identity.Job)
 		if err != nil {
 			return nil, err
@@ -563,6 +566,27 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		scope, err := s.executionAuthority.scope(tx, grant)
 		if err != nil {
 			return nil, err
+		}
+		if routeRecord, routeErr := tx.NetworkRoute(identity.Machine); routeErr == nil {
+			route, decodeErr := store.Decode[domain.NetworkRoute](routeRecord)
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+			if route.Profile.Mode != domain.ProxyDirect {
+				var supported bool
+				if job.Type == domain.ExecuteSessionJob {
+					var input domain.ExecutionJobInput
+					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && input.Installation.Version == domain.CodexProtocolVersion
+				} else if job.Type == domain.GenerateSessionTitleJob {
+					var input domain.AuxiliaryTitleInput
+					supported = domain.Decode(job.Input, &input) == nil && input.Harness == domain.Codex && input.NativeVersion == domain.CodexProtocolVersion
+				}
+				if !supported {
+					return nil, domain.Fail(domain.Unsupported, "The selected Worker proxy has no native adapter for this execution profile.", "Use the pinned Codex API profile or explicitly select Direct; native traffic never silently falls back.")
+				}
+			}
+		} else if !store.MissingNetworkRoute(routeErr) {
+			return nil, routeErr
 		}
 		if !scope.Provider.EnabledValue() {
 			return nil, providerDisabled()

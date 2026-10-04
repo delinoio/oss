@@ -185,3 +185,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Account deletion removes only its account-scoped subscription-recovery Inbox entries in the same transaction through ordinary tombstone/receipt-redaction/event publication. Preserve unrelated account and session Inbox entries and bound every read page.
 
 - Migration 28 bounds relevant configuration/device metadata, not total retained history. Check original affected account references and unsettled session/job ownership directly in SQLite without loading or charging unrelated messages/jobs against retirement bounds.
+
+- Worker network transfer, pending-pairing and native-runtime pins reuse existing metadata with strict original UUID/generation/digest validation. Keep ciphertext and protected derivatives outside SQLite. Remove native job pins with ordinary/session job purge; preserve pending pairing and current routing through their independent authority and restore boundary. Periodic unchanged acknowledgements do not republish Machine state.

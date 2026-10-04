@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "worker-network"
+description = "Prepare, import, or inspect the original same-computer Worker network scope through Go."
+commands.allow = ["worker_network_control"]

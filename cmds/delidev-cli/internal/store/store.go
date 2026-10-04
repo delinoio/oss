@@ -731,6 +731,11 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	if err := t.preserveDeletedProjectPolicy(r); err != nil {
 		return err
 	}
+	if kind == domain.JobKind {
+		if err := t.deleteWorkerNativeRoute(id); err != nil {
+			return err
+		}
+	}
 	if _, err = t.tx.ExecContext(t.ctx, "DELETE FROM entities WHERE id=?", id); err != nil {
 		return storageError(err)
 	}

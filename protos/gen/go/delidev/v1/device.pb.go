@@ -208,6 +208,8 @@ type PairDeviceRequest struct {
 	CredentialDigest []byte                 `protobuf:"bytes,5,opt,name=credential_digest,json=credentialDigest,proto3" json:"credential_digest,omitempty"`
 	MachineId        string                 `protobuf:"bytes,6,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
 	MachineJson      []byte                 `protobuf:"bytes,7,opt,name=machine_json,json=machineJson,proto3" json:"machine_json,omitempty"`
+	NetworkRecipient string                 `protobuf:"bytes,8,opt,name=network_recipient,json=networkRecipient,proto3" json:"network_recipient,omitempty"`
+	NetworkKeyId     string                 `protobuf:"bytes,9,opt,name=network_key_id,json=networkKeyId,proto3" json:"network_key_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -289,6 +291,20 @@ func (x *PairDeviceRequest) GetMachineJson() []byte {
 		return x.MachineJson
 	}
 	return nil
+}
+
+func (x *PairDeviceRequest) GetNetworkRecipient() string {
+	if x != nil {
+		return x.NetworkRecipient
+	}
+	return ""
+}
+
+func (x *PairDeviceRequest) GetNetworkKeyId() string {
+	if x != nil {
+		return x.NetworkKeyId
+	}
+	return ""
 }
 
 type PairDeviceResponse struct {
@@ -480,7 +496,7 @@ const file_delidev_v1_device_proto_rawDesc = "" +
 	"\apairing\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\apairing\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed\"\xf1\x01\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"\xc4\x02\n" +
 	"\x11PairDeviceRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -491,7 +507,9 @@ const file_delidev_v1_device_proto_rawDesc = "" +
 	"\x11credential_digest\x18\x05 \x01(\fR\x10credentialDigest\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\x06 \x01(\tR\tmachineId\x12!\n" +
-	"\fmachine_json\x18\a \x01(\fR\vmachineJson\"\xab\x01\n" +
+	"\fmachine_json\x18\a \x01(\fR\vmachineJson\x12+\n" +
+	"\x11network_recipient\x18\b \x01(\tR\x10networkRecipient\x12$\n" +
+	"\x0enetwork_key_id\x18\t \x01(\tR\fnetworkKeyId\"\xab\x01\n" +
 	"\x12PairDeviceResponse\x12,\n" +
 	"\x06device\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x06device\x12.\n" +
 	"\amachine\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\amachine\x12\x1b\n" +
