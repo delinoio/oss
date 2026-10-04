@@ -10,7 +10,7 @@ use std::{
 use delidev_desktop::{
     Connector, NativeFailure,
     oauth::OAuthHost,
-    updater::{Action, Phase, Prepared, PublicResult},
+    updater::{Action, DesktopUpdateRequest, Phase, Prepared, PublicResult},
 };
 use tauri::{Cef, WebviewWindow};
 
@@ -152,12 +152,14 @@ pub async fn desktop_update_native(
     let prepared = tauri::async_runtime::spawn_blocking(move || {
         c.desktop_update(
             saved.as_ref(),
-            &sid,
-            &oid,
-            revision,
-            &native_generation,
-            command,
-            None,
+            DesktopUpdateRequest {
+                server: &sid,
+                id: &oid,
+                revision,
+                generation: &native_generation,
+                action: command,
+                outcome: None,
+            },
         )
     })
     .await
@@ -218,12 +220,14 @@ pub async fn desktop_update_native(
     let begun = tauri::async_runtime::spawn_blocking(move || {
         c.desktop_update(
             saved.as_ref(),
-            &sid,
-            &oid,
-            revision,
-            &native_generation,
-            "native-begin",
-            None,
+            DesktopUpdateRequest {
+                server: &sid,
+                id: &oid,
+                revision,
+                generation: &native_generation,
+                action: "native-begin",
+                outcome: None,
+            },
         )
     })
     .await
@@ -238,12 +242,14 @@ pub async fn desktop_update_native(
         let outcome = c.install_desktop(&begun);
         c.desktop_update(
             saved.as_ref(),
-            &sid,
-            &oid,
-            revision,
-            &native_generation,
-            "native-outcome",
-            Some(outcome),
+            DesktopUpdateRequest {
+                server: &sid,
+                id: &oid,
+                revision,
+                generation: &native_generation,
+                action: "native-outcome",
+                outcome: Some(outcome),
+            },
         )
     })
     .await
