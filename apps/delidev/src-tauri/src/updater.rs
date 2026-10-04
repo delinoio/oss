@@ -538,6 +538,7 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
 }
 #[cfg(target_os = "linux")]
 fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
+    use std::os::unix::fs::OpenOptionsExt;
     let Some(image) = std::env::var_os("APPIMAGE").map(PathBuf::from) else {
         return Phase::Failed;
     };
