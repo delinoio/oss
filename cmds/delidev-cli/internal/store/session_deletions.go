@@ -258,12 +258,14 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 	if e != nil {
 		return v, false, e
 	}
-	if len(all)+len(ids)+1 > maxSessionDeletions {
-		return v, false, domain.SessionDeletionPending()
-	}
+	remaining := maxSessionDeletions - len(all) - 1
 	for _, id := range ids {
 		child, err := s.readSessionDeletion(id)
 		if errors.Is(err, os.ErrNotExist) {
+			if remaining == 0 {
+				return v, false, domain.SessionDeletionPending()
+			}
+			remaining--
 			row, err := t.Get(domain.SessionKind, id)
 			if err != nil {
 				return v, false, err

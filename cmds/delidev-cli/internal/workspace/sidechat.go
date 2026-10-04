@@ -152,8 +152,24 @@ func (m *Manager) PrepareSidechatReference(ctx context.Context, child domain.ID,
 	// Exclusive metadata creation is covered by the original once-only fork
 	// claim. Failure retains that scope for joined original-operation cleanup.
 	result = Manifest{Version: 1, SessionID: child, MachineID: source.MachineID, Type: source.Type, State: Ready, InputDigest: preparationDigest(input), PrimaryPath: source.PrimaryPath, Repositories: referencedRepositories(source), CreatedAt: time.Now().UTC(), Reference: &SidechatReference{SessionID: source.SessionID, PreparationDigest: source.InputDigest, ManifestDigest: manifestDigest(source), DirectoryIdentity: identity, MetadataIdentity: metadataIdentity}}
+	defer func() {
+		if returned != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := m.removeSidechatMetadata(cleanupCtx, root, result); err != nil {
+				returned = ResultUncertain()
+				m.Logger.WarnContext(cleanupCtx, "sidechat_reference_rollback_pending", "session_id", child, "parent_session_id", source.SessionID, "code", domain.SafeError(err).Code)
+			}
+		}
+	}()
 	if validateSidechatResult(input, result, runtime.GOOS) != nil {
 		return input, result, ResultUncertain()
+	}
+	if m.sidechatBeforeMetadataPublish != nil {
+		m.sidechatBeforeMetadataPublish()
+	}
+	if err := ctx.Err(); err != nil {
+		return input, result, domain.SafeError(err)
 	}
 	raw, err := json.Marshal(result)
 	if err != nil {
@@ -164,6 +180,12 @@ func (m *Manager) PrepareSidechatReference(ctx context.Context, child domain.ID,
 	}
 	if err := security.SyncParent(root); err != nil {
 		return input, result, ResultUncertain()
+	}
+	if m.sidechatAfterMetadataPublish != nil {
+		m.sidechatAfterMetadataPublish()
+	}
+	if err := ctx.Err(); err != nil {
+		return input, result, domain.SafeError(err)
 	}
 	if _, err := m.verifySidechatReference(ctx, input, result, child); err != nil {
 		return input, result, err
@@ -320,4 +342,28 @@ func (m *Manager) removeSidechatMetadata(ctx context.Context, root string, manif
 		return ResultUncertain()
 	}
 	return security.SyncParent(root)
+}
+
+// Failed original Fork work owns only this unpublished inode-bound metadata.
+// Called after native owners join; never follow or remove the referenced parent.
+func (m *Manager) DiscardUnpublishedSidechatReference(ctx context.Context, input PrepareRequest, manifest Manifest) error {
+	if validateSidechatResult(input, manifest, runtime.GOOS) != nil || m.initialize() != nil {
+		return ResultUncertain()
+	}
+	parent, err := m.lockWorkspaceObservations(ctx, input.ForkSourceID)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	child, err := security.TryLock(filepath.Join(m.Root, "locks", string(input.SessionID)+".lock"))
+	if err != nil {
+		return err
+	}
+	defer child.Close()
+	views, err := m.lockWorkspaceObservations(ctx, input.SessionID)
+	if err != nil {
+		return err
+	}
+	defer views.Close()
+	return m.removeSidechatMetadata(ctx, filepath.Join(m.Root, "workspaces", string(input.SessionID)), manifest)
 }

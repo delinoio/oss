@@ -136,9 +136,19 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		return nil, executionCheckpointUncertain()
 	}
 	phase := forkRuntimeUnused
+	var unpublishedSidechatInput workspace.PrepareRequest
+	var unpublishedSidechat *workspace.Manifest
 	defer func() {
 		if returned != nil {
 			output = nil
+			if unpublishedSidechat != nil {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				cleanupErr := manager.DiscardUnpublishedSidechatReference(cleanupCtx, unpublishedSidechatInput, *unpublishedSidechat)
+				cancel()
+				if cleanupErr != nil {
+					returned = executionCheckpointUncertain()
+				}
+			}
 			returned = finishForkPreNativeFailure(home, phase, returned)
 			logger.InfoContext(ctx, "session_fork_failure_ownership", "job_id", owner, "runtime_phase", phase, "code", domain.SafeError(returned).Code)
 		}
@@ -172,6 +182,10 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	var workspaceSnapshot *workspace.ForkSnapshot
 	if input.Purpose == domain.SidechatFork {
 		childPreparation, childManifest, err = manager.PrepareSidechatReference(ctx, input.ChildSessionID, preparation, manifest)
+		if err == nil {
+			unpublishedSidechatInput = childPreparation
+			unpublishedSidechat = &childManifest
+		}
 	} else {
 		childPreparation, err = manager.ForkPreparation(ctx, manifest, input.ChildSessionID, input.Workspace)
 		if err == nil {

@@ -43,7 +43,7 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 		Direction string    `json:"sortDirection"`
 		View      string    `json:"itemsView"`
 	}
-	if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"] || params.Limit != 1 || params.Direction != "desc" || params.View != "full" {
+	if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"] || !(params.Limit == 1 && params.Direction == "desc" || f.mode == "thread-continuation-sidechat" && params.Limit == 50 && params.Direction == "asc") || params.View != "full" {
 		os.Exit(61)
 	}
 	if file := os.Getenv("DELIDEV_CODEX_CAPTURE"); file != "" {
@@ -69,7 +69,16 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 			os.Exit(64)
 		}
 	}
-	write(id, f.history)
+	if params.Limit == 50 {
+		var page map[string]json.RawMessage
+		if json.Unmarshal(f.history, &page) != nil {
+			os.Exit(65)
+		}
+		page["nextCursor"], page["backwardsCursor"] = json.RawMessage("null"), json.RawMessage("null")
+		write(id, page)
+	} else {
+		write(id, f.history)
+	}
 	if n := f.historyNotification; n != nil {
 		f.notify(n.Method, n.Params)
 		f.historyNotification = nil
@@ -86,7 +95,12 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 func continuationFixture(t *testing.T, mode string) (*Client, string, ContinuationCheckpoint, map[string]any) {
 	t.Helper()
 	c, capture := openThreadFixture(t, "thread-continuation-"+mode)
-	bound, err := c.ResumeThread(context.Background(), domain.NewID(), domain.NewID(), threadSettings(t))
+	settings := threadSettings(t)
+	if mode == "sidechat" {
+		settings.Options.Permission = domain.PermissionReadOnly
+		settings.Options.ApprovalPolicy = "never"
+	}
+	bound, err := c.ResumeThread(context.Background(), domain.NewID(), domain.NewID(), settings)
 	if err != nil {
 		t.Fatal(err)
 	}

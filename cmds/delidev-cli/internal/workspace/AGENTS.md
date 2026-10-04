@@ -70,3 +70,5 @@ Removal journals use newline-framed records. Validate the complete prefix before
 Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.
 
 - OpenCode General Chat Fork uses the closed `opencode-general-chat-v1` copy profile with an independent 8,192-entry/256 MiB bound. Preserve omitted legacy Codex profiles and their bounds; apply the chosen bound to initial inspection, actual copy and both final comparisons. Only independently owned sibling managed session roots may be relocated; no links, Git administration or special files may enter this copy.
+
+- Failed unpublished Sidechat reference preparation rolls back only the original inode-bound metadata through independent bounded cleanup. Foreign or replaced metadata remains pending; referenced parent files are never removed.

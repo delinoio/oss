@@ -135,3 +135,5 @@ allocation ledger and generated bindings in the same change.
 - [Workspace](cmds-delidev-workspace-contract.md)
 - [Storage and permanent deletion](cmds-delidev-storage-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+- Sidechat creation uses the full native-fork wait deadline while findings submission retains its immediate bound. UI fork admission includes current workspace availability. Revalidate the closed native Sidechat configuration/features immediately before manual compaction claim/send. Failed unpublished reference preparation/fork rolls back only the original inode-bound metadata under independent bounded cleanup; foreign/replaced metadata remains pending. Parent deletion capacity counts only newly created dependent journals.

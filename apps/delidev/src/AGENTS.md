@@ -617,3 +617,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - OpenCode Fork presentation reads the complete bounded canonical transcript through authenticated Resource RPC, keyed by exact source revision/native thread and rechecked before submit. Require every retained message to match the plain-text/empty-changes profile; incomplete, repeated, invalid or changed pages cannot expose the action. Go retains independent acceptance/publication authority and the Worker retains native-history proof. Task-only OpenCode child observations remain pending, and automatic compaction references require original native part IDs.
 
 - Record native OAuth browser binding only after its acknowledgement. Pre/post-bind uncertainty retries only the original Start and exact BindOpen; exact binding replay cannot open twice, and later Reopen remains deliberate.
+
+- Fork and Sidechat admission use current workspace availability, including submission rechecks after query refresh. Stored, pending or uncertain workspaces cannot display an actionable native-fork control.

@@ -70,3 +70,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `snapshot list --session-id ID [--limit N] [--page-token TOKEN]` negotiates workspace-storage support and uses authenticated Resource pagination. Preserve original opaque tokens, exact metadata revisions and explicit older-server guidance.
 
 - Explicit `account oauth start|complete|status|cancel` follows the OAuth contract. Start defaults to headless mode; completion accepts exact bounded code stdin only, without trimming or secret argv. Code-free `--recover` requires the original completion request/revision and never exchanges. CLI product operations never implicitly start a server.
+
+
+- `snapshot list --session-id ID [--limit N] [--page-token TOKEN]` negotiates workspace-storage support and uses authenticated Resource pagination. Preserve original opaque tokens, exact metadata revisions and explicit older-server guidance.
+
+- Sidechat creation and observation retain the native fork 145-second command deadline; selected findings submission retains the immediate ordinary deadline. A bounded wait failure returns the original accepted job identity.
