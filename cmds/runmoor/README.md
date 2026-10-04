@@ -524,6 +524,10 @@ Xcode builds are intended workloads. Escaped daemons are unsupported. Existing
 control commands and launchd apply. Missing supervisors, changed identities or
 uncertain termination retain reservations and resources even during force-stop.
 Drain/stop and preserve paired state/data backups before upgrade or compatible rollback.
+After completed cleanup, copied backups retain verified host distributions when
+restored together. Start with a compatible binary and the restored storage
+configuration; do not edit ownership markers or reuse a backup while later
+resources remain active.
 Actual host execution, unsigned Xcode builds and live GitHub jobs have not been
 validated. Read the [host guide](https://oss.delino.io/runmoor/host) for setup,
 trust, cleanup, recovery and community support without a response SLA.

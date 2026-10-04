@@ -419,6 +419,15 @@ cleanup reconciles confirmed absence. Public status/doctor remain JSON v1 and do
 not expose these private journals. Seven-day completed history and existing
 seven-day/256 MiB redacted diagnostic limits remain unchanged.
 
+Copied distribution directories may receive new device/inode identities only
+under the exclusive startup lock after a completed stop or drained storage
+relocation. Require all execution cleanup and image operations to be complete,
+every artifact to be ready and unreserved, and matching installation/token,
+artifact/version and runner digest before rebinding the marker and SQLite record.
+A marker committed before a failed state write can be retried at that same
+boundary. Live restart, execution directories, changed content and incomplete
+cleanup never authorize rebinding; runtime ownership checks remain strict.
+
 The manager and jobs use the same macOS account. Recommend a dedicated CI account;
 Runmoor neither provisions accounts nor requires a privileged helper. The job
 allowlist retains PATH and DEVELOPER_DIR when set, the minimal locale, and

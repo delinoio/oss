@@ -1,6 +1,7 @@
 package runmoor
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/url"
@@ -244,6 +245,16 @@ func OpenStore(c Config) (*Store, error) {
 				return failed(problem(ErrPermission, "Cannot restrict SQLite files.", "Use an owner-controlled state directory."))
 			}
 		}
+	}
+	// Rebind copied distribution identities only under the exclusive manager lock
+	// at a completed stop or explicit storage relocation. Live restart never does.
+	if len(s.state.HostDirectories) > 0 && (relocated || s.state.Stopping) && hostRestoreBoundary(s.state) {
+		if err := rebindHostDistributions(context.Background(), s, c); err != nil {
+			db.Close()
+			return fail(err)
+		}
+	} else if relocated && len(s.state.HostDirectories) > 0 {
+		return failed(problem(ErrConfig, "Storage relocation requires completed host execution cleanup.", "Restore the original storage locations and finish host cleanup before copying the paired backup."))
 	}
 	if relocated {
 		if err := s.Update(func(v *Snapshot) error {

@@ -126,7 +126,10 @@ the reported safe error code and restore a matching paired backup when available
 Do not repair ownership markers or delete a directory based only on its name.
 
 Drain and stop before a binary upgrade or rollback. Keep paired state/data backups
-and use a compatible binary; an older binary cannot safely open newer state.
+and wait for cleanup to finish before copying them. Restoring both together with a
+compatible binary preserves verified host distributions. Do not edit ownership
+markers or restore an older backup while later resources remain active.
+An older binary cannot safely open newer state.
 Runmoor preserves unresolved records until recovery and completed history for
 seven days. Diagnostics retain safe lifecycle information within seven days and
 256 MiB; raw workflow output, runner logs and credentials are not copied into them.

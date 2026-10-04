@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,12 @@ func hostRootRead(root *os.Root, name string, limit int64) ([]byte, error) {
 	return b, nil
 }
 func openHostDirectory(c Config, d HostDirectory, installation string, removing bool) (*os.Root, error) {
+	return openHostDirectoryIdentity(c, d, installation, removing, false)
+}
+
+// Copied identities are accepted only by drained startup recovery. Runtime
+// execution and cleanup continue to require the exact opened inode identity.
+func openHostDirectoryIdentity(c Config, d HostDirectory, installation string, removing, copied bool) (*os.Root, error) {
 	if !validHostDirectory(d, installation) {
 		return nil, hostOwnership()
 	}
@@ -93,7 +100,7 @@ func openHostDirectory(c Config, d HostDirectory, installation string, removing 
 	}
 	fail := func() (*os.Root, error) { root.Close(); return nil, hostOwnership() }
 	info, err := root.Stat(".")
-	if err != nil || !hostPrivateInfo(info, true) || d.Identity != "" && hostFileIdentity(info) != d.Identity {
+	if err != nil || !hostPrivateInfo(info, true) || !copied && d.Identity != "" && hostFileIdentity(info) != d.Identity {
 		return fail()
 	}
 	b, err := hostRootRead(root, hostOwnerFile, 4096)
@@ -104,10 +111,99 @@ func openHostDirectory(c Config, d HostDirectory, installation string, removing 
 			return root, nil
 		}
 	}
-	if err != nil || json.Unmarshal(b, &marker) != nil || marker.ID != d.ID || marker.Token != d.Token || marker.Installation != installation || marker.Kind != d.Kind || marker.Identity != hostFileIdentity(info) {
+	if err != nil || json.Unmarshal(b, &marker) != nil || marker.ID != d.ID || marker.Token != d.Token || marker.Installation != installation || marker.Kind != d.Kind {
+		return fail()
+	}
+	if marker.Identity != hostFileIdentity(info) && (!copied || d.Identity == "" || marker.Identity != d.Identity) {
+		return fail()
+	}
+	if copied && (d.Kind != HostDistribution || d.RemovalCommitted || d.Identity == "" || marker.Digest != "" && marker.Digest != d.Digest || marker.Version != "" && marker.Version != d.Version) {
 		return fail()
 	}
 	return root, nil
+}
+
+func hostRestoreBoundary(s Snapshot) bool {
+	for _, r := range s.Runners {
+		if r.Phase != Completed {
+			return false
+		}
+	}
+	for _, a := range s.Artifacts {
+		if a.Reserved || a.Phase != ArtifactReady {
+			return false
+		}
+	}
+	for _, im := range s.Images {
+		if im.Phase == ImageOpen || im.Phase == ImagePreparing || im.Phase == ImageRemoving {
+			return false
+		}
+	}
+	for _, e := range s.HostExecutions {
+		if !e.Terminated || !e.Cleaned {
+			return false
+		}
+	}
+	for _, d := range s.HostDirectories {
+		if d.Kind != HostDistribution || d.RemovalCommitted {
+			return false
+		}
+	}
+	return true
+}
+
+func rebindHostDistributions(ctx context.Context, store *Store, c Config) error {
+	s := store.View()
+	if !hostRestoreBoundary(s) {
+		return hostOwnership()
+	}
+	for id, d := range s.HostDirectories {
+		a := s.Artifacts[id]
+		if d.ID != id || d.Digest == "" || !versionPattern.MatchString(d.Version) || a == nil || a.ID != id || a.Backend != Host || a.Image != id || !a.Generated {
+			return hostOwnership()
+		}
+		root, err := openHostDirectoryIdentity(c, *d, s.Installation, false, true)
+		if err != nil {
+			return err
+		}
+		err = func() error {
+			defer root.Close()
+			info, err := root.Stat(".")
+			if err != nil {
+				return hostOwnership()
+			}
+			identity := hostFileIdentity(info)
+			if identity == d.Identity {
+				return nil
+			}
+			digest, err := hostRunnerDigest(ctx, root)
+			if err != nil || digest != d.Digest {
+				return hostOwnership()
+			}
+			rebound := *d
+			rebound.Identity = identity
+			// Publish the marker first. If the SQLite commit fails, drained retry
+			// accepts this exact new identity and rechecks the digest before commit.
+			if err = hostRootWrite(root, hostOwnerFile, rebound); err != nil {
+				return err
+			}
+			err = store.Update(func(v *Snapshot) error {
+				if !hostRestoreBoundary(*v) || v.HostDirectories[id] == nil || *v.HostDirectories[id] != *d {
+					return hostOwnership()
+				}
+				v.HostDirectories[id].Identity = identity
+				return nil
+			})
+			if err == nil {
+				slog.Info("host_distribution_identity_rebound", "artifact", id)
+			}
+			return err
+		}()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func createHostDirectory(ctx context.Context, store *Store, c Config, id string, kind HostDirectoryKind) (HostDirectory, *os.Root, error) {
 	if ctx.Err() != nil {
