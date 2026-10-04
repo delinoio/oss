@@ -203,6 +203,7 @@ fn selected_esm_options(options: OsString, path: &Path, cwd: Option<&Path>) -> R
     let tokens =
         tokens(options.as_encoded_bytes()).expect("generated options retain valid quoting");
     let mut selected = Vec::new();
+    let mut first_loader = None;
     for (index, token) in tokens.iter().enumerate() {
         for flag in ["--experimental-loader", "--loader"] {
             let value = if token.value == flag.as_bytes() {
@@ -219,6 +220,7 @@ fn selected_esm_options(options: OsString, path: &Path, cwd: Option<&Path>) -> R
                     .map(|value| (value, token.span.clone()))
             };
             if let Some((value, span)) = value {
+                first_loader.get_or_insert_with(|| span.clone());
                 if value == path.as_os_str().as_encoded_bytes()
                     || file_url_path(value, cwd).as_deref()
                         == Some(path.as_os_str().as_encoded_bytes())
@@ -229,16 +231,17 @@ fn selected_esm_options(options: OsString, path: &Path, cwd: Option<&Path>) -> R
         }
     }
     if selected.is_empty() {
-        let mut result = options;
+        let mut result = OsString::new();
         append_loader(
             &mut result,
             "--experimental-loader",
             &file_url(loader_path(path)?),
         );
+        append_option_bytes(&mut result, options.as_encoded_bytes());
         return Ok(result);
     }
     let relative = selected[0].1;
-    if selected.len() == 1 && !relative {
+    if selected.len() == 1 && !relative && first_loader.as_ref() == Some(&selected[0].0) {
         return Ok(options);
     }
     // A selected relative loader must stay bound when a descendant changes
@@ -247,30 +250,29 @@ fn selected_esm_options(options: OsString, path: &Path, cwd: Option<&Path>) -> R
     tracing::debug!(
         action = "node_loader_bound",
         relative,
+        moved_before_callers = first_loader.as_ref() != Some(&selected[0].0),
         duplicates = selected.len() - 1
     );
     let bytes = options.as_encoded_bytes();
     let mut result = OsString::new();
+    // Node loads each later loader through earlier registered hooks. Yarn must
+    // be registered first so caller loaders can import PnP-only dependencies.
+    if relative {
+        append_loader(
+            &mut result,
+            "--experimental-loader",
+            &file_url(loader_path(path)?),
+        );
+    } else {
+        result.push(unsafe { OsStr::from_encoded_bytes_unchecked(&bytes[selected[0].0.clone()]) });
+    }
     let mut cursor = 0;
-    for (index, (span, _)) in selected.into_iter().enumerate() {
+    for (span, _) in selected {
         // Spans use ASCII argument boundaries in the original OsStr encoding.
-        result.push(unsafe { OsStr::from_encoded_bytes_unchecked(&bytes[cursor..span.start]) });
-        if index == 0 {
-            if relative {
-                let mut canonical = OsString::new();
-                append_loader(
-                    &mut canonical,
-                    "--experimental-loader",
-                    &file_url(loader_path(path)?),
-                );
-                result.push(canonical);
-            } else {
-                result.push(unsafe { OsStr::from_encoded_bytes_unchecked(&bytes[span.clone()]) });
-            }
-        }
+        append_option_bytes(&mut result, &bytes[cursor..span.start]);
         cursor = span.end;
     }
-    result.push(unsafe { OsStr::from_encoded_bytes_unchecked(&bytes[cursor..]) });
+    append_option_bytes(&mut result, &bytes[cursor..]);
     Ok(result)
 }
 
@@ -403,6 +405,46 @@ mod tests {
             .unwrap()
             .contains("--no-warnings --require=\"/first preload.cjs\""));
         assert_eq!(loader.options(Some(&options)).unwrap(), options);
+    }
+
+    #[test]
+    fn registers_yarn_before_caller_esm_loaders_without_reordering_callers() {
+        let loader = loader(true);
+        let selected = file_url(loader.esm.as_ref().unwrap().to_str().unwrap());
+        let callers = "--no-warnings --loader=\"file:///first%20loader.mjs\"  \
+                       --experimental-loader \"file:///second.mjs\"";
+        for inherited in [
+            callers.to_owned(),
+            format!("{callers} --loader={selected}"),
+            format!("{callers} --loader={selected} --experimental-loader={selected}"),
+        ] {
+            let options = loader.options(Some(OsStr::new(&inherited))).unwrap();
+            let parsed = tokens(options.as_encoded_bytes()).unwrap();
+            let loaders: Vec<_> = parsed
+                .iter()
+                .enumerate()
+                .filter_map(|(index, token)| {
+                    if token.value == b"--experimental-loader" || token.value == b"--loader" {
+                        Some(parsed[index + 1].value.as_slice())
+                    } else {
+                        token
+                            .value
+                            .strip_prefix(b"--loader=")
+                            .or_else(|| token.value.strip_prefix(b"--experimental-loader="))
+                    }
+                })
+                .collect();
+            assert_eq!(
+                loaders,
+                [
+                    selected.as_bytes(),
+                    b"file:///first%20loader.mjs",
+                    b"file:///second.mjs"
+                ]
+            );
+            assert!(options.to_str().unwrap().contains(callers));
+            assert_eq!(loader.options(Some(&options)).unwrap(), options);
+        }
     }
 
     #[test]

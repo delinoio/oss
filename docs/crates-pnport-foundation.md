@@ -53,7 +53,10 @@ npm package named `pnpapi` or a partial API implementation.
 
 Run the selected CommonJS loader before caller `--require` preloads so those
 preloads can use `pnpapi` and ZIP-backed dependencies. Move an existing selected
-preload ahead of caller preloads when needed. Preserve unrelated option bytes
+preload ahead of caller preloads when needed. Register the selected ESM loader
+before caller ESM loaders, including an existing selected loader that follows
+caller options. Later loader modules must be able to import PnP-only dependencies
+through Yarn's already registered hooks. Preserve unrelated option bytes
 and their relative order, and avoid adding a selected loader more than
 once, including equivalent normalized local file URLs. Query and fragment
 suffixes retain their distinct ESM module identities. Resolve relative ESM

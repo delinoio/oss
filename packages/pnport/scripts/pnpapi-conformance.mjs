@@ -97,6 +97,36 @@ globalThis.__pnportTestPreloadOrder = ['first'];
   if (existsSync(join(root, ".pnp.loader.mjs"))) {
     cases.push(["automaticEsm", ["--input-type=module", "--eval", esmProbe, dependency], env]);
     cases.push(["descendantEsmOptionsRemoved", ["--eval", descendant("const env = {};", esmProbe, true), dependency], env]);
+    const firstEsm = join(childDirectory, "first loader.mjs");
+    const secondEsm = join(childDirectory, "second loader.mjs");
+    writeFileSync(firstEsm, `
+import assert from 'node:assert/strict';
+import api from 'pnpapi';
+import manifest from ${JSON.stringify(dependency)} with {type: 'json'};
+assert.equal(api.VERSIONS.std, 3);
+assert.equal(typeof manifest.name, 'string');
+globalThis.__pnportTestLoaderOrder = ['first'];
+`);
+    writeFileSync(secondEsm, `
+import assert from 'node:assert/strict';
+assert.deepEqual(globalThis.__pnportTestLoaderOrder, ['first']);
+globalThis.__pnportTestLoaderOrder.push('second');
+export function resolve(specifier, context, nextResolve) {
+  if (specifier === 'pnport:loader-order') {
+    assert.deepEqual(globalThis.__pnportTestLoaderOrder, ['first', 'second']);
+    return {url: 'data:text/javascript,export default true', shortCircuit: true};
+  }
+  return nextResolve(specifier, context);
+}
+`);
+    const callerEsmOptions = `--no-warnings --loader ${quote(pathToFileURL(firstEsm).href)} --experimental-loader=${quote(pathToFileURL(secondEsm).href)}`;
+    const callerEsmProbe = `import 'pnport:loader-order';\n${esmProbe}`;
+    cases.push(["esmCallerLoaders", ["--input-type=module", "--eval", callerEsmProbe, dependency],
+      { ...env, NODE_OPTIONS: callerEsmOptions }]);
+    cases.push(["esmCallerBeforeExplicitLoader", ["--input-type=module", "--eval", callerEsmProbe, dependency],
+      { ...env, NODE_OPTIONS: `${callerEsmOptions} --loader ${quote(pathToFileURL(join(resolve(root), ".pnp.loader.mjs")).href)}` }]);
+    cases.push(["esmDescendantCallerOptionsReplaced", ["--eval",
+      descendant(`const env = {NODE_OPTIONS: ${JSON.stringify(callerEsmOptions)}};`, callerEsmProbe, true), dependency], env]);
     const selectedUrl = pathToFileURL(join(resolve(root), ".pnp.loader.mjs")).href;
     const singleLoaderProbe = `${esmProbe}\nassert.equal((process.env.NODE_OPTIONS.match(/--(?:experimental-)?loader(?:=| )/g) ?? []).length, 1);`;
     const loaderCountProbe = (count) => `${probe}\nassert.equal((process.env.NODE_OPTIONS.match(/--(?:experimental-)?loader(?:=| )/g) ?? []).length, ${count});`;

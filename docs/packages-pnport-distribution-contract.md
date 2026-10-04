@@ -74,6 +74,8 @@ and imports both `pnpapi` and the package manifest through ESM. Fresh descendant
 must retain these behaviors after removing `NODE_OPTIONS` or replacing the whole
 environment. Caller preloads must run after Yarn initialization and be able to
 read `pnpapi` and ZIP-backed dependencies in their original relative order.
+Caller ESM loaders must import PnP-only dependencies during their initialization
+through the selected Yarn loader registered first, retaining caller loader order.
 Caller preload options and replacement descendant options must
 still execute. Explicit `--require` and inherited loader options remain supported.
 Relative selected ESM loaders must register once, remain bound across inherited
