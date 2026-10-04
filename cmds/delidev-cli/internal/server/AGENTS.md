@@ -181,3 +181,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Native route observation is monotonic for each immutable claimed runtime: once accepted-target traffic proves Observed, later Failed or Unverified socket reports cannot erase that proof. Distinct runtimes retain independent observations.
 
 - Failed or canceled workspace-storage recovery restores the original uncertain predecessor as the retry anchor. An uncertain recovery retains its assignment chain; terminal failure cannot become recovery authority or settle the predecessor.
+
+- Workspace-storage admission reserves one new job within the 4,096-job permanent deletion plan bound, including exact terminal-page boundaries. Full inventory rejects before job/session publication.

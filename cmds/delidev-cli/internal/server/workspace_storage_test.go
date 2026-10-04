@@ -399,3 +399,45 @@ func TestWorkspaceStorageUnsuccessfulRecoveryRestoresPredecessor(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkspaceStorageAdmissionReservesPermanentDeletionJobCapacity(t *testing.T) {
+	f := newStorageFixture(t)
+	state, err := store.Decode[domain.Session](f.sessionRecord())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.Store.Mutate(f.ownerContext, domain.NewID(), "storage.capacity.fixture", nil, func(tx *store.Tx) (any, error) {
+		original, err := tx.Get(domain.JobKind, state.Preparation.JobID)
+		if err != nil {
+			return nil, err
+		}
+		job, err := store.Decode[domain.Job](original)
+		if err != nil {
+			return nil, err
+		}
+		// The existing preparation plus these settled records leave one legal slot.
+		for i := 0; i < 4094; i++ {
+			if _, err := tx.PutJob(domain.NewID(), 0, f.session, "", job); err != nil {
+				return nil, err
+			}
+		}
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
+	if err != nil {
+		t.Fatal("final deletion-plan slot was not usable", err)
+	}
+	if _, err := f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: accepted.Msg.Job.Id, ExpectedRevision: accepted.Msg.Job.Revision}})); err != nil {
+		t.Fatal(err)
+	}
+	before := f.sessionRecord().Revision
+	if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", ""))); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatal("admission exceeded permanent-deletion inventory", err)
+	}
+	if f.sessionRecord().Revision != before {
+		t.Fatal("rejected storage changed the session")
+	}
+}

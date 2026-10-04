@@ -26,6 +26,7 @@ type storageRemovalIntent struct {
 	Action         StorageAction     `json:"action"`
 	SnapshotDigest string            `json:"snapshot_digest,omitempty"`
 	Inventory      snapshotInventory `json:"inventory"`
+	SourceBytes    *uint64           `json:"source_bytes,omitempty"`
 }
 
 // Persist this only after the private namespace and its original inventory have
@@ -279,6 +280,7 @@ func (m *Manager) removalIntentPath(id domain.ID) string {
 func (m *Manager) retainRemovalIntent(ctx context.Context, r StorageRequest, path string, expectedDigest ...string) error {
 	var inventory snapshotInventory
 	var snapshotDigest string
+	var sourceBytes uint64
 	if r.Action == StorageCleanup {
 		pinned, digest, err := m.cleanupRemovalInventory(r)
 		if err != nil {
@@ -287,10 +289,10 @@ func (m *Manager) retainRemovalIntent(ctx context.Context, r StorageRequest, pat
 		if len(expectedDigest) > 0 && digest != expectedDigest[0] {
 			return ResultUncertain()
 		}
-		inventory, snapshotDigest = pinned, digest
+		inventory, snapshotDigest, sourceBytes = pinned, digest, pinned.Bytes
 	} else if r.Action == StorageDelete {
 		var err error
-		inventory, err = snapshotRemovalInventory(ctx, r, path)
+		inventory, sourceBytes, err = snapshotRemovalInventory(ctx, r, path)
 		if err != nil {
 			return err
 		}
@@ -298,7 +300,7 @@ func (m *Manager) retainRemovalIntent(ctx context.Context, r StorageRequest, pat
 	} else {
 		return ResultUncertain()
 	}
-	intent := storageRemovalIntent{Version: 1, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, Action: r.Action, Inventory: inventory, SnapshotDigest: snapshotDigest}
+	intent := storageRemovalIntent{Version: 1, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, Action: r.Action, Inventory: inventory, SnapshotDigest: snapshotDigest, SourceBytes: &sourceBytes}
 	raw, err := json.Marshal(intent)
 	if err != nil || len(raw) > maxSnapshotManifest {
 		return ResultUncertain()
@@ -503,6 +505,7 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 				}
 			}
 			result.Snapshot = &metadata
+			result.SourceBytes = snapshot.SourceBytes
 		}
 	}
 	switch original.Action {
@@ -578,10 +581,9 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			result.RecoveredJobState = domain.JobSucceeded
 		} else {
 			if staged {
-				current, err := walkSnapshot(ctx, staging, "", nil)
-				if err != nil || inventoryDigest(current) != inventoryDigest(snapshot.Inventory) {
-					return result, ResultUncertain()
-				}
+				// The external operation claim and native root identity own all
+				// scratch, including an interrupted partial copy. Completed snapshot
+				// equality is required for publication, not unpublished cleanup.
 				if err := m.cleanupStorageStaging(ctx, original); err != nil {
 					return result, ResultUncertain()
 				}
@@ -618,6 +620,14 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err := security.SyncParent(m.snapshotPath(original.SnapshotID)); err != nil {
 				return result, ResultUncertain()
 			}
+			rawIntent, err := security.ReadPrivate(m.removalIntentPath(original.OperationID), maxSnapshotManifest)
+			var intent storageRemovalIntent
+			if err != nil || domain.DecodeBounded(rawIntent, &intent, maxSnapshotManifest) != nil || intent.SourceBytes == nil || *intent.SourceBytes > MaxSnapshotBytes {
+				return result, ResultUncertain()
+			}
+			// confirmRemoval bound this original intent to the verified claim;
+			// snapshot metadata size cannot reconstruct its logical source count.
+			result.SourceBytes = *intent.SourceBytes
 			metadata = *original.SnapshotMetadata
 			metadata.Deleted = true
 			result.Snapshot = &metadata
@@ -713,16 +723,16 @@ func (m *Manager) cleanupRemovalInventory(r StorageRequest) (snapshotInventory, 
 
 // Wrapper entries have a separate bound. They do not enlarge the valid workspace
 // inventory, and unexpected snapshot-root content never enters removal authority.
-func snapshotRemovalInventory(ctx context.Context, r StorageRequest, path string) (snapshotInventory, error) {
+func snapshotRemovalInventory(ctx context.Context, r StorageRequest, path string) (snapshotInventory, uint64, error) {
 	raw, err := security.ReadPrivate(filepath.Join(path, "snapshot.json"), maxSnapshotManifest)
 	var pinned snapshotManifest
 	sum := sha256.Sum256(raw)
 	if err != nil || hex.EncodeToString(sum[:]) != r.SnapshotDigest || domain.DecodeBounded(raw, &pinned, maxSnapshotManifest) != nil || pinned.ID != r.SnapshotID || manifestDigest(pinned.Workspace) != manifestDigest(r.Manifest) {
-		return snapshotInventory{}, ResultUncertain()
+		return snapshotInventory{}, 0, ResultUncertain()
 	}
 	inventory, err := walkSnapshotEntries(ctx, path, "", nil, maxSnapshotRemovalEntries)
 	if err != nil {
-		return snapshotInventory{}, err
+		return snapshotInventory{}, 0, err
 	}
 	var contents snapshotInventory
 	wrappers := 0
@@ -730,12 +740,12 @@ func snapshotRemovalInventory(ctx context.Context, r StorageRequest, path string
 		switch {
 		case entry.Path == "snapshot.json":
 			if !os.FileMode(entry.Mode).IsRegular() || entry.SHA256 != r.SnapshotDigest {
-				return snapshotInventory{}, ResultUncertain()
+				return snapshotInventory{}, 0, ResultUncertain()
 			}
 			wrappers++
 		case entry.Path == "workspace":
 			if !os.FileMode(entry.Mode).IsDir() {
-				return snapshotInventory{}, ResultUncertain()
+				return snapshotInventory{}, 0, ResultUncertain()
 			}
 			wrappers++
 		case strings.HasPrefix(entry.Path, "workspace/"):
@@ -743,11 +753,11 @@ func snapshotRemovalInventory(ctx context.Context, r StorageRequest, path string
 			contents.Entries = append(contents.Entries, entry)
 			contents.Bytes += entry.Size
 		default:
-			return snapshotInventory{}, ResultUncertain()
+			return snapshotInventory{}, 0, ResultUncertain()
 		}
 	}
 	if wrappers != 2 || len(contents.Entries) > MaxSnapshotEntries || inventoryDigest(contents) != inventoryDigest(pinned.Inventory) {
-		return snapshotInventory{}, ResultUncertain()
+		return snapshotInventory{}, 0, ResultUncertain()
 	}
-	return inventory, nil
+	return inventory, pinned.SourceBytes, nil
 }

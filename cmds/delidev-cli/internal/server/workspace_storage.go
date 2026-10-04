@@ -123,7 +123,7 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 				return domain.Fail(domain.Conflict, "Dependent jobs have not confirmed cleanup.", "Settle every dependent job before parent storage operations.")
 			}
 		}
-		if len(jobs) < store.MaxPage {
+		if len(jobs) < store.MaxPage && inspected < 4096 {
 			return nil
 		}
 	}
