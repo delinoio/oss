@@ -1963,6 +1963,38 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
     let finished = Arc::new(AtomicBool::new(false));
     let server_finished = Arc::clone(&finished);
     let server = thread::spawn(move || {
+        let read_request = |stream: &mut std::net::TcpStream| {
+            // Darwin can inherit the listener's nonblocking mode on accept.
+            // Read complete headers before responding so unread bytes cannot
+            // turn this 503 fixture into an unintended connection reset.
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                match stream.read_exact(&mut byte) {
+                    Ok(()) => (),
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::UnexpectedEof
+                                | std::io::ErrorKind::TimedOut
+                                | std::io::ErrorKind::WouldBlock
+                        ) =>
+                    {
+                        return false
+                    }
+                    Err(error) => {
+                        panic!("readiness fixture could not read request headers: {error}")
+                    }
+                }
+                request.push(byte[0]);
+                assert!(request.len() < 4096);
+            }
+            true
+        };
         // CLI startup can outlast its own readiness timeout on a loaded host.
         // Bound startup separately and keep serving 503 until the CLI exits.
         let preflight_deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -1979,11 +2011,14 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
                 Err(error) => panic!("readiness fixture could not accept a request: {error}"),
             }
         };
-        let mut request = [0u8; 1024];
-        let _ = stream.read(&mut request);
+        assert!(
+            read_request(&mut stream),
+            "readiness preflight did not send complete headers"
+        );
         stream
-            .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
+            .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             .unwrap();
+        drop(stream);
         let service_deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !service_started.exists() {
             assert!(
@@ -1992,13 +2027,23 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
             );
             thread::sleep(Duration::from_millis(1));
         }
+        let mut closed_response = false;
         while !server_finished.load(Ordering::Acquire) {
             match listener.accept() {
                 Ok((mut stream, _)) => {
-                    let mut request = [0u8; 1024];
-                    let _ = stream.read(&mut request);
+                    // Deadline cancellation can close a final pending request.
+                    if !read_request(&mut stream) {
+                        continue;
+                    }
+                    if !closed_response {
+                        // A peer can disappear before sending headers. Force
+                        // this once so the deadline/output control also proves
+                        // that a temporary transport failure remains retryable.
+                        closed_response = true;
+                        continue;
+                    }
                     stream
-                        .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
+                        .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                         .unwrap();
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -2007,6 +2052,10 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
                 Err(error) => panic!("readiness fixture could not accept a request: {error}"),
             }
         }
+        assert!(
+            closed_response,
+            "the temporary closed-connection control did not run"
+        );
     });
     let output = command(
         home.path(),

@@ -1889,6 +1889,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "fs4",
+ "hyper",
  "libc",
  "libproc",
  "objc2",
