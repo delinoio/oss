@@ -476,7 +476,7 @@ real-account, Worker workspace, native harness or platform-distribution acceptan
 
 ## Remaining implementation
 
-Worker-local workspace snapshots use the separate storage service below; database backup observation does not grant workspace or database restoration. Managed database restore uses its explicit lifecycle above. Permanent dependent Sidechat deletion, independent attachment/cache cleanup and a desktop storage-management surface remain separate issue #964 work. Parent workspace storage fails closed on unresolved dependent jobs or extra resources; it cannot report their permanent deletion. The complete requirements remain authoritative.
+Worker-local workspace snapshots and the desktop storage-management surface use the separate storage service below; database backup observation does not grant workspace or database restoration. Managed database restore uses its explicit lifecycle above. Permanent dependent Sidechat deletion and independent attachment/cache cleanup remain separate issue #964 work. Parent workspace storage fails closed on unresolved dependent jobs or extra resources; it cannot report their permanent deletion. The complete requirements remain authoritative.
 
 ## Validation
 
