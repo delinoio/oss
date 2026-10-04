@@ -90,6 +90,50 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
+    if (!strcmp(mode, "terminal-child-group")) {
+        if (!strcmp(role, "leaf")) {
+            char ready;
+            if (read(9, &ready, 1) != 1) return 99;
+            close(9);
+            FILE *marker = fopen("leaf.pid", "w");
+            if (!marker) return 91;
+            fprintf(marker, "%d", getpid());
+            fclose(marker);
+            char line[32];
+            if (!terminal_line(line, sizeof(line)) || strcmp(line, "first\n")) return 92;
+            marker = fopen("terminal.first", "w");
+            if (!marker) return 93;
+            fclose(marker);
+            for (;;) pause();
+        }
+        FILE *marker = fopen("root.group", "w");
+        if (!marker) return 94;
+        fprintf(marker, "%d", getpgrp());
+        fclose(marker);
+        pid_t worker;
+        int start[2];
+        if (pipe(start) || fcntl(start[0], F_SETFD, FD_CLOEXEC) || fcntl(start[1], F_SETFD, FD_CLOEXEC)) return 100;
+        posix_spawn_file_actions_t actions;
+        if (posix_spawn_file_actions_init(&actions) || posix_spawn_file_actions_adddup2(&actions, start[0], 9)) return 101;
+        posix_spawnattr_t attributes;
+        char *args[] = {argv[0], "leaf", argv[2], NULL};
+        char *environment[] = {"PNPORT_TEST_ENV=replacement", NULL};
+        if (posix_spawnattr_init(&attributes) || posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP) ||
+            posix_spawnattr_setpgroup(&attributes, 0) || posix_spawn(&worker, argv[0], &actions, &attributes, args, environment)) return 95;
+        posix_spawn_file_actions_destroy(&actions);
+        posix_spawnattr_destroy(&attributes);
+        close(start[0]);
+        if (tcsetpgrp(0, worker)) return 96;
+        // Release the worker only after native tty placement; a speculative
+        // SIGCONT before an initial SIGTTIN stop would create a fixture race.
+        if (write(start[1], "1", 1) != 1) return 97;
+        close(start[1]);
+        for (int attempt = 0; attempt < 1000; attempt++) {
+            if (!access("terminal.first", F_OK)) return 23;
+            usleep(10000);
+        }
+        return 98;
+    }
     if (!strcmp(role, "root") && !strcmp(mode, "terminal-detached") && setsid() < 0) return 86;
     if (strcmp(mode, "terminal") == 0 || strcmp(mode, "terminal-stop") == 0 || strcmp(mode, "terminal-pipe") == 0 || !strcmp(mode, "terminal-group") || !strcmp(mode, "terminal-pending-pause")) {
         if (!strcmp(mode, "terminal-group") && setpgid(0, 0)) return 80;

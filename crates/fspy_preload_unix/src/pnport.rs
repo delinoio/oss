@@ -182,6 +182,7 @@ fn directory_entry(stream: &mut DirectoryStream) -> *mut dirent {
 }
 static RUNTIME: OnceLock<Box<ForkMutex<Runtime>>> = OnceLock::new();
 static SESSION: OnceLock<PathBuf> = OnceLock::new();
+static OWNER_KEY: OnceLock<[u8; 32]> = OnceLock::new();
 static OWNED_GROUP: OnceLock<pid_t> = OnceLock::new();
 
 unsafe extern "C" fn before_fork() {
@@ -254,7 +255,10 @@ fn register_owned_process(pid: pid_t) -> std::io::Result<()> {
         .get()
         .ok_or_else(|| std::io::Error::other("Native owner context is missing"))?;
     let identity = pnport_core::macos_process::Identity::capture(pid)?;
-    pnport_core::macos_process::registration(session, identity)
+    let public = OWNER_KEY
+        .get()
+        .ok_or_else(|| std::io::Error::other("Native verification context is missing"))?;
+    pnport_core::macos_process::registration(session, identity, public)
 }
 
 fn admit_group_change(
@@ -809,6 +813,22 @@ macro_rules! translated {
     };
 }
 
+fn initialize_owner() -> std::result::Result<(), InitializationStage> {
+    use InitializationStage as Stage;
+    let group = std::env::var("PNPORT_MACOS_GROUP")
+        .ok()
+        .and_then(|group| group.parse::<pid_t>().ok())
+        .filter(|group| *group > 0)
+        .ok_or(Stage::OwnedGroup)?;
+    OWNED_GROUP.set(group).map_err(|_| Stage::OwnedGroup)?;
+    let public = std::env::var("PNPORT_MACOS_OWNER_KEY").map_err(|_| Stage::OwnedGroup)?;
+    let public =
+        pnport_core::macos_process::decode_public_key(&public).map_err(|_| Stage::OwnedGroup)?;
+    OWNER_KEY.set(public).map_err(|_| Stage::OwnedGroup)?;
+    // SAFETY: getpid has no pointer or lifetime preconditions.
+    register_owned_process(unsafe { getpid() }).map_err(|_| Stage::OwnedGroup)
+}
+
 unsafe extern "C" fn initialize() {
     TLS_READY.store(true, Ordering::Release);
     let Some(_guard) = Guard::enter() else {
@@ -824,6 +844,7 @@ unsafe extern "C" fn initialize() {
         "PNPORT_SESSION",
         "PNPORT_CACHE",
         "PNPORT_MACOS_GROUP",
+        "PNPORT_MACOS_OWNER_KEY",
         "DYLD_INSERT_LIBRARIES",
         "LD_PRELOAD",
     ] {
@@ -865,13 +886,7 @@ unsafe extern "C" fn initialize() {
         let bytes = fs::read(session.join("graph.json")).map_err(|_| Stage::ReadGraph)?;
         let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
         let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
-        let group = std::env::var("PNPORT_MACOS_GROUP")
-            .ok()
-            .and_then(|group| group.parse::<pid_t>().ok())
-            .filter(|group| *group > 0)
-            .ok_or(Stage::OwnedGroup)?;
-        OWNED_GROUP.set(group).map_err(|_| Stage::OwnedGroup)?;
-        register_owned_process(getpid()).map_err(|_| Stage::OwnedGroup)?;
+        initialize_owner()?;
         let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
         let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
         let view = View::new(graph, cache, session.clone());

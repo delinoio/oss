@@ -8,25 +8,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use hmac::{Hmac, Mac};
-use pnport_core::macos_process::{inventory, Identity};
+use pnport_core::macos_process::{
+    acknowledgement, authenticated_read, inventory, public_key, Identity, RegistrationOutcome,
+};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
-
-type Authentication = Hmac<Sha256>;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum FailureStage {
     Registration,
     Cleanup,
     JournalWrite,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Accepted {
-    identity: Identity,
-    signature: [u8; 32],
 }
 
 pub struct Registry {
@@ -45,7 +36,7 @@ impl Registry {
     pub fn create(session: &Path, key: [u8; 32]) -> io::Result<Self> {
         let directory = session.join("owner");
         pnport_core::cache::private_dir(&directory).map_err(|_| invalid())?;
-        for child in ["requests", "accepted"] {
+        for child in ["requests", "accepted", "responses"] {
             pnport_core::cache::private_dir(&directory.join(child)).map_err(|_| invalid())?;
         }
         Ok(Self {
@@ -74,6 +65,10 @@ impl Registry {
         self.births.is_empty()
     }
 
+    pub fn verification_key(&self) -> [u8; 32] {
+        public_key(&self.key)
+    }
+
     pub fn recover(&mut self) -> io::Result<()> {
         pnport_core::cache::private_dir(&self.directory.join("accepted")).map_err(|_| invalid())?;
         let mut failed = false;
@@ -90,18 +85,14 @@ impl Registry {
                 if entry.file_name().as_encoded_bytes().starts_with(b".") {
                     return Ok(());
                 }
-                let accepted: Accepted = serde_json::from_slice(&bounded_read(&entry.path())?)?;
-                let bytes = serde_json::to_vec(&accepted.identity)?;
-                let mut authentication =
-                    Authentication::new_from_slice(&self.key).map_err(|_| invalid())?;
-                authentication.update(&bytes);
-                authentication
-                    .verify_slice(&accepted.signature)
-                    .map_err(|_| invalid())?;
-                if entry.file_name() != accepted.identity.name().as_str() {
+                let (identity, outcome) =
+                    authenticated_read(&entry.path(), &self.verification_key())?;
+                if outcome != RegistrationOutcome::Admitted
+                    || entry.file_name() != identity.name().as_str()
+                {
                     return Err(invalid());
                 }
-                self.remember(accepted.identity)
+                self.remember(identity)
             })();
             failed |= result.is_err();
         }
@@ -138,18 +129,21 @@ impl Registry {
     }
 
     fn commit(&self, identity: Identity) -> io::Result<()> {
-        pnport_core::cache::private_dir(&self.directory.join("accepted")).map_err(|_| invalid())?;
-        let bytes = serde_json::to_vec(&identity)?;
-        let mut authentication =
-            Authentication::new_from_slice(&self.key).map_err(|_| invalid())?;
-        authentication.update(&bytes);
-        let accepted = Accepted {
-            identity,
-            signature: authentication.finalize().into_bytes().into(),
-        };
-        let path = self.directory.join("accepted").join(identity.name());
-        let mut file = tempfile::NamedTempFile::new_in(self.directory.join("accepted"))?;
-        serde_json::to_writer(&mut file, &accepted)?;
+        self.respond(identity, RegistrationOutcome::Admitted)
+    }
+
+    fn respond(&self, identity: Identity, outcome: RegistrationOutcome) -> io::Result<()> {
+        let directory = self
+            .directory
+            .join(if outcome == RegistrationOutcome::Admitted {
+                "accepted"
+            } else {
+                "responses"
+            });
+        pnport_core::cache::private_dir(&directory).map_err(|_| invalid())?;
+        let path = directory.join(identity.name());
+        let mut file = tempfile::NamedTempFile::new_in(&directory)?;
+        file.write_all(&acknowledgement(&self.key, identity, outcome)?)?;
         file.flush()?;
         file.as_file().sync_all()?;
         file.persist(path).map_err(|error| error.error)?;
@@ -206,10 +200,13 @@ impl Registry {
                 Some(current) if current.version == requested.version && self.owned(current) => {
                     self.admit(current)?
                 }
-                Some(current) if self.owned(current) => (),
+                Some(current) if self.owned(current) => {
+                    self.admit(current)?;
+                    self.respond(requested, RegistrationOutcome::Changed)?;
+                }
                 Some(_) if self.empty() => continue,
                 Some(_) => return Err(invalid()),
-                None => (),
+                None => self.respond(requested, RegistrationOutcome::Exited)?,
             }
             fs::remove_file(entry.path())?;
         }
@@ -262,6 +259,14 @@ impl Registry {
             send(identity, libc::SIGCONT)?;
         }
         Ok(())
+    }
+
+    pub fn owns_group(&mut self, group: i32) -> io::Result<bool> {
+        let live = self.live()?;
+        if self.journal_failed {
+            return Err(invalid());
+        }
+        Ok(live.iter().any(|identity| identity.group == group))
     }
 
     fn terminate(
@@ -389,16 +394,12 @@ mod tests {
         assert!(registry.requests().is_err());
         assert_eq!(registry.births.len(), 1);
 
-        let forged = Accepted {
-            identity: unrelated_identity,
-            signature: [0; 32],
-        };
         fs::write(
             registry
                 .directory
                 .join("accepted")
                 .join(unrelated_identity.name()),
-            serde_json::to_vec(&forged).unwrap(),
+            acknowledgement(&[41; 32], unrelated_identity, RegistrationOutcome::Admitted).unwrap(),
         )
         .unwrap();
         let mut recovered = Registry::create(directory.path(), key).unwrap();
@@ -486,6 +487,59 @@ mod journal_failure_tests {
     };
 
     use super::*;
+
+    #[test]
+    fn registration_wakes_for_changed_and_exited_native_images() {
+        use pnport_core::macos_process::registration;
+        let directory = tempfile::tempdir().unwrap();
+        let mut registry = Registry::create(directory.path(), [32; 32]).unwrap();
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "read ready; exec /bin/sleep 30"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let previous = Identity::capture(child.id() as i32).unwrap();
+        registry.admit(previous).unwrap();
+        fs::remove_file(registry.directory.join("accepted").join(previous.name())).unwrap();
+        child.stdin.take().unwrap().write_all(b"ready\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let current = loop {
+            let current = Identity::capture(previous.pid).unwrap();
+            assert_eq!(current.birth, previous.birth);
+            if current.version != previous.version {
+                break current;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        fs::write(
+            registry.directory.join("requests").join(previous.name()),
+            serde_json::to_vec(&previous).unwrap(),
+        )
+        .unwrap();
+        registry.requests().unwrap();
+        let start = Instant::now();
+        registration(directory.path(), previous, &registry.verification_key()).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(registry.births.contains_key(&current.birth));
+        // Native exec can advance again between discovery and guardian polling.
+        // Use the actual generation admitted by the guardian for the exit case.
+        let current = registry.births[&previous.birth];
+        child.kill().unwrap();
+        child.wait().unwrap();
+        fs::remove_file(registry.directory.join("accepted").join(current.name())).unwrap();
+        fs::write(
+            registry.directory.join("requests").join(current.name()),
+            serde_json::to_vec(&current).unwrap(),
+        )
+        .unwrap();
+        registry.requests().unwrap();
+        let start = Instant::now();
+        registration(directory.path(), current, &registry.verification_key()).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert_eq!(unsafe { libc::setpgid(current.pid, current.pid) }, -1);
+        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
+    }
 
     #[test]
     fn lost_journal_writes_do_not_abandon_a_known_birth_after_exec() {

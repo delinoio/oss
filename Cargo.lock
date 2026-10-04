@@ -9170,7 +9170,6 @@ dependencies = [
  "dirs 6.0.0",
  "fs2",
  "fspy_shared_unix",
- "hmac",
  "libc",
  "plist",
  "pnp",
@@ -9193,6 +9192,7 @@ version = "0.1.0-next.1"
 dependencies = [
  "core-foundation 0.10.1",
  "dirs 6.0.0",
+ "ed25519-dalek",
  "fs2",
  "libc",
  "plist",

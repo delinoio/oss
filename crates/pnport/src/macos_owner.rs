@@ -168,6 +168,32 @@ impl Owner {
         Ok(())
     }
 
+    pub fn verification_key(&self) -> String {
+        pnport_core::macos_process::encode_public_key(&self.registry.verification_key())
+    }
+
+    pub fn owns_group(&mut self, group: i32) -> Result<bool> {
+        // EOF does not reap the guardian: retain the original group reservation
+        // while authenticated parent recovery verifies additional tty ownership.
+        if self.check().is_err() {
+            self.registry.recover().map_err(|_| failure())?;
+            return self.registry.owns_group(group).map_err(|_| failure());
+        }
+        self.socket.write_all(b"T").map_err(|_| failure())?;
+        self.socket
+            .write_all(&group.to_be_bytes())
+            .map_err(|_| failure())?;
+        let mut response = [0];
+        self.socket
+            .read_exact(&mut response)
+            .map_err(|_| failure())?;
+        match response[0] {
+            b'Y' => Ok(true),
+            b'N' => Ok(false),
+            _ => Err(failure()),
+        }
+    }
+
     pub fn resume(&mut self, group: i32) -> Result<()> {
         self.socket.write_all(b"J").map_err(|_| failure())?;
         self.socket
@@ -435,6 +461,20 @@ fn cleanup_signal(
         if events[0].revents != 0 {
             let mut command = [0];
             let count = socket.read(&mut command)?;
+            if count == 1 && command == *b"T" {
+                let mut group = [0; 4];
+                socket.read_exact(&mut group)?;
+                let group = i32::from_be_bytes(group);
+                if group <= 0 {
+                    return Err(io::Error::other("Native foreground is invalid"));
+                }
+                socket.write_all(if registry.owns_group(group)? {
+                    b"Y"
+                } else {
+                    b"N"
+                })?;
+                continue;
+            }
             if count == 1 && command == *b"J" {
                 let mut group = [0; 4];
                 socket.read_exact(&mut group)?;

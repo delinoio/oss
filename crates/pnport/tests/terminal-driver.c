@@ -24,6 +24,7 @@ int main(int argc, char **argv) {
     int redirected = strcmp(argv[3], "redirected") == 0;
     if (redirected && pipe(input)) return 85;
     const char *command_mode = redirected ? "terminal-pipe" :
+        !strcmp(argv[3], "child-group") ? "terminal-child-group" :
         !strcmp(argv[3], "detached-interrupt") ? "terminal-detached" :
         !strcmp(argv[3], "new-group") ? "terminal-group" :
         !strcmp(argv[3], "pending-pause") ? "terminal-pending-pause" :
@@ -85,6 +86,7 @@ int main(int argc, char **argv) {
     close(launch[1]);
     marker("terminal.running");
     if (strcmp(argv[3], "interrupt") != 0 && strcmp(argv[3], "detached-interrupt") != 0 &&
+        strcmp(argv[3], "child-group") != 0 &&
         strcmp(argv[3], "missing-image") != 0 &&
         strcmp(argv[3], "invalid-image") != 0 && !redirected) {
         pid_t waited = waitpid(child, &status, WUNTRACED);

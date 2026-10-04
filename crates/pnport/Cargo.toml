@@ -27,7 +27,6 @@ zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 shell-words = "1.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-hmac = "=0.12.1"
 fspy_shared_unix = { path = "../fspy_shared_unix" }
 core-foundation = "0.10.1"
 security-framework = "=3.7.0"

@@ -1347,3 +1347,19 @@ fn native_stopped_orphan_groups_receive_kernel_hangup() {
         );
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn descendant_foreground_group_restores_the_terminal_before_cleanup() {
+    let (mut fixture, mut master) = Fixture::terminal("child-group");
+    master.write_all(b"first\n").unwrap();
+    fixture.wait_marker("terminal.first");
+    let leaf = fs::read_to_string(fixture.root.path().join("leaf.pid"))
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    fixture.pids.push(leaf);
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}

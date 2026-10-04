@@ -132,7 +132,25 @@ impl Job {
         }
     }
 
-    pub fn poll_stop(&mut self, pid: i32) -> Result<Option<Duration>> {
+    pub fn restore_owned(&self, owner: &mut crate::macos_owner::Owner) -> Result<()> {
+        if let Some(terminal) = &self.terminal {
+            let foreground = unsafe { libc::tcgetpgrp(terminal.file.as_raw_fd()) };
+            if foreground > 0
+                && foreground != self.group
+                && foreground != terminal.caller_group
+                && owner.owns_group(foreground)?
+            {
+                return self.transfer(foreground, terminal.caller_group);
+            }
+        }
+        self.restore()
+    }
+
+    pub fn poll_stop(
+        &mut self,
+        pid: i32,
+        owner: &mut crate::macos_owner::Owner,
+    ) -> Result<Option<Duration>> {
         // Root is our unreaped direct child; inspect its current native tty
         // relationship without granting signal authority to a snapshot group.
         let session = unsafe { libc::getsid(pid) };
@@ -145,7 +163,7 @@ impl Job {
                 // A detached root has no controlling tty. Return foreground to
                 // pnport's caller group so terminal cancellation still reaches
                 // the supervisor and its audit-bound owned-tree cleanup.
-                self.restore()?;
+                self.restore_owned(owner)?;
                 self.group = group;
                 self.detached = true;
                 tracing::debug!(
@@ -172,7 +190,7 @@ impl Job {
             };
         }
         if event.si_pid == pid && event.si_code == libc::CLD_STOPPED {
-            self.restore()?;
+            self.restore_owned(owner)?;
             let suspended = Instant::now();
             tracing::debug!(action = "macos_job_stopped", "Owned command stopped");
             // The shell must observe a stopped pnport job, including a command

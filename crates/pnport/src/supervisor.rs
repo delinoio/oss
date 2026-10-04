@@ -414,7 +414,8 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             #[cfg(target_os = "macos")]
             command
                 .process_group(owner.group())
-                .env("PNPORT_MACOS_GROUP", owner.group().to_string());
+                .env("PNPORT_MACOS_GROUP", owner.group().to_string())
+                .env("PNPORT_MACOS_OWNER_KEY", owner.verification_key());
             #[cfg(not(target_os = "macos"))]
             command.process_group(0);
         }
@@ -455,7 +456,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             }
             #[cfg(target_os = "macos")]
             if status.is_none() {
-                if let Some(paused) = job.poll_stop(pid)? {
+                if let Some(paused) = job.poll_stop(pid, &mut owner)? {
                     start += paused;
                     pending_launches.pause(paused);
                     owner.resume(job.group())?;
@@ -533,7 +534,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                 && !initialization_started
                 // Entry can be published after this loop's earlier observation.
                 // Recheck at rejection, as for pending descendant images, so a
-                // legitimate constructor/cache wait keeps its existing lease.
+                // legitimate constructor/cache wait retains its admission.
                 && !starting.is_file()
                 && !ready.is_file()
             {
@@ -565,7 +566,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         #[cfg(target_os = "macos")]
         let cleanup = {
             use std::os::unix::process::ExitStatusExt;
-            let terminal = job.restore();
+            let terminal = job.restore_owned(&mut owner);
             let signal = match SIGNAL.load(Ordering::SeqCst) {
                 signal @ (libc::SIGINT | libc::SIGTERM | libc::SIGHUP) => signal,
                 _ => match status.and_then(|exit| exit.signal()) {

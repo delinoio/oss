@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 #[repr(C)]
@@ -101,11 +102,115 @@ impl Identity {
     }
 }
 
-pub fn registration(session: &Path, identity: Identity) -> io::Result<()> {
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum RegistrationOutcome {
+    Admitted,
+    Changed,
+    Exited,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Acknowledgement {
+    identity: Identity,
+    outcome: RegistrationOutcome,
+    signature: Vec<u8>,
+}
+
+pub fn public_key(secret: &[u8; 32]) -> [u8; 32] {
+    SigningKey::from_bytes(secret).verifying_key().to_bytes()
+}
+
+pub fn encode_public_key(public: &[u8; 32]) -> String {
+    public.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+pub fn decode_public_key(value: &str) -> io::Result<[u8; 32]> {
+    let mut public = [0; 32];
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(io::Error::other("Native verification context is invalid"));
+    }
+    for (index, byte) in public.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+            .map_err(|_| io::Error::other("Native verification context is invalid"))?;
+    }
+    Ok(public)
+}
+
+fn payload(identity: Identity, outcome: RegistrationOutcome) -> io::Result<Vec<u8>> {
+    Ok(serde_json::to_vec(&(
+        "pnport-macos-owner-v3",
+        identity,
+        outcome,
+    ))?)
+}
+
+pub fn acknowledgement(
+    secret: &[u8; 32],
+    identity: Identity,
+    outcome: RegistrationOutcome,
+) -> io::Result<Vec<u8>> {
+    let signature = SigningKey::from_bytes(secret).sign(&payload(identity, outcome)?);
+    Ok(serde_json::to_vec(&Acknowledgement {
+        identity,
+        outcome,
+        signature: signature.to_bytes().to_vec(),
+    })?)
+}
+
+pub fn authenticated_read(
+    path: &Path,
+    public: &[u8; 32],
+) -> io::Result<(Identity, RegistrationOutcome)> {
+    use std::{io::Read, os::unix::fs::OpenOptionsExt};
+    let invalid = || io::Error::other("Native ownership acknowledgement is invalid");
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(invalid());
+    }
+    let mut bytes = Vec::new();
+    file.take(1025).read_to_end(&mut bytes)?;
+    if bytes.len() > 1024 {
+        return Err(invalid());
+    }
+    let record: Acknowledgement = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+    let key = VerifyingKey::from_bytes(public).map_err(|_| invalid())?;
+    let signature = Signature::from_slice(&record.signature).map_err(|_| invalid())?;
+    key.verify_strict(&payload(record.identity, record.outcome)?, &signature)
+        .map_err(|_| invalid())?;
+    Ok((record.identity, record.outcome))
+}
+
+fn acknowledged(
+    path: &Path,
+    public: &[u8; 32],
+    identity: Identity,
+    admitted: bool,
+) -> io::Result<bool> {
+    let (record, outcome) = match authenticated_read(path, public) {
+        Ok(record) => record,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if (record.pid, record.birth, record.version)
+        != (identity.pid, identity.birth, identity.version)
+        || admitted != (outcome == RegistrationOutcome::Admitted)
+    {
+        return Err(io::Error::other(
+            "Native ownership acknowledgement does not match",
+        ));
+    }
+    Ok(true)
+}
+
+pub fn registration(session: &Path, identity: Identity, public: &[u8; 32]) -> io::Result<()> {
     use std::io::Write;
     let owner = session.join("owner");
     let accepted = owner.join("accepted").join(identity.name());
-    if accepted.is_file() {
+    if acknowledged(&accepted, public, identity, true)? {
         return Ok(());
     }
     let requests = owner.join("requests");
@@ -119,7 +224,13 @@ pub fn registration(session: &Path, identity: Identity) -> io::Result<()> {
         Err(error) => return Err(error.error),
     }
     let deadline = Instant::now() + Duration::from_secs(7);
-    while !accepted.is_file() {
+    let response = owner.join("responses").join(identity.name());
+    loop {
+        if acknowledged(&accepted, public, identity, true)?
+            || acknowledged(&response, public, identity, false)?
+        {
+            return Ok(());
+        }
         if Instant::now() >= deadline || !owner.join("alive").is_file() {
             return Err(io::Error::other(
                 "Native process ownership was not acknowledged",
@@ -127,7 +238,6 @@ pub fn registration(session: &Path, identity: Identity) -> io::Result<()> {
         }
         std::thread::sleep(Duration::from_millis(2));
     }
-    Ok(())
 }
 
 pub fn inventory() -> io::Result<Vec<Identity>> {
@@ -162,6 +272,39 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn forged_files_cannot_acknowledge_native_admission() {
+        let session = tempfile::tempdir().unwrap();
+        let mut child = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let identity = Identity::capture(child.id() as i32).unwrap();
+        let accepted = session.path().join("owner/accepted");
+        std::fs::create_dir_all(&accepted).unwrap();
+        let path = accepted.join(identity.name());
+        let public = public_key(&[17; 32]);
+        for bytes in [
+            Vec::new(),
+            acknowledgement(&[18; 32], identity, RegistrationOutcome::Admitted).unwrap(),
+            acknowledgement(
+                &[17; 32],
+                Identity {
+                    birth: identity.birth + 1,
+                    ..identity
+                },
+                RegistrationOutcome::Admitted,
+            )
+            .unwrap(),
+        ] {
+            std::fs::write(&path, bytes).unwrap();
+            let start = Instant::now();
+            assert!(registration(session.path(), identity, &public).is_err());
+            assert!(start.elapsed() < Duration::from_secs(1));
+            assert!(!session.path().join("owner/requests").exists());
+            assert!(child.try_wait().unwrap().is_none());
+        }
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
 
     #[test]
     fn stale_audit_versions_cannot_signal_an_owned_child() {
