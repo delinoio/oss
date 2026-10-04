@@ -32,6 +32,11 @@ test('DeliDev package dry runs cannot obtain publication or production signing a
   assert.equal(packaging.steps[upload].if, undefined);
   assert.equal(packaging.steps[upload].with['if-no-files-found'], 'error');
   assert.equal(packaging.steps[upload].with.path, 'target/delidev-dry-run/${{ matrix.target }}/${{ github.sha }}/');
+  const updater = packaging.steps.findIndex(step => step.run?.includes('bundle:updater-dry-run'));
+  assert.ok(updater > verification && updater < upload);
+  const inputs = packaging.steps.find(step => step.with?.name?.startsWith('delidev-updater-input-'));
+  assert.equal(inputs.with.path, 'target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/');
+  assert.equal(inputs.with['if-no-files-found'], 'error');
 });
 
 test('workspace investigation is explicit and excludes package assembly', () => {

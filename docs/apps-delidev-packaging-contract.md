@@ -4,7 +4,7 @@
 
 `apps/delidev/scripts` and `.github/workflows/delidev-native-dry-run.yml` own
 credential-free native package preparation for DeliDev's six desktop targets.
-These paths build reviewable packages; they do not publish a release, install an
+The existing manual six-target workflow also builds and uploads the desktop/Worker updater inputs after basic package verification. These paths build reviewable packages; they do not publish a release, install an
 update or establish native runtime acceptance. Production signing, notarization,
 updater trust and Windows/Linux execution remain separate requirements.
 
@@ -86,7 +86,7 @@ construction. GitHub checkout credentials are not persisted, permissions are
 `contents: read`, and no signing environment or repository secret is referenced.
 LFS is hydrated before compilation; generated `dist` remains untracked output.
 
-The separate manual updater-input dry run reuses this verified native matrix and assembles the update formats: macOS DMG, Windows NSIS executable, Linux AppImage and one dedicated Worker executable per target. It embeds the same public version/source revision in the Go sidecar/Worker, retains exact artifact names, imported notices and immutable revision-bound input metadata, and does not use a production root or signing credentials. The [updates contract](cmds-delidev-updates-contract.md) owns production manifest readiness, independent verification and explicit maintainer publication.
+The updater-input command and separate manual updater-input workflow reuse this verified native matrix and assembles the update formats: macOS DMG, Windows NSIS executable, Linux AppImage and one dedicated Worker executable per target. It embeds the same public version/source revision in the Go sidecar/Worker, retains exact artifact names, imported notices and immutable revision-bound input metadata, and does not use a production root or signing credentials. Updater assembly re-prepares current source inputs under the same checkout lock, validates Worker architecture, checks Windows installer/product unsigned state, and rechecks exact source revision and cleanliness before atomic publication. Retained basic reports do not pin mutable native outputs. The pinned CEF AppImage path requires an explicit original `share/DeliDev/delidev-desktop` target because upstream copies its Debian bin symlink alone; inspection checks sharun launchers, real `shared/bin` product executables, `bin` CEF resources and `lib/DeliDev` notices. Upstream currently retrieves quick-sharun/hooks from mutable external branches; keyless build results do not establish reproducible or production supply-chain acceptance. Preserve this upstream constraint until the runtime packager owns pinned tools. The [updates contract](cmds-delidev-updates-contract.md) owns production manifest readiness, independent verification and explicit maintainer publication.
 
 ## Logging
 

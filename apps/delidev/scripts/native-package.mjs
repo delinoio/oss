@@ -1,4 +1,4 @@
-import { openSync, readSync, closeSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { openSync, readSync, closeSync, lstatSync, readdirSync, readFileSync, realpathSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +15,19 @@ export function selectTarget(target, platform, arch) {
   const selected = targets.find(item => item.target === target);
   if (!selected || selected.platform !== platform || selected.arch !== arch) throw new Error("A dry run requires the matching native target host.");
   return selected;
+}
+
+export function acquireNativeBuildLock(root) {
+  const directory = join(root, "target/delidev-dry-run");
+  mkdirSync(directory, { recursive: true });
+  const lock = join(directory, ".build.lock");
+  closeSync(openSync(lock, "wx", 0o600));
+  let released = false;
+  return () => { if (!released) { rmSync(lock); released = true; } };
+}
+
+export function verifyPackageRevision(expected, current, status) {
+  if (!/^[a-f0-9]{40}$/.test(expected) || current.trim() !== expected || status.trim()) throw new Error("Source changed during packaging; no revision-bound result was published.");
 }
 
 // The pinned cef 150.0.0 crate resolves to distribution 150.0.10. Keep this
@@ -95,6 +108,26 @@ export function verifyNativePayload(directory, selected) {
   for (const name of required) {
     const file = lstatSync(join(cefRoot, name));
     if (!file.isFile() || file.size === 0) throw new Error("A required CEF resource is missing or invalid.");
+  }
+}
+
+export function verifyAppImagePayload(directory, selected) {
+  if (selected.platform !== "linux") throw new Error("AppImage verification requires a Linux target.");
+  // The pinned CEF AppImage packager uses sharun launchers in bin and real
+  // executables in shared/bin. Debian retains its separate installed layout.
+  for (const name of ["delidev-desktop", "delidev"]) {
+    if (binaryArchitecture(join(directory, "shared/bin", name), "linux") !== selected.arch) throw new Error("The AppImage contains a foreign product architecture.");
+    const launcher = join(directory, "bin", name);
+    const sharun = join(directory, "sharun");
+    const info = lstatSync(sharun);
+    if (!info.isFile() || info.size > 8 * 1024 * 1024 || !lstatSync(launcher).isFile()
+      || binaryArchitecture(launcher, "linux") !== selected.arch
+      || !readFileSync(launcher).equals(readFileSync(sharun))) throw new Error("An AppImage product launcher is invalid.");
+  }
+  if (binaryArchitecture(join(directory, "bin/libcef.so"), "linux") !== selected.arch) throw new Error("The AppImage contains a foreign CEF architecture.");
+  for (const name of ["icudtl.dat", "resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak", "v8_context_snapshot.bin", "locales/en-US.pak"]) {
+    const info = lstatSync(join(directory, "bin", name));
+    if (!info.isFile() || info.size === 0) throw new Error("A required AppImage CEF resource is missing.");
   }
 }
 

@@ -63,12 +63,21 @@ jobs:
         run: pnpm --dir apps/delidev test:bundle-dry-run
       - name: Build and inspect the native package without release credentials
         run: pnpm --dir apps/delidev bundle:dry-run --target ${{ matrix.target }}
+      - name: Build and inspect original desktop and Worker updater inputs
+        run: pnpm --dir apps/delidev bundle:updater-dry-run --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
           name: delidev-dry-run-${{ matrix.target }}-${{ github.sha }}
           path: target/delidev-dry-run/${{ matrix.target }}/${{ github.sha }}/
           if-no-files-found: error
           retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: delidev-updater-input-${{ matrix.target }}-${{ github.sha }}
+          path: target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/
+          if-no-files-found: error
+          retention-days: 7
+
 
   workspace-fixtures:
     if: ${{ inputs.workspace_fixture_only }}

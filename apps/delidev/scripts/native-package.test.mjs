@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { targets, selectTarget, binaryArchitecture, cefCredits, prepareCefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
+import { targets, selectTarget, binaryArchitecture, acquireNativeBuildLock, verifyPackageRevision, verifyAppImagePayload, cefCredits, prepareCefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
 import { nativeEnvironment } from "./bundle-native-dry-run.mjs";
 
 function fixture(t) {
@@ -131,4 +131,39 @@ test("a clean CEF cache is prepared by the pinned CLI before notice validation",
     write(directory, "archive.json", JSON.stringify({ type: "minimal", name: "unverified.tar.bz2" }));
     assert.throws(() => prepareCefCredits(selected, environment, () => {}, home), /pinned distribution/);
   }
+});
+
+
+test("native and updater preparation share one exclusive checkout lock", t => {
+  const root = fixture(t);
+  const release = acquireNativeBuildLock(root);
+  assert.throws(() => acquireNativeBuildLock(root), /EEXIST/);
+  release(); release();
+  const next = acquireNativeBuildLock(root);
+  assert.throws(() => acquireNativeBuildLock(root), /EEXIST/);
+  next();
+});
+
+test("revision-bound publication rejects changes after updater assembly", () => {
+  const revision = "a".repeat(40);
+  verifyPackageRevision(revision, revision + "\n", "");
+  assert.throws(() => verifyPackageRevision(revision, "b".repeat(40), ""), /Source changed/);
+  assert.throws(() => verifyPackageRevision(revision, revision, " M source.rs\n"), /Source changed/);
+});
+
+test("AppImage inspection distinguishes native product bytes from sharun launchers", t => {
+  const root = fixture(t), selected = targets[4];
+  write(root, "sharun", binary("linux", "x64"));
+  for (const name of ["delidev-desktop", "delidev"]) {
+    write(root, `shared/bin/${name}`, binary("linux", "x64"));
+    write(root, `bin/${name}`, binary("linux", "x64"));
+  }
+  write(root, "bin/libcef.so", binary("linux", "x64"));
+  for (const name of ["icudtl.dat", "resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak", "v8_context_snapshot.bin", "locales/en-US.pak"]) write(root, `bin/${name}`, "resource");
+  verifyAppImagePayload(root, selected);
+  write(root, "shared/bin/delidev", binary("linux", "arm64"));
+  assert.throws(() => verifyAppImagePayload(root, selected), /foreign/);
+  write(root, "shared/bin/delidev", binary("linux", "x64"));
+  write(root, "bin/libcef.so", binary("linux", "arm64"));
+  assert.throws(() => verifyAppImagePayload(root, selected), /foreign CEF/);
 });
