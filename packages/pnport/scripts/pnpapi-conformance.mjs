@@ -67,6 +67,7 @@ export function pnpApiConformance({ binary, root, cache, environment = process.e
   const quote = (value) => `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
   const nodeOptions = { ...env, NODE_OPTIONS: `--require ${quote(loader)}` };
   const temporary = mkdtempSync(join(tmpdir(), "pnport-preload-options-"));
+  const childDirectory = mkdtempSync(join(resolve(root), "pnport-esm-cwd-"));
   const custom = join(temporary, "preload with spaces.cjs");
   const second = join(temporary, "second preload.cjs");
   writeFileSync(custom, `
@@ -98,6 +99,7 @@ globalThis.__pnportTestPreloadOrder = ['first'];
     cases.push(["descendantEsmOptionsRemoved", ["--eval", descendant("const env = {};", esmProbe, true), dependency], env]);
     const selectedUrl = pathToFileURL(join(resolve(root), ".pnp.loader.mjs")).href;
     const singleLoaderProbe = `${esmProbe}\nassert.equal((process.env.NODE_OPTIONS.match(/--(?:experimental-)?loader(?:=| )/g) ?? []).length, 1);`;
+    const loaderCountProbe = (count) => `${probe}\nassert.equal((process.env.NODE_OPTIONS.match(/--(?:experimental-)?loader(?:=| )/g) ?? []).length, ${count});`;
     for (const [name, url] of [
       ["esmUppercaseScheme", selectedUrl.replace(/^file:/, "FILE:")],
       ["esmUppercaseLocalhost", selectedUrl.replace(/^file:\/\//, "file://LOCALHOST")],
@@ -105,6 +107,19 @@ globalThis.__pnportTestPreloadOrder = ['first'];
       cases.push([name, ["--input-type=module", "--eval", singleLoaderProbe, dependency],
         { ...nodeOptions, NODE_OPTIONS: `${nodeOptions.NODE_OPTIONS} --loader=${quote(url)}` }]);
     }
+    const relativeOptions = '--loader "./.pnp.loader.mjs"';
+    cases.push(["esmRelativeLoader", ["--input-type=module", "--eval", singleLoaderProbe, dependency],
+      { ...env, NODE_OPTIONS: relativeOptions }]);
+    cases.push(["esmRelativeLoaderAlias", ["--input-type=module", "--eval", singleLoaderProbe, dependency],
+      { ...env, NODE_OPTIONS: '--experimental-loader="./.pnp.loader.mjs"' }]);
+    cases.push(["esmRelativeLoaderBoundAcrossCwdChange", ["--eval",
+      descendant("const env = {...process.env};", loaderCountProbe(1), false, temporary), dependency],
+      { ...env, NODE_OPTIONS: relativeOptions }]);
+    cases.push(["esmRelativeLoaderReplacedWithChildCwd", ["--eval",
+      descendant(`const env = {NODE_OPTIONS: '--loader "../.pnp.loader.mjs"'};`, loaderCountProbe(1), false, childDirectory), dependency], env]);
+    writeFileSync(join(temporary, ".pnp.loader.mjs"), "export {};\n");
+    cases.push(["esmOtherRelativeLoaderPreserved", ["--eval",
+      descendant(`const env = {NODE_OPTIONS: ${JSON.stringify(relativeOptions)}};`, loaderCountProbe(2), false, temporary), dependency], env]);
   }
   const outcomes = {};
   try {
@@ -116,7 +131,10 @@ globalThis.__pnportTestPreloadOrder = ['first'];
       assert.deepEqual(JSON.parse(result.stdout), { code: "PNP_API_READY", zipBacked: true, pnp: "3", findPnpApi: true }, name);
       outcomes[name] = { apiAvailable: true, exitCode: result.status };
     }
-  } finally { rmSync(temporary, { recursive: true, force: true }); }
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+    rmSync(childDirectory, { recursive: true, force: true });
+  }
   assert(!existsSync(join(root, "node_modules")), "Do not generate a physical dependency tree");
   return { node: process.version, outcomes };
 }

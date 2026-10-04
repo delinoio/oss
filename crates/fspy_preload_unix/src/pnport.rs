@@ -842,6 +842,31 @@ fn initialize_owner() -> std::result::Result<(), InitializationStage> {
     register_owned_process(unsafe { getpid() }).map_err(|_| Stage::OwnedGroup)
 }
 
+fn initialize_node_loader(snapshot: &Snapshot) -> std::result::Result<(), InitializationStage> {
+    use InitializationStage as Stage;
+    let loader = pnport_core::node::Loader::from_snapshot(snapshot);
+    let inherited = std::env::var_os("NODE_OPTIONS");
+    let cwd = std::env::current_dir().ok();
+    let options = loader
+        .options_in(inherited.as_deref(), cwd.as_deref())
+        .map_err(|_| Stage::InstallRuntime)?;
+    if inherited.as_deref() != Some(options.as_os_str()) {
+        // Spawn file actions are opaque in the parent. At image startup
+        // their final cwd is available, before Node reads NODE_OPTIONS.
+        // Bind selected relative loaders and remove the provisional copy
+        // without assuming that a parent's cwd is the child's cwd.
+        let value =
+            CString::new(options.as_os_str().as_bytes()).map_err(|_| Stage::InstallRuntime)?;
+        // SAFETY: both strings are NUL-terminated, and initialization runs
+        // before application threads or Node consume the environment.
+        if unsafe { libc::setenv(c"NODE_OPTIONS".as_ptr(), value.as_ptr(), 1) } != 0 {
+            return Err(Stage::InstallRuntime);
+        }
+    }
+    NODE_LOADER.set(loader).ok();
+    Ok(())
+}
+
 unsafe extern "C" fn initialize() {
     TLS_READY.store(true, Ordering::Release);
     let Some(_guard) = Guard::enter() else {
@@ -899,10 +924,8 @@ unsafe extern "C" fn initialize() {
         let bytes = fs::read(session.join("graph.json")).map_err(|_| Stage::ReadGraph)?;
         let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
         let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
-        NODE_LOADER
-            .set(pnport_core::node::Loader::from_snapshot(&graph.snapshot))
-            .ok();
         initialize_owner()?;
+        initialize_node_loader(&graph.snapshot)?;
         let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
         let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
         let view = View::new(graph, cache, session.clone());

@@ -247,9 +247,21 @@ unsafe extern "C" fn initialize() {
         let snapshot: Snapshot =
             serde_json::from_slice(&fs::read(session.join("graph.json")).ok()?).ok()?;
         let graph = Graph::from_snapshot(snapshot).ok()?;
-        NODE_LOADER
-            .set(pnport_core::node::Loader::from_snapshot(&graph.snapshot))
-            .ok();
+        let loader = pnport_core::node::Loader::from_snapshot(&graph.snapshot);
+        let inherited = std::env::var_os("NODE_OPTIONS");
+        let cwd = std::env::current_dir().ok();
+        let options = loader
+            .options_in(inherited.as_deref(), cwd.as_deref())
+            .ok()?;
+        if inherited.as_deref() != Some(options.as_os_str()) {
+            // The new image knows the final cwd after opaque spawn actions;
+            // normalize before Node consumes its environment at startup.
+            let value = CString::new(options.as_os_str().as_bytes()).ok()?;
+            if libc::setenv(c"NODE_OPTIONS".as_ptr(), value.as_ptr(), 1) != 0 {
+                return None;
+            }
+        }
+        NODE_LOADER.set(loader).ok();
         let cache = Cache::open(PathBuf::from(std::env::var_os("PNPORT_CACHE")?)).ok()?;
         let view = View::new(graph, cache, session.clone());
         RUNTIME

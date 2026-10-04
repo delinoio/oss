@@ -56,8 +56,16 @@ preloads can use `pnpapi` and ZIP-backed dependencies. Move an existing selected
 preload ahead of caller preloads when needed. Preserve unrelated option bytes
 and their relative order, and avoid adding a selected loader more than
 once, including equivalent normalized local file URLs. Query and fragment
-suffixes retain their distinct ESM module identities. Restore the selected
-loaders on supported descendant exec/spawn paths,
+suffixes retain their distinct ESM module identities. Resolve relative ESM
+specifiers against the known workload startup cwd. Bind a matching selected
+specifier to its absolute URL before a descendant can inherit it with a changed
+cwd; keep unrelated relative loaders unchanged. Linux exec mediation uses the
+tracee's logical cwd or its live kernel cwd. Opaque macOS spawn actions can change
+cwd, so parent environment preparation retains a provisional absolute loader;
+the new image normalizes again before Node reads `NODE_OPTIONS`, using its final
+startup cwd and removing only repeated selected loaders. When cwd is unavailable,
+retain the caller specifier and the selected absolute loader rather than guess
+its target. Restore the selected loaders on supported descendant exec/spawn paths,
 including replacement environments that remove `NODE_OPTIONS`. Selection uses
 the admitted graph, not a caller-replaced environment variable or descendant
 cwd. Non-Node programs ignore these Node options. The supervisor, `doctor`, and

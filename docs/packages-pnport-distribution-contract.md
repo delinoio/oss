@@ -76,6 +76,9 @@ environment. Caller preloads must run after Yarn initialization and be able to
 read `pnpapi` and ZIP-backed dependencies in their original relative order.
 Caller preload options and replacement descendant options must
 still execute. Explicit `--require` and inherited loader options remain supported.
+Relative selected ESM loaders must register once, remain bound across inherited
+cwd changes, and resolve replacement options against the descendant's final cwd.
+An unrelated relative loader remains active alongside the selected Yarn loader.
 Evidence contains the Node version, typed availability outcomes and exit codes,
 without package paths or child streams. This regression gate does not establish
 complete JavaScript/ESM compatibility or change published 0.1.0 availability.

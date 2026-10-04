@@ -1324,7 +1324,12 @@ impl Trace<'_> {
             }
         }
         let loader = pnport::node::Loader::from_snapshot(&self.view.graph.snapshot);
-        let effective = loader.options(options.as_deref())?;
+        let cwd = self
+            .cwd
+            .get(&Self::group(pid))
+            .cloned()
+            .or_else(|| fs::read_link(format!("/proc/{pid}/cwd")).ok());
+        let effective = loader.options_in(options.as_deref(), cwd.as_deref())?;
         if count == 1 && options.as_deref() == Some(effective.as_os_str()) {
             return Ok(false);
         }

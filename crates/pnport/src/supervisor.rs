@@ -353,7 +353,9 @@ extern "C" fn signal_handler(signal: i32) {
 
 pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString]) -> Result<i32> {
     let node_loader = pnport::node::Loader::from_snapshot(&view.graph.snapshot);
-    let node_options = node_loader.options(std::env::var_os("NODE_OPTIONS").as_deref())?;
+    let cwd = std::env::current_dir().ok();
+    let node_options =
+        node_loader.options_in(std::env::var_os("NODE_OPTIONS").as_deref(), cwd.as_deref())?;
     tracing::debug!(
         action = "node_runtime_prepared",
         esm = node_loader.has_esm(),

@@ -8,6 +8,15 @@ The VoidZero MIT text from the pinned revision is copied in full to each importe
 
 ## Local changes
 
+The pnport-only macOS initializer normalizes selected relative Node ESM loaders
+against the new image's final startup cwd before Node parses `NODE_OPTIONS`.
+Parent spawn file actions remain opaque, so parent preparation adds a provisional
+absolute loader and startup removes only repeated selected loaders. Matching
+relative specifiers become absolute URLs across later cwd changes; unrelated
+relative loaders remain unchanged. Environment preparation failures retain the
+closed `install-runtime` initialization stage. No JavaScript runs during native
+initialization, and the generic fspy preload remains unchanged.
+
 The pnport-only macOS path hooks use the shared native component lookup before virtual translation. They follow native aliases into logical dependencies and managed cache backing, retain read-only classification for following mutations, and keep non-following link operations and unmanaged pathname bytes native. This extension does not change generic fspy or claim complete symlink/canonicalization acceptance.
 
 pnport-mode macOS named `dlopen` translates its library path, then releases the pnport runtime lock and recursion guard before dyld invokes user constructors. Nested ZIP-library loading, constructor filesystem access and fork callbacks retain virtualization; inner hooks still guard their own backing operations. The generic fspy side channel is unchanged. The installed pnport native conformance suite covers this local extension on both macOS architectures alongside Linux syscall-backed controls.

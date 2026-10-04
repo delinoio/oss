@@ -3,7 +3,7 @@
 
 use std::{
     ffi::{OsStr, OsString},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use crate::{
@@ -36,6 +36,12 @@ impl Loader {
     /// Activate Yarn before caller preloads, retaining unrelated option bytes
     /// and their order. Native programs ignore these Node options.
     pub fn options(&self, inherited: Option<&OsStr>) -> Result<OsString> {
+        self.options_in(inherited, None)
+    }
+
+    /// Bind relative selected ESM specifiers only when the workload's cwd is
+    /// known. Opaque spawn actions require another pass in the new process.
+    pub fn options_in(&self, inherited: Option<&OsStr>, cwd: Option<&Path>) -> Result<OsString> {
         let inherited = inherited.unwrap_or_else(|| OsStr::new(""));
         let tokens = tokens(inherited.as_encoded_bytes());
         // Keep malformed caller options malformed. Node must retain its own
@@ -75,19 +81,7 @@ impl Loader {
             result
         };
         if let Some(path) = &self.esm {
-            if !contains_loader(
-                &tokens,
-                "--experimental-loader",
-                path.as_os_str().as_encoded_bytes(),
-            ) {
-                // ESM treats loader specifiers as URLs. Encode path characters
-                // such as '#', '?' and '%' rather than changing their meaning.
-                append_loader(
-                    &mut result,
-                    "--experimental-loader",
-                    &file_url(loader_path(path)?),
-                );
-            }
+            result = selected_esm_options(result, path, cwd)?;
         }
         Ok(result)
     }
@@ -205,27 +199,90 @@ fn require_token(tokens: &[Token], index: usize) -> Option<(&[u8], std::ops::Ran
     None
 }
 
-fn contains_loader(tokens: &[Token], flag: &str, path: &[u8]) -> bool {
-    let flags: &[&str] = if flag == "--require" {
-        &["--require", "-r"]
-    } else {
-        &["--experimental-loader", "--loader"]
-    };
-    tokens.iter().enumerate().any(|(index, token)| {
-        flags.iter().any(|flag| {
+fn selected_esm_options(options: OsString, path: &Path, cwd: Option<&Path>) -> Result<OsString> {
+    let tokens =
+        tokens(options.as_encoded_bytes()).expect("generated options retain valid quoting");
+    let mut selected = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        for flag in ["--experimental-loader", "--loader"] {
             let value = if token.value == flag.as_bytes() {
-                tokens.get(index + 1).map(|token| token.value.as_slice())
+                tokens.get(index + 1).map(|argument| {
+                    (
+                        argument.value.as_slice(),
+                        token.span.start..argument.span.end,
+                    )
+                })
             } else {
-                token.value.strip_prefix(format!("{flag}=").as_bytes())
+                token
+                    .value
+                    .strip_prefix(format!("{flag}=").as_bytes())
+                    .map(|value| (value, token.span.clone()))
             };
-            value
-                .is_some_and(|value| value == path || file_url_path(value).as_deref() == Some(path))
-        })
-    })
+            if let Some((value, span)) = value {
+                if value == path.as_os_str().as_encoded_bytes()
+                    || file_url_path(value, cwd).as_deref()
+                        == Some(path.as_os_str().as_encoded_bytes())
+                {
+                    selected.push((span, value.starts_with(b"./") || value.starts_with(b"../")));
+                }
+            }
+        }
+    }
+    if selected.is_empty() {
+        let mut result = options;
+        append_loader(
+            &mut result,
+            "--experimental-loader",
+            &file_url(loader_path(path)?),
+        );
+        return Ok(result);
+    }
+    let relative = selected[0].1;
+    if selected.len() == 1 && !relative {
+        return Ok(options);
+    }
+    // A selected relative loader must stay bound when a descendant changes
+    // cwd. Keep unrelated relative loaders untouched and remove only repeats
+    // of the selected, untagged module.
+    tracing::debug!(
+        action = "node_loader_bound",
+        relative,
+        duplicates = selected.len() - 1
+    );
+    let bytes = options.as_encoded_bytes();
+    let mut result = OsString::new();
+    let mut cursor = 0;
+    for (index, (span, _)) in selected.into_iter().enumerate() {
+        // Spans use ASCII argument boundaries in the original OsStr encoding.
+        result.push(unsafe { OsStr::from_encoded_bytes_unchecked(&bytes[cursor..span.start]) });
+        if index == 0 {
+            if relative {
+                let mut canonical = OsString::new();
+                append_loader(
+                    &mut canonical,
+                    "--experimental-loader",
+                    &file_url(loader_path(path)?),
+                );
+                result.push(canonical);
+            } else {
+                result.push(unsafe { OsStr::from_encoded_bytes_unchecked(&bytes[span.clone()]) });
+            }
+        }
+        cursor = span.end;
+    }
+    result.push(unsafe { OsStr::from_encoded_bytes_unchecked(&bytes[cursor..]) });
+    Ok(result)
 }
 
-fn file_url_path(value: &[u8]) -> Option<Vec<u8>> {
-    let url = url::Url::parse(std::str::from_utf8(value).ok()?).ok()?;
+fn file_url_path(value: &[u8], cwd: Option<&Path>) -> Option<Vec<u8>> {
+    let value = std::str::from_utf8(value).ok()?;
+    let url = url::Url::parse(value).ok().or_else(|| {
+        if value.starts_with("./") || value.starts_with("../") || value.starts_with('/') {
+            url::Url::from_directory_path(cwd?).ok()?.join(value).ok()
+        } else {
+            None
+        }
+    })?;
     if url.scheme() != "file"
         || url.host_str().is_some()
         || url.query().is_some()
@@ -360,11 +417,14 @@ mod tests {
         assert_eq!(loader.options(Some(&options)).unwrap(), options);
         #[cfg(unix)]
         assert_eq!(
-            file_url_path(b"file://localhost/project%20with%20spaces/.pnp.loader.mjs"),
+            file_url_path(
+                b"file://localhost/project%20with%20spaces/.pnp.loader.mjs",
+                None
+            ),
             Some(b"/project with spaces/.pnp.loader.mjs".to_vec())
         );
-        assert!(file_url_path(b"file://remote/project/.pnp.loader.mjs").is_none());
-        assert!(file_url_path(b"file://localhost-other/project/.pnp.loader.mjs").is_none());
+        assert!(file_url_path(b"file://remote/project/.pnp.loader.mjs", None).is_none());
+        assert!(file_url_path(b"file://localhost-other/project/.pnp.loader.mjs", None).is_none());
     }
 
     #[test]
@@ -390,7 +450,71 @@ mod tests {
             "file:///project%20with%20spaces/.pnp.loader.mjs%00",
             "https://localhost/project%20with%20spaces/.pnp.loader.mjs",
         ] {
-            assert!(file_url_path(url.as_bytes()).is_none(), "{url}");
+            assert!(file_url_path(url.as_bytes(), None).is_none(), "{url}");
+        }
+    }
+
+    #[test]
+    fn binds_selected_relative_esm_loaders_to_the_workload_cwd() {
+        let loader = loader(true);
+        let root = loader.commonjs.parent().unwrap();
+        for (specifier, cwd) in [
+            ("./.pnp.loader.mjs", root.to_owned()),
+            ("../.pnp.loader.mjs", root.join("child")),
+        ] {
+            let inherited = format!("--no-warnings --loader=\"{specifier}\"");
+            let options = loader
+                .options_in(Some(OsStr::new(&inherited)), Some(&cwd))
+                .unwrap();
+            assert!(!options.to_str().unwrap().contains(specifier));
+            assert_eq!(
+                loader
+                    .options_in(Some(&options), Some(&root.join("outside")))
+                    .unwrap(),
+                options
+            );
+            let provisional = loader.options(Some(OsStr::new(&inherited))).unwrap();
+            let normalized = loader.options_in(Some(&provisional), Some(&cwd)).unwrap();
+            let tokens = tokens(normalized.as_encoded_bytes()).unwrap();
+            assert_eq!(
+                tokens
+                    .iter()
+                    .filter(|token| token.value == b"--loader"
+                        || token.value == b"--experimental-loader"
+                        || token.value.starts_with(b"--loader="))
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_relative_loaders_for_other_directories_and_tagged_modules() {
+        let loader = loader(true);
+        for (specifier, cwd) in [
+            (
+                "./.pnp.loader.mjs",
+                loader.commonjs.parent().unwrap().join("other"),
+            ),
+            (
+                "./.pnp.loader.mjs?tag",
+                loader.commonjs.parent().unwrap().to_owned(),
+            ),
+            (
+                "./.pnp.loader.mjs#tag",
+                loader.commonjs.parent().unwrap().to_owned(),
+            ),
+            (
+                "loader-package",
+                loader.commonjs.parent().unwrap().to_owned(),
+            ),
+        ] {
+            let inherited = format!("--loader=\"{specifier}\"");
+            let options = loader
+                .options_in(Some(OsStr::new(&inherited)), Some(&cwd))
+                .unwrap();
+            assert!(options.to_str().unwrap().contains(&inherited));
+            assert!(options.to_str().unwrap().contains("--experimental-loader"));
         }
     }
 
@@ -398,7 +522,10 @@ mod tests {
     #[cfg(windows)]
     fn normalizes_windows_local_file_urls() {
         assert_eq!(
-            file_url_path(b"FILE://LOCALHOST/C:/project%20with%20spaces/.pnp.loader.mjs"),
+            file_url_path(
+                b"FILE://LOCALHOST/C:/project%20with%20spaces/.pnp.loader.mjs",
+                None
+            ),
             Some(br"C:\project with spaces\.pnp.loader.mjs".to_vec())
         );
     }
