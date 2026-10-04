@@ -27,7 +27,15 @@ export function acquireNativeBuildLock(root) {
 }
 
 export function verifyPackageRevision(expected, current, status) {
-  if (!/^[a-f0-9]{40}$/.test(expected) || current.trim() !== expected || status.trim()) throw new Error("Source changed during packaging; no revision-bound result was published.");
+  if (!/^[a-f0-9]{40}$/.test(expected) || current.trim() !== expected || status.trim()) {
+    const entries = status.trimEnd().split(/\r?\n/).filter(Boolean);
+    // Only known repository source paths are diagnostic data. Unknown/untracked
+    // names can contain private local state and are represented by counts only.
+    const sourceFiles = entries.filter(line => !line.startsWith("?? ")).map(line => line.slice(3))
+      .filter(path => /^(?:Cargo\.(?:lock|toml)|pnpm-lock\.yaml|apps\/delidev\/[A-Za-z0-9_.@/-]+)$/.test(path)).slice(0, 16);
+    process.stderr.write(JSON.stringify({ event: "native_package_source_changed", revisionChanged: current.trim() !== expected, changedEntries: entries.length, untrackedEntries: entries.filter(line => line.startsWith("?? ")).length, sourceFiles }) + "\n");
+    throw new Error("Source changed during packaging; no revision-bound result was published.");
+  }
 }
 
 // The pinned cef 150.0.0 crate resolves to distribution 150.0.10. Keep this

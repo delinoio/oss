@@ -45,7 +45,7 @@ async function main() {
   const run = (command, arguments_, inherit = false) => {
     const result = spawnSync(command, arguments_, { cwd: app, env, encoding: "utf8", ...(inherit ? { stdio: "inherit" } : {}) });
     if (result.error || result.status !== 0) throw new Error(`Native dry-run command failed: ${command}.`);
-    return inherit ? "" : result.stdout + result.stderr;
+    return inherit ? "" : command === "git" ? result.stdout : result.stdout + result.stderr;
   };
   if (run("rustc", ["--print", "host-tuple"]).trim() !== selected.target) throw new Error("The Rust toolchain does not match the native target.");
   const revision = run("git", ["rev-parse", "HEAD"]).trim();
