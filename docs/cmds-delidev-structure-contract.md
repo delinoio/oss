@@ -35,11 +35,13 @@ Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
 
-Wholly new closed enums use explicit `newDeclaration: true` member reservations
-under one original owner, including their zero UNSPECIFIED member. Keep these
-planned declarations out of the immutable active baseline; the allocation check
-validates their unique numbers and later active schema declarations without
-requiring premature runtime support.
+Wholly new messages and closed enums use explicit `newDeclaration: true` member
+reservations under one original owner, including the zero UNSPECIFIED member of
+each enum. Later additions retain their own original issue/PR owner; they do not
+redefine declaration ownership. Keep planned declarations out of the immutable
+active baseline. The allocation check validates message fields and enum values,
+their unique numbers and later active schema declarations without requiring
+premature runtime support.
 
 ## Runtime and storage
 
@@ -139,3 +141,35 @@ Both aggregate views therefore include `NetworkService` and `SubscriptionService
 without adding their declarations to the relocation map.
 Issue #1084 activates its already reserved wire allocations without changing
 that historical map. Generated service/query facades retain both services.
+
+## Remaining-feature prerequisite reservations
+
+The allocation ledger reserves the complete remaining-feature dependency closure
+before independent implementation PRs. It retains every existing main assignment
+and original owner; reservations grant no capability or native authority.
+Accounting kinds/summary fields and metadata-only diagnostics precede independent
+subscription-service attribution. Quota/reset-credit observations, encrypted Worker
+bootstrap and native routes, Codex child settings, OpenCode foreground children,
+independent Codex/OpenCode compaction and OpenCode General Chat Fork each retain
+their separately negotiated System/Worker capabilities. Sidechat purpose and exact
+original deletion observation, SSH setup and signed-update operations are reserved
+under issue #964 without activating product endpoints or cleanup authority.
+
+The immutable baseline includes the already active AccountingUnitKind,
+SubscriptionAction, SessionContextCapability, ForkSessionRequest and
+ListSessionDeletionWorkRequest declarations verified from main. Planned
+declarations remain outside that baseline. Shared consumers are explicit and
+new declaration provenance is independent of later field/member provenance.
+
+Migration 30 belongs to issue #1148's 26 additional fixed hosted provider presets
+and follows the real private OAuth migration 29. Versions 26–29 keep their original
+accounting, request-diagnostics, subscription-retirement and OAuth ownership and
+order. No executable migration, schema declaration, generated binding or runtime
+advertisement is added by this prerequisite.
+
+Delivery uses independent PRs merged in dependency order. Establish these shared
+reservations on main before composing their dependent branches; each feature PR
+must include its complete business, authenticated RPC, CLI, client and desktop
+boundary plus applicable validation. Preserve implementation branches and record
+source-bound validation and unresolved native/account/platform acceptance in PRs
+and CI. Reservation completion cannot close a feature issue.

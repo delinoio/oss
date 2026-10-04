@@ -50,6 +50,15 @@
         1235
       ],
       "composition": "Activate only after real migrations 26 through 28. Add private metadata-only account_oauth_attempts with durable once-only exchange claims, original actor/request/process and reserved-account identities, protected-reference and cleanup evidence. Never persist plaintext verifier, code, key or callback/authorization URL, cascade recovery evidence, or create placeholder predecessors."
+    },
+    {
+      "version": 30,
+      "issue": 1148,
+      "feature": "Additional fixed hosted provider presets",
+      "dependsOn": [
+        1146
+      ],
+      "composition": "Seed only the 26 added hosted preset identities once, preserving historical six-provider seed sets, saved Off state, deletions, UUIDs, custom providers and account associations. Migration 29 retains original OAuth ownership and must contain its real private attempt table before migration 30."
     }
   ],
   "policy": "Reservations are not executable. Implement in order, or revise the reservation sequence on main before starting replacements; never fill a gap with a no-op migration. An unmerged version-25 database is an unknown layout and requires preservation and explicit recovery."
