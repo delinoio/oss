@@ -82,7 +82,7 @@ func workspaceReadScope(tx *store.Tx, id domain.ID) (workspace.PrepareRequest, w
 	if err != nil {
 		return input, manifest, err
 	}
-	if session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
+	if !session.WorkspaceAvailable() || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
 		return input, manifest, workspaceReadUnavailable()
 	}
 	_, machine, err := activeMachine(tx, session.MachineID)
@@ -204,18 +204,36 @@ func (s *Service) observeWorkerWorkspace(ctx context.Context, id domain.ID, inpu
 	if err != nil || primary.ID != reader.primary {
 		return nil, workspaceReadUnavailable()
 	}
-	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return currentWorkspaceReader(tx, reader) }); err != nil {
-		return nil, err
-	}
 	raw, _ := json.Marshal(observation.request)
-	select {
-	case reader.requests <- raw:
-	case <-reader.done:
-		return nil, workspaceReadUnavailable()
-	case <-primary.Done:
-		return nil, workspaceReadUnavailable()
-	case <-ctx.Done():
-		return nil, workspaceReadUnavailable()
+	// Publish under the same state transaction as the fresh storage/preparation
+	// check. An earlier caller scope cannot contend with a newly accepted cleanup.
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := currentWorkspaceReader(tx, reader); err != nil {
+			return err
+		}
+		freshInput, freshManifest, err := workspaceReadScope(tx, id)
+		if err != nil {
+			return err
+		}
+		before, _ := json.Marshal([]any{input, manifest})
+		after, _ := json.Marshal([]any{freshInput, freshManifest})
+		if !bytes.Equal(before, after) {
+			return workspace.ResultUncertain()
+		}
+		select {
+		case reader.requests <- raw:
+			return nil
+		case <-reader.done:
+			return workspaceReadUnavailable()
+		case <-primary.Done:
+			return workspaceReadUnavailable()
+		case <-ctx.Done():
+			return workspaceReadUnavailable()
+		default:
+			return domain.Fail(domain.ResourceExhausted, "The prior workspace read is still queued.", "Wait for the original Worker read to finish and refresh.")
+		}
+	}); err != nil {
+		return nil, err
 	}
 	select {
 	case <-ctx.Done():

@@ -185,6 +185,9 @@ func (t *Tx) PutJob(id domain.ID, expected uint64, session, project domain.ID, j
 		if original.AssignedDeviceID != job.AssignedDeviceID && (original.State != domain.JobQueued || job.State != domain.JobClaimed || original.AssignedDeviceID != "") {
 			return Record{}, domain.Fail(domain.InvalidArgument, "The assigned Worker device is immutable.", "Preserve the original accepted assignment.")
 		}
+		if original.StorageReconciledBy != job.StorageReconciledBy && (original.StorageReconciledBy != "" || original.Type != domain.WorkspaceStorageJob || original.State != domain.JobUncertain || !job.State.Terminal()) {
+			return Record{}, domain.Fail(domain.InvalidArgument, "Original storage reconciliation is immutable.", "Use the original successful explicit recovery operation.")
+		}
 		if original.Type != job.Type || original.MachineID != job.MachineID || original.ParentID != job.ParentID || !original.AcceptedAt.Equal(job.AcceptedAt) {
 			return Record{}, domain.Fail(domain.InvalidArgument, "Accepted job routing is immutable.", "Create a new explicit operation instead of reassigning accepted work.")
 		}

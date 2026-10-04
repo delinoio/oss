@@ -1,0 +1,234 @@
+// SPDX-License-Identifier: Apache-2.0
+package worker
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+)
+
+func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
+	for _, kind := range []domain.WorkspaceType{domain.GeneralChat, domain.Worktree} {
+		for _, action := range []string{"create", "cleanup", "restore"} {
+			t.Run(fmt.Sprint(kind, "/", action), func(t *testing.T) {
+				config, work, manifest, source := deletionWorkerFixture(t, kind)
+				manager := workspace.Manager{Root: config.Root, Logger: config.Logger}
+				prepare := workspace.PrepareRequest{SessionID: work.SessionID, MachineID: work.MachineID, OriginMachineID: work.MachineID, Type: kind, Repositories: []workspace.RepositorySpec{}}
+				if kind == domain.Worktree {
+					repo := manifest.Repositories[0]
+					prepare.PrimaryRepository = repo.ID
+					prepare.Repositories = []workspace.RepositorySpec{{ID: repo.ID, Checkout: source, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}}
+				}
+				input := workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), PreviousState: domain.WorkspacePresent, Action: workspace.StoragePreview, Preparation: prepare, Manifest: manifest}
+				preview, err := manager.Storage(context.Background(), input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				input.OperationID, input.SnapshotID = domain.NewID(), domain.NewID()
+				input.Action = workspace.StorageCreate
+				if action != "create" {
+					input.Action, input.PreviewDigest = workspace.StorageCleanup, preview.PreviewDigest
+				}
+				run := func(input workspace.StorageRequest) workspace.StorageResult {
+					raw, _ := json.Marshal(input)
+					instance := work.Copies[0].InstanceID
+					job := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: work.MachineID, InstanceID: instance, AssignedDeviceID: work.DeviceID, Input: raw, AcceptedAt: time.Now().UTC()}
+					document, _ := json.Marshal(job)
+					resource := &pb.Resource{Id: string(input.OperationID), Revision: 2, SchemaVersion: 1, Kind: pb.EntityKind_ENTITY_KIND_JOB, SessionId: string(work.SessionID), DocumentJson: document}
+					result, err := runJob(context.Background(), config, instance, resource, job)
+					if err != nil || result.Problem != nil {
+						t.Fatal(err, result.Problem)
+					}
+					work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: input.OperationID, SnapshotID: input.SnapshotID, Type: job.Type, Revision: 2, InstanceID: instance, Digest: result.Digest})
+					var output workspace.StorageResult
+					if domain.Decode(result.Output, &output) != nil {
+						t.Fatal("invalid result")
+					}
+					return output
+				}
+				output := run(input)
+				if action == "restore" {
+					input.OperationID, input.Action, input.PreviousState, input.PreviousSnapshotID, input.SnapshotDigest = domain.NewID(), workspace.StorageRestore, domain.WorkspaceStored, input.SnapshotID, output.Snapshot.SHA256
+					run(input)
+				}
+				snapshot := filepath.Join(config.Root, "snapshots", string(input.SnapshotID))
+				original, err := os.ReadFile(filepath.Join(snapshot, "snapshot.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var journals []string
+				for _, copy := range work.Copies {
+					if copy.Type != domain.WorkspaceStorageJob {
+						continue
+					}
+					path := filepath.Join(config.Root, "storage-removal-claims", string(copy.JobID)+".pending")
+					if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, []byte("fixture retained path transitions"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					journals = append(journals, path)
+				}
+				// Simulate process death during each atomic publication, including a
+				// partial record that cannot be decoded and a compacted claim journal.
+				var remnants []string
+				foreign := domain.NewID()
+				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+					parent := filepath.Join(config.Root, directory)
+					if err := security.PrivateDir(parent); err != nil {
+						t.Fatal(err)
+					}
+					id := input.OperationID
+					if directory == "workspace-restores" {
+						id = work.SessionID
+					}
+					for _, suffix := range []string{".json-1234", ".pending-5678"} {
+						if suffix == ".pending-5678" && directory != "storage-removal-claims" {
+							continue
+						}
+						path := filepath.Join(parent, ".pending-"+string(id)+suffix)
+						if err := os.WriteFile(path, []byte(`{"partial-private-native-state":`), 0600); err != nil {
+							t.Fatal(err)
+						}
+						remnants = append(remnants, path)
+					}
+					if err := os.WriteFile(filepath.Join(parent, ".pending-"+string(foreign)+".json-9999"), []byte("unrelated"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				proof, err := deleteSessionCopies(context.Background(), config, work)
+				if err != nil || !proof.Complete {
+					t.Fatal("storage copies blocked coordinated deletion", err)
+				}
+				for _, path := range remnants {
+					if _, err := os.Lstat(path); !os.IsNotExist(err) {
+						t.Fatal("interrupted atomic write survived completion", err)
+					}
+					if err := os.WriteFile(path, []byte("replacement"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+						t.Fatal("completed replay ignored a reappeared atomic write")
+					}
+					if raw, err := os.ReadFile(path); err != nil || string(raw) != "replacement" {
+						t.Fatal("replay deleted replacement", err)
+					}
+					if err := os.Remove(path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+					if raw, err := os.ReadFile(filepath.Join(config.Root, directory, ".pending-"+string(foreign)+".json-9999")); err != nil || string(raw) != "unrelated" {
+						t.Fatal("unrelated atomic write changed", err)
+					}
+				}
+				for _, path := range journals {
+					if _, err := os.Lstat(path); !os.IsNotExist(err) {
+						t.Fatal("original claim journal survived deletion", err)
+					}
+				}
+				for _, path := range workspace.SessionStorageCopyPaths(config.Root, work) {
+					if _, err := os.Lstat(path); !os.IsNotExist(err) {
+						t.Fatal("storage copy retained", path, err)
+					}
+				}
+				if source != "" {
+					data, err := os.ReadFile(filepath.Join(source, "tracked.txt"))
+					if err != nil || string(data) != "original" {
+						t.Fatal("original source modified", err)
+					}
+				}
+				again, err := deleteSessionCopies(context.Background(), config, work)
+				if err != nil || again.ReportID != proof.ReportID {
+					t.Fatal("exact cleanup retry failed", err)
+				}
+				if err := os.WriteFile(journals[0], []byte("fixture reappearing journal"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+					t.Fatal("completed proof ignored reappearing claim journal")
+				}
+				if data, err := os.ReadFile(journals[0]); err != nil || string(data) != "fixture reappearing journal" {
+					t.Fatal("completed replay acquired new deletion authority", err)
+				}
+				if err := os.Remove(journals[0]); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(snapshot, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(snapshot, "snapshot.json"), original, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+					t.Fatal("restored managed snapshot accepted as absent")
+				}
+			})
+		}
+	}
+}
+
+func TestSessionDeletionPreservesForeignStorageStaging(t *testing.T) {
+	config, work, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	prepare := workspace.PrepareRequest{SessionID: work.SessionID, MachineID: work.MachineID, OriginMachineID: work.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
+	input := workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), Action: workspace.StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
+	raw, _ := json.Marshal(input)
+	instance := work.Copies[0].InstanceID
+	job := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: work.MachineID, InstanceID: instance, AssignedDeviceID: work.DeviceID, Input: raw, AcceptedAt: time.Now().UTC()}
+	document, _ := json.Marshal(job)
+	resource := &pb.Resource{Id: string(input.OperationID), Revision: 2, SchemaVersion: 1, Kind: pb.EntityKind_ENTITY_KIND_JOB, SessionId: string(work.SessionID), DocumentJson: document}
+	result, err := runJob(context.Background(), config, instance, resource, job)
+	if err != nil || result.Problem != nil {
+		t.Fatal(err, result.Problem)
+	}
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: input.OperationID, Type: job.Type, Revision: 2, InstanceID: instance, Digest: result.Digest})
+	staging := filepath.Join(config.Root, "snapshot-staging", string(input.OperationID))
+	if err := os.Mkdir(staging, 0700); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(staging, "foreign")
+	if err := os.WriteFile(foreign, []byte("preserve foreign scratch"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), config, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("deletion adopted unowned scratch", err)
+	}
+	if raw, err := os.ReadFile(foreign); err != nil || string(raw) != "preserve foreign scratch" {
+		t.Fatal("foreign scratch removed", err)
+	}
+	if _, err := os.Stat(manifest.PrimaryPath); err != nil {
+		t.Fatal("foreign scratch did not block workspace removal", err)
+	}
+}
+
+func TestSessionDeletionPreservesUnattributedAtomicWrite(t *testing.T) {
+	for _, name := range []string{".pending-1234", ".pending-invalid.json-1234"} {
+		t.Run(name, func(t *testing.T) {
+			config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+			parent := filepath.Join(config.Root, "storage-removal-intents")
+			if err := security.PrivateDir(parent); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(parent, name)
+			if err := os.WriteFile(path, []byte("unknown-original-owner"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if proof, err := deleteSessionCopies(context.Background(), config, work); err == nil || proof.Complete {
+				t.Fatal("unattributed write ignored")
+			}
+			if raw, err := os.ReadFile(path); err != nil || string(raw) != "unknown-original-owner" {
+				t.Fatal("unattributed write removed", err)
+			}
+		})
+	}
+}

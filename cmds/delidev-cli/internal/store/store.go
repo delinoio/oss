@@ -19,6 +19,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	_ "modernc.org/sqlite"
 )
 
@@ -611,6 +612,8 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	maxBodyBytes := 1 << 20
 	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.CompactSessionJob {
 		maxBodyBytes = maxCompactionJobEntityBytes
+	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind {
+		maxBodyBytes = workspace.StorageJobDocumentLimit(job)
 	}
 	if err != nil || len(body) > maxBodyBytes {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid entity document.", "Use a validated bounded entity document.")
@@ -956,8 +959,15 @@ func Decode[T any](r Record) (T, error) {
 		var envelope struct {
 			Type domain.JobType `json:"type"`
 		}
-		if json.Unmarshal(r.Data, &envelope) == nil && envelope.Type == domain.CompactSessionJob {
-			maxBytes = maxCompactionJobEntityBytes
+		if len(r.Data) <= workspace.MaxStorageRecoveryJobBytes && json.Unmarshal(r.Data, &envelope) == nil {
+			if envelope.Type == domain.CompactSessionJob {
+				maxBytes = maxCompactionJobEntityBytes
+			} else if envelope.Type == domain.WorkspaceStorageJob {
+				var job domain.Job
+				if workspace.DecodeStorageJob(r.Data, &job) == nil {
+					maxBytes = workspace.StorageJobDocumentLimit(job)
+				}
+			}
 		}
 	}
 	err := domain.DecodeWithLimit(r.Data, &result, maxBytes)

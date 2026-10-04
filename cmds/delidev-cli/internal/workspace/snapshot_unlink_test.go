@@ -1,0 +1,210 @@
+// SPDX-License-Identifier: Apache-2.0
+package workspace
+
+import (
+	"context"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
+
+func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
+	for _, action := range []StorageAction{StorageCleanup, StorageDelete} {
+		mutations := []string{"add-root", "add-child", "replace", "modify", "replace-after-claim", "last-root"}
+		if runtime.GOOS == "windows" {
+			mutations = append(mutations, "blocked-descendant")
+		}
+		for _, mutation := range mutations {
+			t.Run(string(action)+"/"+mutation, func(t *testing.T) {
+				m, prepare, manifest := chatExecutionFixture(t)
+				captureStorageFailureLogs(t, m)
+				if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
+				preview := storageDo(t, m, input)
+				input.Action, input.OperationID, input.SnapshotID, input.PreviewDigest = action, domain.NewID(), domain.NewID(), preview.PreviewDigest
+				source := filepath.Join(m.Root, "workspaces", string(prepare.SessionID))
+				prefix := "chat"
+				if action == StorageDelete {
+					input.Action = StorageCreate
+					created := storageDo(t, m, input)
+					input.Action, input.OperationID, input.SnapshotDigest, input.SnapshotMetadata = StorageDelete, domain.NewID(), created.Snapshot.SHA256, created.Snapshot
+					source = m.snapshotPath(input.SnapshotID)
+					prefix = "workspace/chat"
+				}
+				// Go's Windows OpenRoot(path) omits delete sharing and blocks the
+				// namespace rename. A child opened through its stable parent permits
+				// rename while keeping writes anchored to the original directory. Close
+				// the parent immediately so the fixture retains only the writer handle.
+				parent, err := os.OpenRoot(filepath.Dir(source))
+				if err != nil {
+					t.Fatal(err)
+				}
+				held, err := parent.OpenRoot(filepath.Base(source))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := parent.Close(); err != nil {
+					t.Fatal(err)
+				}
+				defer held.Close()
+				changed := prefix + "/keep"
+				trigger := changed
+				if mutation == "last-root" {
+					trigger = "."
+				}
+				heldParent := held
+				parentPath := filepath.ToSlash(filepath.Dir(changed))
+				components := strings.Split(parentPath, "/")
+				openedComponents := 0
+				openWriterParent := func(relative string) {
+					// Windows forbids moving a directory with open descendants even
+					// when those descendants share deletion. Keep the original root
+					// writer across the namespace claim, then open each descendant
+					// just before that directory's own claim, never before its parent.
+					if parentPath != "." && openedComponents < len(components) && relative == strings.Join(components[:openedComponents+1], "/") {
+						heldParent, err = heldParent.OpenRoot(components[openedComponents])
+						if err != nil {
+							t.Fatal(err)
+						}
+						writer := heldParent
+						t.Cleanup(func() { writer.Close() })
+						openedComponents++
+					}
+				}
+				if mutation == "blocked-descendant" {
+					for index := range components {
+						openWriterParent(strings.Join(components[:index+1], "/"))
+					}
+				}
+				raced := false
+				m.storageBeforeRemovalUnlink = func(relative string) {
+					openWriterParent(relative)
+					if raced || relative != trigger {
+						return
+					}
+					raced = true
+					switch mutation {
+					case "add-root", "last-root":
+						changed = "late"
+					case "add-child":
+						changed = prefix + "/late"
+					case "replace":
+						if err := heldParent.Remove(filepath.Base(changed)); err != nil {
+							t.Fatal(err)
+						}
+					}
+					writerParent := heldParent
+					if mutation == "add-root" || mutation == "last-root" {
+						writerParent = held
+					}
+					if err := writerParent.WriteFile(filepath.Base(changed), []byte("uncaptured writer bytes"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				m.storageAfterRemovalClaim = func(relative string) {
+					if mutation != "replace-after-claim" || raced || relative != trigger {
+						return
+					}
+					raced = true
+					if err := heldParent.WriteFile(filepath.Base(changed), []byte("uncaptured writer bytes"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				result, err := m.Storage(context.Background(), input)
+				if mutation == "blocked-descendant" {
+					if err == nil || raced || result.CleanupVerified || result.RemovedSourceBytes != 0 {
+						t.Fatal("blocked namespace move was reported as removal")
+					}
+					if raw, readErr := os.ReadFile(filepath.Join(source, filepath.FromSlash(changed))); readErr != nil || string(raw) != "original" {
+						t.Fatal("blocked rename changed source bytes", readErr)
+					}
+					if _, statErr := os.Stat(filepath.Join(m.Root, "workspace-removals", string(input.OperationID))); !os.IsNotExist(statErr) {
+						t.Fatal("blocked rename published a removal namespace", statErr)
+					}
+					if _, _, inspectErr := m.inspectSnapshot(context.Background(), input.SnapshotID); inspectErr != nil {
+						t.Fatal("blocked rename changed the recoverable snapshot", inspectErr)
+					}
+					return
+				}
+				if !raced || domain.SafeError(err).Code != domain.RecoveryRequired || result.CleanupVerified || result.RemovedSourceBytes != 0 {
+					t.Fatal("uncaptured mutation completed removal", result, err)
+				}
+				removal := filepath.Join(m.Root, "workspace-removals", string(input.OperationID))
+				reader := heldParent
+				if mutation == "add-root" || mutation == "last-root" {
+					reader = held
+				}
+				if raw, err := reader.ReadFile(filepath.Base(changed)); err != nil || string(raw) != "uncaptured writer bytes" {
+					t.Fatal("uncaptured bytes were removed", err)
+				}
+				// A retained Windows descendant may block restoration of an ancestor
+				// name. Recovery must retain its private journaled name instead. Prove
+				// bytes remain reachable on disk as well as through the original writer.
+				found := false
+				if err := filepath.WalkDir(removal, func(name string, entry fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if entry.Type().IsRegular() {
+						raw, err := os.ReadFile(name)
+						if err != nil {
+							return err
+						}
+						found = found || string(raw) == "uncaptured writer bytes"
+					}
+					return nil
+				}); err != nil || !found {
+					t.Fatal("uncaptured bytes lost durable removal ownership", err)
+				}
+				if _, err := m.Storage(context.Background(), recoveryRequest(input)); domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("recovery adopted uncaptured bytes", err)
+				}
+				if action == StorageCleanup {
+					if _, _, err := m.inspectSnapshot(context.Background(), input.SnapshotID); err != nil {
+						t.Fatal("recoverable original snapshot was changed", err)
+					}
+				} else if raw, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, "keep")); err != nil || string(raw) != "original" {
+					t.Fatal("live workspace was changed by snapshot deletion", err)
+				}
+			})
+		}
+	}
+}
+
+func TestRemovalRecoveryClearsRestoredChildMappingUnderClaimedParent(t *testing.T) {
+	m, prepare, manifest := chatExecutionFixture(t)
+	captureStorageFailureLogs(t, m)
+	for _, name := range []string{"first", "last"} {
+		if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, name), []byte("original"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StorageCreate, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+	created := storageDo(t, m, input)
+	input.Action, input.OperationID, input.SnapshotDigest, input.SnapshotMetadata = StorageDelete, domain.NewID(), created.Snapshot.SHA256, created.Snapshot
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.storageAfterRemovalClaim = func(name string) {
+		if name == "workspace/chat/first" {
+			cancel()
+		}
+	}
+	if _, err := m.Storage(ctx, input); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("child claim did not interrupt", err)
+	}
+	m = &Manager{Root: m.Root, Logger: m.Logger}
+	result, err := m.Storage(context.Background(), recoveryRequest(input))
+	if err != nil || !result.CleanupVerified || result.Snapshot == nil || !result.Snapshot.Deleted {
+		t.Fatal("restored child name remained falsely pending", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, "first")); err != nil || string(raw) != "original" {
+		t.Fatal("snapshot removal changed live source", err)
+	}
+}

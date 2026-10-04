@@ -129,6 +129,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Permanent deletion requests original terminal closes atomically, preserves their cleanup reports and exact close identities, and blocks workspace-removal dispatch plus final purge until independently joined terminal cleanup. Follow `docs/cmds-delidev-terminals-contract.md`; accepted deletion cannot reopen native terminal authority.
 
+- Permanent deletion includes each original claimed workspace-storage snapshot reservation, even before output exists. Persist those typed UUIDs in the synchronized immutable deletion plan; no database migration or inferred native completion is required.
+
 - Manual fixes retain optional original Git/project selection on existing attempts. Only original assignment-bound verified push plus successful native completion/cleanup can handle exact evidence; dismissal wins a race and handled audit cannot be erased. Missing/uncertain proof retains stable PR ownership. Cancel only an explicitly removed unstarted original input atomically; preserve legacy attempts without inventing push proof.
 
 - Manual fix completion must retain dedicated Activity verification in the same transaction as exact handled versions, after original native, cleanup and push proof. An outcome alone cannot create verification.
@@ -187,3 +189,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Migration 28 bounds relevant configuration/device metadata, not total retained history. Check original affected account references and unsettled session/job ownership directly in SQLite without loading or charging unrelated messages/jobs against retirement bounds.
 
 - Worker network transfer, pending-pairing and native-runtime pins reuse existing metadata with strict original UUID/generation/digest validation. Keep ciphertext and protected derivatives outside SQLite. Remove native job pins with ordinary/session job purge; preserve pending pairing and current routing through their independent authority and restore boundary. Periodic unchanged acknowledgements do not republish Machine state.
+
+- A terminal workspace-storage job may retain one immutable `storage_reconciled_by` reference established only while settling an uncertain original through successful explicit recovery. It authorizes no native replay; verify original device/instance, immutable assignment and the successful recovery claim before acknowledging a stale original report.
+
+- Workspace-storage recovery has a dedicated 4 MiB job entity bound, with strict 3 MiB input and individually bounded original request validation. Ordinary storage jobs retain 1 MiB entities. Apply the same typed rule on write, original assignment reads, settlement, replay and permanent deletion without truncating ownership.

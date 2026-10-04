@@ -543,9 +543,6 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		Problem           *domain.Error
 	}{domain.ID(meta.Id), meta.ExpectedRevision, machine, instance, req.Msg.OutputJson, problem}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "worker.report", input, func(tx *store.Tx) (any, error) {
-		if err := currentInstance(tx, machine, instance); err != nil {
-			return nil, err
-		}
 		record, err := tx.Get(domain.JobKind, domain.ID(meta.Id))
 		if err != nil {
 			return nil, err
@@ -556,6 +553,15 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		}
 		if job.MachineID != machine || job.InstanceID != instance || job.AssignedDeviceID != "" && job.AssignedDeviceID != actor.DeviceID {
 			return nil, domain.Fail(domain.PermissionDenied, "The Worker does not own this job.", "Report only work assigned to this machine and process.")
+		}
+		if job.StorageReconciledBy != "" {
+			if err := validateReconciledStorageReport(tx, record, job, actor, machine, instance, meta.ExpectedRevision); err != nil {
+				return nil, err
+			}
+			return record, nil
+		}
+		if err := currentInstance(tx, machine, instance); err != nil {
+			return nil, err
 		}
 		if job.State != domain.JobClaimed {
 			return nil, domain.Fail(domain.Conflict, "The job is no longer awaiting this result.", "Inspect its current accepted outcome.")
@@ -586,6 +592,11 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if problem == nil {
 			outputJSON := req.Msg.OutputJson
 			switch job.Type {
+			case domain.WorkspaceStorageJob:
+				var expected workspace.StorageRequest
+				if workspace.DecodeStorageRequest(job.Input, &expected) != nil || validateWorkspaceStorageResult(expected, req.Msg.OutputJson) != nil {
+					problem = workspace.ResultUncertain()
+				}
 			case domain.RecoverExecutionJob:
 				if validateExecutionRecoveryResult(tx, record, job, req.Msg.OutputJson) != nil {
 					problem = domain.ExecutionRecoveryUncertain()

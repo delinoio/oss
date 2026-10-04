@@ -10,8 +10,8 @@ Schema 27 adds bounded metadata-only request diagnostic rows and session/executi
 Go owns managed database backups, session deletion, Worker snapshots and recovery.
 The approved completion work includes every remaining issue #964 requirement;
 actual account/private-GitHub access and platform distribution validation remain
-deferred. This document covers managed backup observation, creation/deletion and permanent
-session deletion and database restore. Worker-local snapshots remain pending.
+deferred. This document covers managed backup observation, creation/deletion, permanent
+session deletion, database restore and Worker-local workspace snapshots and restoration.
 
 ## Subscription retirement (issue #1235)
 
@@ -318,7 +318,14 @@ remain explicitly unknown. Repeated scans retain completed obligations and
 reapply removal to stale restored managed data. Logs contain operation/UUID,
 revision and stable error codes only, never paths, prompts or credentials.
 
-Future session-owned native services, dependent Sidechats and workspace snapshots
+Workspace snapshots now join the original deletion plan through reserved snapshot
+UUIDs on immutable claimed storage jobs, including interrupted copies with no output.
+The Worker joins job/workspace owners and removes published snapshots, staging, removal
+claims/intents, retirement receipts and restoration bindings before acknowledging.
+A stored workspace supplies its validated original manifest before deleting its only
+copy; restored independent Git is removed solely within the managed root. Original
+Local/source checkouts remain protected. Completed-proof retries verify these exact
+paths remain absent. Future session-owned native services and dependent Sidechats
 must join this ownership graph and acknowledgement boundary before exposing them.
 The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
@@ -469,10 +476,7 @@ real-account, Worker workspace, native harness or platform-distribution acceptan
 
 ## Remaining implementation
 
-Worker-local snapshots must
-faithfully preserve all repositories, ignored files, unpushed commits and symlinks
-before deleting any managed source. Those operations are not yet exposed by the
-backup observation APIs; the complete requirements remain authoritative.
+Worker-local workspace snapshots and the desktop storage-management surface use the separate storage service below; database backup observation does not grant workspace or database restoration. Managed database restore uses its explicit lifecycle above. Permanent dependent Sidechat deletion and independent attachment/cache cleanup remain separate issue #964 work. Parent workspace storage fails closed on unresolved dependent jobs or extra resources; it cannot report their permanent deletion. The complete requirements remain authoritative.
 
 ## Validation
 
@@ -539,6 +543,237 @@ The following source-backed notes were relocated from the project index at `12b3
 
 Backup publication and first-start recovery preserve the original state and synchronize durable names. Completed process scopes are retired only after native completion validation and controller release. Reported pre-launch claim-publication failures can roll back only the current attempt before lease issuance, preserving prior closed ownership and all unexpected evidence. Account deletion retains all live configuration and historical session references; keyless lifecycle operations remain independent of native credential availability. Bounded resource pages account for both wire encodings, and CLI waits distinguish observed completion from timeout/cancellation. Schedule availability restarts with each server process, while Stop/Archive retain their product outcome after later native success. Relay reflection checks cover SSE metadata and sanitized native error codes. These repairs do not close the remaining implementation and platform evidence gaps. Record those gaps in pull requests, issues and CI logs/artifacts.
 
+## Worker-local workspace storage (issue #1079)
+
+Every storage RPC checks owner/paired-client role authority at the service boundary
+before processing its request, including direct internal calls without HTTP
+middleware. Reads, mutations and receipt replay recheck current paired-device
+authorization in their owning transaction. Missing or Worker principals cannot
+observe or control storage operations.
+
+`WorkspaceStorageService.RequestWorkspaceStorage` accepts typed preview, create,
+cleanup, inspect, restore, delete and explicit recover actions. Owner/paired-client
+requests bind a UUID-v7 receipt to the authenticated actor, exact session revision,
+original action and selected preview/snapshot/recovery job. Acceptance reserves one
+`workspace-storage` job and (for creation/cleanup) one snapshot UUID. The same
+request returns the current original job; it never resends native work. Operation
+reads and revision-checked cancellation use dedicated RPCs. Workers cannot invoke
+this service. Generic owner/client Resource reads list snapshot metadata by session.
+`SystemService.GetStatus` advertises `WORKSPACE_STORAGE_V1`; generated Go,
+TypeScript and Connect Query clients expose the additive service.
+
+Only inactive prepared DeliDev-owned Worktree and General Chat workspaces are
+eligible. Local checkouts, active executions, unresolved native ownership,
+unconfirmed cleanup, pending titles, dependent queued/claimed/uncertain jobs and
+any forward without both original peer cleanup confirmations block storage.
+Session terminals independently block every storage operation until their original
+process cleanup is verified, including terminals labeled exited, closed or
+uncertain. Agent Stop and accepted Close alone do not release workspace ownership.
+Stopping a forward or labeling it stopped alone cannot release ownership. The server examines the complete bounded session-job inventory,
+not only its first page. Extra resources in the managed root also block parent
+cleanup. Acceptance pauses dispatch and clears continuation intent atomically;
+first dispatch, Resume, continuation, preparation and initial execution claims
+independently require present storage. New forwards and retained live socket
+authority also require present storage; original cleanup reports remain usable.
+Terminal creation, input/resize acceptance and non-close dispatch or claim receipt
+reads likewise require present storage. Original close and cleanup authority
+remains available while storage is pending, uncertain or stored.
+Archive still preserves files. Successful
+restoration and recovery remain paused and require explicit later Resume.
+
+The authenticated owning Worker performs five-minute cancellable operations
+under the existing session lock plus the independent per-session observation gate
+after joining original session-bound read owners and independently reconciling process ownership
+and rejecting active execution claims. One private manifest covers the complete
+ordered repository set or General Chat directory. Bounds are 8 GiB, 8,192 entries
+and an 8 MiB private manifest, with bounded 128 KiB copying. One shared remaining
+byte/entry budget applies during workspace and independent Git-store copying.
+Capture conservatively reserves the full 8 MiB manifest allowance plus 256 bytes
+per repository for copied Git config rewrites before copying payloads; this bounded
+headroom can reject data close to 8 GiB even when its final metadata would be smaller.
+Git roots count once, Git-created config files reserve an entry before writing,
+overlapping administration directories count only when new,
+and excess or growing-file bytes never enter the copied payload. Published snapshot
+inventory is capped at 4,096 entries. Creation and cleanup hold a Worker-wide
+cross-process publication gate from count admission through durable publication;
+reject at capacity before staging. A busy gate fails with conflict and no output,
+so independent sessions cannot both consume the final slot. Preview remains
+available at capacity, and explicit snapshot deletion can release a slot. Removal intents separately allow the two
+snapshot wrapper entries (`workspace` and `snapshot.json`) beyond a complete
+8,192-entry workspace, without admitting unexpected root content or increasing
+the workspace bound. Private manifests and removal intents use their explicit
+8 MiB strict JSON decoding budget; public command documents retain 1 MiB limits. Files are copied through opened anchored
+parents with exclusive destinations, identity checks, full SHA-256 inventories,
+mode preservation and synchronization. Root and nested directory identity,
+mode, size and modification time are rechecked around inventory reads and copies;
+late root entries, including writes through a retained handle after a cleanup
+claim, invalidate the observation before publication or unlink. Ordinary symlinks,
+including escaping links, remain links and are never opened. Windows inventories additionally retain the native file/directory symlink type and recreate it explicitly, including forward and dangling directory targets. Sockets, devices, FIFOs and other
+unsupported special files block cleanup. Snapshot bytes are sensitive private
+Worker data, never server data or diagnostic content.
+
+Each repository receives an independent Git object/ref/index store preserving
+base/starting/HEAD and unpushed history, staged/unstaged state and tracked,
+untracked and Git-ignored regular files. Linked worktree administration is merged
+into that independent store with relative worktree configuration. Preserve shared
+branch reflogs, including references to reset unpushed commits; overlay only
+colliding selected-worktree administration files such as its own HEAD log. Original Local
+checkouts, shared Git registrations and source refs are preserved. Git checks
+are read-only/offline with hooks, fsmonitor, maintenance, lazy fetching and ambient
+Git/SSH configuration disabled. No remote push is used. External object alternates,
+local/worktree config includes, Git administration symlinks and undeclared nested
+Git administration (pointer files, directories and filesystem case aliases), partial-clone/promisor configuration and retained `.promisor` pack markers are unsupported and block faithful publication. Full `git fsck` and
+inventory comparisons verify every recoverable copy. Whole source data and Git
+state are compared again before publication and before any source removal; an
+index-only change invalidates the exact cleanup preview.
+
+Windows offline Git commands explicitly enable `core.longpaths` at command scope
+because private operation/repository paths can exceed the default 260-character
+limit and ambient configuration is excluded. Restored workspace identity and
+cleanup checks use this same offline read-only profile. Their failure logs expose
+only closed identity phases, session/repository IDs and stable error codes.
+This does not modify source Git
+configuration. Failed independent Git checks log only the closed commit/object/
+location phase, session/repository IDs and stable error code, never paths, native
+output or workspace content.
+Copied Git configuration is synchronized through write-capable handles, as
+required by Windows flushing; only independent copies are opened for that write
+access, and original configuration remains unchanged.
+
+Cleanup requires an exact successful original preview. Every repository is
+published and re-read before a single atomic no-replace rename claims the entire
+source root for deletion. An independently synchronized immutable removal intent
+binds the complete source inventory already pinned in the verified published
+snapshot outside that root. A fresh mutable inventory never grants deletion
+authority. Claimed contents are compared against that pinned inventory; a mismatch
+restores the whole source name without replacement when possible, otherwise
+retains both the claim and recovery uncertainty. Cancellation is rechecked after intent persistence immediately before the
+namespace claim. After verification, a separate synchronized metadata-only claim
+binds the original intent digest before any unlink. An intent persisted before
+the namespace transition cannot prove that removal ever began. Version-2 claims additionally bind the claimed native root identity. Legacy
+claims cannot authorize new unlink. Bounded anchored deletion selects only
+original pinned entries and rechecks regular-file hashes/size/mode, symlink text/
+kind and named/opened identity immediately before unlink. New entries are never
+selected, and atomic empty-directory removal refuses remaining unknown contents.
+Changes during removal retain the claim, remaining bytes and recovery uncertainty;
+partial recovery checks the same intent and root identity. Scratch cleanup keeps
+its separate operation-owned enumeration. Only create/cleanup and restore create
+scratch. After exclusive directory creation, synchronize an external versioned
+claim binding the exact operation/request digest, preparation, session/machine,
+snapshot/action and native root identity before copying. Direct failure cleanup,
+explicit recovery and permanent deletion verify that claim through the opened
+removal root before touching entries. Preview grants no scratch authority;
+missing/legacy proof or replacement directories remain protected without adoption.
+Keep claims until coordinated permanent deletion checks scratch absence; a later
+reappearing directory cannot pass generic Worker copy cleanup. Verification and directory
+synchronization remain mandatory. A second
+repository copy failure or cancellation cannot remove either original repository.
+Failures after a namespace transition retain recovery uncertainty and private
+copies. Cancellation/failure after verified snapshot publication but before source
+removal also retains uncertainty: explicit recovery registers that same retained
+snapshot while settling the incomplete cleanup and preserving present sources.
+Creation promotes its original external staging claim with the exact snapshot
+manifest SHA-256 only after the successful synchronized no-replace rename,
+post-rename content verification and comparison to the original native root
+identity. Snapshot inspection, recovery and permanent deletion require this
+publication proof; creation recovery also matches the entire original request.
+Matching copied bytes or operation IDs cannot establish publication. Missing,
+legacy or mismatched proof leaves foreign snapshots and original staging/source
+data protected behind recovery-required ownership.
+Terminal metadata and session state/events commit together after the
+owning Worker report; malformed reports retain uncertainty instead of authorizing
+Resume. Preview and snapshot SHA-256 reports require exactly 32 bytes encoded as
+canonical lowercase hexadecimal before metadata or workspace state publication;
+length alone cannot establish a usable later inspect/restore request.
+Failed recovery outcomes also bind the original action: availability
+stays at its previous state, removed bytes remain zero, and required retained
+snapshot identity, digest and non-deleted metadata must validate before settlement. Snapshots use the existing generic metadata schema; no database migration,
+history reset or new pre-migration backup is needed.
+
+Restore is available only from the exact current cleanup snapshot of a stored
+session. Its complete private manifest/hash/Git stores are revalidated, the entire
+workspace is copied and verified in owned scratch, then one atomic no-replace
+rename publishes it at the original canonical owned destination. Rewalk the
+renamed live root against the pinned complete snapshot inventory before publishing
+restoration ownership. Changed, missing or additional bytes retain the pending
+proof and the live namespace for recovery; do not erase or reconstruct them. Existing files
+are never replaced and no per-repository partial restore is reported. Failed
+unpublished restoration removes only its operation-owned staging with an
+independent bounded cleanup context; unconfirmed scratch cleanup retains
+recovery-required ownership instead of settling a terminal failure. A private
+restore binding preserves the original logical workspace identity while allowing
+self-contained Git stores at that same path. Its pending form grants no ownership;
+only the original operation/snapshot/hash-bound proof synchronized after successful
+no-replace publication permits restore recovery, restored execution identity or
+coordinated deletion. A matching foreign destination and absent scratch cannot
+prove publication. Version-2 proof additionally pins native filesystem directory
+identity (Unix device/inode or Windows volume/file index) for the published root,
+all repositories and their independent Git stores. Recheck it around subsequent
+Git identity inspection and coordinated deletion; byte-identical replacement
+directories cannot borrow prior publication. Ordinary file/index/config changes
+and new commits retain identity. Missing or legacy proof remains uncertain and
+cannot be reconstructed from current paths. Lost proof preserves uncertainty
+without repeating the rename.
+This comparison does not manufacture
+native harness checkpoint or continuation support. Snapshot deletion requires an
+explicit owner/client request and cannot remove a stored workspace's only
+recoverable copy; restore it first. Deletion claims and verifies the snapshot via
+the same immutable removal-intent boundary and retains historical metadata with
+`deleted=true`. Removal inventories remain private through uncertain reporting.
+Only a matching terminal server acknowledgment followed by the synchronized
+Worker reported journal permits retirement of that original intent and its
+matching verified claim. Retirement synchronizes claim removal before intent
+removal so interrupted acknowledgment cleanup can retry safely. Direct
+failed/canceled operations also retire their intent once acknowledged; uncertain
+reports and failed recovery attempts retain the predecessor intent. Successful
+explicit recovery can retire an interrupted cleanup before snapshot publication
+without requiring nonexistent snapshot metadata. The acknowledgment-bound retirement receipt is synchronized before the original
+journal transitions to reported and binds the exact result digest. Restart may
+finish that transition from matching persisted proof without native replay. A bounded
+metadata-only retirement receipt survives interruptions and retries intent
+retirement at Worker startup; it never grants further native removal.
+
+Usage results separate exact logical source bytes, all retained published snapshot
+bytes, confirmed logical removed source bytes and optional measured filesystem
+capacity/free bytes before/after. Successful inspect, restore and delete results
+use the inspected snapshot's pinned source bytes and the session's post-action
+retained inventory, excluding other sessions. Deleting a snapshot contributes no
+confirmed live-source removal. All byte counts use canonical decimal strings.
+The independent Git stores can cost more than the removed linked worktree. These
+logical counts never imply positive physical reclamation: compression, shared
+blocks and concurrent allocations prevent attribution from byte subtraction.
+Unsupported capacity observation stays absent. Failed/unfinished jobs do not
+report confirmed removal. Native disk-full/quota failures before publication have
+a redacted `resource_exhausted` classification; uncertain transitions retain their
+separate recovery-required ownership. Owned scratch/retained removal data may still occupy
+space during recovery and is reflected in filesystem free observations, not
+misrepresented as a published snapshot. A failed capture whose independent scratch removal is unconfirmed remains recovery-required; explicit recovery removes the original complete staging tree before settling the failure.
+
+Reconnect never repeats a started native operation. Explicit `recover` binds the
+original immutable assignment(s), Worker instance/revision/digest and durable
+Worker journals. It inspects existing publication/removal/restoration namespaces;
+it can finish only already claimed removals against their original inventories.
+It never recreates a snapshot, repeats a source rename or republishes restoration.
+Changed/foreign contents preserve uncertainty and bytes. Even when both original
+and claimed names are absent, cleanup/deletion recovery requires the matching
+synchronized removal intent and its separately retained verified namespace claim;
+filesystem absence or a pre-transition intent alone never proves removal or
+confirmed removed-byte accounting. Recovery itself may be
+reconciled through a bounded eight-claim lineage after another interruption.
+Original jobs and snapshots remain retained; successful reconciliation atomically
+settles their observed outcome and paused workspace state.
+
+CLI equivalents are `delidev storage preview|create|cleanup|inspect|restore|delete|recover
+--session-id ID --expected-revision REV`. Cleanup additionally requires
+`--preview-job-id JOB --confirm`; inspect/restore/delete use `--snapshot-id ID`,
+and delete requires `--confirm`. Recovery uses `--recovery-job-id JOB`.
+`storage operation --id JOB` reads current status and `storage cancel --id JOB
+--expected-revision REV` cancels queued work or targets an already claimed job.
+The global `--request-id` preserves exact acceptance/cancellation retries. These
+commands never implicitly start a server, wait by replaying a mutation or infer
+success from acceptance. `snapshot list --session-id ID` uses existing
+Resource pagination for retained snapshot metadata.
+
 Schema 25 retains the complete schema-24 backup/provider/title layout and adds
 only the future native-accounting table/indexes defined by the [usage
 contract](cmds-delidev-usage-contract.md). Initialization and migration create the
@@ -584,3 +819,110 @@ Follow the [automatic coordinator contract](cmds-delidev-integrations-contract.m
 Before creating retirement tables or changing configuration, live upgrades reject original connections, protected generations/identity commitments, pending operations, leases, recovery fences, unremoved device browser profiles and affected claimed/uncertain native work. Failure rolls back the entire composed transaction and preserves the synchronized pre-migration backup. A private restore candidate has explicitly historical ownership without current local authority; it migrates before replacement preparation/publication, preserves original retired documents and merges current retirement/tombstone evidence. This exemption never applies to ordinary startup.
 
 Affected Agents retain names, options, templates and original model IDs with server-owned `reconfiguration_required`; ordered surviving account weights remain unchanged. Project account restrictions preserve their configured flag even when all IDs retire. Only affected Schedules disable their timer and retain accepted occurrence history with explicit reset guidance. Session/snapshot/transcript/usage bodies and their revisions remain unchanged. Pricing retains original API attribution and independently stores the service identity of newly configured native models.
+
+
+## Desktop workspace storage and permanent deletion
+
+The connection-owned `SessionStorageProvider` in `apps/delidev/src/session-storage.tsx`
+presents current workspace state, usage preview, snapshot creation, original
+operation inspection/cancellation/recovery and paginated snapshot inspection,
+restoration and permanent deletion. Session details open the workflow; closing the
+modal or navigating retains original request/job/session identity. original Local checkouts do not expose
+managed storage actions. Independent storage/deletion capabilities produce explicit
+older-server update guidance before product actions.
+
+Storage acceptance is displayed separately from Worker success and independently
+verified native cleanup. Exact decimal byte counts retain integer precision;
+logical source, retained snapshot and removed bytes remain separate from nullable
+filesystem free measurements. Cleanup confirmation pins the exact successful
+preview job and current session revision. Snapshot removal has separate irreversible confirmation. Restoration
+and recovery disclose paused outcomes and preserve original uncertainty. 
+
+Permanent deletion requires its own explicit confirmation of managed native,
+workspace, backup removal. In-flight native work is stopped
+through its original owner; original Local checkouts and independent Forks remain
+outside removal authority. `GetSessionDeletion` observes the accepted original
+session independently of resource removal, exposing Worker, database and backup
+progress. Closing/navigating cannot resubmit either deletion or storage. Unknown
+acknowledgments retain original wire requests in the connection mutation registry;
+explicit retries use identical UUID/revision/selection bytes. A replacement
+connection follows the existing connection-memory lifetime and never adopts
+another server's operation.
+
+Removal append journals have a separate 64 MiB bound because each transition repeats original and private paths; immutable manifests and claims retain the 8 MiB bound. Capacity-triggered atomic journal compaction drops superseded restoration transitions while preserving exact active prepared/renamed/directory-mode replay and per-entry removed receipts against the unchanged original header. Failure/cancellation cannot replace a journal with partial proof. Snapshot publication by either create or cleanup makes later failure recovery-required; original recovery must retain that published snapshot before reporting settlement. CLI snapshot deletion requires explicit `--confirm`.
+
+Source preview/capture/cleanup observation enforces one shared 8,192-entry/8-GiB allowance for the workspace and all original Git administration/object inventories before hashing payloads; per-repository limits cannot multiply the retained observation. Oversized aggregate observations publish no preview digest. Permanent deletion and completed-proof replay include each original removal append journal in the same immutable job-derived path inventory. Reappearing journals block acknowledgement without granting replay new deletion authority.
+
+New source capture/observation admission reserves the largest original/private name at each path component plus snapshot/Git wrappers and the native removal root, within the platform path ceiling and the 4,096-byte relative replay bound. Insufficient headroom fails before snapshot publication or source removal. Original `.git` entries are checked before Git path resolution: regular linked-worktree pointer files are supported; symlinked administrative entries are rejected without copying or changing their external target.
+
+Source observation counts restored Git stores already covered by the complete managed workspace root only once. The root inventory still binds every retained Git byte and change. Failed or canceled explicit recovery restores its original uncertain predecessor as the retry anchor. Exact acknowledged failed/canceled recovery reports discard their pending replay receipts while retaining predecessor removal intent, including after response loss; these terminal attempts cannot block Worker reconnect or grant source-removal authority.
+
+Storage recovery preserves the pinned snapshot logical source bytes for inspect, restore and delete. Deletion intents retain that count before unlink under the original namespace claim; missing legacy count stays uncertain. Partial unpublished restore staging is removable only through its original external operation claim and native root identity, without completed-inventory equality. New storage admission reserves a job slot within the 4,096-job permanent deletion inventory bound and rejects atomically at capacity. Each new operation reserves its complete eight-claim lost-report recovery lineage. Cleanup also reserves a full restore plus its eight recoveries (18 total slots); recovery consumes only its remaining original lineage. While stored, inspection and other non-restore operations preserve the complete restore lineage. Repeated lost reports cannot exhaust restore/reconciliation capacity before the supported final recovery.
+
+The CLI snapshot inventory negotiates `WORKSPACE_STORAGE_V1`, requires the owning session UUID and preserves opaque Resource cursors through `--page-token`; `--limit` accepts 1–100. After failed/canceled explicit recovery, the desktop retains the attempt but uses the refreshed original uncertain predecessor for its next request. A lost report reply replaying acknowledged uncertainty discards only the pending report receipt and marks the journal reported, preserving original removal intent/claim ownership.
+
+All snapshot namespace publication, storage inspection/restore/delete/recovery, retained inventory scans and permanent-session copy removal share the same cross-process gate after the session/observation locks. Hold it through native effects and final inventory accounting; contention fails before any effect.
+
+- Claimed removal accepts only immutable directory permissions or the exact writable native mode authorized by an original durable directory-mode transition. Retain that transition through journal compaction, partial recovery and failure; check directory identity and permissions again before unlink. Preserve retained-writer permission changes as unresolved recovery.
+
+- A stale original storage report may acknowledge only an independently completed explicit recovery, with its exact immutable assignment, original instance/device, revision, input and recovery-claim digest. Preserve the original UUID receipt through the ordinary report transaction without another state/native mutation. The Worker clears only that pending report receipt and marks its journal reported; the successful recovery owns removal-intent retirement. Uncertain or unproven originals retain their receipt and native evidence.
+
+Compaction acceptance and execution credential publication require present workspace storage. Pending, uncertain or stored workspaces cannot grant native compaction authority.
+
+Recovery after the top-level removal rename may create a missing original claim only when its private namespace remains intact and matches the complete synchronized intent, and neither a claim nor its journal exists. Partial or fully absent namespaces require the preexisting original claim. Malformed or replaced claims stay uncertain.
+
+Workspace-storage recovery retains original preparation/manifest evidence twice
+and at most eight immutable claim references. Its input is capped at 3 MiB and
+its typed job entity at 4 MiB, with an 8 MiB native Connect response allowance
+for JSON/base64 overhead. Each original request retains the 1 MiB bound, and
+ordinary storage jobs/entities keep their original limits. Writes, strict reads,
+Worker dispatch, cancellation, report/receipt reconciliation and permanent
+deletion use the same ownership-specific rule. This finite exception can be
+removed only after immutable original evidence is stored by reference; it grants
+no new filesystem, execution, replay or inferred cleanup authority.
+
+Storage observations preserve the exact accepted snapshot ID, session, machine,
+digest, byte size, creation instant and repository count. Successful original
+deletion changes only its Deleted tombstone. Failed inspect/restore/delete recovery
+uses the same pinned metadata and cannot replace the historical record.
+
+Storage publications in shared private directories use target-attributed atomic
+temporary names: `.pending-<UUID>.json-<decimal suffix>`, plus
+`.pending-<UUID>.pending-<decimal suffix>` for claim-journal compaction. The storage
+writer exception leaves ordinary private atomic-write behavior unchanged. Permanent
+session deletion and completed-proof replay inventory those five shared namespaces
+with a separate 65,536-entry limit per directory. Original session/job target names
+retain cleanup authority even for partial contents; unrelated operations remain
+untouched. Unknown legacy names, malformed names, non-private files and overflow
+retain pending cleanup. A remnant that reappears after completion blocks receipt
+replay and is preserved. Per-operation staging/removal/snapshot directories retain
+their existing native identity and complete-inventory ownership gates.
+
+A failed or canceled nested recovery retains its immediate target in the first
+immutable claim/parent as the retry anchor. The flattened original remains
+historical reconciliation evidence; it does not bypass unresolved intermediate
+recovery ownership. Snapshot inventories include the original native root mode
+in their digests. Managed workspace roots require the original private writable
+mode before capture or rename, so changing root permissions after preview
+rejects without moving the workspace or publishing a snapshot. Removal validates
+that same root-mode authority alongside the native identity and independently
+journaled child-directory mode transitions.
+
+Storage admission reserves eight total original-group recovery attempts, counting
+canceled and failed accepted attempts as retained deletion obligations. Native
+uncertainty claims have their separate eight-member bound. Terminal attempts do
+not reset the reservation count or strand an earlier still-supported successor.
+Exact request replay consumes no additional attempt; exhausting the finite
+recovery-attempt bound preserves evidence and returns explicit resource guidance.
+
+Published snapshots bind the native identities of the original managed root and its chat/repository directories. Recovery verifies that publication and those identities, then uses its pinned source bytes and digest without rewalking mutable original files or external Git stores. A published Create settles as succeeded; Cleanup with its original source still live settles as failed with source preserved. Unsupported later files and unavailable external Git do not strand that settlement. Directory replacement remains uncertain; pre-amendment snapshots retain their previous checks. Windows cross-volume original Git stores remain external observations under the same aggregate budget.
+
+The shared server workspace read scope admits new file, directory, diff, private PR and terminal reads only while storage is present. Pending, uncertain and stored state closes that scope before publication. Previously admitted responses and cleanup retain their original separate ownership checks.
+
+The connection-owned desktop controller polls an active retained storage anchor for external deletion. Authenticated session NotFound releases the stale local operation lock and allows finishing/switching the view, while in-flight or uncertain mutation receipts remain retained. Independent deletion status continues to distinguish pending cleanup, completed cleanup and unavailable status; absence alone cannot prove cleanup. Transient or authorization errors do not release an original operation.
+
+Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
+
+Storage results retain at least the surviving snapshot size in retained bytes and bind successful cleanup to its original canonical preview digest, including recovered cleanup. CLI snapshot inventory emits revision as a decimal JSON string.
+
+Atomic journal compaction represents each settled removal with one inventory-bound original-path proof; it does not repeat generated private paths. The original immutable inventory bounds all such proofs, including deep-directory generated-name expansion. Recovered successful cleanup emits and validates the original snapshot source/preview digest before server settlement; authenticated native-result fixtures also verify the final accepted job state.

@@ -37,7 +37,7 @@ func sameCompactionInstallation(current, assigned domain.Installation) bool {
 func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID) (domain.SessionCompactionInput, error) {
 	var empty domain.SessionCompactionInput
 	p := session.Execution
-	if session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified || !p.ClaudeContinuationBoundary(p.InputID) {
+	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified || !p.ClaudeContinuationBoundary(p.InputID) {
 		return empty, domain.CompactionUncertain()
 	}
 	r, err := tx.SessionExecutionJob(sr.ID, p.ExecutionID)

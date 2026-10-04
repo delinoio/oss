@@ -26,5 +26,6 @@ import public "delidev/v1/system.proto";
 import public "delidev/v1/terminal.proto";
 import public "delidev/v1/usage.proto";
 import public "delidev/v1/worker.proto";
+import public "delidev/v1/workspace_storage.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";

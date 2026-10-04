@@ -9,6 +9,7 @@
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
 - License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
+- Go CI package watchdogs follow `docs/repository-workflow-contract.md`: Windows Worker and explicit DeliDev workspace investigation use 45 minutes for aggregate durable filesystem fixtures; other Go CI package watchdogs remain 20 minutes. Preserve product deadlines and recovery-attempt limits independently of test scheduling.
 - Every repository-owned directory named `dist` is ignored generated output and must never be tracked. Generate required `dist` content explicitly before compilation, testing, or packaging, and remove generated `dist` directories from the final worktree.
 - Track repository asset files of at least 512 KiB through exact-path Git LFS attributes. Checkouts that compile, test, or package those assets must hydrate LFS objects first; preserve source licenses and notices. Schema-only Buf baseline clones must skip LFS smudging within the breaking-check command so pointer-only checkouts need no unrelated asset downloads. Follow `docs/repository-workflow-contract.md`.
 - List files in `docs/` before starting each task, and keep `docs/` up-to-date.
