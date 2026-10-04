@@ -12,6 +12,13 @@ read-only repository access and uploads revision-bound verified workflow artifac
 only; it does not sign with production keys, notarize, publish releases or install
 updates. Native runtime acceptance remains separate from package verification.
 
+The optional boolean `workspace_fixture_only` manual input defaults to false.
+Enabling it skips package planning and assembly and runs only the Windows
+retained-writer namespace-removal and maximum-inventory regressions, using isolated
+temporary directories. Failure output retains structured closed-stage diagnostics.
+This bounded investigation mode preserves read-only access and is separate from
+complete required CI, packaging and installed-platform acceptance.
+
 ## Continuous integration
 
 ### Git LFS assets
