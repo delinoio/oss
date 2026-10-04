@@ -497,6 +497,11 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 		} else if original.JobID != value.JobID || original.ExecutionID != value.ExecutionID || original.MachineID != value.MachineID || original.InstanceID != value.InstanceID || original.DeviceID != value.DeviceID || original.RouteID != value.RouteID || original.Generation != value.Generation || original.JobRevision != value.JobRevision || state == domain.WorkerRouteUnverified {
 			return nil, networkConflict()
 		}
+		// Concurrent sockets may fail after another socket proves original route
+		// use. Preserve that stronger observation for this immutable runtime.
+		if err == nil && original.State == domain.WorkerRouteObserved {
+			value.State = domain.WorkerRouteObserved
+		}
 		value.ObservedAt = time.Now().UTC()
 		if err := tx.PutWorkerNativeRoute(value); err != nil {
 			return nil, err

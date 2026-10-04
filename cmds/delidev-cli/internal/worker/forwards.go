@@ -15,9 +15,12 @@ import (
 
 // Forwarding is an independent, joined outbound lane. Agent Stop cannot cancel
 // it; primary connectivity loss cancels and joins all original TCP lifetimes.
-func watchForwards(ctx context.Context, config Config, credential Credential, instance domain.ID) {
-	httpClient, transport := rpc.HTTPClient()
-	defer transport.CloseIdleConnections()
+func watchForwards(ctx context.Context, config Config, credential Credential, instance domain.ID) error {
+	httpClient, closeHTTP, err := networkHTTPClientFor(ctx, config, credential)
+	if err != nil {
+		return err
+	}
+	defer closeHTTP()
 	client := delidevv1connect.NewForwardServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(64<<10), connect.WithSendMaxBytes(64<<10))
 	work := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(16<<10), connect.WithSendMaxBytes(16<<10))
 	runtime := forwarding.Config{Client: client, Token: credential.Token, Root: config.Root, Endpoint: credential.Endpoint, Logger: config.Logger}
@@ -31,7 +34,7 @@ func watchForwards(ctx context.Context, config Config, credential Credential, in
 		}
 		err = receiveForwards(ctx, config, work, credential, instance, runtime)
 		if ctx.Err() != nil {
-			return
+			return nil
 		}
 		if config.Logger != nil {
 			config.Logger.WarnContext(ctx, "worker_forward_lane_interrupted", "machine_id", credential.MachineID, "code", rpc.ClientError(err).Code)
@@ -40,11 +43,12 @@ func watchForwards(ctx context.Context, config Config, credential Credential, in
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return
+			return nil
 		case <-timer.C:
 		}
 		backoff = min(15*time.Second, backoff*2)
 	}
+	return nil
 }
 func receiveForwards(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, runtime forwarding.Config) error {
 	child, cancel := context.WithCancel(ctx)

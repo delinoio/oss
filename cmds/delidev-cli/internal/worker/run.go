@@ -639,7 +639,12 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		}
 	}()
 	forwardsDone := make(chan struct{})
-	go func() { defer close(forwardsDone); watchForwards(ctx, config, credential, instance) }()
+	go func() {
+		defer close(forwardsDone)
+		if err := watchForwards(ctx, config, credential, instance); err != nil {
+			cancel(err)
+		}
+	}()
 	readsDone := make(chan struct{})
 	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
 	defer func() {

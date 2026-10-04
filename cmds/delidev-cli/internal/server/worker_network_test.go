@@ -171,10 +171,19 @@ func TestWorkerNativeRouteKeepsOriginalGenerationAndDoesNotGrantAnotherLaunch(t 
 	if _, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, request)); err != nil {
 		t.Fatal("active native owner lost its original generation", err)
 	}
+	request.Mutation.RequestId = string(domain.NewID())
+	request.State = pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_FAILED
+	if _, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, request)); err != nil {
+		t.Fatal("late failed socket report was rejected", err)
+	}
 	if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
 		status, err := workerNetworkStatus(tx, f.input.MachineID)
 		if err != nil {
 			return err
+		}
+		storedRoute, e := tx.WorkerNativeRoute(f.job)
+		if e != nil || storedRoute.State != domain.WorkerRouteObserved {
+			t.Fatal("weaker socket failure erased original observed route")
 		}
 		if status.ControlState != domain.WorkerRouteStale || status.DesiredGeneration != 2 || status.EffectiveGeneration != 1 || status.NativeGeneration != 1 || status.NativeExecutionID != f.input.ExecutionID {
 			t.Fatal("desired/effective/native generations were collapsed")
