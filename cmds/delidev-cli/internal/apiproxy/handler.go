@@ -219,42 +219,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		h.logger.Info("api_proxy_request_finished", "correlation_id", correlation, "execution_id", lease.Scope.ExecutionID, "session_id", lease.Scope.SessionID, "account_id", lease.Scope.AccountID, "provider_id", lease.Scope.ProviderID, "model_id", lease.Scope.ModelID, "purpose", lease.Scope.Purpose, "operation", operation, "phase", phase, "stream", stream, "submitted", submitted, "http_status", status, "error_code", code, "duration_ms", time.Since(started).Milliseconds())
 	}()
-	var key []byte
-	if lease.Scope.Provider.Authentication != domain.KeylessAuth {
-		if lease.Key == nil {
-			code = domain.Unavailable
-			fail(http.StatusServiceUnavailable, code)
-			return
-		}
-		key, err = lease.Key(ctx)
-		defer clear(key)
-		if err != nil {
-			code = safeCode(err)
-			fail(errorStatus(err), code)
-			return
-		}
-		if err = domain.ValidateAPIKey(key, false); err != nil {
-			code = domain.Unavailable
-			fail(http.StatusServiceUnavailable, code)
-			return
-		}
-	}
-	if ctx.Err() != nil {
-		code = domain.Canceled
-		fail(http.StatusUnauthorized, domain.Unauthenticated)
-		return
-	}
-	guard := newSecretGuard(key, []byte(token))
 	attempted := false
 	purpose := lease.Scope.Purpose
 	if purpose == "" {
 		purpose = domain.ConversationUsage
 	}
 	diagnostic := domain.RequestDiagnostic{ID: domain.ID(correlation), CorrelationID: domain.ID(correlation), SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, ModelID: lease.Scope.ModelID, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: diagnosticOperation(operation), State: domain.DiagnosticInProgress, Purpose: purpose, ObservedAt: started.UTC(), HTTPAttempted: &attempted}
-	if values := r.Header.Values("X-Client-Request-Id"); len(values) == 1 && domain.SafeDiagnosticID(values[0]) && !guard.contains(values[0]) {
-		diagnostic.NativeRequestID = values[0]
-	}
-	diagnosticRequestSettings(raw, operation, &diagnostic, guard)
 	observations := diagnosticObservations{value: &diagnostic}
 	publishDiagnostic := func(work context.Context) error {
 		if lease.PublishDiagnostic == nil {
@@ -297,6 +267,44 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.logger.Warn("request_diagnostic_settlement_failed", "correlation_id", correlation, "error_code", safeCode(err))
 		}
 	}()
+
+	// Retain validated invocation metadata before accessing the protected store.
+	// Request-controlled settings and IDs require the original credential guard.
+	var key []byte
+	if lease.Scope.Provider.Authentication != domain.KeylessAuth {
+		if lease.Key == nil {
+			code = domain.Unavailable
+			fail(http.StatusServiceUnavailable, code)
+			return
+		}
+		key, err = lease.Key(ctx)
+		defer clear(key)
+		if err != nil {
+			code = safeCode(err)
+			fail(errorStatus(err), code)
+			return
+		}
+		if err = domain.ValidateAPIKey(key, false); err != nil {
+			code = domain.Unavailable
+			fail(http.StatusServiceUnavailable, code)
+			return
+		}
+	}
+	if ctx.Err() != nil {
+		code = domain.Canceled
+		fail(http.StatusUnauthorized, domain.Unauthenticated)
+		return
+	}
+	guard := newSecretGuard(key, []byte(token))
+	if values := r.Header.Values("X-Client-Request-Id"); len(values) == 1 && domain.SafeDiagnosticID(values[0]) && !guard.contains(values[0]) {
+		diagnostic.NativeRequestID = values[0]
+	}
+	diagnosticRequestSettings(raw, operation, &diagnostic, guard)
+	if err := publishDiagnostic(ctx); err != nil {
+		code = safeCode(err)
+		fail(errorStatus(err), code)
+		return
+	}
 
 	upstream, err := upstreamRequest(ctx, r, raw, lease.Scope, key, operation, stream, correlation)
 	if err != nil {

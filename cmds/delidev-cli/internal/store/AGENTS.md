@@ -178,3 +178,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Migration 26 rebuilds the shared native accounting ledger after real 25, retaining Grok body bytes and no historical raw backfill. Publish priced input units only with their touched original usage source in the same receipt transaction; validate indexed attribution against body and original price on reads. Keep response and native lifetime tables independent and combine only in budget evaluation.
 
 - Migration 27 adds the closed metadata-only request diagnostic table after real accounting 26. Reject foreign preexisting layouts, preserve original publication/revision/index parity, atomically publish session invalidation and reference receipts, and never backfill historical requests or evict records to admit new work.
+
+- Proxy diagnostics retain metadata before credential lookup. Only the first in-progress, unsent metadata revision may acquire guarded request settings and the safe caller request ID; send claims and terminal/later revisions preserve them exactly. Follow the diagnostics contract.

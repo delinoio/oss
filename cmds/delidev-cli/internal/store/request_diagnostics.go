@@ -76,6 +76,13 @@ func (t *Tx) PutRequestDiagnostic(value domain.RequestDiagnostic, expected uint6
 		left.ErrorCode, right.ErrorCode = "", ""
 		left.EffectiveEffort, right.EffectiveEffort = nil, nil
 		left.EffectiveServiceTier, right.EffectiveServiceTier = nil, nil
+		// Only the first metadata-only proxy observation may acquire guarded
+		// request settings. Once published, they remain immutable, and neither
+		// terminal settlement nor an HTTP send claim can introduce them.
+		if old.Source == domain.DiagnosticProxyHTTP && old.Revision == 1 && old.State == domain.DiagnosticInProgress && value.State == domain.DiagnosticInProgress && old.HTTPAttempted != nil && !*old.HTTPAttempted && value.HTTPAttempted != nil && !*value.HTTPAttempted && old.NativeRequestID == "" && old.RequestedEffort == nil && old.RequestedServiceTier == nil {
+			left.NativeRequestID = right.NativeRequestID
+			left.RequestedEffort, left.RequestedServiceTier = right.RequestedEffort, right.RequestedServiceTier
+		}
 		a, _ := json.Marshal(left)
 		b, _ := json.Marshal(right)
 		if old.EffectiveEffort != nil && (value.EffectiveEffort == nil || *old.EffectiveEffort != *value.EffectiveEffort) || old.EffectiveServiceTier != nil && (value.EffectiveServiceTier == nil || *old.EffectiveServiceTier != *value.EffectiveServiceTier) || !bytes.Equal(a, b) || old.State != domain.DiagnosticInProgress || old.HTTPAttempted != nil && *old.HTTPAttempted && !*value.HTTPAttempted || old.NativeTurnID != "" && old.NativeTurnID != value.NativeTurnID || old.NativeResponseID != "" && old.NativeResponseID != value.NativeResponseID || old.ProviderRequestID != "" && old.ProviderRequestID != value.ProviderRequestID {
