@@ -520,20 +520,21 @@ func TestHostVerifiedCleanupRepeatedAndEscapingLinks(t *testing.T) {
 	}
 }
 func TestHostEnvironmentAllowlist(t *testing.T) {
+	execution := filepath.Join(t.TempDir(), "execution")
 	t.Setenv("PATH", "/fixture/tools:/usr/bin")
 	t.Setenv("DEVELOPER_DIR", "/fixture/Xcode.app/Contents/Developer")
 	t.Setenv("RUNMOOR_TEST_CREDENTIAL", "secret-management-value")
 	t.Setenv("HOME", "/personal/home")
 	t.Setenv("TMPDIR", "/personal/temp")
 	t.Setenv("ARBITRARY_SECRET", "secret-management-value")
-	env := strings.Join(hostEnvironment("/execution"), "\n")
-	for _, want := range []string{"PATH=/fixture/tools:/usr/bin", "DEVELOPER_DIR=/fixture/Xcode.app/Contents/Developer", "HOME=/execution/home", "TMPDIR=/execution/tmp", "TMP=/execution/tmp", "TEMP=/execution/tmp"} {
-		if !strings.Contains(env, want) {
+	env := hostEnvironment(execution)
+	for _, want := range []string{"PATH=/fixture/tools:/usr/bin", "DEVELOPER_DIR=/fixture/Xcode.app/Contents/Developer", "HOME=" + filepath.Join(execution, "home"), "TMPDIR=" + filepath.Join(execution, "tmp"), "TMP=" + filepath.Join(execution, "tmp"), "TEMP=" + filepath.Join(execution, "tmp")} {
+		if !slices.Contains(env, want) {
 			t.Fatal("missing environment", want)
 		}
 	}
 	for _, forbidden := range []string{"secret-management-value", "RUNMOOR_TEST_CREDENTIAL", "ARBITRARY_SECRET", "/personal"} {
-		if strings.Contains(env, forbidden) {
+		if strings.Contains(strings.Join(env, "\n"), forbidden) {
 			t.Fatal("inherited unsafe environment")
 		}
 	}
