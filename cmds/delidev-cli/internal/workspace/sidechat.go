@@ -310,6 +310,12 @@ func (m *Manager) removeSidechatMetadata(ctx context.Context, root string, manif
 	if err != nil || identity != ref.MetadataIdentity {
 		return ResultUncertain()
 	}
+	// Go's Windows OpenRoot(path) denies delete sharing. Close the original
+	// anchored view after the final identity check before removing its name;
+	// no file operation may use the closed view or adopt another directory.
+	if err := anchored.Close(); err != nil {
+		return ResultUncertain()
+	}
 	if err := os.Remove(root); err != nil {
 		return ResultUncertain()
 	}
