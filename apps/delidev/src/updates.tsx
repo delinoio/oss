@@ -25,10 +25,29 @@ function UpdateCandidate({ current, active, worker, controls }: { current: Resou
     finally { if (alive.current) setBusy(false); }
   };
   const mutation = () => ({ id: row.id, expectedRevision: row.revision, requestId: newRequestId() });
-  return <section aria-label="Original update"><p>DeliDev {text(data.version)} · {text(data.target)} · {text(data.state)}</p><p>Original update: <code>{row.id}</code></p>
+  return <section aria-label="Original update"><p>DeliDev {text(data.version)} · {text(data.target)} · {text(data.state)}</p><p>Original update: <code>{row.id}</code> · revision {row.revision.toString()}</p>
     {worker ? <><p>Updates wait for active work, terminals, forwarding and cleanup. The original registration and workspaces are preserved.</p>{text(data.state) === "OBSERVED" ? <button disabled={!active || request.busy || request.uncertain} onClick={() => void request.send({ mutation: mutation() })}>Update Worker when idle</button> : null}{["OBSERVED", "WAITING_FOR_IDLE"].includes(text(data.state)) ? <button disabled={!active || cancel.busy || cancel.uncertain} onClick={() => void cancel.send({ mutation: mutation() })}>Cancel unclaimed update</button> : null}</> : <><p>Installation requires confirmation on this computer. Restart the desktop after installation; running servers and sessions retain their processes.</p>{!local && !uncertain ? <button disabled={busy || !active} onClick={() => void native(NativeUpdateAction.Prepare)}>Download verified desktop update</button> : null}{local?.phase === NativeUpdatePhase.Prepared && !uncertain ? <button disabled={busy || !active} onClick={() => void native(NativeUpdateAction.Install)}>Review and install desktop update</button> : null}{local ? <p role="status">Desktop installation: {local.phase}{local.phase === NativeUpdatePhase.Installed ? " · Restart DeliDev when ready." : ""}</p> : null}{uncertain ? <p role="alert">The original installation response is unconfirmed. Inspect it before taking another action.</p> : null}<button disabled={busy || !active} onClick={() => void native(NativeUpdateAction.Inspect)}>Inspect original desktop installation</button></>}
     {request.uncertain ? <button disabled={request.busy || !active} onClick={request.retry}>Inspect the same Worker update request</button> : null}{cancel.uncertain ? <button disabled={cancel.busy || !active} onClick={cancel.retry}>Inspect the same cancellation</button> : null}<Problem error={error || read.error || request.error || cancel.error} />
   </section>;
+}
+// Read-only recovery stays available independently of live server negotiation.
+// The native owner compares the exact local journal and trusted connection; this
+// form cannot prepare, install, restart or select an artifact.
+function LocalInstallationInspection({ active, controls }: { active: boolean; controls: DesktopUpdateControls }) {
+  const [id, setId] = useState(""), [revision, setRevision] = useState(""), [result, setResult] = useState<NativeUpdateResult>(), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>();
+  const alive = useRef(true); useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const valid = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id) && /^[1-9][0-9]{0,18}$/.test(revision) && BigInt(revision) < (1n << 63n);
+  const inspect = async () => {
+    if (!active || busy || !valid) return;
+    const original = id; setBusy(true); setError(undefined); setResult(undefined);
+    try {
+      const observed = await controls.control(NativeUpdateAction.Inspect, original, BigInt(revision));
+      if (observed.operation_id !== original) throw new Error("Update identity changed");
+      if (alive.current) setResult(observed);
+    } catch (error) { if (alive.current) setError(error); }
+    finally { if (alive.current) setBusy(false); }
+  };
+  return <section aria-label="Local installation recovery"><p>Inspect a retained installation on this computer, including while the server is unavailable.</p><form onSubmit={event => { event.preventDefault(); void inspect(); }}><label>Retained desktop update ID<input value={id} maxLength={36} disabled={busy} onChange={event => { setId(event.target.value); setResult(undefined); }} /></label><label>Retained desktop update revision<input value={revision} maxLength={19} inputMode="numeric" disabled={busy} onChange={event => { setRevision(event.target.value); setResult(undefined); }} /></label><button disabled={!active || busy || !valid}>Inspect retained local installation</button></form>{result ? <p role="status">Retained desktop {result.release_version}: {result.phase}{result.phase === NativeUpdatePhase.Installed ? " · Restart DeliDev when ready." : ""}</p> : null}<Problem error={error} /></section>;
 }
 export function Updates({ active, machine, controls }: { active: boolean; machine?: Resource; controls?: DesktopUpdateControls }) {
   const [expanded, setExpanded] = useState(false), [candidate, setCandidate] = useState<Resource>(), [id, setId] = useState(""), [nativeContext, setNativeContext] = useState<{ current_version: string; target: string }>(), [error, setError] = useState<unknown>();
@@ -45,5 +64,5 @@ export function Updates({ active, machine, controls }: { active: boolean; machin
     <p>Only signed stable DeliDev releases are accepted. If production signing is unavailable, the installed version is preserved.</p><button disabled={!active || !targets[target] || !version || check.busy || check.uncertain} onClick={() => void check.send({ requestId: newRequestId(), component: machine ? UpdateComponent.WORKER : UpdateComponent.DESKTOP, target: targets[target], currentVersion: version, machineId: machine?.id ?? "", expectedMachineRevision: machine?.revision ?? 0n })}>Check for {machine ? "Worker" : "desktop"} update</button>{check.uncertain ? <button disabled={check.busy || !active} onClick={check.retry}>Retry the same update check</button> : null}
     <form onSubmit={event => { event.preventDefault(); void read.refetch(); }}><label>Original update ID<input value={id} maxLength={36} onChange={event => { setId(event.target.value); setCandidate(undefined); }} /></label><button disabled={!active || !id}>Inspect original update</button></form>
     {selected ? <UpdateCandidate key={selected.id} current={selected} active={active && expanded} worker={Boolean(machine)} controls={controls} /> : null}<Problem error={check.error || read.error || error} />
-  </>}</> : null}</details>;
+  </>}{controls && !machine ? <LocalInstallationInspection active={active && expanded} controls={controls} /> : null}</> : null}</details>;
 }

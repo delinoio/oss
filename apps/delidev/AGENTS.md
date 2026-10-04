@@ -55,3 +55,5 @@ A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejecti
 If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
 
 - Signed desktop updates are available under Connection & diagnostics outside disposable Settings, with native confirmation and original outcome inspection. Runner Device updates expose pending/draining/uncertain states and explicit cancellation before claim. Generated Connect Query reads/mutations retain original IDs, and missing System/Worker capabilities show an update requirement before effects.
+
+- Retained local desktop installation inspection stays available in Connection & diagnostics independently of live server support. Pass only the exact original ID/revision to native read-only inspection; it grants no preparation, installation or restart.
