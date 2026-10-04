@@ -96,7 +96,7 @@ function openCodePlainMessages(source: import("@delinoio/delidev-api-client").Re
  return ["user", "assistant"].map((role, index) => create(ResourceSchema, {kind:EntityKind.MESSAGE,id:newRequestId(),sessionId:source.id,schemaVersion:1,revision:1n,documentJson:encode({execution_id:newRequestId(),native_thread_id:execution.native_thread_id,native_turn_id:execution.native_turn_id,native_id:index ? "prt_01960dcbe1fbABCDEFGHIJKLMN" : "prt_01960dcbe1faABCDEFGHIJKLMN",native_parent_id:role === "user" ? execution.native_turn_id : "msg_01960dcbe1fdABCDEFGHIJKLMN",...(role === "user" ? {input_id:newRequestId()} : {}),role,text:"Original plain text",state:"complete",first_sequence:index+1,last_sequence:index+1})}));
 }
 
-it.each(["valid", "tool", "artifact", "changes", "empty-changes", "late-tool", "repeated-cursor", "changed-source"])("offers OpenCode Fork only after complete retained plain-text history: %s", async mode => {
+it.each(["valid", "tool", "artifact", "changes", "empty-changes", "empty-summary", "missing-change-event", "invalid-change-event", "late-tool", "repeated-cursor", "changed-source"])("offers OpenCode Fork only after complete retained plain-text history: %s", async mode => {
  const machineId = newRequestId();
  const source = create(ResourceSchema,{kind:EntityKind.SESSION,id:newRequestId(),revision:8n,schemaVersion:1,documentJson:encode({name:"OpenCode",machine_id:machineId,workspace:"general-chat",archive:"active",recovery:"none",outcome:"succeeded",initial_execution:{configuration:{harness:"opencode"}},execution:{native_thread_id:"ses_01960dcbe1faABCDEFGHIJKLMN",native_turn_id:"msg_01960dcbe1fcABCDEFGHIJKLMN",cleanup_verified:true,observed:{opencode_agent:"build"}}})});
  const machine = create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,revision:1n,schemaVersion:1,documentJson:encode({os:"linux",worker_capabilities:["opencode-general-chat-fork-v1"]})});
@@ -105,8 +105,8 @@ it.each(["valid", "tool", "artifact", "changes", "empty-changes", "late-tool", "
  if (mode === "tool" || mode === "late-tool") bad.tool = {name:"fixture"};
  if (mode === "artifact") bad.artifact = {kind:"fixture"};
  messages[1]!.documentJson = encode(bad);
- if (mode === "changes" || mode === "empty-changes") {
-  const changes: Record<string, unknown> = {...bad,role:"progress",text:"",native_id:"",first_sequence:3,last_sequence:3,progress:{kind:"opencode-changes",changes:{source:"session-diff",diffs:mode === "changes" ? [{file:"original.txt",additions:1,deletions:0}] : []}}};
+ if (["changes", "empty-changes", "empty-summary", "missing-change-event", "invalid-change-event"].includes(mode)) {
+  const changes: Record<string, unknown> = {...bad,role:"progress",text:"",native_id:"",first_sequence:3,last_sequence:3,progress:{kind:"opencode-changes",changes:{source:mode === "empty-summary" ? "input-summary" : "session-diff",native_event_id:mode === "missing-change-event" ? undefined : mode === "invalid-change-event" ? "msg_01960dcbe1fdABCDEFGHIJKLMN" : "evt_01960dcbe1fdABCDEFGHIJKLMN",...(mode === "empty-summary" ? {native_message_id:object(document(source).execution).native_turn_id} : {}),diffs:mode === "changes" ? [{file:"original.txt",additions:1,deletions:0}] : []}}};
   delete changes.native_parent_id;
   messages.push(create(ResourceSchema,{kind:EntityKind.MESSAGE,id:newRequestId(),sessionId:source.id,revision:1n,schemaVersion:1,documentJson:encode(changes)}));
  }
@@ -115,7 +115,7 @@ it.each(["valid", "tool", "artifact", "changes", "empty-changes", "late-tool", "
  const transport = createRouterTransport(router => {router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1]})});router.service(SessionService,{forkSession:fork});router.service(ResourceService,{getResource:request=>({resource:request.kind === EntityKind.MACHINE ? machine : mode === "changed-source" && ++reads > 1 ? {...source,revision:9n} : source}),listResources:list});});
  const client = new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source}/></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
- const valid = mode === "valid" || mode === "empty-changes";
+ const valid = ["valid", "empty-changes", "empty-summary"].includes(mode);
  if(valid) await screen.findByRole("button",{name:"Fork session"});
  else {await waitFor(()=>expect(list).toHaveBeenCalled());await waitFor(()=>expect(client.isFetching()).toBe(0));expect(screen.queryByRole("button",{name:"Fork session"})).toBeNull();}
  expect(fork).not.toHaveBeenCalled();

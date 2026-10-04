@@ -254,9 +254,10 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 		if domain.Decode(raw, &rows) != nil || rows == nil || len(rows) > 1000 {
 			return nil, observerProblem()
 		}
-		// The pinned page fetches the newest bounded slice, then reverses its
-		// items into chronological order. Refuse a cursor above rather than
-		// treating that bounded suffix as complete history.
+		// Pinned MessageV2.page reverses its descending database slice before
+		// the HTTP handler returns page.items. These rows are already chronological;
+		// reversing them again would put the assistant before its original user.
+		// Refuse a cursor rather than treating a bounded suffix as complete history.
 		seen := map[string]bool{}
 		seenParts := map[string]bool{}
 		userID := ""
