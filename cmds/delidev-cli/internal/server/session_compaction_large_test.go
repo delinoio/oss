@@ -3,18 +3,34 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"net/http"
 )
 
 func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *testing.T) {
-	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode} {
-		t.Run(string(harness), func(t *testing.T) {
+	for _, profile := range []struct {
+		harness domain.Harness
+		managed bool
+	}{{domain.Codex, false}, {domain.OpenCode, false}, {domain.Codex, true}} {
+		harness, managed := profile.harness, profile.managed
+		name := string(harness)
+		if managed {
+			name += "-subscription"
+		}
+		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			f := newFirstDispatchFixtureForHarness(t, harness, domain.ExecuteMode)
 			prompt := strings.Repeat(`"`, domain.MaxPromptBytes)
@@ -33,6 +49,9 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 				c.complete(t, domain.ExecutionSucceeded)
 			}
 			f.workerStream.Close()
+			if managed {
+				configureLargeCompactionSubscription(t, c)
+			}
 			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.large-compaction-capability", nil, func(tx *store.Tx) (any, error) {
 				r, m, err := activeMachine(tx, f.selection.MachineID)
 				if err != nil {
@@ -79,6 +98,66 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 			}
 			assertContext(domain.JobQueued)
 			claimed := claimQueuedCompaction(t, f, r.Msg.Job)
+			// Exercise every fresh authority reader at the admitted large bound.
+			// Codex also uses a synchronized non-Direct route, without upstream I/O.
+			if harness == domain.Codex && !managed {
+				_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.large-compaction-route", nil, func(tx *store.Tx) (any, error) {
+					routeID := domain.NewID()
+					_, err := tx.Put(domain.NetworkRouteKind, routeID, 0, "", "", domain.NetworkRoute{MachineID: f.selection.MachineID, Profile: domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Fixture", Mode: domain.ProxyHTTP, Host: "127.0.0.1", Port: 3128}}})
+					if err != nil {
+						return nil, err
+					}
+					mr, machine, err := activeMachine(tx, f.selection.MachineID)
+					if err != nil {
+						return nil, err
+					}
+					machine.Network = &domain.WorkerNetworkState{InstanceID: domain.ID(f.workerInstance), RouteID: routeID, EffectiveGeneration: 1, NativeState: domain.WorkerRouteNotApplied, ObservedAt: time.Now().UTC()}
+					return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if managed {
+				client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.endpoint.URL)
+				taken, err := client.TakeSubscription(ctx, ownerRequest(f.workerIdentity, &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(input.Assignment.AccountID), ExpectedRevision: claimed.Revision}, MachineId: f.machine.Id, InstanceId: f.workerInstance, OperationId: claimed.Id, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE}))
+				if err != nil {
+					t.Fatal("large action subscription lease", err)
+				}
+				clear(taken.Msg.Bundle)
+				// The real authenticated Take path consumed this original large job.
+				return
+			}
+			rawToken, err := security.RandomToken()
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := apiproxy.TokenPrefix + rawToken
+			digest := sha256.Sum256([]byte(token))
+			_, err = f.workerClient.RegisterExecution(ctx, ownerRequest(f.workerIdentity, &pb.RegisterExecutionRequest{Mutation: acctMutation(claimed, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, CredentialDigest: digest[:]}))
+			if err != nil {
+				t.Fatal("large action registration", err)
+			}
+			lease, err := f.service.executionAuthority.Acquire(ctx, token)
+			if err != nil {
+				t.Fatal("large action authority", err)
+			}
+			defer lease.Release()
+			if lease.ObserveHistory != nil {
+				if err := lease.ObserveHistory(ctx, false); err != nil {
+					t.Fatal("large action history observation", err)
+				}
+			}
+			if harness == domain.Codex {
+				id, attempted := domain.NewID(), true
+				if err := lease.PublishDiagnostic(ctx, domain.RequestDiagnostic{ID: id, CorrelationID: id, SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, ModelID: lease.Scope.ModelID, Harness: harness, Source: domain.DiagnosticProxyHTTP, Operation: domain.DiagnosticCompact, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, ObservedAt: time.Now().UTC(), HTTPAttempted: &attempted}); err != nil {
+					t.Fatal(err)
+				}
+				if err := lease.ObserveResponseUsage(ctx, id, domain.NativeResponseUsage{Source: domain.CompactionHTTPResponse, ResponseDigest: strings.Repeat("ab", 32), CostEvidence: domain.UsageCostMissing}); err != nil {
+					t.Fatal("large action response usage", err)
+				}
+			}
+			lease.Release()
 			output := publicCompactionResult(input, domain.ID(claimed.Id), false)
 			if harness == domain.Codex {
 				output = domain.SessionCompactionResult{Version: 2, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: output.Checkpoint, Codex: &domain.CodexCompactionResult{NativeThreadID: input.Completion.NativeThreadID, SourceNativeTurnID: input.Completion.NativeTurnID, NativeTurnID: domain.NativeIdentity(domain.NewID()), LiveItemID: "original-live-context", HistoryItemID: "item-0", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, ResponseUsages: []domain.NativeResponseUsage{}}}
@@ -120,4 +199,82 @@ func claimQueuedCompaction(t *testing.T, f *firstDispatchFixture, resource *pb.R
 		t.Fatal(err)
 	}
 	return resourceForTest(claimed)
+}
+
+// Controlled protected-state fixture: configure a completed synthetic original
+// under the managed identity before admission, without claiming account acceptance.
+func configureLargeCompactionSubscription(t *testing.T, c *continuationFixture) {
+	t.Helper()
+	f, ctx := c.firstDispatchFixture, context.Background()
+	bundle := subscriptionTestBundle("fixture-account", "large-compaction", time.Now().UTC())
+	_, identity, err := subscription.Parse(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityJSON, _ := json.Marshal(identity)
+	generation := domain.NewID()
+	f.service.accountSecrets = &accountTestSecrets{values: map[credentials.Ref][]byte{{Owner: c.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}: bundle}, removed: map[credentials.Ref]bool{}}
+	t.Cleanup(func() { clear(bundle) })
+	c.input.Configuration.ProviderID, c.input.Configuration.SubscriptionService, c.input.Configuration.Subscription = "", domain.SubscriptionChatGPT, true
+	c.input.ConfigurationDigest, err = c.input.Configuration.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.large-managed-compaction", nil, func(tx *store.Tx) (any, error) {
+		ar, account, err := accountFromTx(tx, c.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.ProviderID, account.SubscriptionService, account.Type = "", domain.SubscriptionChatGPT, domain.SubscriptionAccount
+		account.Validation, account.Catalog = nil, nil
+		account.Connection.Authentication = domain.SubscriptionAuth
+		account.Subscription = &domain.SubscriptionState{Generation: generation, IdentityCommitment: f.service.accountCommitment(f.service.Identity.ServerID, identityJSON), OwnerMachineID: c.input.MachineID}
+		if _, err := tx.Put(domain.AccountKind, ar.ID, ar.Revision, "", "", account); err != nil {
+			return nil, err
+		}
+		mr, err := tx.Get(domain.ModelKind, c.input.Configuration.ModelID)
+		if err != nil {
+			return nil, err
+		}
+		model, err := store.Decode[domain.Model](mr)
+		if err != nil {
+			return nil, err
+		}
+		model.ProviderID, model.SubscriptionService, model.SourceKind = "", domain.SubscriptionChatGPT, domain.SubscriptionModel
+		if _, err := tx.Put(domain.ModelKind, mr.ID, mr.Revision, "", "", model); err != nil {
+			return nil, err
+		}
+		sr, session, err := sessionRecord(tx, c.input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		session.InitialExecution.Configuration, session.InitialExecution.ConfigurationDigest = c.input.Configuration, c.input.ConfigurationDigest
+		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.SessionID, sr.ProjectID, session); err != nil {
+			return nil, err
+		}
+		machineRecord, machine, err := activeMachine(tx, c.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1)
+		if _, err := tx.Put(domain.MachineKind, machineRecord.ID, machineRecord.Revision, "", "", machine); err != nil {
+			return nil, err
+		}
+		jr, err := tx.Get(domain.JobKind, domain.ID(c.job.Id))
+		if err != nil {
+			return nil, err
+		}
+		job, err := store.Decode[domain.Job](jr)
+		if err != nil {
+			return nil, err
+		}
+		job.Input, err = json.Marshal(c.input)
+		if err != nil {
+			return nil, err
+		}
+		return tx.PutJob(jr.ID, jr.Revision, jr.SessionID, jr.ProjectID, job)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

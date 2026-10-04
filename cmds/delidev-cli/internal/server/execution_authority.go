@@ -334,7 +334,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				}
 				job, err := store.Decode[domain.Job](jr)
 				var input domain.SessionCompactionInput
-				if err != nil || job.Type != domain.CompactSessionJob || job.InstanceID != grant.InstanceID || job.AssignedDeviceID != grant.DeviceID || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ActionID != scope.ExecutionID || input.Completion.NativeTurnID != scope.CompactionSourceTurn {
+				if err != nil || job.Type != domain.CompactSessionJob || job.InstanceID != grant.InstanceID || job.AssignedDeviceID != grant.DeviceID || domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.ActionID != scope.ExecutionID || input.Completion.NativeTurnID != scope.CompactionSourceTurn {
 					return nil, executionDenied()
 				}
 				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: domain.CodexProtocolVersion, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
@@ -517,7 +517,7 @@ func (a *executionAuthority) historyObservation(tx *store.Tx, grant store.Execut
 	}
 	if job.Type == domain.CompactSessionJob {
 		var action domain.SessionCompactionInput
-		if domain.Decode(job.Input, &action) != nil || action.Validate() != nil {
+		if domain.DecodeCompactionInput(job.Input, &action) != nil || action.Validate() != nil {
 			return store.Record{}, domain.Session{}, "", executionDenied()
 		}
 		expected = action.Assignment.ExecutionID
@@ -613,7 +613,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		}
 		if job.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil {
+			if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil {
 				return nil, executionDenied()
 			}
 			grant.ExecutionID = input.ActionID
@@ -653,7 +653,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && input.Installation.Version == domain.CodexProtocolVersion
 				} else if job.Type == domain.CompactSessionJob {
 					var input domain.SessionCompactionInput
-					supported = domain.Decode(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex
+					supported = domain.DecodeCompactionInput(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex
 				} else if job.Type == domain.GenerateSessionTitleJob {
 					var input domain.AuxiliaryTitleInput
 					supported = domain.Decode(job.Input, &input) == nil && input.Harness == domain.Codex && input.NativeVersion == domain.CodexProtocolVersion

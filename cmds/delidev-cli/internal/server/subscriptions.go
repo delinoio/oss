@@ -443,7 +443,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				}
 			case domain.CompactSessionJob:
 				var compact domain.SessionCompactionInput
-				if domain.Decode(job.Input, &compact) != nil || compact.Validate() != nil || compact.Version != 2 {
+				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || compact.Version != 2 {
 					return nil, subscriptionDenied()
 				}
 				sr, session, err := sessionRecord(tx, jr.SessionID)
