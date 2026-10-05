@@ -400,6 +400,7 @@ fn protected() -> Error {
         "This executable or interpreter cannot be safely injected by this build; use a compatible \
          native executable. System executables are never replaced.",
     )
+    .with_exec_failure(ExecFailureKind::UnsupportedImage)
 }
 #[cfg(target_os = "macos")]
 fn check_signature(bytes: &[u8]) -> Result<()> {

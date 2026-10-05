@@ -2170,6 +2170,10 @@ fn child_exec_error(error: &Error) -> c_int {
         Some(ExecFailureKind::PermissionDenied) => libc::EACCES,
         Some(ExecFailureKind::InvalidFormat) => libc::ENOEXEC,
         Some(ExecFailureKind::InterpreterLoop) => libc::ELOOP,
+        // Admission has rejected the image before any exec/spawn syscall.
+        // Keep it denied while allowing optional child probes to recover.
+        // Launch revalidation and injection failures use the critical path.
+        Some(ExecFailureKind::UnsupportedImage) => ENOTSUP,
         None => fail(error.code),
     }
 }

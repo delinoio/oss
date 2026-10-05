@@ -53,6 +53,8 @@ pub enum ExecFailureKind {
     PermissionDenied,
     InvalidFormat,
     InterpreterLoop,
+    #[cfg(target_os = "macos")]
+    UnsupportedImage,
 }
 
 impl Code {
