@@ -1,6 +1,6 @@
 # Commands
 
-**pnport 0.1.0 is available.** These are its command names and diagnostic interfaces. Check [installation and known limits](/pnport/installation), including unresolved macOS initialization and cancellation failures.
+**pnport 0.1.2 is available.** These are its command names and diagnostic interfaces. Check [installation and known limits](/pnport/installation), including unresolved macOS initialization and cancellation failures.
 
 | Command | Purpose |
 | --- | --- |

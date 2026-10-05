@@ -1,6 +1,6 @@
 # Editors and language servers
 
-**pnport 0.1.0 is available.** No editor or language-server version is certified. This guide describes the integration shape for testing; it does not establish that a particular editor works. Check [installation and known limits](/pnport/installation) before testing.
+**pnport 0.1.2 is available.** No editor or language-server version is certified. This guide describes the integration shape for testing; it does not establish that a particular editor works. Check [installation and known limits](/pnport/installation) before testing.
 
 ## Configure the executable
 

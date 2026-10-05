@@ -94,13 +94,13 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
     const contents = await readFile(file, "utf8");
     if (!/<main\b/iu.test(contents)) failures.push(`${publicRoute(slug, route)} is missing a main landmark`);
     if (!contents.includes("delino-docs-site-switcher")) failures.push(`${publicRoute(slug, route)} is missing the site selector`);
-    if (slug === "pnport" && !/\bpnport 0\.1\.0 is (?:available|published)\b/iu.test(visibleProjectText(contents))) {
-      failures.push(`${publicRoute(slug, route)} is missing its published 0.1.0 availability notice`);
+    if (slug === "pnport" && !/\bpnport 0\.1\.2 is (?:available|published)\b/iu.test(visibleProjectText(contents))) {
+      failures.push(`${publicRoute(slug, route)} is missing its published 0.1.2 availability notice`);
     }
     if (slug === "pnport" && ["/installation", "/releases"].includes(route)) {
       const visible = visibleProjectText(contents);
       if (!/intermittent macOS initialization failures/iu.test(visible) || !/cancellation returning 125/iu.test(visible) || !/compatibility|acceptance/iu.test(visible)) {
-        failures.push(`${publicRoute(slug, route)} is missing published 0.1.0 known limits`);
+        failures.push(`${publicRoute(slug, route)} is missing published 0.1.2 known limits`);
       }
     }
     for (const destination of selectorDestinations) {

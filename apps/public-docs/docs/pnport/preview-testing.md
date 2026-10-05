@@ -2,7 +2,7 @@
 
 Use the published pnport preview to test Turbopack and TypeScript 7 against a Yarn 4 Plug'n'Play project, without creating a physical project `node_modules` directory.
 
-**pnport 0.1.0 is available.** See [stable installation and known limits](/pnport/installation) to use it. This walkthrough continues to pin the immutable preview. The experimental `0.1.0-next.1` preview is available on macOS and glibc Linux, each on x64 and arm64. Windows, musl hosts such as Alpine Linux, and mixed architectures are unsupported. Full feature, minimum-OS and benchmark acceptance remain unfinished; intermittent native initialization failures with exit status 125 remain under investigation. These workflows are for testing and do not certify compatibility with every project or tool.
+**pnport 0.1.2 is available.** See [stable installation and known limits](/pnport/installation) to use it. This walkthrough continues to pin the immutable preview. The experimental `0.1.0-next.1` preview is available on macOS and glibc Linux, each on x64 and arm64. Windows, musl hosts such as Alpine Linux, and mixed architectures are unsupported. Full feature, minimum-OS and benchmark acceptance remain unfinished; intermittent native initialization failures with exit status 125 remain under investigation. These workflows are for testing and do not certify compatibility with every project or tool.
 
 On macOS, keep preview commands in the foreground with daemonization disabled: detached descendants can remain running after pnport stops. See [filesystem and process limits](/pnport/filesystem-and-processes).
 

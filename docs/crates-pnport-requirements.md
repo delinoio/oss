@@ -17,6 +17,15 @@ final native candidate gates passed; publication does not complete the deferred
 acceptance or resolve the recorded failures. Keep the immutable preview and
 Windows 0.2.0 requirements separate from stable availability.
 
+## Owner-authorized 0.1.2 repair release (2026-10-05)
+
+The [project repair amendment](project-pnport.md#owner-authorized-012-repair-release-2026-10-05)
+authorizes exactly 0.1.2 after all retained final-tag and fresh publication gates.
+Stable 0.1.2 is published on the same four targets, with the previously disclosed
+initialization/cancellation and full-acceptance limits retained. The failed 0.1.1
+tag and earlier published bytes remain immutable. Keep #958 open and preserve
+the complete Windows 0.2.0 requirements.
+
 Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete. The owner-approved 2026-10-03 amendment raises the macOS support floor to 15; both native CI architectures must execute on that supported floor.
 
 ## Summary
