@@ -573,7 +573,7 @@ fn parse_request_mode(
             }
         }
         let supplied = fields.get("state")?;
-        if fields.get("code").is_none()
+        if !fields.contains_key("code")
             || supplied.len() != state.len()
             || supplied
                 .iter()
