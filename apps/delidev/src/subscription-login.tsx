@@ -112,8 +112,9 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
           const suggested = subscriptionNameValid(progress.suggestedName) ? progress.suggestedName : subscriptionServiceNames[p.service];
           update(p, { stage, name: suggested, suggested: Boolean(progress.suggestedName) }); changed(); return;
         }
-        update(p, { stage, diagnostic: progress.diagnostic, problem: undefined });
-        if (![Stage.Preparing, Stage.Waiting].includes(stage)) {
+        const terminal = ![Stage.Preparing, Stage.Waiting].includes(stage);
+        update(p, { stage, diagnostic: progress.diagnostic, ...(terminal ? { problem: undefined } : {}) });
+        if (terminal) {
           p.terminal = true; p.url = "";
           void native!(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(() => undefined);
         }

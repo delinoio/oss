@@ -49,7 +49,7 @@ function fixture() {
     const [visible, setVisible] = useState(true);
     return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={() => setVisible(false)}>Leave Settings fixture</button><OAuthNativeProvider control={native}><Settings visible={visible} /></OAuthNativeProvider></QueryClientProvider></TransportProvider>;
   }
-  return { Harness, client, machine, accounts, list, status, provider, apiLifecycle, save, login, cancel, progress, fail: (code?: Code) => { failure = code; }, finish: () => release?.() };
+  return { Harness, client, machine, accounts, list, status, provider, apiLifecycle, save, login, cancel, progress, native, fail: (code?: Code) => { failure = code; }, finish: () => release?.() };
 }
 
 it.each([Code.Unavailable, Code.PermissionDenied, Code.Unauthenticated])("keeps capability failure %s retryable without granting native lifecycle", async (code) => {
@@ -185,4 +185,18 @@ it("projects terminal Codex diagnostics without another login or cached native p
  expect(JSON.stringify(value.client.getQueryCache().getAll().map(q=>q.state.data),(_,v)=>typeof v === "bigint" ? v.toString() : v)).not.toContain("private-native-sentinel");
  fireEvent.click(screen.getByRole("button",{name:"Leave Settings fixture"}));
  expect(value.cancel).not.toHaveBeenCalled();
+});
+
+it("keeps an uncertain original browser opening visible across later waiting polls", async () => {
+ const value=fixture(); value.native.mockRejectedValue(new Error("private-native-url"));
+ render(<value.Harness />);
+ fireEvent.click(await screen.findByRole("button",{name:"Manage login for Existing subscription"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Sign in to ChatGPT"}));
+ await screen.findByText(/The browser could not be opened/,{}, {timeout:4000});
+ const nativeCalls=value.native.mock.calls.length;
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1100));});
+ expect(screen.getByRole("alert").textContent).toContain("The browser could not be opened");
+ expect(screen.queryByText(/private-native-url/)).toBeNull();
+ expect(value.native).toHaveBeenCalledTimes(nativeCalls);
+ expect(value.login).toHaveBeenCalledTimes(1);
 });
