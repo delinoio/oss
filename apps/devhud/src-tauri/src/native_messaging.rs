@@ -52,6 +52,21 @@ struct UnixListenerHandle {
     thread: std::thread::JoinHandle<()>,
 }
 
+fn packaged_host_path(current: &std::path::Path, name: &str) -> Result<std::path::PathBuf, String> {
+    let adjacent = current
+        .parent()
+        .ok_or("application executable has no parent")?
+        .join(name);
+    // The pinned CEF Debian bundler relocates only the main binary to
+    // /usr/share/DevHUD and leaves sidecars in /usr/bin. Restrict this lookup
+    // to that exact installed layout; never search the user's PATH.
+    #[cfg(target_os = "linux")]
+    if current == std::path::Path::new("/usr/share/DevHUD/devhud") {
+        return Ok(std::path::Path::new("/usr/bin").join(name));
+    }
+    Ok(adjacent)
+}
+
 pub fn register_packaged_host() -> Result<(), String> {
     use std::process::Command;
 
@@ -62,10 +77,7 @@ pub fn register_packaged_host() -> Result<(), String> {
     } else {
         "devhud-native-messaging-host"
     };
-    let binary = current
-        .parent()
-        .ok_or("application executable has no parent")?
-        .join(name);
+    let binary = packaged_host_path(&current, name)?;
     if !binary.is_file() {
         return Err("packaged Native Messaging host was not found".to_string());
     }
@@ -86,6 +98,25 @@ pub fn register_packaged_host() -> Result<(), String> {
             Err("Native Messaging host registration timed out".to_string())
         }
     }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[test]
+fn packaged_host_lookup_follows_only_the_committed_cef_debian_layout() {
+    use std::path::Path;
+    let name = "devhud-native-messaging-host";
+    assert_eq!(
+        packaged_host_path(Path::new("/usr/share/DevHUD/devhud"), name).unwrap(),
+        Path::new("/usr/bin").join(name)
+    );
+    assert_eq!(
+        packaged_host_path(Path::new("/tmp/DevHUD/devhud"), name).unwrap(),
+        Path::new("/tmp/DevHUD").join(name)
+    );
+    assert_eq!(
+        packaged_host_path(Path::new("/tmp/AppDir/shared/bin/devhud"), name).unwrap(),
+        Path::new("/tmp/AppDir/shared/bin").join(name)
+    );
 }
 
 #[derive(Default)]

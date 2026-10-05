@@ -247,6 +247,7 @@ test("derives the compiled package kind from one explicit Linux bundle", () => {
     {
       DEVHUD_PACKAGE_KIND: "linux-appimage",
       STRACE_MODE: "0",
+      ANYLINUX_LIB: "1",
     },
   );
   assert.deepEqual(
@@ -254,6 +255,7 @@ test("derives the compiled package kind from one explicit Linux bundle", () => {
     {
       DEVHUD_PACKAGE_KIND: "linux-appimage",
       STRACE_MODE: "0",
+      ANYLINUX_LIB: "1",
     },
   );
 });
@@ -275,6 +277,50 @@ function fixtureSharunPin(bytes) {
   };
 }
 
+function fixtureAnylinuxOptions() {
+  return {
+    anylinuxPin: {
+      repository: "https://github.com/example/anylinux", revision: "revision",
+      source: { path: "anylinux.c", sha256: createHash("sha256").update("verified source").digest("hex") },
+      license: { path: "LICENSE", sha256: createHash("sha256").update("verified license").digest("hex") },
+    },
+    runCompiler(command, args, options) {
+      assert.equal(command, "cc");
+      assert.deepEqual(args.slice(0, 3), ["-shared", "-fPIC", "-O2"]);
+      assert.equal(readFileSync(args[3], "utf8"), "verified source");
+      assert.equal(options.shell, false);
+      writeFileSync(args.at(-1), "compiled verified source");
+      return { status: 0 };
+    },
+  };
+}
+
+for (const kind of ["source", "license"]) {
+  test(`rejects an AppImage anylinux ${kind} checksum mismatch before compilation`, async () => {
+    const bytes = Buffer.from("verified sharun");
+    const options = fixtureAnylinuxOptions();
+    let compiled = false;
+    options.runCompiler = () => { compiled = true; };
+    await assert.rejects(prepareVerifiedAppImageSharun("x64", async (url) => {
+      if (url.endsWith("sharun-x86_64")) return new Response(bytes);
+      if (kind === "source" || url.endsWith("LICENSE")) return new Response("replacement");
+      return new Response("verified source");
+    }, fixtureSharunPin(bytes), options), new RegExp(`anylinux ${kind} checksum mismatch`, "u"));
+    assert.equal(compiled, false);
+  });
+}
+
+test("removes private AppImage staging when the anylinux compiler fails", async () => {
+  const bytes = Buffer.from("verified sharun");
+  const options = fixtureAnylinuxOptions();
+  let stagedSource;
+  options.runCompiler = (_, args) => { stagedSource = args[3]; return { status: 1, stderr: "compiler fixture failure" }; };
+  await assert.rejects(prepareVerifiedAppImageSharun("x64", async (url) => new Response(
+    url.endsWith("sharun-x86_64") ? bytes : url.endsWith("LICENSE") ? "verified license" : "verified source",
+  ), fixtureSharunPin(bytes), options), /anylinux compilation failed/u);
+  assert.equal(existsSync(stagedSource), false);
+});
+
 for (const [architecture, assetName] of [
   ["arm64", "sharun-aarch64"],
   ["x64", "sharun-x86_64"],
@@ -285,17 +331,19 @@ for (const [architecture, assetName] of [
     const prepared = await prepareVerifiedAppImageSharun(
       architecture,
       async (url) => {
-        assert.equal(
-          url,
-          `https://example.com/sharun/releases/download/fixture/${assetName}`,
-        );
-        return new Response(bytes);
+        if (url.endsWith(`/${assetName}`)) return new Response(bytes);
+        if (url.endsWith("/anylinux.c")) return new Response(Buffer.from("verified source"));
+        assert.equal(url, "https://raw.githubusercontent.com/example/anylinux/revision/LICENSE");
+        return new Response(Buffer.from("verified license"));
       },
       pin,
+      fixtureAnylinuxOptions(),
     );
     try {
       const launcher = prepared.config.bundle.linux.appimage.files.sharun;
-      assert.deepEqual(Object.keys(prepared.config.bundle.linux.appimage.files), ["sharun"]);
+      assert.deepEqual(Object.keys(prepared.config.bundle.linux.appimage.files), ["sharun", "lib/anylinux.so", "share/licenses/anylinux/LICENSE"]);
+      assert.equal(readFileSync(prepared.config.bundle.linux.appimage.files["lib/anylinux.so"], "utf8"), "compiled verified source");
+      assert.equal(readFileSync(prepared.config.bundle.linux.appimage.files["share/licenses/anylinux/LICENSE"], "utf8"), "verified license");
       assert.deepEqual(readFileSync(launcher), bytes);
       if (process.platform !== "win32") assert.equal(statSync(launcher).mode & 0o777, 0o755);
     } finally {
@@ -307,10 +355,12 @@ for (const [architecture, assetName] of [
 
 test("AppImage builds reject ambient helper download and integrity overrides", () => {
   const environment = desktopTauriEnvironment("build", ["--bundles", "appimage"], "linux", {
-    SHARUN_LINK: "https://example.com/unverified", SKIP_INTEGRITY_CHECKS: "1",
+    SHARUN_LINK: "https://example.com/unverified", SKIP_INTEGRITY_CHECKS: "1", ANYLINUX_LIB_SOURCE: "https://example.com/unverified", ANYLINUX_LIB: "0",
   });
   assert.equal(environment.SHARUN_LINK, undefined);
   assert.equal(environment.SKIP_INTEGRITY_CHECKS, undefined);
+  assert.equal(environment.ANYLINUX_LIB_SOURCE, undefined);
+  assert.equal(environment.ANYLINUX_LIB, "1");
 });
 
 test("rejects a Linux AppImage launcher whose digest does not match", async () => {

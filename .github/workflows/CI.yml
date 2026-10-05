@@ -784,7 +784,7 @@ jobs:
         if: ${{ matrix.os == 'linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
+          sudo apt-get install -y clang cmake dbus-x11 python3-dbus python3-gi desktop-file-utils gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
 
       - name: Install dependencies
         # CI runs the app checks explicitly; skip developer-only root prepare hooks,
@@ -949,7 +949,13 @@ jobs:
         env:
           XDG_SESSION_TYPE: x11
           WAYLAND_DISPLAY: ""
-        run: APPIMAGE="$DEVHUD_SMOKE_APPIMAGE" APPDIR="$DEVHUD_SMOKE_APPDIR" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
+        run: |
+          if [ "${{ matrix.bundle }}" = "appimage" ]; then
+            export APPIMAGE="$DEVHUD_SMOKE_APPIMAGE" APPDIR="$DEVHUD_SMOKE_APPDIR"
+          else
+            unset APPIMAGE APPDIR
+          fi
+          dbus-run-session -- xvfb-run -a /usr/bin/python3 apps/devhud/scripts/with-linux-smoke-tray.py pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
 
       - name: Verify Ubuntu AppImage Native Messaging register and unregister lifecycle
         if: ${{ matrix.os == 'linux' && matrix.bundle == 'appimage' }}

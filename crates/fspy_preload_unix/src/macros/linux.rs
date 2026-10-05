@@ -14,12 +14,14 @@ macro_rules! intercept {
             }
         }
         #[cfg(not(test))] // Don't interpose on the test binary
+        // rustc rejects #[expect] on naked functions; scope the Clippy
+        // allowance to this container while checking the C signature below.
+        #[expect(clippy::allow_attributes, reason = "the naked function requires a scoped runtime-symbol allowance")]
         const _: () = {
             // This naked tail jump preserves every register and variadic argument.
             // The checked $fn_sig constants above prove the destination's C ABI;
             // rustc checks the intentionally argument-free trampoline instead.
             // Remove this allowance when trampolines carry the complete signature.
-            #[expect(clippy::allow_attributes, reason = "the runtime-symbol lint fires only for selected macro names")]
             #[allow(invalid_runtime_symbol_definitions, reason = "naked ABI-preserving tail trampoline has no Rust argument handling")]
             #[unsafe(naked)]
             #[unsafe(export_name = ::core::concat!(::core::stringify!($name), 64))]
@@ -66,12 +68,14 @@ macro_rules! intercept_inner {
         const _: $fn_sig = $crate::libc::$name;
 
         #[cfg(not(test))] // Don't interpose on the test binary
+        // rustc rejects #[expect] on naked functions; scope the Clippy
+        // allowance to this container while checking the C signature below.
+        #[expect(clippy::allow_attributes, reason = "the naked function requires a scoped runtime-symbol allowance")]
         const _: () = {
             // This naked tail jump preserves every register and variadic argument.
             // The checked $fn_sig constants above prove the destination's C ABI;
             // rustc checks the intentionally argument-free trampoline instead.
             // Remove this allowance when trampolines carry the complete signature.
-            #[expect(clippy::allow_attributes, reason = "the runtime-symbol lint fires only for selected macro names")]
             #[allow(invalid_runtime_symbol_definitions, reason = "naked ABI-preserving tail trampoline has no Rust argument handling")]
             #[unsafe(naked)]
             #[unsafe(export_name = ::core::stringify!($name))]

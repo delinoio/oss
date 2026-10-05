@@ -41,6 +41,18 @@
           "sha256": "2f1a73799dceb7f1b682118bf714308ba38a18e10ebdbdb09078dac9337508d8"
         }
       }
+    },
+    "anylinux": {
+      "repository": "https://github.com/FabianLars/Anylinux-AppImages",
+      "revision": "3e280d1b2270fecfcb2c2c823b490c782ecf1277",
+      "source": {
+        "path": "useful-tools/lib/anylinux.c",
+        "sha256": "f50650ad96d177559bdd0737df509fa20bd4af08887631c738fc1f31bfac185f"
+      },
+      "license": {
+        "path": "LICENSE",
+        "sha256": "78a983481f226ae0ee56d72fb73a027ce51f72ff40ec8ab3b55e8866ca9f2f7f"
+      }
     }
   },
   "runtime": {

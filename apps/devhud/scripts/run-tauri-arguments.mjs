@@ -70,9 +70,10 @@ export async function prepareVerifiedAppImageSharun(
   architecture = process.arch,
   fetchAsset = globalThis.fetch,
   sharunPin = cefPins.appImage.sharun,
+  { anylinuxPin = cefPins.appImage.anylinux, runCompiler = spawnSync } = {},
 ) {
   const asset = appImageSharunAsset(architecture, sharunPin);
-  const response = await fetchAsset(asset.url);
+  const response = await fetchAsset(asset.url, { signal: AbortSignal.timeout(120_000) });
   if (!response.ok) {
     throw new Error(`AppImage launcher download failed with HTTP ${response.status}`);
   }
@@ -84,16 +85,39 @@ export async function prepareVerifiedAppImageSharun(
     );
   }
 
-  // The upstream packager now downloads a tar containing helper libraries.
-  // Keep our immutable launcher separate: Tauri copies custom AppImage files
-  // before quick-sharun runs, and that tool preserves an existing executable.
-  // This also leaves the helper archive's own integrity checks enabled.
+  // The pinned upstream script's default anylinux.c URL returns HTTP 404.
+  // Verify the source and license from its owning fork before compiling locally;
+  // quick-sharun preserves an existing lib/anylinux.so and adds it to .preload.
+  // Remove this staging when Tauri pins and verifies these helper inputs itself.
   const directory = mkdtempSync(join(tmpdir(), "devhud-verified-sharun-"));
   const launcher = join(directory, "sharun");
   try {
     writeFileSync(launcher, bytes, { mode: 0o755, flag: "wx" });
+    const base = `${anylinuxPin.repository.replace("https://github.com/", "https://raw.githubusercontent.com/")}/${anylinuxPin.revision}`;
+    const verifiedFiles = {};
+    for (const [kind, pin] of Object.entries({ source: anylinuxPin.source, license: anylinuxPin.license })) {
+      const result = await fetchAsset(`${base}/${pin.path}`, { signal: AbortSignal.timeout(120_000) });
+      if (!result.ok) throw new Error(`AppImage anylinux ${kind} download failed with HTTP ${result.status}`);
+      const content = Buffer.from(await result.arrayBuffer());
+      const digest = createHash("sha256").update(content).digest("hex");
+      if (digest !== pin.sha256) throw new Error(`AppImage anylinux ${kind} checksum mismatch: expected ${pin.sha256}, observed ${digest}`);
+      const path = join(directory, kind === "source" ? "anylinux.c" : "LICENSE-anylinux");
+      writeFileSync(path, content, { mode: kind === "license" ? 0o644 : 0o600, flag: "wx" });
+      verifiedFiles[kind] = path;
+    }
+    const library = join(directory, "anylinux.so");
+    const compiled = runCompiler("cc", ["-shared", "-fPIC", "-O2", verifiedFiles.source, "-o", library], {
+      shell: false, encoding: "utf8", timeout: 120_000,
+    });
+    if (compiled.error || compiled.status !== 0) {
+      throw new Error(`AppImage anylinux compilation failed: ${compiled.error?.message ?? compiled.stderr ?? compiled.status}`);
+    }
     return {
-      config: { bundle: { linux: { appimage: { files: { sharun: launcher } } } } },
+      config: { bundle: { linux: { appimage: { files: {
+        sharun: launcher,
+        "lib/anylinux.so": library,
+        "share/licenses/anylinux/LICENSE": verifiedFiles.license,
+      } } } } },
       close: () => rmSync(directory, { recursive: true, force: true }),
     };
   } catch (error) {
@@ -200,10 +224,12 @@ export function desktopTauriEnvironment(
       : {}),
   };
   if (bundle === "appimage") {
-    // A launcher override is not a helper-library archive. Do not let ambient
-    // overrides misroute that download or bypass its checksum verification.
+    // Use only the verified staged helpers. Ambient overrides must neither
+    // redirect their downloads nor bypass upstream integrity checks.
     delete result.SHARUN_LINK;
     delete result.SKIP_INTEGRITY_CHECKS;
+    delete result.ANYLINUX_LIB_SOURCE;
+    result.ANYLINUX_LIB = "1";
   }
   return result;
 }

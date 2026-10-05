@@ -88,3 +88,17 @@ test("generated mobile child commands resolve the verified CLI and preserve the 
   assert.equal(windows.SystemRoot, "system");
   assert.equal(tauriEnvironment("/cache/bin/cargo-tauri", {}, "linux").PATH, "/cache/bin");
 });
+
+test("Linux GUI smokes use an explicit tray fixture and reserve AppImage environment for AppImages", () => {
+  const publicJob = workflow("workflows/CI.yml").jobs["devhud-desktop"];
+  const smoke = publicJob.steps.find(step => step.name === "Run Ubuntu X11 platform smoke").run;
+  assert.match(smoke, /unset APPIMAGE APPDIR/u);
+  assert.match(smoke, /with-linux-smoke-tray\.py pnpm/u);
+  const privateJob = workflow("workflows/package-devhud-private.yml").jobs.desktop;
+  const commands = privateJob.steps.map(step => step.run ?? "").join("\n");
+  assert.equal(commands.match(/with-linux-smoke-tray\.py pnpm/gu)?.length, 2);
+  for (const job of [publicJob, privateJob]) {
+    const commands = job.steps.map(step => step.run ?? "").join("\n");
+    for (const requirement of ["python3-dbus", "python3-gi", "-rwsr-xr-x 0/0"]) assert.ok(commands.includes(requirement), requirement);
+  }
+});

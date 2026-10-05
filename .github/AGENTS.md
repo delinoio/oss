@@ -27,3 +27,5 @@
 - DeliDev updater input dry runs use the same six-target native matrix and keyless read-only manual workflow. Export exact twelve signed-inventory filenames and source/version/size/digest provenance only after package checks. Keep production signing readiness and private-key access separate; dry-run artifacts never imply production release or installed-platform acceptance.
 
 - Shared Tauri CLI preparation uses `setup-prebuilt` and execution-host lock selection; restore/verify on native and mobile paths, save only after a successful main job, and retain existing application Cargo caches. Native DeliDev dry runs remain read-only and credential-free.
+
+- DevHud Linux Xvfb smokes must provide an explicit session-local StatusNotifierWatcher fixture for the pinned ksni tray backend, retain Chromium sandbox requirements, and keep fixture-only tray registration distinct from real desktop-panel acceptance. Only AppImage smokes may set APPDIR and APPIMAGE.

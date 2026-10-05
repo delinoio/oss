@@ -84,6 +84,18 @@ const CANONICAL_APPIMAGE_SHARUN = {
     },
   },
 };
+const CANONICAL_APPIMAGE_ANYLINUX = {
+  "repository": "https://github.com/FabianLars/Anylinux-AppImages",
+  "revision": "3e280d1b2270fecfcb2c2c823b490c782ecf1277",
+  "source": {
+    "path": "useful-tools/lib/anylinux.c",
+    "sha256": "f50650ad96d177559bdd0737df509fa20bd4af08887631c738fc1f31bfac185f"
+  },
+  "license": {
+    "path": "LICENSE",
+    "sha256": "78a983481f226ae0ee56d72fb73a027ce51f72ff40ec8ab3b55e8866ca9f2f7f"
+  }
+};
 const CANONICAL_CEF_ARCHIVES = {
   "aarch64-apple-darwin": {
     name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_macosarm64_minimal.tar.bz2",
@@ -381,6 +393,10 @@ assert(
 assert(
   JSON.stringify(pins.appImage?.sharun) === JSON.stringify(CANONICAL_APPIMAGE_SHARUN),
   "AppImage sharun launcher pins changed",
+);
+assert(
+  JSON.stringify(pins.appImage?.anylinux) === JSON.stringify(CANONICAL_APPIMAGE_ANYLINUX),
+  "AppImage anylinux source and license pins changed",
 );
 
 const cargoMetadataResult = spawnSync(

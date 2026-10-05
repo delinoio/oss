@@ -1038,7 +1038,10 @@ fn main() {
                     }
                 }
             });
-            create_tray(&app.handle().clone())?;
+            create_tray(&app.handle().clone()).inspect_err(|_| {
+                error!(event = "tray_initialization_failed");
+            })?;
+            info!(event = "desktop_tray_ready");
             let webview = tauri::WebviewWindowBuilder::<tauri_runtime_cef::CefRuntime, _>::new(
                 app,
                 "main",
