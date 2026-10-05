@@ -177,7 +177,7 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 			installation = &machine.Installations[i]
 		}
 	}
-	if installation == nil || installation.State != domain.InstallationDetected || installation.Version != version || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.ProtocolFor(c.Harness) || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || installation.Problem != nil || installation.ResolvedPath == "" || installation.ObservedAt == nil || installation.ObservedAt.IsZero() || installation.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
+	if installation == nil || installation.State != domain.InstallationDetected || (c.Harness == domain.Codex && !domain.CodexVersionAllowed(installation.Version) || c.Harness != domain.Codex && installation.Version != version) || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.ProtocolFor(c.Harness) || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || installation.Problem != nil || installation.ResolvedPath == "" || installation.ObservedAt == nil || installation.ObservedAt.IsZero() || installation.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
 		return empty, domain.Fail(domain.Unsupported, "The selected Worker has no verified installation for this execution profile.", "Run machine discovery with native protocol verification for the selected installation.")
 	}
 	_, account, err := accountFromTx(tx, input.AccountID, 0)

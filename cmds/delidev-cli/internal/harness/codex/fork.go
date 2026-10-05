@@ -273,7 +273,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		}
 		return result, c.problem
 	}
-	thread, effective, err := decodeBoundThread(response.Result, settings, "", forkThread)
+	thread, effective, err := decodeBoundThread(response.Result, settings, "", forkThread, c.version)
 	result.Thread, result.Effective = thread, effective
 	if thread != nil {
 		c.thread = thread.ID
@@ -281,7 +281,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 	var bound boundThreadWire
 	var wire threadWire
 	if domain.Decode(response.Result, &bound) == nil {
-		wire, _ = decodeThread(bound.Thread)
+		wire, _ = decodeThread(bound.Thread, c.version)
 	}
 	if err != nil || thread == nil || effective == nil || thread.ID == source.checkpoint.ThreadID || thread.SessionID != thread.ID || thread.Status.Type != ThreadIdle || wire.ForkedFromID == nil || *wire.ForkedFromID != source.checkpoint.ThreadID || !c.forkDefaults(source.checkpoint.Effective, *effective) {
 		c.problem = threadUncertain()

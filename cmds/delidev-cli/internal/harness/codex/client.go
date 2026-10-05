@@ -85,12 +85,15 @@ func incompatible() *domain.Error {
 func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	phase := profilePhase
 	defer func() {
+		if returned != nil {
+			returned = domain.WithCodexDiagnostic(config.Version, domain.CodexPhase(phase), returned)
+		}
 		if returned != nil && config.Process.Logger != nil {
-			config.Process.Logger.WarnContext(ctx, "Codex native handshake failed", "owner_id", config.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
+			config.Process.Logger.WarnContext(ctx, "Codex native handshake failed", "owner_id", config.Process.OwnerID, "phase", domain.CodexErrorDiagnostic(returned).Phase, "version", domain.CodexErrorDiagnostic(returned).DetectedVersion, "minimum_version", domain.CodexMinimumVersion, "code", domain.CodexErrorDiagnostic(returned).Code, "recovery_code", domain.SafeError(returned).Code, "correlation_id", config.Process.OwnerID)
 		}
 	}()
-	if config.Version != SupportedVersion {
-		return nil, incompatible()
+	if !domain.CodexVersionAllowed(config.Version) {
+		return nil, domain.CodexVersionFailure(config.Version)
 	}
 	if config.Mode == "" {
 		config.Mode = ProbeProtocol
@@ -148,7 +151,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	defer func() {
 		if returned != nil {
 			if err := wire.Close(); err != nil {
-				returned = domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying.")
+				returned = domain.CodexRecoveryFailure(config.Version, domain.CodexPhase(phase), returned, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
 			}
 		}
 	}()

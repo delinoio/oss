@@ -14,7 +14,7 @@ import (
 
 // VerifyCodexTitleProfile proves the exact installed binary and native thread
 // protocol without logging in, opening a workspace, or sending inference.
-func VerifyCodexTitleProfile(ctx context.Context, root string, owner domain.ID, executable string, logger *slog.Logger) (supported bool, returned error) {
+func VerifyCodexTitleProfile(ctx context.Context, root string, owner domain.ID, executable, expectedVersion string, logger *slog.Logger) (supported bool, returned error) {
 	if err := owner.Validate(); err != nil {
 		return false, err
 	}
@@ -72,12 +72,13 @@ func VerifyCodexTitleProfile(ctx context.Context, root string, owner domain.ID, 
 		}
 		return false, nil
 	}
-	if stdout.overflow || stderr.overflow || parseVersion(domain.Codex, stdout.buffer.String()) != domain.CodexProtocolVersion {
+	version := parseVersion(domain.Codex, stdout.buffer.String())
+	if stdout.overflow || stderr.overflow || !domain.CodexVersionAllowed(version) || version != expectedVersion {
 		return false, nil
 	}
 	probeCtx, stopProbe := context.WithTimeout(ctx, probeTimeout)
 	client, err := codex.Open(probeCtx, codex.Config{
-		Mode: codex.ThreadProtocol, Version: domain.CodexProtocolVersion,
+		Mode: codex.ThreadProtocol, Version: version,
 		Home:    filepath.Join(home, "codex"),
 		Process: process.Config{Directory: processRoot, OwnerID: owner, Executable: resolved, Env: env, Cwd: home, Logger: logger},
 	})
@@ -92,7 +93,7 @@ func VerifyCodexTitleProfile(ctx context.Context, root string, owner domain.ID, 
 		return false, domain.Fail(domain.RecoveryRequired, "Codex title profile cleanup could not be verified.", "Retain its private probe directory and reconcile owned processes before reconnecting.")
 	}
 	if logger != nil {
-		logger.InfoContext(ctx, "codex automatic title profile verified", "owner_id", owner, "version", domain.CodexProtocolVersion)
+		logger.InfoContext(ctx, "codex automatic title profile verified", "owner_id", owner, "version", version)
 	}
 	return true, nil
 }

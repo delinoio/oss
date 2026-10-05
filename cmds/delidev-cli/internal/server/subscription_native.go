@@ -68,7 +68,7 @@ func openServerSubscription(ctx context.Context, root string, owner domain.ID, b
 	if e != nil {
 		return nil, e
 	}
-	if installation.State != domain.InstallationDetected || installation.Version != codex.SupportedVersion || !installation.ProtocolVerified || installation.ExecutableSHA256 == "" {
+	if installation.State != domain.InstallationDetected || !domain.CodexVersionAllowed(installation.Version) || !installation.ProtocolVerified || installation.ExecutableSHA256 == "" {
 		return nil, domain.Fail(domain.Unsupported, "Browser sign-in is unavailable on this server.", "Install the supported Codex version on the server and start a new explicit login.")
 	}
 	digest, e := harness.InspectExecutable(ctx, installation.ResolvedPath)

@@ -28,7 +28,7 @@ func TestOptInManualCodexTitleProfile(t *testing.T) {
 	}
 	root := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	verified, err := VerifyCodexTitleProfile(context.Background(), root, domain.NewID(), absolute, logger)
+	verified, err := VerifyCodexTitleProfile(context.Background(), root, domain.NewID(), absolute, domain.CodexMinimumVersion, logger)
 	if err != nil || !verified {
 		t.Fatalf("installed Codex title profile was not verified: verified=%v err=%v", verified, err)
 	}

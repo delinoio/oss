@@ -165,7 +165,7 @@ func (s *Service) steerScope(tx *store.Tx, sr store.Record, session domain.Sessi
 	if jr.ID != p.JobID || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || !session.OwnsExecution(input) {
 		return input, store.ExecutionGrant{}, steerConflict()
 	}
-	if input.Configuration.Harness != domain.Codex || input.Installation.Version != domain.CodexProtocolVersion || !input.Installation.ProtocolVerified {
+	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || !input.Installation.ProtocolVerified {
 		return input, store.ExecutionGrant{}, domain.SessionExecutionUnavailable()
 	}
 	grant, err := tx.ExecutionGrantForJob(jr.ID)

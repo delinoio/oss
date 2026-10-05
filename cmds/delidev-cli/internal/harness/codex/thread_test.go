@@ -95,7 +95,7 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		}
 		threadID = domain.ID(params["threadId"].(string))
 	}
-	f.thread = map[string]any{"id": threadID, "sessionId": threadID, "cliVersion": SupportedVersion, "cwd": params["cwd"], "modelProvider": params["modelProvider"], "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
+	f.thread = map[string]any{"id": threadID, "sessionId": threadID, "cliVersion": fixtureVersion(), "cwd": params["cwd"], "modelProvider": params["modelProvider"], "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
 	f.thread["historyMode"] = "legacy"
 	f.thread["extra"] = nil
 	f.thread["canAcceptDirectInput"] = true
@@ -358,7 +358,7 @@ func TestThreadLateAcknowledgmentRetainsOriginalIdentityWithoutRetry(t *testing.
 		if string(event.ID) != `"`+string(id)+`"` {
 			t.Fatal("late response identity changed")
 		}
-		thread, _, err := decodeBoundThread(event.Response.Result, settings, "", startThread)
+		thread, _, err := decodeBoundThread(event.Response.Result, settings, "", startThread, SupportedVersion)
 		if err != nil || thread == nil {
 			t.Fatalf("late response lost state: %v", err)
 		}

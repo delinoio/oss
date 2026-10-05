@@ -226,7 +226,7 @@ func (i AuxiliaryTitleInput) Validate() error {
 			return Fail(InvalidArgument, "Invalid automatic title assignment identity.", "Preserve the original completed execution and its immutable selection.")
 		}
 	}
-	if i.Version != 1 || i.NameGeneration == 0 || (i.ProjectID != "" && i.ProjectID.Validate() != nil) || i.Harness != Codex || i.NativeVersion != CodexProtocolVersion || i.ProviderProtocol != OpenAIResponses || Text(i.Executable, "native executable", 4096, true) != nil || Text(i.NativeModel, "native model", 256, true) != nil || Text(i.Effort, "reasoning effort", 64, false) != nil || Text(i.ServiceTier, "service tier", 64, false) != nil || Text(i.Prompt, "first session input", MaxPromptBytes, true) != nil {
+	if i.Version != 1 || i.NameGeneration == 0 || (i.ProjectID != "" && i.ProjectID.Validate() != nil) || i.Harness != Codex || !CodexVersionAllowed(i.NativeVersion) || i.ProviderProtocol != OpenAIResponses || Text(i.Executable, "native executable", 4096, true) != nil || Text(i.NativeModel, "native model", 256, true) != nil || Text(i.Effort, "reasoning effort", 64, false) != nil || Text(i.ServiceTier, "service tier", 64, false) != nil || Text(i.Prompt, "first session input", MaxPromptBytes, true) != nil {
 		return Fail(Unsupported, "This automatic title assignment has no verified native profile.", "Use the pinned Codex Responses title profile without changing its original account or model.")
 	}
 	return nil

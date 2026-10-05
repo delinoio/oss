@@ -458,7 +458,7 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 		switch job.Type {
 		case domain.ExecuteSessionJob:
 			var input domain.ExecutionJobInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Subscription || input.Configuration.Harness != domain.Codex || input.Installation.Version != domain.CodexProtocolVersion || input.ExecutionID != value.ExecutionID {
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Subscription || input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || input.ExecutionID != value.ExecutionID {
 				return nil, executionDenied()
 			}
 		case domain.CompactSessionJob:
@@ -468,7 +468,7 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 			}
 		case domain.GenerateSessionTitleJob:
 			var input domain.AuxiliaryTitleInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Harness != domain.Codex || input.NativeVersion != domain.CodexProtocolVersion || input.OriginalExecutionID != value.ExecutionID {
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Harness != domain.Codex || !domain.CodexVersionAllowed(input.NativeVersion) || input.OriginalExecutionID != value.ExecutionID {
 				return nil, executionDenied()
 			}
 		default:

@@ -27,6 +27,59 @@ const OUTPUT_LIMIT: u64 = 128 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
 
+// A GUI launch does not run the user's shell. Keep OS utilities first, then
+// bounded absolute lookup context and the standard macOS Homebrew locations.
+// This supplies executable lookup only; no other inherited variables survive.
+fn sidecar_lookup_path(inherited: Option<&std::ffi::OsStr>) -> OsString {
+    #[cfg(unix)]
+    let mut paths: Vec<PathBuf> = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    #[cfg(windows)]
+    let mut paths = {
+        let root = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        vec![
+            root.join("System32"),
+            root.clone(),
+            root.join("System32/WindowsPowerShell/v1.0"),
+        ]
+    };
+    if let Some(value) = inherited.filter(|value| value.as_encoded_bytes().len() <= 32768) {
+        for path in std::env::split_paths(value)
+            .take(64)
+            .filter(|path| path.is_absolute())
+        {
+            #[cfg(windows)]
+            let duplicate = paths.iter().any(|prior| {
+                prior
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(&path.to_string_lossy())
+            });
+            #[cfg(unix)]
+            let duplicate = paths.contains(&path);
+            if !duplicate {
+                paths.push(path);
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    for path in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        let path = PathBuf::from(path);
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    if !paths.contains(&PathBuf::from("/usr/local/bin")) {
+        paths.push(PathBuf::from("/usr/local/bin"));
+    }
+    std::env::join_paths(paths).unwrap_or_default()
+}
+
 pub mod browser;
 mod connections;
 pub use connections::{
@@ -483,8 +536,10 @@ impl Connector {
                 command.env(name, value);
             }
         }
-        #[cfg(unix)]
-        command.env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+        command.env(
+            "PATH",
+            sidecar_lookup_path(std::env::var_os("PATH").as_deref()),
+        );
         // Only the closed OS opener needs desktop-session display context.
         // No renderer-controlled environment or provider credentials are used.
         if arguments.first().is_some_and(|v| v == "presentation") {

@@ -51,9 +51,9 @@ func (t threadWire) summary() Thread {
 	}
 	return Thread{ID: t.ID, SessionID: t.SessionID, Status: t.Status, History: history, DirectInput: t.CanAcceptDirectInput}
 }
-func decodeThread(raw json.RawMessage) (threadWire, error) {
+func decodeThread(raw json.RawMessage, version string) (threadWire, error) {
 	var thread threadWire
-	if domain.Decode(raw, &thread) != nil || thread.ID.Validate() != nil || thread.SessionID.Validate() != nil || thread.CLIVersion != SupportedVersion || thread.CreatedAt == nil || thread.UpdatedAt == nil || *thread.CreatedAt < 0 || *thread.UpdatedAt < *thread.CreatedAt || thread.Ephemeral == nil || *thread.Ephemeral || thread.Preview == nil || len(thread.ProjectID) == 0 || len(thread.Source) == 0 || thread.Turns == nil || len(thread.Turns) != 0 || (thread.HistoryMode != "" && thread.HistoryMode != LegacyHistory && thread.HistoryMode != PaginatedHistory) {
+	if domain.Decode(raw, &thread) != nil || thread.ID.Validate() != nil || thread.SessionID.Validate() != nil || thread.CLIVersion != version || thread.CreatedAt == nil || thread.UpdatedAt == nil || *thread.CreatedAt < 0 || *thread.UpdatedAt < *thread.CreatedAt || thread.Ephemeral == nil || *thread.Ephemeral || thread.Preview == nil || len(thread.ProjectID) == 0 || len(thread.Source) == 0 || thread.Turns == nil || len(thread.Turns) != 0 || (thread.HistoryMode != "" && thread.HistoryMode != LegacyHistory && thread.HistoryMode != PaginatedHistory) {
 		return threadWire{}, incompatible()
 	}
 	for _, id := range []*domain.ID{thread.ParentThreadID, thread.ForkedFromID} {
@@ -92,12 +92,12 @@ type boundThreadWire struct {
 	InitialTurnsPage        json.RawMessage `json:"initialTurnsPage,omitempty"`
 }
 
-func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID domain.ID, method threadMethod) (*Thread, *EffectiveSettings, error) {
+func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID domain.ID, method threadMethod, version string) (*Thread, *EffectiveSettings, error) {
 	var response boundThreadWire
 	if domain.Decode(raw, &response) != nil {
 		return nil, nil, incompatible()
 	}
-	wire, err := decodeThread(response.Thread)
+	wire, err := decodeThread(response.Thread, version)
 	if err != nil {
 		return nil, nil, err
 	}

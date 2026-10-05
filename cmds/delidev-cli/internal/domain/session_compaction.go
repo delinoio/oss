@@ -51,7 +51,7 @@ type SessionCompactionInput struct {
 
 func (i SessionCompactionInput) Validate() error {
 	a, done := i.Assignment, i.Completion
-	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && a.Installation.Version == ClaudeProtocolVersion || i.Version == 2 && a.Configuration.Harness == Codex && a.Installation.Version == CodexProtocolVersion || i.Version == 3 && a.Configuration.Harness == OpenCode && a.Installation.Version == OpenCodeProtocolVersion
+	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && a.Installation.Version == ClaudeProtocolVersion || i.Version == 2 && a.Configuration.Harness == Codex && CodexVersionAllowed(a.Installation.Version) || i.Version == 3 && a.Configuration.Harness == OpenCode && a.Installation.Version == OpenCodeProtocolVersion
 	if !profile || UniqueIDs([]ID{i.ActionID, i.SourceJobID, a.ExecutionID, a.InputID, a.SessionID}) != nil || a.Validate() != nil || done.ValidateForHarness(a.Configuration.Harness) != nil || done.Version != 2 || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || done.Outcome != ExecutionSucceeded {
 		return CompactionUncertain()
 	}

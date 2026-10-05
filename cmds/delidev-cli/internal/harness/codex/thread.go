@@ -397,7 +397,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 		return result, problem
 	}
-	thread, effective, err := decodeBoundThread(response.Result, settings, threadID, method)
+	thread, effective, err := decodeBoundThread(response.Result, settings, threadID, method, c.version)
 	result.Thread, result.Effective = thread, effective
 	if threadID != "" {
 		// A mismatched native response cannot replace the resumed identity's
@@ -466,7 +466,7 @@ func (c *Client) readThreadLocked(ctx context.Context, requestID, threadID domai
 	if domain.Decode(response.Result, &result) != nil {
 		return threadWire{}, incompatible()
 	}
-	wire, err := decodeThread(result.Thread)
+	wire, err := decodeThread(result.Thread, c.version)
 	if err != nil || wire.ID != threadID {
 		return threadWire{}, incompatible()
 	}

@@ -120,7 +120,7 @@ func (s *Service) DiscoverNativeModels(ctx context.Context, req *connect.Request
 		if account.Connection == nil {
 			return nil, domain.Fail(domain.Conflict, "The selected account is disconnected.", "Select a connected account before observation.")
 		}
-		scope := domain.NativeModelScope{Version: 1, MachineID: record.ID, MachineRevision: input.Revision, InstallationGeneration: machine.DiscoveryRevision, NativeVersion: domain.CodexProtocolVersion, AccountID: input.Account, AccountRevision: input.AccountRevision, ConnectionID: account.Connection.ID, ProviderID: account.ProviderID, Actor: actor, IncludeHidden: input.Hidden}
+		scope := domain.NativeModelScope{Version: 1, MachineID: record.ID, MachineRevision: input.Revision, InstallationGeneration: machine.DiscoveryRevision, AccountID: input.Account, AccountRevision: input.AccountRevision, ConnectionID: account.Connection.ID, ProviderID: account.ProviderID, Actor: actor, IncludeHidden: input.Hidden}
 		for _, installation := range machine.Installations {
 			if installation.Harness == domain.Codex {
 				scope.Executable = installation.ResolvedPath

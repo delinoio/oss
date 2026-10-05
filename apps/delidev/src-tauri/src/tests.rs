@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn sidecar_lookup_preserves_absolute_paths_without_relative_fallback() {
+    let temporary = tempfile::tempdir().unwrap();
+    let selected = temporary.path().join("native-bin");
+    let input = std::env::join_paths([
+        PathBuf::from("relative"),
+        selected.clone(),
+        PathBuf::new(),
+        selected.clone(),
+    ])
+    .unwrap();
+    let result = sidecar_lookup_path(Some(&input));
+    let paths: Vec<_> = std::env::split_paths(&result).collect();
+    assert!(paths.iter().all(|path| path.is_absolute()));
+    assert_eq!(paths.iter().filter(|path| *path == &selected).count(), 1);
+    #[cfg(target_os = "macos")]
+    for required in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        assert!(paths.contains(&PathBuf::from(required)));
+    }
+    let oversized = OsString::from("x".repeat(32769));
+    assert_eq!(
+        sidecar_lookup_path(Some(&oversized)),
+        sidecar_lookup_path(None)
+    );
+}
+
+#[test]
 #[cfg(unix)]
 fn github_presentation_uses_closed_sidecar_and_checks_acknowledgment() {
     use std::os::unix::fs::PermissionsExt;

@@ -35,7 +35,7 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 			if i.Questions != nil {
 				return publicationUncertain()
 			}
-			approval, err := codexApprovalRequest(i.Approval)
+			approval, err := codexApprovalRequest(i.Approval, c.publisher.input.Installation.Version)
 			if err != nil {
 				return err
 			}

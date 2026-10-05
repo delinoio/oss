@@ -177,7 +177,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIProtocol) []apiproxy.Operation {
 	switch input.Configuration.Harness {
 	case domain.Codex:
-		if input.Installation.Version == domain.CodexProtocolVersion && protocol == domain.OpenAIResponses {
+		if domain.CodexVersionAllowed(input.Installation.Version) && protocol == domain.OpenAIResponses {
 			return []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
 		}
 	case domain.ClaudeCode:
@@ -340,7 +340,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				if err != nil || job.Type != domain.CompactSessionJob || job.InstanceID != grant.InstanceID || job.AssignedDeviceID != grant.DeviceID || domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.ActionID != scope.ExecutionID || input.Completion.NativeTurnID != scope.CompactionSourceTurn {
 					return nil, executionDenied()
 				}
-				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: domain.CodexProtocolVersion, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
+				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: input.Assignment.Installation.Version, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
 				id, replayed, err := tx.PutResponseUsage(request, record)
 				return struct {
 					ID       domain.ID
@@ -653,13 +653,13 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 				var supported bool
 				if job.Type == domain.ExecuteSessionJob {
 					var input domain.ExecutionJobInput
-					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && input.Installation.Version == domain.CodexProtocolVersion
+					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && domain.CodexVersionAllowed(input.Installation.Version)
 				} else if job.Type == domain.CompactSessionJob {
 					var input domain.SessionCompactionInput
 					supported = domain.DecodeCompactionInput(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex
 				} else if job.Type == domain.GenerateSessionTitleJob {
 					var input domain.AuxiliaryTitleInput
-					supported = domain.Decode(job.Input, &input) == nil && input.Harness == domain.Codex && input.NativeVersion == domain.CodexProtocolVersion
+					supported = domain.Decode(job.Input, &input) == nil && input.Harness == domain.Codex && domain.CodexVersionAllowed(input.NativeVersion)
 				}
 				if !supported {
 					return nil, domain.Fail(domain.Unsupported, "The selected Worker proxy has no native adapter for this execution profile.", "Use the pinned Codex API profile or explicitly select Direct; native traffic never silently falls back.")

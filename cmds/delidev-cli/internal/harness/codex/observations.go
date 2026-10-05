@@ -97,7 +97,7 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 		if identity.ID != c.thread {
 			return privateNative(native), nil
 		}
-		thread, err := decodeThread(params.Thread)
+		thread, err := decodeThread(params.Thread, c.version)
 		if err != nil || thread.SessionID != c.execution.thread.SessionID || thread.ModelProvider != c.execution.settings.Provider || !nativePathEqual(thread.Cwd, c.execution.settings.Cwd) || thread.summary().History != c.execution.thread.History || thread.CanAcceptDirectInput == nil || !*thread.CanAcceptDirectInput {
 			return Event{}, incompatible()
 		}

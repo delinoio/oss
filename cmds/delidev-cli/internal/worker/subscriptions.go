@@ -274,7 +274,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 		clear(latest)
 	}()
 	var installation domain.Installation
-	if domain.Decode(lease.response.InstallationJson, &installation) != nil || installation.Harness != domain.Codex || installation.Version != codex.SupportedVersion {
+	if domain.Decode(lease.response.InstallationJson, &installation) != nil || installation.Harness != domain.Codex || !domain.CodexVersionAllowed(installation.Version) {
 		return subscription.Invalid()
 	}
 	executable, err := filepath.EvalSymlinks(installation.ResolvedPath)
@@ -543,7 +543,7 @@ func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 
 // Capability probing is a read-only empty-home handshake. It neither starts a
 // login nor reads host credentials and does not establish real-account support.
-func verifyManagedSubscriptionProfile(ctx context.Context, config Config, executable string) (bool, error) {
+func verifyManagedSubscriptionProfile(ctx context.Context, config Config, executable, version string) (bool, error) {
 	root := filepath.Join(config.Root, "managed-auth")
 	if err := security.PrivateDir(root); err != nil {
 		return false, domain.SafeError(err)
@@ -560,7 +560,7 @@ func verifyManagedSubscriptionProfile(ctx context.Context, config Config, execut
 	if err != nil {
 		return false, subscription.Invalid()
 	}
-	client, err := codex.Open(ctx, codex.Config{Version: codex.SupportedVersion, Mode: codex.SubscriptionProtocol, ManagedAuthentication: true, Home: filepath.Join(home, "codex"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: executable, Cwd: home, Env: env, Logger: config.Logger}})
+	client, err := codex.Open(ctx, codex.Config{Version: version, Mode: codex.SubscriptionProtocol, ManagedAuthentication: true, Home: filepath.Join(home, "codex"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: executable, Cwd: home, Env: env, Logger: config.Logger}})
 	if err != nil {
 		if domain.SafeError(err).Code != domain.RecoveryRequired {
 			_ = cleanupManagedHome(home, info)
