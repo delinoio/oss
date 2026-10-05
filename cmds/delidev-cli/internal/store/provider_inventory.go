@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 )
 
 type ProviderInventorySearch struct {
@@ -90,7 +91,7 @@ func (s *Store) ListAccountsByProviderPage(ctx context.Context, filter Filter, p
 	return result, more, err
 }
 
-// ProviderInventoryPage merges the nine bounded preset choices with a paged
+// ProviderInventoryPage merges the complete bounded preset choices with a paged
 // custom-provider query in one SQLite snapshot. Account totals are counted by
 // provider identity, never inferred from a client-visible account page.
 func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.ProviderPreset, f ProviderInventorySearch) ([]ProviderInventoryItem, bool, uint64, error) {
@@ -111,15 +112,29 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 			return domain.Fail(domain.CursorExpired, "Provider or account state changed during pagination.", "Restart provider inventory to read current account totals.")
 		}
 
-		managed, err := tx.modelRecords("SELECT " + recordColumns + " FROM entities WHERE kind='provider' AND json_type(body,'$.preset_id')='text' AND json_extract(body,'$.preset_id')<>'' ORDER BY id LIMIT 10")
+		canonicalPresets := providers.Presets()
+		canonical := make(map[domain.ProviderPresetID]bool, len(canonicalPresets))
+		for _, preset := range canonicalPresets {
+			if !preset.ID.Valid() || canonical[preset.ID] {
+				return domain.Fail(domain.RecoveryRequired, "Canonical provider inventory is invalid.", "Use a matching server version.")
+			}
+			canonical[preset.ID] = true
+		}
+		managed, err := tx.modelRecords("SELECT "+recordColumns+" FROM entities WHERE kind='provider' AND json_type(body,'$.preset_id')='text' AND json_extract(body,'$.preset_id')<>'' ORDER BY id LIMIT ?", len(canonicalPresets)+1)
 		if err != nil {
 			return err
+		}
+		if len(managed) > len(canonicalPresets) {
+			return domain.Fail(domain.RecoveryRequired, "Saved provider inventory exceeds its canonical bound.", "Preserve the server data and reconcile managed identities.")
 		}
 		managedByPreset := make(map[domain.ProviderPresetID]Record, len(managed))
 		for _, record := range managed {
 			provider, err := Decode[domain.Provider](record)
-			if err != nil || provider.PresetID == nil || !provider.PresetID.Valid() {
+			if err != nil || provider.PresetID == nil || !canonical[*provider.PresetID] {
 				return domain.Fail(domain.RecoveryRequired, "Saved provider preset identity is invalid.", "Preserve the server data and reconcile its provider inventory.")
+			}
+			if _, duplicate := managedByPreset[*provider.PresetID]; duplicate {
+				return domain.Fail(domain.RecoveryRequired, "Saved provider preset identity is duplicated.", "Preserve both records and reconcile their original identity.")
 			}
 			managedByPreset[*provider.PresetID] = record
 		}

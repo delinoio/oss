@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- Issue #1148 activates only its recorded `ProviderPresetId` 10–35 additions after real migration 30 and complete fixed inspection profiles. Preserve 0–9 and generated Go/TypeScript parity, provider inventory gates and service-native subscription separation; preset visibility grants no harness/protocol/account authority.
+
 - Issue #1146 reserves `ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 = 5`, `ProviderInventoryEntry.connection_method = 9` and the exclusively owned `ProviderConnectionMethod` / `AccountOAuthState` enums in `allocations.json`. Wholly new messages and enums reserve declaration ownership with `newDeclaration: true`; preserve existing member provenance and each enum's zero UNSPECIFIED value; do not add planned declarations to the active baseline. Establish reservations on main before dependent implementation and keep them out of active schemas/advertisements until complete support exists. Follow `docs/cmds-delidev-account-oauth-contract.md`; OAuth remains independent of the four existing inventory gates and cannot be inferred from names or copied URLs.
 
 - Issue #1235 reserves `SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` under its owning issue identity. Establish this allocation and storage migration 28 on main before dependent implementation. The reservation does not change schemas, generated clients or advertised support; preserve the independent capability boundary from API provider inventory.
@@ -175,3 +177,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Codex compaction activates only its reconciled common 15/5, independent 24/13 and SessionContext 3/4 reservations. OpenCode independently activates 25/14/5/6 through its original version-3 result and complete durable/manual ownership profile. GetUsageSummaryResponse field 14 exposes missing manual-action response coverage separately; preserve generated Go/TypeScript parity and allocation provenance. Follow `docs/cmds-delidev-compaction-contract.md`.
 
 - Issue #1210 activates independent System 26 and Worker 15 only for the pinned Unix plain-text General Chat OpenCode Fork profile. Preserve full original native fork/relocation/history/cleanup proof, closed mapped child identities and explicit inherited canonical provenance without input/accounting authority. Codex Fork support grants no OpenCode authority; native preparation cannot publish effective model/agent selection.
+
+- OAuth AccountService schemas retain capability 5, entry field 9 and the original closed enum allocations. Completion code is write-only bytes; responses never contain keys, verifiers or URLs outside live Start. Reservations do not grant product authority; regenerate bindings from reconciled sources and preserve owner/client-only execution under the OAuth contract.
+
+- Each OAuth RPC has its own standard-named response schema. The ten reserved `ACCOUNT_OAUTH_STATE_*` names retain their original allocation spelling with value-local Buf acronym-prefix comments; do not broaden lint exceptions or rename their contract to accommodate acronym splitting.

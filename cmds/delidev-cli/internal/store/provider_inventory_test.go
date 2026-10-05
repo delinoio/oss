@@ -15,18 +15,9 @@ func TestProviderInventoryCountsAvailabilityOrderAndCursorEpoch(t *testing.T) {
 	ctx := context.Background()
 	var presetProvider, legacyProvider, disabledProvider domain.ID
 	_, err := s.Mutate(ctx, domain.NewID(), "provider-inventory.fixture", nil, func(tx *Tx) (any, error) {
-		presets := providers.Presets()
-		ordered := make([]domain.ProviderPreset, 0, len(presets))
-		for _, id := range []domain.ProviderPresetID{domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetOpenRouter, domain.PresetVercel, domain.PresetXAI, domain.PresetDeepSeek, domain.PresetOllama, domain.PresetLMStudio, domain.PresetVLLM} {
-			for _, preset := range presets {
-				if preset.ID == id {
-					ordered = append(ordered, preset)
-					break
-				}
-			}
-		}
+		ordered := providers.Presets()
 		presetProvider = domain.NewID()
-		managed := ordered[6].Provider
+		managed := ordered[len(ordered)-3].Provider
 		managed.SetEnabled(false)
 		if _, err := tx.Put(domain.ProviderKind, presetProvider, 0, "", "", managed); err != nil {
 			return nil, err
@@ -61,16 +52,7 @@ func TestProviderInventoryCountsAvailabilityOrderAndCursorEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allPresets := providers.Presets()
-	ordered := make([]domain.ProviderPreset, 0, len(allPresets))
-	for _, id := range []domain.ProviderPresetID{domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetOpenRouter, domain.PresetVercel, domain.PresetXAI, domain.PresetDeepSeek, domain.PresetOllama, domain.PresetLMStudio, domain.PresetVLLM} {
-		for _, preset := range allPresets {
-			if preset.ID == id {
-				ordered = append(ordered, preset)
-				break
-			}
-		}
-	}
+	ordered := providers.Presets()
 
 	search := ProviderInventorySearch{Limit: 4}
 	var names []string
@@ -95,7 +77,7 @@ func TestProviderInventoryCountsAvailabilityOrderAndCursorEpoch(t *testing.T) {
 		}
 		search.After, search.Epoch = page[len(page)-1].CursorKey(), epoch
 	}
-	want := []string{"OpenAI", "Anthropic", "OpenRouter", "Vercel AI Gateway", "xAI", "DeepSeek", "Ollama", "LM Studio", "vLLM", "Alpha Disabled", "Zulu Legacy"}
+	want := []string{"OpenAI", "Anthropic", "OpenRouter", "Vercel AI Gateway", "xAI", "DeepSeek", "Google Gemini", "Groq", "Mistral", "Together AI", "Fireworks AI", "Perplexity Router", "Cohere", "Cerebras", "Nebius Token Factory", "Novita", "DeepInfra", "Hugging Face Inference Providers", "Venice", "Scaleway", "Baseten", "Moonshot / Kimi \u2014 Global", "Moonshot / Kimi \u2014 China", "MiniMax \u2014 Global", "MiniMax \u2014 China", "SiliconFlow \u2014 Global", "SiliconFlow \u2014 China", "Baidu Qianfan", "Tencent TokenHub \u2014 China", "Tencent TokenHub \u2014 International", "Alibaba Model Studio \u2014 International", "Alibaba Model Studio \u2014 Hong Kong", "Ollama", "LM Studio", "vLLM", "Alpha Disabled", "Zulu Legacy"}
 	if strings.Join(names, "|") != strings.Join(want, "|") {
 		t.Fatalf("provider order/pagination: %v", names)
 	}
@@ -122,6 +104,50 @@ func TestProviderInventoryCountsAvailabilityOrderAndCursorEpoch(t *testing.T) {
 	}
 	if _, _, _, err := s.ProviderInventoryPage(ctx, ordered, active); domain.SafeError(err).Code != domain.CursorExpired {
 		t.Fatalf("provider change did not expire the inventory cursor: %v", err)
+	}
+}
+
+func TestProviderInventoryRejectsCorruptManagedIdentityAtFullRegistryBound(t *testing.T) {
+	for _, mode := range []string{"unknown", "duplicate", "overflow", "presentation-subset"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _ := openTest(t)
+			ctx := context.Background()
+			switch mode {
+			case "unknown":
+				if _, err := s.db.Exec("UPDATE entities SET body=CAST(json_set(body,'$.preset_id','unknown-fixture') AS BLOB) WHERE kind='provider' AND json_extract(body,'$.preset_id')='groq'"); err != nil {
+					t.Fatal(err)
+				}
+			case "duplicate":
+				if _, err := s.db.Exec("DROP INDEX provider_preset_unique; UPDATE entities SET body=CAST(json_set(body,'$.preset_id','gemini') AS BLOB) WHERE kind='provider' AND json_extract(body,'$.preset_id')='groq'"); err != nil {
+					t.Fatal(err)
+				}
+			case "overflow":
+				if _, err := s.db.Exec("DROP INDEX provider_preset_unique"); err != nil {
+					t.Fatal(err)
+				}
+				_, err := s.Mutate(ctx, domain.NewID(), "fixture.inventory-overflow", nil, func(tx *Tx) (any, error) {
+					for i := 0; i < 4; i++ {
+						if _, err := tx.Put(domain.ProviderKind, domain.NewID(), 0, "", "", providers.Presets()[6].Provider); err != nil {
+							return nil, err
+						}
+					}
+					return nil, nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Old clients may supply no/full-subset presentation without lowering
+			// the independent saved-identity scan bound to nine or zero.
+			page, more, _, err := s.ProviderInventoryPage(ctx, nil, ProviderInventorySearch{Limit: 50})
+			if mode == "presentation-subset" {
+				if err != nil || more || len(page) != 0 {
+					t.Fatal("valid full registry rejected by presentation subset", err)
+				}
+			} else if domain.SafeError(err).Code != domain.RecoveryRequired || len(page) != 0 {
+				t.Fatal("corrupt inventory returned partial state", err)
+			}
+		})
 	}
 }
 

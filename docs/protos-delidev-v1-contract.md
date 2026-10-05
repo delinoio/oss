@@ -11,18 +11,22 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
-Issue #1146's [planned OpenRouter OAuth contract](cmds-delidev-account-oauth-contract.md)
+Issue #1146's [OpenRouter OAuth contract](cmds-delidev-account-oauth-contract.md)
 reserves inventory capability `OPENROUTER_OAUTH_PKCE_V1 = 5` independently of the
 four existing account-flow gates, and `ProviderInventoryEntry.connection_method = 9`.
-The new closed `ProviderConnectionMethod` enum reserves UNSPECIFIED 0,
-API_KEY 1, OAUTH_PKCE 2 and KEYLESS 3. `AccountOAuthState` reserves UNSPECIFIED 0,
+The new closed `ProviderConnectionMethod` enum declares UNSPECIFIED 0,
+API_KEY 1, OAUTH_PKCE 2 and KEYLESS 3. `AccountOAuthState` declares UNSPECIFIED 0,
 AWAITING_AUTHORIZATION 1, EXCHANGING 2, SAVING 3, CONNECTED 4, CANCELED 5, EXPIRED 6,
 FAILED 7, INTERRUPTED 8 and RECOVERY_REQUIRED 9. Each new-enum member uses explicit
 declaration provenance in the allocation ledger without entering the active
 baseline. Establish these reservations and migration 29 on main before dependent
-implementation. The prerequisite adds no active schema, RPC, generated binding
-or capability advertisement; complete owner/client RPC and CLI support remains
-required before activation. Older servers satisfying the four existing gates
+implementation, except the owner-approved single integrated PR. The reconciled
+AccountService schema defines owner/client Start/Complete/Cancel/Status, each
+with its own standard-named response, and generates both languages from their
+source. Value-local Buf acronym-prefix comments preserve the reserved OAuth
+enum spelling; they grant no broader lint exception. Reservations alone grant no exchange
+or capability authority. Complete product support remains required before
+advertisement. Older servers satisfying the four existing gates
 retain manual connection without an OAuth badge.
 
 The [planned shared compaction contract](cmds-delidev-compaction-contract.md)

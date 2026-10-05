@@ -16,7 +16,7 @@ it("starts with hosted presets on without accounts or models and retains identit
   const providers = createClient(ProviderService, transport);
   const initial = await providers.listProviderInventory({ pageSize: 50 });
   expect(initial.capabilities).toEqual(expect.arrayContaining([ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER]));
-  expect(initial.entries.filter((entry) => entry.presetId !== ProviderPresetId.UNSPECIFIED)).toHaveLength(9);
+  expect(initial.entries.filter((entry) => entry.presetId !== ProviderPresetId.UNSPECIFIED)).toHaveLength(35);
   expect(initial.entries.filter((entry) => [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId)).every((entry) => !entry.enabled && !entry.providerId && entry.accountCountsAvailable)).toBe(true);
   expect(initial.entries.filter((entry) => ![ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId)).every((entry) => entry.enabled && !!entry.providerId && entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.connectedAccounts === 0n)).toBe(true);
 

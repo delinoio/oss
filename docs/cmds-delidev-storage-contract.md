@@ -39,31 +39,23 @@ version-1 imports remain supported and legacy subscription graphs are rejected
 atomically with recreate guidance. Implementation must compose the independent
 managed-account ownership and cleanup boundary from issue #1095.
 
-## Planned account OAuth attempts (issue #1146)
+## Account OAuth attempts (issue #1146)
 
-Migration 29 is reserved for the private `account_oauth_attempts` table under
-[issue #1146](https://github.com/delinoio/oss/issues/1146), following real
-migrations 26–28. Establish the reservation on main before dependent
-implementation; the executable sequence ends at 28 until OAuth is implemented. Do not create empty
-predecessors, reuse an allocated version or activate this table early.
+Real migration 29 follows accounting 26, request diagnostics 27 and subscription
+identity 28, whose reservations reached main before these dependent feature implementations. It adds the private
+`account_oauth_attempts` table and `account_oauth_layout=pkce-once-v1` marker;
+foreign layouts fail the backup-first transactional upgrade. Attempt body/index
+identity and exact revisions agree, with an 8 KiB metadata ceiling and no account
+foreign key or cascading cleanup deletion. Codes, verifiers, keys and browser
+URLs never enter the table, receipts, events, resources or portable bundles.
 
-The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the
-complete lifecycle. Attempt metadata binds actor/server/provider and revision,
-original start/completion IDs, reserved account/create/connect IDs, process
-generation, state/revision/times, keyed comparison commitments, exact protected
-references and cleanup status. Do not require an existing account foreign key,
-cascade deletion of recovery evidence, or include attempts in public resources,
-snapshots/events or portable export. SQLite, receipts and backup images contain
-no raw verifier, code, key or callback/authorization URL.
+Current unresolved attempts/cleanup block managed restore. A candidate copies
+only the current private attempt table; old images and receipts cannot acquire
+new exchange authority. A fresh server lifetime interrupts awaiting attempts
+and fences claimed exchanges for explicit original local recovery. The
+[OAuth contract](cmds-delidev-account-oauth-contract.md) owns the original dispatch,
+protected reference and cancellation/publication gates.
 
-Fresh/upgrade paths must share the verified backup-first transaction and preserve
-existing account/provider/settings/claim state and explicit default deletions.
-A durable claim commits before HTTP outside locks; no restart, copied image,
-timeout, cancellation or retry can reacquire exchange authority. Original local
-recovery may finish only an exactly sealed credential or accepted result without
-HTTP. Keep account-less staged references, partial disconnected accounts and
-unresolved cleanup; unknown provider response never proves failure or revocation.
-This reservation implements no table, migration, exchange or restore feature.
 
 ## Managed backup observation
 
@@ -926,3 +918,7 @@ Removal journals use newline-framed records. Validate the complete prefix before
 Storage results retain at least the surviving snapshot size in retained bytes and bind successful cleanup to its original canonical preview digest, including recovered cleanup. CLI snapshot inventory emits revision as a decimal JSON string.
 
 Atomic journal compaction represents each settled removal with one inventory-bound original-path proof; it does not repeat generated private paths. The original immutable inventory bounds all such proofs, including deep-directory generated-name expansion. Recovered successful cleanup emits and validates the original snapshot source/preview digest before server settlement; authenticated native-result fixtures also verify the final accepted job state.
+
+## Added hosted-provider defaults (migration 30)
+
+Real 30 follows implemented OAuth 29 and actual accounting/diagnostics/retirement 26–28. It stores the private `provider_presets_layout=hosted-additions-26-v1` marker and seeds only the 26 explicitly allocated hosted preset identities. Historical defaults migrations retain their original six-ID set. Existing managed UUIDs, Off state, custom providers/accounts/models and explicit deletion of original presets remain authoritative. No Account, credential or model is created. Upgrade synchronizes the original backup first and publishes all predecessor/layout/seed changes atomically; failure leaves the original version and image intact. A current-store reopen validates the exact layout marker and never seeds again.

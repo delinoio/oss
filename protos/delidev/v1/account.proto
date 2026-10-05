@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/worker.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
@@ -11,6 +12,10 @@ service AccountService {
   rpc DisconnectAccount(DisconnectAccountRequest) returns (DisconnectAccountResponse);
   rpc GetAccountStatus(GetAccountStatusRequest) returns (GetAccountStatusResponse);
   rpc ValidateAccount(ValidateAccountRequest) returns (ValidateAccountResponse);
+  rpc StartAccountOAuth(StartAccountOAuthRequest) returns (StartAccountOAuthResponse);
+  rpc CompleteAccountOAuth(CompleteAccountOAuthRequest) returns (CompleteAccountOAuthResponse);
+  rpc CancelAccountOAuth(CancelAccountOAuthRequest) returns (CancelAccountOAuthResponse);
+  rpc GetAccountOAuthStatus(GetAccountOAuthStatusRequest) returns (GetAccountOAuthStatusResponse);
 }
 
 message ConnectAccountRequest {
@@ -59,4 +64,79 @@ message ValidateAccountResponse {
   // Accepted, sanitized non-inference observation. Does not expose model payloads
   // or credentials and is not inference, quota recovery or harness capability.
   bytes validation_json = 4;
+}
+
+// Dedicated projection only: no verifier, key, code, callback or actor metadata.
+message AccountOAuthAttempt {
+  string id = 1;
+  uint64 revision = 2;
+  AccountOAuthState state = 3;
+  string expires_at = 4;
+  string provider_id = 5;
+  ErrorDetail problem = 6;
+}
+message StartAccountOAuthRequest {
+  Mutation provider = 1;
+  // Transient native-owned callback; empty selects documented headless mode.
+  string callback_url = 2;
+}
+message StartAccountOAuthResponse {
+  AccountOAuthAttempt attempt = 1;
+  // Present only while the original process owns this live start.
+  string authorization_url = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+message CompleteAccountOAuthRequest {
+  Mutation mutation = 1;
+  // Write-only exact UTF-8 bytes. Empty only for original local-result recovery.
+  bytes authorization_code = 2;
+}
+message CancelAccountOAuthRequest {
+  Mutation mutation = 1;
+}
+message GetAccountOAuthStatusRequest {
+  string attempt_id = 1;
+}
+message CompleteAccountOAuthResponse {
+  AccountOAuthAttempt attempt = 1;
+  Resource account = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+message CancelAccountOAuthResponse {
+  AccountOAuthAttempt attempt = 1;
+  Resource account = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+message GetAccountOAuthStatusResponse {
+  AccountOAuthAttempt attempt = 1;
+  Resource account = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+// Preserve the reserved OAuth spelling. Remove these value-prefix exceptions
+// only when Buf recognizes OAuth as one acronym or compatibility is renegotiated.
+enum AccountOAuthState {
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_UNSPECIFIED = 0;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION = 1;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_EXCHANGING = 2;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_SAVING = 3;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_CONNECTED = 4;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_CANCELED = 5;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_EXPIRED = 6;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_FAILED = 7;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_INTERRUPTED = 8;
+  // buf:lint:ignore ENUM_VALUE_PREFIX
+  ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED = 9;
 }

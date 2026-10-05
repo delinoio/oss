@@ -2,17 +2,19 @@
 // @generated from file delidev/v1/account.proto (package delidev.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Mutation, Resource } from "./common_pb.js";
 import { file_delidev_v1_common } from "./common_pb.js";
+import type { ErrorDetail } from "./worker_pb.js";
+import { file_delidev_v1_worker } from "./worker_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file delidev/v1/account.proto.
  */
 export const file_delidev_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChhkZWxpZGV2L3YxL2FjY291bnQucHJvdG8SCmRlbGlkZXYudjEiYQoVQ29ubmVjdEFjY291bnRSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIPCgdhcGlfa2V5GAIgASgMEg8KB2tleWxlc3MYAyABKAgiZQoWQ29ubmVjdEFjY291bnRSZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIkIKGERpc2Nvbm5lY3RBY2NvdW50UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ihgEKGURpc2Nvbm5lY3RBY2NvdW50UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIcChRjbGVhbnVwX3Byb2JsZW1fanNvbhgEIAEoDCIlChdHZXRBY2NvdW50U3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoCSJBChhHZXRBY2NvdW50U3RhdHVzUmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiQAoWVmFsaWRhdGVBY2NvdW50UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ifwoXVmFsaWRhdGVBY2NvdW50UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIXCg92YWxpZGF0aW9uX2pzb24YBCABKAwyhgMKDkFjY291bnRTZXJ2aWNlElcKDkNvbm5lY3RBY2NvdW50EiEuZGVsaWRldi52MS5Db25uZWN0QWNjb3VudFJlcXVlc3QaIi5kZWxpZGV2LnYxLkNvbm5lY3RBY2NvdW50UmVzcG9uc2USYAoRRGlzY29ubmVjdEFjY291bnQSJC5kZWxpZGV2LnYxLkRpc2Nvbm5lY3RBY2NvdW50UmVxdWVzdBolLmRlbGlkZXYudjEuRGlzY29ubmVjdEFjY291bnRSZXNwb25zZRJdChBHZXRBY2NvdW50U3RhdHVzEiMuZGVsaWRldi52MS5HZXRBY2NvdW50U3RhdHVzUmVxdWVzdBokLmRlbGlkZXYudjEuR2V0QWNjb3VudFN0YXR1c1Jlc3BvbnNlEloKD1ZhbGlkYXRlQWNjb3VudBIiLmRlbGlkZXYudjEuVmFsaWRhdGVBY2NvdW50UmVxdWVzdBojLmRlbGlkZXYudjEuVmFsaWRhdGVBY2NvdW50UmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
+  fileDesc("ChhkZWxpZGV2L3YxL2FjY291bnQucHJvdG8SCmRlbGlkZXYudjEiYQoVQ29ubmVjdEFjY291bnRSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIPCgdhcGlfa2V5GAIgASgMEg8KB2tleWxlc3MYAyABKAgiZQoWQ29ubmVjdEFjY291bnRSZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIkIKGERpc2Nvbm5lY3RBY2NvdW50UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ihgEKGURpc2Nvbm5lY3RBY2NvdW50UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIcChRjbGVhbnVwX3Byb2JsZW1fanNvbhgEIAEoDCIlChdHZXRBY2NvdW50U3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoCSJBChhHZXRBY2NvdW50U3RhdHVzUmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiQAoWVmFsaWRhdGVBY2NvdW50UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ifwoXVmFsaWRhdGVBY2NvdW50UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIXCg92YWxpZGF0aW9uX2pzb24YBCABKAwitAEKE0FjY291bnRPQXV0aEF0dGVtcHQSCgoCaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQSLAoFc3RhdGUYAyABKA4yHS5kZWxpZGV2LnYxLkFjY291bnRPQXV0aFN0YXRlEhIKCmV4cGlyZXNfYXQYBCABKAkSEwoLcHJvdmlkZXJfaWQYBSABKAkSKAoHcHJvYmxlbRgGIAEoCzIXLmRlbGlkZXYudjEuRXJyb3JEZXRhaWwiWAoYU3RhcnRBY2NvdW50T0F1dGhSZXF1ZXN0EiYKCHByb3ZpZGVyGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIUCgxjYWxsYmFja191cmwYAiABKAkijgEKGVN0YXJ0QWNjb3VudE9BdXRoUmVzcG9uc2USMAoHYXR0ZW1wdBgBIAEoCzIfLmRlbGlkZXYudjEuQWNjb3VudE9BdXRoQXR0ZW1wdBIZChFhdXRob3JpemF0aW9uX3VybBgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgJEhAKCHJlcGxheWVkGAQgASgIImEKG0NvbXBsZXRlQWNjb3VudE9BdXRoUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SGgoSYXV0aG9yaXphdGlvbl9jb2RlGAIgASgMIkMKGUNhbmNlbEFjY291bnRPQXV0aFJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uIjIKHEdldEFjY291bnRPQXV0aFN0YXR1c1JlcXVlc3QSEgoKYXR0ZW1wdF9pZBgBIAEoCSKdAQocQ29tcGxldGVBY2NvdW50T0F1dGhSZXNwb25zZRIwCgdhdHRlbXB0GAEgASgLMh8uZGVsaWRldi52MS5BY2NvdW50T0F1dGhBdHRlbXB0EiUKB2FjY291bnQYAiABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAyABKAkSEAoIcmVwbGF5ZWQYBCABKAgimwEKGkNhbmNlbEFjY291bnRPQXV0aFJlc3BvbnNlEjAKB2F0dGVtcHQYASABKAsyHy5kZWxpZGV2LnYxLkFjY291bnRPQXV0aEF0dGVtcHQSJQoHYWNjb3VudBgCIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgDIAEoCRIQCghyZXBsYXllZBgEIAEoCCKeAQodR2V0QWNjb3VudE9BdXRoU3RhdHVzUmVzcG9uc2USMAoHYXR0ZW1wdBgBIAEoCzIfLmRlbGlkZXYudjEuQWNjb3VudE9BdXRoQXR0ZW1wdBIlCgdhY2NvdW50GAIgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAMgASgJEhAKCHJlcGxheWVkGAQgASgIKoIDChFBY2NvdW50T0F1dGhTdGF0ZRIjCh9BQ0NPVU5UX09BVVRIX1NUQVRFX1VOU1BFQ0lGSUVEEAASLgoqQUNDT1VOVF9PQVVUSF9TVEFURV9BV0FJVElOR19BVVRIT1JJWkFUSU9OEAESIgoeQUNDT1VOVF9PQVVUSF9TVEFURV9FWENIQU5HSU5HEAISHgoaQUNDT1VOVF9PQVVUSF9TVEFURV9TQVZJTkcQAxIhCh1BQ0NPVU5UX09BVVRIX1NUQVRFX0NPTk5FQ1RFRBAEEiAKHEFDQ09VTlRfT0FVVEhfU1RBVEVfQ0FOQ0VMRUQQBRIfChtBQ0NPVU5UX09BVVRIX1NUQVRFX0VYUElSRUQQBhIeChpBQ0NPVU5UX09BVVRIX1NUQVRFX0ZBSUxFRBAHEiMKH0FDQ09VTlRfT0FVVEhfU1RBVEVfSU5URVJSVVBURUQQCBIpCiVBQ0NPVU5UX09BVVRIX1NUQVRFX1JFQ09WRVJZX1JFUVVJUkVEEAkypgYKDkFjY291bnRTZXJ2aWNlElcKDkNvbm5lY3RBY2NvdW50EiEuZGVsaWRldi52MS5Db25uZWN0QWNjb3VudFJlcXVlc3QaIi5kZWxpZGV2LnYxLkNvbm5lY3RBY2NvdW50UmVzcG9uc2USYAoRRGlzY29ubmVjdEFjY291bnQSJC5kZWxpZGV2LnYxLkRpc2Nvbm5lY3RBY2NvdW50UmVxdWVzdBolLmRlbGlkZXYudjEuRGlzY29ubmVjdEFjY291bnRSZXNwb25zZRJdChBHZXRBY2NvdW50U3RhdHVzEiMuZGVsaWRldi52MS5HZXRBY2NvdW50U3RhdHVzUmVxdWVzdBokLmRlbGlkZXYudjEuR2V0QWNjb3VudFN0YXR1c1Jlc3BvbnNlEloKD1ZhbGlkYXRlQWNjb3VudBIiLmRlbGlkZXYudjEuVmFsaWRhdGVBY2NvdW50UmVxdWVzdBojLmRlbGlkZXYudjEuVmFsaWRhdGVBY2NvdW50UmVzcG9uc2USYAoRU3RhcnRBY2NvdW50T0F1dGgSJC5kZWxpZGV2LnYxLlN0YXJ0QWNjb3VudE9BdXRoUmVxdWVzdBolLmRlbGlkZXYudjEuU3RhcnRBY2NvdW50T0F1dGhSZXNwb25zZRJpChRDb21wbGV0ZUFjY291bnRPQXV0aBInLmRlbGlkZXYudjEuQ29tcGxldGVBY2NvdW50T0F1dGhSZXF1ZXN0GiguZGVsaWRldi52MS5Db21wbGV0ZUFjY291bnRPQXV0aFJlc3BvbnNlEmMKEkNhbmNlbEFjY291bnRPQXV0aBIlLmRlbGlkZXYudjEuQ2FuY2VsQWNjb3VudE9BdXRoUmVxdWVzdBomLmRlbGlkZXYudjEuQ2FuY2VsQWNjb3VudE9BdXRoUmVzcG9uc2USbAoVR2V0QWNjb3VudE9BdXRoU3RhdHVzEiguZGVsaWRldi52MS5HZXRBY2NvdW50T0F1dGhTdGF0dXNSZXF1ZXN0GikuZGVsaWRldi52MS5HZXRBY2NvdW50T0F1dGhTdGF0dXNSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common, file_delidev_v1_worker]);
 
 /**
  * @generated from message delidev.v1.ConnectAccountRequest
@@ -211,6 +213,346 @@ export const ValidateAccountResponseSchema: GenMessage<ValidateAccountResponse> 
   messageDesc(file_delidev_v1_account, 7);
 
 /**
+ * Dedicated projection only: no verifier, key, code, callback or actor metadata.
+ *
+ * @generated from message delidev.v1.AccountOAuthAttempt
+ */
+export type AccountOAuthAttempt = Message<"delidev.v1.AccountOAuthAttempt"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: uint64 revision = 2;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: delidev.v1.AccountOAuthState state = 3;
+   */
+  state: AccountOAuthState;
+
+  /**
+   * @generated from field: string expires_at = 4;
+   */
+  expiresAt: string;
+
+  /**
+   * @generated from field: string provider_id = 5;
+   */
+  providerId: string;
+
+  /**
+   * @generated from field: delidev.v1.ErrorDetail problem = 6;
+   */
+  problem?: ErrorDetail | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.AccountOAuthAttempt.
+ * Use `create(AccountOAuthAttemptSchema)` to create a new message.
+ */
+export const AccountOAuthAttemptSchema: GenMessage<AccountOAuthAttempt> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 8);
+
+/**
+ * @generated from message delidev.v1.StartAccountOAuthRequest
+ */
+export type StartAccountOAuthRequest = Message<"delidev.v1.StartAccountOAuthRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation provider = 1;
+   */
+  provider?: Mutation | undefined;
+
+  /**
+   * Transient native-owned callback; empty selects documented headless mode.
+   *
+   * @generated from field: string callback_url = 2;
+   */
+  callbackUrl: string;
+};
+
+/**
+ * Describes the message delidev.v1.StartAccountOAuthRequest.
+ * Use `create(StartAccountOAuthRequestSchema)` to create a new message.
+ */
+export const StartAccountOAuthRequestSchema: GenMessage<StartAccountOAuthRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 9);
+
+/**
+ * @generated from message delidev.v1.StartAccountOAuthResponse
+ */
+export type StartAccountOAuthResponse = Message<"delidev.v1.StartAccountOAuthResponse"> & {
+  /**
+   * @generated from field: delidev.v1.AccountOAuthAttempt attempt = 1;
+   */
+  attempt?: AccountOAuthAttempt | undefined;
+
+  /**
+   * Present only while the original process owns this live start.
+   *
+   * @generated from field: string authorization_url = 2;
+   */
+  authorizationUrl: string;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 4;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.StartAccountOAuthResponse.
+ * Use `create(StartAccountOAuthResponseSchema)` to create a new message.
+ */
+export const StartAccountOAuthResponseSchema: GenMessage<StartAccountOAuthResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 10);
+
+/**
+ * @generated from message delidev.v1.CompleteAccountOAuthRequest
+ */
+export type CompleteAccountOAuthRequest = Message<"delidev.v1.CompleteAccountOAuthRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * Write-only exact UTF-8 bytes. Empty only for original local-result recovery.
+   *
+   * @generated from field: bytes authorization_code = 2;
+   */
+  authorizationCode: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.CompleteAccountOAuthRequest.
+ * Use `create(CompleteAccountOAuthRequestSchema)` to create a new message.
+ */
+export const CompleteAccountOAuthRequestSchema: GenMessage<CompleteAccountOAuthRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 11);
+
+/**
+ * @generated from message delidev.v1.CancelAccountOAuthRequest
+ */
+export type CancelAccountOAuthRequest = Message<"delidev.v1.CancelAccountOAuthRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.CancelAccountOAuthRequest.
+ * Use `create(CancelAccountOAuthRequestSchema)` to create a new message.
+ */
+export const CancelAccountOAuthRequestSchema: GenMessage<CancelAccountOAuthRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 12);
+
+/**
+ * @generated from message delidev.v1.GetAccountOAuthStatusRequest
+ */
+export type GetAccountOAuthStatusRequest = Message<"delidev.v1.GetAccountOAuthStatusRequest"> & {
+  /**
+   * @generated from field: string attempt_id = 1;
+   */
+  attemptId: string;
+};
+
+/**
+ * Describes the message delidev.v1.GetAccountOAuthStatusRequest.
+ * Use `create(GetAccountOAuthStatusRequestSchema)` to create a new message.
+ */
+export const GetAccountOAuthStatusRequestSchema: GenMessage<GetAccountOAuthStatusRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 13);
+
+/**
+ * @generated from message delidev.v1.CompleteAccountOAuthResponse
+ */
+export type CompleteAccountOAuthResponse = Message<"delidev.v1.CompleteAccountOAuthResponse"> & {
+  /**
+   * @generated from field: delidev.v1.AccountOAuthAttempt attempt = 1;
+   */
+  attempt?: AccountOAuthAttempt | undefined;
+
+  /**
+   * @generated from field: delidev.v1.Resource account = 2;
+   */
+  account?: Resource | undefined;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 4;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.CompleteAccountOAuthResponse.
+ * Use `create(CompleteAccountOAuthResponseSchema)` to create a new message.
+ */
+export const CompleteAccountOAuthResponseSchema: GenMessage<CompleteAccountOAuthResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 14);
+
+/**
+ * @generated from message delidev.v1.CancelAccountOAuthResponse
+ */
+export type CancelAccountOAuthResponse = Message<"delidev.v1.CancelAccountOAuthResponse"> & {
+  /**
+   * @generated from field: delidev.v1.AccountOAuthAttempt attempt = 1;
+   */
+  attempt?: AccountOAuthAttempt | undefined;
+
+  /**
+   * @generated from field: delidev.v1.Resource account = 2;
+   */
+  account?: Resource | undefined;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 4;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.CancelAccountOAuthResponse.
+ * Use `create(CancelAccountOAuthResponseSchema)` to create a new message.
+ */
+export const CancelAccountOAuthResponseSchema: GenMessage<CancelAccountOAuthResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 15);
+
+/**
+ * @generated from message delidev.v1.GetAccountOAuthStatusResponse
+ */
+export type GetAccountOAuthStatusResponse = Message<"delidev.v1.GetAccountOAuthStatusResponse"> & {
+  /**
+   * @generated from field: delidev.v1.AccountOAuthAttempt attempt = 1;
+   */
+  attempt?: AccountOAuthAttempt | undefined;
+
+  /**
+   * @generated from field: delidev.v1.Resource account = 2;
+   */
+  account?: Resource | undefined;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 4;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.GetAccountOAuthStatusResponse.
+ * Use `create(GetAccountOAuthStatusResponseSchema)` to create a new message.
+ */
+export const GetAccountOAuthStatusResponseSchema: GenMessage<GetAccountOAuthStatusResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 16);
+
+/**
+ * Preserve the reserved OAuth spelling. Remove these value-prefix exceptions
+ * only when Buf recognizes OAuth as one acronym or compatibility is renegotiated.
+ *
+ * @generated from enum delidev.v1.AccountOAuthState
+ */
+export enum AccountOAuthState {
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_UNSPECIFIED = 0;
+   */
+  ACCOUNT_OAUTH_STATE_UNSPECIFIED = 0,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION = 1;
+   */
+  ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION = 1,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_EXCHANGING = 2;
+   */
+  ACCOUNT_OAUTH_STATE_EXCHANGING = 2,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_SAVING = 3;
+   */
+  ACCOUNT_OAUTH_STATE_SAVING = 3,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_CONNECTED = 4;
+   */
+  ACCOUNT_OAUTH_STATE_CONNECTED = 4,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_CANCELED = 5;
+   */
+  ACCOUNT_OAUTH_STATE_CANCELED = 5,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_EXPIRED = 6;
+   */
+  ACCOUNT_OAUTH_STATE_EXPIRED = 6,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_FAILED = 7;
+   */
+  ACCOUNT_OAUTH_STATE_FAILED = 7,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_INTERRUPTED = 8;
+   */
+  ACCOUNT_OAUTH_STATE_INTERRUPTED = 8,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED = 9;
+   */
+  ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED = 9,
+}
+
+/**
+ * Describes the enum delidev.v1.AccountOAuthState.
+ */
+export const AccountOAuthStateSchema: GenEnum<AccountOAuthState> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_account, 0);
+
+/**
  * Write-only account credentials. Workers cannot invoke this owner/client API.
  *
  * @generated from service delidev.v1.AccountService
@@ -247,6 +589,38 @@ export const AccountService: GenService<{
     methodKind: "unary";
     input: typeof ValidateAccountRequestSchema;
     output: typeof ValidateAccountResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.AccountService.StartAccountOAuth
+   */
+  startAccountOAuth: {
+    methodKind: "unary";
+    input: typeof StartAccountOAuthRequestSchema;
+    output: typeof StartAccountOAuthResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.AccountService.CompleteAccountOAuth
+   */
+  completeAccountOAuth: {
+    methodKind: "unary";
+    input: typeof CompleteAccountOAuthRequestSchema;
+    output: typeof CompleteAccountOAuthResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.AccountService.CancelAccountOAuth
+   */
+  cancelAccountOAuth: {
+    methodKind: "unary";
+    input: typeof CancelAccountOAuthRequestSchema;
+    output: typeof CancelAccountOAuthResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.AccountService.GetAccountOAuthStatus
+   */
+  getAccountOAuthStatus: {
+    methodKind: "unary";
+    input: typeof GetAccountOAuthStatusRequestSchema;
+    output: typeof GetAccountOAuthStatusResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_delidev_v1_account, 0);

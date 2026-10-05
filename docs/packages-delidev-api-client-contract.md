@@ -1,5 +1,7 @@
 # DeliDev TypeScript client
 
+Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAccountOAuth, CancelAccountOAuth and GetAccountOAuthStatus, with exact bigint revisions and closed OAuth state/connection-method enums. Authorization URL exists only in original live Start; status carries metadata only. Completion code is a write-only bounded byte array: use a direct authenticated RPC without query/mutation-cache retention, clear transient buffers, and recover only the original completion identity without code. No client-side retry may repeat an exchange. Preserve all four existing account-flow gates independently of capability 5 under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
+
 ## Request diagnostic client
 
 Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the issue #1103 metadata read. Preserve native-input versus proxy-HTTP enum provenance, optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.

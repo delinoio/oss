@@ -1,14 +1,16 @@
-# Planned OpenRouter account OAuth PKCE (issue #1146)
+# OpenRouter account OAuth PKCE (issue #1146)
 
 ## Status and ownership
 
 [Issue #1146](https://github.com/delinoio/oss/issues/1146) owns the server/CLI
 attempt lifecycle, protected credential coordination, native browser/callback
-infrastructure and desktop waiting/completion flow below. This contract is
-planned: its main-first reservation prerequisite implements no OAuth RPC,
-credential exchange, account creation, native callback or desktop flow.
+infrastructure and desktop waiting/completion flow below. Reservations alone
+grant no RPC/exchange or callback authority. The complete Go/CLI/native/desktop
+lifecycle implements real migration 29 after real 26–28. Shared reservations
+reached main first; independent feature PRs merge in dependency order. Scripted
+fixtures and builds remain separate from real-provider and platform acceptance.
 The direct-action picker prerequisite #1145 is already on main. Compose the
-future UI with the current AI API Keys terminology and compact presentation
+UI with the current AI API Keys terminology and compact presentation
 from #1135/#1237 and fresh Settings lifetime from #1138.
 
 Go remains the business and credential owner; native Rust owns only the closed
@@ -30,15 +32,15 @@ migration order retain their current meanings.
   RECOVERY_REQUIRED 9.
 - Private SQLite migration 29 follows the real Claude accounting 26, request
   diagnostics 27 and subscription identity/retirement 28 implementations.
-  Runtime migrations currently end at 25. Do not implement placeholder
-  predecessors or activate 29 before that complete sequence exists. Changing
+  Do not implement placeholder predecessors or activate 29 before that complete
+  sequence exists. Changing
   product order requires a separately reconciled reservation sequence on main.
 
 The allocation ledger marks each member of a wholly new enum with
 `newDeclaration: true`, retaining one owner and a zero UNSPECIFIED value without
-adding it to the immutable active baseline. These reservations declare no
-active protobuf enum/field or capability advertisement. Generate Go/TypeScript
-bindings from reconciled source schemas when the feature is implemented.
+adding it to the immutable active baseline. Reservations grant no capability advertisement. The reconciled schema declares
+the closed enum/field/RPC interfaces and generates Go/TypeScript bindings.
+Advertise capability 5 only together with the implemented product lifecycle.
 
 ## Required implementation
 
@@ -53,10 +55,10 @@ bindings from reconciled source schemas when the feature is implemented.
 
 ### Server ownership and persistence
 
-- Go generates a cryptographic PKCE verifier/challenge with S256 and builds only `https://openrouter.ai/auth`. Desktop uses the owned callback_url; headless omits it. Exchange only through `POST https://openrouter.ai/api/v1/auth/keys` with code/verifier/S256. No registration/client secret, inference, management key, ambient cookies/proxies, redirects, automatic HTTP retry or alternate provider.
+- Go generates a cryptographic PKCE verifier/challenge with S256 and builds only `https://openrouter.ai/auth`. Desktop uses the owned callback_url; headless omits it. Exchange only through `POST https://openrouter.ai/api/v1/auth/keys` with code/verifier/S256. Resolve one immutable explicit server route under the existing network contract; route or TLS failure never grants direct fallback. No registration/client secret, inference, management key, ambient cookies/proxies, redirects, automatic HTTP retry or alternate provider.
 - Keep verifier and canonical callback/authorization URL in memory in their original server process. Cap application attempts at ten minutes and 32 nonterminal or unresolved-cleanup server attempts; distinguish this application deadline from the provider's code lifetime after issuance. Clear transient buffers and bound HTTP with the existing 20-second deadline/32KiB response-header conventions and a deliberately tighter new OAuth response ceiling of 64KiB (ordinary provider inspection permits 4MiB). Validate the returned key with the existing 1–8192-byte API-key validator.
 - Add private `account_oauth_attempts` metadata storage in reserved schema 29 after the implemented schema 25 baseline and real migrations 26–28. Preserve the reservation's meaning; reconcile any required order change on main before implementation. Include actor/server/provider UUID+revision, original start/completion IDs, reserved account/create/connect UUIDs, process generation, state/revision/times, comparison HMAC/digests, protected-reference identity and cleanup status. No raw verifier, code, key, callback URL or approval URL in SQLite/receipts. No foreign key requiring an existing account and no cascading deletion of recovery evidence.
-- Fresh stores include the table; use the existing verified backup-first transactional migration, preserving accounts/providers/settings/claims/default deletions. Exclude attempt rows from public resources/snapshots/events/portable export. Database images contain metadata, never credentials. No backup restoration feature is introduced.
+- Fresh stores include the table; use the existing verified backup-first transactional migration, preserving accounts/providers/settings/claims/default deletions. Exclude attempt rows from public resources/snapshots/events/portable export. Database images contain metadata, never credentials. Existing managed restore eligibility refuses unresolved OAuth attempts or cleanup. Historical images cannot replace current once-only attempt metadata; restore copies the current private attempt table and quarantines historical receipts. This adds no restore operation.
 - Before HTTP, commit one durable exchange-dispatch claim, following the existing once-only HTTP-claim pattern. HTTP runs outside SQLite/account locks. No timeout, cancellation, duplicate callback, RPC retry or process restart may send that exchange again.
 - Seal a successfully received key in the existing vault under `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}`. Then create disconnected default metadata once and connect once using shared existing lifecycle helpers, exact creation revision and original identities. Factor locked helpers to avoid recursive account-gate acquisition. Recheck actor, provider and attempt authority before staging and at final commit.
 - Defaults: alias OpenRouter, type api, enabled=true, exclude_automatic=false, recovery_notifications=true. This intentionally follows the approved/current API-creation default; document its scoped override of the broader requirements' default-off wording without changing saved accounts or subscription defaults. Connection sets unverified and clears prior observations under existing rules. Never auto-validate/discover.
@@ -69,12 +71,13 @@ bindings from reconciled source schemas when the feature is implemented.
 - Add a closed OpenRouter opener/callback infrastructure capability for trusted main and saved-server webviews. Preserve trusted-origin/window/server-generation checks and existing GitHub restrictions; no generic opener, new renderer navigation/CSP origin, embedded account browser profile or credential storage in Rust.
 - Own one native attempt per trusted window. Start a temporary listener on IPv4/IPv6 loopback only before obtaining the authorization URL. Use documented `http://localhost:<ephemeral-port>/...`, an unpredictable per-attempt path, exact Host/method/path, single-use callback with a <=16KiB request-target budget and <=16KiB header budget, the same exact code-byte validation, and no wildcard bind. This infrastructure port is unrelated to the fixed frontend dev port.
 - Bind callback forwarding to the initiating window, selected server identity, attempt and current local generation. Code travels through a dedicated one-shot trusted completion bridge, never broadcast native events, query keys, app-owned history/storage, logs or echoed callback HTML. Return a constant non-secret callback page with no-store/no-referrer policy and remove the code from the final displayed callback URL; do not promise erasure of the external browser's own history. PKCE verifier/returned key never enter the renderer. Remote selected servers receive code through authenticated encrypted Connect; callback localhost means the desktop, while keyless provider localhost still means the server.
+- The bridge captures a native window epoch before awaiting sidecar identity and checks it again after its blocking operation. Window closure invalidates admitted, queued Begin calls as well as existing listeners. A visit supplies one opaque local opening identity before Begin; scoped disposal records a tombstone even if the Begin response was lost. Original Begin replay returns its existing listener metadata without opening a browser. Tombstones/closed-window identities are bounded at 4096 per native process; exhausted capacity fails explicitly rather than evicting a revocation. A replacement opening cannot be disposed by a late predecessor.
 - A deliberate OpenRouter provider/Add-account action enters the waiting screen and opens the default browser exactly once. Mount, restoration, polling and Strict Mode must not start/reopen OAuth. Card heading `Connect OpenRouter`; subheading `Complete sign-in in your browser`; copy `Approve access on OpenRouter. DeliDev will finish connecting automatically.`; spinner/status `Waiting for authorization…`.
 - Provide `Open browser again` for the same live attempt, `Cancel`, `Back to providers`, and `Use an API key instead`. Explicit cancel/back/fallback uses the dedicated cancellation outcome before abandoning a live flow; fallback opens the preserved manual form. Do not start another account/manual save while an earlier outcome remains uncertain.
 - During exchange/save/connection, show distinct progress and disable navigation that could duplicate or discard the write. Success offers Edit account through the existing metadata editor, Manage account and Done. Validation/discovery remain explicit. Error/expiry/open-failure offers deliberate restart or manual fallback; expired/restarted flows never reuse prior callbacks.
 - Closing Settings/window disposes local listener/forwarding authority, clears local waits and rejects late callbacks, focus/navigation and new completion from that opening. Consistent with #1138, Close does not implicitly send business Cancel or undo already accepted server work; accepted saves may finish and be observed later. Reopening starts fresh, with no automatic authentication/replay.
 - Keep the approved 760px/20px/12px-radius card, existing colors/font and surrounding Settings. Waiting row uses a subtle bordered background; actions are neutral outlined controls, fallback a blue text action. Footer: `Your credential will be stored securely on the selected server.` and `You can validate your account after connecting.`. No key/name input in the waiting state, search/radios/Continue, ready/verified claim, provider code/URL display or logo.
-- Use accessible button names, polite live progress, safe alerts, heading focus on deliberate transitions, original-provider focus on return, native Settings Escape/containment and responsive wrapping/200% zoom. Avoid focus changes from disposable polling/late results.
+- Use accessible button names, polite live progress, safe alerts, heading focus on deliberate transitions, original-provider focus on return, current issue #1236 Settings page/child-dialog Escape and containment rules, and responsive wrapping/200% zoom. Avoid focus changes from disposable polling/late results. The visit-owned OAuth controller uses direct authenticated write-only completion so transient code bytes never enter React Query mutation/query caches; clear its native and renderer byte buffers on every outcome.
 - Structured logs cover stable lifecycle stage/outcome/error/correlation and non-secret attempt/account IDs only; no code/verifier/key/URL, provider response body, email or browser contents. Update requirement/account/credential/storage/desktop/protocol/client contracts and applicable AGENTS with the implementation. Record implementation and validation evidence in the owning PR, issue and CI logs/artifacts under the root policy; do not add repository evidence documents.
 
 
@@ -118,3 +121,11 @@ Subscription/Codex/Claude login; embedded browser/account-profile work (#1087/#1
 - [Desktop](apps-delidev-desktop-contract.md)
 - [Protocol](protos-delidev-v1-contract.md)
 - [Typed client](packages-delidev-api-client-contract.md)
+
+- Exchange code/verifier and returned printable-ASCII keys remain owned, zeroizable byte buffers through JSON encoding/decoding. Transport cancellation after a valid key is returned does not discard it: settle under independent bounded original-actor authority, honoring serialized business cancellation before sealing. Expired awaiting attempts with no claimed credential cleanup do not block managed restore; exchanging/saving/recovery and cleanup obligations remain blocking.
+
+Callback polling rechecks captured Go-verified local connection authority against its fixed descriptor without sidecar launches. Exact native BindOpen replay settles uncertain binding without opening twice; the renderer records binding only after acknowledgement. Secret exchange response parsing stays byte-backed and rejects duplicate nested object keys without immutable credential-value strings.
+
+A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
+
+If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.

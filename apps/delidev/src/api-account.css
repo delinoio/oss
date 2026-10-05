@@ -57,3 +57,15 @@
   .api-entry-row .actions { flex-direction: column; align-items: flex-start; }
   .api-entry-row .actions button { max-width: 100%; }
 }
+
+.account-oauth-card { width: 100%; max-width: 760px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.account-oauth-card h2 { margin: 0 0 8px; font-size: 20px; }
+.account-oauth-card .account-oauth-subheading { color: var(--muted); }
+.account-oauth-progress { display: flex; align-items: center; gap: 10px; margin: 20px 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); }
+.account-oauth-spinner { flex-shrink: 0; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--muted); border-radius: 50%; animation: account-oauth-spin 1.5s linear infinite; }
+.account-oauth-card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-oauth-card .account-oauth-fallback { margin-top: 14px; padding-inline: 0; background: transparent; border: 0; color: var(--accent); text-align: left; }
+.account-oauth-card footer { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; color: var(--muted); font-size: 12px; }
+.account-oauth-card button { max-width: 100%; white-space: normal; }
+@keyframes account-oauth-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .account-oauth-spinner { animation: none; } }

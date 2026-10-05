@@ -145,6 +145,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
 	}
+	if err := service.initializeOAuth(child); err != nil {
+		return err
+	}
 	defer service.closeAccountSecrets()
 	defer service.closeIntegrationSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())

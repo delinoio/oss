@@ -30,3 +30,5 @@ export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectqu
 export * as PullRequestFixQuery from "./gen/delidev/v1/pr_fix-PullRequestFixService_connectquery.js";
 
 export * from "./configuration-identity.js";
+
+export * from "./provider-presets.js";

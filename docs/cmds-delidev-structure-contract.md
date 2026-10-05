@@ -82,7 +82,9 @@ The Grok replacement for issue #1100 implements reserved version 25 with the
 independent `grok-closed-input-v1` layout marker. Complete feature PRs implement real version 26 for original Claude/OpenCode
 accounting and version 27 for metadata-only request diagnostics, followed by real
 version 28 for service-native subscription identity and its account-scoped recovery notification constraint, preserving all original delivery claims with an independent layout marker. The executable registry ends
-at 28; reserved version 29 remains inactive until the OAuth implementation. Unmarked historical
+at 30 in the coordinated implementation: real OAuth 29 follows 28, and the
+26 added hosted Provider defaults use real migration 30. Each has its own exact
+private layout marker; no reservation itself activates support. Unmarked historical
 version-25 files still require recovery without modification.
 Claude accounting must compose with the Grok accounting schema and shared usage
 meaning established by the preceding change. Request diagnostics follows both
@@ -104,13 +106,14 @@ replacing its unsettled-ownership and cleanup gates.
 Issue #1146 reserves migration 29 for private OpenRouter OAuth attempt metadata,
 after real migrations 26–28, together with inventory capability 5, inventory-entry
 field 9 and the exclusively owned connection-method/attempt-state enums. The
-[planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the complete
-future lifecycle and acceptance. Establish these allocations on main before
+[OAuth contract](cmds-delidev-account-oauth-contract.md) owns the complete
+implemented lifecycle and outstanding real-provider/platform acceptance. Establish these allocations on main before
 dependent implementation; no placeholder migration, active protobuf declaration,
 generated binding or OAuth capability is introduced by this prerequisite. Keep
 the existing sequence and issue open until full implementation is accepted.
 
-The storage suite covers fixed historical layouts through 27 and the recognized
+The storage suite covers every fixed historical schema and the real 29-to-30
+Provider upgrade, along with the recognized
 21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,
 retains existing seeded record/backfill/rollback tests, and verifies that three
 unidentified version-25 layouts return recovery-required without modifying bytes.

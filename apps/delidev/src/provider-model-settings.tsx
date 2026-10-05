@@ -1,3 +1,4 @@
+import { providerPresetNames, hostedProviderPresetOrder } from "@delinoio/delidev-api-client";
 import { subscriptionService, subscriptionServiceNames, supportsResourceSchema } from "@delinoio/delidev-api-client";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useState } from "react";
@@ -15,33 +16,13 @@ const requiredCapabilities = [
   ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
 ] as const;
 
-const hostedPresetOrder = [
-  ProviderPresetId.OPENAI,
-  ProviderPresetId.ANTHROPIC,
-  ProviderPresetId.OPENROUTER,
-  ProviderPresetId.VERCEL_AI_GATEWAY,
-  ProviderPresetId.XAI,
-  ProviderPresetId.DEEPSEEK,
-];
+const hostedPresetOrder = hostedProviderPresetOrder;
 
 export function providerInventoryReady(capabilities: readonly ProviderInventoryCapability[] | undefined): boolean {
   return Boolean(capabilities && requiredCapabilities.every((value) => capabilities.includes(value)));
 }
 
-function presetString(id: ProviderPresetId): string | undefined {
-  switch (id) {
-    case ProviderPresetId.VERCEL_AI_GATEWAY: return "vercel-ai-gateway";
-    case ProviderPresetId.OPENROUTER: return "openrouter";
-    case ProviderPresetId.OPENAI: return "openai";
-    case ProviderPresetId.ANTHROPIC: return "anthropic";
-    case ProviderPresetId.XAI: return "xai";
-    case ProviderPresetId.DEEPSEEK: return "deepseek";
-    case ProviderPresetId.OLLAMA: return "ollama";
-    case ProviderPresetId.LM_STUDIO: return "lm-studio";
-    case ProviderPresetId.VLLM: return "vllm";
-    default: return undefined;
-  }
-}
+function presetString(id: ProviderPresetId): string | undefined { return providerPresetNames.get(id); }
 
 function presetData(entry: ProviderInventoryEntry, presets: Document[]): Document | undefined {
   if (entry.provider) return document(entry.provider);
@@ -104,7 +85,7 @@ export function ApiProviderSettings({
   createCustom: (data?: Document) => void;
   editCustom: (resource: Resource) => void;
   manageAccounts: (providerID: string, entry: ProviderInventoryEntry) => void;
-  addAccount: (providerID: string, entry: ProviderInventoryEntry) => void;
+  addAccount: (providerID: string, entry: ProviderInventoryEntry, oauthSupported: boolean) => void;
   deleteCustom: (resource: Resource) => void;
 }) {
   const [localState, setLocalState] = useState<ProviderListState>({ query: "", page: "" });
@@ -135,7 +116,7 @@ export function ApiProviderSettings({
       <div className="actions">
         <button type="button" disabled={!entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
           if (!entry.providerId) return;
-          if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId, entry);
+          if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId, entry, Boolean(result.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1) && result.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER)));
           else manageAccounts(entry.providerId, entry);
         }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? "Manage AI API Keys" : "Add AI API key"}</button>
         {entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled && entry.providerId ? <span>Turn on this provider to add an entry.</span> : null}

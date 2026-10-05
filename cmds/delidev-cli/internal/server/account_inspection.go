@@ -16,6 +16,7 @@ type inspectionOperation string
 const (
 	validationInspection inspectionOperation = "account.validate"
 	catalogInspection    inspectionOperation = "catalog.discover"
+	oauthInspection      inspectionOperation = "oauth.exchange"
 )
 
 type accountCheck struct {
@@ -37,7 +38,7 @@ func (s *Service) cancelAccountChecks(id domain.ID) {
 func (s *Service) cancelCatalogChecks(provider domain.ID) {
 	for _, checks := range s.accountChecks {
 		for _, check := range checks {
-			if check.providerID == provider && check.operation == catalogInspection {
+			if check.providerID == provider && (check.operation == catalogInspection || check.operation == oauthInspection) {
 				check.cancel()
 			}
 		}

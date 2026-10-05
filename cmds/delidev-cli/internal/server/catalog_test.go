@@ -67,7 +67,7 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial.Msg.Entries) != 9 || len(initial.Msg.Capabilities) != 4 {
+	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 5 {
 		t.Fatalf("fresh inventory was not capability-complete: %+v", initial.Msg)
 	}
 	accountTypeFilterAdvertised := false

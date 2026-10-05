@@ -3,6 +3,7 @@
 mod appearance_host;
 mod browser_host;
 mod notification_host;
+mod oauth_host;
 mod tray_host;
 mod widget_host;
 use std::{
@@ -23,6 +24,7 @@ use notification_host::{
     NotificationHost, begin_notifications, end_notifications, notification_permission,
     present_notification, request_notification_permission,
 };
+use oauth_host::account_oauth_native;
 use tauri::{
     AppHandle, Cef, Emitter, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent,
     utils::config::{Csp, CspDirectiveSources, WebviewUrl},
@@ -124,6 +126,39 @@ async fn open_github(
         .map_err(|_| NativeFailure::SidecarFailed)?;
     if let Err(code) = result {
         tracing::warn!(operation = "github_open", ?code);
+    }
+    result
+}
+
+// This is a closed presentation selector, never a renderer-supplied URL.
+#[tauri::command]
+async fn open_provider_guidance(
+    window: WebviewWindow<Cef>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    preset: String,
+    action: delidev_desktop::provider_guidance::GuidanceAction,
+) -> Result<(), NativeFailure> {
+    let original = if window.label() == "main" {
+        trusted_main(&window)?;
+        None
+    } else {
+        Some(saved_binding(&window, &windows)?)
+    };
+    // Capture authority on the native loop; dispatch runs on a bounded worker.
+    let connector = Arc::clone(connector.inner());
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        connector.open_provider_guidance(&preset, action)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)?;
+    if let Some(original) = original {
+        let current = saved_binding(&window, &windows)?;
+        if current.instance != original.instance {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else {
+        trusted_main(&window)?;
     }
     result
 }
@@ -1143,6 +1178,7 @@ fn run() -> Result<(), NativeFailure> {
     let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
     let tray = Arc::new(TrayHost::default());
     let notifications = Arc::new(NotificationHost::default());
+    let oauth = Arc::new(delidev_desktop::oauth::OAuthHost::default());
     let browser_cache = connector.prepare_browser_storage()?;
     let browser = Arc::new(browser_host::BrowserHost::new(
         browser_cache.clone(),
@@ -1154,9 +1190,11 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::new(SavedWindows::default()))
         .manage(Arc::clone(&tray))
         .manage(Arc::clone(&notifications))
+        .manage(Arc::clone(&oauth))
         .manage(connector)
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
+            account_oauth_native,
             choose_repository_folder,
             read_appearance,
             update_appearance,
@@ -1164,6 +1202,7 @@ fn run() -> Result<(), NativeFailure> {
             control_browser,
             browser_state,
             open_github,
+            open_provider_guidance,
             connect_local,
             launch_local,
             retry_local,
@@ -1197,7 +1236,15 @@ fn run() -> Result<(), NativeFailure> {
             present_notification
         ])
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Destroyed) {
+                window
+                    .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
+                    .close_window(window.label());
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
+                window
+                    .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
+                    .close_window(window.label());
                 if window
                     .state::<Arc<TrayHost>>()
                     .available
@@ -1286,6 +1333,7 @@ fn run() -> Result<(), NativeFailure> {
             }
         }
         if matches!(event, tauri::RunEvent::Exit) {
+            oauth.stop();
             // This event precedes CEF shutdown. Keep host task joins and the
             // return from app.run separate so an exit event cannot imply that
             // the native runtime has actually finished.

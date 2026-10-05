@@ -15,6 +15,8 @@ Read the relevant owner before changing its behavior, including cross-domain con
 
 Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
+- OpenRouter OAuth follows `docs/cmds-delidev-account-oauth-contract.md`: independently negotiate inventory capability 5 and the managed entry's closed connection method. Go owns PKCE/exchange/credentials; `src/account-oauth.tsx` owns the current Settings visit and `src-tauri/src/oauth.rs`/`oauth_host.rs` own only trusted-window loopback callback/opener infrastructure. Preserve manual connection for older servers and validation/discovery as explicit operations. Fixtures/builds cannot establish real provider or packaged platform acceptance.
+
 The Schedules context pane owns the issue #1153 presentation and connection-memory retained-history disclosure. Follow `src/AGENTS.md` and `docs/apps-delidev-desktop-contract.md`; keep shared shell defaults and the Settings visit lifetime unchanged.
 
 - Issue #1137 makes a fresh trusted main host own one Go-admitted launch before supervision, without renderer-triggered startup. Keep same-process Stop, native-service ownership and saved-window authority independent. Use persistent Connection & diagnostics for advanced controls, with product startup/sidebar/tray wording. Follow docs/apps-delidev-desktop-contract.md.
@@ -45,3 +47,9 @@ Unsupported-schema Agent display names/aliases are projected only within the exi
 - OpenCode Fork presentation requires the independent server capability plus the original macOS/Linux Runner Device capability and completed Build General Chat profile. Retain the accepted operation across navigation; cloned conversation is inherited context with no new input or usage. Follow `docs/cmds-delidev-forks-contract.md` and the desktop contract.
 
 - OpenCode Fork presentation reads the complete bounded canonical transcript through authenticated Resource RPC, keyed by exact source revision/native thread and rechecked before submit. Require every retained message to match the plain-text/empty-changes profile; incomplete, repeated, invalid or changed pages cannot expose the action. Go retains independent acceptance/publication authority and the Worker retains native-history proof. Task-only OpenCode child observations remain pending, and automatic compaction references require original native part IDs.
+
+- All 35 API presets use the shared closed client identity/order mapping and authenticated inventory. Keep regional/subscription-key guidance, connection, explicit validation, discovery and selected native harness compatibility separate. Follow the catalog and provider inspection contracts.
+
+A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
+
+If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.

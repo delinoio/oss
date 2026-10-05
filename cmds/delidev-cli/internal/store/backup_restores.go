@@ -621,7 +621,11 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		if err := tx.tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM jobs WHERE state IN ('claimed','uncertain'))").Scan(&claimed); err != nil {
 			return storageError(err)
 		}
-		blocked = blocked || claimed
+		oauth, err := tx.AccountOAuthPending()
+		if err != nil {
+			return err
+		}
+		blocked = blocked || claimed || oauth != 0
 		if blocked {
 			return domain.Fail(domain.RecoveryRequired, "Restore requires independently settled execution, forwarding and credential ownership.", "Stop and reconcile original work, forwards and credential operations first; restore never terminates them.")
 		}

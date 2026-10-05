@@ -75,6 +75,9 @@ type Service struct {
 	subscriptionProgress map[domain.ID]subscriptionProgress
 	accountOnce          sync.Once
 	accountGate          chan struct{}
+	oauthGeneration      domain.ID
+	oauthLive            map[domain.ID]*oauthLive
+	oauthExchange        oauthExchange
 	accountChecks        map[domain.ID]map[domain.ID]accountCheck
 	accountSecrets       accountSecrets
 	ownedVault           *credentials.Vault

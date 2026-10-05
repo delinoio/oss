@@ -210,3 +210,13 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `docs/cmds-delidev-compaction-contract.md`.
 
 - Session context projects retained compaction jobs through the typed 3 MiB input decoder used by admission and settlement, preserving action state even for large original assignments.
+
+- OAuth follows `docs/cmds-delidev-account-oauth-contract.md`: commit original actor/provider/revision/code-HMAC dispatch before HTTP outside account/SQLite gates. Seal the reserved immutable reference, reuse configuration admission and shared connection commit, and atomically publish the connected private outcome. Serialize cancellation with staging/final publication. Restart/status never exchange; explicit original code-free recovery can finish only protected local material. Preserve orphan cleanup and provider-side uncertainty without logging content or URLs.
+
+- Exchange code/verifier and returned printable-ASCII keys remain owned, zeroizable byte buffers through JSON encoding/decoding. Transport cancellation after a valid key is returned does not discard it: settle under independent bounded original-actor authority, honoring serialized business cancellation before sealing. Expired awaiting attempts with no claimed credential cleanup do not block managed restore; exchanging/saving/recovery and cleanup obligations remain blocking.
+
+- OAuth secret responses use byte-backed JSON parsing with duplicate-key checks at every object depth. Credentials never pass through string-backed domain readers or scalar Decoder tokens.
+
+A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
+
+If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
