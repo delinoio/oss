@@ -59,6 +59,7 @@ export interface SubscriptionSettingsViewProps {
   refreshAllOperation?: SubscriptionOperation;
   lifecycleUnavailable?: string;
   selectService?: (brand: SubscriptionBrand) => void;
+  serviceLoginAvailable?: (brand: SubscriptionBrand) => boolean;
   activeFilter?: string;
   clearFilter: () => void;
   advanced: ReactNode;
@@ -176,7 +177,7 @@ const readLabels: Partial<Record<SubscriptionReadState, string>> = {
 };
 
 /** Presentation only; the owning controller negotiates every native action. */
-export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = "Subscription login is not available yet. This server does not support subscription connection, quota refresh or disconnection.", selectService, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
+export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = "Subscription login is not available yet. This server does not support subscription connection, quota refresh or disconnection.", selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
   const noticeId = useId();
   const [, expireObservation] = useReducer((revision: number) => revision + 1, 0);
   const presentationNow = now ?? Date.now();
@@ -202,7 +203,7 @@ export function SubscriptionSettingsView({ accounts, state, problem, retryRead, 
       {pagination}
     </section>
     <section aria-label="Connect a subscription"><header className="subscription-section-heading"><h2>Connect a subscription</h2></header><p id={noticeId} className="subscription-unavailable">{lifecycleUnavailable}</p>
-      <div className="subscription-provider-cards">{subscriptionCatalog.map((provider) => <article className="subscription-provider-card" key={provider.brand}><ProviderMark brand={provider.brand} /><h3>{provider.name}</h3><p>{provider.purpose}</p><button type="button" disabled={!selectService} aria-label={`${provider.name} · ${selectService ? "Add account" : "Coming soon"}`} onClick={() => selectService?.(provider.brand)}>{selectService ? "Add account" : "Coming soon"}</button></article>)}</div>
+      <div className="subscription-provider-cards">{subscriptionCatalog.map((provider) => <article className="subscription-provider-card" key={provider.brand}><ProviderMark brand={provider.brand} /><h3>{provider.name}</h3><p>{provider.purpose}</p><button type="button" disabled={!selectService || !serviceLoginAvailable(provider.brand)} aria-label={`${provider.name} · ${selectService && serviceLoginAvailable(provider.brand) ? "Add account" : "Coming soon"}`} onClick={() => selectService?.(provider.brand)}>{selectService && serviceLoginAvailable(provider.brand) ? "Add account" : "Coming soon"}</button></article>)}</div>
     </section>
     <details className="subscription-advanced"><summary>Advanced settings</summary><div>{advanced}</div></details>
   </section>;

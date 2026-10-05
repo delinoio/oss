@@ -44,7 +44,7 @@ it("manages service-native subscription metadata through real authenticated RPC 
   fireEvent.click(screen.getByRole("button", { name: "More actions for Edited subscription" })); fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
   fireEvent.click(await screen.findByRole("button", { name: "Confirm configuration deletion" })); await screen.findByRole("heading", { name: "Account configuration deleted" });
   expect(await screen.findByText("0 profile cleanup obligations pending · 0 confirmed removed")).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Return to accounts" })); await screen.findByRole("heading", { name: "No subscriptions yet" });
-  fireEvent.click(screen.getByRole("button", { name: "Claude · Add account" })); fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Unsaved service account" } });
+  expect((screen.getByRole("button", { name: "Claude · Coming soon" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" })); fireEvent.click(screen.getByRole("button", { name: "Open Settings fixture" }));
   expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page"); expect(screen.queryByLabelText("Account name")).toBeNull(); expect(unexpected).not.toHaveBeenCalled();
 }, 30000);

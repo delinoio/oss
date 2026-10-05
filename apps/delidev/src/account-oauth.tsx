@@ -7,10 +7,11 @@ import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
 
-export enum OAuthNativeAction { Begin = "begin", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
+export enum OAuthNativeAction { Begin = "begin", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
 export interface OAuthNativeResult { generation: string; callback_url?: string; code?: number[] }
 export type OAuthNativeControl = (opening: string, action: OAuthNativeAction, generation: string, attempt: string, authorization: string) => Promise<OAuthNativeResult>;
 const NativeContext = createContext<OAuthNativeControl | undefined>(undefined);
+export const useOAuthNativeControl = () => useContext(NativeContext);
 export function OAuthNativeProvider({ control, children }: { control: OAuthNativeControl; children: ReactNode }) { return <NativeContext.Provider value={control}>{children}</NativeContext.Provider>; }
 enum Stage { Starting, Awaiting, Exchanging, Saving, Canceling, Recovering, Connected, Canceled, Expired, Interrupted, Recovery }
 interface View { provider: AccountProviderSummary; stage: Stage; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string; openFailed?: boolean }

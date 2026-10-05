@@ -6,7 +6,7 @@
 .subscription-onboarding-status { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .subscription-onboarding-success { color: var(--success-text); }
 .subscription-onboarding form { display: grid; gap: 8px; }
-.subscription-onboarding form input { width: 100%; }
+.subscription-onboarding form input { width: 100%; height: 40px; box-sizing: border-box; }
 .subscription-onboarding form p { margin: 0; color: var(--muted); }
 .subscription-onboarding .actions { margin-top: 24px; }
 .subscription-onboarding-footer { margin-top: 40px; color: var(--muted); }

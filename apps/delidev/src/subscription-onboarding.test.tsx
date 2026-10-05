@@ -58,3 +58,11 @@ it("uses the existing UTF-8 name bound and rejects empty or NUL names", () => {
   expect(subscriptionNameValid(" ")).toBe(false); expect(subscriptionNameValid("account\0name")).toBe(false);
   expect(subscriptionNameValid("계".repeat(85))).toBe(true); expect(subscriptionNameValid("계".repeat(86))).toBe(false);
 });
+it("focuses once when the confirmed name becomes enabled after a pending browser action", () => {
+  const value = props({ stage: Stage.Naming, busy: true });
+  const view = render(<SubscriptionOnboarding {...value} />);
+  const input = screen.getByLabelText("Account name");
+  expect(document.activeElement).not.toBe(input);
+  view.rerender(<SubscriptionOnboarding {...value} busy={false} />);
+  expect(document.activeElement).toBe(input);
+});

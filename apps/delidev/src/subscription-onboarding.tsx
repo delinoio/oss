@@ -42,11 +42,11 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
   const nameInput = useRef<HTMLInputElement>(null);
   const focused = useRef(false);
   useEffect(() => {
-    if (active && naming && !focused.current && nameInput.current) {
+    if (active && naming && !busy && !focused.current && nameInput.current) {
       focused.current = true;
       nameInput.current.focus({ preventScroll: true });
     }
-  }, [active, naming]);
+  }, [active, naming, busy]);
   const status = {
     [SubscriptionOnboardingStage.Preparing]: `Preparing ${serviceName} sign-in`,
     [SubscriptionOnboardingStage.Waiting]: `Waiting for ${serviceName} sign-in`,
