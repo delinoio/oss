@@ -72,9 +72,11 @@ type HarnessDiscoveryOutput struct {
 	Installations []Installation `json:"installations"`
 }
 
-var installationVersion = regexp.MustCompile(`^[0-9]{1,8}\.[0-9]{1,8}\.[0-9]{1,8}(-[a-zA-Z0-9.-]{1,64})?(\+[a-zA-Z0-9.-]{1,64})?$`)
+var installationVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]{1,64})?(\+[a-zA-Z0-9.-]{1,64})?$`)
 
-func ValidInstallationVersion(version string) bool { return installationVersion.MatchString(version) }
+func ValidInstallationVersion(version string) bool {
+	return len(version) <= 256 && installationVersion.MatchString(version)
+}
 
 func InstallationProblem(state InstallationState) *Error {
 	switch state {

@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, SubscriptionService, SystemCapability, SystemService, SubscriptionLoginState, newRequestId } from "@delinoio/delidev-api-client";
+import { CodexDiagnosticSchema, CodexDiagnosticPhase, AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, SubscriptionService, SystemCapability, SystemService, SubscriptionLoginState, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { ManagedSubscriptionAccount, SubscriptionAccounts } from "./subscription-accounts";
 import { MutationIntents } from "./mutation";
@@ -165,4 +165,24 @@ it.each([
  expect(button.disabled).toBe(true);
  fireEvent.click(button);
  expect(refresh).not.toHaveBeenCalled();
+});
+
+it("projects terminal Codex diagnostics without another login or cached native progress", async () => {
+ const value=fixture();
+ value.progress.mockImplementation(() => ({state:SubscriptionLoginState.FAILED,url:"",diagnostic:create(CodexDiagnosticSchema,{detectedVersion:"0.159.2",minimumVersion:"0.151.0",phase:CodexDiagnosticPhase.INITIALIZE,code:"unsupported",message:"private-native-sentinel"})}));
+ render(<value.Harness />);
+ fireEvent.click(await screen.findByRole("button",{name:"Manage login for Existing subscription"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Sign in to ChatGPT"}));
+ await screen.findByText("ChatGPT sign-in failed");
+ expect(screen.getByRole("alert").textContent).toContain("0.159.2");
+ expect(screen.getByRole("alert").textContent).toContain("Initialization");
+ expect(screen.queryByText(/private-native-sentinel/)).toBeNull();
+ expect(value.login).toHaveBeenCalledTimes(1);
+ const reads=value.progress.mock.calls.length;
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1100));});
+ expect(value.progress).toHaveBeenCalledTimes(reads);
+ expect(value.login).toHaveBeenCalledTimes(1);
+ expect(JSON.stringify(value.client.getQueryCache().getAll().map(q=>q.state.data))).not.toContain("private-native-sentinel");
+ fireEvent.click(screen.getByRole("button",{name:"Leave Settings fixture"}));
+ expect(value.cancel).not.toHaveBeenCalled();
 });

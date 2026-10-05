@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { create } from "@bufbuild/protobuf";
+import { CodexDiagnosticSchema, CodexDiagnosticPhase } from "@delinoio/delidev-api-client";
 import { StrictMode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
@@ -65,4 +67,27 @@ it("focuses once when the confirmed name becomes enabled after a pending browser
   expect(document.activeElement).not.toBe(input);
   view.rerender(<SubscriptionOnboarding {...value} busy={false} />);
   expect(document.activeElement).toBe(input);
+});
+
+it.each(["0.159.2", ""]) ("shows safe ChatGPT failure metadata for version %s without focus or retries", (version) => {
+ const diagnostic = create(CodexDiagnosticSchema,{detectedVersion:version,minimumVersion:"0.151.0",phase:CodexDiagnosticPhase.INITIALIZE,code:"unsupported",message:"raw-secret/native-path",guidance:"secret-login-url"});
+ const value=props({stage:Stage.Waiting,canReopen:false,canCancel:false});
+ const view=render(<SubscriptionOnboarding {...value} />);
+ const back=screen.getByRole("button",{name:"Back to AI Subscription"}); back.focus();
+ view.rerender(<SubscriptionOnboarding {...value} stage={Stage.Unsupported} diagnostic={diagnostic} />);
+ expect(screen.getByRole("status").textContent).toBe("ChatGPT sign-in failed");
+ expect(screen.getByRole("alert").textContent).toContain(version || "Not detected");
+ expect(screen.getByRole("alert").textContent).toContain("Initialization");
+ expect(screen.getByRole("alert").textContent).toContain("Minimum version:0.151.0");
+ expect(screen.queryByText(/raw-secret|secret-login-url/)).toBeNull();
+ expect(document.activeElement).toBe(back);
+ expect(screen.getAllByRole("button")).toHaveLength(1);
+ expect(value.reopen).not.toHaveBeenCalled(); expect(value.cancel).not.toHaveBeenCalled();
+});
+it("shows Not reported for older servers and retains other services' unsupported message", () => {
+ const view=render(<SubscriptionOnboarding {...props({stage:Stage.Unsupported,canReopen:false,canCancel:false})} />);
+ expect(screen.getByRole("alert").textContent).toContain("Codex version:Not reported");
+ view.rerender(<SubscriptionOnboarding {...props({serviceName:"Claude",stage:Stage.Unsupported})} />);
+ expect(screen.getByRole("status").textContent).toBe("Claude sign-in is not supported yet");
+ expect(screen.queryByRole("alert")).toBeNull();
 });

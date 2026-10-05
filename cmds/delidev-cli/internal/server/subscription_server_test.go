@@ -29,19 +29,25 @@ type serverLoginFixture struct {
 	started    chan struct{}
 	finish     chan struct{}
 	closeError error
+	startError error
+	waitError  error
 	bundle     []byte
 	calls      atomic.Int32
 }
 
+func (n *serverLoginFixture) Version() string { return "0.159.2" }
 func (n *serverLoginFixture) StartManagedLogin(context.Context, bool) (codex.ManagedLoginProgress, error) {
 	n.calls.Add(1)
+	if n.startError != nil {
+		return codex.ManagedLoginProgress{}, n.startError
+	}
 	return codex.ManagedLoginProgress{LoginID: "fixture-login", URL: serverFixtureURL}, nil
 }
 func (n *serverLoginFixture) WaitManagedLogin(ctx context.Context, _ string) error {
 	close(n.started)
 	select {
 	case <-n.finish:
-		return nil
+		return n.waitError
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -303,5 +309,65 @@ func TestServerSubscriptionNameSavePreservesCurrentOwnership(t *testing.T) {
 	_, a = f.record()
 	if a.Alias != "User edited name" || a.Connection == nil {
 		t.Fatal("completion overwrote user name or lost original authentication")
+	}
+}
+
+func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
+	for _, scenario := range []struct {
+		name, version string
+		phase         domain.CodexPhase
+		code          domain.Code
+		recovery      bool
+	}{
+		{"missing", "", domain.CodexDiscovery, domain.NotFound, false},
+		{"old", "0.150.9", domain.CodexVersion, domain.Unsupported, false},
+		{"initialize", "0.159.2", domain.CodexInitialize, domain.Unsupported, false},
+		{"login", "0.159.2", domain.CodexLogin, domain.Unauthenticated, false},
+		{"timeout", "0.159.2", domain.CodexLogin, domain.Unavailable, false},
+		{"cleanup", "0.159.2", domain.CodexCleanup, domain.RecoveryRequired, true},
+		{"login-cleanup", "0.159.2", domain.CodexLogin, domain.Unauthenticated, true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			f := newSubscriptionFixture(t)
+			op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+			n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle("private-native-identity", "first", time.Now().UTC())}
+			close(n.finish)
+			switch scenario.name {
+			case "missing", "old", "initialize":
+				f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+					return nil, domain.WithCodexDiagnostic(scenario.version, scenario.phase, domain.Fail(scenario.code, "raw-token/path/native-sentinel", "secret-url"))
+				}
+			case "login", "login-cleanup":
+				n.startError = domain.Fail(domain.Unauthenticated, "raw-token/native-sentinel", "secret-url")
+			case "timeout":
+				n.startError = context.DeadlineExceeded
+			}
+			if scenario.recovery {
+				n.closeError = subscriptionDenied()
+			}
+			if scenario.name == "missing" || scenario.name == "old" || scenario.name == "initialize" {
+				f.service.runServerSubscription(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), f.input.AccountID)
+			} else {
+				awaitServerFixture(t, f.serverRun(n))
+			}
+			p := f.progressFor(op.OperationId)
+			if p.Diagnostic == nil || p.Diagnostic.DetectedVersion != scenario.version || p.Diagnostic.MinimumVersion != domain.CodexMinimumVersion || p.Diagnostic.Code != string(scenario.code) || p.Diagnostic.CorrelationId != op.OperationId || p.Url != "" || p.UserCode != "" {
+				t.Fatalf("incorrect safe progress: %#v", p.Diagnostic)
+			}
+			_, a := f.record()
+			d := a.Subscription.ServerOperation.Diagnostic
+			if d == nil || d.Validate() != nil || d.Phase != scenario.phase || strings.Contains(d.Message, "sentinel") || strings.Contains(d.Guidance, "secret") || strings.Contains(d.Message, "identity") {
+				t.Fatal("original diagnostic was lost or raw content escaped")
+			}
+			if scenario.recovery && p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED {
+				t.Fatal("cleanup uncertainty lost recovery authority")
+			}
+			// The retained failure can be observed after transient progress is gone;
+			// the original server operation is never launched again.
+			delete(f.service.subscriptionProgress, domain.ID(d.CorrelationID))
+			if f.progressFor(op.OperationId).Diagnostic == nil {
+				t.Fatal("diagnostic depended on transient presentation")
+			}
+		})
 	}
 }

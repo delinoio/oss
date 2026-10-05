@@ -77,6 +77,8 @@ message GetSubscriptionProgressResponse {
   SubscriptionLoginState state = 4;
   string suggested_name = 5;
   string generation = 6;
+  // Safe metadata for the original native failure; absent on older servers.
+  CodexDiagnostic diagnostic = 7;
 }
 message WatchSubscriptionRequest {
   string machine_id = 1;
@@ -210,4 +212,30 @@ message ForwardSubscriptionCallbackRequest {
 }
 message ForwardSubscriptionCallbackResponse {
   bool accepted = 1;
+}
+
+// Bounded metadata only. Never include native output, paths or credentials.
+message CodexDiagnostic {
+  string detected_version = 1;
+  string minimum_version = 2;
+  CodexDiagnosticPhase phase = 3;
+  string code = 4;
+  string message = 5;
+  string guidance = 6;
+  string correlation_id = 7;
+}
+enum CodexDiagnosticPhase {
+  CODEX_DIAGNOSTIC_PHASE_UNSPECIFIED = 0;
+  CODEX_DIAGNOSTIC_PHASE_DISCOVERY = 1;
+  CODEX_DIAGNOSTIC_PHASE_VERSION = 2;
+  CODEX_DIAGNOSTIC_PHASE_PROFILE = 3;
+  CODEX_DIAGNOSTIC_PHASE_RUNTIME = 4;
+  CODEX_DIAGNOSTIC_PHASE_LAUNCH = 5;
+  CODEX_DIAGNOSTIC_PHASE_INITIALIZE = 6;
+  CODEX_DIAGNOSTIC_PHASE_CONFIRM = 7;
+  CODEX_DIAGNOSTIC_PHASE_LOGIN = 8;
+  CODEX_DIAGNOSTIC_PHASE_MODELS = 9;
+  CODEX_DIAGNOSTIC_PHASE_EXECUTION = 10;
+  CODEX_DIAGNOSTIC_PHASE_HISTORY = 11;
+  CODEX_DIAGNOSTIC_PHASE_CLEANUP = 12;
 }

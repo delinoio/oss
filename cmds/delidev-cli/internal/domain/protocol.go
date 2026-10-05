@@ -35,9 +35,10 @@ const (
 )
 
 type ProtocolObservation struct {
-	Protocol NativeProtocol `json:"protocol"`
-	State    ProtocolState  `json:"state"`
-	Problem  *Error         `json:"problem,omitempty"`
+	Protocol   NativeProtocol   `json:"protocol"`
+	State      ProtocolState    `json:"state"`
+	Problem    *Error           `json:"problem,omitempty"`
+	Diagnostic *CodexDiagnostic `json:"diagnostic,omitempty"`
 }
 
 func ProtocolFor(harness Harness) NativeProtocol {
@@ -77,7 +78,7 @@ func (i *Installation) validateProtocol(requested bool) error {
 	switch i.Protocol.State {
 	case ProtocolVerified:
 		supported := (i.Harness == Codex && CodexVersionAllowed(i.Version)) || (i.Harness == ClaudeCode && i.Version == ClaudeProtocolVersion) || (i.Harness == GrokBuild && i.Version == GrokProtocolVersion) || (i.Harness == OpenCode && i.Version == OpenCodeProtocolVersion)
-		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil {
+		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil || i.Protocol.Diagnostic != nil {
 			return Fail(InvalidArgument, "The reported native profile is not validated.", "Use a supported protocol profile; version detection alone cannot grant capabilities.")
 		}
 	case ProtocolFailed, ProtocolUnsupported:
@@ -86,6 +87,11 @@ func (i *Installation) validateProtocol(requested bool) error {
 		}
 	default:
 		return Fail(InvalidArgument, "Unknown native protocol state.", "Report a supported protocol outcome.")
+	}
+	if d := i.Protocol.Diagnostic; d != nil {
+		if i.Harness != Codex || d.Validate() != nil || d.DetectedVersion != i.Version || i.Protocol.State == ProtocolVerified {
+			return Fail(InvalidArgument, "Invalid native failure attribution.", "Refresh discovery without raw error metadata.")
+		}
 	}
 	i.Protocol.Problem = ProtocolProblem(i.Protocol.State)
 	return nil

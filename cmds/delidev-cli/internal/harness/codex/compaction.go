@@ -71,6 +71,7 @@ type manualCompaction struct {
 func compactionUncertain() *domain.Error { return domain.CompactionUncertain() }
 
 func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source ContinuationCheckpoint, previous *CompactedCheckpoint) (returned error) {
+	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	if action.Validate() != nil || source.validate(ContinueAfterSuccess) != nil {
 		return compactionUncertain()
 	}
@@ -199,7 +200,8 @@ func (c *Client) observeCompactionLocked(native nativewire.Event, turn domain.ID
 	return Event{Kind: CompactionEvent, ThreadID: c.thread, TurnID: turn, ItemID: item.ID, Compaction: &copy, Correlated: true}, nil
 }
 
-func (c *Client) RetainCompactedCheckpoint(ctx context.Context) (CompactedCheckpoint, error) {
+func (c *Client) RetainCompactedCheckpoint(ctx context.Context) (diagnosticResult CompactedCheckpoint, returned error) {
+	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
 	if err := c.acquireControl(ctx); err != nil {
 		return CompactedCheckpoint{}, err
 	}
@@ -278,7 +280,8 @@ func VerifyCompactionRollout(ctx context.Context, home string, p CompactedCheckp
 	return nil
 }
 
-func (c *Client) VerifyCompactedContinuation(ctx context.Context, request domain.ID, p CompactedCheckpoint) (Turn, error) {
+func (c *Client) VerifyCompactedContinuation(ctx context.Context, request domain.ID, p CompactedCheckpoint) (diagnosticResult Turn, returned error) {
+	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
 	if request.Validate() != nil || p.Source.validate(ContinueAfterSuccess) != nil {
 		return Turn{}, compactionUncertain()
 	}

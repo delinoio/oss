@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
@@ -131,7 +130,7 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 	if c.SidechatPolicy != "" && (!session.IsSidechat() || !slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1)) {
 		return empty, domain.SidechatUnavailable()
 	}
-	version, protocol := codex.SupportedVersion, domain.OpenAIResponses
+	version, protocol := "", domain.OpenAIResponses
 	switch c.Harness {
 	case domain.Codex:
 		if (c.Options.SubagentModel != "" || c.Options.SubagentEffort != "" || c.Options.MaxConcurrency != 0) && !slices.Contains(machine.WorkerCapabilities, domain.CodexSubagentConfigurationV1) {

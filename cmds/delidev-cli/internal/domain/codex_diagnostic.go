@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -47,10 +48,12 @@ type CodexDiagnostic struct {
 type codexFailure struct {
 	diagnostic CodexDiagnostic
 	problem    *Error
+	cause      error
 }
 
-func (e *codexFailure) Error() string { return e.problem.Error() }
-func (e *codexFailure) Unwrap() error { return e.problem }
+func (e *codexFailure) Error() string        { return e.problem.Error() }
+func (e *codexFailure) Unwrap() error        { return e.problem }
+func (e *codexFailure) Is(target error) bool { return errors.Is(e.cause, target) }
 
 // WithCodexDiagnostic preserves the first native failure when outer operations
 // add context. SafeError excludes arbitrary provider/filesystem error text.
@@ -71,6 +74,9 @@ func WithCodexDiagnostic(version string, phase CodexPhase, err error) error {
 	safe := SafeError(err)
 	diagnostic := CodexDiagnostic{DetectedVersion: version, MinimumVersion: CodexMinimumVersion, Phase: phase, Code: safe.Code}
 	diagnostic.Message, diagnostic.Guidance = diagnostic.text()
+	if safe.Code == Unavailable && (errors.Is(err, context.DeadlineExceeded) || safe.Cause == "timeout") {
+		diagnostic.Message = strings.Replace(diagnostic.Message, "The native operation failed or timed out.", "The native operation timed out.", 1)
+	}
 	if ID(safe.CorrelationID).Validate() == nil {
 		diagnostic.CorrelationID = safe.CorrelationID
 	}
@@ -80,8 +86,9 @@ func WithCodexDiagnostic(version string, phase CodexPhase, err error) error {
 	}
 
 	problem := *safe
+	problem.Guidance, problem.Cause, problem.CorrelationID = diagnostic.Guidance, "", diagnostic.CorrelationID
 	problem.Message = fmt.Sprintf("Codex %s failed during %s (minimum %s): %s", label, phase, CodexMinimumVersion, diagnostic.Message)
-	return &codexFailure{diagnostic: diagnostic, problem: &problem}
+	return &codexFailure{diagnostic: diagnostic, problem: &problem, cause: err}
 }
 
 func CodexErrorDiagnostic(err error) *CodexDiagnostic {
@@ -122,7 +129,7 @@ func (d CodexDiagnostic) Validate() error {
 		validCode = true
 	}
 	message, guidance := d.text()
-	if !d.Phase.Valid() || !validCode || d.MinimumVersion != CodexMinimumVersion || (d.DetectedVersion != "" && !ValidInstallationVersion(d.DetectedVersion)) || d.Message != message || d.Guidance != guidance || (d.CorrelationID != "" && ID(d.CorrelationID).Validate() != nil) || strings.ContainsAny(d.DetectedVersion, "\r\n") {
+	if !d.Phase.Valid() || !validCode || d.MinimumVersion != CodexMinimumVersion || (d.DetectedVersion != "" && !ValidInstallationVersion(d.DetectedVersion)) || (d.Message != message && !(d.Code == Unavailable && d.Message == strings.Replace(message, "The native operation failed or timed out.", "The native operation timed out.", 1))) || d.Guidance != guidance || (d.CorrelationID != "" && ID(d.CorrelationID).Validate() != nil) || strings.ContainsAny(d.DetectedVersion, "\r\n") {
 		return Fail(InvalidArgument, "Invalid Codex diagnostic metadata.", "Retain only locally reconstructed bounded diagnostic metadata.")
 	}
 	return nil
@@ -136,7 +143,9 @@ func CodexRecoveryFailure(version string, phase CodexPhase, original, recovery e
 	}
 	first := CodexErrorDiagnostic(WithCodexDiagnostic(version, phase, original))
 	problem := *SafeError(recovery)
-	return &codexFailure{diagnostic: *first, problem: &problem}
+	problem.Message = first.Message + " Owned cleanup or recovery could not be confirmed."
+	problem.Guidance, problem.Cause, problem.CorrelationID = first.Guidance, "", first.CorrelationID
+	return &codexFailure{diagnostic: *first, problem: &problem, cause: original}
 }
 
 func RestoreCodexDiagnostic(d CodexDiagnostic) error {

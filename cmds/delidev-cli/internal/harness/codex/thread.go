@@ -290,6 +290,7 @@ func (c *Client) acquireControl(ctx context.Context) error {
 	}
 }
 func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, settings ThreadSettings, method threadMethod) (result ThreadResult, returned error) {
+	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result.RequestID = requestID
 	if c.sidechat != "" && !sidechatSettings(settings) {
 		return result, sidechatUnavailable()
@@ -428,7 +429,8 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 
 // ReadThread inspects metadata only. It neither resumes nor hydrates a complete
 // transcript, and cannot clear uncertainty or authorize another native send.
-func (c *Client) ReadThread(ctx context.Context, requestID, threadID domain.ID) (Thread, error) {
+func (c *Client) ReadThread(ctx context.Context, requestID, threadID domain.ID) (diagnosticResult Thread, returned error) {
+	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
 	if c.mode != ThreadProtocol {
 		return Thread{}, unsupportedSettings()
 	}

@@ -78,3 +78,9 @@ Native quota and reset-credit controls follow the [managed subscription contract
 Quota row refresh selects the active execution lease machine, falling back to the retained native owner only when no lease exists. Other active lease kinds disable that action. Recovery Inbox details show the account and quota observation time without terminal content; read-state changes grant no quota, session or execution authority.
 
 Row quota refresh remains unavailable while a lifecycle operation, removal/recovery owner or queued/sending/uncertain observation retains account authority, including after the client acceptance mutation finishes. Current connection and generation are required.
+
+### ChatGPT sign-in failure presentation
+
+Retain the existing login-first hierarchy, Back action, theme and account lifetime. A ChatGPT native failed/unsupported/expired/recovery result shows `ChatGPT sign-in failed` as `role="status"`, followed by an ordinary `role="alert"` explanation and compact version, minimum version, failed step, error code and optional opaque reference. Reconstruct explanations from closed metadata; never render server/native raw text. An empty detected version shows `Not detected`; an absent or invalid diagnostic shows `Not reported`. Keep independent recovery/cleanup uncertainty visible. Guidance points to Connection & diagnostics before another explicit sign-in.
+
+The approved 1280×800 preview illustrates initialization failure; it is not observed failure evidence for Codex 0.159.2. Preserve natural wrapping on narrow screens, the departure footer and existing controls. Failure adds no button, copy action, modal, focus movement, browser/device-code fallback or automatic retry. Claude/Grok retain their existing unsupported message. Confirmed naming keeps its original once-only focus behavior. Original Settings lifetime, late-callback suppression and once-only mutations remain unchanged.

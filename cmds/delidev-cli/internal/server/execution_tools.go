@@ -134,8 +134,8 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 
 // Codex 0.151.0's approval presentation emits an early Agent start and
 // suppresses the later canonical start. Its unified-exec completion reports
-// ExecStartup instead. Preserve both observations only for that pinned profile
-// and a matching intervening command approval; this is not approval acceptance.
+// ExecStartup instead. Preserve both observations only for an admitted Codex profile
+// and an exactly attributed intervening command approval; this is not approval acceptance.
 // Remove this compatibility rule when the pinned native profile emits a stable
 // source, after validating the replacement against installed native evidence.
 func codexApprovalSourceTransition(tx *store.Tx, input domain.ExecutionJobInput, event domain.ExecutionEvent, started uint64, prior, next domain.CommandSource) (bool, error) {
@@ -159,7 +159,7 @@ func codexApprovalSourceTransition(tx *store.Tx, input domain.ExecutionJobInput,
 			continue
 		}
 		approval := value.Approval
-		if approval.Harness == domain.Codex && domain.CodexVersionAllowed(approval.Version) && approval.Codex != nil && approval.Codex.Kind == domain.CodexCommandApproval && approval.Codex.Command != nil && approval.Codex.Command.Kind == domain.CodexExecuteCommandApproval && approval.Codex.Command.ApprovalID == nil {
+		if approval.Harness == domain.Codex && approval.Version == input.Installation.Version && approval.Codex != nil && approval.Codex.Kind == domain.CodexCommandApproval && approval.Codex.Command != nil && approval.Codex.Command.Kind == domain.CodexExecuteCommandApproval && approval.Codex.Command.ApprovalID == nil {
 			return true, nil
 		}
 	}

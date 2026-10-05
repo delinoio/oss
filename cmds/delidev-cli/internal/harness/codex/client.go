@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"runtime"
@@ -210,6 +211,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
 	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	phase = profilePhase
 	if config.ManagedAuthentication {
 		client.managedHome = home
 		client.quotaObserver = config.QuotaObserver
@@ -237,7 +239,20 @@ func handshakeError(wire *nativewire.Connection, err error) error {
 	}
 	// A handshake has no product side effect. Once Close proves native cleanup,
 	// its missing acknowledgment is a failed probe, not an uncertain execution.
-	return domain.Fail(domain.Unavailable, "Codex app-server did not complete its native handshake.", "Check the installed executable and refresh protocol discovery.")
+	failure := domain.Fail(domain.Unavailable, "Codex app-server did not complete its native handshake.", "Check the installed executable and refresh protocol discovery.")
+	if errors.Is(err, context.DeadlineExceeded) {
+		failure.Cause = "timeout"
+	}
+	return failure
 }
-func (c *Client) Close() error    { return c.wire.Close() }
+func (c *Client) Close() error {
+	return domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.Close())
+}
 func (c *Client) Version() string { return c.version }
+
+func (c *Client) recordFailure(ctx context.Context, phase domain.CodexPhase, returned *error) {
+	*returned = domain.WithCodexDiagnostic(c.version, phase, *returned)
+	if d := domain.CodexErrorDiagnostic(*returned); d != nil && c.logger != nil {
+		c.logger.WarnContext(ctx, "codex_native_operation_failed", "version", d.DetectedVersion, "minimum_version", d.MinimumVersion, "phase", d.Phase, "code", d.Code, "correlation_id", c.ownerID, "recovery_code", domain.SafeError(*returned).Code)
+	}
+}

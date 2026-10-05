@@ -144,7 +144,7 @@ func (s *Service) serverSubscriptionProgress(ctx context.Context, req *pb.GetSub
 		if a.Subscription.RecoveryRequired || o.Active() && o.Epoch != s.subscriptionServerEpoch() {
 			state = domain.SubscriptionRecovery
 		}
-		response = &pb.GetSubscriptionProgressResponse{State: loginState(state), Canceled: state == domain.SubscriptionCanceled || a.Subscription.Pending != nil && a.Subscription.Pending.ID == o.ID && a.Subscription.Pending.Canceled}
+		response = &pb.GetSubscriptionProgressResponse{Diagnostic: codexDiagnosticMessage(o.Diagnostic), State: loginState(state), Canceled: state == domain.SubscriptionCanceled || a.Subscription.Pending != nil && a.Subscription.Pending.ID == o.ID && a.Subscription.Pending.Canceled}
 		p := s.subscriptionProgress[o.ID]
 		if !p.Until.IsZero() && !time.Now().Before(p.Until) {
 			delete(s.subscriptionProgress, o.ID)
@@ -333,6 +333,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	cleanup, success := false, false
 	nativeStarted := false
 	var nativeErr error
+	version, phase := "", domain.CodexRuntime
 	var native serverSubscriptionNative
 	var vault accountSecrets
 	vault, nativeErr = s.secrets()
@@ -353,6 +354,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	clear(old)
 	if native != nil {
 		nativeStarted = true
+		version, phase = native.Version(), domain.CodexLogin
 		if operation.Action == domain.SubscriptionLogin {
 			progress, err := native.StartManagedLogin(ctx, operation.DeviceCode)
 			nativeErr = err
@@ -367,7 +369,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 				cancelErr := native.CancelManagedLogin(bounded, progress.LoginID)
 				stop()
 				if cancelErr != nil {
-					nativeErr = subscriptionDenied()
+					nativeErr = domain.CodexRecoveryFailure(version, phase, nativeErr, subscriptionDenied())
 				}
 			}
 		}
@@ -382,9 +384,14 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 		closeErr := native.Close(latest)
 		cleanup = closeErr == nil
 		if closeErr != nil {
-			nativeErr = closeErr
+			nativeErr = domain.CodexRecoveryFailure(version, phase, nativeErr, closeErr)
 			success = false
 		}
+	}
+	nativeErr = domain.WithCodexDiagnostic(version, phase, nativeErr)
+	diagnostic := domain.CodexErrorDiagnostic(nativeErr)
+	if diagnostic != nil {
+		diagnostic.CorrelationID = string(original.ID)
 	}
 	cancel()
 	<-checked
@@ -406,8 +413,8 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	}
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
 	defer stop()
-	if err := s.finishServerSubscription(bounded, id, original, operation, latest, cleanup, state); err != nil {
-		if e := s.markServerSubscriptionRecovery(id, original.ID); e != nil {
+	if err := s.finishServerSubscription(bounded, id, original, operation, latest, cleanup, state, diagnostic); err != nil {
+		if e := s.markServerSubscriptionRecovery(id, original.ID, diagnostic); e != nil {
 			s.logger.Warn("server_subscription_recovery_unconfirmed", "account_id", id, "operation_id", original.ID, "code", domain.SafeError(e).Code)
 		}
 		s.logger.Warn("server_subscription_finish_failed", "account_id", id, "operation_id", original.ID, "code", domain.SafeError(err).Code)
@@ -456,12 +463,15 @@ func suggestedSubscriptionName(identity subscription.Identity) string {
 	return "ChatGPT"
 }
 
-func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, operation domain.SubscriptionOperation, bundle []byte, cleanup bool, result domain.SubscriptionLoginState) error {
+func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, operation domain.SubscriptionOperation, bundle []byte, cleanup bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic) error {
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return err
 	}
 	defer unlock()
+	if diagnostic != nil && diagnostic.Validate() != nil {
+		return subscriptionDenied()
+	}
 	var suggestion *subscriptionProgress
 	defer func() {
 		delete(s.subscriptionProgress, o.ID)
@@ -536,7 +546,8 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 		Account, Operation domain.ID
 		Cleanup            bool
 		State              domain.SubscriptionLoginState
-	}{id, o.ID, cleanup, result}, func(tx *store.Tx) (any, error) {
+		Diagnostic         *domain.CodexDiagnostic
+	}{id, o.ID, cleanup, result, diagnostic}, func(tx *store.Tx) (any, error) {
 		r, a, err := subscriptionAccount(tx, id, 0)
 		if err != nil {
 			return nil, err
@@ -551,6 +562,10 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 			if operation.Action != domain.SubscriptionLogin {
 				result = domain.SubscriptionRecovery
 			}
+		}
+		st.ServerOperation.Diagnostic = diagnostic
+		if success {
+			st.ServerOperation.Diagnostic = nil
 		}
 		if !cleanup || result == domain.SubscriptionRecovery {
 			st.RecoveryRequired = true
@@ -620,11 +635,14 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 		// The deferred removal applies before this later original-bound publication.
 		suggestion = &subscriptionProgress{Name: suggestedSubscriptionName(identity), Generation: o.FinishID, Until: o.ExpiresAt}
 	}
-	s.logger.InfoContext(ctx, "server_subscription_finished", "account_id", id, "operation_id", o.ID, "state", result, "cleanup_confirmed", cleanup)
+	s.logger.InfoContext(ctx, "server_subscription_finished", "account_id", id, "operation_id", o.ID, "state", result, "cleanup_confirmed", cleanup, "correlation_id", o.ID)
+	if diagnostic != nil {
+		s.logger.WarnContext(ctx, "server_subscription_native_failed", "version", diagnostic.DetectedVersion, "minimum_version", diagnostic.MinimumVersion, "phase", diagnostic.Phase, "code", diagnostic.Code, "correlation_id", diagnostic.CorrelationID, "state", result, "cleanup_confirmed", cleanup)
+	}
 	return nil
 }
 
-func (s *Service) markServerSubscriptionRecovery(id, operation domain.ID) error {
+func (s *Service) markServerSubscriptionRecovery(id, operation domain.ID, diagnostic *domain.CodexDiagnostic) error {
 	ctx, cancel := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 5*time.Second)
 	defer cancel()
 	unlock, err := s.lockAccounts(ctx)
@@ -642,6 +660,9 @@ func (s *Service) markServerSubscriptionRecovery(id, operation domain.ID) error 
 			return nil, subscriptionDenied()
 		}
 		a.Subscription.ServerOperation.State = domain.SubscriptionRecovery
+		if a.Subscription.ServerOperation.Diagnostic == nil {
+			a.Subscription.ServerOperation.Diagnostic = diagnostic
+		}
 		a.Subscription.RecoveryRequired = true
 		a.Health = domain.AccountFailed
 		// A settled metadata publication may precede failed vault cleanup. Retain
@@ -658,4 +679,25 @@ func (s *Service) markServerSubscriptionRecovery(id, operation domain.ID) error 
 }
 func operationPlaceholder(o *domain.ServerSubscriptionOperation) *domain.SubscriptionOperation {
 	return &domain.SubscriptionOperation{ID: o.ID, Action: o.Action, Actor: o.Actor, Phase: domain.SubscriptionQueued}
+}
+
+func codexDiagnosticMessage(d *domain.CodexDiagnostic) *pb.CodexDiagnostic {
+	if d == nil || d.Validate() != nil {
+		return nil
+	}
+	phases := map[domain.CodexPhase]pb.CodexDiagnosticPhase{
+		domain.CodexDiscovery:  pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_DISCOVERY,
+		domain.CodexVersion:    pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_VERSION,
+		domain.CodexProfile:    pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_PROFILE,
+		domain.CodexRuntime:    pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_RUNTIME,
+		domain.CodexLaunch:     pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_LAUNCH,
+		domain.CodexInitialize: pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_INITIALIZE,
+		domain.CodexConfirm:    pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_CONFIRM,
+		domain.CodexLogin:      pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_LOGIN,
+		domain.CodexModels:     pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_MODELS,
+		domain.CodexExecution:  pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_EXECUTION,
+		domain.CodexHistory:    pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_HISTORY,
+		domain.CodexCleanup:    pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_CLEANUP,
+	}
+	return &pb.CodexDiagnostic{DetectedVersion: d.DetectedVersion, MinimumVersion: d.MinimumVersion, Phase: phases[d.Phase], Code: string(d.Code), Message: d.Message, Guidance: d.Guidance, CorrelationId: d.CorrelationID}
 }

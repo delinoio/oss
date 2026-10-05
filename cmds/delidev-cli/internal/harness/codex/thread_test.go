@@ -498,3 +498,26 @@ func TestSelectionValidationDoesNotReadCoordinatorFilesystem(t *testing.T) {
 		t.Fatal("coordinator accepted unsupported native settings", err)
 	}
 }
+
+func TestNewerThreadAndHistoryKeepExactNativeVersion(t *testing.T) {
+	cfg := fixtureConfig(t, "thread-ready")
+	cfg.Mode, cfg.Version = ThreadProtocol, "0.159.2"
+	cfg.Process.Env = append(cfg.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE="+cfg.Version)
+	c, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	result, err := c.StartThread(context.Background(), domain.NewID(), threadSettings(t))
+	if err != nil || result.Thread == nil {
+		t.Fatal(err)
+	}
+	thread, err := c.ReadThread(context.Background(), domain.NewID(), result.Thread.ID)
+	if err != nil || thread.ID != result.Thread.ID || c.Version() != cfg.Version {
+		t.Fatal("higher native history changed attribution", err)
+	}
+	raw, _ := json.Marshal(threadWire{ID: domain.NewID(), SessionID: domain.NewID(), CLIVersion: SupportedVersion, Status: ThreadStatus{Type: ThreadIdle}})
+	if _, err := decodeThread(raw, cfg.Version); err == nil {
+		t.Fatal("minimum substituted for exact historical native version")
+	}
+}
