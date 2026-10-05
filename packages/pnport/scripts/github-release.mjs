@@ -75,9 +75,7 @@ export async function publish({ plan, files }, { api, download, upload, sign, ve
   if (!release) {
     const description = prerelease
       ? { make_latest: 'false', body: 'Experimental npm next preview for macOS and glibc Linux x64/arm64. Install with npm install --global @delino/pnport@next. Windows remains unsupported. Full feature, minimum-OS, and benchmark acceptance is incomplete; intermittent native initialization failures remain under investigation. This preview does not establish stable 0.1.0 readiness. Report reproducible failures in issue #958 with the version, OS/architecture and sanitized doctor diagnostics.' }
-      : plan.version === '0.1.0'
-        ? { body: 'pnport 0.1.0 supports macOS 15+ and Ubuntu 22.04-equivalent glibc Linux on x64/arm64. Install with npm install --global @delino/pnport@0.1.0. Windows is planned for 0.2.0. Known limitations: intermittent macOS initialization failures and cancellation returning exit 125 instead of the signal-derived status remain unresolved. Compatibility is not verified for every filesystem and process workflow. Universal executable compatibility is not claimed. Report reproducible failures in issue #958 with the exact version, OS/architecture and sanitized diagnostics.' }
-        : {};
+      : { body: `pnport ${plan.version} supports macOS 15+ and Ubuntu 22.04-equivalent glibc Linux on x64/arm64. Install with npm install --global @delino/pnport@${plan.version}. Windows is planned for 0.2.0. Known limitations: intermittent macOS initialization failures and cancellation returning exit 125 instead of the signal-derived status remain unresolved. Compatibility is not verified for every filesystem and process workflow. Universal executable compatibility is not claimed. Report reproducible failures in issue #958 with the exact version, OS/architecture and sanitized diagnostics.` };
     release = await api('POST', `${prefix}/releases`, {
       tag_name: plan.tag, target_commitish: plan.revision, name: plan.tag,
       draft: true, prerelease, generate_release_notes: true, ...description,

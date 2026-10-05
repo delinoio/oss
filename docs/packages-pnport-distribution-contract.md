@@ -21,6 +21,17 @@ job skipped. Discovery and job readback fail closed, including missing, pending,
 failed, ambiguous and untrusted results. Branch candidates do not grant this
 authority.
 
+## Owner-authorized 0.1.2 repair release (2026-10-05)
+
+Follow the [exact 0.1.2 repair authorization](project-pnport.md#owner-authorized-012-repair-release-2026-10-05).
+The owner requested repairing the failed 0.1.1 candidate and completing the next
+patch release. Require `pnportReleaseReady: true` with exact
+`pnportReleaseVersion: "0.1.2"`, preserve the failed immutable 0.1.1 tag and
+all published bytes, and pass every existing four-native candidate gate before
+publication. Existing disclosed initialization/cancellation and full-acceptance
+limits remain visible; new candidate failures must be fixed. This authorization
+is specific to 0.1.2 and does not close #958 or add Windows support.
+
 ## Scope
 Native CI and release candidate jobs additionally run installed hidden-cache directory/mutation conformance and prepared offline Yarn 4.18.0 / Vitest 5.0.1 / Vite 8.3.0 cache conformance. Execute the prepared `vitest` package bin through the supplied packaged CLI's `run --` path, with its matching companion, so Vitest and its workers use the native view. Yarn/npm are used only for fixture preparation. Each fresh temporary project must create its first lockfile under `CI=true`; disable immutable installs only for its preparation call, without changing repository install policy or offline execution settings. Default settings create `.vite` inside physical `node_modules`; two inline/split runs must preserve cache bytes, native dependency access and doctor readiness. Source-only support does not mutate or grant capabilities to published 0.1.0/preview artifacts.
 

@@ -275,7 +275,7 @@ test("an older pnport retry cannot downgrade the Homebrew tap", (t) => {
   assert.equal(execFileSync("git", ["show", "main:Formula/pnport.rb"], { cwd: remote, encoding: "utf8" }), current);
 });
 
-for (const version of ["0.1.0", "0.1.0-next.1"]) test(`signed GitHub ${version} resumes an identical partial draft and rejects conflicting bytes`, async () => {
+for (const version of ["0.1.0", "0.1.2", "0.1.0-next.1"]) test(`signed GitHub ${version} resumes an identical partial draft and rejects conflicting bytes`, async () => {
   const prerelease = publicationChannel(version).prerelease;
   const plan = { project: "pnport", version, revision, tag: `pnport@v${version}` };
   const files = new Map([["pnport-darwin-arm64.tar.gz", Buffer.from("native archive")]]);
@@ -291,6 +291,7 @@ for (const version of ["0.1.0", "0.1.0-next.1"]) test(`signed GitHub ${version} 
         assert.equal(body.prerelease, prerelease);
         if (prerelease) { assert.equal(body.make_latest, "false"); assert.match(body.body, /acceptance is incomplete/u); }
         else {
+          assert.match(body.body, new RegExp(`@delino/pnport@${version.replaceAll(".", "\\.")}`, "u"));
           assert.match(body.body, /intermittent macOS initialization failures/u);
           assert.match(body.body, /exit 125 instead of the signal-derived status/u);
           assert.match(body.body, /Compatibility is not verified/u);

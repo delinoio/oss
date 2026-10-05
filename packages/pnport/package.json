@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "pnportReleaseReady": true,
-  "pnportReleaseVersion": "0.1.0",
+  "pnportReleaseVersion": "0.1.2",
   "pnportPreviewVersion": "0.1.0-next.1",
   "description": "Native Yarn Plug'n'Play subprocess filesystem",
   "license": "Apache-2.0",
