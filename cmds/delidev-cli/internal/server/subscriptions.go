@@ -18,7 +18,11 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-type subscriptionProgress struct{ URL, UserCode string }
+type subscriptionProgress struct {
+	URL, UserCode, Name string
+	Generation          domain.ID
+	Until               time.Time
+}
 
 func (s *Service) subscriptionServerEpoch() domain.ID {
 	s.subscriptionOnce.Do(func() { s.subscriptionEpoch = domain.NewID() })
@@ -80,6 +84,9 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 		if state == nil || state.Pending == nil || state.Pending.Actor.DeviceID != device || state.Pending.Phase != domain.SubscriptionQueued {
 			continue
 		}
+		if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
+			o.State = domain.SubscriptionCanceled
+		}
 		state.Pending = nil
 		if _, err := tx.Put(domain.AccountKind, record.ID, record.Revision, "", "", account); err != nil {
 			return err
@@ -130,6 +137,9 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 	m := req.Msg.Mutation
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if req.Msg.MachineId == "" {
+		return s.requestServerSubscription(ctx, req)
 	}
 	action := subscriptionAction(req.Msg.Action)
 	if action == "" || (action != domain.SubscriptionLogin && action != domain.SubscriptionRefresh && action != domain.SubscriptionLogout) || (req.Msg.DeviceCode && action != domain.SubscriptionLogin) || domain.ID(req.Msg.MachineId).Validate() != nil {
@@ -214,6 +224,9 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 			return nil, domain.Fail(domain.Unsupported, "Only an active login can be canceled.", "Let refresh or logout finish under exclusive ownership.")
 		}
 		if a.Subscription.Pending.Phase == domain.SubscriptionQueued {
+			if o := a.Subscription.ServerOperation; o != nil && o.ID == a.Subscription.Pending.ID {
+				o.State = domain.SubscriptionCanceled
+			}
 			a.Subscription.Pending = nil
 		} else {
 			a.Subscription.Pending.Canceled = true
@@ -240,6 +253,12 @@ func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Requ
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
+	if response, matched, err := s.serverSubscriptionProgress(ctx, req.Msg); matched || err != nil {
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
+		return connect.NewResponse(response), nil
+	}
 	var op *domain.SubscriptionOperation
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		_, a, err := subscriptionAccount(tx, domain.ID(req.Msg.AccountId), 0)
@@ -408,7 +427,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if state == nil || state.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
-		if state.Lease != nil {
+		if state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
 			return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
@@ -606,7 +625,7 @@ func (s *Service) PublishSubscriptionProgress(ctx context.Context, req *connect.
 		s.subscriptionProgress = map[domain.ID]subscriptionProgress{}
 	}
 	if !op.Canceled {
-		s.subscriptionProgress[op.ID] = subscriptionProgress{req.Msg.Url, req.Msg.UserCode}
+		s.subscriptionProgress[op.ID] = subscriptionProgress{URL: req.Msg.Url, UserCode: req.Msg.UserCode}
 	}
 	return connect.NewResponse(&pb.PublishSubscriptionProgressResponse{Canceled: op.Canceled}), nil
 }

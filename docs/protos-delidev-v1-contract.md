@@ -608,3 +608,7 @@ with an optional original unpublished Sidechat child ID on Fork copies. Keep the
 native clients allow 8 MiB response transport overhead for JSON/base64. Ordinary
 public command JSON retains its 1 MiB bound. These metadata IDs grant no native
 replay or filesystem authority.
+
+## Independent server subscription login
+
+Main-established capability 30 and PR #1332's reserved declarations activate the independent server lifecycle. Omitted `RequestSubscription.machine_id` selects this capability; explicit machine requests retain original Worker authority. `GetSubscriptionProgressResponse` adds typed state 4, transient suggested_name 5 and original successful generation 6. The closed SubscriptionLoginState values 0–8 separate all native outcomes; unknown values grant no UI transition. `ForwardSubscriptionCallback` carries account_id 1, operation_id 2 and write-only bounded callback_query bytes 3, returning accepted 1. Only the authenticated original owner/client may claim one original state-bound native callback; no Worker, receipt replay or uncertain delivery grants another send. Callback bytes, authorization URLs and unsaved suggestions never enter persisted records or logs. Follow the subscription contract; regenerate Go, TypeScript and Connect Query outputs together.

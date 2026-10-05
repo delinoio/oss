@@ -77,10 +77,23 @@ pub async fn account_oauth_native(
         opening,
         window_epoch,
     };
+    let local = binding
+        .as_ref()
+        .map(|v| {
+            url::Url::parse(&v.profile.endpoint)
+                .ok()
+                .is_some_and(|u| match u.host() {
+                    Some(url::Host::Domain("localhost")) => true,
+                    Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+                    Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+                    _ => false,
+                })
+        })
+        .unwrap_or(true);
     let original_scope = scope.clone();
     let native = Arc::clone(host.inner());
     let result = tauri::async_runtime::spawn_blocking(move || {
-        native.control(scope, action, &generation, &attempt, &authorization)
+        native.control_subscription(scope, action, &generation, &attempt, &authorization, local)
     })
     .await
     .map_err(|_| NativeFailure::SidecarFailed)??;

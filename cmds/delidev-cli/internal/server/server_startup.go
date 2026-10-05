@@ -145,6 +145,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
 	}
+	if err := service.initializeServerSubscriptions(child); err != nil {
+		return err
+	}
 	if err := service.initializeOAuth(child); err != nil {
 		return err
 	}
@@ -170,6 +173,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	lifecycleLock = nil
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
+	subscriptionCtx, stopSubscription := context.WithCancel(child)
+	subscriptionDone := make(chan struct{})
+	go func() { defer close(subscriptionDone); service.runServerSubscriptions(subscriptionCtx) }()
+	defer func() { stopSubscription(); <-subscriptionDone }()
 	sshCtx, stopSSH := context.WithCancel(child)
 	sshDone := make(chan struct{})
 	go func() { defer close(sshDone); service.runSSHSetups(sshCtx) }()

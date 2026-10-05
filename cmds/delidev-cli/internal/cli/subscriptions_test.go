@@ -34,7 +34,7 @@ func TestCLISubscriptionExplicitWorkerAndOriginalOperation(t *testing.T) {
 	id, machine, requestID := domain.NewID(), domain.NewID(), domain.NewID()
 	for _, operation := range []string{"login", "refresh", "logout"} {
 		f := &subscriptionCLIClient{}
-		c := client{subscriptions: f}
+		c := client{subscriptions: f, system: &subscriptionCLISystem{}}
 		args := []string{operation, "--id", string(id), "--revision", "7", "--machine-id", string(machine)}
 		if operation == "login" {
 			args = append(args, "--device-code")
@@ -50,7 +50,7 @@ func TestCLISubscriptionExplicitWorkerAndOriginalOperation(t *testing.T) {
 		}
 	}
 	f := &subscriptionCLIClient{}
-	c := client{subscriptions: f}
+	c := client{subscriptions: f, system: &subscriptionCLISystem{}}
 	if _, err := accountCommand(context.Background(), c, options{requestID: requestID}, []string{"cancel-login", "--id", string(id), "--revision", "7"}, IO{}); err != nil {
 		t.Fatal(err)
 	}
@@ -60,5 +60,31 @@ func TestCLISubscriptionExplicitWorkerAndOriginalOperation(t *testing.T) {
 	value, err := accountCommand(context.Background(), c, options{}, []string{"login-progress", "--id", string(id), "--operation-id", string(requestID)}, IO{})
 	if err != nil || f.progress == nil || f.progress.OperationId != string(requestID) || value.(map[string]any)["user_code"] != "TEST-1234" {
 		t.Fatal("progress did not use the original operation", err)
+	}
+}
+
+type subscriptionCLISystem struct {
+	delidevv1connect.SystemServiceClient
+	supported bool
+}
+
+func (f *subscriptionCLISystem) GetStatus(context.Context, *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
+	result := &pb.GetStatusResponse{}
+	if f.supported {
+		result.Capabilities = []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_LOGIN_V1}
+	}
+	return connect.NewResponse(result), nil
+}
+func TestCLISubscriptionWithoutWorkerNegotiatesIndependentCapability(t *testing.T) {
+	for _, operation := range []string{"login", "refresh", "logout"} {
+		f := &subscriptionCLIClient{}
+		c := client{subscriptions: f, system: &subscriptionCLISystem{supported: true}}
+		id, requestID := domain.NewID(), domain.NewID()
+		if _, err := accountCommand(context.Background(), c, options{requestID: requestID}, []string{operation, "--id", string(id), "--revision", "7"}, IO{}); err != nil {
+			t.Fatal(err)
+		}
+		if f.request == nil || f.request.MachineId != "" || f.request.DeviceCode || f.request.Mutation.RequestId != string(requestID) || f.request.Mutation.ExpectedRevision != 7 {
+			t.Fatal("independent CLI login lost its original ownership")
+		}
 	}
 }

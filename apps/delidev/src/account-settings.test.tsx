@@ -345,42 +345,17 @@ it("requires a deliberate keyless connection and exposes provider-off state sepa
   expect(await screen.findByText(/Enable it in API Providers/)).toBeTruthy();
 });
 
-it("creates service-native metadata without a provider or implicit login", async () => {
-  const account = resource(EntityKind.ACCOUNT, { alias: "Work subscription", subscription_service: "chatgpt", type: "subscription", enabled: true, health: "disconnected" });
-  const save = vi.fn(async (request: unknown) => ({ resource: account, requestId: requestId(request) }));
-  const value = fixture({ save });
-  render(value.view(value.settings(AccountSettingsSection.Subscription)));
-  fireEvent.click(await screen.findByRole("button", { name: "ChatGPT · Add account" }));
-  fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Work subscription" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save subscription account" }));
-  await screen.findByRole("heading", { name: "Work subscription" });
-  expect(value.connect).not.toHaveBeenCalled();
-  const body = JSON.parse(new TextDecoder().decode((save.mock.calls[0][0] as { documentJson: Uint8Array }).documentJson));
-  expect(body).toMatchObject({ type: "subscription", subscription_service: "chatgpt", alias: "Work subscription", recovery_notifications: false });
-  expect(body).not.toHaveProperty("provider_id");
-});
-
-it("offers closed service choices without provider search or setup", async () => {
+it("keeps legacy service-native inventory read-only without independent login support", async () => {
   const value = fixture(); render(value.view(value.settings(AccountSettingsSection.Subscription)));
-  await screen.findByRole("button", { name: "ChatGPT · Add account" });
-  for (const name of ["ChatGPT", "Claude", "Grok"]) expect(screen.getByRole("button", { name: `${name} · Add account` })).toBeTruthy();
+  for (const name of ["ChatGPT", "Claude", "Grok"]) {
+    const button = await screen.findByRole("button", { name: `${name} · Coming soon` });
+    expect((button as HTMLButtonElement).disabled).toBe(true); fireEvent.click(button);
+  }
+  expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("Account name")).toBeNull();
   expect(screen.queryByLabelText("Subscription provider")).toBeNull(); expect(screen.queryByLabelText("Search providers")).toBeNull();
   expect(value.list.mock.calls.every(([request]) => request.filter?.kind === EntityKind.ACCOUNT && request.providerId === "")).toBe(true);
 });
-
-it("retries a lost service-native metadata acknowledgment exactly without starting login", async () => {
-  const account = resource(EntityKind.ACCOUNT, { alias: "Work subscription", subscription_service: "claude", type: "subscription", enabled: true, health: "disconnected" }, 2n);
-  const save = vi.fn(async (request: unknown) => ({ resource: account, requestId: requestId(request) })).mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable));
-  const value = fixture({ save }); render(value.view(value.settings(AccountSettingsSection.Subscription)));
-  fireEvent.click(await screen.findByRole("button", { name: "Claude · Add account" }));
-  fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Work subscription" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save subscription account" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Retry original subscription account creation" }));
-  await screen.findByRole("heading", { name: "Work subscription" });
-  expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[0][0]).toEqual(save.mock.calls[1][0]);
-  expect(value.connect).not.toHaveBeenCalled(); expect(screen.getByText(/Native login for this service is unavailable/)).toBeTruthy();
-});
-
 
 it("renders ordered native provider actions, enters once without writes, and returns focus to the exact button", async () => {
   const value = fixture();

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -81,7 +82,7 @@ func accountCommand(ctx context.Context, c client, o options, args []string, str
 		if err != nil {
 			return nil, rpc.ClientError(err)
 		}
-		return map[string]any{"url": response.Msg.Url, "user_code": response.Msg.UserCode, "canceled": response.Msg.Canceled}, nil
+		return map[string]any{"url": response.Msg.Url, "user_code": response.Msg.UserCode, "canceled": response.Msg.Canceled, "state": response.Msg.State.String(), "suggested_name": response.Msg.SuggestedName, "generation": response.Msg.Generation}, nil
 	}
 	if revision == 0 {
 		return nil, domain.Fail(domain.MissingInput, "The account's current revision is required.", "Read account status and provide --revision.")
@@ -95,8 +96,18 @@ func accountCommand(ctx context.Context, c client, o options, args []string, str
 		return map[string]any{"account": resourceJSON(response.Msg.Account), "replayed": response.Msg.Replayed}, nil
 	}
 	if operation == "login" || operation == "refresh" || operation == "logout" {
-		if err := domain.ID(machine).Validate(); err != nil {
-			return nil, err
+		if machine != "" {
+			if err := domain.ID(machine).Validate(); err != nil {
+				return nil, err
+			}
+		} else {
+			status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_LOGIN_V1) {
+				return nil, domain.Fail(domain.Unsupported, "This server does not support independent subscription login.", "Update the server or explicitly select an existing Worker with --machine-id.")
+			}
 		}
 		action := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN
 		if operation == "refresh" {

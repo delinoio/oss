@@ -18,6 +18,18 @@ enum SubscriptionAction {
 
 // Public lifecycle operations and an independently authorized protected Worker
 // lane. Bundles never enter Resource, Job, events, receipts, or execution output.
+enum SubscriptionLoginState {
+  SUBSCRIPTION_LOGIN_STATE_UNSPECIFIED = 0;
+  SUBSCRIPTION_LOGIN_STATE_PREPARING = 1;
+  SUBSCRIPTION_LOGIN_STATE_WAITING = 2;
+  SUBSCRIPTION_LOGIN_STATE_SUCCEEDED = 3;
+  SUBSCRIPTION_LOGIN_STATE_CANCELED = 4;
+  SUBSCRIPTION_LOGIN_STATE_EXPIRED = 5;
+  SUBSCRIPTION_LOGIN_STATE_UNSUPPORTED = 6;
+  SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED = 7;
+  SUBSCRIPTION_LOGIN_STATE_FAILED = 8;
+}
+
 service SubscriptionService {
   rpc RequestSubscriptionObservation(RequestSubscriptionObservationRequest) returns (RequestSubscriptionObservationResponse);
   rpc RefreshAllSubscriptionQuotas(RefreshAllSubscriptionQuotasRequest) returns (RefreshAllSubscriptionQuotasResponse);
@@ -28,6 +40,7 @@ service SubscriptionService {
   rpc RequestSubscription(RequestSubscriptionRequest) returns (RequestSubscriptionResponse);
   rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
   rpc GetSubscriptionProgress(GetSubscriptionProgressRequest) returns (GetSubscriptionProgressResponse);
+  rpc ForwardSubscriptionCallback(ForwardSubscriptionCallbackRequest) returns (ForwardSubscriptionCallbackResponse);
   rpc WatchSubscription(WatchSubscriptionRequest) returns (stream WatchSubscriptionResponse);
   rpc TakeSubscription(TakeSubscriptionRequest) returns (TakeSubscriptionResponse);
   rpc PublishSubscriptionProgress(PublishSubscriptionProgressRequest) returns (PublishSubscriptionProgressResponse);
@@ -61,6 +74,9 @@ message GetSubscriptionProgressResponse {
   string url = 1;
   string user_code = 2;
   bool canceled = 3;
+  SubscriptionLoginState state = 4;
+  string suggested_name = 5;
+  string generation = 6;
 }
 message WatchSubscriptionRequest {
   string machine_id = 1;
@@ -183,4 +199,15 @@ message PublishSubscriptionObservationRequest {
 message PublishSubscriptionObservationResponse {
   Resource account = 1;
   bool replayed = 2;
+}
+
+// The authenticated original initiator can forward one trusted native callback.
+// Callback bytes are write-only and never enter receipts or resource documents.
+message ForwardSubscriptionCallbackRequest {
+  string account_id = 1;
+  string operation_id = 2;
+  bytes callback_query = 3;
+}
+message ForwardSubscriptionCallbackResponse {
+  bool accepted = 1;
 }

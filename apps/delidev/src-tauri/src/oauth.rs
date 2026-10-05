@@ -23,6 +23,8 @@ use crate::{NativeFailure, canonical_id};
 pub enum OAuthAction {
     Begin,
     BindOpen,
+    SubscriptionOpen,
+    SubscriptionReopen,
     Reopen,
     Take,
     Dispose,
@@ -51,6 +53,7 @@ pub struct OAuthScope {
     pub window_epoch: u64,
 }
 struct Shared {
+    expected_state: Option<Zeroizing<String>>,
     bound: AtomicBool,
     consumed: AtomicBool,
     stop: AtomicBool,
@@ -138,6 +141,26 @@ impl OAuthHost {
         )
     }
 
+    pub fn control_subscription(
+        &self,
+        scope: OAuthScope,
+        action: OAuthAction,
+        generation: &str,
+        attempt_id: &str,
+        authorization: &str,
+        local: bool,
+    ) -> Result<OAuthResult, NativeFailure> {
+        self.control_with_browser(
+            scope,
+            action,
+            generation,
+            attempt_id,
+            authorization,
+            local,
+            open_authorization,
+        )
+    }
+
     fn control_with_opener(
         &self,
         scope: OAuthScope,
@@ -145,6 +168,28 @@ impl OAuthHost {
         generation: &str,
         attempt_id: &str,
         authorization: &str,
+        opener: impl FnOnce(&str, &AtomicBool) -> Result<(), NativeFailure>,
+    ) -> Result<OAuthResult, NativeFailure> {
+        self.control_with_browser(
+            scope,
+            action,
+            generation,
+            attempt_id,
+            authorization,
+            true,
+            opener,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn control_with_browser(
+        &self,
+        scope: OAuthScope,
+        action: OAuthAction,
+        generation: &str,
+        attempt_id: &str,
+        authorization: &str,
+        local: bool,
         opener: impl FnOnce(&str, &AtomicBool) -> Result<(), NativeFailure>,
     ) -> Result<OAuthResult, NativeFailure> {
         if self.stopped.load(Ordering::Acquire) {
@@ -167,6 +212,68 @@ impl OAuthHost {
                     true
                 }
             });
+        }
+        if matches!(
+            action,
+            OAuthAction::SubscriptionOpen | OAuthAction::SubscriptionReopen
+        ) {
+            canonical_id(attempt_id)?;
+            if self
+                .disposed
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .contains(&scope)
+            {
+                return Err(NativeFailure::Stopped);
+            }
+            if let Some(original) = attempts.get(&scope.window) {
+                if original.scope != scope
+                    || original.attempt != attempt_id
+                    || original.authorization.as_str() != authorization
+                    || !generation.is_empty() && original.generation != generation
+                    || original.shared.expected_state.is_none()
+                {
+                    return Err(NativeFailure::InvalidEvidence);
+                }
+                // Exact initial binding replay never opens another browser.
+                // Deliberate reopen recovers a lost binding reply and opens
+                // this same original address exactly once.
+                if action == OAuthAction::SubscriptionReopen {
+                    let shared = Arc::clone(&original.shared);
+                    let url = Zeroizing::new(original.authorization.to_string());
+                    let generation = original.generation.clone();
+                    drop(attempts);
+                    opener(&url, &shared.stop)?;
+                    return Ok(OAuthResult {
+                        generation,
+                        callback_url: String::new(),
+                        code: None,
+                    });
+                }
+                return Ok(OAuthResult {
+                    generation: original.generation.clone(),
+                    callback_url: String::new(),
+                    code: None,
+                });
+            }
+            if !generation.is_empty()
+                || attempts.len() >= 32
+                || self.disposed.lock().map_err(|_| NativeFailure::Busy)?.len() >= 4096
+            {
+                return Err(NativeFailure::Busy);
+            }
+            let original = begin_subscription(scope, attempt_id, authorization, local)?;
+            let result = OAuthResult {
+                generation: original.generation.clone(),
+                callback_url: String::new(),
+                code: None,
+            };
+            let shared = Arc::clone(&original.shared);
+            let url = Zeroizing::new(original.authorization.to_string());
+            attempts.insert(original.scope.window.clone(), original);
+            drop(attempts);
+            opener(&url, &shared.stop)?;
+            return Ok(result);
         }
         if action == OAuthAction::Begin {
             let disposed = self.disposed.lock().map_err(|_| NativeFailure::Busy)?;
@@ -333,6 +440,7 @@ fn begin(scope: OAuthScope) -> Result<Attempt, NativeFailure> {
     let callback = format!("http://localhost:{port}{path}");
     let generation = uuid::Uuid::now_v7().to_string();
     let shared = Arc::new(Shared {
+        expected_state: None,
         bound: AtomicBool::new(false),
         consumed: AtomicBool::new(false),
         stop: AtomicBool::new(false),
@@ -396,7 +504,16 @@ fn decode_code(raw: &str) -> Option<Zeroizing<Vec<u8>>> {
     }
     valid_code(&result).then_some(result)
 }
+#[cfg(test)]
 fn parse_request(raw: &[u8], host: &str, path: &str) -> Option<Option<Zeroizing<Vec<u8>>>> {
+    parse_request_mode(raw, host, path, None)
+}
+fn parse_request_mode(
+    raw: &[u8],
+    host: &str,
+    path: &str,
+    state: Option<&str>,
+) -> Option<Option<Zeroizing<Vec<u8>>>> {
     let text = std::str::from_utf8(raw).ok()?;
     let (first, headers) = text.split_once("\r\n")?;
     let mut parts = first.split(' ');
@@ -425,7 +542,8 @@ fn parse_request(raw: &[u8], host: &str, path: &str) -> Option<Option<Zeroizing<
             }
         }
         // The callback has no body. Refuse request smuggling/ambiguous framing.
-        if name.eq_ignore_ascii_case("transfer-encoding")
+        if state.is_some() && name.eq_ignore_ascii_case("origin")
+            || name.eq_ignore_ascii_case("transfer-encoding")
             || name.eq_ignore_ascii_case("content-length") && value.trim() != "0"
         {
             return None;
@@ -438,7 +556,36 @@ fn parse_request(raw: &[u8], host: &str, path: &str) -> Option<Option<Zeroizing<
         return Some(None);
     }
     let (request_path, query) = target.split_once('?')?;
-    if request_path != path || query.contains('&') || query.contains('#') {
+    if request_path != path || query.contains('#') {
+        return None;
+    }
+    if let Some(state) = state {
+        if query.len() > 16 << 10 {
+            return None;
+        }
+        let mut fields = BTreeMap::new();
+        for part in query.split('&') {
+            let (key, value) = part.split_once('=')?;
+            if !matches!(key, "code" | "state" | "scope")
+                || fields.insert(key, decode_code(value)?).is_some()
+            {
+                return None;
+            }
+        }
+        let supplied = fields.get("state")?;
+        if !fields.contains_key("code")
+            || supplied.len() != state.len()
+            || supplied
+                .iter()
+                .zip(state.as_bytes())
+                .fold(0u8, |diff, (a, b)| diff | (*a ^ *b))
+                != 0
+        {
+            return None;
+        }
+        return Some(Some(Zeroizing::new(query.as_bytes().to_vec())));
+    }
+    if query.contains('&') {
         return None;
     }
     let code = query.strip_prefix("code=")?;
@@ -467,7 +614,12 @@ fn handle_request(stream: &mut TcpStream, host: &str, path: &str, shared: &Share
         }
     }
     buffer.zeroize();
-    let parsed = parse_request(&raw, host, path);
+    let parsed = parse_request_mode(
+        &raw,
+        host,
+        path,
+        shared.expected_state.as_deref().map(String::as_str),
+    );
     let common = "Cache-Control: no-store\r\nReferrer-Policy: \
                   no-referrer\r\nContent-Security-Policy: default-src 'none'; frame-ancestors \
                   'none'\r\nConnection: close\r\n";
@@ -871,5 +1023,323 @@ mod tests {
             )
             .is_err()
         );
+    }
+}
+
+fn subscription_authorization(raw: &str) -> Result<Zeroizing<String>, NativeFailure> {
+    if raw.len() > 8192 || raw.chars().any(char::is_control) {
+        return Err(NativeFailure::InvalidInput);
+    }
+    let url = url::Url::parse(raw).map_err(|_| NativeFailure::InvalidInput)?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("auth.openai.com")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/oauth/authorize"
+        || url.fragment().is_some()
+        || url.as_str() != raw
+    {
+        return Err(NativeFailure::InvalidInput);
+    }
+    let mut fields = BTreeMap::new();
+    for (key, value) in url.query_pairs() {
+        if fields
+            .insert(key.into_owned(), value.into_owned())
+            .is_some()
+        {
+            return Err(NativeFailure::InvalidInput);
+        }
+    }
+    let state = fields.remove("state").ok_or(NativeFailure::InvalidInput)?;
+    if !(16..=512).contains(&state.len())
+        || !state
+            .bytes()
+            .all(|v| v.is_ascii_alphanumeric() || v == b'-' || v == b'_')
+        || fields.get("redirect_uri").map(String::as_str)
+            != Some("http://localhost:1457/auth/callback")
+        || fields.get("code_challenge_method").map(String::as_str) != Some("S256")
+        || fields.get("response_type").map(String::as_str) != Some("code")
+    {
+        return Err(NativeFailure::InvalidInput);
+    }
+    Ok(Zeroizing::new(state))
+}
+
+fn begin_subscription(
+    scope: OAuthScope,
+    attempt_id: &str,
+    authorization: &str,
+    local: bool,
+) -> Result<Attempt, NativeFailure> {
+    let state = subscription_authorization(authorization)?;
+    let shared = Arc::new(Shared {
+        expected_state: Some(state),
+        bound: AtomicBool::new(true),
+        consumed: AtomicBool::new(false),
+        stop: AtomicBool::new(false),
+        code: Mutex::new(None),
+    });
+    let until = Instant::now() + Duration::from_secs(900);
+    let handle = if local {
+        None
+    } else {
+        // The registered fallback callback belongs to the original remote
+        // Codex login. A conflict is explicit; never remap or use device codes.
+        let v4 = TcpListener::bind((Ipv4Addr::LOCALHOST, 1457))
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        let v6 = TcpListener::bind((Ipv6Addr::LOCALHOST, 1457))
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        v4.set_nonblocking(true)
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        v6.set_nonblocking(true)
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        let control = Arc::clone(&shared);
+        Some(
+            thread::Builder::new()
+                .name("delidev-subscription-callback".into())
+                .spawn(move || {
+                    while !control.stop.load(Ordering::Acquire) && Instant::now() < until {
+                        for listener in [&v4, &v6] {
+                            if let Ok((mut stream, peer)) = listener.accept()
+                                && peer.ip().is_loopback()
+                            {
+                                handle_request(
+                                    &mut stream,
+                                    "localhost:1457",
+                                    "/auth/callback",
+                                    &control,
+                                );
+                            }
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                })
+                .map_err(|_| NativeFailure::SidecarFailed)?,
+        )
+    };
+    Ok(Attempt {
+        scope,
+        generation: uuid::Uuid::now_v7().to_string(),
+        callback: "http://localhost:1457/auth/callback".into(),
+        attempt: attempt_id.into(),
+        authorization: Zeroizing::new(authorization.into()),
+        until,
+        shared,
+        thread: handle,
+    })
+}
+
+#[cfg(test)]
+mod subscription_tests {
+    use super::*;
+    const AUTH: &str = "https://auth.openai.com/oauth/authorize?state=fixture-original-state-123456&redirect_uri=http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback&response_type=code&code_challenge_method=S256";
+    fn scope() -> OAuthScope {
+        OAuthScope {
+            window: "main".into(),
+            server: uuid::Uuid::now_v7().to_string(),
+            instance: uuid::Uuid::now_v7().to_string(),
+            opening: uuid::Uuid::now_v7().to_string(),
+            window_epoch: 0,
+        }
+    }
+    #[test]
+    fn local_browser_binding_replays_once_and_reopens_only_original() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let opened = std::sync::atomic::AtomicUsize::new(0);
+        let opener = |url: &str, _: &AtomicBool| {
+            assert_eq!(url, AUTH);
+            opened.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        let first = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::SubscriptionOpen,
+                "",
+                &operation,
+                AUTH,
+                true,
+                opener,
+            )
+            .unwrap();
+        let replay = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::SubscriptionOpen,
+                "",
+                &operation,
+                AUTH,
+                true,
+                opener,
+            )
+            .unwrap();
+        assert_eq!(first.generation, replay.generation);
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
+        assert!(
+            host.control_with_browser(
+                scope.clone(),
+                OAuthAction::SubscriptionOpen,
+                "",
+                &uuid::Uuid::now_v7().to_string(),
+                AUTH,
+                true,
+                opener
+            )
+            .is_err()
+        );
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::Reopen,
+            &first.generation,
+            &operation,
+            "",
+            true,
+            opener,
+        )
+        .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 2);
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::SubscriptionReopen,
+            "",
+            &operation,
+            AUTH,
+            true,
+            opener,
+        )
+        .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 3);
+        assert!(
+            host.control(
+                scope.clone(),
+                OAuthAction::Take,
+                &first.generation,
+                &operation,
+                ""
+            )
+            .unwrap()
+            .code
+            .is_none()
+        );
+        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        assert!(
+            host.control_with_browser(
+                scope,
+                OAuthAction::SubscriptionOpen,
+                "",
+                &operation,
+                AUTH,
+                true,
+                opener
+            )
+            .is_err()
+        );
+    }
+    #[test]
+    fn subscription_query_requires_original_state_closed_keys_and_framing() {
+        let valid = "code=fixture-code&state=fixture-original-state-123456&scope=openid";
+        let request = |query: &str| {
+            format!("GET /auth/callback?{query} HTTP/1.1\r\nHost: localhost:1457\r\n\r\n")
+        };
+        let expected = Some("fixture-original-state-123456");
+        assert_eq!(
+            parse_request_mode(
+                request(valid).as_bytes(),
+                "localhost:1457",
+                "/auth/callback",
+                expected
+            )
+            .unwrap()
+            .unwrap()
+            .as_slice(),
+            valid.as_bytes()
+        );
+        for query in ["code=fixture&state=foreign", "code=fixture&state=fixture-original-state-123456&code=other", "code=fixture&state=fixture-original-state-123456&redirect_uri=https://external.invalid", "code=%00&state=fixture-original-state-123456", "state=fixture-original-state-123456"] {
+            assert!(parse_request_mode(request(query).as_bytes(), "localhost:1457", "/auth/callback", expected).is_none());
+        }
+        assert!(
+            parse_request_mode(
+                request(valid)
+                    .replace("Host: localhost:1457", "Host: external.invalid")
+                    .as_bytes(),
+                "localhost:1457",
+                "/auth/callback",
+                expected
+            )
+            .is_none()
+        );
+        assert!(
+            parse_request_mode(
+                request(valid)
+                    .replace("\r\n\r\n", "\r\nOrigin: https://external.invalid\r\n\r\n")
+                    .as_bytes(),
+                "localhost:1457",
+                "/auth/callback",
+                expected
+            )
+            .is_none()
+        );
+    }
+    #[test]
+    fn remote_receiver_delivers_once_and_joins_on_disposal() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let first = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::SubscriptionOpen,
+                "",
+                &operation,
+                AUTH,
+                false,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        let callback = || {
+            let mut stream = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, 1457)).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            stream.write_all(b"GET /auth/callback?code=fixture&state=fixture-original-state-123456 HTTP/1.1\r\nHost: localhost:1457\r\n\r\n").unwrap();
+            let mut result = String::new();
+            stream.read_to_string(&mut result).unwrap();
+            result
+        };
+        assert!(callback().starts_with("HTTP/1.1 303"));
+        let result = host
+            .control(
+                scope.clone(),
+                OAuthAction::Take,
+                &first.generation,
+                &operation,
+                "",
+            )
+            .unwrap();
+        assert_eq!(
+            result.code.as_ref().unwrap(),
+            b"code=fixture&state=fixture-original-state-123456"
+        );
+        assert!(
+            host.control(
+                scope.clone(),
+                OAuthAction::Take,
+                &first.generation,
+                &operation,
+                ""
+            )
+            .unwrap()
+            .code
+            .is_none()
+        );
+        assert!(callback().starts_with("HTTP/1.1 400"));
+        host.control(scope, OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 1457)).unwrap();
+        drop(listener);
     }
 }

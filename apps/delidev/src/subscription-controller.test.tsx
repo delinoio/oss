@@ -6,10 +6,11 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, SubscriptionService, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, SubscriptionService, SystemCapability, SystemService, SubscriptionLoginState, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
-import { SubscriptionAccounts } from "./subscription-accounts";
+import { ManagedSubscriptionAccount, SubscriptionAccounts } from "./subscription-accounts";
 import { MutationIntents } from "./mutation";
+import { OAuthNativeProvider } from "./account-oauth";
 import { encode } from "./documents";
 
 function fixture() {
@@ -19,7 +20,7 @@ function fixture() {
   let failure: Code | undefined;
   let release: (() => void) | undefined;
   const list = vi.fn((request) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? accounts : request.filter?.kind === EntityKind.MACHINE ? [machine] : [] }));
-  const status = vi.fn(() => { if (failure) throw new ConnectError("Capability fixture failure", failure); return { capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] }; });
+  const status = vi.fn(() => { if (failure) throw new ConnectError("Capability fixture failure", failure); return { capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1] }; });
   const provider = vi.fn(() => ({})), apiLifecycle = vi.fn(() => ({}));
   const save = vi.fn(async (request) => {
     const result = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: request.schemaVersion, documentJson: request.documentJson });
@@ -28,11 +29,12 @@ function fixture() {
     return { requestId: request.mutation?.requestId, resource: result };
   });
   const login = vi.fn(async (request) => {
-    account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ alias: "Existing subscription", type: "subscription", subscription_service: "chatgpt", enabled: true, health: "disconnected", quota: [], subscription: { pending: { id: request.mutation?.requestId, action: "login", phase: "claimed" } } }) });
+    account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ alias: "Existing subscription", type: "subscription", subscription_service: "chatgpt", enabled: true, health: "disconnected", quota: [], subscription: { server_operation: { id: request.mutation?.requestId }, pending: { id: request.mutation?.requestId, action: "login", phase: "claimed" } } }) });
     accounts[0] = account;
     return { account, operationId: request.mutation?.requestId };
   });
-  const progress = vi.fn(() => ({ url: "https://auth.openai.com/device", userCode: "ABCD-EFGH" }));
+  const progress = vi.fn(() => ({ state: SubscriptionLoginState.WAITING, url: "https://auth.openai.com/oauth/authorize?state=fixture-original-state-123456&redirect_uri=http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback" }));
+  const native = vi.fn(async () => ({ generation: newRequestId() }));
   const cancel = vi.fn((request) => ({ account: create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ alias: "Existing subscription", type: "subscription", subscription_service: "chatgpt", enabled: true, health: "disconnected", quota: [], subscription: { pending: { id: "original", action: "login", canceled: true } } }) }) }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
@@ -45,7 +47,7 @@ function fixture() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   function Harness() {
     const [visible, setVisible] = useState(true);
-    return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={() => setVisible(false)}>Leave Settings fixture</button><Settings visible={visible} /></QueryClientProvider></TransportProvider>;
+    return <TransportProvider transport={transport}><QueryClientProvider client={client}><button onClick={() => setVisible(true)}>Open Settings fixture</button><button onClick={() => setVisible(false)}>Leave Settings fixture</button><OAuthNativeProvider control={native}><Settings visible={visible} /></OAuthNativeProvider></QueryClientProvider></TransportProvider>;
   }
   return { Harness, client, machine, accounts, list, status, provider, apiLifecycle, save, login, cancel, progress, fail: (code?: Code) => { failure = code; }, finish: () => release?.() };
 }
@@ -71,46 +73,38 @@ it("retains subscriptions after a capability read failure without querying provi
   expect(screen.getByRole("article", { name: "Existing subscription" })).toBeTruthy(); expect(value.provider).not.toHaveBeenCalled();
 });
 
-it("discards service drafts and late acknowledgments while accepted server work continues", async () => {
+it("discards a late creation acknowledgment while keeping accepted default account metadata", async () => {
   const value = fixture(); render(<value.Harness />);
   await screen.findByRole("article", { name: "Existing subscription" });
-  fireEvent.click(screen.getByRole("button", { name: "Claude · Add account" }));
-  fireEvent.change(screen.getByLabelText("Account name"), { target: { value: "Accepted subscription metadata" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save subscription account" }));
+  fireEvent.click(screen.getByRole("button", { name: "ChatGPT · Add account" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = value.save.mock.calls[0][0];
-  expect(request.schemaVersion).toBe(2); expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ subscription_service: "claude", recovery_notifications: false });
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).not.toHaveProperty("provider_id");
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ alias: "ChatGPT", subscription_service: "chatgpt", recovery_notifications: false });
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   fireEvent.click(screen.getByRole("button", { name: "Open Settings fixture" }));
-  await screen.findByRole("article", { name: "Accepted subscription metadata" });
+  await screen.findByRole("article", { name: "ChatGPT" });
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
   await act(async () => value.finish());
   expect(screen.getByRole("heading", { level: 1, name: "Instructions" })).toBeTruthy();
   expect(value.save).toHaveBeenCalledTimes(1); expect(value.login).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "AI Subscription" }));
-  expect(screen.queryByLabelText("Account name")).toBeNull(); expect(screen.queryByRole("button", { name: "Retry original subscription account creation" })).toBeNull();
 });
 
-it("runs only an explicit managed Codex login and retains its exact uncertain operation", async () => {
+it("starts an existing account login without a Runner Device and retries the exact uncertain request", async () => {
   const value = fixture(); value.login.mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable)); render(<value.Harness />);
   await screen.findByRole("article", { name: "Existing subscription" });
   fireEvent.click(screen.getByRole("button", { name: "Manage login for Existing subscription" }));
-  await screen.findByRole("option", { name: "Fixture runner" });
-  fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: value.machine.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Log in with Codex" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Retry original subscription operation" }));
-  await screen.findByLabelText("Login address");
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in to ChatGPT" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry original request" }));
+  await screen.findByRole("button", { name: "Open browser again" }, { timeout: 3000 });
   expect(value.login).toHaveBeenCalledTimes(2); expect(value.login.mock.calls[0][0]).toEqual(value.login.mock.calls[1][0]);
-  expect(value.login.mock.calls[0][0]).toMatchObject({ machineId: value.machine.id, action: 1, deviceCode: true, mutation: { expectedRevision: 1n } });
+  expect(value.login.mock.calls[0][0]).toMatchObject({ machineId: "", action: 1, deviceCode: false, mutation: { expectedRevision: 1n } });
+  expect(screen.queryByLabelText("Runner Device")).toBeNull(); expect(screen.queryByLabelText("Login address")).toBeNull();
   expect(value.provider).not.toHaveBeenCalled(); expect(value.apiLifecycle).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Cancel login" }));
   await waitFor(() => expect(value.cancel).toHaveBeenCalledTimes(1));
-  await waitFor(() => expect(screen.queryByLabelText("Login address")).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   expect(value.cancel).toHaveBeenCalledTimes(1);
 });
-
 
 it("routes row quota refresh to the original active execution lease machine", async () => {
  const value=fixture(), owner=newRequestId(), runner=newRequestId(), connection=newRequestId(), generation=newRequestId();
@@ -128,6 +122,28 @@ it("routes row quota refresh to the original active execution lease machine", as
  await waitFor(()=>expect(refresh).toHaveBeenCalledTimes(1));
  expect(refresh.mock.calls[0]?.[0]).toMatchObject({machineId:runner,connectionId:connection,generationId:generation});
  expect(refresh.mock.calls[0]?.[0].machineId).not.toBe(owner);
+});
+
+it("preserves managed quota authority without the independent login capability", async () => {
+  const owner = newRequestId(), connection = newRequestId(), generation = newRequestId();
+  const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 2,
+    documentJson: encode({ alias: "Connected subscription", type: "subscription", subscription_service: "chatgpt", enabled: true, health: "ready", quota: [], connection: { id: connection }, subscription: { generation, owner_machine_id: owner } }) });
+  const refresh = vi.fn(async request => ({ account, operationId: request.mutation.requestId }));
+  const login = vi.fn(() => ({}));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SUBSCRIPTION_QUOTA_V1] }) });
+    router.service(ResourceService, { getResource: () => ({ resource: account }) });
+    router.service(SubscriptionService, { requestSubscriptionObservation: refresh, requestSubscription: login });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  const button = await screen.findByRole("button", { name: "Refresh quota" });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  expect((screen.getByRole("button", { name: "Refresh login" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(button);
+  await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+  expect(refresh.mock.calls[0]?.[0]).toMatchObject({ machineId: owner, connectionId: connection, generationId: generation });
+  expect(login).not.toHaveBeenCalled();
 });
 
 it.each([
