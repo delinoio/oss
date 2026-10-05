@@ -46,6 +46,22 @@ omit executable paths and full observations. Generate service-specific Go and
 Connect Query bindings plus historical facades; subscription support remains typed
 unsupported until #1095 supplies its protected lifecycle.
 
+## Server-owned subscription login reservations
+
+The owner-approved login-first amendment reserves independent System capability
+`SERVER_SUBSCRIPTION_LOGIN_V1 = 30` under issue #964. Progress fields 4–6 reserve
+`state`, `suggested_name` and `generation`. The closed `SubscriptionLoginState`
+enum reserves UNSPECIFIED 0, PREPARING 1, WAITING 2, SUCCEEDED 3, CANCELED 4,
+EXPIRED 5, UNSUPPORTED 6, RECOVERY_REQUIRED 7 and FAILED 8.
+`ForwardSubscriptionCallbackRequest` reserves account ID 1, original operation
+ID 2 and write-only callback query 3; its response reserves accepted 1.
+All new declarations have explicit ledger ownership. Establish these allocations
+on main before dependent schemas or code. This reservation changes no active
+schema, binding, endpoint, capability advertisement or migration. Omitted
+`RequestSubscription.machine_id` remains unsupported until the complete
+server-owned boundary activates; existing machine-bound requests retain their
+original Worker authority.
+
 ## Scope
 
 Issue #1235 reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
