@@ -15,6 +15,13 @@
 #ifdef __APPLE__
 #include <sys/clonefile.h>
 #include <sys/xattr.h>
+// macOS 15 SDKs omit this later XNU flag. Exercise its native EINVAL
+// result on older kernels as well as success on newer kernels. Remove
+// this compatibility definition when the minimum SDK declares the flag.
+#define PNPORT_CLONE_RESOLVE_BENEATH UINT32_C(0x0010)
+#ifdef CLONE_RESOLVE_BENEATH
+_Static_assert(PNPORT_CLONE_RESOLVE_BENEATH == CLONE_RESOLVE_BENEATH, "XNU clone flag changed");
+#endif
 #endif
 #ifdef __linux__
 #include <sys/inotify.h>
@@ -156,6 +163,33 @@ static int buffer_cookies(int fd) {
 }
 #endif
 int main(int argc, char **argv) {
+#ifdef __APPLE__
+    if (argc > 1 && !strcmp(argv[1], "clone-control")) {
+        int source = open("clone-control-source", O_CREAT | O_EXCL | O_RDWR, 0600);
+        CHECK(source >= 0 && write(source, "clone", 5) == 5);
+        int parent = open(".", O_RDONLY | O_DIRECTORY); CHECK(parent >= 0);
+        errno = 0;
+        int result = clonefileat(parent, "clone-control-source", parent, "clone-control-path", PNPORT_CLONE_RESOLVE_BENEATH);
+        int expected = result == 0 ? 0 : errno;
+        CHECK(result == 0 || (result == -1 && expected == EINVAL));
+        if (result == 0) CHECK(unlink("clone-control-path") == 0);
+        errno = 0;
+        result = fclonefileat(source, parent, "clone-control-fd", PNPORT_CLONE_RESOLVE_BENEATH);
+        CHECK(expected == 0 ? result == 0 : result == -1 && errno == expected);
+        if (result == 0) CHECK(unlink("clone-control-fd") == 0);
+        close(parent); close(source); CHECK(unlink("clone-control-source") == 0);
+        printf("%d\n", expected);
+        return 0;
+    }
+    int clone_error = 0;
+    if (argc > 1 && strcmp(argv[1], "mkdir-alias") && strcmp(argv[1], "conflict")) {
+        CHECK(argc == 3);
+        char *end;
+        long expected = strtol(argv[2], &end, 10);
+        CHECK(!*end && (expected == 0 || expected == EINVAL));
+        clone_error = (int)expected;
+    }
+#endif
     if (argc > 1 && !strcmp(argv[1], "mkdir-alias")) {
         const char *paths[] = {"node_modules/.", "node_modules/./", "node_modules/././/",
                                "node_modules/@scope/..", "node_modules/@scope/../",
@@ -337,17 +371,29 @@ int main(int argc, char **argv) {
     CHECK(readlinkat(copy, ".clone-link", bytes, sizeof(bytes)) == 12 && !memcmp(bytes, "clone-source", 12));
     errno = 0; CHECK(clonefileat(parent, "clone-link", copy, ".clone-any", CLONE_NOFOLLOW_ANY) == -1 && errno == ELOOP);
     errno = 0; CHECK(clonefileat(parent, "node_modules/dep/file.txt", copy, ".clone-any", CLONE_NOFOLLOW_ANY) == -1 && errno == ELOOP);
-    CHECK(clonefileat(parent, "clone-source", parent, "clone-beneath", CLONE_RESOLVE_BENEATH) == 0);
-    CHECK(clonefileat(parent, "clone-source", copy, ".clone-beneath", CLONE_RESOLVE_BENEATH) == 0);
-    CHECK(clonefileat(copy, ".clone-at", copy, ".clone-cache-beneath", CLONE_RESOLVE_BENEATH) == 0);
-    CHECK(fclonefileat(clone_source, copy, ".clone-fd-beneath", CLONE_RESOLVE_BENEATH) == 0);
-    errno = 0; CHECK(clonefileat(parent, "node_modules/dep/file.txt", copy, ".clone-managed-beneath", CLONE_RESOLVE_BENEATH) == -1 && errno == ENOTSUP);
+    errno = 0; int cloned = clonefileat(parent, "clone-source", parent, "clone-beneath", PNPORT_CLONE_RESOLVE_BENEATH);
+    CHECK(clone_error == 0 ? cloned == 0 : cloned == -1 && errno == clone_error);
+    errno = 0; cloned = clonefileat(parent, "clone-source", copy, ".clone-beneath", PNPORT_CLONE_RESOLVE_BENEATH);
+    CHECK(clone_error == 0 ? cloned == 0 : cloned == -1 && errno == clone_error);
+    errno = 0; cloned = clonefileat(copy, ".clone-at", copy, ".clone-cache-beneath", PNPORT_CLONE_RESOLVE_BENEATH);
+    CHECK(clone_error == 0 ? cloned == 0 : cloned == -1 && errno == clone_error);
+    errno = 0; cloned = fclonefileat(clone_source, copy, ".clone-fd-beneath", PNPORT_CLONE_RESOLVE_BENEATH);
+    CHECK(clone_error == 0 ? cloned == 0 : cloned == -1 && errno == clone_error);
+    errno = 0; CHECK(clonefileat(parent, "node_modules/dep/file.txt", copy, ".clone-managed-beneath", PNPORT_CLONE_RESOLVE_BENEATH) == -1 && errno == ENOTSUP);
+    CHECK(access("node_modules/.clone-managed-beneath", F_OK) == -1 && errno == ENOENT);
     errno = 0; CHECK(clonefileat(-1, "clone-source", copy, ".clone-invalid", 0) == -1 && errno == EBADF);
     errno = 0; CHECK(fclonefileat(-1, copy, ".clone-invalid", 0) == -1 && errno == EBADF);
     errno = 0; CHECK(clonefile("clone-source", "node_modules/.clone-invalid", UINT32_C(0x80000000)) == -1 && errno == EINVAL);
-    const char *clones[] = {".clone-at", ".clone-fd", ".clone-path", ".clone-dep-fd", ".clone-link", ".clone-beneath", ".clone-cache-beneath", ".clone-fd-beneath"};
+    const char *clones[] = {".clone-at", ".clone-fd", ".clone-path", ".clone-dep-fd", ".clone-link"};
     for (size_t i = 0; i < sizeof(clones) / sizeof(clones[0]); i++) CHECK(unlinkat(copy, clones[i], 0) == 0);
-    close(clone_source); CHECK(unlink("clone-source") == 0 && unlink("clone-link") == 0 && unlink("clone-beneath") == 0);
+    const char *beneath[] = {".clone-beneath", ".clone-cache-beneath", ".clone-fd-beneath"};
+    for (size_t i = 0; i < sizeof(beneath) / sizeof(beneath[0]); i++) {
+        errno = 0; int removed = unlinkat(copy, beneath[i], 0);
+        CHECK(clone_error == 0 ? removed == 0 : removed == -1 && errno == ENOENT);
+    }
+    errno = 0; int removed = unlink("clone-beneath");
+    CHECK(clone_error == 0 ? removed == 0 : removed == -1 && errno == ENOENT);
+    close(clone_source); CHECK(unlink("clone-source") == 0 && unlink("clone-link") == 0);
 #endif
     close(parent);
     CHECK(symlink("../node_modules/dep", "node_modules/.cache-link") == 0 || errno == EEXIST);

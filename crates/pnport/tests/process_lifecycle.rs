@@ -747,17 +747,22 @@ fn vector_and_variadic_exec_preserve_nested_virtual_images_and_literal_arguments
 
 #[cfg(target_os = "macos")]
 #[test]
-fn protected_exec_and_shell_fallback_fail_without_starting_unmediated_images() {
-    for mode in ["protected", "shell-fallback"] {
+fn protected_exec_and_spawn_return_unsupported_without_starting_images() {
+    for mode in [
+        "protected",
+        "shell-fallback",
+        "protected-spawn",
+        "protected-spawnp",
+    ] {
         let mut fixture = exec_fixture(mode);
         let output = fixture.stopped();
         assert_eq!(
             output.status.code(),
-            Some(125),
+            Some(23),
             "{mode}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
         assert!(!fixture.root.path().join("exec.accepted").exists());
         assert!(!fixture.root.path().join("shell.accepted").exists());
         fixture.assert_released();
