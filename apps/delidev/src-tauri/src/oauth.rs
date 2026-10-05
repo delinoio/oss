@@ -1101,15 +1101,15 @@ fn begin_subscription(
                 .spawn(move || {
                     while !control.stop.load(Ordering::Acquire) && Instant::now() < until {
                         for listener in [&v4, &v6] {
-                            if let Ok((mut stream, peer)) = listener.accept() {
-                                if peer.ip().is_loopback() {
-                                    handle_request(
-                                        &mut stream,
-                                        "localhost:1457",
-                                        "/auth/callback",
-                                        &control,
-                                    );
-                                }
+                            if let Ok((mut stream, peer)) = listener.accept()
+                                && peer.ip().is_loopback()
+                            {
+                                handle_request(
+                                    &mut stream,
+                                    "localhost:1457",
+                                    "/auth/callback",
+                                    &control,
+                                );
                             }
                         }
                         thread::sleep(Duration::from_millis(10));
