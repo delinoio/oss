@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/pelletier/go-toml/v2"
@@ -114,8 +115,8 @@ daemon_image = "docker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 		t.Fatal(err)
 	}
 	p := c.Pools[0]
-	if p.DaemonResources != (Resources{1, 1024}) || p.MaxRunners != 2 {
-		t.Fatalf("DinD omitted allocations not combined: %+v", p)
+	if p.DaemonResources != (Resources{1, 1024}) || p.MaxRunners != 3 {
+		t.Fatalf("DinD defaults did not reserve runner CPU and combined memory: %+v", p)
 	}
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		return
@@ -150,4 +151,94 @@ daemon_image = "docker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 	if counts["linux"] != 1 || counts["macos"] != 2 {
 		t.Fatalf("host/engine/VM ceilings not independent: %v", counts)
 	}
+}
+
+func TestDinDRunnerOnlyCPUAdmission(t *testing.T) {
+	body := minimalConfig + `mode = "dind"
+daemon_image = "docker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+min_idle = 12
+max_runners = 15
+resources = {cpu = 2, memory_mib = 16384}
+daemon_resources = {cpu = 2, memory_mib = 2048}
+`
+	c, err := decodeDefaults(t, body, Resources{32, 524288})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.DockerBudget = Resources{32, 524288}
+	c, err = resolveDefaults(c, Resources{32, 524288})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Pools[0]
+	s := Snapshot{Config: c, Pools: map[string]*PoolState{
+		p.Name: {ID: p.Name, Spec: p, Phase: Ready, ScaleSetID: 1, Session: "fixture"},
+	}, Runners: map[string]*Runner{}}
+	initializeManaged(&s, c)
+	if s.Managed[p.Name].Resources != (Resources{2, 18432}) {
+		t.Fatal("managed status cost included daemon CPU")
+	}
+	if got := Schedule(s); len(got) != 12 {
+		t.Fatalf("minimum idle allocation: got %d, want 12", len(got))
+	}
+	s.Pools[p.Name].Demand = 100
+	if got := acquisitionCapacity(s, s.Pools[p.Name]); got != 15 {
+		t.Fatalf("acquisition capacity: got %d, want 15", got)
+	}
+	for _, pool := range Schedule(s) {
+		id := newID()
+		s.Runners[id] = &Runner{ID: id, PoolID: pool, Backend: Docker, Phase: Preparing, Resources: p.Cost()}
+	}
+	status := statusOf(s, false)
+	if status.Active != 15 || status.Reserved != (Resources{30, 276480}) || status.Pools[0].Resources != (Resources{2, 18432}) {
+		t.Fatalf("wrong admission reservations in status: %+v", status)
+	}
+	if got := Schedule(s); len(got) != 0 {
+		t.Fatalf("pool cap exceeded: %v", got)
+	}
+
+	// Omitting the pool cap uses 32/2 CPUs, without adding the daemon CPU
+	// to either the available budget or the per-runner reservation.
+	automatic := strings.Replace(body, "max_runners = 15\n", "", 1)
+	c, err = decodeDefaults(t, automatic, Resources{32, 524288})
+	if err != nil || c.Pools[0].MaxRunners != 16 || c.Host.MaxRunners != 16 {
+		t.Fatalf("automatic CPU ceiling: %+v, %v", c, err)
+	}
+	for _, capacity := range []Resources{{23, 524288}, {32, 215 * 1024}} {
+		_, err := decodeDefaults(t, body, capacity)
+		requireCode(t, err, ErrConfig)
+	}
+}
+
+func TestDinDDefaultsUseFullCPUAndReserveDaemonMemory(t *testing.T) {
+	body := minimalConfig + `mode = "dind"
+daemon_image = "docker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+`
+	for _, tc := range []struct {
+		name                 string
+		host, engine, runner Resources
+		max                  int
+	}{
+		{"one CPU host", Resources{1, 2048}, Resources{}, Resources{1, 1024}, 1},
+		{"CPU limited engine", Resources{32, 524288}, Resources{4, 65536}, Resources{2, 4096}, 2},
+		{"memory limited engine", Resources{32, 524288}, Resources{32, 10240}, Resources{2, 4096}, 2},
+		{"one CPU engine", Resources{32, 524288}, Resources{1, 2048}, Resources{1, 1024}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := decodeDefaults(t, body, tc.host)
+			if err == nil && validResources(tc.engine) {
+				c.DockerBudget = tc.engine
+				c, err = resolveDefaults(c, tc.host)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := c.Pools[0]
+			if p.Resources != tc.runner || p.DaemonResources != (Resources{1, 1024}) || p.MaxRunners != tc.max {
+				t.Fatalf("wrong DinD resource defaults: %+v", p)
+			}
+		})
+	}
+	_, err := decodeDefaults(t, body, Resources{1, 1536})
+	requireCode(t, err, ErrCapacity)
 }

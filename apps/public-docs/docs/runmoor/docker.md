@@ -69,3 +69,25 @@ daemon_resources = { cpu = 1, memory_mib = 1024 }
 DinD requires cgroup v2 and a privileged daemon container. Its CPU/memory must fit alongside the runner. Omitted daemon resources default to 1 CPU and 1024 MiB; its immutable image remains an explicit choice. Plain mode is still the default. Every execution has its own daemon/socket/storage, matching workspace/externals paths and network namespace. The host Docker socket, personal directories, SSH agents and management credentials are never passed to jobs. Remote Docker endpoints are rejected.
 
 Docker and privileged DinD share a kernel; they are not secure isolation for arbitrary hostile workloads. Run trusted developer/team workflows and control external fork execution through GitHub policy. Job containers, daemon, networks and volumes are destroyed after completion/cancellation. Base images remain reusable; use GitHub Actions cache instead of persistent local job/build-cache volumes.
+
+## DinD CPU admission (unreleased)
+
+Releases through 0.2.7 reserve both runner and daemon CPU. The unreleased change
+reserves only `resources.cpu` for each DinD runner. Memory still reserves
+`resources.memory_mib + daemon_resources.memory_mib`. `daemon_resources.cpu`
+remains the daemon container's CPU limit and must not exceed the Docker engine's
+CPU count. It is not added to the host or engine CPU admission budget. The daemon
+can use CPU in addition to the runner, so the reservation does not cap their
+combined CPU usage. No TOML changes are needed.
+
+For a host and Docker engine with 32 CPUs and 512 GiB, a runner using 2 CPUs/16 GiB
+and a daemon using 2 CPUs/2 GiB reserve 2 CPUs/18 GiB after this change. Twelve idle
+runners need 24 CPUs/216 GiB instead of 48 CPUs/216 GiB; `max_runners = 15` allows
+up to 15 runners, and an omitted cap calculates 16 from CPU capacity. Smaller
+engine budgets and other work can reduce available capacity.
+
+When this change becomes available, existing runner and preparation reservations
+retain their previous values across manager restart and reload until those
+resources terminate. Newly created runners use the revised CPU reservation.
+Check the containing release before relying on this behavior; it is not available
+in 0.2.7.
