@@ -60,3 +60,5 @@ network failure, Windows executable names, unsupported hosts, explicit local
 source builds and CI source-build refusal. CI contract tests guard cache keys,
 main-only saves and native/mobile routing. `pnpm ci:contracts` and package-owned
 DevHud/DeliDev tests include these boundaries.
+
+CEF AppImage build helpers are prepared by `scripts/appimage-tools.mjs` for DevHud and DeliDev using the existing canonical pins in `apps/devhud/cef-pins.json`. The helper verifies the sharun executable, anylinux C source, and original MIT license before exposing them to the bundler. Native compilation receives the caller-owned environment. DeliDev retains its credential-free build environment and cleans private helper staging while holding its native package lock. These helper inputs are distinct from the published Tauri CLI release.

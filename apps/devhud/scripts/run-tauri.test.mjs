@@ -279,6 +279,7 @@ function fixtureSharunPin(bytes) {
 
 function fixtureAnylinuxOptions() {
   return {
+    environment: { PATH: "/safe/native/bin" },
     anylinuxPin: {
       repository: "https://github.com/example/anylinux", revision: "revision",
       source: { path: "anylinux.c", sha256: createHash("sha256").update("verified source").digest("hex") },
@@ -289,6 +290,7 @@ function fixtureAnylinuxOptions() {
       assert.deepEqual(args.slice(0, 3), ["-shared", "-fPIC", "-O2"]);
       assert.equal(readFileSync(args[3], "utf8"), "verified source");
       assert.equal(options.shell, false);
+      assert.deepEqual(options.env, { PATH: "/safe/native/bin" });
       writeFileSync(args.at(-1), "compiled verified source");
       return { status: 0 };
     },

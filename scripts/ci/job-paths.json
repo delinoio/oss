@@ -274,7 +274,8 @@
       "prebuilt-dependencies.lock.json",
       "scripts/prebuilt-dependencies*.mjs",
       "scripts/archive*.mjs",
-      "scripts/tauri-cli.mjs"
+      "scripts/tauri-cli.mjs",
+      "scripts/appimage-tools.mjs"
     ],
     "workspace": "devhud",
     "workspacePaths": [
@@ -364,7 +365,8 @@
       "prebuilt-dependencies.lock.json",
       "scripts/prebuilt-dependencies*.mjs",
       "scripts/archive*.mjs",
-      "scripts/tauri-cli.mjs"
+      "scripts/tauri-cli.mjs",
+      "scripts/appimage-tools.mjs"
     ],
     "native": true
   },

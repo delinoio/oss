@@ -545,3 +545,5 @@ Release automation baseline:
 
 - Shared dependency executables follow `docs/repository-prebuilt-dependencies-contract.md`. Use the locked public Tauri CLI through `scripts/tauri-cli.mjs`; never compile a CLI wrapper in consumers or fall back to source in CI. New source/recipe versions require six-host public release verification before updating both consumer locks.
 - The owner permits Chromium without a process sandbox on Windows DevHud and DeliDev only while upstream lacks executable-host broker support. Keep this exception explicit in runtime selection, validation and user documentation. macOS/Linux require Chromium sandboxing; all desktop hosts use OS-backed secret storage. Keep protected-browser IPC isolation, exact profile ownership and joined cleanup unchanged.
+
+- DevHud and DeliDev CEF AppImage packaging must share verified helper preparation through `scripts/appimage-tools.mjs` and the canonical DevHud runtime pins. Preserve each caller’s environment restrictions and private staging cleanup; follow `docs/repository-prebuilt-dependencies-contract.md`.

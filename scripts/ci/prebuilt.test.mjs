@@ -111,3 +111,10 @@ test("Linux Debian packages install the portal and confirmation dialog backends"
     assert.ok(dependencies.some(value => value.includes("xdg-desktop-portal-gtk")));
   }
 });
+
+test("shared AppImage helper changes select both the native consumer and its wrapper tests", async () => {
+  const { planJobs, Event } = await import("./plan.mjs");
+  const selected = planJobs(Event.Push, ["scripts/appimage-tools.mjs"]).jobs;
+  assert.equal(selected["devhud-desktop"], true);
+  assert.equal(selected["devhud-frontend"], true);
+});
