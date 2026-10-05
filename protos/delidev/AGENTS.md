@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- Codex forward-version diagnostics reserve progress field 7 and the new `CodexDiagnostic` / `CodexDiagnosticPhase` declarations under issue #964. Establish their ledger reservations on main before use; reservation-only changes grant no version or runtime support. Keep diagnostics bounded and content-free under the protocol contract.
+
 - The server-owned subscription login amendment reserves System capability 30, progress fields 4–6, the closed `SubscriptionLoginState` enum and `ForwardSubscriptionCallback` message fields under issue #964. Establish these reservations on main before implementation; they grant no native login or callback authority. Preserve explicit-machine Worker operations and their original leases.
 
 - `ListSessionDeletionWorkRequest.original_session_id = 4` and `original_job_id = 5` inspect only the original retiring assignment under current Worker authority. They are exclusive with pagination and do not bypass independent descendant or terminal cleanup. Follow the Sidechat contract and original allocation ownership.
