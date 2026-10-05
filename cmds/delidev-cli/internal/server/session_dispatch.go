@@ -125,6 +125,12 @@ func initialExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
 	var empty domain.Installation
 	c := input.Configuration
+	if err := requireSidechatParent(tx, session); err != nil {
+		return empty, err
+	}
+	if c.SidechatPolicy != "" && (!session.IsSidechat() || !slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1)) {
+		return empty, domain.SidechatUnavailable()
+	}
 	version, protocol := codex.SupportedVersion, domain.OpenAIResponses
 	switch c.Harness {
 	case domain.Codex:

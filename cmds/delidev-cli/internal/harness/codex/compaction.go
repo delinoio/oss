@@ -102,6 +102,9 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 	} else if c.verifyCompactedHistoryLocked(source, *previous, before) != nil {
 		return compactionUncertain()
 	}
+	if err := c.verifySidechat(ctx, c.execution.settings.Cwd, c.thread); err != nil {
+		return err
+	}
 	// Claim before Call. A rejected, partial or lost response cannot erase this
 	// attempt or grant another native send, even under a new request identity.
 	attempt := &manualCompaction{actionID: action, source: cloneCompactionSource(source), previous: cloneCompactedCheckpoint(previous), before: before}

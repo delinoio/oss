@@ -81,17 +81,24 @@ func forkableMetadata(wire threadWire, checkpoint ContinuationCheckpoint) bool {
 }
 
 func (c *Client) noForkWorkLocked(ctx context.Context, thread domain.ID) error {
-	goal, err := c.wire.Call(ctx, domain.NewID(), "thread/goal/get", struct {
-		Thread domain.ID `json:"threadId"`
-	}{thread})
-	if err != nil {
-		return err
-	}
-	var g struct {
-		Goal json.RawMessage `json:"goal"`
-	}
-	if goal.ErrorCode != nil || domain.Decode(goal.Result, &g) != nil || string(g.Goal) != "null" {
-		return unsupportedFork()
+	// The original source independently proved an empty goal before Fork.
+	// Sidechat's verified disabled Goals feature prevents inheritance/dispatch,
+	// and this installed version rejects goal/get when that feature is disabled.
+	// Ordinary Fork still requires the original native read; do not infer an
+	// empty goal from a failed read or apply this exception to other profiles.
+	if c.sidechat == "" {
+		goal, err := c.wire.Call(ctx, domain.NewID(), "thread/goal/get", struct {
+			Thread domain.ID `json:"threadId"`
+		}{thread})
+		if err != nil {
+			return err
+		}
+		var g struct {
+			Goal json.RawMessage `json:"goal"`
+		}
+		if goal.ErrorCode != nil || domain.Decode(goal.Result, &g) != nil || string(g.Goal) != "null" {
+			return unsupportedFork()
+		}
 	}
 	queue, err := c.wire.Call(ctx, domain.NewID(), "thread/queue/list", struct {
 		Thread domain.ID `json:"threadId"`
@@ -228,6 +235,12 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 	if err := c.verifyAPI(ctx, settings.Cwd); err != nil {
 		return result, err
 	}
+	if c.sidechat != "" && !sidechatSettings(settings) {
+		return result, sidechatUnavailable()
+	}
+	if err := c.verifySidechat(ctx, settings.Cwd, ""); err != nil {
+		return result, err
+	}
 	request := struct {
 		Thread       domain.ID      `json:"threadId"`
 		Last         domain.ID      `json:"lastTurnId"`
@@ -248,10 +261,16 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 	response, err := c.wire.Call(ctx, requestID, string(forkThread), request)
 	if err != nil {
 		c.problem = threadUncertain()
+		if c.logger != nil {
+			c.logger.WarnContext(ctx, "Codex Fork transport unconfirmed", "owner_id", c.ownerID, "code", domain.SafeError(err).Code)
+		}
 		return result, c.problem
 	}
 	if response.ErrorCode != nil {
 		c.problem = threadUncertain()
+		if c.logger != nil {
+			c.logger.WarnContext(ctx, "Codex native Fork rejected", "owner_id", c.ownerID, "native_error_code", *response.ErrorCode)
+		}
 		return result, c.problem
 	}
 	thread, effective, err := decodeBoundThread(response.Result, settings, "", forkThread)
@@ -264,8 +283,16 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 	if domain.Decode(response.Result, &bound) == nil {
 		wire, _ = decodeThread(bound.Thread)
 	}
-	if err != nil || thread == nil || effective == nil || thread.ID == source.checkpoint.ThreadID || thread.SessionID != thread.ID || thread.Status.Type != ThreadIdle || wire.ForkedFromID == nil || *wire.ForkedFromID != source.checkpoint.ThreadID || !sameForkDefaults(source.checkpoint.Effective, *effective) {
+	if err != nil || thread == nil || effective == nil || thread.ID == source.checkpoint.ThreadID || thread.SessionID != thread.ID || thread.Status.Type != ThreadIdle || wire.ForkedFromID == nil || *wire.ForkedFromID != source.checkpoint.ThreadID || !c.forkDefaults(source.checkpoint.Effective, *effective) {
 		c.problem = threadUncertain()
+		if c.logger != nil {
+			c.logger.WarnContext(ctx, "Codex fork boundary rejected", "owner_id", c.ownerID, "decoded", err == nil, "thread_observed", thread != nil, "settings_observed", effective != nil)
+		}
+		return result, c.problem
+	}
+	if err := c.verifySidechat(ctx, settings.Cwd, thread.ID); err != nil {
+		c.problem = threadUncertain()
+		c.problem.Guidance = domain.SafeError(err).Guidance
 		return result, c.problem
 	}
 	turns, err := c.forkTurnsLocked(ctx, thread.ID)

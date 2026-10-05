@@ -1,5 +1,6 @@
 # DeliDev server ownership
 
+- Sidechat admission/publication/execution require the original parent, account, completed native boundary and Worker capability 16. Selected complete replies use exact child/message/parent revisions and the ordinary queue receipt. Parent storage retirement and deletion freeze complete child obligations before cancellation; retirement inspection never grants early cleanup. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Keep PR activity projection and original-source validation in `activity_pr.go` under the activity contract. Validate immutable original versions and stable numeric PR ownership, preserve historical navigation across repository renames, cap complete pages in protobuf and JSON, and advertise the typed activity capability. Reads cannot change Inbox or PR handling or infer verified handling from an attempt.
@@ -220,3 +221,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
 
 If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
+
+- Joined successful native-owner cleanup settles unpublished quota reads as failed while preserving last observed values and future read/execution admission. Retain original-key uncertainty only for possible reset-credit consumption.
+
+- Worker-only permanent-deletion reads preserve all 4,096 original copies within a 4 MiB ownership envelope/page and at most 20 envelopes. Exact retiring-assignment inspection uses the same bound and authorization; no truncation or native cleanup inference is permitted.

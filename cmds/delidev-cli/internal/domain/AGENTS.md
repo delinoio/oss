@@ -1,5 +1,6 @@
 # DeliDev domain ownership
 
+- Sidechat uses a closed Codex read-only overlay of the complete original API account snapshot, with no child-account or permission expansion. Preserve the separate parent snapshot, version-3 fork seed and ordinary omitted-purpose bytes; follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - PR activity uses the closed metadata-only shapes in `pr_activity.go` under the activity contract. Keep original problem versions, actor provenance and attempt outcomes distinct from dedicated handling verification; never infer verification from success, dismissal or provider state.
@@ -116,3 +117,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - OAuth attempt metadata uses closed states, unique original identities, exact revision/lifetime and keyed comparison commitments. Validate exact UTF-8 authorization-code bytes without trimming and only the canonical owned localhost callback. Keep this private domain outside resources, synchronization and portable configuration under the OAuth contract.
 
 - ProviderPresetID includes the 26 additions allocated in 10–35, preserving old IDs and fixed managed definitions. Preset guidance and advisory catalog metadata cannot grant connection, readiness or inference/harness authority. Follow the catalog/inspection contracts.
+
+- Permanent-deletion ownership envelopes retain the original unpublished Sidechat child ID only for a Fork copy. Their dedicated strict JSON bound is 4 MiB; public command JSON retains 1 MiB. Preserve the 4,096-copy bound and reject malformed or extra authority.

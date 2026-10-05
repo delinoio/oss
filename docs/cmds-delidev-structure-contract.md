@@ -186,3 +186,5 @@ must include its complete business, authenticated RPC, CLI, client and desktop
 boundary plus applicable validation. Preserve implementation branches and record
 source-bound validation and unresolved native/account/platform acceptance in PRs
 and CI. Reservation completion cannot close a feature issue.
+
+Sidechat reference preparation privately owns sidechat-preparations/ under the workspace Manager. Original Fork job/parent/child and native metadata identities bind each bounded claim before manifest publication. Permanent deletion composes that ownership only after original process cleanup; the server receives IDs and digests, never filesystem authority.

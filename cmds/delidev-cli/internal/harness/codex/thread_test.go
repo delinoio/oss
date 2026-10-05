@@ -25,9 +25,13 @@ type threadFixture struct {
 	history                json.RawMessage
 	historyChangeAfterRead bool
 	historyNotification    *fixtureHistoryNotification
+	sidechatDrift          string
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleSidechatCompaction(id, method, raw, write) {
+		return true
+	}
 	if method == "model/list" {
 		entries := []any{}
 		for _, name := range []string{"child-model", "fixture-model"} {
@@ -186,6 +190,9 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	t.Helper()
 	config := fixtureConfig(t, mode)
 	config.Mode = ThreadProtocol
+	if mode == "thread-continuation-sidechat" {
+		config.Sidechat = ReadOnlySidechatV1
+	}
 	capture := filepath.Join(t.TempDir(), "requests.jsonl")
 	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_CAPTURE="+capture)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -83,6 +83,17 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 	if meta == nil || domain.ID(meta.RequestId).Validate() != nil || domain.ID(meta.Id).Validate() != nil || meta.ExpectedRevision == 0 || (domain.NativeIdentity(req.Msg.ExpectedTurnId).Validate(domain.Codex, domain.NativeTurnIdentity) != nil && domain.NativeIdentity(req.Msg.ExpectedTurnId).Validate(domain.OpenCode, domain.NativeTurnIdentity) != nil) || domain.Text(req.Msg.Name, "fork name", 256, true) != nil {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Fork requires exact source identities, revision, boundary and name.", "Read the completed source session before submitting a fork."), correlation)
 	}
+	purpose := domain.IndependentFork
+	switch req.Msg.Purpose {
+	case pb.ForkPurpose_FORK_PURPOSE_UNSPECIFIED, pb.ForkPurpose_FORK_PURPOSE_INDEPENDENT:
+	case pb.ForkPurpose_FORK_PURPOSE_SIDECHAT:
+		purpose = domain.SidechatFork
+	default:
+		return nil, rpc.Error(domain.SidechatUnavailable(), correlation)
+	}
+	if purpose == domain.SidechatFork && (req.Msg.Workspace != pb.ForkWorkspace_FORK_WORKSPACE_UNSPECIFIED || req.Msg.LocalWorkerToken != "") {
+		return nil, rpc.Error(domain.SidechatUnavailable(), correlation)
+	}
 	kind := domain.WorkspaceType("")
 	switch req.Msg.Workspace {
 	case pb.ForkWorkspace_FORK_WORKSPACE_UNSPECIFIED:
@@ -122,7 +133,8 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		Workspace domain.WorkspaceType
 		Actor     domain.Principal
 		Origin    *domain.LocalOrigin
-	}{domain.ID(meta.Id), meta.ExpectedRevision, req.Msg.ExpectedTurnId, req.Msg.Name, kind, actor, origin}
+		Purpose   domain.ForkPurpose `json:",omitempty"`
+	}{domain.ID(meta.Id), meta.ExpectedRevision, req.Msg.ExpectedTurnId, req.Msg.Name, kind, actor, origin, purpose}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "session.fork", identity, func(tx *store.Tx) (any, error) {
 		if err := tx.RequireForkActor(actor); err != nil {
 			return nil, err
@@ -145,13 +157,28 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 				input.Workspace = domain.Worktree
 			}
 		}
+		if purpose == domain.SidechatFork {
+			if err := tx.RequireSidechatCapacity(identity.Source); err != nil {
+				return nil, err
+			}
+			_, machine, err := activeMachine(tx, session.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || input.SourceAssignment.Configuration.Harness != domain.Codex {
+				s.logger.InfoContext(ctx, "sidechat_admission_rejected", "source_session_id", input.SourceSessionID, "worker_capability", slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1), "harness", input.SourceAssignment.Configuration.Harness, "code", domain.Unsupported)
+				return nil, domain.SidechatUnavailable()
+			}
+			input.Version, input.Purpose, input.Workspace = 3, purpose, session.Workspace
+			origin = session.LocalOrigin
+		}
 		if (session.Workspace == domain.GeneralChat) != (input.Workspace == domain.GeneralChat) {
 			return nil, forkConflict()
 		}
 		if err := validateForkSharing(input); err != nil {
 			return nil, err
 		}
-		if origin != nil {
+		if origin != nil && purpose != domain.SidechatFork {
 			current, err := tx.Authenticate(originDigest[:])
 			if err != nil {
 				return nil, err
@@ -167,6 +194,9 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 			input.OpenCode = &domain.OpenCodeForkRequests{Restore: domain.NewID(), Fork: input.NativeRequestID, Move: domain.NewID(), Mark: domain.NewID(), DeleteSource: domain.NewID()}
 		}
 		if err := input.Validate(); err != nil {
+			if input.Purpose == domain.SidechatFork {
+				s.logger.InfoContext(ctx, "sidechat_boundary_rejected", "source_session_id", input.SourceSessionID, "children", len(input.Progress.Subagents), "version", input.Version, "workspace", input.Workspace, "code", domain.SafeError(err).Code)
+			}
 			if input.Version == 2 {
 				s.logger.WarnContext(ctx, "opencode_fork_admission_rejected", "source_session_id", input.SourceSessionID, "operations_valid", input.OpenCode != nil && input.OpenCode.Validate() == nil, "observed_build", input.Progress.Observed.OpenCodeAgent == domain.OpenCodeBuildAgent, "children", len(input.Progress.Subagents), "context_actions", len(input.Progress.NativeCompactions), "workspace_observed", input.Progress.LatestWorkspaceEventID != "", "todo_observed", input.Progress.LatestTodoID != "", "plan_observed", input.Progress.LatestPlanID != "", "diff_observed", input.Progress.LatestDiffID != "", "code", domain.SafeError(err).Code)
 			}
@@ -257,6 +287,15 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if now.SourceRevision != input.SourceRevision || now.SourceJobID != input.SourceJobID || now.Completion != input.Completion || now.SourceAssignment.ConfigurationDigest != input.SourceAssignment.ConfigurationDigest || source.ExecutionSelection().AccountID != input.SourceAssignment.AccountID || source.ExecutionSelection().ConnectionID != input.SourceAssignment.ConnectionID {
 		return forkConflict()
 	}
+	if input.Purpose == domain.SidechatFork {
+		if err := tx.RequireSidechatCapacity(input.SourceSessionID); err != nil {
+			return err
+		}
+		_, machine, err := activeMachine(tx, source.MachineID)
+		if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) {
+			return domain.SidechatUnavailable()
+		}
+	}
 	if err := validateForkSharing(input); err != nil {
 		return err
 	}
@@ -315,6 +354,16 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 		return nil, err
 	}
 	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
+	if input.Purpose == domain.SidechatFork {
+		snapshot, err := input.ChildSnapshot()
+		if err != nil {
+			return nil, err
+		}
+		child.Source, child.Fork.Snapshot, child.Fork.SidechatParentSnapshot = domain.SidechatSession, snapshot, &input.Snapshot
+		if err := tx.RegisterSidechat(input.SourceSessionID, input.ChildSessionID); err != nil {
+			return nil, err
+		}
+	}
 	if input.Version == 2 {
 		child.Fork.NativeTurnID = output.NativeTurnID
 	}
@@ -341,6 +390,15 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 	var source workspace.Manifest
 	if domain.Decode(input.SourceAssignment.Manifest, &source) != nil || len(preparation.Repositories) != len(source.Repositories) || len(manifest.Repositories) != len(source.Repositories) {
 		return forkConflict()
+	}
+	if input.Purpose == domain.SidechatFork {
+		if preparation.SidechatSource == nil || manifest.Reference == nil || preparation.ForkProfile != workspace.CodexSidechatReferenceV1 || preparation.ForkSourceID != input.SourceSessionID {
+			return forkConflict()
+		}
+		if string(mustForkValueJSON(preparation.SidechatSource.Preparation)) != string(input.SourceAssignment.Preparation) || string(mustForkValueJSON(preparation.SidechatSource.Manifest)) != string(input.SourceAssignment.Manifest) {
+			return forkConflict()
+		}
+		return nil
 	}
 	if input.Workspace == domain.GeneralChat {
 		if input.Version == 2 && preparation.ForkProfile != workspace.OpenCodeGeneralChatForkV1 || input.Version == 1 && preparation.ForkProfile != "" {
@@ -373,7 +431,7 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 }
 
 func validateForkSharing(input domain.ForkJobInput) error {
-	if input.Workspace != domain.Local {
+	if input.Purpose == domain.SidechatFork || input.Workspace != domain.Local {
 		return nil
 	}
 	var source workspace.Manifest
@@ -387,3 +445,5 @@ func forkInputDigest(raw []byte) string {
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:])
 }
+
+func mustForkValueJSON(v any) []byte { raw, _ := json.Marshal(v); return raw }

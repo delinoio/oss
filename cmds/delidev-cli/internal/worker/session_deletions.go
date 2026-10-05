@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -46,7 +47,7 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 			}
 			for _, raw := range r.Msg.WorkJson {
 				var w domain.SessionDeletionWork
-				if domain.Decode(raw, &w) != nil || w.Validate() != nil || w.ServerID != credential.ServerID || w.DeviceID != credential.DeviceID || w.MachineID != credential.MachineID {
+				if domain.DecodeWithLimit(raw, &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil || w.ServerID != credential.ServerID || w.DeviceID != credential.DeviceID || w.MachineID != credential.MachineID {
 					config.Logger.WarnContext(ctx, "session_deletion_invalid_work", "code", domain.RecoveryRequired)
 					continue
 				}
@@ -115,6 +116,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			return proof, e
 		}
 		paths = append(paths, filepath.Join(root, "workspaces", string(w.SessionID)))
+		if w.Fork != nil {
+			paths = append(paths, workspace.SidechatForkClaimPath(root, w.Fork.JobID))
+		}
 		for _, path := range paths {
 			if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
@@ -147,7 +151,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			if domain.DecodeWithLimit(raw, &native, maxOpenCodeExecutionCheckpointBytes) == nil && native.Version == 2 {
 				valid = native.JobID == w.Fork.JobID && native.JobInputDigest == w.Fork.JobInputDigest && native.RuntimeID == w.Fork.RuntimeID && native.SessionID == w.SessionID && native.MachineID == w.MachineID && string(mustForkJSON(native)) == string(raw)
 			} else {
-				valid = len(raw) <= maxExecutionCheckpointBytes && domain.DecodeWithLimit(raw, &checkpoint, maxExecutionCheckpointBytes) == nil && checkpoint.Version == 1 && checkpoint.JobID == w.Fork.JobID && checkpoint.JobInputDigest == w.Fork.JobInputDigest && checkpoint.RuntimeID == w.Fork.RuntimeID && checkpoint.SessionID == w.SessionID && checkpoint.MachineID == w.MachineID && string(mustForkJSON(checkpoint)) == string(raw)
+				valid = len(raw) <= maxExecutionCheckpointBytes && domain.DecodeWithLimit(raw, &checkpoint, maxExecutionCheckpointBytes) == nil && ((checkpoint.Version == 1 && checkpoint.SidechatPolicy == "") || (checkpoint.Version == 3 && checkpoint.SidechatPolicy == domain.CodexReadOnlySidechatV1 && checkpoint.Native.Effective.Sandbox.Type == codex.ReadOnly && checkpoint.Native.Effective.ApprovalPolicy == codex.ApprovalNever)) && checkpoint.JobID == w.Fork.JobID && checkpoint.JobInputDigest == w.Fork.JobInputDigest && checkpoint.RuntimeID == w.Fork.RuntimeID && checkpoint.SessionID == w.SessionID && checkpoint.MachineID == w.MachineID && string(mustForkJSON(checkpoint)) == string(raw)
 			}
 		}
 		if !valid {
@@ -201,6 +205,20 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	manager := workspace.Manager{Root: root, Logger: config.Logger}
+	for _, copy := range w.Copies {
+		if copy.UnpublishedSidechatID != "" {
+			if err := manager.DiscardInterruptedSidechatFork(ctx, copy.JobID, w.SessionID, copy.UnpublishedSidechatID); err != nil {
+				return proof, err
+			}
+		}
+	}
+	unpublishedPaths := map[string]bool{}
+	for _, copy := range w.Copies {
+		if copy.UnpublishedSidechatID != "" {
+			unpublishedPaths[filepath.Join(root, "workspaces", string(copy.UnpublishedSidechatID))] = true
+			unpublishedPaths[workspace.SidechatForkClaimPath(root, copy.JobID)] = true
+		}
+	}
 	e = manager.DeleteOwnedWorkspace(ctx, w, allowAbsentWorkspace, func() error {
 		// Admission is tombstoned and every native/publisher owner was joined.
 		// Release handles before unlinking their lock files on Windows.
@@ -221,6 +239,12 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			return e
 		}
 		for _, path := range paths {
+			if unpublishedPaths[path] {
+				if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+					return domain.SessionDeletionPending()
+				}
+				continue
+			}
 			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") {
 				// Workspace cleanup already checked the original native staging
 				// identity. A later replacement must remain protected here.
@@ -237,6 +261,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	})
 	if e != nil {
 		return proof, e
+	}
+	if w.Fork != nil {
+		if err := manager.RetirePublishedSidechatFork(ctx, w.Fork.JobID, w.SessionID); err != nil {
+			return proof, err
+		}
 	}
 	proof.Complete = true
 	return proof, writeJSON(path, proof)
@@ -271,6 +300,9 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 			return nil, domain.SafeError(e)
 		}
 		paths = append(paths, filepath.Join(root, "jobs", string(copy.JobID)), filepath.Join(root, "jobs", string(copy.JobID)+".json"), filepath.Join(root, "workspace-recovery", string(copy.JobID)+".json"), filepath.Join(root, "processes", string(copy.JobID)), filepath.Join(root, "processes", string(copy.JobID)+".recovery.lock"))
+		if copy.UnpublishedSidechatID != "" {
+			paths = append(paths, workspace.SidechatForkClaimPath(root, copy.JobID), filepath.Join(root, "workspaces", string(copy.UnpublishedSidechatID)))
+		}
 		if copy.ExecutionID != "" {
 			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ExecutionID)), filepath.Join(root, "pr-git", string(copy.ExecutionID)))
 		}
@@ -311,4 +343,28 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 		}
 	}
 	return paths, nil
+}
+
+// Match only the original server-issued ownership envelope. Generic unavailable,
+// canceled or recovery errors never imply deletion authority or permit replay.
+func retiringAssignment(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, resource *pb.Resource) bool {
+	if resource == nil || domain.ID(resource.SessionId).Validate() != nil || domain.ID(resource.Id).Validate() != nil {
+		return false
+	}
+	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	r, err := client.ListSessionDeletionWork(bounded, authenticated(credential, &pb.ListSessionDeletionWorkRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), OriginalSessionId: resource.SessionId, OriginalJobId: resource.Id}))
+	if err != nil || len(r.Msg.WorkJson) != 1 || r.Msg.NextSessionId != "" {
+		return false
+	}
+	var w domain.SessionDeletionWork
+	if domain.DecodeWithLimit(r.Msg.WorkJson[0], &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil || w.ServerID != credential.ServerID || w.DeviceID != credential.DeviceID || w.MachineID != credential.MachineID || string(w.SessionID) != resource.SessionId {
+		return false
+	}
+	for _, copy := range w.Copies {
+		if string(copy.JobID) == resource.Id && copy.InstanceID == instance && copy.Revision == resource.Revision && copy.Digest == executionInputDigest(resource.DocumentJson) {
+			return true
+		}
+	}
+	return false
 }

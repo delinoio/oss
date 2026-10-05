@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ForkWorkspace, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ForkPurpose, ForkWorkspace, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { document, encode, object } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionForkAction, SessionForkProvider } from "./session-fork";
@@ -119,4 +119,33 @@ it.each(["valid", "tool", "artifact", "changes", "empty-changes", "empty-summary
  if(valid) await screen.findByRole("button",{name:"Fork session"});
  else {await waitFor(()=>expect(list).toHaveBeenCalled());await waitFor(()=>expect(client.isFetching()).toBe(0));expect(screen.queryByRole("button",{name:"Fork session"})).toBeNull();}
  expect(fork).not.toHaveBeenCalled();
+});
+
+it.each([true, false])("gates native Sidechat on the original Runner Device and sends no workspace override (%s)", async (supported) => {
+ const machineId = newRequestId();
+ const source = create(ResourceSchema, {schemaVersion:1,kind:EntityKind.SESSION,id:newRequestId(),revision:8n,documentJson:encode({name:"Original",machine_id:machineId,workspace:"worktree",archive:"active",recovery:"none",outcome:"succeeded",initial_execution:{configuration:{harness:"codex",account_type:"api"}},execution:{native_turn_id:newRequestId(),cleanup_verified:true}})});
+ const machine=create(ResourceSchema,{schemaVersion:1,kind:EntityKind.MACHINE,id:machineId,revision:1n,documentJson:encode({worker_capabilities:supported?["codex-read-only-sidechat-v1"]:[]})});
+ const job=create(ResourceSchema,{schemaVersion:1,kind:EntityKind.JOB,id:newRequestId(),revision:1n,documentJson:encode({state:"claimed",input:{source_session_id:source.id}})});
+ const fork=vi.fn(async(_request:unknown)=>({job}));
+ const transport=createRouterTransport((router)=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.NATIVE_SIDECHAT_V1]})});router.service(ResourceService,{getResource:(request)=>({resource:request.kind===EntityKind.MACHINE?machine:source})});router.service(SessionService,{forkSession:fork,getSessionFork:()=>({job})});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source}/></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ if(!supported){await waitFor(()=>expect(client.isFetching()).toBe(0));expect(screen.queryByRole("button",{name:"Open Sidechat"})).toBeNull();expect(fork).not.toHaveBeenCalled();return;}
+ fireEvent.click(await screen.findByRole("button",{name:"Open Sidechat"}));
+ expect(screen.queryByRole("combobox",{name:"Workspace"})).toBeNull();
+ expect(screen.getByText(/permanently deletes dependent Sidechats/)).not.toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Create Sidechat"}));
+ await waitFor(()=>expect(fork).toHaveBeenCalledTimes(1));
+ expect(fork.mock.calls[0]?.[0]).toMatchObject({purpose:ForkPurpose.SIDECHAT,workspace:ForkWorkspace.UNSPECIFIED,mutation:{id:source.id,expectedRevision:8n}});
+});
+
+it.each(["pending", "uncertain", "stored"])("hides native fork and Sidechat while the parent workspace is %s", async (state) => {
+ const source=create(ResourceSchema,{kind:EntityKind.SESSION,id:newRequestId(),revision:8n,schemaVersion:1,documentJson:encode({name:"Parent",machine_id:newRequestId(),workspace:"general-chat",archive:"active",recovery:"none",outcome:"succeeded",storage:{state},initial_execution:{configuration:{harness:"codex"}},execution:{native_turn_id:newRequestId(),cleanup_verified:true}})});
+ const machine=create(ResourceSchema,{kind:EntityKind.MACHINE,id:newRequestId(),revision:1n,schemaVersion:1,documentJson:encode({worker_capabilities:["codex-read-only-sidechat-v1"]})});
+ const fork=vi.fn();
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.CODEX_SESSION_FORK_V1,SystemCapability.NATIVE_SIDECHAT_V1]})});router.service(ResourceService,{getResource:()=>({resource:machine})});router.service(SessionService,{forkSession:fork});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source}/></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ await waitFor(()=>expect(client.isFetching()).toBe(0));
+ expect(screen.queryByRole("button",{name:"Open Sidechat"})).toBeNull();expect(screen.queryByRole("button",{name:"Fork session"})).toBeNull();expect(fork).not.toHaveBeenCalled();
 });

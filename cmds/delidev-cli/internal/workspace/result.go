@@ -18,6 +18,9 @@ func ResultUncertain() *domain.Error {
 // the server OS. This is publication validation, not permission to open those
 // paths: confinement and native filesystem checks remain the Worker's duty.
 func ValidateResult(input PrepareRequest, result Manifest, workerOS string) error {
+	if input.SidechatSource != nil || input.ForkProfile == CodexSidechatReferenceV1 || result.Reference != nil {
+		return validateSidechatResult(input, result, workerOS)
+	}
 	if input.validateStructure() != nil || input.ForkProfile == OpenCodeGeneralChatForkV1 && workerOS != "darwin" && workerOS != "linux" {
 		return ResultUncertain()
 	}

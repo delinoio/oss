@@ -157,10 +157,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		if command == "session" && len(rest) > 0 {
 			switch rest[0] {
-			case "fork":
-				// Fork copies every repository under a two-minute Worker bound.
-				// A command timeout retains the accepted job for observation.
-				limit = 145 * time.Second
+			case "fork", "sidechat":
+				// Native creation has a two-minute Worker bound and retained wait.
+				// Findings submission is an immediate operation with the usual bound.
+				if rest[0] != "sidechat" || len(rest) < 2 || rest[1] != "send" {
+					limit = 145 * time.Second
+				}
 			case "pr":
 				// Linking refreshes GitHub identities before committing metadata.
 				limit = 45 * time.Second

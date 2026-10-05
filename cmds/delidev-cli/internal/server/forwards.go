@@ -136,6 +136,9 @@ func (s *Service) StartForward(ctx context.Context, req *connect.Request[pb.Star
 		if sr.Revision != m.ExpectedSessionRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before starting a forward.")
 		}
+		if session.IsSidechat() {
+			return nil, domain.SidechatUnavailable()
+		}
 		if !session.WorkspaceAvailable() {
 			return nil, domain.Fail(domain.Conflict, "Workspace storage retains this session.", "Settle the original storage operation and restore the workspace before starting a forward.")
 		}

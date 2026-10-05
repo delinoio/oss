@@ -1,5 +1,6 @@
 # DeliDev store ownership
 
+- Sidechat publication atomically records its bounded parent dependency. Keep it until original native, database and backup retirement finishes. Synchronized complete parent/storage intents reconstruct only their original child plans across SQL rollback and response loss; compare immutable ownership inventories, never substitute current work. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - PR activity follows `docs/cmds-delidev-activity-contract.md`: publish immutable metadata with its source transaction, preserve receipt/alias/unchanged-state deduplication and original actor/time/version references, and remove all session-owned attempt transitions on deletion, including pre-binding reservations. Do not backfill inferred history. Dedicated verification retention is independently bounded and proof-replay-safe; no production verifier or public write is enabled by its private storage boundary.
@@ -209,3 +210,11 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Exchange code/verifier and returned printable-ASCII keys remain owned, zeroizable byte buffers through JSON encoding/decoding. Transport cancellation after a valid key is returned does not discard it: settle under independent bounded original-actor authority, honoring serialized business cancellation before sealing. Expired awaiting attempts with no claimed credential cleanup do not block managed restore; exchanging/saving/recovery and cleanup obligations remain blocking.
 
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
+
+- Parent permanent deletion capacity counts only newly created dependent journals; retained child journals preserve their exact operation/request identities without consuming a second slot.
+
+- Permanent deletion derives unpublished Sidechat child IDs only from original immutable failed/canceled Fork assignments. Persist the complete synchronized plan within its 4 MiB bound, preserving legacy omitted fields and original request/digest identities; no current child lookup can reconstruct ownership.
+
+- Sidechat storage retirement uses the strict typed storage-input decoder, including large original recovery with no dependents. Its private wrapper retains the full existing 4 MiB deletion plan plus 4 KiB fixed wrapper headroom; publication/restart use the same bound. Preserve original actor, job/input digest and every child plan identity before native storage admission.
+
+Check the 256-child Sidechat ownership allowance inside the original fork admission transaction before queuing native preparation, and recheck at native claim/publication. The existing queued/claimed/uncertain fork reservation serializes the single outstanding preparation against that parent inventory; a rejected capacity request creates no job or child authority.

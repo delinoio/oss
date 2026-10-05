@@ -585,3 +585,10 @@ and cleanup proof under the fork contract. Copied canonical messages carry
 explicit original provenance without input/accounting authority; absent native
 agent/model remains private until the first real input independently proves
 selection. No migration is allocated.
+
+Worker-only permanent-deletion ownership JSON retains its closed version-1 shape
+with an optional original unpublished Sidechat child ID on Fork copies. Keep the
+4,096-copy bound, strict 4 MiB envelope/page limit and 20-envelope pagination bound;
+native clients allow 8 MiB response transport overhead for JSON/base64. Ordinary
+public command JSON retains its 1 MiB bound. These metadata IDs grant no native
+replay or filesystem authority.

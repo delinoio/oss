@@ -79,6 +79,7 @@ Each project must have one project index document and one or more domain contrac
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Claude native context and manual compaction](cmds-delidev-claude-compaction-contract.md)
 - [Same-account native Codex session forks](cmds-delidev-forks-contract.md)
+- [Native read-only Sidechat](cmds-delidev-sidechat-contract.md)
 
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)

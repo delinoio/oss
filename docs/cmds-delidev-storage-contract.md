@@ -238,7 +238,9 @@ reapplies intent before listeners, reconstructs reference-only receipts and
 repurges an older database when removal had committed. Obligations are never
 evicted: 4,096 sessions and 4,096 original jobs per session are explicit bounds.
 Each plan validates UUID uniqueness across the full 4,096-job capacity independently
-of the general 1,000-link bound; one immutable plan is capped at 1 MiB. Unknown
+of the general 1,000-link bound; one immutable plan is capped at 4 MiB. Worker pages retain at most 20 envelopes
+and 4 MiB total ownership JSON; the native Connect response allowance includes
+its bounded JSON/base64 overhead. Ordinary command JSON retains its 1 MiB bound. Unknown
 ownership fails closed.
 
 A separate authenticated Worker polling/report lane survives an interrupted
@@ -317,8 +319,10 @@ claims/intents, retirement receipts and restoration bindings before acknowledgin
 A stored workspace supplies its validated original manifest before deleting its only
 copy; restored independent Git is removed solely within the managed root. Original
 Local/source checkouts remain protected. Completed-proof retries verify these exact
-paths remain absent. Future session-owned native services and dependent Sidechats
-must join this ownership graph and acknowledgement boundary before exposing them.
+paths remain absent. Dependent Sidechats join this ownership graph through their
+original child plans and unpublished Fork metadata claims before parent removal.
+Future session-owned native services must join the same acknowledgement boundary
+before exposure.
 The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
@@ -468,7 +472,7 @@ real-account, Worker workspace, native harness or platform-distribution acceptan
 
 ## Remaining implementation
 
-Worker-local workspace snapshots and the desktop storage-management surface use the separate storage service below; database backup observation does not grant workspace or database restoration. Managed database restore uses its explicit lifecycle above. Permanent dependent Sidechat deletion and independent attachment/cache cleanup remain separate issue #964 work. Parent workspace storage fails closed on unresolved dependent jobs or extra resources; it cannot report their permanent deletion. The complete requirements remain authoritative.
+Worker-local workspace snapshots and the desktop storage-management surface use the separate storage service below; database backup observation does not grant workspace or database restoration. Managed database restore uses its explicit lifecycle above. Permanent dependent Sidechat deletion follows its original native read-only ownership contract and composes through this deletion boundary. Independent attachment/cache cleanup retains its existing source-bound owners. Parent workspace storage fails closed on unresolved dependent jobs or extra resources; it cannot report their permanent deletion. The complete requirements remain authoritative.
 
 ## Validation
 
@@ -922,3 +926,5 @@ Atomic journal compaction represents each settled removal with one inventory-bou
 ## Added hosted-provider defaults (migration 30)
 
 Real 30 follows implemented OAuth 29 and actual accounting/diagnostics/retirement 26–28. It stores the private `provider_presets_layout=hosted-additions-26-v1` marker and seeds only the 26 explicitly allocated hosted preset identities. Historical defaults migrations retain their original six-ID set. Existing managed UUIDs, Off state, custom providers/accounts/models and explicit deletion of original presets remain authoritative. No Account, credential or model is created. Upgrade synchronizes the original backup first and publishes all predecessor/layout/seed changes atomically; failure leaves the original version and image intact. A current-store reopen validates the exact layout marker and never seeds again.
+
+Sidechat storage retirement decodes original storage/recovery inputs with the owning strict 3 MiB rule, even when no Sidechat is selected. Its private retirement wrapper permits the existing complete 4 MiB deletion plan plus 4 KiB fixed operation metadata, consistently at publication and restart. The allowance preserves complete original child cleanup obligations and grants no additional native removal authority or ordinary entity capacity.

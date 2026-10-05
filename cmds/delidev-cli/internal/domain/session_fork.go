@@ -6,21 +6,23 @@ import "encoding/json"
 // ForkOrigin is a retained boundary, never an executable copy of source input.
 // Snapshot remains immutable even before the child's first explicit input.
 type ForkOrigin struct {
-	SourceSessionID   ID               `json:"source_session_id"`
-	SourceRevision    uint64           `json:"source_revision"`
-	SourceExecutionID ID               `json:"source_execution_id"`
-	SourceTurnID      NativeIdentity   `json:"source_turn_id"`
-	JobID             ID               `json:"job_id"`
-	RuntimeID         ID               `json:"runtime_id"`
-	NativeThreadID    NativeIdentity   `json:"native_thread_id"`
-	NativeTurnID      NativeIdentity   `json:"native_turn_id,omitempty"`
-	CheckpointDigest  string           `json:"checkpoint_digest"`
-	Snapshot          InitialExecution `json:"snapshot"`
-	WorkerDeviceID    ID               `json:"worker_device_id"`
-	JobInputDigest    string           `json:"job_input_digest"`
+	SidechatParentSnapshot *InitialExecution `json:"sidechat_parent_snapshot,omitempty"`
+	SourceSessionID        ID                `json:"source_session_id"`
+	SourceRevision         uint64            `json:"source_revision"`
+	SourceExecutionID      ID                `json:"source_execution_id"`
+	SourceTurnID           NativeIdentity    `json:"source_turn_id"`
+	JobID                  ID                `json:"job_id"`
+	RuntimeID              ID                `json:"runtime_id"`
+	NativeThreadID         NativeIdentity    `json:"native_thread_id"`
+	NativeTurnID           NativeIdentity    `json:"native_turn_id,omitempty"`
+	CheckpointDigest       string            `json:"checkpoint_digest"`
+	Snapshot               InitialExecution  `json:"snapshot"`
+	WorkerDeviceID         ID                `json:"worker_device_id"`
+	JobInputDigest         string            `json:"job_input_digest"`
 }
 
 type ForkJobInput struct {
+	Purpose          ForkPurpose           `json:"purpose,omitempty"`
 	Version          uint32                `json:"version"`
 	OpenCode         *OpenCodeForkRequests `json:"opencode,omitempty"`
 	SourceSessionID  ID                    `json:"source_session_id"`
@@ -41,6 +43,12 @@ type ForkJobInput struct {
 }
 
 func (i ForkJobInput) Validate() error {
+	if i.Purpose != IndependentFork && i.Purpose != SidechatFork {
+		return SidechatUnavailable()
+	}
+	if i.Purpose == SidechatFork && (i.Version != 3 || i.SourceAssignment.Configuration.Harness != Codex || i.SourceAssignment.Configuration.SidechatPolicy != "" || i.OpenCode != nil || i.Workspace != i.sourceWorkspace() || len(i.Progress.Subagents) != 0 || i.SourceAssignment.Fork != nil) {
+		return SidechatUnavailable()
+	}
 	// Native Fork currently opens an API-authenticated child outside the
 	// managed execution lease. Reject subscriptions before job acceptance or
 	// Worker journaling until Fork has its own joined protected lease profile.
@@ -52,7 +60,7 @@ func (i ForkJobInput) Validate() error {
 	if harness == OpenCode && (i.Version != 2 || i.OpenCode == nil || i.OpenCode.Validate() != nil || i.OpenCode.Fork != i.NativeRequestID || UniqueIDs([]ID{i.OpenCode.Restore, i.OpenCode.Fork, i.OpenCode.Move, i.OpenCode.Mark, i.OpenCode.DeleteSource, i.SourceSessionID, i.ChildSessionID, i.RuntimeID, i.SourceJobID, i.SourceAssignment.ExecutionID, i.SourceAssignment.InputID, i.SourceAssignment.ThreadRequestID, i.SourceAssignment.TurnRequestID}) != nil || primaryErr != nil || primary != OpenCodeBuildAgent || i.Progress.Observed.OpenCodeAgent != OpenCodeBuildAgent || i.Workspace != GeneralChat || i.LocalOrigin != nil || i.SourceAssignment.Input.Mode != ExecuteMode || i.SourceAssignment.Fork != nil || len(i.Progress.Subagents) != 0 || len(i.Progress.NativeCompactions) != 0 || i.Progress.LatestWorkspaceEventID != "" || i.Progress.LatestTodoID != "" || i.Progress.LatestPlanID != "") {
 		return Fail(Unsupported, "OpenCode Fork requires the bounded Unix plain-text General Chat profile.", "Keep the original session; tools, children, compaction, Plan and previously forked sources cannot be adopted.")
 	}
-	validProfile := harness == Codex && i.Version == 1 && i.OpenCode == nil || harness == OpenCode && i.Version == 2 && i.OpenCode != nil
+	validProfile := harness == Codex && ((i.Version == 1 && i.Purpose == IndependentFork) || (i.Version == 3 && i.Purpose == SidechatFork)) && i.OpenCode == nil || harness == OpenCode && i.Version == 2 && i.OpenCode != nil
 	digest, digestErr := i.Snapshot.Configuration.Digest()
 	if !validProfile || UniqueIDs([]ID{i.SourceSessionID, i.ChildSessionID, i.RuntimeID, i.NativeRequestID, i.SourceJobID}) != nil || i.SourceRevision == 0 || Text(i.Name, "fork name", 256, true) != nil || (i.CreatedBy != "" && i.CreatedBy.Validate() != nil) || i.CreatedBy != i.Actor.DeviceID || i.SourceAssignment.Validate() != nil || i.SourceAssignment.SessionID != i.SourceSessionID || i.Completion.Version != 2 || i.Completion.ValidateForHarness(harness) != nil || i.Completion.Outcome != ExecutionSucceeded || i.Completion.ExecutionID != i.SourceAssignment.ExecutionID || i.Completion.InputID != i.SourceAssignment.InputID || !i.Progress.CleanupVerified || i.Progress.Waiting != (NativeWaiting{}) || i.Progress.UnconfirmedResponses != 0 || i.Progress.ExecutionID != i.Completion.ExecutionID || i.Progress.Outcome != ExecutionSucceeded || i.Progress.LastSequence != i.Completion.LastSequence || i.Progress.JobID != i.SourceJobID || i.Progress.NativeTurnID != string(i.Completion.NativeTurnID) || i.Progress.NativeThreadID != string(i.Completion.NativeThreadID) || digestErr != nil || digest != i.SourceAssignment.ConfigurationDigest || i.Snapshot.ConfigurationDigest != i.SourceAssignment.ConfigurationDigest || i.Snapshot.InitialAccountID != i.SourceAssignment.AccountID || i.Snapshot.ConnectionID != i.SourceAssignment.ConnectionID {
 		return Fail(RecoveryRequired, "The fork does not identify one verified completed source boundary.", "Preserve the original session, assignment, checkpoint and cleanup evidence.")
@@ -109,7 +117,7 @@ func canonicalDigest(value string) bool {
 
 func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 	harness := input.SourceAssignment.Configuration.Harness
-	validProfile := harness == Codex && r.Version == 1 && r.OpenCodeMappings == nil && r.NativeTurnID == input.Completion.NativeTurnID || harness == OpenCode && r.Version == 2 && validateOpenCodeForkMappings(r.OpenCodeMappings, input.Completion.NativeTurnID, r.NativeTurnID) == nil && r.NativeTurnID != input.Completion.NativeTurnID && r.NativeTurnID.Validate(OpenCode, NativeTurnIdentity) == nil
+	validProfile := harness == Codex && r.Version == input.Version && r.OpenCodeMappings == nil && r.NativeTurnID == input.Completion.NativeTurnID || harness == OpenCode && r.Version == 2 && validateOpenCodeForkMappings(r.OpenCodeMappings, input.Completion.NativeTurnID, r.NativeTurnID) == nil && r.NativeTurnID != input.Completion.NativeTurnID && r.NativeTurnID.Validate(OpenCode, NativeTurnIdentity) == nil
 	if !validProfile || !r.CleanupVerified || r.ChildSessionID != input.ChildSessionID || r.RuntimeID != input.RuntimeID || r.NativeThreadID == input.Completion.NativeThreadID || r.NativeThreadID.Validate(harness, NativeThreadIdentity) != nil || !canonicalDigest(r.CheckpointDigest) {
 		return Fail(RecoveryRequired, "Fork completion lacks its exact verified child boundary.", "Retain the original Worker operation without repeating native Fork.")
 	}
@@ -118,6 +126,17 @@ func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 
 // Validate checks the child-owned publication seed without reopening its parent.
 func (f ForkOrigin) Validate() error {
+	if f.Snapshot.Configuration.SidechatPolicy != "" || f.SidechatParentSnapshot != nil {
+		if f.SidechatParentSnapshot == nil || f.SidechatParentSnapshot.Configuration.SidechatPolicy != "" {
+			return SidechatUnavailable()
+		}
+		expected, err := SidechatSnapshot(*f.SidechatParentSnapshot)
+		actual, _ := json.Marshal(f.Snapshot)
+		want, _ := json.Marshal(expected)
+		if err != nil || string(actual) != string(want) {
+			return SidechatUnavailable()
+		}
+	}
 	harness := f.Snapshot.Configuration.Harness
 	validProfile := harness == Codex && f.NativeTurnID == "" || harness == OpenCode && f.NativeTurnID.Validate(OpenCode, NativeTurnIdentity) == nil && f.NativeTurnID != f.SourceTurnID
 	digest, err := f.Snapshot.Configuration.Digest()
