@@ -1,6 +1,6 @@
 # Getting started
 
-**pnport 0.1.0 is available.** Check [installation and known limits](/pnport/installation), then prepare an installed Yarn 4 Plug'n'Play project. The project must have `.pnp.cjs`; pnport supports inline and split PnP data.
+**pnport 0.1.2 is available.** Check [installation and known limits](/pnport/installation), then prepare an installed Yarn 4 Plug'n'Play project. The project must have `.pnp.cjs`; pnport supports inline and split PnP data.
 
 For a walkthrough using the published preview with Turbopack and TypeScript 7, see [preview testing](/pnport/preview-testing).
 

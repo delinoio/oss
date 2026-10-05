@@ -1,6 +1,6 @@
 # Diagnostics and troubleshooting
 
-**pnport 0.1.0 is available.** Its diagnostics apply to the published CLI. Full filesystem/process compatibility remains incomplete. Check [installation and known limits](/pnport/installation) for unresolved macOS initialization and cancellation failures.
+**pnport 0.1.2 is available.** Its diagnostics apply to the published CLI. Full filesystem/process compatibility remains incomplete. Check [installation and known limits](/pnport/installation) for unresolved macOS initialization and cancellation failures.
 
 ## Start with doctor
 
@@ -14,7 +14,7 @@ Run `pnport doctor` for human-readable project, platform, injection, and cache c
 | Archive or cache error | Check that the installed package archive is intact and the private cache is writable; inspect [cache management](/pnport/cache). |
 | Graph-change restart notice | Stop and start the command again after PnP data or an active archive changes. |
 
-Published 0.1.0 also reports a dependency-view conflict for an empty or cache-only physical `node_modules`, including caches left by Vitest. Unreleased development builds support hidden tool-cache coexistence; see [filesystem behavior](/pnport/filesystem-and-processes#unreleased-tool-cache-support). The doctor JSON schema and exit codes remain unchanged.
+Earlier 0.1.0 reports a dependency-view conflict for an empty or cache-only physical `node_modules`, including caches left by Vitest. Version 0.1.2 supports hidden tool-cache coexistence; see [filesystem behavior](/pnport/filesystem-and-processes#tool-cache-support). The doctor JSON schema and exit codes remain unchanged.
 
 ## Exit codes and streams
 
@@ -25,6 +25,6 @@ Published 0.1.0 also reports a dependency-view conflict for an empty or cache-on
 | `126` | Command found but cannot be executed. |
 | `127` | Command not found. |
 
-When a child starts successfully, pnport passes through its exit status. On macOS, intermittent initialization and cancellation failures can return 125 instead of the expected signal-derived status; this remains unresolved in 0.1.0. Stable `PNPORT_*` codes on stderr distinguish a pnport failure from a child that exits with the same number. Normal missing files remain child-visible filesystem errors rather than always stopping the supervisor.
+When a child starts successfully, pnport passes through its exit status. On macOS, intermittent initialization and cancellation failures can return 125 instead of the expected signal-derived status; this remains unresolved in 0.1.2. Stable `PNPORT_*` codes on stderr distinguish a pnport failure from a child that exits with the same number. Normal missing files remain child-visible filesystem errors rather than always stopping the supervisor.
 
 pnport diagnostics go to stderr; child stdout and stderr are inherited rather than captured. Default logging includes errors and necessary notices. `--log-level debug` can expose paths, so review debug logs before sharing them. pnport diagnostics must not contain file contents, environment values, full argument vectors, or captured child output. There is no pnport telemetry or hosted diagnostic service. Report a sanitized reproduction through [GitHub Issues](https://github.com/delinoio/oss/issues).
