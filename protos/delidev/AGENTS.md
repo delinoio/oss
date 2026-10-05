@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- The server-owned subscription login amendment reserves System capability 30, progress fields 4–6, the closed `SubscriptionLoginState` enum and `ForwardSubscriptionCallback` message fields under issue #964. Establish these reservations on main before implementation; they grant no native login or callback authority. Preserve explicit-machine Worker operations and their original leases.
+
 - `ListSessionDeletionWorkRequest.original_session_id = 4` and `original_job_id = 5` inspect only the original retiring assignment under current Worker authority. They are exclusive with pagination and do not bypass independent descendant or terminal cleanup. Follow the Sidechat contract and original allocation ownership.
 - Issue #964 reserves independent System capability 27, Worker capability 16, `ForkSessionRequest.purpose = 6` and the closed `ForkPurpose` enum for Sidechat. Follow `docs/cmds-delidev-sidechat-contract.md`; record missing numbers before source use and activate only the complete native read-only, workspace-reference and dependent-cleanup boundary. Preserve ordinary omitted-purpose Fork bytes and all existing capability values.
 

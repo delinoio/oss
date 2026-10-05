@@ -2513,6 +2513,14 @@
         "instance_id": 2,
         "after_session_id": 3
       }
+    },
+    "GetSubscriptionProgressResponse": {
+      "kind": "message",
+      "members": {
+        "url": 1,
+        "user_code": 2,
+        "canceled": 3
+      }
     }
   },
   "reservations": [
@@ -5684,6 +5692,138 @@
       "newDeclaration": true,
       "member": "WORKSPACE_STORAGE_ACTION_RECOVER",
       "number": 7
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_LOGIN_V1",
+      "number": 30
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressResponse",
+      "member": "state",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressResponse",
+      "member": "suggested_name",
+      "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressResponse",
+      "member": "generation",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_PREPARING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_WAITING",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_SUCCEEDED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_CANCELED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_EXPIRED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_UNSUPPORTED",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginState",
+      "member": "SUBSCRIPTION_LOGIN_STATE_FAILED",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ForwardSubscriptionCallbackRequest",
+      "member": "account_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ForwardSubscriptionCallbackRequest",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ForwardSubscriptionCallbackRequest",
+      "member": "callback_query",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ForwardSubscriptionCallbackResponse",
+      "member": "accepted",
+      "number": 1,
+      "newDeclaration": true
     }
   ]
 }
