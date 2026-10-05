@@ -414,10 +414,14 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	bounded, stop := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
 	defer stop()
 	if err := s.finishServerSubscription(bounded, id, original, operation, latest, cleanup, state, diagnostic); err != nil {
+		if diagnostic == nil {
+			diagnostic = domain.CodexErrorDiagnostic(domain.WithCodexDiagnostic(version, domain.CodexCleanup, err))
+			diagnostic.CorrelationID = string(original.ID)
+		}
 		if e := s.markServerSubscriptionRecovery(id, original.ID, diagnostic); e != nil {
 			s.logger.Warn("server_subscription_recovery_unconfirmed", "account_id", id, "operation_id", original.ID, "code", domain.SafeError(e).Code)
 		}
-		s.logger.Warn("server_subscription_finish_failed", "account_id", id, "operation_id", original.ID, "code", domain.SafeError(err).Code)
+		s.logger.Warn("server_subscription_finish_failed", "account_id", id, "operation_id", original.ID, "code", domain.SafeError(err).Code, "version", diagnostic.DetectedVersion, "minimum_version", diagnostic.MinimumVersion, "phase", diagnostic.Phase, "original_code", diagnostic.Code, "correlation_id", diagnostic.CorrelationID, "cleanup_confirmed", cleanup)
 	}
 	clear(latest)
 }
