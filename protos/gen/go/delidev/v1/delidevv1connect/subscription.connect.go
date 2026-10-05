@@ -57,6 +57,9 @@ const (
 	// SubscriptionServiceGetSubscriptionProgressProcedure is the fully-qualified name of the
 	// SubscriptionService's GetSubscriptionProgress RPC.
 	SubscriptionServiceGetSubscriptionProgressProcedure = "/delidev.v1.SubscriptionService/GetSubscriptionProgress"
+	// SubscriptionServiceForwardSubscriptionCallbackProcedure is the fully-qualified name of the
+	// SubscriptionService's ForwardSubscriptionCallback RPC.
+	SubscriptionServiceForwardSubscriptionCallbackProcedure = "/delidev.v1.SubscriptionService/ForwardSubscriptionCallback"
 	// SubscriptionServiceWatchSubscriptionProcedure is the fully-qualified name of the
 	// SubscriptionService's WatchSubscription RPC.
 	SubscriptionServiceWatchSubscriptionProcedure = "/delidev.v1.SubscriptionService/WatchSubscription"
@@ -81,6 +84,7 @@ type SubscriptionServiceClient interface {
 	RequestSubscription(context.Context, *connect.Request[v1.RequestSubscriptionRequest]) (*connect.Response[v1.RequestSubscriptionResponse], error)
 	CancelSubscription(context.Context, *connect.Request[v1.CancelSubscriptionRequest]) (*connect.Response[v1.CancelSubscriptionResponse], error)
 	GetSubscriptionProgress(context.Context, *connect.Request[v1.GetSubscriptionProgressRequest]) (*connect.Response[v1.GetSubscriptionProgressResponse], error)
+	ForwardSubscriptionCallback(context.Context, *connect.Request[v1.ForwardSubscriptionCallbackRequest]) (*connect.Response[v1.ForwardSubscriptionCallbackResponse], error)
 	WatchSubscription(context.Context, *connect.Request[v1.WatchSubscriptionRequest]) (*connect.ServerStreamForClient[v1.WatchSubscriptionResponse], error)
 	TakeSubscription(context.Context, *connect.Request[v1.TakeSubscriptionRequest]) (*connect.Response[v1.TakeSubscriptionResponse], error)
 	PublishSubscriptionProgress(context.Context, *connect.Request[v1.PublishSubscriptionProgressRequest]) (*connect.Response[v1.PublishSubscriptionProgressResponse], error)
@@ -146,6 +150,12 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(subscriptionServiceMethods.ByName("GetSubscriptionProgress")),
 			connect.WithClientOptions(opts...),
 		),
+		forwardSubscriptionCallback: connect.NewClient[v1.ForwardSubscriptionCallbackRequest, v1.ForwardSubscriptionCallbackResponse](
+			httpClient,
+			baseURL+SubscriptionServiceForwardSubscriptionCallbackProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("ForwardSubscriptionCallback")),
+			connect.WithClientOptions(opts...),
+		),
 		watchSubscription: connect.NewClient[v1.WatchSubscriptionRequest, v1.WatchSubscriptionResponse](
 			httpClient,
 			baseURL+SubscriptionServiceWatchSubscriptionProcedure,
@@ -183,6 +193,7 @@ type subscriptionServiceClient struct {
 	requestSubscription            *connect.Client[v1.RequestSubscriptionRequest, v1.RequestSubscriptionResponse]
 	cancelSubscription             *connect.Client[v1.CancelSubscriptionRequest, v1.CancelSubscriptionResponse]
 	getSubscriptionProgress        *connect.Client[v1.GetSubscriptionProgressRequest, v1.GetSubscriptionProgressResponse]
+	forwardSubscriptionCallback    *connect.Client[v1.ForwardSubscriptionCallbackRequest, v1.ForwardSubscriptionCallbackResponse]
 	watchSubscription              *connect.Client[v1.WatchSubscriptionRequest, v1.WatchSubscriptionResponse]
 	takeSubscription               *connect.Client[v1.TakeSubscriptionRequest, v1.TakeSubscriptionResponse]
 	publishSubscriptionProgress    *connect.Client[v1.PublishSubscriptionProgressRequest, v1.PublishSubscriptionProgressResponse]
@@ -231,6 +242,11 @@ func (c *subscriptionServiceClient) GetSubscriptionProgress(ctx context.Context,
 	return c.getSubscriptionProgress.CallUnary(ctx, req)
 }
 
+// ForwardSubscriptionCallback calls delidev.v1.SubscriptionService.ForwardSubscriptionCallback.
+func (c *subscriptionServiceClient) ForwardSubscriptionCallback(ctx context.Context, req *connect.Request[v1.ForwardSubscriptionCallbackRequest]) (*connect.Response[v1.ForwardSubscriptionCallbackResponse], error) {
+	return c.forwardSubscriptionCallback.CallUnary(ctx, req)
+}
+
 // WatchSubscription calls delidev.v1.SubscriptionService.WatchSubscription.
 func (c *subscriptionServiceClient) WatchSubscription(ctx context.Context, req *connect.Request[v1.WatchSubscriptionRequest]) (*connect.ServerStreamForClient[v1.WatchSubscriptionResponse], error) {
 	return c.watchSubscription.CallServerStream(ctx, req)
@@ -261,6 +277,7 @@ type SubscriptionServiceHandler interface {
 	RequestSubscription(context.Context, *connect.Request[v1.RequestSubscriptionRequest]) (*connect.Response[v1.RequestSubscriptionResponse], error)
 	CancelSubscription(context.Context, *connect.Request[v1.CancelSubscriptionRequest]) (*connect.Response[v1.CancelSubscriptionResponse], error)
 	GetSubscriptionProgress(context.Context, *connect.Request[v1.GetSubscriptionProgressRequest]) (*connect.Response[v1.GetSubscriptionProgressResponse], error)
+	ForwardSubscriptionCallback(context.Context, *connect.Request[v1.ForwardSubscriptionCallbackRequest]) (*connect.Response[v1.ForwardSubscriptionCallbackResponse], error)
 	WatchSubscription(context.Context, *connect.Request[v1.WatchSubscriptionRequest], *connect.ServerStream[v1.WatchSubscriptionResponse]) error
 	TakeSubscription(context.Context, *connect.Request[v1.TakeSubscriptionRequest]) (*connect.Response[v1.TakeSubscriptionResponse], error)
 	PublishSubscriptionProgress(context.Context, *connect.Request[v1.PublishSubscriptionProgressRequest]) (*connect.Response[v1.PublishSubscriptionProgressResponse], error)
@@ -322,6 +339,12 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 		connect.WithSchema(subscriptionServiceMethods.ByName("GetSubscriptionProgress")),
 		connect.WithHandlerOptions(opts...),
 	)
+	subscriptionServiceForwardSubscriptionCallbackHandler := connect.NewUnaryHandler(
+		SubscriptionServiceForwardSubscriptionCallbackProcedure,
+		svc.ForwardSubscriptionCallback,
+		connect.WithSchema(subscriptionServiceMethods.ByName("ForwardSubscriptionCallback")),
+		connect.WithHandlerOptions(opts...),
+	)
 	subscriptionServiceWatchSubscriptionHandler := connect.NewServerStreamHandler(
 		SubscriptionServiceWatchSubscriptionProcedure,
 		svc.WatchSubscription,
@@ -364,6 +387,8 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 			subscriptionServiceCancelSubscriptionHandler.ServeHTTP(w, r)
 		case SubscriptionServiceGetSubscriptionProgressProcedure:
 			subscriptionServiceGetSubscriptionProgressHandler.ServeHTTP(w, r)
+		case SubscriptionServiceForwardSubscriptionCallbackProcedure:
+			subscriptionServiceForwardSubscriptionCallbackHandler.ServeHTTP(w, r)
 		case SubscriptionServiceWatchSubscriptionProcedure:
 			subscriptionServiceWatchSubscriptionHandler.ServeHTTP(w, r)
 		case SubscriptionServiceTakeSubscriptionProcedure:
@@ -411,6 +436,10 @@ func (UnimplementedSubscriptionServiceHandler) CancelSubscription(context.Contex
 
 func (UnimplementedSubscriptionServiceHandler) GetSubscriptionProgress(context.Context, *connect.Request[v1.GetSubscriptionProgressRequest]) (*connect.Response[v1.GetSubscriptionProgressResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.GetSubscriptionProgress is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) ForwardSubscriptionCallback(context.Context, *connect.Request[v1.ForwardSubscriptionCallbackRequest]) (*connect.Response[v1.ForwardSubscriptionCallbackResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.ForwardSubscriptionCallback is not implemented"))
 }
 
 func (UnimplementedSubscriptionServiceHandler) WatchSubscription(context.Context, *connect.Request[v1.WatchSubscriptionRequest], *connect.ServerStream[v1.WatchSubscriptionResponse]) error {
