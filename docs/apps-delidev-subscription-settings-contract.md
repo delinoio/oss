@@ -22,6 +22,17 @@ Codex management requires explicit account and Runner Device selection. Login, a
 
 A capability-read error has an explicit retry and is never classified as planned support. Initial loading, successful empty, retained-data failure, permission denial, expired authentication and unsupported service-account capability remain distinct. API validation, provider enablement and model discovery never grant subscription lifecycle authority.
 
+`subscription-onboarding.tsx` is the login-first presentation seam. It owns no
+RPC or browser side effects. Its controller supplies preparing, waiting, confirmed
+name entry, canceled, expired, unsupported, failed and recovery states. Name entry
+receives focus once after confirmed success; progress rerenders cannot replace
+an edited value. Save validates the existing 256-byte UTF-8 name bound. Back and
+Later invoke only the supplied departure callback. The flat 720px form retains
+semantic light/dark tokens, 40px controls, 8px corners and stacked narrow-screen
+actions. Native browser opening, account acceptance and original-operation
+ownership require a separate complete controller; this presentation alone grants
+no login capability. It contains no Runner Device or login-code control.
+
 `SubscriptionSettingsView` is a pure frontend presentation seam. Supported fixtures can supply exact-account callbacks and independently owned operation state. Refresh all calls one supplied server-wide callback, with no frontend page traversal, provider aggregation or discovery request. Fixtures render independent account authentication/quota outcomes. Disconnect first confirms the exact account and describes preserved metadata/history, then calls its owning callback. Busy blocks another operation; uncertain and cleanup-pending states expose only an owning original-operation retry callback and cannot issue a new request identity. Future production adapters must prove generated capabilities, current authorization and exact native profile before supplying these callbacks.
 
 Each window preserves its ID, order, remaining fraction, observation time and reset time. Finite fractions within [0, 1] become percentages and native progress elements with text equivalents; zero is observed zero rather than unknown. Missing/invalid values and future observation times have no valid bar. Observations older than five minutes, future observation times or elapsed resets are stale. Unknown, stale, failed and unsupported remain distinct; retained last-success values can remain visible with stale/failed text. An elapsed reset never implies recovery. No provider/window values are pooled. Refresh failure presentation retains the original successful windows/time supplied by its owner. An active surface schedules one presentation-only expiry at the next known freshness/reset boundary, without network requests; hidden/disposed surfaces clear it.

@@ -1,0 +1,16 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.settings-content[aria-label] .subscription-onboarding { margin-top: 0; max-width: 720px; }
+.subscription-onboarding-back { margin-bottom: 20px; }
+.subscription-onboarding-steps { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0 32px; padding: 0; list-style: none; color: var(--muted); }
+.subscription-onboarding-steps [aria-current="step"] { color: var(--text); font-weight: 600; }
+.subscription-onboarding-status { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.subscription-onboarding-success { color: var(--success-text); }
+.subscription-onboarding form { display: grid; gap: 8px; }
+.subscription-onboarding form input { width: 100%; }
+.subscription-onboarding form p { margin: 0; color: var(--muted); }
+.subscription-onboarding .actions { margin-top: 24px; }
+.subscription-onboarding-footer { margin-top: 40px; color: var(--muted); }
+.subscription-onboarding-spinner { width: 16px; height: 16px; flex: 0 0 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: subscription-onboarding-spin 1s linear infinite; }
+@keyframes subscription-onboarding-spin { to { transform: rotate(360deg); } }
+@container (max-width: 460px) { .subscription-onboarding .actions { flex-direction: column; align-items: stretch; } }
+@media (prefers-reduced-motion: reduce) { .subscription-onboarding-spinner { animation: none; } }
