@@ -82,7 +82,7 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
         <div><dt>Error code:</dt><dd>{diagnostic?.code ?? "Not reported"}</dd></div>
         {diagnostic?.correlation ? <div><dt>Reference:</dt><dd>{diagnostic.correlation}</dd></div> : null}
       </dl>
-      {stage === SubscriptionOnboardingStage.Recovery ? <p>The original sign-in result requires recovery; cleanup has not been confirmed.</p> : null}
+      {stage === SubscriptionOnboardingStage.Recovery ? <p>The original sign-in result requires recovery.</p> : null}
       <p>Check Connection &amp; diagnostics before starting another sign-in.</p>
     </div> : null}
     {naming ? <form onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
@@ -109,7 +109,7 @@ const versionText = (value: string) => value.length <= 256 && /^[0-9]+\.[0-9]+\.
 // Reconstruct text from closed metadata, never provider/native message strings.
 function safeDiagnostic(d?: CodexDiagnostic) {
  if (!d || (d.detectedVersion && !versionText(d.detectedVersion)) || !versionText(d.minimumVersion) || !phaseNames[d.phase] || !Object.values(FailureCode).includes(d.code as FailureCode)) return;
- const reasons: Partial<Record<FailureCode,string>> = { [FailureCode.NotFound]: "The Codex executable was not found.", [FailureCode.Unsupported]: "The native protocol or version is incompatible.", [FailureCode.Unavailable]: "The native operation failed or timed out.", [FailureCode.Unauthenticated]: "Native authentication was not accepted.", [FailureCode.PermissionDenied]: "Native access was denied.", [FailureCode.RecoveryRequired]: "Owned cleanup could not be confirmed." };
+ const reasons: Partial<Record<FailureCode,string>> = { [FailureCode.NotFound]: "The Codex executable was not found.", [FailureCode.Unsupported]: "The native protocol or version is incompatible.", [FailureCode.Unavailable]: "The native operation failed or timed out.", [FailureCode.Unauthenticated]: "Native authentication was not accepted.", [FailureCode.PermissionDenied]: "Native access was denied.", [FailureCode.RecoveryRequired]: "The native operation requires recovery." };
  const timeout = d.code === FailureCode.Unavailable && d.message === `Codex ${d.detectedVersion || "not detected"} did not complete ${phaseNames[d.phase]!.toLowerCase()}. The native operation timed out.`;
  const reason = timeout ? "The native operation timed out." : d.phase === CodexDiagnosticPhase.VERSION ? `Codex requires valid SemVer at or above ${d.minimumVersion}.` : reasons[d.code as FailureCode] ?? "The native operation did not complete.";
  return { version:d.detectedVersion, minimum:d.minimumVersion, phase:phaseNames[d.phase], code:d.code, correlation:isEntityId(d.correlationId) ? d.correlationId : "", message:`Codex ${d.detectedVersion || "not detected"} did not complete ${phaseNames[d.phase]!.toLowerCase()}. ${reason}` };

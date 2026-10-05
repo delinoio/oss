@@ -325,6 +325,7 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 		{"login", "0.159.2", domain.CodexLogin, domain.Unauthenticated, false},
 		{"timeout", "0.159.2", domain.CodexLogin, domain.Unavailable, false},
 		{"cleanup", "0.159.2", domain.CodexCleanup, domain.RecoveryRequired, true},
+		{"native-recovery", "0.159.2", domain.CodexLogin, domain.RecoveryRequired, true},
 		{"login-cleanup", "0.159.2", domain.CodexLogin, domain.Unauthenticated, true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
@@ -339,10 +340,12 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 				}
 			case "login", "login-cleanup":
 				n.startError = domain.Fail(domain.Unauthenticated, "raw-token/native-sentinel", "secret-url")
+			case "native-recovery":
+				n.startError = subscriptionDenied()
 			case "timeout":
 				n.startError = context.DeadlineExceeded
 			}
-			if scenario.recovery {
+			if scenario.recovery && scenario.name != "native-recovery" {
 				n.closeError = subscriptionDenied()
 			}
 			if scenario.name == "missing" || scenario.name == "old" || scenario.name == "initialize" {

@@ -398,7 +398,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	state := domain.SubscriptionFailed
 	if success {
 		state = domain.SubscriptionSucceeded
-	} else if parent.Err() != nil || !cleanup {
+	} else if parent.Err() != nil || !cleanup || domain.SafeError(nativeErr).Code == domain.RecoveryRequired {
 		state = domain.SubscriptionRecovery
 	} else if !time.Now().Before(original.ExpiresAt) {
 		state = domain.SubscriptionExpired
