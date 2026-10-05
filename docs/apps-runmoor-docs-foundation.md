@@ -85,6 +85,15 @@ The Runmoor install page links directly to the shared key-verification and stabl
 
 ## Automatic configuration documentation
 
+DinD capacity guidance must retain the released behavior through 0.2.7 and label
+runner-only CPU admission as unreleased until a containing release is verified.
+Explain that memory still combines runner and daemon allocations, daemon CPU
+still limits its container, and existing reservations survive an upgrade until
+the prior resources terminate. The 32-CPU/512-GiB example with runner 2 CPUs/16 GiB
+and daemon 2 CPUs/2 GiB needs 48 CPUs for 12 idle runners before this change, and
+24 CPUs/216 GiB afterward. Do not publish internal reservation records or storage
+implementation details in the public guides.
+
 Runmoor 0.2.0 introduced interactive/minimal init, omitted resource and
 architecture defaults, latest runner management for Docker/Tart, resolved
 configuration inspection and explicit update requests. Guides label this

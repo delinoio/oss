@@ -92,6 +92,9 @@ func (d *DockerDriver) Validate(ctx context.Context, c Config, p Pool, s Snapsho
 	if budget.CPU > info.Info.NCPU || budget.MemoryMiB > info.Info.MemTotal/(1024*1024) || p.Cost().CPU > budget.CPU || p.Cost().MemoryMiB > budget.MemoryMiB {
 		return problem(ErrCapacity, "Configured budgets exceed Docker engine resources.", "Increase Docker's assigned resources or reduce the host budget.")
 	}
+	if p.Mode == DinD && p.DaemonResources.CPU > info.Info.NCPU {
+		return problem(ErrCapacity, "The Docker-in-Docker daemon CPU limit exceeds the engine's CPU capacity.", "Reduce daemon_resources.cpu or increase Docker's assigned CPUs.")
+	}
 	if p.Mode == DinD && info.Info.CgroupVersion != "2" {
 		return problem(ErrDependency, "Docker-in-Docker resource isolation requires cgroup v2.", "Use a local engine with cgroup v2 and privileged-container support.")
 	}

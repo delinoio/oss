@@ -151,6 +151,12 @@ default to zero. Disk reserves default to 10240 MiB, or 20480 MiB with Tart.
 There is no automatic CPU/memory reserve for other applications; set a smaller
 `[host]` budget when sharing the computer with other work.
 
+Releases through 0.2.7 include daemon CPU in DinD reservations. The
+[unreleased DinD CPU admission change](./docker#dind-cpu-admission-unreleased)
+counts runner CPU only, keeps combined runner/daemon memory, and preserves the
+daemon container's CPU limit. Check the containing release before using that
+calculation; it is not available in 0.2.7.
+
 Omit `runner_version`, or set it to `"latest"`, for automatic management. An
 exact version keeps a pin. Docker image omission chooses the official minimal
 image. Explicit custom Docker images still require immutable digests; in latest

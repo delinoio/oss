@@ -96,7 +96,6 @@ func resolveDefaults(c Config, capacity Resources) (Config, error) {
 				p.DaemonResources.MemoryMiB = 1024
 			}
 		}
-		available.CPU -= p.DaemonResources.CPU
 		available.MemoryMiB -= p.DaemonResources.MemoryMiB
 		if auto[poolDefaultKey(p.Name, "resources.cpu")] {
 			p.Resources.CPU = min(desired.CPU, available.CPU)
@@ -112,7 +111,7 @@ func resolveDefaults(c Config, capacity Resources) (Config, error) {
 		}
 		cost := p.Cost()
 		if auto[poolDefaultKey(p.Name, "max_runners")] && validResources(cost) {
-			limit := Resources{available.CPU + p.DaemonResources.CPU, available.MemoryMiB + p.DaemonResources.MemoryMiB}
+			limit := Resources{available.CPU, available.MemoryMiB + p.DaemonResources.MemoryMiB}
 			p.MaxRunners = min(limit.CPU/cost.CPU, int(limit.MemoryMiB/cost.MemoryMiB), 10000)
 			if p.Backend == Tart {
 				p.MaxRunners = min(p.MaxRunners, 2)

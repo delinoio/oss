@@ -32,17 +32,18 @@ func TestDemandPrecedesWarmAndRoundRobin(t *testing.T) {
 		t.Fatal("round-robin cursor was ignored")
 	}
 }
-func TestReservationsIncludeDindAndUncertainResources(t *testing.T) {
+func TestReservationsIncludeDinDMemoryAndUncertainResources(t *testing.T) {
 	s := schedulingState(t)
-	s.Config.Host.CPU = 3
-	s.Pools["a"].Spec.DaemonResources = Resources{CPU: 2, MemoryMiB: 256}
+	s.Config.Host.MemoryMiB = 768
+	s.Pools["a"].Spec.Mode = DinD
+	s.Pools["a"].Spec.DaemonResources = Resources{CPU: 7, MemoryMiB: 256}
 	s.Pools["a"].Demand = 3
 	s.Runners["uncertain"] = &Runner{PoolID: "b", Phase: Quarantined, Resources: Resources{CPU: 1, MemoryMiB: 128}}
-	if got := Schedule(s); len(got) != 0 {
-		t.Fatalf("overcommitted daemon or uncertain work: %v", got)
+	if got := Schedule(s); len(got) != 1 {
+		t.Fatalf("combined memory or uncertain reservation ignored: %v", got)
 	}
 	s.Runners["uncertain"].Terminated = true
-	if got := Schedule(s); len(got) != 1 {
+	if got := Schedule(s); len(got) != 2 {
 		t.Fatalf("confirmed termination did not release reservation: %v", got)
 	}
 }

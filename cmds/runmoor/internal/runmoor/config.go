@@ -325,7 +325,7 @@ func normalizeConfig(c Config, hostOS, hostArch string) (Config, error) {
 		}
 		cost := p.Cost()
 		if cost.CPU > c.Host.CPU || cost.MemoryMiB > c.Host.MemoryMiB {
-			return fail("A runner and its daemon must fit the host resource budget.")
+			return fail("A runner CPU allocation and combined runner/daemon memory must fit the host resource budget.")
 		}
 		labels := map[string]bool{}
 		for _, l := range p.Labels {
@@ -352,8 +352,14 @@ func validResources(r Resources) bool {
 func validRunnerPath(path string) bool {
 	return strings.HasPrefix(path, "/") && !strings.ContainsAny(path, "\x00\n\r") && !strings.Contains(path, "..")
 }
-func validID(s string) bool    { u, e := uuidParse(s); return e == nil && u == s }
-func (p Pool) Cost() Resources { return p.Resources.Add(p.DaemonResources) }
+func validID(s string) bool { u, e := uuidParse(s); return e == nil && u == s }
+
+// Cost is the admission reservation, not the sum of container CPU limits.
+// DinD daemon CPU remains limited at runtime but shares CPU without a separate
+// reservation; daemon memory still counts against both host and engine budgets.
+func (p Pool) Cost() Resources {
+	return Resources{CPU: p.Resources.CPU, MemoryMiB: p.Resources.MemoryMiB + p.DaemonResources.MemoryMiB}
+}
 func poolIdentity(p Pool, c Connection) string {
 	g := p.RunnerGroup
 	if g == "" {
