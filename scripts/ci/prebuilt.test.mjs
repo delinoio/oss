@@ -102,3 +102,12 @@ test("Linux GUI smokes use an explicit tray fixture and reserve AppImage environ
     for (const requirement of ["python3-dbus", "python3-gi", "-rwsr-xr-x 0/0"]) assert.ok(commands.includes(requirement), requirement);
   }
 });
+
+test("Linux Debian packages install the portal and confirmation dialog backends", () => {
+  for (const config of ["apps/devhud/src-tauri/tauri.desktop.conf.json", "apps/delidev/src-tauri/tauri.conf.json"]) {
+    const dependencies = JSON.parse(read(config)).bundle.linux.deb.depends;
+    assert.ok(dependencies.includes("xdg-desktop-portal"));
+    assert.ok(dependencies.includes("zenity"));
+    assert.ok(dependencies.some(value => value.includes("xdg-desktop-portal-gtk")));
+  }
+});

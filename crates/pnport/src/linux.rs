@@ -992,8 +992,8 @@ fn read_pointer_vector(pid: i32, address: u64) -> Result<ChildRead<Vec<u64>>> {
         if bytes.len() < mem::size_of::<u64>() || bytes.len() % mem::size_of::<u64>() != 0 {
             return Ok(ChildRead::Fault);
         }
-        for chunk in bytes.chunks_exact(mem::size_of::<u64>()) {
-            let pointer = u64::from_ne_bytes(chunk.try_into().map_err(|_| injection_failed())?);
+        for chunk in bytes.as_chunks::<{ mem::size_of::<u64>() }>().0 {
+            let pointer = u64::from_ne_bytes(*chunk);
             if pointer == 0 {
                 return Ok(ChildRead::Value(values));
             }
