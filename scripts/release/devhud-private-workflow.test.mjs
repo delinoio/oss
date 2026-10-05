@@ -65,7 +65,7 @@ test("private workflow validates AppImage sandbox metadata before preparing its 
   assert.ok(ubuntu.indexOf(metadataInspection) < ubuntu.indexOf(extraction));
   assert.ok(ubuntu.indexOf(extraction) < ubuntu.indexOf(repair));
   assert.ok(ubuntu.includes('appimage=$(realpath "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage")'));
-  assert.ok(ubuntu.includes('APPIMAGE="$appimage" APPDIR="$appdir" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$executable"'));
+  assert.ok(ubuntu.includes('APPIMAGE="$appimage" APPDIR="$appdir" dbus-run-session -- xvfb-run -a /usr/bin/python3 apps/devhud/scripts/with-linux-smoke-tray.py pnpm --filter devhud smoke:platform -- --artifact "$executable"'));
   assert.ok(!workflow.includes('smoke:platform -- --artifact "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"'));
 });
 
