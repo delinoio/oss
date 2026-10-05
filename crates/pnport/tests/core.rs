@@ -5905,6 +5905,19 @@ fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
                 compiler.arg("-static");
             }
             assert!(compiler.status().unwrap().success());
+            #[cfg(target_os = "macos")]
+            let clone_control = {
+                let result = Command::new(&executable)
+                    .current_dir(root.path())
+                    .arg("clone-control")
+                    .output()
+                    .unwrap();
+                assert!(result.status.success(), "{result:?}");
+                let expected = String::from_utf8(result.stdout).unwrap();
+                let expected = expected.trim().to_owned();
+                assert!(expected == "0" || expected == libc::EINVAL.to_string());
+                expected
+            };
             // Existing virtual-root aliases must not materialize cache
             // storage, including for the Linux static child on rerun.
             let namespace = root.path().join("node_modules");
@@ -5932,18 +5945,20 @@ fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
                 fs::rename(&saved, &namespace).unwrap();
             }
             for _ in 0..2 {
-                let result = Command::new(
+                let mut command = Command::new(
                     std::env::var_os("PNPORT_TEST_BINARY")
                         .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
-                )
-                .current_dir(root.path())
-                .arg("--cache-dir")
-                .arg(cache.path().join("cache"))
-                .args(["run", "--"])
-                .arg(&executable)
-                .arg(cache.path().join("cache"))
-                .output()
-                .unwrap();
+                );
+                command
+                    .current_dir(root.path())
+                    .arg("--cache-dir")
+                    .arg(cache.path().join("cache"))
+                    .args(["run", "--"])
+                    .arg(&executable)
+                    .arg(cache.path().join("cache"));
+                #[cfg(target_os = "macos")]
+                command.arg(&clone_control);
+                let result = command.output().unwrap();
                 assert_eq!(
                     result.status.code(),
                     Some(0),
