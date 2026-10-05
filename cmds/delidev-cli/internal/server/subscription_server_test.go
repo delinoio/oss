@@ -330,6 +330,8 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			f := newSubscriptionFixture(t)
+			var logs bytes.Buffer
+			f.service.logger = slog.New(slog.NewJSONHandler(&logs, nil))
 			op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 			n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle("private-native-identity", "first", time.Now().UTC())}
 			close(n.finish)
@@ -370,6 +372,24 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 			delete(f.service.subscriptionProgress, domain.ID(d.CorrelationID))
 			if f.progressFor(op.OperationId).Diagnostic == nil {
 				t.Fatal("diagnostic depended on transient presentation")
+			}
+			for _, protected := range []string{"account_id", string(f.input.AccountID), "native-sentinel", "secret-url", "private-native-identity", serverFixtureURL} {
+				if strings.Contains(logs.String(), protected) {
+					t.Fatal("subscription logs retained protected native or account metadata")
+				}
+			}
+			observed := false
+			for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+				var record map[string]any
+				if json.Unmarshal([]byte(line), &record) != nil {
+					t.Fatal("subscription log was not structured JSON")
+				}
+				if record["msg"] == "server_subscription_native_failed" {
+					observed = record["version"] == scenario.version && record["minimum_version"] == domain.CodexMinimumVersion && record["phase"] == string(scenario.phase) && record["code"] == string(scenario.code) && record["correlation_id"] == op.OperationId
+				}
+			}
+			if !observed {
+				t.Fatal("subscription log lost safe native failure attribution")
 			}
 		})
 	}

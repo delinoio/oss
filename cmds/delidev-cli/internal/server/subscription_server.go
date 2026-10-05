@@ -91,7 +91,7 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	s.logger.InfoContext(ctx, "server_subscription_accepted", "account_id", input.ID, "operation_id", m.RequestId, "action", action, "replayed", result.Replayed)
+	s.logger.InfoContext(ctx, "server_subscription_accepted", "operation_id", m.RequestId, "action", action, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.RequestSubscriptionResponse{Account: rpc.Resource(r), OperationId: m.RequestId, Replayed: result.Replayed}), nil
 }
 
@@ -419,9 +419,9 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 			diagnostic.CorrelationID = string(original.ID)
 		}
 		if e := s.markServerSubscriptionRecovery(id, original.ID, diagnostic); e != nil {
-			s.logger.Warn("server_subscription_recovery_unconfirmed", "account_id", id, "operation_id", original.ID, "code", domain.SafeError(e).Code)
+			s.logger.Warn("server_subscription_recovery_unconfirmed", "operation_id", original.ID, "code", domain.SafeError(e).Code)
 		}
-		s.logger.Warn("server_subscription_finish_failed", "account_id", id, "operation_id", original.ID, "code", domain.SafeError(err).Code, "version", diagnostic.DetectedVersion, "minimum_version", diagnostic.MinimumVersion, "phase", diagnostic.Phase, "original_code", diagnostic.Code, "correlation_id", diagnostic.CorrelationID, "cleanup_confirmed", cleanup)
+		s.logger.Warn("server_subscription_finish_failed", "operation_id", original.ID, "code", domain.SafeError(err).Code, "version", diagnostic.DetectedVersion, "minimum_version", diagnostic.MinimumVersion, "phase", diagnostic.Phase, "original_code", diagnostic.Code, "correlation_id", diagnostic.CorrelationID, "cleanup_confirmed", cleanup)
 	}
 	clear(latest)
 }
@@ -639,7 +639,7 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 		// The deferred removal applies before this later original-bound publication.
 		suggestion = &subscriptionProgress{Name: suggestedSubscriptionName(identity), Generation: o.FinishID, Until: o.ExpiresAt}
 	}
-	s.logger.InfoContext(ctx, "server_subscription_finished", "account_id", id, "operation_id", o.ID, "state", result, "cleanup_confirmed", cleanup, "correlation_id", o.ID)
+	s.logger.InfoContext(ctx, "server_subscription_finished", "operation_id", o.ID, "state", result, "cleanup_confirmed", cleanup, "correlation_id", o.ID)
 	if diagnostic != nil {
 		s.logger.WarnContext(ctx, "server_subscription_native_failed", "version", diagnostic.DetectedVersion, "minimum_version", diagnostic.MinimumVersion, "phase", diagnostic.Phase, "code", diagnostic.Code, "correlation_id", diagnostic.CorrelationID, "state", result, "cleanup_confirmed", cleanup)
 	}
