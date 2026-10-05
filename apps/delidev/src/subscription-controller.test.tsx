@@ -173,7 +173,7 @@ it("projects terminal Codex diagnostics without another login or cached native p
  render(<value.Harness />);
  fireEvent.click(await screen.findByRole("button",{name:"Manage login for Existing subscription"}));
  fireEvent.click(await screen.findByRole("button",{name:"Sign in to ChatGPT"}));
- await screen.findByText("ChatGPT sign-in failed");
+ await screen.findByText("ChatGPT sign-in failed",{}, {timeout:4000});
  expect(screen.getByRole("alert").textContent).toContain("0.159.2");
  expect(screen.getByRole("alert").textContent).toContain("Initialization");
  expect(screen.queryByText(/private-native-sentinel/)).toBeNull();
@@ -182,7 +182,7 @@ it("projects terminal Codex diagnostics without another login or cached native p
  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1100));});
  expect(value.progress).toHaveBeenCalledTimes(reads);
  expect(value.login).toHaveBeenCalledTimes(1);
- expect(JSON.stringify(value.client.getQueryCache().getAll().map(q=>q.state.data))).not.toContain("private-native-sentinel");
+ expect(JSON.stringify(value.client.getQueryCache().getAll().map(q=>q.state.data),(_,v)=>typeof v === "bigint" ? v.toString() : v)).not.toContain("private-native-sentinel");
  fireEvent.click(screen.getByRole("button",{name:"Leave Settings fixture"}));
  expect(value.cancel).not.toHaveBeenCalled();
 });

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
