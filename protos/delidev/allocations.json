@@ -5824,6 +5824,173 @@
       "member": "accepted",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressResponse",
+      "member": "diagnostic",
+      "number": 7
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CodexDiagnostic",
+      "member": "detected_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CodexDiagnostic",
+      "member": "minimum_version",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CodexDiagnostic",
+      "member": "phase",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CodexDiagnostic",
+      "member": "code",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CodexDiagnostic",
+      "member": "message",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CodexDiagnostic",
+      "member": "guidance",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CodexDiagnostic",
+      "member": "correlation_id",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_DISCOVERY",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_VERSION",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_PROFILE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_RUNTIME",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_LAUNCH",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_INITIALIZE",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_CONFIRM",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_LOGIN",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_MODELS",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_EXECUTION",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_HISTORY",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "CodexDiagnosticPhase",
+      "member": "CODEX_DIAGNOSTIC_PHASE_CLEANUP",
+      "number": 12,
+      "newDeclaration": true
     }
   ]
 }

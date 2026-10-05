@@ -48,6 +48,17 @@ unsupported until #1095 supplies its protected lifecycle.
 
 ## Server-owned subscription login reservations
 
+The Codex forward-version amendment reserves
+`GetSubscriptionProgressResponse.diagnostic = 7`, the new `CodexDiagnostic`
+message fields detected version 1, minimum version 2, phase 3, stable error code
+4, safe message 5, guidance 6 and correlation ID 7 under issue #964.
+`CodexDiagnosticPhase` reserves UNSPECIFIED 0, DISCOVERY 1, VERSION 2, PROFILE 3,
+RUNTIME 4, LAUNCH 5, INITIALIZE 6, CONFIRM 7, LOGIN 8, MODELS 9, EXECUTION 10,
+HISTORY 11 and CLEANUP 12. Establish these ledger-only reservations on main
+before dependent implementation. They grant no Codex version, native operation,
+diagnostic response or capability support and add no migration. Diagnostics
+must exclude paths, credentials, login URLs, identities and raw native content.
+
 The owner-approved login-first amendment reserves independent System capability
 `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` under issue #964. Progress fields 4–6 reserve
 `state`, `suggested_name` and `generation`. The closed `SubscriptionLoginState`
