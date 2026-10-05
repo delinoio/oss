@@ -75,3 +75,16 @@ test("GTK4 desktop metadata and CI agree on the Ubuntu 24.04 native baseline", a
   }
   assert.equal(workflow("workflows/CI.yml").jobs["devhud-rust-conformance"]["runs-on"], "ubuntu-24.04");
 });
+
+
+test("generated mobile child commands resolve the verified CLI and preserve the caller environment", async () => {
+  const { tauriEnvironment } = await import("../tauri-cli.mjs");
+  const environment = { PATH: "/cargo/bin:/usr/bin", TAURI_ENV_PLATFORM: "ios" };
+  assert.deepEqual(tauriEnvironment("/cache/pinned/bin/cargo-tauri", environment, "darwin"), { PATH: "/cache/pinned/bin:/cargo/bin:/usr/bin", TAURI_ENV_PLATFORM: "ios" });
+  assert.equal(environment.PATH, "/cargo/bin:/usr/bin");
+  const windows = tauriEnvironment(String.raw`C:\cache\bin\cargo-tauri.exe`, { Path: String.raw`C:\cargo\bin`, PATH: "shadow", SystemRoot: "system" }, "win32");
+  assert.equal(windows.Path, String.raw`C:\cache\bin;C:\cargo\bin`);
+  assert.equal(windows.PATH, undefined);
+  assert.equal(windows.SystemRoot, "system");
+  assert.equal(tauriEnvironment("/cache/bin/cargo-tauri", {}, "linux").PATH, "/cache/bin");
+});

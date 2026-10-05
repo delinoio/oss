@@ -19,7 +19,7 @@ application target never selects the host executable.
 `scripts/prebuilt-dependencies.mjs` owns generic installation.
 `scripts/tauri-cli.mjs -- <arguments...>` prepares the CLI and forwards structured
 arguments, environment, cwd, exit status and termination signals through the
-repository process supervisor. DevHud desktop/mobile generation/build paths and
+repository process supervisor. It prepends the verified executable directory to the child PATH so generated Xcode/Gradle Cargo invocations use the same CLI. The direct Intel iOS simulator path applies that verified environment to Xcode and its options server. DevHud desktop/mobile generation/build paths and
 DeliDev macOS development, bundling and dry runs use this adapter. DeliDev's
 Windows/Linux executable-only development path remains a direct application
 Cargo build. Consumer manifests and `Cargo.lock` contain no Tauri CLI wrapper.

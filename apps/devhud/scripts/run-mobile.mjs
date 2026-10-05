@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
+import { prepareCli, tauriCommand, tauriEnvironment } from "../../../scripts/tauri-cli.mjs";
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -133,17 +133,19 @@ async function waitForOptionsServer(child, outcome, timeoutMs = 120_000) {
 }
 
 async function runIntelSimulator(execution) {
+  const cli = await prepareCli(repoRoot);
+  const environment = tauriEnvironment(cli.executable);
   rmSync(iosOptionsPath, { force: true });
   const optionsServer = spawn(
     process.execPath,
     [scriptPath, "--options-server", ...execution.optionsServerArguments],
-    { cwd: appRoot, stdio: "inherit", shell: false },
+    { cwd: appRoot, stdio: "inherit", shell: false, env: environment },
   );
   const outcome = childOutcome(optionsServer);
   let result;
   try {
     await waitForOptionsServer(optionsServer, outcome);
-    result = await spawnDevServer(execution.command, execution.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
+    result = await spawnDevServer(execution.command, execution.arguments, { cwd: appRoot, stdio: "inherit", shell: false, env: environment }, { terminateProcessTree: true });
   } finally {
     if (optionsServer.exitCode === null && optionsServer.signalCode === null) optionsServer.kill("SIGTERM");
     await outcome.promise;
