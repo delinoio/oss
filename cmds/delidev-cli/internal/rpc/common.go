@@ -13,7 +13,10 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-const Version = "0.1.0"
+// Release builds pin both values with reviewed ldflags; neither is configuration.
+var Version = "0.1.0"
+var SourceRevision = ""
+
 const ProtocolVersion = 1
 const CorrelationHeader = "X-Delidev-Correlation-Id"
 

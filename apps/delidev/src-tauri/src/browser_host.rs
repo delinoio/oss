@@ -1925,7 +1925,7 @@ fn window_info(r: &ViewRequest) -> WindowInfo {
     }
     #[cfg(windows)]
     {
-        info.parent_window = r.parent as *mut std::ffi::c_void;
+        info.parent_window = cef::sys::HWND(r.parent as *mut cef::sys::HWND__);
         info.style = 0x40000000 | 0x10000000 | 0x04000000 | 0x02000000;
     }
     #[cfg(target_os = "linux")]
@@ -2001,7 +2001,7 @@ fn position(
         };
         unsafe {
             SetWindowPos(
-                HWND(handle),
+                HWND(handle.0.cast()),
                 None,
                 (b.x * scale).round() as i32,
                 (b.y * scale).round() as i32,

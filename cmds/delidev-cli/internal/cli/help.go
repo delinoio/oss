@@ -44,6 +44,13 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   worker stop --worker-dir PATH --generation UUID-V7
   worker start --worker-dir PATH [--detach]
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
+  update check --component desktop|worker --target TARGET --current-version VERSION [--machine-id ID --machine-revision N]
+  update get --id ID
+  update worker-request|cancel --id ID --revision N
+  machine ssh inspect --host HOST --port PORT --user USER
+  machine ssh start --id ID --revision N --name NAME --confirm-host-key SHA256:FINGERPRINT --credential-stdin
+  machine ssh get --id ID
+  machine ssh cancel|reconcile --id ID --revision N
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
   account connect --id ID --revision N (--key-stdin | --keyless)
   account disconnect --id ID --revision N

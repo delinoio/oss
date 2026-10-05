@@ -5,6 +5,7 @@ mod browser_host;
 mod notification_host;
 mod oauth_host;
 mod tray_host;
+mod updater_host;
 mod widget_host;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -31,6 +32,7 @@ use tauri::{
     webview::NewWindowResponse,
 };
 use tray_host::{TrayHost, acknowledge_tray_action, begin_tray, publish_tray, read_tray_action};
+use updater_host::{UpdateHost, desktop_update_context, desktop_update_native};
 
 fn trusted_url(url: &tauri::Url) -> bool {
     let origin =
@@ -1186,6 +1188,7 @@ fn run() -> Result<(), NativeFailure> {
     )?);
     let app = tauri::Builder::<Cef>::new()
         .root_cache_path(&browser_cache)
+        .manage(Arc::new(UpdateHost::default()))
         .manage(Arc::clone(&browser))
         .manage(Arc::new(SavedWindows::default()))
         .manage(Arc::clone(&tray))
@@ -1212,6 +1215,8 @@ fn run() -> Result<(), NativeFailure> {
             local_worker_proof,
             local_worker_control,
             worker_network_control,
+            desktop_update_context,
+            desktop_update_native,
             connection_context,
             saved_connections,
             removed_connections,

@@ -184,3 +184,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - OAuth AccountService schemas retain capability 5, entry field 9 and the original closed enum allocations. Completion code is write-only bytes; responses never contain keys, verifiers or URLs outside live Start. Reservations do not grant product authority; regenerate bindings from reconciled sources and preserve owner/client-only execution under the OAuth contract.
 
 - Each OAuth RPC has its own standard-named response schema. The ten reserved `ACCOUNT_OAUTH_STATE_*` names retain their original allocation spelling with value-local Buf acronym-prefix comments; do not broaden lint exceptions or rename their contract to accommodate acronym splitting.
+
+- Signed updates and SSH Worker setup follow `docs/cmds-delidev-updates-contract.md` and `docs/cmds-delidev-ssh-setup-contract.md`. Preserve compiled release authority, exact confirmed host identity, protected credentials, original registration/workspaces, once-only remote effects and joined Worker replacement. Never replace live server/harness binaries or treat fixtures as installed-platform acceptance.
+
+- `PollWorkerUpdateRequest.original_update_id = 2` is a Worker-only exact original observation under the current device/instance. It grants no idle admission, claim, report or installation and must not substitute another pending/latest update.

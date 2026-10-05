@@ -1,6 +1,6 @@
-import { openSync, readSync, closeSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { openSync, readSync, closeSync, lstatSync, readdirSync, readFileSync, realpathSync, mkdirSync, rmSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 export const targets = Object.freeze([
   { target: "x86_64-apple-darwin", platform: "darwin", arch: "x64", runner: "macos-15-intel", cef: "cef_macos_x86_64" },
@@ -17,6 +17,27 @@ export function selectTarget(target, platform, arch) {
   return selected;
 }
 
+export function acquireNativeBuildLock(root) {
+  const directory = join(root, "target/delidev-dry-run");
+  mkdirSync(directory, { recursive: true });
+  const lock = join(directory, ".build.lock");
+  closeSync(openSync(lock, "wx", 0o600));
+  let released = false;
+  return () => { if (!released) { rmSync(lock); released = true; } };
+}
+
+export function verifyPackageRevision(expected, current, status) {
+  if (!/^[a-f0-9]{40}$/.test(expected) || current.trim() !== expected || status.trim()) {
+    const entries = status.trimEnd().split(/\r?\n/).filter(Boolean);
+    // Only known repository source paths are diagnostic data. Unknown/untracked
+    // names can contain private local state and are represented by counts only.
+    const sourceFiles = entries.filter(line => !line.startsWith("?? ")).map(line => line.slice(3))
+      .filter(path => /^(?:Cargo\.(?:lock|toml)|pnpm-lock\.yaml|apps\/delidev\/[A-Za-z0-9_.@/-]+)$/.test(path)).slice(0, 16);
+    process.stderr.write(JSON.stringify({ event: "native_package_source_changed", revisionChanged: current.trim() !== expected, changedEntries: entries.length, untrackedEntries: entries.filter(line => line.startsWith("?? ")).length, sourceFiles }) + "\n");
+    throw new Error("Source changed during packaging; no revision-bound result was published.");
+  }
+}
+
 // The pinned cef 150.0.0 crate resolves to distribution 150.0.10. Keep this
 // pairing explicit; a runtime upgrade requires reviewing the bundled notices.
 export function cefCredits(selected, environment, home = homedir()) {
@@ -31,6 +52,27 @@ export function cefCredits(selected, environment, home = homedir()) {
   const credits = join(directory, "CREDITS.html");
   if (!lstatSync(credits).isFile() || lstatSync(credits).size === 0) throw new Error("The original Chromium notices are missing.");
   return credits;
+}
+
+// A bare Cargo build downloads CEF into OUT_DIR. The pinned Tauri CLI sets
+// its own versioned cache for that build; prepare it before reading or bundling
+// the original notices. Remove this extra build when upstream exposes an
+// independently verified distribution-preparation command.
+export function prepareCefCredits(selected, environment, build, home = homedir()) {
+  const target = selected.platform === "darwin" ? [] : ["--target", selected.target];
+  build("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--no-bundle", ...target, "--features", "desktop-host,custom-protocol,tauri/cef"]);
+  return cefCredits(selected, environment, home);
+}
+
+// The pinned Windows resource resolver strips a drive prefix from absolute
+// source keys. Stage the unchanged original notices on the checkout drive and
+// pass a relative key until upstream preserves cross-drive source paths.
+export function cefResourcePath(app, root, selected, credits) {
+  const directory = join(root, "target/delidev-package-notices", selected.target);
+  mkdirSync(directory, { recursive: true });
+  const staged = join(directory, "Chromium-CREDITS.html");
+  copyFileSync(credits, staged);
+  return relative(join(app, "src-tauri"), staged);
 }
 
 export function packageResources(app, root, credits) {
@@ -85,6 +127,26 @@ export function verifyNativePayload(directory, selected) {
   for (const name of required) {
     const file = lstatSync(join(cefRoot, name));
     if (!file.isFile() || file.size === 0) throw new Error("A required CEF resource is missing or invalid.");
+  }
+}
+
+export function verifyAppImagePayload(directory, selected) {
+  if (selected.platform !== "linux") throw new Error("AppImage verification requires a Linux target.");
+  // The pinned CEF AppImage packager uses sharun launchers in bin and real
+  // executables in shared/bin. Debian retains its separate installed layout.
+  for (const name of ["delidev-desktop", "delidev"]) {
+    if (binaryArchitecture(join(directory, "shared/bin", name), "linux") !== selected.arch) throw new Error("The AppImage contains a foreign product architecture.");
+    const launcher = join(directory, "bin", name);
+    const sharun = join(directory, "sharun");
+    const info = lstatSync(sharun);
+    if (!info.isFile() || info.size > 8 * 1024 * 1024 || !lstatSync(launcher).isFile()
+      || binaryArchitecture(launcher, "linux") !== selected.arch
+      || !readFileSync(launcher).equals(readFileSync(sharun))) throw new Error("An AppImage product launcher is invalid.");
+  }
+  if (binaryArchitecture(join(directory, "bin/libcef.so"), "linux") !== selected.arch) throw new Error("The AppImage contains a foreign CEF architecture.");
+  for (const name of ["icudtl.dat", "resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak", "v8_context_snapshot.bin", "locales/en-US.pak"]) {
+    const info = lstatSync(join(directory, "bin", name));
+    if (!info.isFile() || info.size === 0) throw new Error("A required AppImage CEF resource is missing.");
   }
 }
 

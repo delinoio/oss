@@ -11,6 +11,7 @@ import public "delidev/v1/configuration.proto";
 import public "delidev/v1/device.proto";
 import public "delidev/v1/forward.proto";
 import public "delidev/v1/inbox.proto";
+import public "delidev/v1/installation.proto";
 import public "delidev/v1/integration.proto";
 import public "delidev/v1/interaction.proto";
 import public "delidev/v1/native_models.proto";

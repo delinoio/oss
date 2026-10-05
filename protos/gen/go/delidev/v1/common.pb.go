@@ -56,6 +56,8 @@ const (
 	EntityKind_ENTITY_KIND_NETWORK_PROFILE EntityKind = 28
 	EntityKind_ENTITY_KIND_NETWORK_ROUTE   EntityKind = 29
 	EntityKind_ENTITY_KIND_SUBAGENT        EntityKind = 30
+	EntityKind_ENTITY_KIND_UPDATE          EntityKind = 33
+	EntityKind_ENTITY_KIND_SSH_SETUP       EntityKind = 34
 )
 
 // Enum value maps for EntityKind.
@@ -93,6 +95,8 @@ var (
 		28: "ENTITY_KIND_NETWORK_PROFILE",
 		29: "ENTITY_KIND_NETWORK_ROUTE",
 		30: "ENTITY_KIND_SUBAGENT",
+		33: "ENTITY_KIND_UPDATE",
+		34: "ENTITY_KIND_SSH_SETUP",
 	}
 	EntityKind_value = map[string]int32{
 		"ENTITY_KIND_UNSPECIFIED":     0,
@@ -127,6 +131,8 @@ var (
 		"ENTITY_KIND_NETWORK_PROFILE": 28,
 		"ENTITY_KIND_NETWORK_ROUTE":   29,
 		"ENTITY_KIND_SUBAGENT":        30,
+		"ENTITY_KIND_UPDATE":          33,
+		"ENTITY_KIND_SSH_SETUP":       34,
 	}
 )
 
@@ -694,7 +700,7 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x10database_removed\x18\b \x01(\bR\x0fdatabaseRemoved\x12'\n" +
 	"\x0fbackups_removed\x18\t \x01(\bR\x0ebackupsRemoved\x122\n" +
 	"\x15reclaimed_bytes_known\x18\n" +
-	" \x01(\bR\x13reclaimedBytesKnown*\xc6\x06\n" +
+	" \x01(\bR\x13reclaimedBytesKnown*\xf9\x06\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -729,7 +735,9 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x14ENTITY_KIND_TERMINAL\x10\x1f\x12\x1f\n" +
 	"\x1bENTITY_KIND_NETWORK_PROFILE\x10\x1c\x12\x1d\n" +
 	"\x19ENTITY_KIND_NETWORK_ROUTE\x10\x1d\x12\x18\n" +
-	"\x14ENTITY_KIND_SUBAGENT\x10\x1e*\x8e\x01\n" +
+	"\x14ENTITY_KIND_SUBAGENT\x10\x1e\x12\x16\n" +
+	"\x12ENTITY_KIND_UPDATE\x10!\x12\x19\n" +
+	"\x15ENTITY_KIND_SSH_SETUP\x10\"*\x8e\x01\n" +
 	"\rUsageCoverage\x12\x1e\n" +
 	"\x1aUSAGE_COVERAGE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES\x10\x01\x121\n" +

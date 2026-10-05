@@ -169,3 +169,7 @@ func ReplacePrivateFile(from, to string) error {
 	}
 	return replaceFile(from, to)
 }
+
+// PublishImmutable moves a synchronized temporary file without replacing a
+// previously published generation. The destination must share its private directory.
+func PublishImmutable(from, to string) error { return publishImmutable(from, to) }

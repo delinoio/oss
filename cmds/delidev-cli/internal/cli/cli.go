@@ -87,6 +87,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := start(ctx, o, rest, streams)
 		return emit(value, err)
 	}
+	if command == "update" && len(rest) > 0 && strings.HasPrefix(rest[0], "native-") {
+		value, err := nativeDesktopUpdate(ctx, o, rest)
+		return emit(value, err)
+	}
 	if command == "browser-storage" {
 		if len(rest) != 1 || rest[0] != "prepare" {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Select browser-storage prepare.", "The native host uses only its fixed private cache root."))
@@ -137,6 +141,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		limit := 30 * time.Second
 		// Network credential work and backup inspection/replacement own bounded
 		// 30-second server work. Allow its typed outcome to arrive first.
+		if command == "machine" && len(rest) > 0 && rest[0] == "ssh" {
+			limit = 35 * time.Second
+			c.transport.ResponseHeaderTimeout = limit
+		}
 		if command == "network" || command == "backup" && len(rest) > 0 && (rest[0] == "restore" || rest[0] == "inspect") {
 			limit = 35 * time.Second
 			c.transport.ResponseHeaderTimeout = limit
@@ -189,6 +197,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			value, err := snapshotListCommand(ctx, c, rest[1:])
 			return emit(value, err)
 		}
+
+	case "update":
+		value, err := updateCommand(ctx, c, o, rest)
+		return emit(value, err)
 	case "storage":
 		if code, handled := dispatchStorage(ctx, c, o, rest, streams); handled {
 			return code

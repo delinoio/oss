@@ -119,3 +119,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - ProviderPresetID includes the 26 additions allocated in 10–35, preserving old IDs and fixed managed definitions. Preset guidance and advisory catalog metadata cannot grant connection, readiness or inference/harness authority. Follow the catalog/inspection contracts.
 
 - Permanent-deletion ownership envelopes retain the original unpublished Sidechat child ID only for a Fork copy. Their dedicated strict JSON bound is 4 MiB; public command JSON retains 1 MiB. Preserve the 4,096-copy bound and reject malformed or extra authority.
+
+- EntityKind update and ssh_setup are installation metadata owned by Go InstallationService. Worker version admission requires the original compiled-authority release and exact registration; reservations alone never advertise installation support.

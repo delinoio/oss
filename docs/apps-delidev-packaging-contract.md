@@ -4,7 +4,7 @@
 
 `apps/delidev/scripts` and `.github/workflows/delidev-native-dry-run.yml` own
 credential-free native package preparation for DeliDev's six desktop targets.
-These paths build reviewable packages; they do not publish a release, install an
+The existing manual six-target workflow also builds and uploads the desktop/Worker updater inputs after basic package verification. These paths build reviewable packages; they do not publish a release, install an
 update or establish native runtime acceptance. Production signing, notarization,
 updater trust and Windows/Linux execution remain separate requirements.
 
@@ -12,7 +12,7 @@ updater trust and Windows/Linux execution remain separate requirements.
 
 Node.js 24 orchestrates the existing pinned Rust/Tauri CEF packager and Go sidecar.
 CI installs the repository's `nightly-2026-01-01` Rust toolchain and explicitly
-selects the matrix's native host, including Windows arm64.
+selects the matrix's native host, including Windows arm64. On macOS it installs both Apple Rust target standard libraries because the pinned upstream bundler builds both embedded CEF helper variants; each final package still verifies only the selected native architecture.
 The Tauri revision remains `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; `cef`
 150.0.0 resolves to native CEF 150.0.10 / Chromium 150.0.7871.101. No packaging
 operation starts a DeliDev server, Worker, harness or account login.
@@ -56,6 +56,8 @@ The pinned Debian bundler moves the main binary to
 `/usr/bin/delidev`. Native sidecar resolution recognizes only that exact installed
 layout; development/AppImage paths retain adjacent resolution with no PATH lookup.
 
+Before notice inspection, both dry-run paths run the pinned package-local Tauri CLI build with `--no-bundle`. That CLI owns the versioned `tauri-cef` cache; a bare Cargo build downloads into its own build output and cannot prove the package cache is prepared. Preparation failure stops the sequence. The later installer build retains full original distribution identity and notice-byte verification. Original Chromium notices are copied unchanged to ignored `target/delidev-package-notices/<target>/` and supplied as a checkout-relative resource key; this avoids the pinned Windows resolver removing an absolute cache drive prefix. Packaged notice bytes remain compared against the original verified CEF cache.
+
 Every verified package contains unchanged Apache `LICENSE`/`NOTICE`, the original
 CEF license and the exact distribution's Chromium `CREDITS.html`. Distribution
 identity and complete packaged notice bytes are checked; the report also records
@@ -84,12 +86,14 @@ construction. GitHub checkout credentials are not persisted, permissions are
 `contents: read`, and no signing environment or repository secret is referenced.
 LFS is hydrated before compilation; generated `dist` remains untracked output.
 
+The updater-input command and separate manual updater-input workflow reuse this verified native matrix and assembles the update formats: macOS DMG, Windows NSIS executable, Linux AppImage and one dedicated Worker executable per target. It embeds the same public version/source revision in the Go sidecar/Worker, retains exact artifact names, imported notices and immutable revision-bound input metadata, and does not use a production root or signing credentials. Updater assembly re-prepares current source inputs under the same checkout lock, validates Worker architecture, checks Windows installer/product unsigned state, and rechecks exact source revision and cleanliness before atomic publication. Retained basic reports do not pin mutable native outputs. The pinned CEF AppImage path requires an explicit original `share/DeliDev/delidev-desktop` target because upstream copies its Debian bin symlink alone; inspection checks sharun launchers, real `shared/bin` product executables, `bin` CEF resources and `lib/DeliDev` notices. Upstream currently retrieves quick-sharun/hooks from mutable external branches; keyless build results do not establish reproducible or production supply-chain acceptance. Preserve this upstream constraint until the runtime packager owns pinned tools. The [updates contract](cmds-delidev-updates-contract.md) owns production manifest readiness, independent verification and explicit maintainer publication.
+
 ## Logging
 
 Build tools emit their ordinary diagnostics. Verification emits bounded status
 and typed failure descriptions; its JSON contains package provenance only, never
 account data, environment dumps or signing material. A failed check must not leave
-a successful verification report.
+a successful verification report. Revision/cleanliness checks consume Git stdout only; stderr warnings are not source state. A rejected final publication emits bounded revision-change and entry counts plus at most sixteen allowlisted tracked repository source paths. Unknown/untracked names and values remain excluded.
 
 ## Build and Test
 
@@ -122,3 +126,5 @@ notice sources, verification or publication boundaries change.
 - [Desktop contract](apps-delidev-desktop-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [License contract](repository-license-contract.md)
+
+The app Cargo manifest has exact-path LF checkout normalization. The pinned Tauri CLI parses and rewrites it before compilation, normalizing CRLF input even when its TOML meaning is unchanged. Packaging retains the strict source-revision and clean-worktree guard; canonical checkout bytes avoid that platform-only rewrite without accepting real source changes.

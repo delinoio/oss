@@ -218,3 +218,7 @@ A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejecti
 - Sidechat storage retirement uses the strict typed storage-input decoder, including large original recovery with no dependents. Its private wrapper retains the full existing 4 MiB deletion plan plus 4 KiB fixed wrapper headroom; publication/restart use the same bound. Preserve original actor, job/input digest and every child plan identity before native storage admission.
 
 Check the 256-child Sidechat ownership allowance inside the original fork admission transaction before queuing native preparation, and recheck at native claim/publication. The existing queued/claimed/uncertain fork reservation serializes the single outstanding preparation against that parent inventory; a rejected capacity request creates no job or child authority.
+
+- Installation entities are server-owned operation history. Restore copies current SSH/update entities rather than historical images, and blocks unsettled installation or protected cleanup. Pending projections exclude terminal history without truncating active obligations.
+
+- Worker update admission and idle checks run under the claim transaction, including original terminal/forward/subscription/deletion ownership. Filter matching pending/signed scopes before applying query bounds. Preserve current installation metadata across managed restore, and never release uncertain update fences through history pagination or restored receipts.

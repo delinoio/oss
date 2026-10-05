@@ -23,6 +23,9 @@ test('DeliDev package dry runs cannot obtain publication or production signing a
   const packaging = workflow.jobs.package;
   assert.equal(packaging.steps.find(step => step.uses?.startsWith('dtolnay/rust-toolchain@')).with.toolchain, readFileSync('rust-toolchain', 'utf8').trim());
   assert.ok(packaging.steps.some(step => step.run === 'rustup set default-host ${{ matrix.target }}'));
+  const helperTargets = packaging.steps.find(step => step.name === 'Install both pinned macOS CEF helper targets');
+  assert.equal(helperTargets.if, "runner.os == 'macOS'");
+  assert.equal(helperTargets.run, 'rustup target add aarch64-apple-darwin x86_64-apple-darwin');
   assert.equal(packaging['runs-on'], '${{ matrix.runner }}');
   assert.equal(packaging.strategy['fail-fast'], false);
   assert.ok(packaging.steps.some(step => step.uses?.startsWith('actions/checkout@') && step.with.lfs === true));
@@ -32,6 +35,11 @@ test('DeliDev package dry runs cannot obtain publication or production signing a
   assert.equal(packaging.steps[upload].if, undefined);
   assert.equal(packaging.steps[upload].with['if-no-files-found'], 'error');
   assert.equal(packaging.steps[upload].with.path, 'target/delidev-dry-run/${{ matrix.target }}/${{ github.sha }}/');
+  const updater = packaging.steps.findIndex(step => step.run?.includes('bundle:updater-dry-run'));
+  assert.ok(updater > verification && updater < upload);
+  const inputs = packaging.steps.find(step => step.with?.name?.startsWith('delidev-updater-input-'));
+  assert.equal(inputs.with.path, 'target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/');
+  assert.equal(inputs.with['if-no-files-found'], 'error');
 });
 
 test('workspace investigation is explicit and excludes package assembly', () => {
@@ -49,4 +57,12 @@ test('workspace investigation is explicit and excludes package assembly', () => 
   assert.equal(fixtures.steps.length, 3);
   assert.ok(fixtures.steps.some(step => step.with?.lfs === true && step.with['persist-credentials'] === false));
   assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable|TestSnapshotCreatePublicationFailureRetainsOriginalRecovery|TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart|TestSnapshotObservationSharesBudgetBeforeHashing|TestSnapshotObservationStopsAtAggregateGitInventory|TestSnapshotAdmissionReservesPrivatePathHeadroom)$' -count=1 -timeout=45m -v");
+});
+
+test('DeliDev updater inputs retain the one six-target matrix and keyless boundary',()=>{
+ const source=readFileSync('.github/workflows/delidev-updater-input-dry-run.yml','utf8'),workflow=yaml.load(source);
+ assert.deepEqual(Object.keys(workflow.on),['workflow_dispatch']);assert.deepEqual(workflow.permissions,{contents:'read'});assert.doesNotMatch(source,/secrets\.|contents: write|id-token:|gh release|notarytool|signtool/);
+ const steps=workflow.jobs.package.steps;assert.ok(steps.some(v=>v.uses?.startsWith('actions/checkout@')&&v.with.lfs===true&&v.with['persist-credentials']===false));
+ assert.ok(steps.findIndex(v=>v.run?.includes('bundle:updater-dry-run'))<steps.findIndex(v=>v.uses?.startsWith('actions/upload-artifact@')));
+ assert.equal(steps.find(v=>v.uses?.startsWith('actions/upload-artifact@')).with.path,'target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/');
 });

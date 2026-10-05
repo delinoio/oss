@@ -171,3 +171,11 @@ Issue #1208 extends native subagent observation to OpenCode 1.18.32 foreground t
 - Bounded Unix plain-text OpenCode General Chat Fork uses independent System 26 / Worker 15, native ID-clone/history proof, explicit no-change relocation, preparation without inference and independent copied files. The [fork contract](cmds-delidev-forks-contract.md) owns this profile; Codex support does not imply OpenCode or Sidechat authority.
 
 - The canonical 35-ID API provider registry preserves original wire IDs and shares product ordering across RPC/CLI/desktop. Real default migration 30 follows actual 26–29, retaining existing identities and deletions. Fixed native/private inspection authority is owned by the [provider inspection](cmds-delidev-providers-contract.md), [catalog](cmds-delidev-catalog-contract.md) and [activation](cmds-delidev-provider-activation-contract.md) contracts; discovery grants no inference or subscription authority.
+
+
+Workspace storage exposes original-job snapshot, usage preview, cleanup, inspection, restore, deletion and recovery through authenticated Connect RPC, CLI and the connection-owned desktop controller. Preserve independent terminal/forwarding cleanup gates and logical-versus-physical byte measurements under the [storage contract](cmds-delidev-storage-contract.md); runtime/account/platform acceptance remains separate from fixtures.
+
+
+- Signed updates use independent System 28/Worker 17 admission, original device/generation receipts, joined idle replacement and retained old binaries. Desktop install requires original trusted-window confirmation and preserves live server/harness lifetimes. System 29 SSH setup pins exact host identity and the server-compatible signed Worker release, with protected credentials and original remote operation inspection. An unset production public-root declaration blocks real signing/downloads; fixture/build evidence remains separate from production account/platform acceptance. See the [updates](cmds-delidev-updates-contract.md) and [SSH setup](cmds-delidev-ssh-setup-contract.md) contracts.
+- [DeliDev signed updates](cmds-delidev-updates-contract.md)
+- [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
