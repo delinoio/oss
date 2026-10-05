@@ -58,7 +58,7 @@ fn endpoint(raw: &str, ipv6: bool) -> Option<(String, u16)> {
             return None;
         }
         let mut bytes = [0; 16];
-        for (i, chunk) in address.as_bytes().chunks_exact(8).enumerate() {
+        for (i, chunk) in address.as_bytes().as_chunks::<8>().0.iter().enumerate() {
             let n = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
             bytes[i * 4..i * 4 + 4].copy_from_slice(&n.to_ne_bytes());
         }

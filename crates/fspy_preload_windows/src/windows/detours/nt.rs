@@ -883,7 +883,9 @@ unsafe fn read_mutation_paths(
         return None;
     }
     let mut destination = name
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect::<Vec<_>>();
     if destination.contains(&0) {

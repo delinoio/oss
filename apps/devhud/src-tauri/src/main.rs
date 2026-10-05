@@ -691,7 +691,6 @@ fn missing_resource_reason(resource: &str) -> &'static str {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 fn should_observe_renderer_crashes(development: bool) -> bool {
     !development
 }
@@ -889,7 +888,7 @@ fn main() {
         complete: Arc::new(AtomicBool::new(false)),
         smoke_mode,
         renderer_crashed: Arc::new(AtomicBool::new(false)),
-        renderer_crash_listener_ready: Arc::new(AtomicBool::new(cfg!(target_os = "macos"))),
+        renderer_crash_listener_ready: Arc::new(AtomicBool::new(false)),
     };
     let bridge_state = bridge::NativeBridgeState::default();
     let session_network_policy = bridge_state.clone();
@@ -993,13 +992,15 @@ fn main() {
             }
         });
 
-    #[cfg(target_os = "macos")]
-    {
+    if should_observe_renderer_crashes(tauri::is_dev()) {
         let renderer_crashed = frontend_readiness.renderer_crashed.clone();
         builder = builder.on_web_content_process_terminate(move |_, _| {
             renderer_crashed.store(true, Ordering::SeqCst);
             error!(event = "renderer_terminated", source = "cef_callback");
         });
+        frontend_readiness
+            .renderer_crash_listener_ready
+            .store(true, Ordering::SeqCst);
     }
 
     let result = builder
@@ -1076,35 +1077,6 @@ fn main() {
 
             start_frontend_readiness_watchdog(app.handle().clone(), readiness.complete.clone());
 
-            #[cfg(not(target_os = "macos"))]
-            if should_observe_renderer_crashes(tauri::is_dev()) {
-                let renderer_crashed_for_protocol = readiness.renderer_crashed.clone();
-                webview.on_dev_tools_protocol(move |message| {
-                    if let tauri_runtime_cef::DevToolsProtocol::Event { method, .. } = message
-                        && method.contains("targetCrashed")
-                    {
-                        renderer_crashed_for_protocol.store(true, Ordering::SeqCst);
-                        error!(event = "renderer_terminated", source = "cdp");
-                    }
-                })?;
-                if webview
-                    .send_dev_tools_message(
-                        br#"{"id":9000,"method":"Inspector.enable","params":{}}"#,
-                    )
-                    .is_err()
-                {
-                    error!(event = "renderer_diagnostic_enable_failed");
-                    if smoke_mode == Some(SmokeMode::RendererCrash) {
-                        app.handle().exit(70);
-                    }
-                } else {
-                    readiness
-                        .renderer_crash_listener_ready
-                        .store(true, Ordering::SeqCst);
-                }
-            }
-
-            #[cfg(target_os = "macos")]
             drop(webview);
 
             if let Some(probe) = &update_health_probe {
@@ -1236,12 +1208,11 @@ mod tests {
     use tracing::{debug, error, info, warn};
     use tracing_subscriber::{Layer, layer::SubscriberExt};
 
-    #[cfg(not(target_os = "macos"))]
-    use super::should_observe_renderer_crashes;
     use super::{
         DiagnosticLogController, SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
         is_diagnostic_log_name, missing_resource_reason, remove_diagnostic_log_files,
-        wait_for_frontend_readiness_timeout, wait_for_renderer_crash_listener,
+        should_observe_renderer_crashes, wait_for_frontend_readiness_timeout,
+        wait_for_renderer_crash_listener,
     };
 
     #[test]
@@ -1271,7 +1242,6 @@ mod tests {
         assert!(waiter.join().expect("listener readiness waiter panicked"));
     }
 
-    #[cfg(not(target_os = "macos"))]
     #[test]
     fn renderer_crash_observation_is_enabled_only_for_packaged_launches() {
         assert!(should_observe_renderer_crashes(false));

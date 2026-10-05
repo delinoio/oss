@@ -152,10 +152,10 @@ jobs:
           - { id: windows-x64-nsis, runner: windows-2022, bundle: nsis, artifact: devhud-windows-x64-windows-nsis.exe }
           - { id: windows-arm64-msi, runner: windows-11-arm, bundle: msi, artifact: devhud-windows-arm64-windows-msi.msi }
           - { id: windows-arm64-nsis, runner: windows-11-arm, bundle: nsis, artifact: devhud-windows-arm64-windows-nsis.exe }
-          - { id: ubuntu-x64-appimage, runner: ubuntu-22.04, bundle: appimage, artifact: devhud-ubuntu-x64-linux-appimage.AppImage }
-          - { id: ubuntu-x64-deb, runner: ubuntu-22.04, bundle: deb, artifact: devhud-ubuntu-x64-linux-deb.deb }
-          - { id: ubuntu-arm64-appimage, runner: ubuntu-22.04-arm, bundle: appimage, artifact: devhud-ubuntu-arm64-linux-appimage.AppImage }
-          - { id: ubuntu-arm64-deb, runner: ubuntu-22.04-arm, bundle: deb, artifact: devhud-ubuntu-arm64-linux-deb.deb }
+          - { id: ubuntu-x64-appimage, runner: ubuntu-24.04, bundle: appimage, artifact: devhud-ubuntu-x64-linux-appimage.AppImage }
+          - { id: ubuntu-x64-deb, runner: ubuntu-24.04, bundle: deb, artifact: devhud-ubuntu-x64-linux-deb.deb }
+          - { id: ubuntu-arm64-appimage, runner: ubuntu-24.04-arm, bundle: appimage, artifact: devhud-ubuntu-arm64-linux-appimage.AppImage }
+          - { id: ubuntu-arm64-deb, runner: ubuntu-24.04-arm, bundle: deb, artifact: devhud-ubuntu-arm64-linux-deb.deb }
     runs-on: ${{ matrix.runner }}
     env:
       CI: "true"

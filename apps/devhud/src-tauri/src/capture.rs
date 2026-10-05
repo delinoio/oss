@@ -2895,7 +2895,7 @@ fn native_pointer_position() -> Result<Point, CaptureError> {
     unsafe extern "C" {
         fn CGEventCreate(source: *const c_void) -> *mut c_void;
         fn CGEventGetLocation(event: *mut c_void) -> CGPoint;
-        fn CFRelease(value: *mut c_void);
+        fn CFRelease(value: *const c_void);
     }
     unsafe {
         let event = CGEventCreate(std::ptr::null());

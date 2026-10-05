@@ -58,3 +58,20 @@ test("consumer manifests never compile a CLI wrapper and retain platform runtime
   for (const app of ["devhud", "delidev"]) assert.match(read(`apps/${app}/src-tauri/Cargo.toml`), /"xdg-portal", "tokio"/u);
   assert.doesNotMatch(read("Cargo.lock"), /name = "tauri-cli"/u);
 });
+
+
+test("GTK4 desktop metadata and CI agree on the Ubuntu 24.04 native baseline", async () => {
+  const platforms = JSON.parse(read("apps/devhud/platforms.json")).targets.filter(target => target.os === "linux");
+  const matrix = JSON.parse(read("scripts/ci/native-matrices.json"))["devhud-desktop"].filter(target => target.os === "linux");
+  const privateMatrix = workflow("workflows/package-devhud-private.yml").jobs.desktop.strategy.matrix.include.filter(target => target.id.startsWith("ubuntu-"));
+  const { targets } = await import("../../apps/delidev/scripts/native-package.mjs");
+  for (const platform of platforms) {
+    assert.equal(platform.minimumVersion, "24.04");
+    const runner = platform.arch === "arm64" ? "ubuntu-24.04-arm" : "ubuntu-24.04";
+    assert.equal(platform.runner, runner);
+    const id = platform.arch === "arm64" ? "ubuntu-arm64-" : "ubuntu-x64-";
+    for (const entry of [...matrix, ...privateMatrix].filter(entry => entry.id.startsWith(id))) assert.equal(entry.runner, runner);
+    assert.equal(targets.find(entry => entry.platform === "linux" && entry.arch === platform.arch).runner, runner);
+  }
+  assert.equal(workflow("workflows/CI.yml").jobs["devhud-rust-conformance"]["runs-on"], "ubuntu-24.04");
+});

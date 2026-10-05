@@ -4,11 +4,13 @@
 //! public key, package type, or target. Those values are all native enums or
 //! constants in this module.
 
+#[cfg(not(target_os = "macos"))]
+use std::io::Write;
 use std::{
     collections::HashSet,
     fs,
     future::Future,
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     process::{Child, Command},
     sync::{
@@ -1056,6 +1058,7 @@ impl<'a> PlatformInstaller<'a> {
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
     fn stage(&self, bytes: &[u8], suffix: &str) -> Result<tempfile::NamedTempFile, DiagnosticCode> {
         let mut file = tempfile::Builder::new()
             .prefix("devhud-update-v1-")

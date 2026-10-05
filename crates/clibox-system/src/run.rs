@@ -1234,11 +1234,11 @@ fn contains_local_resource_failure(error: &(dyn std::error::Error + 'static)) ->
 
 fn is_local_resource_error(error: i32) -> bool {
     #[cfg(unix)]
-    if matches!(
-        error,
-        libc::EMFILE | libc::ENFILE | libc::ENOBUFS | libc::ENOMEM
-    ) {
-        return true;
+    {
+        matches!(
+            error,
+            libc::EMFILE | libc::ENFILE | libc::ENOBUFS | libc::ENOMEM
+        )
     }
     #[cfg(windows)]
     {
@@ -1247,15 +1247,11 @@ fn is_local_resource_error(error: i32) -> bool {
             Networking::WinSock::{WSAEMFILE, WSAENOBUFS},
         };
 
-        if error == ERROR_NOT_ENOUGH_MEMORY as i32
+        error == ERROR_NOT_ENOUGH_MEMORY as i32
             || error == ERROR_TOO_MANY_OPEN_FILES as i32
             || error == WSAEMFILE
             || error == WSAENOBUFS
-        {
-            return true;
-        }
     }
-    false
 }
 
 fn service_http_client(

@@ -88,17 +88,20 @@ impl fmt::Display for DesktopTarget {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_os = "linux", test))]
 pub enum LinuxDisplayMode {
     X11,
     XWayland,
 }
 
 #[derive(Debug, Eq, PartialEq)]
+#[cfg(any(target_os = "linux", test))]
 pub enum PlatformError {
     NativeWaylandUnsupported,
     X11DisplayMissing,
 }
 
+#[cfg(any(target_os = "linux", test))]
 impl fmt::Display for PlatformError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -106,13 +109,15 @@ impl fmt::Display for PlatformError {
                 "native Wayland is unsupported; start DevHUD in an X11 session or through XWayland",
             ),
             Self::X11DisplayMissing => formatter
-                .write_str("an X11 DISPLAY is required; DevHUD supports Ubuntu 22.04+ on X11"),
+                .write_str("an X11 DISPLAY is required; DevHUD supports Ubuntu 24.04+ on X11"),
         }
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 impl std::error::Error for PlatformError {}
 
+#[cfg(any(target_os = "linux", test))]
 pub fn validate_linux_display(
     display: Option<&str>,
     wayland_display: Option<&str>,
@@ -140,11 +145,6 @@ pub fn validate_current_environment() -> Result<LinuxDisplayMode, PlatformError>
         wayland_display.as_deref(),
         session_type.as_deref(),
     )
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn validate_current_environment() -> Result<(), PlatformError> {
-    Ok(())
 }
 
 #[cfg(test)]

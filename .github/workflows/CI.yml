@@ -680,7 +680,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-rust-conformance'] }}
     name: DevHud Rust capture, shortcut, and IPC conformance
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6

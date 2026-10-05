@@ -231,7 +231,7 @@ fn parse_selector_for_resolution(
 ) -> Result<RuntimeSelector> {
     match RuntimeSelector::parse(selector_value) {
         Ok(selector) => Ok(selector),
-        Err(error)
+        Err(_error)
             if source != RuntimeSelectorSource::Explicit
                 && is_case_variant_of_reserved_channel_selector(selector_value.trim()) =>
         {

@@ -66,14 +66,24 @@ export function assertGeneratedOverlays(platform) {
   if (!mobileSection.includes(mobileTauriFeatures) || !mobileSection.includes("tauri-runtime-wry =") || /cef|tray-icon|unstable/iu.test(mobileSection)) throw new Error("mobile Cargo features were broadened by project generation");
 }
 
+export function restoreMobileCargoDependencies(cargo) {
+  const section = /(?<=\[target\.'cfg\(any\(target_os = "android", target_os = "ios"\)\)'\.dependencies\]\n)[\s\S]*?(?=\n\[|$)/u;
+  const mobile = cargo.match(section)?.[0];
+  if (!mobile || !mobile.includes("tauri-runtime-wry =")) throw new Error("mobile Wry runtime dependency is missing");
+  const tauri = /^tauri = \{[^\n]+\}/mu;
+  const line = mobile.match(tauri)?.[0];
+  if (!line || !/features = \[[^\]]*\]/u.test(line)) throw new Error("mobile Tauri dependency alias is missing");
+  // Init may update Tauri features, while the explicit runtime may precede
+  // the Tauri alias. Restore only the mobile alias regardless of their order.
+  const restored = line.replace(/features = \[[^\]]*\]/u, mobileTauriFeatures);
+  return cargo.replace(section, () => mobile.replace(tauri, () => restored));
+}
+
 function restoreMobileCargoFeatures() {
   const path = join(appRoot, "src-tauri/Cargo.toml");
   const cargo = readFileSync(path, "utf8");
-  const section = /(?<=\[target\.'cfg\(any\(target_os = "android", target_os = "ios"\)\)'\.dependencies\]\n)tauri = \{[^\n]+\}/u;
-  const line = cargo.match(section)?.[0];
-  if (!line) throw new Error("mobile Tauri dependency alias is missing");
-  const restored = line.replace(/features = \[[^\]]*\]/u, mobileTauriFeatures);
-  writeFileSync(path, cargo.replace(section, restored));
+  const restored = restoreMobileCargoDependencies(cargo);
+  if (cargo !== restored) writeFileSync(path, restored);
 }
 
 export function configureIosWidgetProject(projectPath = join(generatedRoot, "apple", "project.yml")) {

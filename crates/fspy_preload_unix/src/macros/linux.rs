@@ -15,6 +15,12 @@ macro_rules! intercept {
         }
         #[cfg(not(test))] // Don't interpose on the test binary
         const _: () = {
+            // This naked tail jump preserves every register and variadic argument.
+            // The checked $fn_sig constants above prove the destination's C ABI;
+            // rustc checks the intentionally argument-free trampoline instead.
+            // Remove this allowance when trampolines carry the complete signature.
+            #[expect(clippy::allow_attributes, reason = "the runtime-symbol lint fires only for selected macro names")]
+            #[allow(invalid_runtime_symbol_definitions, reason = "naked ABI-preserving tail trampoline has no Rust argument handling")]
             #[unsafe(naked)]
             #[unsafe(export_name = ::core::concat!(::core::stringify!($name), 64))]
             pub unsafe extern "C" fn interpose_fn() {
@@ -61,6 +67,12 @@ macro_rules! intercept_inner {
 
         #[cfg(not(test))] // Don't interpose on the test binary
         const _: () = {
+            // This naked tail jump preserves every register and variadic argument.
+            // The checked $fn_sig constants above prove the destination's C ABI;
+            // rustc checks the intentionally argument-free trampoline instead.
+            // Remove this allowance when trampolines carry the complete signature.
+            #[expect(clippy::allow_attributes, reason = "the runtime-symbol lint fires only for selected macro names")]
+            #[allow(invalid_runtime_symbol_definitions, reason = "naked ABI-preserving tail trampoline has no Rust argument handling")]
             #[unsafe(naked)]
             #[unsafe(export_name = ::core::stringify!($name))]
             pub unsafe extern "C" fn interpose_fn() {

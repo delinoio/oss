@@ -1,5 +1,3 @@
-#![feature(c_variadic)]
-
 // Compile as an empty crate on non-unix targets and on musl (where seccomp
 // alone handles access tracking).
 

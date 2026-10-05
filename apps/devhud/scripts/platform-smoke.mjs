@@ -143,9 +143,9 @@ function validateMinimumHost() {
           return [line.slice(0, separator), line.slice(separator + 1).replace(/^"|"$/gu, "")];
         }),
     );
-    if (distribution.ID !== "ubuntu" || Number.parseFloat(distribution.VERSION_ID) < 22.04) {
+    if (distribution.ID !== "ubuntu" || Number.parseFloat(distribution.VERSION_ID) < 24.04) {
       fail(
-        `platform smoke requires Ubuntu 22.04+, found ${distribution.ID} ${distribution.VERSION_ID}`,
+        `platform smoke requires Ubuntu 24.04+, found ${distribution.ID} ${distribution.VERSION_ID}`,
       );
     }
     const hasDisplay = Boolean(process.env.DISPLAY);

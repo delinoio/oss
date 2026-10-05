@@ -25,7 +25,7 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
   assert.deepEqual(calls[0][1], [environment.npm_execpath, "build:native"]);
   const [command, argv, options, lifecycle] = calls[1];
   assert.equal(command, process.execPath);
-  assert.ok(argv[0].endsWith("/scripts/tauri-cli.mjs"));
+  assert.ok(argv[0].replaceAll("\\", "/").endsWith("/scripts/tauri-cli.mjs"));
   assert.ok(argv.includes("dev"));
   assert.ok(argv.includes("--no-watch"));
   assert.ok(argv.includes("--no-dev-server"));

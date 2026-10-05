@@ -1,4 +1,3 @@
-#![feature(c_variadic)]
 //! Matched native injection artifact; not a public Rust API.
 #[cfg(target_os = "linux")]
 mod unix;

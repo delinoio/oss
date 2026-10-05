@@ -2131,11 +2131,8 @@ hook!(setpgid, pnport_setpgid, (pid:pid_t,group:pid_t) -> c_int, {
     let identity = pnport_core::macos_process::Identity::capture(target);
     match &identity {
         Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return original(pid,group),
-        Ok(identity) if target != libc::getpid() => {
-            if pnport_core::macos_process::Identity::capture(libc::getpid()).is_ok_and(|current| current.birth != identity.parent_birth) {
-                return original(pid,group);
-            }
-        }
+        Ok(identity) if target != libc::getpid()
+            && pnport_core::macos_process::Identity::capture(libc::getpid()).is_ok_and(|current| current.birth != identity.parent_birth) => return original(pid,group),
         _ => (),
     }
     if let Err(error) = admit_group_change(libc::getpid(), ProcessGroupOperation::Group) { errno(error); return -1; }

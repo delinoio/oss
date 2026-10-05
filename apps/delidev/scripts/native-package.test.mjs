@@ -116,7 +116,7 @@ test("a clean CEF cache is prepared by the pinned CLI before notice validation",
     let prepared = 0;
     const credits = prepareCefCredits(selected, environment, (command, args) => {
       assert.equal(command, process.execPath);
-      assert.ok(args[0].endsWith("/scripts/tauri-cli.mjs"));
+      assert.ok(args[0].replaceAll("\\", "/").endsWith("/scripts/tauri-cli.mjs"));
       assert.equal(args[1], "--");
       assert.ok(!args.includes("cli"));
       assert.ok(args.includes("--no-bundle"));

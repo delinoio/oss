@@ -393,17 +393,13 @@ fn management_output_preferences_from_management_args<I>(args: I) -> ManagementO
 where
     I: IntoIterator<Item = OsString>,
 {
-    let mut args = args.into_iter();
+    let args = args.into_iter();
     let mut output_preferences = ManagementOutputPreferences::default();
     let mut command_scan_state = CommandScanState::BeforeSubcommand;
     let mut output_value_expected = false;
     let mut color_value_expected = false;
 
-    loop {
-        let Some(arg) = args.next() else {
-            break;
-        };
-
+    for arg in args {
         let Some(arg) = arg.to_str() else {
             output_value_expected = false;
             color_value_expected = false;

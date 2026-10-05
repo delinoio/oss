@@ -5,9 +5,9 @@
 //! layout and text-generation APIs. Only normalized keys from the closed
 //! shortcut contract leave this module.
 
-use crate::shortcuts::{
-    NativeKey, NativeKeyEvent, ShortcutFailure, ShortcutPlatform, normalize_native_key,
-};
+use crate::shortcuts::{NativeKey, NativeKeyEvent, ShortcutFailure};
+#[cfg(test)]
+use crate::shortcuts::{ShortcutPlatform, normalize_native_key};
 
 const COMMAND_FLAG: u64 = 1 << 20;
 const CONTROL_FLAG: u64 = 1 << 18;
@@ -33,6 +33,7 @@ enum MacosEventKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(test)]
 struct MacosEventRecord {
     kind: MacosEventKind,
     physical_code: u32,
@@ -60,6 +61,7 @@ struct MacosShortcutAdapter {
 }
 
 impl MacosShortcutAdapter {
+    #[cfg(test)]
     fn process(&mut self, record: MacosEventRecord) -> [Option<NativeKeyEvent>; 2] {
         let Some(key) = normalize_native_key(ShortcutPlatform::Macos, record.physical_code) else {
             return [None, None];

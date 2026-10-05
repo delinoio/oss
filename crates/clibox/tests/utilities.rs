@@ -1090,7 +1090,12 @@ fn streaming_stdout_can_be_partial_before_decode_failure() {
     drop(stdin);
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.chunks_exact(3).all(|chunk| chunk == b"foo"));
+    assert!(output
+        .stdout
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .all(|chunk| chunk == b"foo"));
 }
 
 #[test]

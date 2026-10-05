@@ -285,11 +285,11 @@ pub fn geometry(bytes: &[u8]) -> Result<Geometry> {
         None
     };
     let mut indices = Vec::with_capacity(ni);
-    for (i, c) in bytes[offset..].chunks_exact(4).enumerate() {
+    for (i, c) in bytes[offset..].as_chunks::<4>().0.iter().enumerate() {
         if i % 8192 == 0 {
             checkpoint()?;
         }
-        let v = u32::from_le_bytes(c.try_into().expect("index"));
+        let v = u32::from_le_bytes(*c);
         if v as usize >= n {
             return Err(invalid("geometry/indices"));
         }

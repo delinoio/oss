@@ -419,7 +419,9 @@ fn display_key(platform: record::Platform, key: &record::ProjectKey) -> String {
         record::Platform::Linux | record::Platform::Macos => NativePath::UnixBytes(key.0.clone()),
         record::Platform::Windows => NativePath::WindowsUtf16(
             key.0
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
                 .collect(),
         ),
@@ -2101,7 +2103,9 @@ fn external_native_from_key(bytes: Vec<u8>) -> NativePath {
 fn external_native_from_key(bytes: Vec<u8>) -> NativePath {
     NativePath::WindowsUtf16(
         bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
             .collect(),
     )

@@ -38,8 +38,10 @@ matrix consumed by CI; it requires neither dependencies nor credentials.
 | `aarch64-apple-darwin` | `macos-15` | Ad-hoc signed `.app` in a tar archive |
 | `x86_64-pc-windows-msvc` | `windows-2022` | Unsigned MSI |
 | `aarch64-pc-windows-msvc` | `windows-11-arm` | Unsigned MSI |
-| `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | Unsigned DEB |
-| `aarch64-unknown-linux-gnu` | `ubuntu-22.04-arm` | Unsigned DEB |
+| `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | Unsigned DEB |
+| `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | Unsigned DEB |
+
+Linux desktop packages require Ubuntu 24.04 or newer on X11. The pinned GTK4-backed runtime requires system GTK 4.14 or newer. The shared Tauri CLI remains compatible with the Ubuntu 22.04 glibc baseline used to build its immutable prebuilt release.
 
 The macOS-specific `bundle:macos-dry-run` remains available for development
 checkouts and verifies strict nested ad-hoc signatures, original bundle ID,

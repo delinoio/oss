@@ -30,7 +30,9 @@ fn fixture() -> Sound {
 }
 fn samples(bytes: &[u8]) -> Vec<i16> {
     bytes[44..]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|b| i16::from_le_bytes([b[0], b[1]]))
         .collect()
 }
@@ -90,7 +92,7 @@ fn seeded_noise_is_repeatable_and_stereo_pan_preserves_silence() {
     let first = generate(&sound).unwrap();
     assert_eq!(first, generate(&sound).unwrap());
     let pcm = samples(&first);
-    assert!(pcm.chunks_exact(2).all(|frame| frame[1] == 0));
+    assert!(pcm.as_chunks::<2>().0.iter().all(|frame| frame[1] == 0));
     assert!(pcm.iter().any(|sample| *sample != 0));
     sound.layers[0].source = Source::Noise {
         seed: 816,
@@ -101,7 +103,9 @@ fn seeded_noise_is_repeatable_and_stereo_pan_preserves_silence() {
     sound.layers[0].pan = 1.0;
     assert!(
         samples(&generate(&sound).unwrap())
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .all(|frame| frame[0] == 0)
     );
 }
