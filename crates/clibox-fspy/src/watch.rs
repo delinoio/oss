@@ -83,7 +83,8 @@ fn same_component(left: &std::ffi::OsStr, right: &std::ffi::OsStr) -> bool {
     else {
         return false;
     };
-    // CompareStringOrdinal follows Windows' case-insensitive filesystem spelling.
+    // CompareStringOrdinal follows Windows' case-insensitive filesystem
+    // spelling.
     unsafe {
         winapi::um::stringapiset::CompareStringOrdinal(
             left.as_ptr(),
@@ -622,9 +623,10 @@ impl WatchSession {
         for event in events {
             let event = event.map_err(|_| WatchFailure::WatchLoss)?;
             // notify's inotify backend includes open and close notifications in
-            // every watch mask. Reads by the supervised command must not restart
-            // autowatch; only create, remove, rename, and content/metadata changes
-            // can invalidate the captured dependency set.
+            // every watch mask. Reads by the supervised command must not
+            // restart autowatch; only create, remove, rename, and
+            // content/metadata changes can invalidate the captured
+            // dependency set.
             if event.kind.is_access() {
                 continue;
             }

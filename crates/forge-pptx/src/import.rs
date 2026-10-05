@@ -356,7 +356,8 @@ fn image_projection_matches(
         return false;
     }
     // V1 models a bitmap stretched into the full frame after optional cropping.
-    // Tile modes and inset fill rectangles cannot be represented by contain/cover.
+    // Tile modes and inset fill rectangles cannot be represented by
+    // contain/cover.
     let rectangles: Vec<_> = modes[0].children().filter(|n| n.is_element()).collect();
     if rectangles.len() > 1
         || rectangles.iter().any(|n| {

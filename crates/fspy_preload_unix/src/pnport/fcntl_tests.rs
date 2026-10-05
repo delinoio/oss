@@ -227,8 +227,9 @@ fn admitted_duplication_preserves_state_on_failure() {
         || {
             let root = install_runtime();
             let path = CString::new(root.path().as_os_str().as_encoded_bytes()).unwrap();
-            // SAFETY: The path is NUL-terminated, all live descriptors remain owned,
-            // and the closed descriptor is used only for native EBADF controls.
+            // SAFETY: The path is NUL-terminated, all live descriptors remain
+            // owned, and the closed descriptor is used only for
+            // native EBADF controls.
             unsafe {
                 let fd = libc::open(path.as_ptr(), libc::O_RDONLY);
                 assert!(fd >= 0);

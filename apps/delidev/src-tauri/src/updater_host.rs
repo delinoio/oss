@@ -12,7 +12,8 @@ use delidev_desktop::{
     oauth::OAuthHost,
     updater::{Action, DesktopUpdateRequest, Phase, Prepared, PublicResult},
 };
-use tauri::{Cef, WebviewWindow};
+use tauri::WebviewWindow;
+use tauri_runtime_cef::CefRuntime;
 
 use super::{SavedWindows, saved_binding, trusted_main};
 
@@ -43,7 +44,7 @@ impl Drop for Busy {
 
 #[tauri::command]
 pub async fn desktop_update_context(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
 ) -> Result<serde_json::Value, NativeFailure> {
     if window.label() == "main" {
@@ -70,7 +71,7 @@ pub async fn desktop_update_context(
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn desktop_update_native(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     oauth: tauri::State<'_, Arc<OAuthHost>>,
@@ -215,8 +216,9 @@ pub async fn desktop_update_native(
     if approved != rfd::MessageDialogResult::Yes {
         return Ok(prepared.public());
     }
-    // Reverify signed bytes and atomically claim once-only installation after the
-    // native confirmation. Native owns this outcome even if the renderer leaves.
+    // Reverify signed bytes and atomically claim once-only installation after
+    // the native confirmation. Native owns this outcome even if the
+    // renderer leaves.
     let c = Arc::clone(connector.inner());
     let saved = expected.clone();
     let sid = server.clone();

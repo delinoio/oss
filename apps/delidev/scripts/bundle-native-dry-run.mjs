@@ -1,3 +1,4 @@
+import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -88,7 +89,7 @@ async function main() {
       const kind = selected.platform === "win32" ? "msi" : "deb";
       const config = JSON.stringify({ bundle: { resources: { [cefResourcePath(app, root, selected, credits)]: "notices/Chromium-CREDITS.html" } } });
       const started = Date.now();
-      run("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--target", selected.target, "--bundles", kind, "--features", "desktop-host,custom-protocol,tauri/cef", "--config", config], true);
+      run(...tauriCommand([ "build", "--target", selected.target, "--bundles", kind, "--features", "desktop-host,custom-protocol", "--config", config]), true);
       const directory = join(root, "target", selected.target, "release/bundle", kind);
       const packages = readdirSync(directory).filter(name => name.endsWith(`.${kind}`) && statSync(join(directory, name)).mtimeMs >= started - 2000);
       if (packages.length !== 1) throw new Error("Expected one newly built native package.");
@@ -110,7 +111,7 @@ async function main() {
     }
     const digest = await sha256(artifact);
     verifyPackageRevision(revision, run("git", ["rev-parse", "HEAD"]), run("git", ["status", "--porcelain", "--untracked-files=normal"]));
-    const report = { version: 1, sourceRevision: revision, target: selected.target, artifact: basename(artifact), bytes: statSync(artifact).size, sha256: digest, signature, cefVersion: "150.0.10", chromiumCreditsSHA256: await sha256(Object.keys(resources).find(path => resources[path] === "notices/Chromium-CREDITS.html")), runtimeAcceptance: "unverified", publication: "not-requested" };
+    const report = { version: 1, sourceRevision: revision, target: selected.target, artifact: basename(artifact), bytes: statSync(artifact).size, sha256: digest, signature, cefVersion: "151.3.24", chromiumCreditsSHA256: await sha256(Object.keys(resources).find(path => resources[path] === "notices/Chromium-CREDITS.html")), runtimeAcceptance: "unverified", publication: "not-requested" };
     writeFileSync(join(staging, "verification.json"), JSON.stringify(report, null, 2) + "\n", { flag: "wx" });
     writeFileSync(join(staging, "SHA256SUMS"), `${digest}  ${basename(artifact)}\n`, { flag: "wx" });
     renameSync(staging, output);

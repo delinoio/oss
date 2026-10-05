@@ -107,10 +107,11 @@ impl Tools for System {
             .env_remove("WAYLAND_DEBUG");
         // wl-copy buffers stdin in a temporary file, even with an explicit MIME
         // type. Confine it to a private verified tmpfs directory, so clipboard
-        // bytes never reach persistent storage. Keep this until upstream accepts
-        // an anonymous in-memory fd without copying into its own temp directory.
-        // Drop removes incomplete setup files on failure or cancellation; a
-        // successful tool unlinks its file before retaining the in-memory owner.
+        // bytes never reach persistent storage. Keep this until upstream
+        // accepts an anonymous in-memory fd without copying into its
+        // own temp directory. Drop removes incomplete setup files on
+        // failure or cancellation; a successful tool unlinks its file
+        // before retaining the in-memory owner.
         let memory = if tool == "wl-copy" {
             Some(memory_directory()?)
         } else {
@@ -161,8 +162,9 @@ impl Tools for System {
         let mut output = None;
         loop {
             if runtime::cancelled() {
-                // Tools have their own session; cancel only unfinished tool work. A
-                // successful background clipboard owner is deliberately not retained here.
+                // Tools have their own session; cancel only unfinished tool
+                // work. A successful background clipboard owner
+                // is deliberately not retained here.
                 unsafe {
                     libc::kill(-(pid as i32), libc::SIGKILL);
                 }
@@ -200,10 +202,10 @@ impl Tools for System {
     }
 
     fn x11_empty(&mut self) -> Result<bool> {
-        // Older xclip versions use the same failed conversion error for an empty
-        // selection and non-text data. Query ownership explicitly instead of treating
-        // every failed paste as empty. x11rb uses the wire protocol, with no libX11
-        // link.
+        // Older xclip versions use the same failed conversion error for an
+        // empty selection and non-text data. Query ownership explicitly
+        // instead of treating every failed paste as empty. x11rb uses
+        // the wire protocol, with no libX11 link.
         let check = || {
             let (conn, _) = x11rb::connect(None).map_err(|_| ())?;
             let atom = conn

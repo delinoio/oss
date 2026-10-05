@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "repository": "delinoio/prebuilt",
+  "dependencies": {
+    "tauri-cli": {
+      "source": {
+        "repository": "https://github.com/tauri-apps/tauri",
+        "revision": "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975"
+      },
+      "release": "tauri-cli-c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975-r1",
+      "recipeVersion": 1,
+      "producerRevision": "4d2e37e1442c4318e3f207b2746747d55ee8cad5",
+      "toolchain": "nightly-2026-09-28",
+      "verificationArgs": ["tauri", "--version"],
+      "verificationOutput": "tauri-cli 2.11.4",
+      "sourceBuild": {
+        "command": "cargo",
+        "arguments": [
+          "+{toolchain}",
+          "install",
+          "--git",
+          "{repository}",
+          "--rev",
+          "{revision}",
+          "tauri-cli",
+          "--locked",
+          "--target",
+          "{target}",
+          "--root",
+          "{root}",
+          "--force"
+        ]
+      },
+      "assets": {
+        "x86_64-apple-darwin": {
+          "platform": "darwin",
+          "arch": "x64",
+          "name": "tauri-cli-x86_64-apple-darwin.tar.gz",
+          "sha256": "14f0a3e6d45c7a6c8ae55acac5a4f5e2fc246803a69260fa8f79a90c1aabd106",
+          "binarySha256": "62554edac9c286bb651302a7abb307ce0eccf658aef6e92934ce052a71c070a7",
+          "executable": "bin/cargo-tauri",
+          "size": 8700943
+        },
+        "aarch64-apple-darwin": {
+          "platform": "darwin",
+          "arch": "arm64",
+          "name": "tauri-cli-aarch64-apple-darwin.tar.gz",
+          "sha256": "2bdfb3d052db23f8f1c035cdd9d9004698c957b56542b3509b92dfeec3ac853c",
+          "binarySha256": "2e0e244527e2a6d8a885ec3d8b50af9d5ede5a7edd8ac724bfc9384a00236e46",
+          "executable": "bin/cargo-tauri",
+          "size": 8193915
+        },
+        "x86_64-pc-windows-msvc": {
+          "platform": "win32",
+          "arch": "x64",
+          "name": "tauri-cli-x86_64-pc-windows-msvc.tar.gz",
+          "sha256": "afb5462ec557fe453519b01fffa5762861235a1c79d8ef6f5e668ee5e60fc0ff",
+          "binarySha256": "851f6551ed2814688cb2ca9c0074217eccd48a58b316b0e0a3fdac7d3223ef31",
+          "executable": "bin/cargo-tauri.exe",
+          "size": 7982192
+        },
+        "aarch64-pc-windows-msvc": {
+          "platform": "win32",
+          "arch": "arm64",
+          "name": "tauri-cli-aarch64-pc-windows-msvc.tar.gz",
+          "sha256": "30ceea5a0ea0a6e5ae74333e306bb76fbc6417bf2a7094f96350abd9424e9a53",
+          "binarySha256": "058cc4f0a1e8ee9afd988b1f1d75e5ed6d2a62724fffcd609209f335355377f7",
+          "executable": "bin/cargo-tauri.exe",
+          "size": 7626193
+        },
+        "x86_64-unknown-linux-gnu": {
+          "platform": "linux",
+          "arch": "x64",
+          "name": "tauri-cli-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "c14aea23a40d84bd675366246edc5719ee3b1dca0cfa5a21962d700bc52e3d2d",
+          "binarySha256": "6148a568b64c8ebaa3a484022766210a19410fcd2822d44dc6282ab9822b623a",
+          "executable": "bin/cargo-tauri",
+          "size": 9300598
+        },
+        "aarch64-unknown-linux-gnu": {
+          "platform": "linux",
+          "arch": "arm64",
+          "name": "tauri-cli-aarch64-unknown-linux-gnu.tar.gz",
+          "sha256": "33d19d112c560795461c74f24ac5bd053692c2bffb473d3f29b8fa67418c1b80",
+          "binarySha256": "d96ff6b1bd140dec4dc0f78d27718246a7671a6134dcf7ecc11bc4f79feac6d2",
+          "executable": "bin/cargo-tauri",
+          "size": 8949911
+        }
+      }
+    }
+  }
+}

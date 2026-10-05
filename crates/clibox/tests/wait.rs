@@ -219,7 +219,8 @@ fn files_output_modes_units_and_relative_unicode_paths() {
             .current_dir(directory.path())
             .output()
             .unwrap();
-        // 1ms can expire on a loaded CI host; duration parsing must still succeed.
+        // 1ms can expire on a loaded CI host; duration parsing must still
+        // succeed.
         let value = json(
             &output,
             if duration == "1ms" {

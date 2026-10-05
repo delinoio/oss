@@ -1292,7 +1292,8 @@ fn native_service_tls_blocking() -> Result<rustls::ClientConfig> {
     // supported platforms. Service probes promise OS trust only, so scope the
     // workaround to root loading. An unfinished worker never permits a child
     // spawn, and process exit ends it after cancellation or readiness timeout.
-    // Remove this workaround once the loader offers an explicit native-only API.
+    // Remove this workaround once the loader offers an explicit native-only
+    // API.
     let _overrides = NativeRootOverrides::without_custom_ca();
     let loaded = rustls_native_certs::load_native_certs();
     let mut roots = rustls::RootCertStore::empty();
@@ -2234,11 +2235,13 @@ fn forward(
                     }
                     Ok(count) => count,
                 };
-                // A successful read is workload activity even when a slow consumer
-                // blocks forwarding these bytes for longer than the idle limit.
-                // Retain the most recent read timestamp rather than a bounded
-                // notification. Output can outpace supervisor polls, and a stale
-                // earlier event must not make a later read look idle.
+                // A successful read is workload activity even when a slow
+                // consumer blocks forwarding these bytes for
+                // longer than the idle limit. Retain the most
+                // recent read timestamp rather than a bounded
+                // notification. Output can outpace supervisor polls, and a
+                // stale earlier event must not make a later
+                // read look idle.
                 if let Some(activity) = &activity {
                     activity.observe();
                 }

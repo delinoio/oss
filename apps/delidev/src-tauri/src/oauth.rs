@@ -344,8 +344,9 @@ impl OAuthHost {
                     {
                         return Err(NativeFailure::InvalidEvidence);
                     }
-                    // Exact binding replay settles pre/post-admission uncertainty
-                    // without dispatching another browser. Reopen remains explicit.
+                    // Exact binding replay settles pre/post-admission
+                    // uncertainty without dispatching
+                    // another browser. Reopen remains explicit.
                     return Ok(OAuthResult {
                         generation: generation.into(),
                         callback_url: String::new(),

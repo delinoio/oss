@@ -31,7 +31,7 @@ function restoredWindowOperations(source, marker) {
 test("desktop CEF main window is natively maximized only at creation", () => {
   const builder = segment(
     desktopHost,
-    "let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(",
+    "let webview = tauri::WebviewWindowBuilder::<tauri_runtime_cef::CefRuntime, _>::new(",
     ".build()?;",
   );
   const maximized = builder.indexOf(".maximized(true)");

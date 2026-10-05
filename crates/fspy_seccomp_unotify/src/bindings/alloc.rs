@@ -47,7 +47,8 @@ impl<T> Alloced<T> {
     /// The `layout` must have a size large enough to hold a value of type `T`
     /// and must have proper alignment for `T`.
     pub(crate) unsafe fn alloc(layout: Layout) -> Self {
-        // SAFETY: layout is non-zero-sized (guaranteed by caller) and properly aligned
+        // SAFETY: layout is non-zero-sized (guaranteed by caller) and properly
+        // aligned
         let ptr = unsafe { alloc::alloc_zeroed(layout) };
 
         let ptr = NonNull::new(ptr).unwrap();
@@ -61,8 +62,9 @@ impl<T> Alloced<T> {
         // SAFETY: `self.ptr` was allocated with `self.layout.size()` bytes,
         // so writing that many zero bytes is within bounds
         unsafe { self.ptr.cast::<u8>().write_bytes(0, self.layout.size()) };
-        // SAFETY: the pointer is valid, properly aligned, and the buffer has just
-        // been zero-initialized, which is valid for the kernel structs used here
+        // SAFETY: the pointer is valid, properly aligned, and the buffer has
+        // just been zero-initialized, which is valid for the kernel
+        // structs used here
         unsafe { self.ptr.as_mut() }
     }
 }
@@ -71,7 +73,8 @@ impl<T> Deref for Alloced<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: the pointer is valid and properly aligned, allocated in `alloc()`
+        // SAFETY: the pointer is valid and properly aligned, allocated in
+        // `alloc()`
         unsafe { self.ptr.as_ref() }
     }
 }
@@ -107,6 +110,7 @@ pub fn alloc_seccomp_notif() -> Alloced<libc::seccomp_notif> {
 #[must_use]
 pub fn alloc_seccomp_notif_resp() -> Alloced<libc::seccomp_notif_resp> {
     // SAFETY: `BUF_SIZES.resp_layout` is computed from `get_notif_sizes()` and
-    // `size_of::<seccomp_notif_resp>()`, guaranteeing sufficient size and alignment
+    // `size_of::<seccomp_notif_resp>()`, guaranteeing sufficient size and
+    // alignment
     unsafe { Alloced::alloc(BUF_SIZES.resp_layout) }
 }

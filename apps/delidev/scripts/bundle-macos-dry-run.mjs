@@ -1,3 +1,4 @@
+import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { accessSync, constants, lstatSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -90,7 +91,7 @@ async function main() {
   const resources = packageResources(app, root, credits);
   const dryRunConfig = JSON.parse(readFileSync(join(app, "src-tauri/tauri.dry-run.conf.json"), "utf8"));
   const config = JSON.stringify({ ...dryRunConfig, bundle: { ...dryRunConfig.bundle, resources: { [cefResourcePath(app, root, selected, credits)]: "notices/Chromium-CREDITS.html" } } });
-  build("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--bundles", "app", "--features", "desktop-host,custom-protocol,tauri/cef", "--config", config]);
+  build(...tauriCommand([ "build", "--bundles", "app", "--features", "desktop-host,custom-protocol", "--config", config]));
   const bundle = join(root, "target/release/bundle/macos/DeliDev.app");
   const run = (command, args) => {
     const result = spawnSync(command, args, { cwd: app, env, encoding: "utf8" });

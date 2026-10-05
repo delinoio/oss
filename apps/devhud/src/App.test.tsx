@@ -23,7 +23,7 @@ const mobileRuntime: RuntimeSnapshot = {
   osVersion: "16.0",
   appVersion: "0.1.0",
   buildId: "test",
-  tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+  tauriRevision: "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975",
   cefRevision: "",
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },

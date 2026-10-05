@@ -49,8 +49,8 @@ pub fn symbol_exists(name: &str) -> bool {
     use std::ffi::CString;
 
     let name = CString::new(name).unwrap();
-    // SAFETY: dlsym with RTLD_DEFAULT searches for the symbol in the default shared
-    // object search order
+    // SAFETY: dlsym with RTLD_DEFAULT searches for the symbol in the default
+    // shared object search order
     !unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr().cast()) }.is_null()
 }
 

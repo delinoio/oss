@@ -5583,7 +5583,8 @@ int main(int argc, char **argv) {
             let namespace = root.path().join(issuer).join("node_modules");
             let lookup = namespace.join("dep/package.json");
             // The parent creates conflicts outside interception, after child
-            // readiness when testing runtime admission, and removes only its fixture.
+            // readiness when testing runtime admission, and removes only its
+            // fixture.
             for late in [false, true] {
                 let create_conflict = || {
                     fs::create_dir(&namespace).unwrap();

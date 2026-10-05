@@ -11,7 +11,8 @@ use delidev_desktop::{
     NativeFailure, canonical_id,
     notifications::{self, Notice, Permission, PermissionProblem, PresentationResult, Readiness},
 };
-use tauri::{AppHandle, Cef, WebviewWindow};
+use tauri::{AppHandle, WebviewWindow};
+use tauri_runtime_cef::CefRuntime;
 use tokio::sync::oneshot;
 
 use super::{SavedWindows, saved_binding, tray_host, trusted_main};
@@ -49,7 +50,7 @@ pub struct NotificationHost {
 }
 
 fn instance(
-    window: &WebviewWindow<Cef>,
+    window: &WebviewWindow<CefRuntime>,
     windows: &SavedWindows,
 ) -> Result<Option<String>, NativeFailure> {
     if window.label() == "main" {
@@ -61,7 +62,7 @@ fn instance(
 }
 #[tauri::command]
 pub async fn begin_notifications(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<String, NativeFailure> {
@@ -80,7 +81,7 @@ pub async fn begin_notifications(
 }
 #[tauri::command]
 pub async fn end_notifications(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
     scope: String,
@@ -98,7 +99,7 @@ pub async fn end_notifications(
 }
 #[tauri::command]
 pub async fn notification_permission(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<Readiness, NativeFailure> {
@@ -114,7 +115,7 @@ pub async fn notification_permission(
 }
 #[tauri::command]
 pub async fn request_notification_permission(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<Readiness, NativeFailure> {
@@ -124,8 +125,8 @@ pub async fn request_notification_permission(
 }
 #[tauri::command]
 pub async fn present_notification(
-    window: WebviewWindow<Cef>,
-    app: AppHandle<Cef>,
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
     scope: String,
@@ -199,9 +200,10 @@ impl NotificationHost {
         let (sender, receiver) = oneshot::channel();
         let host = Arc::clone(self);
         let task = tauri::async_runtime::spawn(async move {
-            // Polling never requests permission. If a native prompt outlives the
-            // deadline, do not launch another in this process; only a completed
-            // platform response can release this admission gate.
+            // Polling never requests permission. If a native prompt outlives
+            // the deadline, do not launch another in this process;
+            // only a completed platform response can release this
+            // admission gate.
             let (readiness, completed) = tokio::select! {biased;
                 _=&mut canceled=>(Readiness::unavailable(PermissionProblem::OsUnavailable),false),
                 result=tokio::time::timeout(Duration::from_secs(120),notifications::permission(true))=>match result{
@@ -233,7 +235,7 @@ impl NotificationHost {
 
     fn start(
         self: &Arc<Self>,
-        app: AppHandle<Cef>,
+        app: AppHandle<CefRuntime>,
         target: Target,
         notice: Notice,
     ) -> Result<oneshot::Receiver<PresentationResult>, NativeFailure> {
@@ -245,8 +247,9 @@ impl NotificationHost {
         // A process-lifetime bound also covers callbacks whose platform release
         // is uncertain. mac-usernotifications 0.3.1 consumes its response guard
         // before waiting, so cancellation cannot prove delegate-map release.
-        // Keep this bound until every backend offers verified owned cancellation;
-        // never recycle an old claim into another display attempt.
+        // Keep this bound until every backend offers verified owned
+        // cancellation; never recycle an old claim into another display
+        // attempt.
         let (cancel, mut canceled) = oneshot::channel();
         let (sender, receiver) = oneshot::channel();
         let host = Arc::clone(self);

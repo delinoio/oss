@@ -43,8 +43,9 @@ fn encode_checked(image: &RgbaImage, mut check: impl FnMut(u64) -> Result<()>) -
     };
     // png's high-level streaming writer still filters/compresses a whole row
     // per call. Atlas rows can span millions of pixels, so feed unfiltered PNG
-    // scanlines through bounded zlib calls and let png frame/checksum the IDATs.
-    // Retain this until that writer supports cancellation within a scanline.
+    // scanlines through bounded zlib calls and let png frame/checksum the
+    // IDATs. Retain this until that writer supports cancellation within a
+    // scanline.
     for row in image.as_raw().chunks_exact(image.width() as usize * 4) {
         compress(&[0], FlushCompress::None)?;
         for chunk in row.chunks(CHUNK_BYTES) {

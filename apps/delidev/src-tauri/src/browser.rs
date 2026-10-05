@@ -413,7 +413,8 @@ fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
     }
     let from: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
     let to: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
-    // Replacement and write-through preserve a retry's original durable identity.
+    // Replacement and write-through preserve a retry's original durable
+    // identity.
     if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), 1 | 8) } == 0 {
         Err(std::io::Error::last_os_error())
     } else {

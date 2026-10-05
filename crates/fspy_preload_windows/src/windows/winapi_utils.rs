@@ -38,8 +38,8 @@ pub const fn ck_long(val: c_long) -> winsafe::SysResult<()> {
     if val == 0 {
         Ok(())
     } else {
-        // SAFETY: creating an ERROR from the raw c_long value for the Windows error
-        // code
+        // SAFETY: creating an ERROR from the raw c_long value for the Windows
+        // error code
         Err(unsafe { winsafe::co::ERROR::from_raw(val.cast_unsigned()) })
     }
 }
@@ -49,8 +49,8 @@ pub unsafe fn get_u16_str(ustring: &UNICODE_STRING) -> &U16Str {
     // UNICODE_STRING.Length is in bytes
     let u16_count = ustring.Length / 2;
     let chars: &[u16] = if u16_count == 0 {
-        // If length is zero, we can't use slice::from_raw_parts as it requires a
-        // non-null pointer but Buffer may be null in that case.
+        // If length is zero, we can't use slice::from_raw_parts as it requires
+        // a non-null pointer but Buffer may be null in that case.
         &[]
     } else {
         // SAFETY: UNICODE_STRING.Buffer points to a valid u16 array of Length/2
@@ -87,7 +87,8 @@ unsafe fn get_path_name_with_flags(
         }
         let len = len as usize;
         if len < path.capacity() {
-            // SAFETY: a successful call wrote `len` UTF-16 units into the buffer.
+            // SAFETY: a successful call wrote `len` UTF-16 units into the
+            // buffer.
             unsafe { path.set_len(len) };
             return Ok(path);
         }
@@ -155,8 +156,8 @@ impl Drop for HeapPath {
 
 pub fn combine_paths(path1: &U16CStr, path2: &U16CStr) -> winsafe::SysResult<HeapPath> {
     let mut out = std::ptr::null_mut();
-    // SAFETY: FFI call to PathAllocCombine with valid null-terminated wide string
-    // pointers
+    // SAFETY: FFI call to PathAllocCombine with valid null-terminated wide
+    // string pointers
     let hr = unsafe {
         PathAllocCombine(
             path1.as_ptr(),

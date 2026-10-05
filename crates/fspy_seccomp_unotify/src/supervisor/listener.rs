@@ -93,8 +93,8 @@ impl NotifyListener {
             if !ready.is_readable() {
                 continue;
             }
-            // TODO: check why this call solves the issue that `is_read_closed ||
-            // is_write_closed` is never true.
+            // TODO: check why this call solves the issue that `is_read_closed
+            // || is_write_closed` is never true.
             ready_guard.clear_ready();
 
             match notif_recv(ready_guard.get_inner().as_fd(), &mut self.notif_buf) {

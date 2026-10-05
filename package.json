@@ -13,7 +13,7 @@
     "dev:oss:down": "node scripts/dev-environment/cli.mjs down",
     "test:dev-environment": "node --test scripts/dev-environment/*.test.mjs && node scripts/dev-environment/verify-turbo.mjs",
     "ci:affected": "turbo run",
-    "ci:contracts": "node --test scripts/ci/*.test.mjs",
+    "ci:contracts": "node --test scripts/ci/*.test.mjs scripts/prebuilt-dependencies.test.mjs scripts/archive.test.mjs",
     "ci:workflows": "node scripts/ci/workflows.mjs",
     "ci:release-fixtures": "node --test scripts/release/*.test.mjs",
     "ci:tools": "node --test scripts/tools/*.test.cjs",

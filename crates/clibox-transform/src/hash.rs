@@ -468,8 +468,9 @@ pub fn verify(
         "verification completed"
     );
     if failed {
-        // Results can be redirected or suppressed. Keep a static failure summary
-        // on stderr without disclosing filenames or expected/actual digests.
+        // Results can be redirected or suppressed. Keep a static failure
+        // summary on stderr without disclosing filenames or
+        // expected/actual digests.
         crate::transform_error::report(Error::runtime(Code::VerificationFailed), "hash-verify");
     }
     Ok(u8::from(failed))

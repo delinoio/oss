@@ -63,8 +63,8 @@ test("bounded native header inspection rejects mixed, truncated and out-of-bound
 
 test("CEF credits retain the exact pinned distribution and original packaged bytes", t => {
   const root = fixture(t), selected = targets[1];
-  const cache = "Library/Caches/tauri-cef/150.0.10/cef_macos_aarch64";
-  const manifest = { type: "minimal", name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosarm64_minimal.tar.bz2" };
+  const cache = "Library/Caches/tauri-cef/151.3.24/cef_macos_aarch64";
+  const manifest = { type: "minimal", name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_macosarm64_minimal.tar.bz2" };
   write(root, `${cache}/archive.json`, JSON.stringify(manifest));
   const credits = write(root, `${cache}/CREDITS.html`, "original credits");
   assert.equal(cefCredits(selected, {}, root), credits);
@@ -72,7 +72,7 @@ test("CEF credits retain the exact pinned distribution and original packaged byt
   verifyNotices(join(root, "payload"), { [credits]: "notices/Chromium-CREDITS.html" });
   write(root, "payload/notices/Chromium-CREDITS.html", "changed credits");
   assert.throws(() => verifyNotices(join(root, "payload"), { [credits]: "notices/Chromium-CREDITS.html" }), /notice/);
-  write(root, `${cache}/archive.json`, JSON.stringify({ ...manifest, name: manifest.name.replace("150.0.10", "151.0.0") }));
+  write(root, `${cache}/archive.json`, JSON.stringify({ ...manifest, name: manifest.name.replace("151.3.24", "151.0.0") }));
   assert.throws(() => cefCredits(selected, {}, root), /pinned/);
 });
 
@@ -112,16 +112,17 @@ test("a clean CEF cache is prepared by the pinned CLI before notice validation",
       : selected.platform === "win32" ? environment.LOCALAPPDATA : join(home, ".cache");
     const distribution = selected.platform === "darwin" ? `macos${selected.arch === "arm64" ? "arm64" : "x64"}`
       : selected.platform === "win32" ? `windows${selected.arch === "arm64" ? "arm64" : "64"}` : `linux${selected.arch === "arm64" ? "arm64" : "64"}`;
-    const directory = join(cache, "tauri-cef", "150.0.10", selected.cef);
+    const directory = join(cache, "tauri-cef", "151.3.24", selected.cef);
     let prepared = 0;
     const credits = prepareCefCredits(selected, environment, (command, args) => {
-      assert.equal(command, "cargo");
-      assert.ok(args.includes("--locked"));
-      assert.equal(args[args.indexOf("--bin") + 1], "delidev-tauri-cli");
+      assert.equal(command, process.execPath);
+      assert.ok(args[0].endsWith("/scripts/tauri-cli.mjs"));
+      assert.equal(args[1], "--");
+      assert.ok(!args.includes("cli"));
       assert.ok(args.includes("--no-bundle"));
-      assert.ok(args.includes("desktop-host,custom-protocol,tauri/cef"));
+      assert.ok(args.includes("desktop-host,custom-protocol"));
       if (selected.platform !== "darwin") assert.equal(args[args.indexOf("--target") + 1], selected.target);
-      write(directory, "archive.json", JSON.stringify({ type: "minimal", name: `cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_${distribution}_minimal.tar.bz2` }));
+      write(directory, "archive.json", JSON.stringify({ type: "minimal", name: `cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_${distribution}_minimal.tar.bz2` }));
       write(directory, "CREDITS.html", "original notices");
       prepared++;
     }, home);

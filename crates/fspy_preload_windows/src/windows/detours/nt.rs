@@ -47,8 +47,8 @@ unsafe fn begin_path_operation(
     kind: u8,
     path: impl ToAbsolutePath,
 ) -> Option<operation::OperationGuard> {
-    // SAFETY: the native caller owns this path or handle through the intercepted
-    // call.
+    // SAFETY: the native caller owns this path or handle through the
+    // intercepted call.
     unsafe { begin_path_operation_with_intent(kind, path, false) }
 }
 
@@ -57,8 +57,8 @@ unsafe fn begin_path_operation_with_intent(
     path: impl ToAbsolutePath,
     mutates: bool,
 ) -> Option<operation::OperationGuard> {
-    // SAFETY: the native caller owns this path or handle through the intercepted
-    // call.
+    // SAFETY: the native caller owns this path or handle through the
+    // intercepted call.
     operation::with_preserved_last_error(|| {
         operation::with_resolution(|| unsafe { begin_path_operation_inner(kind, path, mutates) })
             .flatten()
@@ -108,7 +108,8 @@ unsafe fn begin_handle_operation(
 ) -> Option<operation::OperationGuard> {
     operation::with_preserved_last_error(|| {
         operation::with_resolution(|| {
-            // SAFETY: GetFileType accepts a native handle and does not take ownership.
+            // SAFETY: GetFileType accepts a native handle and does not take
+            // ownership.
             match unsafe { GetFileType(handle) } {
                 FILE_TYPE_DISK => operation::begin_handle_with_requested(kind, handle, requested),
                 FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
@@ -183,10 +184,12 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                 create_info: PPS_CREATE_INFO,
                 attribute_list: PPS_ATTRIBUTE_LIST,
             ) -> NTSTATUS {
-                // SAFETY: observing caller memory without changing the forwarded arguments
+                // SAFETY: observing caller memory without changing the
+                // forwarded arguments
                 let operation = unsafe { handle_process_image(attribute_list) };
 
-                // SAFETY: calling the original NtCreateUserProcess with all original arguments
+                // SAFETY: calling the original NtCreateUserProcess with all
+                // original arguments
                 let status = unsafe {
                     (DETOUR_NT_CREATE_USER_PROCESS.real())(
                         process_handle,
@@ -219,13 +222,13 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
 unsafe fn handle_process_image(
     attribute_list: PPS_ATTRIBUTE_LIST,
 ) -> Option<operation::OperationGuard> {
-    // SAFETY: NtCreateUserProcess requires its attribute list to remain valid for
-    // this call.
+    // SAFETY: NtCreateUserProcess requires its attribute list to remain valid
+    // for this call.
     if let Some(image_path) = unsafe { read_process_image_attribute(attribute_list) } {
-        // Sender serialization completes before this call returns, so IpcPath does not
-        // retain the borrowed PS_ATTRIBUTE_IMAGE_NAME buffer past the
-        // NtCreateUserProcess call. SAFETY: accessing the global client which
-        // was initialized during DLL_PROCESS_ATTACH
+        // Sender serialization completes before this call returns, so IpcPath
+        // does not retain the borrowed PS_ATTRIBUTE_IMAGE_NAME buffer
+        // past the NtCreateUserProcess call. SAFETY: accessing the
+        // global client which was initialized during DLL_PROCESS_ATTACH
         unsafe { global_client() }.send(PathAccess {
             mode: AccessMode::READ,
             path: IpcPath::from_wide(image_path),
@@ -280,16 +283,16 @@ unsafe fn read_process_image_attribute<'a>(
             continue;
         }
 
-        // Unlike a UNICODE_STRING, PS_ATTRIBUTE_IMAGE_NAME stores the path buffer
-        // directly in ValuePtr and stores its byte length in Size. It is the
-        // image path consumed by the kernel, so do not fall back to the
-        // separately spoofable process-parameter path.
-        // SAFETY: PS_ATTRIBUTE_IMAGE_NAME stores a valid UTF-16 pointer in ValuePtr for
-        // this call; a null pointer is parsed as None.
+        // Unlike a UNICODE_STRING, PS_ATTRIBUTE_IMAGE_NAME stores the path
+        // buffer directly in ValuePtr and stores its byte length in
+        // Size. It is the image path consumed by the kernel, so do not
+        // fall back to the separately spoofable process-parameter path.
+        // SAFETY: PS_ATTRIBUTE_IMAGE_NAME stores a valid UTF-16 pointer in
+        // ValuePtr for this call; a null pointer is parsed as None.
         let image_path = unsafe { attribute.u.ValuePtr.cast::<u16>().as_ref()? };
-        // SAFETY: the attribute contract guarantees a valid UTF-16 buffer of Size bytes
-        // for this call. Size is the counted string length, so no
-        // NUL-terminator parsing is needed.
+        // SAFETY: the attribute contract guarantees a valid UTF-16 buffer of
+        // Size bytes for this call. Size is the counted string length,
+        // so no NUL-terminator parsing is needed.
         return Some(unsafe {
             std::slice::from_raw_parts(
                 std::ptr::from_ref(image_path),
@@ -366,8 +369,8 @@ static DETOUR_NT_CREATE_FILE: Detour<
                         create_disposition_mutates(create_disposition),
                     )
                 };
-                // SAFETY: intercepting file open to record access before forwarding to real
-                // function
+                // SAFETY: intercepting file open to record access before
+                // forwarding to real function
                 unsafe {
                     handle_open(
                         create_file_access_mode(desired_access, create_disposition),
@@ -375,7 +378,8 @@ static DETOUR_NT_CREATE_FILE: Detour<
                     )
                 };
 
-                // SAFETY: calling the original NtCreateFile with all original arguments
+                // SAFETY: calling the original NtCreateFile with all original
+                // arguments
                 let status = unsafe {
                     (DETOUR_NT_CREATE_FILE.real())(
                         file_handle,
@@ -460,15 +464,17 @@ static DETOUR_NT_OPEN_FILE: Detour<
                 share_access: ULONG,
                 open_options: ULONG,
             ) -> HFILE {
-                // SAFETY: the object attributes remain valid throughout the call.
+                // SAFETY: the object attributes remain valid throughout the
+                // call.
                 let operation = unsafe { begin_path_operation(1, object_attributes) };
-                // SAFETY: intercepting file open to record access before forwarding to real
-                // function
+                // SAFETY: intercepting file open to record access before
+                // forwarding to real function
                 unsafe {
                     handle_open(desired_access, object_attributes);
                 }
 
-                // SAFETY: calling the original NtOpenFile with all original arguments
+                // SAFETY: calling the original NtOpenFile with all original
+                // arguments
                 let status = unsafe {
                     (DETOUR_NT_OPEN_FILE.real())(
                         file_handle,
@@ -505,10 +511,11 @@ static DETOUR_NT_QUERY_ATTRIBUTES_FILE: Detour<
                 ) -> HFILE {
                     // SAFETY: object attributes remain valid through this call.
                     let operation = unsafe { begin_path_operation(7, object_attributes) };
-                    // SAFETY: intercepting attribute query to record read access
+                    // SAFETY: intercepting attribute query to record read
+                    // access
                     unsafe { handle_open(AccessMode::READ, object_attributes) };
-                    // SAFETY: calling the original NtQueryAttributesFile with all original
-                    // arguments
+                    // SAFETY: calling the original NtQueryAttributesFile with
+                    // all original arguments
                     let status = unsafe {
                         (DETOUR_NT_QUERY_ATTRIBUTES_FILE.real())(
                             object_attributes,
@@ -528,8 +535,8 @@ unsafe fn handle_open(access_mode: impl ToAccessMode, path: impl ToAbsolutePath)
         // SAFETY: accessing the global client which was initialized during
         // DLL_PROCESS_ATTACH
         let client = unsafe { global_client() };
-        // SAFETY: resolving path from Windows object attributes or handle for access
-        // tracking
+        // SAFETY: resolving path from Windows object attributes or handle for
+        // access tracking
         if unsafe {
             path.to_absolute_path(|path| {
                 let Some(path) = path else {
@@ -541,7 +548,8 @@ unsafe fn handle_open(access_mode: impl ToAccessMode, path: impl ToAbsolutePath)
                     .rposition(|c| *c == u16::from(b'*'))
                     .map_or_else(
                         || {
-                            // SAFETY: converting access mask to AccessMode via FFI-aware trait
+                            // SAFETY: converting access mask to AccessMode via
+                            // FFI-aware trait
                             PathAccess {
                                 mode: access_mode.to_access_mode(),
                                 path: IpcPath::from_wide(path),
@@ -710,7 +718,8 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE: Detour<
             ) -> NTSTATUS {
                 // SAFETY: the directory handle remains valid until return.
                 let operation = unsafe { begin_handle_operation(8, file_handle, None) };
-                // SAFETY: intercepting directory query to record directory read access
+                // SAFETY: intercepting directory query to record directory read
+                // access
                 unsafe { handle_open(AccessMode::READ_DIR, file_handle) };
                 // SAFETY: calling the original NtQueryDirectoryFile
                 let status = unsafe {
@@ -768,7 +777,8 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
             ) -> NTSTATUS {
                 // SAFETY: the directory handle remains valid until return.
                 let operation = unsafe { begin_handle_operation(8, file_handle, None) };
-                // SAFETY: intercepting directory query to record directory read access
+                // SAFETY: intercepting directory query to record directory read
+                // access
                 unsafe { handle_open(AccessMode::READ_DIR, file_handle) };
                 // SAFETY: calling the original NtQueryDirectoryFileEx
                 let status = unsafe {
@@ -935,7 +945,8 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                 } else if changes_handle_contents(file_information_class) {
                     // End-of-file changes mutate the opened inode even though
                     // no destination pathname is supplied by this NT class.
-                    // SAFETY: the caller retains the live handle through the call.
+                    // SAFETY: the caller retains the live handle through the
+                    // call.
                     let guard = unsafe { begin_handle_operation(9, file_handle, None) };
                     let resolved = guard.is_some();
                     Some((guard, resolved))

@@ -44,10 +44,11 @@ fn nested_array(value: Value, depth: usize) -> Value {
 #[test]
 fn parse_lenient_json_upstream_parity_cases() {
     // Explicit parity exclusions (documented by design):
-    // 1) JS `undefined` expectations are not representable in `serde_json::Value`.
+    // 1) JS `undefined` expectations are not representable in
+    //    `serde_json::Value`.
     // 2) JS `Infinity` / `-Infinity` are not representable as JSON numbers.
-    // 3) Lone-surrogate code-unit expectations differ because Rust `String` follows
-    //    valid Unicode scalar value rules.
+    // 3) Lone-surrogate code-unit expectations differ because Rust `String`
+    //    follows valid Unicode scalar value rules.
 
     let mut cases = vec![
         success(

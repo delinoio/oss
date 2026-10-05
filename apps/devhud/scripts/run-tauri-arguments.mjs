@@ -158,8 +158,8 @@ export function repositoryAppleSigningEnvironment(
 }
 
 export function desktopTauriArguments(command, forwardedArguments, environment = process.env) {
-  // The pinned CLI resolves bundle features through app-owned Cargo features;
-  // passing tauri/cef directly builds CEF but leaves its bundle path unset.
+  // The pinned CLI detects the desktop runtime dependency by target. Keep the
+  // app-owned desktop marker and bundle configuration together.
   const config = command === "build" && environment.DEVHUD_PRIVATE_RELEASE === "1"
     ? privateReleaseTauriConfigPath
     : desktopTauriConfigPath;

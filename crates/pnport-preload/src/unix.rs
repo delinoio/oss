@@ -287,7 +287,7 @@ static INITIALIZER: unsafe extern "C" fn() = initialize;
 
 unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -323,7 +323,7 @@ const _: () = {
 #[export_name = "open"]
 unsafe extern "C" fn linux_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -336,7 +336,7 @@ unsafe extern "C" fn pnport_openat(
     mut args: ...
 ) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -377,7 +377,7 @@ unsafe extern "C" fn linux_openat(
     mut args: ...
 ) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };

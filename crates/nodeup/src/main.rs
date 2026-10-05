@@ -455,16 +455,18 @@ where
                 };
             }
             CommandScanState::RunBeforeRuntime => {
-                // Clap still accepts Nodeup global flags after the runtime selector,
-                // so the delegated argv boundary is the first non-Nodeup token after it.
+                // Clap still accepts Nodeup global flags after the runtime
+                // selector, so the delegated argv boundary is
+                // the first non-Nodeup token after it.
                 if arg.starts_with('-') {
                     continue;
                 }
                 command_scan_state = CommandScanState::RunBeforeDelegatedCommand;
             }
             CommandScanState::RunBeforeDelegatedCommand => {
-                // Clap accepts global flags between `run <runtime>` and the delegated
-                // command. Keep scanning for those flags, then stop at the first token
+                // Clap accepts global flags between `run <runtime>` and the
+                // delegated command. Keep scanning for those
+                // flags, then stop at the first token
                 // that belongs to delegated argv.
                 if arg == "--" {
                     break;

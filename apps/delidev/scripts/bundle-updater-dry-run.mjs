@@ -1,3 +1,4 @@
+import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 // SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from 'node:child_process';
 import { createReadStream, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -48,7 +49,7 @@ export async function main(args) {
    // binary so sharun can resolve it; remove when upstream copies share itself.
    const appimage=selected.platform==='linux'?{linux:{appimage:{files:{'share/DeliDev/delidev-desktop':join(root,'target',selected.target,'release/delidev-desktop')}}}}:{};
    const config=JSON.stringify({bundle:{resources:{[cefResourcePath(app,root,selected,credits)]:'notices/Chromium-CREDITS.html'},...appimage}});
-   run('cargo',['run','--locked','--manifest-path','src-tauri/Cargo.toml','--features','cli','--bin','delidev-tauri-cli','--','build','--target',selected.target,'--bundles',kind,'--features','desktop-host,custom-protocol,tauri/cef','--config',config],true);
+   run(...tauriCommand(['build','--target',selected.target,'--bundles',kind,'--features','desktop-host,custom-protocol','--config',config]),true);
    const directory=join(root,'target',selected.target,'release/bundle',kind),extension=selected.platform==='win32'?'.exe':'.AppImage';
    const files=readdirSync(directory).filter(v=>v.endsWith(extension));if(files.length!==1)throw new Error('One unambiguous native updater artifact is required.');copyFileSync(join(directory,files[0]),desktop);
    if(selected.platform==='win32')run('pwsh',['-NoProfile','-NonInteractive','-File',join(app,'scripts/verify-unsigned-windows.ps1'),'-Desktop',join(root,'target',selected.target,'release/delidev-desktop.exe'),'-Worker',worker,'-Installer',desktop]);

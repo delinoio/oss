@@ -1120,10 +1120,12 @@ impl<'a> PlatformInstaller<'a> {
                         return Err(DiagnosticCode::InstallationFailed);
                     }
                     DebianInstallerExit::CommitUncertain => {
-                        // dpkg can return failure after unpacking replaced files.
-                        // Keep only the pre-install executable path for an explicit
-                        // restart recovery instead of claiming the old install was
-                        // preserved or attempting the package installation again.
+                        // dpkg can return failure after unpacking replaced
+                        // files. Keep only the
+                        // pre-install executable path for an explicit
+                        // restart recovery instead of claiming the old install
+                        // was preserved or attempting
+                        // the package installation again.
                         return Ok(RestartDisposition::RestartRequired {
                             executable,
                             diagnostic: DiagnosticCode::InstallationFailed,

@@ -35,6 +35,8 @@ Each project must have one project index document and one or more domain contrac
 
 ## Repository Workflow
 
+- [Prebuilt dependency distribution](repository-prebuilt-dependencies-contract.md): shared immutable host executables and consumer installation.
+
 - `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, Runmoor stable publication, and consolidated documentation publication.
 
 ## Project Catalog

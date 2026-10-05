@@ -674,7 +674,8 @@ impl DraftStore {
             let manifest = entry.path().join("manifest.bin");
             let Ok(document) = read_document(&manifest, key) else {
                 // An unreadable unexpired draft is retained for explicit user
-                // recovery/deletion; startup never guesses that it is safe to evict.
+                // recovery/deletion; startup never guesses that it is safe to
+                // evict.
                 continue;
             };
             if document.expires_at <= now {

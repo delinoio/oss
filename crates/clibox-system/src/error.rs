@@ -69,8 +69,8 @@ impl Failure {
     }
 
     pub fn report(&self, operation: &'static str) {
-        // Never format a raw OS error: it can contain paths, arguments or clipboard
-        // data.
+        // Never format a raw OS error: it can contain paths, arguments or
+        // clipboard data.
         if tracing::enabled!(tracing::Level::ERROR) {
             tracing::error!(operation, code = ?self.code, pid = self.pid, port = self.port, "error: {}", self.message);
         } else {

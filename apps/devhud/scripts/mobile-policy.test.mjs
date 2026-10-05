@@ -438,7 +438,7 @@ test("mobile policy verifies the packaged Android identity, build number, and De
 });
 
 test("mobile policy distinguishes embedded runtime metadata from CEF symbols", () => {
-  assert.doesNotThrow(() => assertAndroidNativeLibrary("150.0.10+g8042e43+chromium-150.0.7871.101"));
+  assert.doesNotThrow(() => assertAndroidNativeLibrary("151.3.24+g2384915+chromium-151.0.7922.174"));
   assert.throws(() => assertAndroidNativeLibrary("libcef.so"), /CEF symbols/u);
   assert.throws(() => assertAndroidNativeLibrary("cef_initialize"), /CEF symbols/u);
 });

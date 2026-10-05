@@ -164,7 +164,8 @@ impl<'a> Writer<'a> {
             .find(|id| !used.contains(id))
             .ok_or_else(|| failure("numbering identity"))?;
         // Definitions precede concrete lists. Append without reserializing any
-        // original numbering, so existing list IDs and overrides keep their bytes.
+        // original numbering, so existing list IDs and overrides keep their
+        // bytes.
         let definition = numbering_definition(id, kind);
         let at = doc
             .root_element()
@@ -296,8 +297,9 @@ impl<'a> Writer<'a> {
                     if let Some(rid) = &rid {
                         out.push_str(&format!("<w:hyperlink r:id=\"{rid}\">"));
                     }
-                    // Paragraph mark properties do not cascade into runs in Word.
-                    // Materialize the inherited style for both direct engine and
+                    // Paragraph mark properties do not cascade into runs in
+                    // Word. Materialize the inherited style
+                    // for both direct engine and
                     // React callers, with explicit local overrides.
                     out.push_str(&format!(
                         "<w:r>{}",

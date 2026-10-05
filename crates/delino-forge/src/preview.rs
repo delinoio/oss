@@ -142,9 +142,9 @@ pub async fn preview(store: Store, id: Uuid, output: PathBuf) -> Result<serde_js
         std::fs::copy(path, stage.path().join(name)).map_err(io_error)?;
     }
     store.check_cancelled()?;
-    // Create the destination exclusively before moving files; no existing directory
-    // is ever replaced. Remove only this request's new directory on publication
-    // error.
+    // Create the destination exclusively before moving files; no existing
+    // directory is ever replaced. Remove only this request's new directory
+    // on publication error.
     std::fs::create_dir(&output).map_err(|e| {
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             Diagnostic::new(ErrorCode::OutputExists, "", "Preview output already exists")

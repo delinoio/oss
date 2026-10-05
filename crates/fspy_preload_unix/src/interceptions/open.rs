@@ -36,15 +36,15 @@ unsafe extern "C" fn open(path: *const c_char, flags: c_int, mut args: ...) -> c
     let operation = unsafe { operation::enter_open_path(path, mutates_at_open(flags)) };
     super::observe_path(path, OpenFlags(flags));
     let result = if has_mode_arg(flags) {
-        // SAFETY: when O_CREAT or O_TMPFILE is set, a mode_t argument is required by
-        // the open() contract
-        let mode: Mode = unsafe { args.arg() };
-        // SAFETY: calling the original libc open() with the same arguments forwarded
-        // from the interposed function
+        // SAFETY: when O_CREAT or O_TMPFILE is set, a mode_t argument is
+        // required by the open() contract
+        let mode: Mode = unsafe { args.next_arg() };
+        // SAFETY: calling the original libc open() with the same arguments
+        // forwarded from the interposed function
         unsafe { open::original()(path, flags, mode) }
     } else {
-        // SAFETY: calling the original libc open() with the same arguments forwarded
-        // from the interposed function
+        // SAFETY: calling the original libc open() with the same arguments
+        // forwarded from the interposed function
         unsafe { open::original()(path, flags) }
     };
     #[cfg(target_os = "macos")]
@@ -66,15 +66,15 @@ unsafe extern "C" fn openat(
 
     let result = if has_mode_arg(flags) {
         // https://github.com/tailhook/openat/issues/21#issuecomment-535914957
-        // SAFETY: when O_CREAT or O_TMPFILE is set, a mode_t argument is required by
-        // the openat() contract
-        let mode: Mode = unsafe { args.arg() };
-        // SAFETY: calling the original libc openat() with the same arguments forwarded
-        // from the interposed function
+        // SAFETY: when O_CREAT or O_TMPFILE is set, a mode_t argument is
+        // required by the openat() contract
+        let mode: Mode = unsafe { args.next_arg() };
+        // SAFETY: calling the original libc openat() with the same arguments
+        // forwarded from the interposed function
         unsafe { openat::original()(dirfd, path, flags, mode) }
     } else {
-        // SAFETY: calling the original libc openat() with the same arguments forwarded
-        // from the interposed function
+        // SAFETY: calling the original libc openat() with the same arguments
+        // forwarded from the interposed function
         unsafe { openat::original()(dirfd, path, flags) }
     };
     #[cfg(target_os = "macos")]
@@ -90,14 +90,15 @@ unsafe extern "C" fn open_nocancel(path: *const c_char, flags: c_int, mut args: 
     let operation = unsafe { operation::enter_open_path(path, mutates_at_open(flags)) };
     super::observe_path(path, OpenFlags(flags));
     let result = if has_mode_arg(flags) {
-        // SAFETY: O_CREAT requires a mode argument, matching the open$NOCANCEL contract
-        let mode: Mode = unsafe { args.arg() };
-        // SAFETY: calling the original libc open$NOCANCEL() with the same arguments
-        // forwarded from the interposed function
+        // SAFETY: O_CREAT requires a mode argument, matching the open$NOCANCEL
+        // contract
+        let mode: Mode = unsafe { args.next_arg() };
+        // SAFETY: calling the original libc open$NOCANCEL() with the same
+        // arguments forwarded from the interposed function
         unsafe { open_nocancel::original()(path, flags, mode) }
     } else {
-        // SAFETY: calling the original libc open$NOCANCEL() with the same arguments
-        // forwarded from the interposed function
+        // SAFETY: calling the original libc open$NOCANCEL() with the same
+        // arguments forwarded from the interposed function
         unsafe { open_nocancel::original()(path, flags) }
     };
     operation::finish(operation, i64::from(result));
@@ -117,15 +118,15 @@ unsafe extern "C" fn openat_nocancel(
     let operation = unsafe { operation::enter_open_at(dirfd, path, mutates_at_open(flags)) };
     super::observe_at(dirfd, path, OpenFlags(flags));
     let result = if has_mode_arg(flags) {
-        // SAFETY: O_CREAT requires a mode argument, matching the openat$NOCANCEL
-        // contract
-        let mode: Mode = unsafe { args.arg() };
-        // SAFETY: calling the original libc openat$NOCANCEL() with the same arguments
-        // forwarded from the interposed function
+        // SAFETY: O_CREAT requires a mode argument, matching the
+        // openat$NOCANCEL contract
+        let mode: Mode = unsafe { args.next_arg() };
+        // SAFETY: calling the original libc openat$NOCANCEL() with the same
+        // arguments forwarded from the interposed function
         unsafe { openat_nocancel::original()(dirfd, path, flags, mode) }
     } else {
-        // SAFETY: calling the original libc openat$NOCANCEL() with the same arguments
-        // forwarded from the interposed function
+        // SAFETY: calling the original libc openat$NOCANCEL() with the same
+        // arguments forwarded from the interposed function
         unsafe { openat_nocancel::original()(dirfd, path, flags) }
     };
     operation::finish(operation, i64::from(result));
@@ -152,8 +153,8 @@ unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut lib
     }
     #[cfg(target_os = "linux")]
     super::observe_path(path, ModeStr(mode));
-    // SAFETY: calling the original libc fopen() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc fopen() with the same arguments
+    // forwarded from the interposed function
     let result = unsafe { fopen::original()(path, mode) };
     #[cfg(target_os = "macos")]
     operation::finish(operation, if result.is_null() { -1 } else { 0 });
@@ -178,8 +179,8 @@ unsafe extern "C" fn freopen(
                 .is_some_and(|mode| matches!(mode.as_bytes().first().copied(), Some(b'w' | b'a'))),
         )
     };
-    // SAFETY: path and mode are valid C string pointers provided by the caller of
-    // the interposed function
+    // SAFETY: path and mode are valid C string pointers provided by the caller
+    // of the interposed function
     if path.is_null() {
         // freopen(NULL, ...) can reopen the stream's previous file without a
         // pathname we can recover here. Keep its native behavior, but do not
@@ -195,8 +196,8 @@ unsafe extern "C" fn freopen(
         #[cfg(target_os = "linux")]
         super::observe_path(path, ModeStr(mode));
     }
-    // SAFETY: calling the original libc freopen() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc freopen() with the same arguments
+    // forwarded from the interposed function
     let result = unsafe { freopen::original()(path, mode, stream) };
     #[cfg(target_os = "macos")]
     operation::finish(operation, if result.is_null() { -1 } else { 0 });

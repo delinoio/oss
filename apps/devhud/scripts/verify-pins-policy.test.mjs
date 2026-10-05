@@ -11,7 +11,7 @@ import {
 
 const CRATES_IO_SOURCE = "registry+https://github.com/rust-lang/crates.io-index";
 const TAURI_SOURCE =
-  "git+https://github.com/tauri-apps/tauri?rev=4af26a3f7f8b692d62cca549bbacd93f5ce90b41#4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+  "git+https://github.com/tauri-apps/tauri?rev=c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975#c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975";
 const DEVHUD_ID = "path+file:///repo/apps/devhud/src-tauri#devhud@0.1.0";
 const NATIVE_MESSAGING_HOST_ID =
   "path+file:///repo/crates/devhud-native-messaging-host#devhud-native-messaging-host@0.1.0";

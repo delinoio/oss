@@ -14,6 +14,7 @@ pub fn run() {
     let bridge_state = bridge::NativeBridgeState::default();
     let session_network_policy = bridge_state.clone();
     tauri::Builder::default()
+        .runtime(tauri_runtime_wry::Wry::default())
         .plugin(native_plugin::init())
         .manage(bridge_state)
         .invoke_handler(tauri::generate_handler![bridge::native_bridge_v1])

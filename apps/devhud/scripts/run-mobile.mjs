@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -52,7 +53,7 @@ export function preserveAndroidArtifacts(target, forwarded, roots = { appRoot, r
   }
 }
 
-export function mobileCargoArguments(rawArguments) {
+export function mobileTauriArguments(rawArguments) {
   const [platform, command, ...forwarded] = rawArguments;
   if (!platforms.has(platform) || !commands.has(command)) {
     throw new Error("Usage: run-mobile.mjs <android|ios> <dev|build> [Tauri arguments...]");
@@ -64,13 +65,12 @@ export function mobileCargoArguments(rawArguments) {
     if (!target || !targets[platform].has(target)) throw new Error(`devhud: unsupported ${platform} target ${target ?? "missing"}`);
   }
   return [
-    "run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli",
-    "--bin", "devhud-tauri-cli", "--", platform, command, ...forwarded,
+    platform, command, ...forwarded,
   ];
 }
 
 export function mobileExecution(rawArguments) {
-  const cargoArguments = mobileCargoArguments(rawArguments);
+  const tauriArguments = mobileTauriArguments(rawArguments);
   const [platform, command, ...forwarded] = rawArguments;
   const requestedTargets = targetValues(forwarded);
   const nonTargetArguments = forwarded.filter((argument, index) => (
@@ -88,7 +88,6 @@ export function mobileExecution(rawArguments) {
       command: "xcodebuild",
       prerequisites: [
         { command: "pnpm", arguments: ["build:frontend"], env: { TAURI_ENV_PLATFORM: "ios" } },
-        { command: "cargo", arguments: ["build", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "devhud-tauri-cli"] },
       ],
       optionsServerArguments: [...rawArguments, "--open"],
       arguments: [
@@ -103,7 +102,8 @@ export function mobileExecution(rawArguments) {
       ],
     };
   }
-  return { command: "cargo", arguments: cargoArguments };
+  const [program, args] = tauriCommand(tauriArguments);
+  return { command: program, arguments: args };
 }
 
 function childOutcome(child) {
@@ -152,9 +152,10 @@ async function runIntelSimulator(execution) {
   return result;
 }
 
-export async function runMobile(rawArguments, { forceCargo = false } = {}) {
-  const execution = forceCargo
-    ? { command: "cargo", arguments: mobileCargoArguments(rawArguments) }
+export async function runMobile(rawArguments, { forceCli = false } = {}) {
+  const [program, args] = tauriCommand(mobileTauriArguments(rawArguments));
+  const execution = forceCli
+    ? { command: program, arguments: args }
     : mobileExecution(rawArguments);
   for (const prerequisite of execution.prerequisites ?? []) {
     const prerequisiteResult = await spawnDevServer(prerequisite.command, prerequisite.arguments, { cwd: appRoot, stdio: "inherit", shell: false, env: { ...process.env, ...(prerequisite.env ?? {}) } }, { terminateProcessTree: true });
@@ -175,7 +176,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const rawArguments = process.argv.slice(2);
     const optionsServer = rawArguments[0] === "--options-server";
-    await runMobile(optionsServer ? rawArguments.slice(1) : rawArguments, { forceCargo: optionsServer });
+    await runMobile(optionsServer ? rawArguments.slice(1) : rawArguments, { forceCli: optionsServer });
   } catch (error) {
     console.error(error.message);
     process.exit(1);

@@ -481,8 +481,8 @@ pub fn replace(
                 fragment.push_str("<w:p/>");
             }
             // Preserve the original cell opening/closing tags, attributes and
-            // namespace bindings along with tcPr. Only the selected cell's block
-            // content is owned by the mounted subtree.
+            // namespace bindings along with tcPr. Only the selected cell's
+            // block content is owned by the mounted subtree.
             let original = &prefix[cell.range()];
             let opening = original.find('>').ok_or_else(|| failure("cell"))? + 1;
             let closing = original.rfind("</").ok_or_else(|| failure("cell"))?;

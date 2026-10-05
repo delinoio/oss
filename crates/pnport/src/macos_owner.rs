@@ -223,7 +223,8 @@ impl Owner {
 
     pub fn owns_group(&mut self, group: i32) -> Result<bool> {
         // EOF does not reap the guardian: retain the original group reservation
-        // while authenticated parent recovery verifies additional tty ownership.
+        // while authenticated parent recovery verifies additional tty
+        // ownership.
         match self.query_group(group) {
             Ok(owned) => Ok(owned),
             Err(_) => {

@@ -183,12 +183,16 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Install Ubuntu packaging prerequisites
         if: ${{ startsWith(matrix.id, 'ubuntu-') }}
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-x11 gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf squashfs-tools xauth xdg-utils xvfb
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-x11 gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf squashfs-tools xauth xdg-utils xvfb
       - name: Install locked dependencies and validate pins
         run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: ./.github/actions/setup-clibox
         with:
           install: 'false'
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
       - name: Materialize macOS signing and notarization credentials
         if: ${{ startsWith(matrix.id, 'macos-') }}
         shell: bash
@@ -390,6 +394,10 @@ jobs:
       - name: Install macOS Rust targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
       - run: pnpm --filter devhud mobile:generate -- --platform ios
       - name: Initialize Intel iOS simulators
         if: ${{ matrix.target == 'x86_64' }}
@@ -484,7 +492,11 @@ jobs:
         if: ${{ matrix.platform == 'android' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxtst-dev ninja-build
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
       - run: pnpm --filter devhud mobile:generate -- --platform ${{ matrix.platform }}
       - name: Build and verify signed Android App Bundle
         if: ${{ matrix.platform == 'android' }}

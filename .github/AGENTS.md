@@ -25,3 +25,5 @@
 - clibox Homebrew follows its exact-tag GitHub Release independently of npm enablement. Both native macOS installation/audit gates and signed public-source verification must precede tap-only app-token creation. Publish only the identical tested Formula, then verify public-tap installation on both architectures. Dry runs never enter Homebrew publication; keep the release summary and workflow contracts synchronized.
 
 - DeliDev updater input dry runs use the same six-target native matrix and keyless read-only manual workflow. Export exact twelve signed-inventory filenames and source/version/size/digest provenance only after package checks. Keep production signing readiness and private-key access separate; dry-run artifacts never imply production release or installed-platform acceptance.
+
+- Shared Tauri CLI preparation uses `setup-prebuilt` and execution-host lock selection; restore/verify on native and mobile paths, save only after a successful main job, and retain existing application Cargo caches. Native DeliDev dry runs remain read-only and credential-free.

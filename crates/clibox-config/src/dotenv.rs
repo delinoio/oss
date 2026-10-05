@@ -95,7 +95,8 @@ pub fn parse(text: &str, values: &mut Values, cancel: &Cancellation) -> Result<(
         // Node recognizes the prefix only with an immediate ASCII space.
         let export_prefix = key == "export" && c.peek() == Some(b' ');
         c.space()?;
-        // `export` remains an ordinary key when followed by the assignment sign.
+        // `export` remains an ordinary key when followed by the assignment
+        // sign.
         if export_prefix && c.peek() != Some(b'=') {
             key = c.key()?;
             c.space()?;
@@ -109,8 +110,9 @@ pub fn parse(text: &str, values: &mut Values, cancel: &Cancellation) -> Result<(
         let end;
         if let Some(quote @ (b'\'' | b'"')) = c.peek() {
             c.advance()?;
-            // Quotes delimit tokens; escapes and internal CRLF are literal bytes.
-            // Node's dotenv baseline does not apply shell/JSON escape decoding.
+            // Quotes delimit tokens; escapes and internal CRLF are literal
+            // bytes. Node's dotenv baseline does not apply
+            // shell/JSON escape decoding.
             while c.peek() != Some(quote) {
                 if c.peek().is_none() {
                     return Err(c.error());

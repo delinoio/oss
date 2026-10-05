@@ -119,8 +119,9 @@ impl AppearanceStore {
             .as_deref()
             .ok_or(AppearanceProblem::Unavailable)
             .and_then(|path| {
-                // Reinspect before replacement, preserving external invalid/newer
-                // documents instead of silently upgrading or overwriting them.
+                // Reinspect before replacement, preserving external
+                // invalid/newer documents instead of silently
+                // upgrading or overwriting them.
                 let current = inspect(path)?;
                 if current != state.theme {
                     return Err(AppearanceProblem::Changed);

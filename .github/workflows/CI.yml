@@ -239,7 +239,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
           components: rustfmt
 
       - name: Run rustfmt
@@ -260,7 +260,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
           components: clippy
 
       - name: Setup Go for DeliDev sidecar
@@ -286,7 +286,7 @@ jobs:
       - name: Install DevHUD Linux prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -326,7 +326,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
 
       - name: Setup Go for DeliDev sidecar
         id: ci-go
@@ -351,7 +351,7 @@ jobs:
       - name: Install DevHUD Linux prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -395,7 +395,7 @@ jobs:
           lfs: true
       - uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
@@ -419,7 +419,7 @@ jobs:
           lfs: true
       - uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
       - name: Install optional renderers
         run: |
           sudo apt-get update
@@ -466,7 +466,7 @@ jobs:
         id: ci-node
       - uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
           components: clippy, rustfmt
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
@@ -696,7 +696,7 @@ jobs:
       - name: Install Linux native prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxtst-dev ninja-build
 
       - name: Install clean locked workspace and build frontend
         run: |
@@ -771,6 +771,11 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
+
       - name: Install macOS Rust targets
         if: ${{ matrix.os == 'macos' }}
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -779,7 +784,7 @@ jobs:
         if: ${{ matrix.os == 'linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
+          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
 
       - name: Install dependencies
         # CI runs the app checks explicitly; skip developer-only root prepare hooks,
@@ -1059,6 +1064,14 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Save verified CLI after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.prebuilt.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.prebuilt.outputs.cache-path }}
+          key: ${{ steps.prebuilt.outputs.cache-key }}
+
+
   devhud-mobile-contracts:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-mobile-contracts'] }}
@@ -1119,6 +1132,11 @@ jobs:
 
       # The pinned Tauri bundler embeds a universal macOS CEF helper even when
       # its host CLI is invoked only to generate or build an iOS project.
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
+
       - name: Install macOS Rust targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
@@ -1144,6 +1162,14 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save verified CLI after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.prebuilt.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.prebuilt.outputs.cache-path }}
+          key: ${{ steps.prebuilt.outputs.cache-key }}
+
 
   devhud-android-emulator:
     needs: changes
@@ -1184,6 +1210,11 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
+
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -1214,7 +1245,7 @@ jobs:
       - name: Install Linux host prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxtst-dev ninja-build
 
       - name: Generate pinned Android project
         run: pnpm --filter devhud mobile:generate -- --platform android
@@ -1268,6 +1299,14 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save verified CLI after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.prebuilt.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ steps.prebuilt.outputs.cache-path }}
+          key: ${{ steps.prebuilt.outputs.cache-key }}
+
 
   devhud-protocol:
     needs: changes
@@ -1696,7 +1735,7 @@ jobs:
         id: ci-node
       - uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1770,7 +1809,7 @@ jobs:
         id: ci-node
       - uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
           targets: ${{ matrix.target }}
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify native runtime and installed package on this host

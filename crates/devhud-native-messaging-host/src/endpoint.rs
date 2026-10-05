@@ -154,8 +154,8 @@ pub fn peer_is_current_user(stream: &UnixStream) -> io::Result<bool> {
         gid: 0,
     };
     let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    // SAFETY: the output pointer and length describe a live `ucred` value and the
-    // stream owns a valid fd.
+    // SAFETY: the output pointer and length describe a live `ucred` value and
+    // the stream owns a valid fd.
     let result = unsafe {
         libc::getsockopt(
             std::os::fd::AsRawFd::as_raw_fd(stream),
@@ -176,8 +176,8 @@ pub fn peer_is_current_user(stream: &UnixStream) -> io::Result<bool> {
 pub fn peer_is_current_user(stream: &UnixStream) -> io::Result<bool> {
     let mut uid = 0;
     let mut gid = 0;
-    // SAFETY: pointers reference live uid/gid values and the stream owns a valid
-    // fd.
+    // SAFETY: pointers reference live uid/gid values and the stream owns a
+    // valid fd.
     let result = unsafe {
         libc::getpeereid(
             std::os::fd::AsRawFd::as_raw_fd(stream),
@@ -233,7 +233,8 @@ pub fn connect(deadline: Instant) -> io::Result<IpcClientStream> {
         // A successful wait is only a hint: another client can claim the
         // available instance before CreateFileW, so retry against the same
         // absolute deadline.
-        // SAFETY: the pipe name is NUL-terminated and remains live for the call.
+        // SAFETY: the pipe name is NUL-terminated and remains live for the
+        // call.
         if unsafe { WaitNamedPipeW(pipe_name.as_ptr(), remaining_millis(deadline)?) } == 0 {
             let error = io::Error::last_os_error();
             return if error.raw_os_error().map(|code| code as u32) == Some(ERROR_SEM_TIMEOUT) {
@@ -296,18 +297,20 @@ impl WindowsPipeStream {
         };
 
         let timeout = self.remaining_millis()?;
-        // SAFETY: null attributes/name create an unnamed event owned by this operation.
+        // SAFETY: null attributes/name create an unnamed event owned by this
+        // operation.
         let event = unsafe { CreateEventW(null(), 1, 0, null()) };
         if event.is_null() {
             return Err(io::Error::last_os_error());
         }
-        // SAFETY: zero is a valid initial OVERLAPPED state before assigning its event.
+        // SAFETY: zero is a valid initial OVERLAPPED state before assigning its
+        // event.
         let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
         overlapped.hEvent = event;
         let mut transferred = 0_u32;
-        // SAFETY: the buffer remains live until the overlapped operation has completed
-        // or cancellation has been observed, and this stream uniquely owns the
-        // pipe handle.
+        // SAFETY: the buffer remains live until the overlapped operation has
+        // completed or cancellation has been observed, and this stream
+        // uniquely owns the pipe handle.
         let started = unsafe {
             if write {
                 WriteFile(
@@ -328,23 +331,28 @@ impl WindowsPipeStream {
             }
         };
         if started == 0 {
-            // SAFETY: read immediately after the failed Win32 call on this thread.
+            // SAFETY: read immediately after the failed Win32 call on this
+            // thread.
             let error = unsafe { GetLastError() };
             if !write && matches!(error, ERROR_BROKEN_PIPE | ERROR_PIPE_NOT_CONNECTED) {
-                // SAFETY: event is owned by this operation and closed exactly once.
+                // SAFETY: event is owned by this operation and closed exactly
+                // once.
                 unsafe { CloseHandle(event) };
                 return Ok(0);
             }
             if error != ERROR_IO_PENDING {
-                // SAFETY: event is owned by this operation and closed exactly once.
+                // SAFETY: event is owned by this operation and closed exactly
+                // once.
                 unsafe { CloseHandle(event) };
                 return Err(io::Error::from_raw_os_error(error as i32));
             }
-            // SAFETY: event remains valid until the wait and any cancellation complete.
+            // SAFETY: event remains valid until the wait and any cancellation
+            // complete.
             let wait = unsafe { WaitForSingleObject(event, timeout) };
             if wait != WAIT_OBJECT_0 {
                 let wait_error = io::Error::last_os_error();
-                // SAFETY: the OVERLAPPED value remains live until the cancellation completes.
+                // SAFETY: the OVERLAPPED value remains live until the
+                // cancellation completes.
                 unsafe {
                     CancelIoEx(self.handle, &raw const overlapped);
                     WaitForSingleObject(event, INFINITE);
@@ -359,13 +367,15 @@ impl WindowsPipeStream {
                     Err(wait_error)
                 };
             }
-            // SAFETY: the event signaled completion and all output pointers are valid.
+            // SAFETY: the event signaled completion and all output pointers are
+            // valid.
             if unsafe {
                 GetOverlappedResult(self.handle, &raw const overlapped, &raw mut transferred, 0)
             } == 0
             {
                 let error = io::Error::last_os_error();
-                // SAFETY: event is owned by this operation and closed exactly once.
+                // SAFETY: event is owned by this operation and closed exactly
+                // once.
                 unsafe { CloseHandle(event) };
                 return if !write
                     && matches!(
@@ -378,7 +388,8 @@ impl WindowsPipeStream {
                 };
             }
         }
-        // SAFETY: an immediate successful operation has completed before this close.
+        // SAFETY: an immediate successful operation has completed before this
+        // close.
         unsafe { CloseHandle(event) };
         Ok(transferred as usize)
     }
@@ -471,8 +482,8 @@ impl WindowsPipeListener {
             bInheritHandle: 0,
         };
         let pipe_name = wide(WINDOWS_PIPE_PATH);
-        // SAFETY: all pointers remain valid for the duration of the call; Windows
-        // copies the descriptor.
+        // SAFETY: all pointers remain valid for the duration of the call;
+        // Windows copies the descriptor.
         let handle = unsafe {
             CreateNamedPipeW(
                 pipe_name.as_ptr(),
@@ -485,23 +496,27 @@ impl WindowsPipeListener {
                 &raw const attributes,
             )
         };
-        // SAFETY: descriptor was allocated by LocalAlloc through the conversion API.
+        // SAFETY: descriptor was allocated by LocalAlloc through the conversion
+        // API.
         unsafe { LocalFree(descriptor.cast()) };
         if handle == INVALID_HANDLE_VALUE {
             return Err(io::Error::last_os_error());
         }
-        // SAFETY: null attributes/name create an unnamed event owned by this accept
-        // call.
+        // SAFETY: null attributes/name create an unnamed event owned by this
+        // accept call.
         let event = unsafe { CreateEventW(null(), 1, 0, null()) };
         if event.is_null() {
-            // SAFETY: the server handle is live and has not transferred ownership.
+            // SAFETY: the server handle is live and has not transferred
+            // ownership.
             unsafe { CloseHandle(handle) };
             return Err(io::Error::last_os_error());
         }
-        // SAFETY: zero is a valid initial OVERLAPPED state before assigning its event.
+        // SAFETY: zero is a valid initial OVERLAPPED state before assigning its
+        // event.
         let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
         overlapped.hEvent = event;
-        // SAFETY: handle and OVERLAPPED remain live until connection completion.
+        // SAFETY: handle and OVERLAPPED remain live until connection
+        // completion.
         let connected_immediately = unsafe { ConnectNamedPipe(handle, &raw mut overlapped) } != 0;
         // SAFETY: read immediately after the failed Win32 call on this thread.
         let connect_error = if connected_immediately {
@@ -528,12 +543,14 @@ impl WindowsPipeListener {
         // SAFETY: connection completion was observed before closing the event.
         unsafe { CloseHandle(event) };
         if !connected {
-            // SAFETY: the server handle is live and has not transferred ownership.
+            // SAFETY: the server handle is live and has not transferred
+            // ownership.
             unsafe { CloseHandle(handle) };
             return Err(connection_error.expect("failed connection has an error"));
         }
         if !matches!(client_user_sid(handle), Ok(ref sid) if sid == &self.current_user_sid) {
-            // SAFETY: the server handle is live and has not transferred ownership.
+            // SAFETY: the server handle is live and has not transferred
+            // ownership.
             unsafe { CloseHandle(handle) };
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -568,7 +585,8 @@ fn process_user_sid() -> io::Result<String> {
         return Err(io::Error::last_os_error());
     }
     let result = token_user_sid(token);
-    // SAFETY: token was returned by OpenProcessToken and is closed exactly once.
+    // SAFETY: token was returned by OpenProcessToken and is closed exactly
+    // once.
     unsafe { CloseHandle(token) };
     result
 }
@@ -600,10 +618,12 @@ fn client_user_sid(pipe: windows_sys::Win32::Foundation::HANDLE) -> io::Result<S
         Err(io::Error::last_os_error())
     };
     if opened {
-        // SAFETY: token was returned by OpenThreadToken and is closed exactly once.
+        // SAFETY: token was returned by OpenThreadToken and is closed exactly
+        // once.
         unsafe { CloseHandle(token) };
     }
-    // SAFETY: always end the temporary pipe-client impersonation before returning.
+    // SAFETY: always end the temporary pipe-client impersonation before
+    // returning.
     if unsafe { RevertToSelf() } == 0 {
         return Err(io::Error::last_os_error());
     }
@@ -643,8 +663,8 @@ fn token_user_sid(token: windows_sys::Win32::Foundation::HANDLE) -> io::Result<S
     {
         return Err(io::Error::last_os_error());
     }
-    // SAFETY: TokenUser guarantees the buffer begins with TOKEN_USER and its SID
-    // remains live with bytes.
+    // SAFETY: TokenUser guarantees the buffer begins with TOKEN_USER and its
+    // SID remains live with bytes.
     let user = unsafe { &*bytes.as_ptr().cast::<TOKEN_USER>() };
     let mut sid_text: PWSTR = null_mut();
     // SAFETY: SID comes from a successful TokenUser query and output is valid.
@@ -660,7 +680,8 @@ fn token_user_sid(token: windows_sys::Win32::Foundation::HANDLE) -> io::Result<S
     // content.
     let result = String::from_utf16(unsafe { std::slice::from_raw_parts(sid_text, length) })
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid user SID"));
-    // SAFETY: sid_text was allocated by LocalAlloc through ConvertSidToStringSidW.
+    // SAFETY: sid_text was allocated by LocalAlloc through
+    // ConvertSidToStringSidW.
     unsafe { LocalFree(sid_text.cast()) };
     result
 }
@@ -798,8 +819,8 @@ mod tests {
     #[test]
     fn linux_endpoint_has_no_tmp_fallback() {
         let previous = std::env::var_os("XDG_RUNTIME_DIR");
-        // SAFETY: this test is single-threaded with respect to this crate's endpoint
-        // tests.
+        // SAFETY: this test is single-threaded with respect to this crate's
+        // endpoint tests.
         unsafe { std::env::remove_var("XDG_RUNTIME_DIR") };
         assert!(socket_path().is_err());
         if let Some(previous) = previous {

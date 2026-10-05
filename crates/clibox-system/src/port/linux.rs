@@ -256,8 +256,8 @@ impl Backend for Native {
                 "Process identity changed; no signal was sent.",
             ));
         }
-        // A pidfd keeps signaling tied to this process even if its numeric PID is
-        // reused.
+        // A pidfd keeps signaling tied to this process even if its numeric PID
+        // is reused.
         let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 };
         let handle = if fd >= 0 {
             Some(unsafe { OwnedFd::from_raw_fd(fd) })
@@ -269,8 +269,9 @@ impl Backend for Native {
             if !matches!(e.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL)) {
                 return Err(Failure::io(&e));
             }
-            // Older kernels have no pidfd. Retain the same immediate birth/socket
-            // revalidation contract before kill(2); never chase replacement owners.
+            // Older kernels have no pidfd. Retain the same immediate
+            // birth/socket revalidation contract before kill(2);
+            // never chase replacement owners.
             None
         };
         let mut check = Report::default();

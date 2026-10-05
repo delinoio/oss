@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
 import { finalizeLinuxAppImage } from "./finalize-appimage.mjs";
 import {
@@ -57,19 +58,7 @@ try {
   const targetDirectory = workspaceCargoTargetDirectory();
   stageNativeMessagingHost({ release: command === "build", targetDirectory });
   result = await spawnDevServer(
-    "cargo",
-    [
-      "run",
-      "--locked",
-      "--manifest-path",
-      "src-tauri/Cargo.toml",
-      "--features",
-      "cli",
-      "--bin",
-      "devhud-tauri-cli",
-      "--",
-      ...args,
-    ],
+    ...tauriCommand(args),
     {
       env: environment,
       stdio: "inherit",

@@ -1147,7 +1147,8 @@ fn macos_extended_acl_survives_replacement() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("acl");
         fs::write(&path, b"before").unwrap();
-        // chmod is only a fixture setup tool, never a clibox runtime dependency.
+        // chmod is only a fixture setup tool, never a clibox runtime
+        // dependency.
         assert!(Command::new("/bin/chmod")
             .args([
                 "+a",

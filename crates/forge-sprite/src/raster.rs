@@ -85,7 +85,8 @@ impl<'a> Raster<'a> {
                 ..
             } = node
             {
-                // Hidden nodes still traverse validation, including image crops.
+                // Hidden nodes still traverse validation, including image
+                // crops.
                 self.nodes(children, canvas, (x, y), page, visible && *layer_visible)?;
                 continue;
             }
@@ -134,8 +135,9 @@ impl<'a> Raster<'a> {
                     let rgba = match node {
                         Node::Rect { .. } => fill,
                         Node::Ellipse { .. } => {
-                            // Evaluate the ellipse at pixel centers with integer
-                            // arithmetic so all hosts produce identical edges.
+                            // Evaluate the ellipse at pixel centers with
+                            // integer arithmetic so
+                            // all hosts produce identical edges.
                             let dx = i64::from(2 * sx + 1) - i64::from(width);
                             let dy = i64::from(2 * sy + 1) - i64::from(height);
                             let w2 = i64::from(width).pow(2);

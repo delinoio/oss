@@ -184,15 +184,17 @@ impl SourceIdentity {
             );
         }
         // External packages have no Forge metadata, so each independent import
-        // initially assigns fresh UUID-v7s. Rebind the immutable source traversal
-        // to the session's captured identities without writing metadata on import.
+        // initially assigns fresh UUID-v7s. Rebind the immutable source
+        // traversal to the session's captured identities without
+        // writing metadata on import.
         let mapping: std::collections::BTreeMap<_, _> = original
             .ids
             .into_iter()
             .zip(self.ids.iter().copied())
             .collect();
-        // The foundation importer also derives image asset keys from node UUIDs.
-        // Rebind both ends of those references so untouched images stay equal.
+        // The foundation importer also derives image asset keys from node
+        // UUIDs. Rebind both ends of those references so untouched
+        // images stay equal.
         let asset_keys: std::collections::BTreeMap<_, _> = mapping
             .iter()
             .map(|(old, new)| (format!("image-{old}"), format!("image-{new}")))
@@ -295,8 +297,8 @@ mod tests {
                     ids: vec![],
                 },
             };
-            // Caller-only text work needs a registered font; no-op import itself
-            // remains independent of system discovery.
+            // Caller-only text work needs a registered font; no-op import
+            // itself remains independent of system discovery.
             let mut op = op;
             op.assets
                 .insert("font".into(), forge_tree_doc::FONT_BYTES.to_vec());
