@@ -393,66 +393,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 }
 
 func cleanupManagedHome(home string, original os.FileInfo) error {
-	if err := security.CheckPrivateDir(home); err != nil {
-		return subscription.Invalid()
-	}
-	current, err := os.Stat(home)
-	if err != nil || !os.SameFile(current, original) {
-		return subscription.Invalid()
-	}
-	root, err := os.OpenRoot(home)
-	if err != nil {
-		return subscription.Invalid()
-	}
-	defer root.Close()
-	anchored, err := root.Stat(".")
-	if err != nil || !os.SameFile(anchored, original) {
-		return subscription.Invalid()
-	}
-	count, total := 0, int64(0)
-	if err := fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.Type()&os.ModeSymlink != 0 {
-			return subscription.Invalid()
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		count++
-		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() || count > 2048 {
-			return subscription.Invalid()
-		}
-		total += info.Size()
-		if total > 64<<20 {
-			return subscription.Invalid()
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	entries, err := fs.ReadDir(root.FS(), ".")
-	if err != nil {
-		return subscription.Invalid()
-	}
-	for _, entry := range entries {
-		if err := root.RemoveAll(entry.Name()); err != nil {
-			return subscription.Invalid()
-		}
-	}
-	current, err = os.Stat(home)
-	if err != nil || !os.SameFile(current, original) {
-		return subscription.Invalid()
-	}
-	if err := os.Remove(home); err != nil {
-		return subscription.Invalid()
-	}
-	if _, err := os.Lstat(home); !os.IsNotExist(err) {
-		return subscription.Invalid()
-	}
-	if err := security.SyncParent(home); err != nil {
-		return subscription.Invalid()
-	}
-	return nil
+	return subscription.CleanupRuntime(home, original)
 }
 
 // Only the caller's pre-native barrier permits an unpublished auth destination.

@@ -32,7 +32,24 @@ type DiscoveryConfig struct {
 	Logger  *slog.Logger
 }
 
-func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput) (result domain.HarnessDiscoveryOutput, returned error) {
+func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput) (domain.HarnessDiscoveryOutput, error) {
+	return discover(ctx, config, input, false)
+}
+
+// DiscoverCodex probes the server's installed adapter without registering a
+// Worker, probing other harnesses or opening any existing user authentication.
+func DiscoverCodex(ctx context.Context, config DiscoveryConfig) (domain.Installation, error) {
+	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, true)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	if len(result.Installations) != 1 {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "The server's installed login adapter is unavailable.", "Install the supported Codex version on the server.")
+	}
+	return result.Installations[0], nil
+}
+
+func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool) (result domain.HarnessDiscoveryOutput, returned error) {
 	root, owner := config.Root, config.OwnerID
 	logger := config.Logger
 	if logger == nil {
@@ -83,6 +100,9 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		}
 	}()
 	result.Installations = input.Selections.Installations()
+	if onlyCodex {
+		result.Installations = result.Installations[:1]
+	}
 	for index := range result.Installations {
 		if err := ctx.Err(); err != nil {
 			return domain.HarnessDiscoveryOutput{}, domain.SafeError(err)

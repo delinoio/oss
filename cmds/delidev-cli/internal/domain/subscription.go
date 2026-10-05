@@ -34,6 +34,7 @@ type SubscriptionState struct {
 	IdentityCommitment     string                            `json:"identity_commitment,omitempty"`
 	RecoveryRequired       bool                              `json:"recovery_required"`
 	Pending                *SubscriptionOperation            `json:"pending,omitempty"`
+	ServerOperation        *ServerSubscriptionOperation      `json:"server_operation,omitempty"`
 	Lease                  *SubscriptionLease                `json:"lease,omitempty"`
 }
 type SubscriptionOperation struct {
@@ -83,13 +84,17 @@ func (s SubscriptionState) Validate(account Account) error {
 	}
 	if s.Pending != nil {
 		op := s.Pending
-		if op.ID.Validate() != nil || op.MachineID.Validate() != nil || (op.Action != SubscriptionLogin && op.Action != SubscriptionRefresh && op.Action != SubscriptionLogout) || (op.Phase != SubscriptionQueued && op.Phase != SubscriptionClaimed) || (op.Actor.Type != OwnerDevice && op.Actor.Type != ClientDevice) {
+		if op.ID.Validate() != nil || (op.MachineID != "" && op.MachineID.Validate() != nil) || (op.Action != SubscriptionLogin && op.Action != SubscriptionRefresh && op.Action != SubscriptionLogout) || (op.Phase != SubscriptionQueued && op.Phase != SubscriptionClaimed) || (op.Actor.Type != OwnerDevice && op.Actor.Type != ClientDevice) {
 			return invalid()
 		}
 		if op.Actor.Type == ClientDevice && op.Actor.DeviceID.Validate() != nil {
 			return invalid()
 		}
-		if op.Phase == SubscriptionClaimed && (s.Lease == nil || s.Lease.OperationID != op.ID || s.Lease.Action != op.Action) {
+		serverOwned := op.MachineID == "" && s.ServerOperation != nil && s.ServerOperation.ID == op.ID && s.ServerOperation.Actor == op.Actor
+		if op.MachineID == "" && !serverOwned {
+			return invalid()
+		}
+		if op.Phase == SubscriptionClaimed && !(serverOwned && s.ServerOperation.NativeStarted) && (s.Lease == nil || s.Lease.OperationID != op.ID || s.Lease.Action != op.Action) {
 			return invalid()
 		}
 	}
@@ -104,5 +109,63 @@ func (s SubscriptionState) Validate(account Account) error {
 			return invalid()
 		}
 	}
+	if o := s.ServerOperation; o != nil {
+		for _, id := range []ID{o.ID, o.Epoch, o.FinishID} {
+			if id.Validate() != nil {
+				return invalid()
+			}
+		}
+		if o.Generation != "" && o.Generation.Validate() != nil {
+			return invalid()
+		}
+		if (o.Action != SubscriptionLogin && o.Action != SubscriptionRefresh && o.Action != SubscriptionLogout) || !o.State.Valid() || o.StartedAt.IsZero() || !o.ExpiresAt.After(o.StartedAt) || (o.Actor.Type != OwnerDevice && o.Actor.Type != ClientDevice) || o.Actor.Type == ClientDevice && o.Actor.DeviceID.Validate() != nil {
+			return invalid()
+		}
+		if o.NativeStarted && (s.Lease != nil || s.Pending == nil || s.Pending.ID != o.ID || s.Pending.Phase != SubscriptionClaimed || s.Pending.MachineID != "" || o.Generation != s.Generation) {
+			return invalid()
+		}
+		if o.Active() && (s.Pending == nil || s.Pending.ID != o.ID || s.Pending.MachineID != "") {
+			return invalid()
+		}
+	}
 	return nil
+}
+
+// Server operations retain no executable paths, login URLs, codes or identity
+// suggestions. NativeStarted is the independent server credential lease.
+type ServerSubscriptionOperation struct {
+	ID                ID                     `json:"id"`
+	Action            SubscriptionAction     `json:"action"`
+	Epoch             ID                     `json:"epoch"`
+	FinishID          ID                     `json:"finish_id"`
+	Generation        ID                     `json:"generation,omitempty"`
+	Actor             Principal              `json:"actor"`
+	State             SubscriptionLoginState `json:"state"`
+	NativeStarted     bool                   `json:"native_started"`
+	CallbackForwarded bool                   `json:"callback_forwarded"`
+	StartedAt         time.Time              `json:"started_at"`
+	ExpiresAt         time.Time              `json:"expires_at"`
+}
+type SubscriptionLoginState string
+
+const (
+	SubscriptionPreparing   SubscriptionLoginState = "preparing"
+	SubscriptionWaiting     SubscriptionLoginState = "waiting"
+	SubscriptionSucceeded   SubscriptionLoginState = "succeeded"
+	SubscriptionCanceled    SubscriptionLoginState = "canceled"
+	SubscriptionExpired     SubscriptionLoginState = "expired"
+	SubscriptionUnsupported SubscriptionLoginState = "unsupported"
+	SubscriptionRecovery    SubscriptionLoginState = "recovery-required"
+	SubscriptionFailed      SubscriptionLoginState = "failed"
+)
+
+func (v SubscriptionLoginState) Valid() bool {
+	switch v {
+	case SubscriptionPreparing, SubscriptionWaiting, SubscriptionSucceeded, SubscriptionCanceled, SubscriptionExpired, SubscriptionUnsupported, SubscriptionRecovery, SubscriptionFailed:
+		return true
+	}
+	return false
+}
+func (o ServerSubscriptionOperation) Active() bool {
+	return o.State == SubscriptionPreparing || o.State == SubscriptionWaiting || o.State == SubscriptionRecovery
 }

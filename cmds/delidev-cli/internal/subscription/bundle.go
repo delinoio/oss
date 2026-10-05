@@ -28,7 +28,7 @@ type Bundle struct {
 	LastRefresh time.Time `json:"last_refresh"`
 }
 
-type Identity struct{ Account, User, Email, Plan string }
+type Identity struct{ Account, User, Email, Plan, DisplayName string }
 
 func Invalid() *domain.Error {
 	return domain.Fail(domain.RecoveryRequired, "The managed Codex authentication evidence is invalid or incomplete.", "Retain exclusive ownership and reconcile the original operation; never import or redistribute an older login.")
@@ -56,8 +56,10 @@ func Parse(raw []byte) (Bundle, Identity, error) {
 		}
 		var claims struct {
 			Email   string `json:"email"`
+			Name    string `json:"name"`
 			Profile struct {
 				Email string `json:"email"`
+				Name  string `json:"name"`
 			} `json:"https://api.openai.com/profile"`
 			Auth struct {
 				Account string `json:"chatgpt_account_id"`
@@ -83,7 +85,11 @@ func Parse(raw []byte) (Bundle, Identity, error) {
 			if email == "" {
 				email = claims.Profile.Email
 			}
-			identity = Identity{b.Tokens.Account, user, email, claims.Auth.Plan}
+			name := claims.Name
+			if name == "" {
+				name = claims.Profile.Name
+			}
+			identity = Identity{Account: b.Tokens.Account, User: user, Email: email, Plan: claims.Auth.Plan, DisplayName: name}
 		} else if identity.User != user {
 			return b, identity, Invalid()
 		}
