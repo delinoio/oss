@@ -31,14 +31,15 @@ export function latestServerPreferences(baseline?: Resource, ...observations: (R
   return replacement || observations.reduce((latest, row) => row && (!latest || row.revision > latest.revision) ? row : latest, baseline);
 }
 
-export function ServerPreferencesUnavailable({ rows }: { rows: Resource[] }) {
+export function ServerPreferencesUnavailable({ rows, section = ServerPreferenceSection.All }: { rows: Resource[]; section?: ServerPreferenceSection }) {
   useLocale();
-  return <section className="server-preferences-unavailable" aria-label={copy("server-preferences.unavailable_0a6a4f")}>
+  const label = serverPreferenceLabel(section);
+  return <section className="server-preferences-unavailable" aria-label={`${label} unavailable`}>
     <p role="status">{rows.length === 1 && rows[0].schemaVersion !== 1
-      ? copy("server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f")
+      ? `Unsupported ${label.toLowerCase()} schema. Policy values are unavailable.`
       : rows.length === 1 && !readableServerPreferences(rows[0])
-      ? copy("server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc")
-      : copy("server-preferences.incompleteReadRefreshBeforeEditing")}</p>
+      ? `${label} contains unreadable or unsupported policy values. Policy values are unavailable.`
+      : `The ${label.toLowerCase()} read is incomplete or does not identify one settings document. Refresh settings before editing.`}</p>
     {rows.map(row => <small className="server-preferences-id" key={row.id}>{row.id}</small>)}
   </section>;
 }
