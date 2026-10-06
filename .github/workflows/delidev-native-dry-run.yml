@@ -22,9 +22,9 @@ jobs:
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, package-manager-cache: false }
       - id: targets
         run: echo "matrix=$(node apps/delidev/scripts/bundle-native-dry-run.mjs --plan)" >> "$GITHUB_OUTPUT"
@@ -39,16 +39,16 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with: { lfs: true, persist-credentials: false }
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with: { version: 10.26.2 }
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           architecture: ${{ matrix.arch }}
           package-manager-cache: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with: { go-version-file: go.mod, cache: false }
       - uses: dtolnay/rust-toolchain@v1
         with: { toolchain: nightly-2026-09-28 }
@@ -72,13 +72,13 @@ jobs:
         run: pnpm --dir apps/delidev bundle:dry-run --target ${{ matrix.target }}
       - name: Build and inspect original desktop and Worker updater inputs
         run: pnpm --dir apps/delidev bundle:updater-dry-run --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: delidev-dry-run-${{ matrix.target }}-${{ github.sha }}
           path: target/delidev-dry-run/${{ matrix.target }}/${{ github.sha }}/
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: delidev-updater-input-${{ matrix.target }}-${{ github.sha }}
           path: target/delidev-updater-input/${{ matrix.target }}/${{ github.sha }}/
@@ -100,9 +100,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with: { lfs: true, persist-credentials: false }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with: { go-version-file: go.mod, cache: false }
       - name: Verify native namespace claims and inventory bounds
         shell: pwsh
