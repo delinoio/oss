@@ -904,6 +904,12 @@ impl TrayHost {
     }
 }
 
+// A language change repaints retained observations without another RPC or
+// scope.
+pub fn refresh(app: &AppHandle<CefRuntime>) {
+    schedule(app);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1323,10 +1329,4 @@ mod tests {
         state.acknowledge("main", "newer");
         assert!(!state.pending.contains_key("main"));
     }
-}
-
-// A language change repaints retained observations without another RPC or
-// scope.
-pub fn refresh(app: &AppHandle<CefRuntime>) {
-    schedule(app);
 }
