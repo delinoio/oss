@@ -34,11 +34,9 @@ func reconcileFailedServerLoginRuntime(ctx context.Context, root string, o domai
 	if err := security.CheckPrivateDir(processRoot); err != nil {
 		return subscriptionDenied()
 	}
-	release, err := lockFailedServerLoginControllers(ctx, processRoot, o.ID)
-	if err != nil {
+	if err := lockFailedServerLoginControllers(ctx, processRoot, o.ID); err != nil {
 		return err
 	}
-	defer release()
 	// Missing process journals cannot prove cleanup. The existing owner index
 	// survives verified journal retirement, including when it becomes empty.
 	if err := process.ReconcileOwnerContext(ctx, processRoot, o.ID); err != nil {
@@ -50,51 +48,100 @@ func reconcileFailedServerLoginRuntime(ctx context.Context, root string, o domai
 	return cleanupFailedServerLoginDirectory(home)
 }
 
+// A failed vault lookup can happen before the native opener runs. The durable
+// claim still sets NativeStarted as the account fence, so this separate check
+// proves the narrower pre-native case without pretending that a process journal
+// was joined. Any retained evidence remains blocked for a later server process.
+func reconcileFailedServerLoginPreNative(ctx context.Context, root string, owner domain.ID) error {
+	if err := owner.Validate(); err != nil {
+		return err
+	}
+	runtimeRoot := filepath.Join(root, "subscription-runtime")
+	for _, path := range []string{
+		runtimeRoot,
+		filepath.Join(runtimeRoot, "auth"),
+		filepath.Join(runtimeRoot, "processes"),
+	} {
+		if err := checkOptionalPrivateDirectory(path); err != nil {
+			return err
+		}
+	}
+	home := filepath.Join(runtimeRoot, "auth", string(owner))
+	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+		return subscriptionDenied()
+	}
+	processOwner := filepath.Join(runtimeRoot, "processes", string(owner))
+	if _, err := os.Lstat(processOwner); !errors.Is(err, os.ErrNotExist) {
+		return subscriptionDenied()
+	}
+	return cleanupFailedServerLoginProbes(ctx, runtimeRoot, owner, false)
+}
+
+func checkOptionalPrivateDirectory(path string) error {
+	_, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil || security.CheckPrivateDir(path) != nil {
+		return subscriptionDenied()
+	}
+	return nil
+}
+
 // The maintenance runner excludes its own live login goroutines. Retained
 // controller locks independently prevent recovery from stopping a live Handle;
 // an orphaned supervisor is recoverable only after that controller has left.
-func lockFailedServerLoginControllers(ctx context.Context, processRoot string, owner domain.ID) (func(), error) {
+func lockFailedServerLoginControllers(ctx context.Context, processRoot string, owner domain.ID) error {
 	path := filepath.Join(processRoot, string(owner))
 	if err := security.CheckPrivateDir(path); err != nil {
-		return nil, subscriptionDenied()
+		return subscriptionDenied()
 	}
 	index, err := os.Open(path)
 	if err != nil {
-		return nil, subscriptionDenied()
+		return subscriptionDenied()
 	}
 	defer index.Close()
 	var locks []*security.Lock
-	release := func() {
+	release := func() error {
+		var releaseErr error
 		for _, lock := range locks {
-			_ = lock.Close()
+			releaseErr = errors.Join(releaseErr, lock.Close())
 		}
+		locks = nil
+		return releaseErr
 	}
 	keep := false
 	defer func() {
 		if !keep {
-			release()
+			_ = release()
 		}
 	}()
 	count := 0
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, domain.SafeError(err)
+			return domain.SafeError(err)
 		}
 		entries, err := index.ReadDir(256)
 		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, subscriptionDenied()
+			return subscriptionDenied()
 		}
 		if len(entries) == 0 {
+			// The preflight only excludes a still-running original controller.
+			// Release those locks before the shared reconciler reacquires each
+			// controller lock; no new process can claim this immutable operation.
+			if err := release(); err != nil {
+				return err
+			}
 			keep = true
-			return release, nil
+			return nil
 		}
 		count += len(entries)
 		if count > 10000 {
-			return nil, subscriptionDenied()
+			return subscriptionDenied()
 		}
 		for _, entry := range entries {
 			if !entry.IsDir() || domain.ID(strings.TrimPrefix(entry.Name(), ".retired-")).Validate() != nil {
-				return nil, subscriptionDenied()
+				return subscriptionDenied()
 			}
 			if strings.HasPrefix(entry.Name(), ".retired-") {
 				continue
@@ -102,11 +149,11 @@ func lockFailedServerLoginControllers(ctx context.Context, processRoot string, o
 			scope := filepath.Join(path, entry.Name())
 			controller := filepath.Join(scope, "controller.lock")
 			if security.CheckPrivateDir(scope) != nil || security.RegularPrivate(controller) != nil {
-				return nil, subscriptionDenied()
+				return subscriptionDenied()
 			}
 			lock, err := security.TryLock(controller)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			locks = append(locks, lock)
 		}

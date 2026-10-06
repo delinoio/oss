@@ -525,3 +525,26 @@ func TestFailedServerLoginCleanupKeepsRetainedReferences(t *testing.T) {
 		t.Fatal("cleanup bypassed retained Agent/session references", err)
 	}
 }
+
+func TestFailedServerLoginPreNativeVaultFailureRequiresCleanRuntime(t *testing.T) {
+	for _, retained := range []bool{false, true} {
+		t.Run(map[bool]string{false: "absent", true: "retained"}[retained], func(t *testing.T) {
+			root := t.TempDir()
+			owner := domain.NewID()
+			if retained {
+				home := filepath.Join(root, "subscription-runtime", "auth", string(owner))
+				if err := security.PrivateDir(home); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := reconcileFailedServerLoginPreNative(context.Background(), root, owner)
+			if retained {
+				if err == nil {
+					t.Fatal("retained pre-native evidence released recovery")
+				}
+			} else if err != nil {
+				t.Fatal("clean pre-native state was not accepted", err)
+			}
+		})
+	}
+}

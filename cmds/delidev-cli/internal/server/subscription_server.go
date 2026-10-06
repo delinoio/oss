@@ -360,9 +360,20 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	var vault accountSecrets
 	vault, nativeErr = s.secrets()
 	if nativeErr != nil && operation.Action == domain.SubscriptionLogin && original.Generation == "" {
-		// No opener or native write ran. Persist this pre-native cleanup proof
-		// even if the vault must be retried after server restart.
-		cleanup = true
+		// No opener or native write ran. Verify the narrower pre-native absence
+		// proof before allowing a checkpoint, even if the vault must be retried
+		// after server restart. Retained evidence remains recovery-owned.
+		verifyCtx := ctx
+		if parent.Err() != nil {
+			var verifyCancel context.CancelFunc
+			verifyCtx, verifyCancel = context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
+			defer verifyCancel()
+		}
+		if err := reconcileFailedServerLoginPreNative(verifyCtx, s.Store.Root(), original.ID); err == nil {
+			cleanup = true
+		} else {
+			nativeErr = domain.CodexRecoveryFailure(version, domain.CodexCleanup, nativeErr, err)
+		}
 	}
 	var old []byte
 	if nativeErr == nil && original.Generation != "" {
