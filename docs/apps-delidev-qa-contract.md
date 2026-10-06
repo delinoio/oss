@@ -76,6 +76,10 @@ including in tabs of one Chrome profile. Separate ports isolate origin storage;
 the appearance key additionally contains the original server ID. A stopped server
 keeps the same endpoint and identity on explicit Start. Starting a server does
 not replace a stopped Worker, pair a revoked client, or certify harness readiness.
+Server controls remain in the QA banner across Settings navigation. Reloading a
+stopped environment retains an explicit Start action, while product screens wait
+for renderer-side authenticated identity/version verification. Once verified,
+same-identity disconnections retain the existing App and pending intents.
 
 ## Storage
 

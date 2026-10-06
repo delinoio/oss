@@ -95,6 +95,18 @@ try {
   for (const page of pages) assert(await page.evaluate(() => Object.keys(localStorage).every(key => key.startsWith("delidev-qa-appearance:")) && sessionStorage.length === 0 && !("__TAURI_INTERNALS__" in window)));
   checks.push("appearance-only-storage-and-no-native-emulation");
 
+  stage = "server-stop-reload-explicit-start";
+  await pages[0].locator("details.local-server summary").click();
+  await pages[0].getByRole("button", { name: "Stop local server", exact: true }).click();
+  await pages[0].getByRole("button", { name: "Confirm server stop", exact: true }).click();
+  await until(async () => (await run.environments[0].status()).state === "stopped");
+  await pages[0].reload();
+  await pages[0].getByRole("heading", { name: "DeliDev browser QA unavailable", exact: true }).waitFor();
+  await pages[0].getByRole("button", { name: "Start local server", exact: true }).click();
+  await pages[0].getByRole("button", { name: "Settings", exact: true }).waitFor();
+  assert.equal((await run.environments[1].status()).state, "ready");
+  checks.push("server-product-stop-reload-and-explicit-start");
+
   stage = "worker-stop-restart";
   await category(pages[0], "Runner Devices");
   await pages[0].getByRole("button", { name: "Stop local Worker", exact: true }).click();
