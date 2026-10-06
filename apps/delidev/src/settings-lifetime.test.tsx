@@ -215,8 +215,9 @@ it.each([undefined, Code.Unavailable, Code.Canceled])("disposes an Agent opening
   const siblingQuery = value.client.getQueryCache().getAll()[0];
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Agent Worker" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
-  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" })); next();
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
+  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
   await screen.findByRole("option", { name: "Fixture Provider" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
   fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ })); next();
