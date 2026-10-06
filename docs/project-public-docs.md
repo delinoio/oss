@@ -26,6 +26,7 @@ Provide the Rspress-based public documentation site for user-facing product and 
 - The shared site selector appears on every assembled page and marks the active project with `aria-current`; it supports keyboard navigation, Escape close, outside-click close, and focus return.
 - No legacy handoff page or duplicate guide route is canonical. Retired standalone documentation hosting is decommissioned by operators after route and installer verification; no redirects or aliases are added.
 - `public-docs` uses Rspress clean URLs, builds the seven project content roots below their canonical subpaths, and publishes the complete `doc_build` tree to the single `public-docs` Cloudflare Pages project.
+- Public-docs build and route-validation caches include all eight canonical installer sources through package-local external inputs. Generated installer bytes must equal the current source; inherited build dependencies, outputs, and tool inputs remain intact. These cache inputs do not invalidate unrelated workspace tasks.
 - Package-local `pnpm dev` and root `pnpm dev:public-docs` bind to loopback on fixed port `46302`, reject host overrides, preflight that exact port, and fail on conflicts without automatic remapping.
 
 ## Change Policy

@@ -27,6 +27,13 @@ it("edits singleton server preferences inline while preserving the separate Git 
   expect(screen.queryByRole("button", { name: "Edit Server preferences" })).toBeNull();
   expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true);
   const resources = createClient(ResourceService, transport);
+  const waitForSettings = async (expected: unknown) => {
+    await waitFor(async () => {
+      const current = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
+      expect(current).toHaveLength(1);
+      expect(document(current[0])).toEqual(expected);
+    }, serverRoundTripWait);
+  };
   expect((await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources).toHaveLength(0);
   fireEvent.change(routing, { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -36,6 +43,7 @@ it("edits singleton server preferences inline while preserving the separate Git 
     expect(screen.queryByText("Saving changes…")).toBeNull();
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   }, serverRoundTripWait);
+  await waitForSettings({ ...defaults, default_routing: "priority" });
   const first = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(first).toHaveLength(1);
   expect(document(first[0])).toEqual({ ...defaults, default_routing: "priority" });
@@ -60,7 +68,7 @@ it("edits singleton server preferences inline while preserving the separate Git 
   fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Automatically fix required CI failures" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Git workflow" }));
-  await screen.findByRole("button", { name: "Edit Git workflow" }, serverRoundTripWait);
+  await waitForSettings({ ...defaults, default_routing: "priority", automatic_fetch: false, remediation: { ...defaults.remediation, ci_failure: true } });
   const git = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(git).toHaveLength(1); expect(git[0].id).toBe(first[0].id);
   expect(git[0].revision).toBe(latest[0].revision + 1n);
@@ -77,6 +85,7 @@ it("edits singleton server preferences inline while preserving the separate Git 
     expect(screen.queryByText("Saving changes…")).toBeNull();
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   }, serverRoundTripWait);
+  await waitForSettings({ ...document(git[0]), default_routing: "fixed" });
   const final = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(final).toHaveLength(1); expect(final[0].id).toBe(first[0].id);
   expect(document(final[0])).toEqual({ ...document(git[0]), default_routing: "fixed" });

@@ -4,7 +4,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { load } from "js-yaml";
-import { jobPaths, nativeMatrices } from "./plan.mjs";
+import { Event, jobPaths, nativeMatrices, planJobs } from "./plan.mjs";
 import { jobCommands, jobTaskGraph } from "./task-graph.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -115,6 +115,22 @@ test("async-commit-hook retains runner, interface, protocol and unsigned archive
     'python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"',
   ]) assert.ok(commands.includes(command), command);
   assert.equal(commands.match(/pnpm install --frozen-lockfile --ignore-scripts/gu)?.length, 1);
+});
+
+test("DevHud generated-only plans reach the shared uncached freshness command", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const plan = planJobs(event, ["packages/devhud-api-client/src/gen/devhud/v1/common_pb.ts"]);
+    assert.equal(plan.jobs["async-commit-hook"], true, event);
+    const job = workflow.jobs["async-commit-hook"];
+    const validation = namedStep(job, "Validate package tasks");
+    assert.equal(validation.env.FORCE_RUN, "true");
+    const graph = jobTaskGraph(job);
+    assert.ok(graph.has("@delinoio/ci#ci:proto:check"), event);
+    const fresh = graph.get("@delinoio/ci#ci:proto:fresh");
+    assert.ok(fresh, event);
+    assert.equal(fresh.task.cache, false);
+    assert.equal(fresh.command, "node from-root.mjs node scripts/ci/protocol-fresh.mjs");
+  }
 });
 
 test("CI keeps every legacy check and aggregates every required job", () => {
@@ -442,10 +458,11 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   }
   assert.deepEqual(extensionTurbo.extends, ["//"]);
   // Both build:test and the clean-build regression replace the same outputs.
-  // Keep their writers ordered before checking the final ZIP bytes.
-  assert.deepEqual(extensionTurbo.tasks["test:package"].dependsOn, ["build:test"]);
+  // Finish the regression before the final build or cached output restoration.
+  assert.deepEqual(extensionTurbo.tasks["test:package"].dependsOn, []);
   assert.equal(extensionTurbo.tasks["test:package"].cache, false);
-  assert.deepEqual(extensionTurbo.tasks["ci:zip"].dependsOn, ["test:package"]);
+  assert.deepEqual(extensionTurbo.tasks["build:test"].dependsOn, ["test:package"]);
+  assert.deepEqual(extensionTurbo.tasks["ci:zip"].dependsOn, ["build:test"]);
   for (const output of ["dist/**", "build/**", "artifacts/**"]) {
     assert.ok(extensionTurbo.tasks["build:test"].outputs.includes(output), output);
   }

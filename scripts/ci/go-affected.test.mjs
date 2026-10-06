@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, win32 } from "node:path";
 import test from "node:test";
@@ -101,10 +101,10 @@ test("empty affected Windows shards succeed without compiling or running fixture
   const worker = mock();
   assert.equal(runGoTests(GoTestShard.Worker, { ...worker.options, platform: "win32" }), 0);
   assert.deepEqual(worker.calls.at(-2).args.slice(0, 4), ["test", "-c", "-o", "NUL"]);
-  assert.deepEqual(worker.calls.at(-1).args.slice(0, 3), ["test", "-p=1", "-timeout=45m"]);
+  assert.deepEqual(worker.calls.at(-1).args.slice(0, 4), ["test", "-count=1", "-p=1", "-timeout=45m"]);
   const unix = mock();
   assert.equal(runGoTests(GoTestShard.All, unix.options), 0);
-  assert.deepEqual(unix.calls.at(-1).args.slice(0, 2), ["test", "-timeout=20m"]);
+  assert.deepEqual(unix.calls.at(-1).args.slice(0, 3), ["test", "-count=1", "-timeout=20m"]);
 });
 
 test("bad comparisons, discovery errors and partial inventories cannot silently pass", () => {
@@ -153,4 +153,118 @@ test("real native Go discovery respects OS files, test imports and exact Git cha
   assert.equal(native.status, 0, native.stderr);
   assert.equal(native.stdout.trim(), process.platform === "win32" ? "native_windows.go" : "native_unix.go");
   assert.throws(() => affectedGoPackages({ base: "f".repeat(40), head, cwd, log() {} }));
+});
+
+test("affected Go tests execute subprocess consumers despite seeded successful results", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "ci-go-test-cache-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const cwd = join(directory, "checkout");
+  mkdirSync(cwd);
+  // Keep the execution counter outside the module so reading it in Node does
+  // not invalidate Go's cached test inputs. Never modify the host's Go cache.
+  const counter = join(directory, "executions");
+  const env = { ...process.env, GOCACHE: join(directory, "go-cache"), GOWORK: "off", GOFLAGS: "", GOTOOLCHAIN: "local", CI_GO_TEST_EXECUTIONS: counter };
+  const git = (...args) => execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const write = (name, contents) => { const file = join(cwd, name); mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, contents); };
+  const main = (value) => `package main\nimport "fmt"\nfunc main() { fmt.Println("${value}") }\n`;
+  const commit = () => { git("add", "."); git("commit", "--quiet", "-m", "fixture source"); return git("rev-parse", "HEAD"); };
+  const executions = () => readFileSync(counter, "utf8").trim().split("\n").length;
+  const go = (args) => spawnSync("go", args, { cwd, env, shell: false, encoding: "utf8" });
+  const selected = [path("cmds/async-commit-hook"), path("cmds/async-commit-hook/integration")];
+  git("init", "--quiet"); git("config", "user.email", "fixture@example.invalid"); git("config", "user.name", "CI fixture");
+  write("go.mod", `module ${modulePath}\n\ngo 1.22\n`);
+  write("cmds/async-commit-hook/main.go", main("good"));
+  write("cmds/async-commit-hook/integration/integration_test.go", `package integration
+import (
+  "fmt"
+  "os"
+  "os/exec"
+  "path/filepath"
+  "runtime"
+  "strings"
+  "testing"
+)
+var helper string
+func TestMain(m *testing.M) {
+  directory, err := os.MkdirTemp("", "ci-go-helper-")
+  if err != nil { panic(err) }
+  helper = filepath.Join(directory, "helper")
+  if runtime.GOOS == "windows" { helper += ".exe" }
+  command := exec.Command("go", "build", "-o", helper, "..")
+  command.Stdout, command.Stderr = os.Stdout, os.Stderr
+  if err := command.Run(); err != nil { panic(err) }
+  counter, err := os.OpenFile(os.Getenv("CI_GO_TEST_EXECUTIONS"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+  if err != nil { panic(err) }
+  if _, err := fmt.Fprintln(counter, "executed"); err != nil { panic(err) }
+  if err := counter.Close(); err != nil { panic(err) }
+  code := m.Run()
+  if err := os.RemoveAll(directory); err != nil { panic(err) }
+  os.Exit(code)
+}
+func TestHelper(t *testing.T) {
+  output, err := exec.Command(helper).Output()
+  if err != nil { t.Fatal(err) }
+  if actual := strings.TrimSpace(string(output)); actual != "good" {
+    t.Fatalf("expected good, got %s", actual)
+  }
+}
+`);
+  const base = commit();
+  write("cmds/async-commit-hook/main.go", `${main("good")}// Changed command source with valid behavior.\n`);
+  commit();
+
+  for (const shard of [GoTestShard.All, GoTestShard.Core]) {
+    const seedArgs = ["test", ...(shard === GoTestShard.All ? [] : ["-p=1"]), "-timeout=20m", ...selected];
+    const seed = go(seedArgs);
+    assert.equal(seed.status, 0, seed.stdout + seed.stderr);
+    const before = executions();
+    const cached = go(seedArgs);
+    assert.equal(cached.status, 0, cached.stdout + cached.stderr);
+    assert.match(cached.stdout, /integration\s+\(cached\)/u);
+    assert.equal(executions(), before, "the seed must actually reuse Go's result cache");
+
+    const run = (head) => {
+      const calls = [], events = [];
+      const status = runGoTests(shard, { mode: "affected", base, head, cwd, log: (line) => events.push(JSON.parse(line)), run(command, args, options) {
+        const result = spawnSync(command, args, { ...options, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+        calls.push({ command, args, result });
+        return result;
+      } });
+      assert.deepEqual(events.find((event) => event.event === "ci_go_affected").packages, selected);
+      if (shard === GoTestShard.Core) {
+        const compilation = calls.find((call) => call.args.includes("-c"));
+        assert.equal(compilation.result.status, 0, compilation.result.stderr);
+        assert.deepEqual(compilation.args, ["test", "-c", "-o", process.platform === "win32" ? "NUL" : "/dev/null", ...selected]);
+      }
+      return { status, result: calls.at(-1).result };
+    };
+
+    write("cmds/async-commit-hook/main.go", main("bad"));
+    const brokenHead = commit();
+    const stale = go(seedArgs);
+    assert.equal(stale.status, 0, stale.stdout + stale.stderr);
+    assert.match(stale.stdout, /integration\s+\(cached\)/u);
+    assert.equal(executions(), before, "changed subprocess source must leave the seeded result reusable");
+    const broken = run(brokenHead);
+    assert.notEqual(broken.status, 0, `${shard} must execute the changed command`);
+    assert.match(broken.result.stdout, /expected good, got bad/u);
+    assert.doesNotMatch(broken.result.stdout, /\(cached\)/u);
+    assert.equal(executions(), before + 1);
+    write("cmds/async-commit-hook/main.go", `${main("good")}// Changed command source with valid behavior.\n`);
+    const goodHead = commit();
+
+    // Repeated valid runs must execute TestMain while retaining compiled objects.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const fresh = run(goodHead);
+      assert.equal(fresh.status, 0, fresh.result.stdout + fresh.result.stderr);
+      assert.doesNotMatch(fresh.result.stdout, /\(cached\)/u);
+      assert.equal(executions(), before + 1 + attempt);
+    }
+  }
+
+  // A warm compile-only call still reuses Go's compiled objects. -x exposes
+  // tool execution without changing source or deleting any cached objects.
+  const compilation = go(["test", "-x", "-c", "-o", process.platform === "win32" ? "NUL" : "/dev/null", ...selected]);
+  assert.equal(compilation.status, 0, compilation.stderr);
+  assert.doesNotMatch(compilation.stderr, /[/\\]compile(?:\.exe)?(?:"|\s)/u);
 });

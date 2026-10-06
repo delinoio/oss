@@ -6,8 +6,13 @@ import { clientFailure, FailureCode } from "@delinoio/delidev-api-client";
 import { useSettingsOpening } from "./settings-lifetime";
 import { SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
 
-interface Intent { input?: object; bytes?: number; busy: boolean; uncertain: boolean; error?: unknown }
+interface Intent { input?: object; bytes?: number; acknowledge?: (result: unknown) => boolean; busy: boolean; uncertain: boolean; error?: unknown }
 const empty: Intent = Object.freeze({ busy: false, uncertain: false });
+// Bind outside the hook so a retained verifier cannot keep the submitting
+// hook's mutation, presentation callback or view state alive.
+function bindAcknowledgement<I extends DescMessage, O extends DescMessage>(acknowledge: (result: MessageShape<O>, request: MessageShape<I>) => boolean, request: MessageShape<I>) {
+  return (result: unknown) => acknowledge(result as MessageShape<O>, request);
+}
 class IntentRegistry {
   alive = true;
   revision = 0;
@@ -57,7 +62,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
   const state = useSyncExternalStore(registry.subscribe, () => registry.entries.get(key) ?? empty);
   useRetainSettingsTask(state.busy || state.uncertain, state.busy ? SettingsTaskStatus.Pending : SettingsTaskStatus.Uncertain);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const send = async (input?: MessageInitShape<I>) => {
+  const send = async (input?: MessageInitShape<I>, retainedAcknowledgement?: (result: MessageShape<O>, request: MessageShape<I>) => boolean) => {
     const current = registry.entries.get(key) ?? empty;
     if (current.busy || (current.input && input) || !registry.alive || opening?.disposed) return;
     if (!current.input && !input) return;
@@ -71,8 +76,11 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       registry.reserve(key, bytes);
       retained = fromBinary(method.input, wire);
     } catch (error) { setLocalError({ key, error }); return; }
+    // Recovery views must use the original request's validation authority even
+    // when the submitting view has gone away or its current selection changed.
+    const verify = current.acknowledge ?? (retainedAcknowledgement ? bindAcknowledgement<I, O>(retainedAcknowledgement, retained) : undefined);
     setLocalError(undefined);
-    registry.put(key, { ...current, input: retained, bytes, busy: true, error: undefined });
+    registry.put(key, { ...current, input: retained, bytes, acknowledge: verify, busy: true, error: undefined });
     let result: MessageShape<O>;
     try {
       result = await mutation.mutateAsync(retained);
@@ -81,16 +89,18 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       mutation.reset();
       if (!registry.alive || opening?.disposed) return;
       const failure = clientFailure(error);
-      const uncertain = [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
-      registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, error });
+      // A rejected replay cannot establish whether an earlier uncertain request
+      // was admitted. Keep opt-in original verification until a matching receipt.
+      const uncertain = Boolean(current.uncertain && current.acknowledge) || [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
+      registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, acknowledge: uncertain ? verify : undefined, error });
       return;
     }
     if (!registry.alive || opening?.disposed) return;
-    if (acknowledge) {
+    if (verify || acknowledge) {
       try {
-        if (!acknowledge(result, retained)) throw new ConnectError("The accepted response could not be verified. Retry only the original request or inspect retained attempts.", Code.Internal);
+        if (!(verify ? verify(result) : acknowledge!(result, retained))) throw new ConnectError("The accepted response could not be verified. Retry only the original request or inspect retained attempts.", Code.Internal);
       } catch (error) {
-        registry.put(key, { busy: false, uncertain: true, input: retained, bytes, error });
+        registry.put(key, { busy: false, uncertain: true, input: retained, bytes, acknowledge: verify, error });
         return;
       }
     }
