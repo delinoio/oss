@@ -20,6 +20,13 @@ all affected owners, even when their rules live outside the edited directory.
 
 ## Protocol
 
+GitHub token-first onboarding under issue #964 reserves System capability 34,
+two closed enums and five new message declarations in the protocol allocation
+ledger. Establish this reservation-only closure on main before dependent
+implementation. It grants no token inspection, pre-profile form, credential
+retention or browser capability and adds no migration. Follow the protocol and
+integration contracts.
+
 The Agent Worker wizard amendment under issue #964 reserves System capability
 `AGENT_WORKER_WIZARD_V1 = 33`, list-only subscription-service field 4 on
 `ListResourcesRequest`, field 7 on `SearchModelsRequest`, and the wholly new
