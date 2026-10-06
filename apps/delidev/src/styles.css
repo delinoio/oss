@@ -924,3 +924,17 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .browser-tabs li > button:first-child { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .browser-current-address { overflow-wrap: anywhere; font-size: 12px; }
 .browser-viewport { flex: 1; min-height: 400px; border: 1px solid var(--border); }
+
+/* Token-first creation shares the flat Settings form and disclosure geometry. */
+.integration-onboarding { max-width: 720px; width: 100%; container-type: inline-size; }
+.integration-onboarding form { max-width: 720px; }
+.integration-onboarding .actions { margin-top: 20px; flex-wrap: wrap; }
+.integration-onboarding fieldset p, .integration-draft-guidance p { color: var(--muted); }
+.integration-draft-guidance { margin-top: 24px; padding: 16px 0; border: 0; border-block: 1px solid var(--border); border-radius: 0; }
+.integration-draft-guidance summary { cursor: pointer; font-weight: 600; padding-inline: 0; }
+.integration-draft-guidance form { margin-top: 16px; }
+.integration-verified { color: var(--text); }
+.integration-verified::before { content: "✓"; display: inline-block; margin-right: 8px; color: var(--success, var(--accent)); }
+.integration-onboarding .integration-access-note { padding-inline: 0; }
+
+.integration-external-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; margin-right: 8px; vertical-align: -2px; }
