@@ -263,3 +263,23 @@ it("refreshes and focuses a model changed between the last read and server save"
   expect(value.save).toHaveBeenCalledTimes(1);
   expect(value.discover).not.toHaveBeenCalled();
 }, 15000);
+
+
+it("keeps one autocomplete selection and valid active identity across empty pages", async () => {
+  const value = fixture();
+  value.search.mockImplementation(async request => ({ models: request.pageToken ? [] : value.models, providers: [value.provider], nextPageToken: request.pageToken ? "" : "model-page-2" }));
+  await start(value); await accounts(value);
+  const input = screen.getByRole("combobox", { name: "Model" }); fireEvent.focus(input);
+  fireEvent.click(await screen.findByRole("option", { name: /Example B/ })); fireEvent.focus(input);
+  await waitFor(() => expect(value.search.mock.calls.some(([request]) => request.query === "example-1")).toBe(true));
+  await screen.findByRole("option", { name: /Example A/ });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(screen.getAllByRole("option", { selected: true })).toHaveLength(1);
+  fireEvent.keyDown(input, { key: "ArrowUp" });
+  expect(input.getAttribute("aria-activedescendant")).toMatch(/-2$/);
+  fireEvent.click(screen.getByRole("button", { name: "Next model page" }));
+  await waitFor(() => expect(screen.queryByRole("option", { name: /Example A/ })).toBeNull());
+  expect(input.getAttribute("aria-activedescendant")).toBeNull();
+  expect((input as HTMLInputElement).value).toBe("example-1");
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
