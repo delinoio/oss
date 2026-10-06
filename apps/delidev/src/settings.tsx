@@ -404,7 +404,10 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   } : undefined;
   const apiProviders = (apiInventory.data?.entries ?? []).map(entry => providerSummary(entry, Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1)))).filter((value): value is AccountProviderSummary => value !== undefined);
   const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(entry => providerSummary(entry, Boolean(eligibleInventory.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1)))).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
-  const configurationList = area === SettingsArea.Configuration && (!hasOverlay || kind === EntityKind.REPOSITORY) && !hasSpecializedPanel;
+  // Keep the toolbar mounted while a task is open so closing can restore focus
+  // to the exact action that opened it. SettingsTaskBackground makes it inert
+  // during the task, so this does not expose a concurrent background action.
+  const configurationList = area === SettingsArea.Configuration && !hasSpecializedPanel;
   const successfulEmptyFirstPage = !page && Boolean(result.data && result.data.resources.length === 0 && !result.error && !result.data.nextPageToken);
   const retainedServerEmpty = isPreferenceCategory && !page && Boolean(result.data && result.data.resources.length === 0 && !result.data.nextPageToken);
   const hidePagination = successfulEmptyFirstPage || (isPreferenceCategory && !page && Boolean(result.data && !result.data.nextPageToken));

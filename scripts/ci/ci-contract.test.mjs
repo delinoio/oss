@@ -30,10 +30,11 @@ const legacyJobs = [
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
-  "devhud-mobile-contracts", "devhud-ios-simulator", "devhud-android-emulator", "devhud-protocol", "devhud-admin",
+  "devhud-mobile-contracts", "devhud-ios-simulator", "devhud-android-emulator", "devhud-admin",
   "devhud-api", "devhud-oci", "devhud-supply-chain", "devhud-release-contracts",
 ];
 const achJobs = ["async-commit-hook"];
+const delidevJobs = ["delidev-protocol"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -56,7 +57,7 @@ test("async-commit-hook retains runner, interface, protocol and unsigned archive
 
 test("CI keeps every legacy check and aggregates every required job", () => {
   const jobs = Object.keys(workflow.jobs);
-  for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, ...achJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
+  for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, ...achJobs, ...delidevJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
   const required = jobs.filter((id) => id !== "ci-result").sort();
   assert.deepEqual([...workflow.jobs["ci-result"].needs].sort(), required);
   assert.equal(workflow.jobs["ci-result"].if, "always()");
@@ -67,8 +68,8 @@ test("CI keeps every legacy check and aggregates every required job", () => {
 
 test("one change plan gates every domain job before runner allocation", () => {
   assert.equal(workflow.jobs.changes.steps.find(({ id }) => id === "plan").run, "node scripts/ci/plan.mjs");
-  assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...achJobs].sort());
-  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
+  assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...achJobs, ...delidevJobs].sort());
+  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs, ...delidevJobs]) {
     const job = workflow.jobs[id];
     assert.deepEqual(job.needs, "changes", id);
     assert.equal(job.if, "${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['" + id + "'] }}", id);
@@ -82,7 +83,7 @@ test("one change plan gates every domain job before runner allocation", () => {
     "apps/public-docs/**", ".github/workflows/package-devhud-private.yml", ".github/workflows/release-devhud.yml",
     ".github/workflows/devhud-cef-security-review.yml", "scripts/ci/check-go-format.mjs", ".dockerignore",
   ]) assert.ok(filters.includes(path), path);
-  for (const id of ["devhud-frontend", "devhud-extension", "devhud-security", "devhud-admin", "devhud-api", "devhud-protocol", "repository-environment"]) {
+  for (const id of ["devhud-frontend", "devhud-extension", "devhud-security", "devhud-admin", "devhud-api", "delidev-protocol", "repository-environment"]) {
     for (const path of [".nvmrc", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json"]) {
       assert.ok(jobPaths[id].paths.includes(path), `${id}: ${path}`);
     }
@@ -207,9 +208,25 @@ test("desktop and mobile matrices match the committed architecture contracts", (
   }
 });
 
+test("DeliDev owns protocol, client and desktop validation without DevHud client checks", () => {
+  assert.equal(workflow.jobs["devhud-protocol"], undefined);
+  const job = workflow.jobs["delidev-protocol"];
+  assert.equal(job.name, "DeliDev Protocol and Client");
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  const commands = job.steps.map(({ run }) => run ?? "").join("\n");
+  for (const command of [
+    "pnpm proto:check", "go test ./protos/gen/go/delidev/...",
+    "pnpm --filter @delinoio/delidev-api-client lint",
+    "pnpm --filter @delinoio/delidev-api-client test",
+    "pnpm --filter @delinoio/delidev-api-client build",
+    "pnpm --filter delidev-desktop test",
+  ]) assert.ok(commands.includes(command), command);
+  assert.doesNotMatch(commands, /@delinoio\/devhud-api-client|go test \.\/protos\/\.\.\./u);
+  assert.equal(job.steps.filter(({ run }) => run?.includes("pnpm install")).length, 1);
+});
+
 test("implemented DevHud conformance commands are wired to their owning jobs", () => {
   const commands = new Map([
-    ["devhud-protocol", ["proto:check", "go test ./protos/", "@delinoio/devhud-api-client"]],
     ["devhud-api", ["ci:format", "ci:vet", "ci:build", "ci:unit", "ci:migrations", "ci:integration", "ci:api", "ci:sweeper"]],
     ["devhud-rust-conformance", ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]],
     ["devhud-frontend", ["run-affected.mjs devhud test", "verify:pins"]],
