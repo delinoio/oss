@@ -147,3 +147,19 @@ it("clears a valid late receipt after leaving the row without replaying it", asy
   await f.pending().findByText("No pending PR actions.");
   expect(f.fix).toHaveBeenCalledOnce(); expect(f.query).toHaveBeenCalledTimes(2); expect(f.history).toHaveBeenCalledOnce();
 });
+
+it.each([Code.PermissionDenied, Code.Unauthenticated, Code.FailedPrecondition, Code.NotFound])("keeps an already uncertain Fix after rejected replay %s", async code => {
+  const f = fixture();
+  f.fix.mockRejectedValueOnce(new ConnectError("Lost receipt", Code.Unavailable)).mockRejectedValueOnce(new ConnectError("Replay unavailable to the current client", code));
+  render(<App transport={f.transport} />); await f.start();
+  await f.pending().findByRole("button", { name: "Retry original fix request" });
+  f.leave(); f.back();
+  fireEvent.click(f.pending().getByRole("button", { name: "Retry original fix request" }));
+  await waitFor(() => expect(f.fix).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect((f.pending().getByRole("button", { name: "Retry original fix request" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(f.pending().queryByText("No pending PR actions.")).toBeNull();
+  fireEvent.click(f.pending().getByRole("button", { name: "Retry original fix request" }));
+  await f.pending().findByText("No pending PR actions.");
+  expect(f.fix.mock.calls[1][0]).toEqual(f.fix.mock.calls[0][0]); expect(f.fix.mock.calls[2][0]).toEqual(f.fix.mock.calls[0][0]);
+  expect(f.query).toHaveBeenCalledTimes(2); expect(f.capabilities).toHaveBeenCalledOnce();
+});

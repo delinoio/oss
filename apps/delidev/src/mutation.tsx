@@ -89,7 +89,9 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       mutation.reset();
       if (!registry.alive || opening?.disposed) return;
       const failure = clientFailure(error);
-      const uncertain = [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
+      // A rejected replay cannot establish whether an earlier uncertain request
+      // was admitted. Keep opt-in original verification until a matching receipt.
+      const uncertain = Boolean(current.uncertain && current.acknowledge) || [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
       registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, acknowledge: uncertain ? verify : undefined, error });
       return;
     }
