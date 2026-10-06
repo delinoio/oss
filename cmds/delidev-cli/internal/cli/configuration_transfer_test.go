@@ -87,6 +87,9 @@ func TestCLIConfigurationTransferThroughRealWorker(t *testing.T) {
 	if out, err := exec.Command("git", "init", "-b", "main", checkout).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %s %v", out, err)
 	}
+	if err := exec.Command("git", "-C", checkout, "remote", "add", "origin", "https://github.com/fixture/repo.git").Run(); err != nil {
+		t.Fatal(err)
+	}
 	sourceMachine, repoID, templateID := domain.NewID(), domain.NewID(), domain.NewID()
 	repo, _ := json.Marshal(domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Imported repository", Checkouts: []domain.Checkout{{MachineID: sourceMachine, Path: "/old/computer/path"}}, AutoFetch: true})
 	template, _ := json.Marshal(domain.Template{Name: "Imported instructions", Contents: "Keep this original content.\n"})

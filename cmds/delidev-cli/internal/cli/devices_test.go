@@ -41,7 +41,7 @@ func TestCLIPairWorkerAndInspectRealRepository(t *testing.T) {
 	if err := exec.Command("git", "init", "--quiet", repo).Run(); err != nil {
 		t.Fatal(err)
 	}
-	if err := exec.Command("git", "-C", repo, "remote", "add", "origin", "https://example.invalid/repository.git").Run(); err != nil {
+	if err := exec.Command("git", "-C", repo, "remote", "add", "origin", "https://github.com/fixture/repo.git").Run(); err != nil {
 		t.Fatal(err)
 	}
 	sub := filepath.Join(repo, "nested")

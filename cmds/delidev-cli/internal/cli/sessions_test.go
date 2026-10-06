@@ -196,6 +196,7 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		commit := git("rev-parse", "HEAD")
 		commits = append(commits, commit)
 		url := "https://github.com/fixture/repo-" + strconv.Itoa(i) + ".git"
+		git("remote", "add", "origin", url)
 		registerGit(url, checkout)
 		checkouts := []domain.Checkout{}
 		if i == 1 {
