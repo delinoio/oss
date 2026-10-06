@@ -299,7 +299,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if (bundle.Version != 1 && bundle.Version != domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
+	if (bundle.Version != 1 && bundle.Version != 2 && bundle.Version != domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {
@@ -434,7 +434,27 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 				err = rewrite(&v.ProviderID, domain.ProviderKind)
 			}
 		case *domain.Agent:
-			if err = rewrite(&v.ModelID, domain.ModelKind); err == nil {
+			if len(v.Routes) == 0 {
+				err = rewrite(&v.ModelID, domain.ModelKind)
+			} else {
+				if bundle.Version < 3 {
+					return plan, domain.Fail(domain.Unsupported, "Account source routes require portable version 3.", "Export the complete current configuration.")
+				}
+				for i := range v.Routes {
+					if err = rewrite(&v.Routes[i].ModelID, domain.ModelKind); err != nil {
+						break
+					}
+					for j := range v.Routes[i].Accounts {
+						if err = rewrite(&v.Routes[i].Accounts[j].ID, domain.AccountKind); err != nil {
+							break
+						}
+					}
+					if err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
 				err = rewriteIDs(v.Templates, domain.TemplateKind)
 			}
 			if err == nil {

@@ -10,45 +10,15 @@ import { Problem } from "./ui";
 import { revealAgentInvalidControl } from "./agent-configuration";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import "./agent-worker-wizard.css";
+import { SourceKind, SelectedAccount, fromKey, modelSource, sameSource, sourceKey, wireService, type Source } from "./worker-source";
+import { AgentWorkerSourceWizard } from "./agent-worker-source-wizard";
 
 enum Step { Harness = 1, Accounts, Model, Configure }
-enum SourceKind { Api = "api", Subscription = "subscription" }
-interface Source { kind: SourceKind; id: string }
 const steps = [Step.Harness, Step.Accounts, Step.Model, Step.Configure];
 const stepNames = { [Step.Harness]: "Harness", [Step.Accounts]: "Accounts", [Step.Model]: "Model", [Step.Configure]: "Configure" };
 const harnessNames: Record<Harness, string> = { [Harness.Codex]: "Codex", [Harness.Claude]: "Claude Code", [Harness.OpenCode]: "OpenCode", [Harness.Grok]: "Grok Build" };
-const sourceKey = (source?: Source) => source ? `${source.kind}:${source.id}` : "";
-function fromKey(value: string): Source | undefined {
-  const [kind, id] = value.split(":");
-  return id && (kind === SourceKind.Api || kind === SourceKind.Subscription && subscriptionService(id)) ? { kind: kind as SourceKind, id } : undefined;
-}
-function wireService(source?: Source) {
-  if (source?.kind !== SourceKind.Subscription) return SubscriptionServiceIdentity.UNSPECIFIED;
-  return { [SubscriptionServiceId.ChatGPT]: SubscriptionServiceIdentity.CHATGPT, [SubscriptionServiceId.Claude]: SubscriptionServiceIdentity.CLAUDE, [SubscriptionServiceId.Grok]: SubscriptionServiceIdentity.GROK }[source.id as SubscriptionServiceId];
-}
-function sameSource(row: Resource, source?: Source) {
-  const data = document(row);
-  return row.kind === EntityKind.ACCOUNT && supportsResourceSchema(row) && data.retired !== true && (source?.kind === SourceKind.Subscription
-    ? data.type === "subscription" && data.subscription_service === source.id && !data.provider_id
-    : source?.kind === SourceKind.Api && data.type === "api" && data.provider_id === source.id);
-}
-function modelSource(row: Resource): Source | undefined {
-  const data = document(row);
-  if (row.kind !== EntityKind.MODEL || data.retired === true || !supportsResourceSchema(row)) return undefined;
-  if (data.source_kind === "subscription" && subscriptionService(data.subscription_service)) return { kind: SourceKind.Subscription, id: text(data.subscription_service) };
-  return text(data.provider_id) ? { kind: SourceKind.Api, id: text(data.provider_id) } : undefined;
-}
 
-// Off-page selections keep their original identity and are read independently
-// of the bounded source page. No list fallback can substitute another account.
-function SelectedAccount({ id, active, refresh, read }: { id: string; active: boolean; refresh: number; read: (id: string, row?: Resource) => void }) {
-  const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.ACCOUNT, id }, { enabled: active, refetchInterval: active ? 5000 : false });
-  useEffect(() => { if (active && refresh) void current.refetch(); }, [active, refresh, current.refetch]);
-  useEffect(() => { if (current.data || current.error) read(id, current.error ? undefined : current.data?.resource); }, [current.data, current.error, id, read]);
-  return <><Problem error={current.error} />{!current.data && !current.error ? <p role="status">Loading selected account…</p> : null}</>;
-}
-
-export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
+function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
   const [data, setData] = useState<Document>(() => initial ? document(initial) : newConfiguration(EntityKind.AGENT));
   const [step, setStep] = useState(Step.Harness);
   const [source, setSource] = useState<Source>();
@@ -227,4 +197,12 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     <div className="worker-footer"><button type="button" disabled={blocked} onClick={cancel}>Cancel</button><div>{step > Step.Harness ? <button type="button" disabled={blocked} onClick={() => { setStep(step - 1); setFocusField(""); setProblem(""); }}>Back</button> : null}<button type="submit" className="primary" disabled={blocked || !active || !supported || step === Step.Configure && (stale || currentModel.isLoading || Boolean(initial && (current.error || !current.data?.resource)))}>{mutation.busy ? "Saving…" : step === Step.Configure ? "Save Agent Worker" : "Next"}</button></div></div>
     {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same Worker save</button> : null}
   </form>;
+}
+
+export function AgentWorkerWizard(props: { initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: props.active });
+  if (!status.data && !status.error) return <p role="status">Checking server support…</p>;
+  if (status.data?.capabilities.includes(SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1)) return <AgentWorkerSourceWizard {...props} />;
+  if (props.initial?.schemaVersion === 3) return <><p role="alert">Update the server to edit this Worker's account sources.</p><button onClick={props.cancel}>Cancel</button></>;
+  return <LegacyAgentWorkerWizard {...props} />;
 }

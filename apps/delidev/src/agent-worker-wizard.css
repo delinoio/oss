@@ -38,3 +38,15 @@
 }
 
 .worker-wizard input[type="checkbox"] { width: 16px; min-height: 16px; height: 16px; }
+
+.worker-source-group { border-top: 1px solid var(--border); padding: 16px 0; }
+.worker-source-group > fieldset > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.worker-source-group h4 { margin: 0; overflow-wrap: anywhere; }
+.worker-source-group .worker-routing { margin-top: 12px; padding-bottom: 0; }
+.worker-source-group .worker-account-row { padding: 8px 0; }
+.worker-source-group .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.worker-source-wizard .worker-footer { position: static; }
+@media (max-width: 640px) {
+  .worker-source-group > fieldset > header { align-items: flex-start; flex-direction: column; }
+  .worker-source-wizard .worker-footer > div { flex-wrap: wrap; }
+}

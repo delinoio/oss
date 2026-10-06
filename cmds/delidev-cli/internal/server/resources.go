@@ -302,7 +302,7 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 }
 func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb.SaveConfigurationRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 {
+	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported configuration schema and mutation identity are required.", "Use schema version 1 for API configuration or version 2 for subscription identity, a UUID-v7 request ID and the current expected revision."), correlation)
 	}
 	kind, err := rpc.Kind(req.Msg.Kind)
@@ -310,7 +310,7 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		return nil, rpc.Error(err, correlation)
 	}
 	expectedSchema := rpc.ResourceSchemaVersion(kind, req.Msg.DocumentJson)
-	if req.Msg.SchemaVersion != expectedSchema && !(kind == domain.AgentKind && req.Msg.SchemaVersion == 2) {
+	if req.Msg.SchemaVersion != expectedSchema && !(kind == domain.AgentKind && req.Msg.SchemaVersion == 2 && expectedSchema != 3) {
 		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Configuration schema does not match its identity family.", "Use schema 2 for service accounts/native models and schema 1 for API configuration. Update older clients before configuring subscriptions."), correlation)
 	}
 	if kind == domain.AccountKind || kind == domain.ProviderKind {
@@ -552,13 +552,13 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 					return err
 				}
 				if kind == domain.AccountKind {
-					for _, account := range agent.Accounts {
+					for _, account := range agent.AllAccounts() {
 						if account.ID == id {
 							return conflict()
 						}
 					}
 				}
-				if kind == domain.ModelKind && agent.ModelID == id {
+				if kind == domain.ModelKind && slices.Contains(agent.ModelIDs(), id) {
 					return conflict()
 				}
 				if kind == domain.TemplateKind {
@@ -587,7 +587,7 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 			}
 		}
 	}
-	if kind == domain.AccountKind {
+	if kind == domain.AccountKind || kind == domain.ModelKind {
 		filter := store.Filter{Kind: domain.SessionKind, Limit: store.MaxPage}
 		count := 0
 		for {
@@ -597,13 +597,30 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 			}
 			count += len(records)
 			if count > 10000 {
-				return domain.Fail(domain.ResourceExhausted, "Account reference validation exceeded its session bound.", "Reduce the retained scope before deleting the account.")
+				return domain.Fail(domain.ResourceExhausted, "Execution reference validation exceeded its session bound.", "Reduce the retained scope before deleting this configuration.")
 			}
 			for _, record := range records {
 				session, err := store.Decode[domain.Session](record)
 				if err != nil {
 					return err
 				}
+				if kind == domain.ModelKind {
+					if initial := session.InitialExecution; initial != nil {
+						if initial.Configuration.ModelID == id {
+							return conflict()
+						}
+						for _, source := range initial.Route.Sources {
+							if source.ModelID == id {
+								return conflict()
+							}
+						}
+					}
+					if session.Fork != nil && session.Fork.Snapshot.Configuration.ModelID == id {
+						return conflict()
+					}
+					continue
+				}
+
 				if session.CurrentExecution != nil && session.CurrentExecution.AccountID == id {
 					return conflict()
 				}
@@ -614,6 +631,13 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 					for _, account := range initial.Configuration.Accounts {
 						if account.ID == id {
 							return conflict()
+						}
+					}
+					for _, source := range initial.Route.Sources {
+						for _, candidate := range source.Route.Candidates {
+							if candidate.ID == id {
+								return conflict()
+							}
 						}
 					}
 					for _, candidate := range initial.Route.Candidates {

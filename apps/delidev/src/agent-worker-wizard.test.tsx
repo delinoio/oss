@@ -10,7 +10,7 @@ import { AccountTypeFilter, ConfigurationService, EntityKind, ProviderInventoryC
 import { Settings } from "./settings";
 import { document, encode } from "./documents";
 
-function fixture() {
+function fixture(routes = false) {
   const row = (kind: EntityKind, data: Record<string, unknown>, schemaVersion = 1) => create(ResourceSchema, { kind, schemaVersion, id: newRequestId(), revision: 1n, documentJson: encode(data) });
   const provider = row(EntityKind.PROVIDER, { name: "OpenAI API", enabled: true, discovery: true, protocol: "openai-responses" });
   const otherProvider = row(EntityKind.PROVIDER, { name: "Other API", enabled: true, discovery: true, protocol: "openai-responses" });
@@ -19,13 +19,17 @@ function fixture() {
   const models = ["Example A", "Example B"].map((name, i) => row(EntityKind.MODEL, { name, native_id: `example-${i}`, provider_id: provider.id, harnesses: [], hidden: i === 1, manual: false, new: true }));
   const agent = row(EntityKind.AGENT, { name: "Existing Worker", harness: "codex", model_id: models[0].id, accounts: [{ id: accounts[0].id, weight: 3 }], templates: [], options: { permission: "default", service_tier: "priority" }, effort: "high" });
   const records = [provider, otherProvider, ...accounts, subscription, ...models, agent];
-  const save = vi.fn(async (request: SaveAgentWorkerRequest) => ({ requestId: request.mutation!.requestId, resource: row(EntityKind.AGENT, { ...JSON.parse(new TextDecoder().decode(request.documentJson)), model_id: models[0].id }) }));
+  const save = vi.fn(async (request: SaveAgentWorkerRequest) => {
+    const data = JSON.parse(new TextDecoder().decode(request.documentJson));
+    if (request.schemaVersion === 3) data.routes = data.routes.map((route: Record<string, unknown>, index: number) => ({ ...route, model_id: models[index]?.id || newRequestId() })); else data.model_id = models[0].id;
+    return { requestId: request.mutation!.requestId, resource: row(EntityKind.AGENT, data, request.schemaVersion) };
+  });
   const search = vi.fn(async (_request: SearchModelsRequest) => ({ models, providers: [provider], nextPageToken: "model-page-2" }));
   const discover = vi.fn(async (request: { mutation?: { requestId: string; id: string } }) => ({ requestId: request.mutation!.requestId, account: accounts.find(value => value.id === request.mutation!.id) }));
   const list = vi.fn((request: { filter?: { kind: EntityKind; pageToken: string }; providerId: string; subscriptionService: SubscriptionServiceIdentity }) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? request.subscriptionService === SubscriptionServiceIdentity.CHATGPT ? [subscription] : request.providerId === provider.id ? request.filter.pageToken ? [accounts[1], accounts[2]] : [accounts[0]] : [] : records.filter(value => value.kind === request.filter?.kind), nextPageToken: request.filter?.kind === EntityKind.ACCOUNT && request.providerId === provider.id && !request.filter.pageToken ? "account-page-2" : "" }));
   const get = vi.fn((request: { id: string }) => ({ resource: records.find(value => value.id === request.id) }));
   const transport = createRouterTransport(router => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AGENT_WORKER_WIZARD_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AGENT_WORKER_WIZARD_V1, ...(routes ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])] }) });
     router.service(ProviderService, { listProviderInventory: () => ({ entries: [provider, otherProvider].map(value => ({ provider: value, providerId: value.id, displayName: document(value).name as string, enabled: true })), capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] }), searchModels: search, discoverModels: discover });
     router.service(ResourceService, { listResources: list, getResource: get });
     router.service(ConfigurationService, { saveAgentWorker: save });
@@ -283,3 +287,44 @@ it("keeps one autocomplete selection and valid active identity across empty page
   expect((input as HTMLInputElement).value).toBe("example-1");
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
+
+it("saves subscription then API source models atomically and preserves drafts across Back", async () => {
+  const value = fixture(true); await start(value); next();
+  fireEvent.change(await screen.findByRole("combobox", { name: "Account source 1" }), { target: { value: "subscription:chatgpt" } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
+  fireEvent.click(screen.getByRole("button", { name: "+ Add account source" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Account source 2" }), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select Personal API" })).toBeTruthy());
+  next();
+  const subscriptionModel = screen.getByRole("combobox", { name: "Model for ChatGPT subscription" });
+  const apiModel = screen.getByRole("combobox", { name: "Model for OpenAI API" });
+  fireEvent.change(subscriptionModel, { target: { value: "subscription-exact" } }); fireEvent.keyDown(subscriptionModel, { key: "Escape" });
+  fireEvent.focus(apiModel); await screen.findByRole("option", { name: /Example A/ }); fireEvent.keyDown(apiModel, { key: "ArrowDown" }); fireEvent.keyDown(apiModel, { key: "Enter" });
+  await waitFor(() => { expect((apiModel as HTMLInputElement).value).toBe("example-0"); expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false); });
+  next(); await screen.findByRole("heading", { name: "Configure", level: 3 });
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Subscription priority" } });
+  fireEvent.click(screen.getByRole("button", { name: "Back" })); expect((subscriptionModel as HTMLInputElement).value).toBe("subscription-exact");
+  next(); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const request = value.save.mock.calls[0][0];
+  expect(request.schemaVersion).toBe(3); expect(request.model).toBeUndefined();
+  expect(request.routeModels).toMatchObject([{ selection: { case: "nativeId", value: "subscription-exact" }, expectedModelRevision: 0n }, { selection: { case: "modelId", value: value.models[0].id }, expectedModelRevision: 1n }]);
+  const saved = JSON.parse(new TextDecoder().decode(request.documentJson));
+  expect(saved.routes).toMatchObject([{ accounts: [{ id: value.subscription.id, weight: 1 }], routing: "priority" }, { accounts: [{ id: value.accounts[0].id, weight: 1 }], routing: "priority" }]);
+  expect(saved.model_id).toBeUndefined(); expect(saved.accounts).toBeUndefined(); expect(value.discover).not.toHaveBeenCalled();
+}, 15000);
+
+it("reorders sources with buttons and resets only a changed source", async () => {
+  const value = fixture(true); await start(value); next();
+  fireEvent.change(await screen.findByRole("combobox", { name: "Account source 1" }), { target: { value: "subscription:chatgpt" } }); fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
+  fireEvent.click(screen.getByRole("button", { name: "+ Add account source" })); fireEvent.change(screen.getByRole("combobox", { name: "Account source 2" }), { target: { value: `api:${value.provider.id}` } }); fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select Personal API" })).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Move source 2 up" }));
+  expect((screen.getByRole("combobox", { name: "Account source 1" }) as HTMLSelectElement).value).toBe(`api:${value.provider.id}`);
+  expect(screen.getByRole("checkbox", { name: "Select ChatGPT account" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("combobox", { name: "Account source 1" }), { target: { value: `api:${value.otherProvider.id}` } });
+  expect(screen.queryByRole("checkbox", { name: "Select Personal API" })).toBeNull(); expect(screen.getByRole("checkbox", { name: "Select ChatGPT account" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Remove source 1" })); expect((screen.getByRole("combobox", { name: "Account source 1" }) as HTMLSelectElement).value).toBe("subscription:chatgpt");
+  next(); expect(screen.getByRole("combobox", { name: "Model for ChatGPT subscription" })).toBeTruthy();
+}, 15000);

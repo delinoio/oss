@@ -31,13 +31,14 @@ const name = (entry: Entry) => text(entry.document.name) || text(entry.document.
 function readBundle(raw: string): Bundle {
   if (encoder.encode(raw).byteLength > bundleLimit) throw new Error("Use an export of at most 384 KiB.");
   const value = object(JSON.parse(raw));
-  if (![1, 2].includes(value.version as number) || !Array.isArray(value.entries) || !Array.isArray(value.machines) || value.entries.length > 256 || value.machines.length > 64) throw new Error("Use a version 1 API-only or version 2 DeliDev configuration export.");
+  if (![1, 2, 3].includes(value.version as number) || !Array.isArray(value.entries) || !Array.isArray(value.machines) || value.entries.length > 256 || value.machines.length > 64) throw new Error("Use a version 1 API-only, version 2 or version 3 DeliDev configuration export.");
   const ids = new Set<string>();
   for (const item of value.entries) {
     const entry = object(item), id = text(entry.id);
     if (!canonicalId.test(id) || ids.has(id) || !Object.hasOwn(kinds, text(entry.kind)) || !entry.document || typeof entry.document !== "object" || Array.isArray(entry.document)) throw new Error("The exported entries are not readable. Validate the original document before continuing.");
     const data = object(entry.document);
     if (value.version === 1 && (data.type === "subscription" || data.source_kind === "subscription" || data.protocol === "native-subscription" || data.subscription_service !== undefined)) throw new Error("Service-native subscription configuration requires a version 2 export. Version 1 imports support API configuration only.");
+    if (Number(value.version) < 3 && entry.kind === "agent" && data.routes !== undefined) throw new Error("Account source routes require a version 3 export.");
     ids.add(id);
   }
   for (const item of value.machines) {
@@ -64,7 +65,7 @@ function readBundle(raw: string): Bundle {
 function readPreview(bytes: Uint8Array): Preview {
   if (bytes.byteLength > 1 << 20) throw new Error("The change preview exceeds its limit.");
   const value = object(JSON.parse(decoder.decode(bytes))), plan = object(value.plan);
-  if (!text(value.token) || ![1, 2].includes(plan.version as number) || !Array.isArray(plan.changes) || !plan.changes.length || plan.changes.length > 256 || !Array.isArray(plan.machines)) throw new Error("The server did not return a readable change preview.");
+  if (!text(value.token) || ![1, 2, 3].includes(plan.version as number) || !Array.isArray(plan.changes) || !plan.changes.length || plan.changes.length > 256 || !Array.isArray(plan.machines)) throw new Error("The server did not return a readable change preview.");
   for (const item of plan.changes) {
     const change = object(item);
     if (!canonicalId.test(text(change.id)) || !canonicalId.test(text(change.source_id)) || !Object.hasOwn(kinds, text(change.kind)) || !Object.values(ImportAction).includes(change.action as ImportAction) || !change.after || typeof change.after !== "object" || Array.isArray(change.after)) throw new Error("The server change preview is incomplete.");

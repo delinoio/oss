@@ -250,3 +250,62 @@ func TestAgentWorkerWizardPreservesModelMetadataAndConcurrentCreation(t *testing
 		t.Fatal("no concurrent save succeeded")
 	}
 }
+
+func TestWorkerSourceRoutesAtomicSaveAndLegacyProtection(t *testing.T) {
+	f := newAccountFixture(t)
+	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Responses", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	api := wizardAccount(f, provider, "API")
+	sub := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Subscription", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
+	priority := domain.Priority
+	agent := domain.Agent{Name: "Source Worker", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Accounts: []domain.WeightedAccount{{ID: domain.ID(sub.Id), Weight: 1}}, Routing: &priority}, {Accounts: []domain.WeightedAccount{{ID: domain.ID(api.Id), Weight: 1}}, Routing: &priority}}, Options: domain.AgentOptions{Permission: domain.PermissionWorkspaceWrite}}
+	raw, _ := json.Marshal(agent)
+	request := &pb.SaveAgentWorkerRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, SchemaVersion: 3, DocumentJson: raw, RouteModels: []*pb.AgentWorkerModelSelection{{Selection: &pb.AgentWorkerModelSelection_NativeId{NativeId: "subscription-model"}}, {Selection: &pb.AgentWorkerModelSelection_NativeId{NativeId: "api-model"}}}}
+	ctx := context.Background()
+	// Failure in the final route must roll back a model created for the first.
+	request.RouteModels[1].Selection = &pb.AgentWorkerModelSelection_ModelId{ModelId: string(domain.NewID())}
+	request.RouteModels[1].ExpectedModelRevision = 1
+	_, err := f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, request))
+	wantAccountCode(t, err, domain.NotFound)
+	models, err := f.resources.ListResources(ctx, ownerRequest(f.identity, &pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_MODEL}}))
+	if err != nil || len(models.Msg.Resources) != 0 {
+		t.Fatalf("partial model survived: %v %v", models, err)
+	}
+	request.Mutation.RequestId = string(domain.NewID())
+	request.RouteModels[1].Selection = &pb.AgentWorkerModelSelection_NativeId{NativeId: "api-model"}
+	request.RouteModels[1].ExpectedModelRevision = 0
+	saved, err := f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Msg.Resource.SchemaVersion != 3 {
+		t.Fatal("route document lost its schema")
+	}
+	var configured domain.Agent
+	if err := domain.Decode(saved.Msg.Resource.DocumentJson, &configured); err != nil || len(configured.Routes) != 2 || configured.ModelID != "" {
+		t.Fatalf("saved routes: %+v %v", configured, err)
+	}
+	replay, err := f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, request))
+	if err != nil || !replay.Msg.Replayed || replay.Msg.Resource.Id != saved.Msg.Resource.Id {
+		t.Fatalf("replay: %v %v", replay, err)
+	}
+	legacy := wizardRequest([]*pb.Resource{api}, "api-model")
+	legacy.Mutation.Id = saved.Msg.Resource.Id
+	legacy.Mutation.ExpectedRevision = saved.Msg.Resource.Revision
+	_, err = f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, legacy))
+	wantAccountCode(t, err, domain.Unsupported)
+	mixed := *request
+	mixed.Mutation = &pb.Mutation{RequestId: string(domain.NewID())}
+	mixed.Model = legacy.Model
+	_, err = f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, &mixed))
+	wantAccountCode(t, err, domain.InvalidArgument)
+	duplicate := agent
+	duplicate.Routes = []domain.AgentSourceRoute{agent.Routes[1], {Accounts: []domain.WeightedAccount{{ID: domain.ID(wizardAccount(f, provider, "Other API").Id), Weight: 1}}, Routing: &priority}}
+	request.DocumentJson, _ = json.Marshal(duplicate)
+	request.Mutation.RequestId = string(domain.NewID())
+	_, err = f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, request))
+	wantAccountCode(t, err, domain.InvalidArgument)
+	for _, modelID := range configured.ModelIDs() {
+		_, err = f.config.DeleteConfiguration(ctx, ownerRequest(f.identity, &pb.DeleteConfigurationRequest{Kind: pb.EntityKind_ENTITY_KIND_MODEL, Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(modelID), ExpectedRevision: 1}}))
+		wantAccountCode(t, err, domain.Conflict)
+	}
+}

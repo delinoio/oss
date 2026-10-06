@@ -1,4 +1,5 @@
-- DeliDev Agent Worker source routes reserve System capability 36 and SaveAgentWorkerRequest.route_models field 5 before dependent implementation. Preserve capability 35 and every existing allocation; reservations alone grant no support.
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
 
 ### Instructions for `protos/`
 

@@ -1,4 +1,5 @@
-- Agent Worker source routes reserve System capability 36 and SaveAgentWorkerRequest.route_models field 5 under issue #964. Establish both on main before activation; reuse AgentWorkerModelSelection and the save acknowledgement. Preserve the legacy single-model request and capability 35. Reservations add no migration or routing capability.
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
 
 - Known subscription model suggestions under issue #964 reserve System capability 35 and the new catalog-source enum/model/list declarations. Establish these allocations on main before dependent implementation. Reservations grant no known-model retrieval, native discovery, account entitlement or execution capability and add no migration. Follow the catalog, protocol and structure contracts.
 

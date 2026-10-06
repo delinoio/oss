@@ -1,17 +1,18 @@
 # DeliDev source ownership and compatibility
 
-## Agent Worker source-route reservations
+## Agent Worker source-route ownership
 
-Issue #964 reserves System capability `AGENT_WORKER_SOURCE_ROUTES_V1 = 36`
-and `SaveAgentWorkerRequest.route_models = 5`, reusing the existing typed model
-selection. Capability 35 remains owned by known subscription models. Establish
-this closure on main before dependent implementation. Reservations do not change
-active schemas, generated bindings, resource documents, SQLite migrations or
-runtime support. The planned feature uses ordered same-source account groups
-with source-specific models under one Harness, confirmed-quota-only fallback at
-first execution, and automatic preference for observed recovered quota. Existing
-sessions retain their selected account/model and immutable attribution.
-
+PR #1371 established System capability `AGENT_WORKER_SOURCE_ROUTES_V1 = 36`
+and `SaveAgentWorkerRequest.route_models = 5` on main before implementation.
+Capability 35 remains owned by known subscription models. The catalog contract
+owns ordered source/model/account references, atomic multi-model saving and the
+confirmed-exhaustion first-execution boundary. Domain and store own the shared
+pure source selector and per-source routing state. Server owns immutable complete
+decisions and selected-source dispatch; desktop owns group editing and source-scoped
+catalog/account pages. Portable configuration version 3 maps the complete graph.
+Generated bindings are regenerated from reconciled schemas. No SQLite migration
+or historical snapshot rewrite is introduced; capability advertisement cannot
+grant native/account acceptance.
 
 
 ## Known subscription model reservations

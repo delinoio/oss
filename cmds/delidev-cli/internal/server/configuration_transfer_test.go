@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -512,5 +513,59 @@ func TestConfigurationImportExplicitReuseAndDeletedReceiptCannotRecreate(t *test
 	job, _ := store.Decode[domain.Job](row)
 	if bytes.Contains(job.Input, []byte("no retained copy")) {
 		t.Fatal("terminal job retained instructions")
+	}
+}
+
+func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	selection := transferSelection()
+	selection.Bundle.Version = 3
+	provider := transferEntry(domain.ProviderKind, domain.Provider{Name: "Responses fallback", Endpoint: "https://fallback.example.test/v1", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth})
+	model := transferEntry(domain.ModelKind, domain.Model{ProviderID: provider.ID, NativeID: "fallback", Name: "Fallback model", Harnesses: []domain.Harness{domain.Codex}, Manual: true, MetadataSource: domain.Unknown})
+	account := transferEntry(domain.AccountKind, domain.Account{Alias: "Fallback", ProviderID: provider.ID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}})
+	for i, entry := range selection.Bundle.Entries {
+		if entry.Kind != domain.AgentKind {
+			continue
+		}
+		var agent domain.Agent
+		if err := domain.Decode(entry.Document, &agent); err != nil {
+			t.Fatal(err)
+		}
+		priority := domain.Priority
+		agent.Routes = []domain.AgentSourceRoute{{ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: &priority}, {ModelID: model.ID, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 7}}, Routing: &priority}}
+		agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
+		selection.Bundle.Entries[i].Document, _ = json.Marshal(agent)
+	}
+	selection.Bundle.Entries = append(selection.Bundle.Entries, account, model, provider)
+	raw, _ := json.Marshal(selection)
+	_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := selection.Bundle.Version
+	for _, version := range []uint32{1, 2} {
+		selection.Bundle.Version = version
+		raw, _ = json.Marshal(selection)
+		_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
+		if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+			t.Fatalf("legacy bundle accepted routes: %v", err)
+		}
+	}
+	selection.Bundle.Version = original
+	preview := transferPreview(t, s, selection)
+	result := transferApply(t, s, preview, domain.NewID())
+	if len(result.Resources) != len(selection.Bundle.Entries) {
+		t.Fatalf("incomplete import: %+v", result)
+	}
+	records, err := s.Store.List(context.Background(), store.Filter{Kind: domain.AgentKind, Limit: 10})
+	if err != nil || len(records) != 1 {
+		t.Fatalf("agents: %v %v", records, err)
+	}
+	imported, err := store.Decode[domain.Agent](records[0])
+	if err != nil || len(imported.Routes) != 2 {
+		t.Fatalf("routes: %+v %v", imported, err)
+	}
+	if imported.Routes[1].ModelID == model.ID || imported.Routes[1].Accounts[0].ID == account.ID || imported.Routes[1].Accounts[0].Weight != 7 {
+		t.Fatal("route references/order were not remapped")
 	}
 }
