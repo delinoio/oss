@@ -103,3 +103,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Sidecar PATH includes OS defaults, bounded sanitized absolute inherited entries and macOS Homebrew paths under the desktop contract. Deduplicate, exclude empty/relative entries, never run shell startup files and preserve the cleared environment allowlist.
 
 - General API OAuth adds closed accepted Hugging Face profile inventory and browser/callback control. Read the same compiled public registration metadata as Go, bind fixed official authorization fields and original state, and transfer one code/state or access-denied callback to the owning window. Pending profiles grant no listener or opener authority. Keep subscription callback ownership separate. Follow `docs/cmds-delidev-account-oauth-contract.md`.
+
+- The accepted Gemini public profile uses the exact IPv4 loopback callback and closed Google authorization fields. Bind original state and allow only bounded authuser/prompt callback metadata for this profile; Hugging Face and subscription callbacks cannot gain those fields. Follow `docs/cmds-delidev-account-oauth-contract.md`.
