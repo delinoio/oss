@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- GitHub token-first onboarding under issue #964 reserves System capability 34, the new `GitHubTokenKind` / `GitHubTokenIdentityState` enums and `InspectGitHubToken` / `PrepareGitHubTokenForm` request/response and identity declarations. Establish these reservations on main before dependent schemas or code. Reservations grant no token inspection, credential retention or browser authority and require no migration. Follow the integration and protocol contracts.
+
 - General API OAuth follows `docs/cmds-delidev-account-oauth-contract.md`. Establish issue #964's inventory capability 6, device method 4, closed flow enum, Google options and additive Start/Complete fields on main before use. Preserve OpenRouter capability 5 and existing wire assignments. Reservations grant no OAuth support; new providers require registered DeliDev public/native apps, real API compatibility and native/server support before advertisement.
 
 - Agent Worker wizard reservations under issue #964 own System capability 33,
