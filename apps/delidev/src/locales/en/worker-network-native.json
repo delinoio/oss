@@ -1,0 +1,17 @@
+{
+  "worker-network-native.thisComputerSWorkerNetwork_ddbb96": "This computer's Worker network",
+  "worker-network-native.thisComputerSMatchingWorker_0db01d": "This computer's matching Worker",
+  "worker-network-native.theseControlsUseOnlyTheAlready_4de670": "These controls use only the already registered Worker for this server on this computer. Remote Runner Devices prepare and import through their own DeliDev CLI. Preparing a new recipient requires encrypted import and an explicit Worker restart before new work can continue.",
+  "worker-network-native.openTheTrustedDesktopAppTo_dce615": "Open the trusted desktop app to prepare or import this computer's Worker configuration.",
+  "worker-network-native.prepareProtectedRecipient_5b5127": "Prepare protected recipient",
+  "worker-network-native.inspectOriginalPublicRecipient_579cd7": "Inspect original public recipient",
+  "worker-network-native.encryptedBundleToImportBase64_db23d6": "Encrypted bundle to import (Base64)",
+  "worker-network-native.separatelyAuthenticatedDigest_be070a": "Separately authenticated digest",
+  "worker-network-native.iVerifiedThisDigestIndependentlyAnd_638722": "I verified this digest independently and intend to import into this Worker's original protected recipient.",
+  "worker-network-native.importConfirmedEncryptedConfiguration_30d15e": "Import confirmed encrypted configuration",
+  "worker-network-native.retryOriginalEncryptedImport_46c8e9": "Retry original encrypted import",
+  "worker-network-native.extra.0590779bd8e2": "Paste the encrypted Base64 bundle and separately authenticated digest, then confirm the original recipient import.",
+  "worker-network-native.extra.9b693b5af315": "Original public recipient inspected. Its protected key stays on this computer.",
+  "worker-network-native.extra.af95af8c4781": "The original same-computer Worker operation could not be verified. Inspect its registration and current route. An import may have committed; retain the original encrypted input and digest for explicit reconciliation.",
+  "worker-network-native.sentence.49a8a8c21241": "Encrypted generation {{v0}} imported. Inspect current control status after an explicit Worker restart. Import alone does not prove network use."
+}

@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { fixtureBinary } from "../../../scripts/ci/fixture-binary.mjs";
 import { ConfigurationService, EntityKind, ResourceService, SystemService, SystemCapability, UserServiceKind, UserServiceState } from "../src/gen/delidev/v1/delidev_pb.js";
 import { createDeliDevTransport } from "../src/transport.js";
 import { clientFailure, FailureCode } from "../src/errors.js";
@@ -23,8 +24,9 @@ const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "delidev-ts-"));
-  const binary = join(directory, process.platform === "win32" ? "delidev.exe" : "delidev");
-  await execute("go", ["build", "-o", binary, "./cmds/delidev-cli"], { cwd: fileURLToPath(new URL("../../../", import.meta.url)), timeout: 120000 });
+  const localBinary = join(directory, process.platform === "win32" ? "delidev.exe" : "delidev");
+  const binary = await fixtureBinary(localBinary);
+  if (binary === localBinary) await execute("go", ["build", "-o", binary, "./cmds/delidev-cli"], { cwd: fileURLToPath(new URL("../../../", import.meta.url)), timeout: 120000 });
   const data = join(directory, "server");
   server = spawn(binary, ["--data-dir", data, "server", "run", "--listen", "127.0.0.1:0"], { stdio: "ignore" });
   const until = Date.now() + 15000;

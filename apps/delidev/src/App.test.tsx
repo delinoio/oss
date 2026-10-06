@@ -1,3 +1,4 @@
+import { i18n } from "./localization";
 import { create } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -544,7 +545,7 @@ it("discards a nested integration profile draft on close before targeted reposit
   // Wait for that read so the test clicks the current button, not a detached node.
   await screen.findByRole("heading", { name: "Add your first GitHub profile" });
   fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
-  const name = screen.getByRole("textbox", { name: "Profile name" });
+  const name = await screen.findByRole("textbox", { name: "Profile name" });
   fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
@@ -575,7 +576,7 @@ it("discards a notification draft on close without saving", async () => {
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
   expect(value.saveNotificationPreferences).not.toHaveBeenCalled();
   expect(value.saveConfiguration).not.toHaveBeenCalled();
-});
+}, fullShellTimeoutMs);
 
 it("discards an import draft on close before targeted repository entry without saving", async () => {
   const value = fixture();
@@ -807,3 +808,38 @@ it.each([false, true])("uses shared Settings navigation and preserves a visit th
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expectNoNavigationWrites(value);
 });
+
+it("changing language retains the mounted conversation draft, focus and read identities", async () => {
+  const value = fixture([], [], [], true);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const input = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(input, { target: { value: "Unsent original 한국어 draft <b>inert</b>" } }); input.focus();
+  await screen.findByText('<script>window.invalid = true</script>');
+  const sessionRequests = value.sessionRequests.length, statusRequests = value.status.mock.calls.length;
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("textbox", { name: "메시지" })).toBe(input);
+  expect(document.activeElement).toBe(input);
+  expect(input).toHaveProperty("value", "Unsent original 한국어 draft <b>inert</b>");
+  expect(screen.getByText('<script>window.invalid = true</script>')).toBeTruthy();
+  expect(value.sessionRequests).toHaveLength(sessionRequests); expect(value.status).toHaveBeenCalledTimes(statusRequests);
+  expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled(); expect(value.creates).not.toHaveBeenCalled();
+}, fullShellTimeoutMs);
+
+it("language changes keep an uncertain conversation operation and never replay its RPC", async () => {
+  const value = fixture();
+  value.enqueues.mockRejectedValueOnce(new ConnectError("Original response lost", Code.Unavailable));
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const input = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(input, { target: { value: "Original queued input" } });
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  await screen.findByRole("button", { name: "Retry the same message" });
+  const original = value.enqueues.mock.calls[0];
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("textbox", { name: "메시지" })).toBe(input);
+  expect(input).toHaveProperty("value", "Original queued input");
+  expect(value.enqueues).toHaveBeenCalledTimes(1); expect(value.enqueues.mock.calls[0]).toBe(original);
+  expect(value.controls).not.toHaveBeenCalled(); expect(value.creates).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: /같은 메시지/ })).toBeTruthy();
+}, fullShellTimeoutMs);

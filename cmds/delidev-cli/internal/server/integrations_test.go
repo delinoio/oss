@@ -347,6 +347,23 @@ func TestIntegrationActorBoundReceiptsWorkerDenialAndRevocation(t *testing.T) {
 	}
 	worker, _ := pair(pb.DeviceType_DEVICE_TYPE_WORKER)
 	actor, device := pair(pb.DeviceType_DEVICE_TYPE_CLIENT)
+	preview := &pb.InspectGitHubTokenRequest{RequestId: string(domain.NewID()), Token: []byte("fixture-pat")}
+	if _, err := f.client.InspectGitHubToken(ctx, connect.NewRequest(preview)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("anonymous token inspection accepted", err)
+	}
+	if _, err := f.client.InspectGitHubToken(ctx, ownerRequest(worker, preview)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("Worker token inspection accepted", err)
+	}
+	if _, err := f.client.InspectGitHubToken(ctx, ownerRequest(actor, preview)); err != nil {
+		t.Fatal("paired client token inspection rejected", err)
+	}
+	form := &pb.PrepareGitHubTokenFormRequest{RequestId: string(domain.NewID()), TokenKind: pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_CLASSIC, Access: pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES}
+	if _, err := f.client.PrepareGitHubTokenForm(ctx, ownerRequest(worker, form)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("Worker token form accepted", err)
+	}
+	if _, err := f.client.PrepareGitHubTokenForm(ctx, ownerRequest(actor, form)); err != nil {
+		t.Fatal("paired client token form rejected", err)
+	}
 	raw := []byte(`{"name":"Actor profile","provider":"github.com","token_kind":"classic"}`)
 	save := &pb.SaveIntegrationProfileRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, SchemaVersion: 1, DocumentJson: raw}
 	if _, err := f.client.SaveIntegrationProfile(ctx, connect.NewRequest(save)); connect.CodeOf(err) != connect.CodeUnauthenticated {

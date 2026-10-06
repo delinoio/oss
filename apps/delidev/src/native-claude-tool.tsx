@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
 enum State { Streaming = "streaming", Complete = "complete" }
@@ -46,22 +47,23 @@ function tool(value: unknown, state: string): Tool | undefined {
 }
 
 export function NativeClaudeTool({ content, state, id, native, parent }: { content: unknown; state: string; id: string; native: string; parent: string }) {
+  useLocale();
   const retained = tool(content, state);
-  if (!retained || retained.reference.id !== id || retained.reference.native_id !== native || retained.native_message_id !== parent) return <section aria-label="Claude tool unavailable"><p>The retained Claude tool is unavailable or inconsistent.</p></section>;
+  if (!retained || retained.reference.id !== id || retained.reference.native_id !== native || retained.native_message_id !== parent) return <section aria-label={copy("native-claude-tool.claudeToolUnavailable_fade0a")}><p>{copy("native-claude-tool.theRetainedClaudeToolIsUnavailable_552da4")}</p></section>;
   const result = retained.result;
-  return <section aria-label="Claude tool observation"><details>
-    <summary>{retained.reference.name} · {result ? "Result observed" : retained.proposal ? "Proposal complete" : "Receiving proposal"}</summary>
-    <p>Provider block {retained.index + 1}. Caller: {retained.caller === null ? "Not reported" : "Direct"}.</p>
-    <details><summary>Initial input</summary><pre>{retained.initial_input}</pre></details>
-    {retained.input_delta !== null ? <details><summary>Streamed input</summary><pre>{retained.input_delta}</pre></details> : null}
-    {retained.proposal ? <><details><summary>Original proposed input</summary><pre>{retained.proposal.proposed}</pre></details><details><summary>Native applied input</summary><pre>{retained.proposal.applied}</pre></details></> : null}
-    {result ? <section aria-label="Original tool result">
-      <p>Native error flag: {result.is_error === null ? "Not reported" : result.is_error ? "Error reported" : "No error reported"}.</p>
-      {result.non_execution ? <p>{result.non_execution.non_execution_kind === "user-rejected" ? "The original user rejection prevented this tool from executing." : "Native permission policy prevented this tool from executing."}</p> : null}
+  return <section aria-label={copy("native-claude-tool.claudeToolObservation_17c86c")}><details>
+    <summary>{retained.reference.name} · {result ? copy("native-claude-tool.resultObserved_447816") : retained.proposal ? copy("native-claude-tool.proposalComplete_1ebb0e") : copy("native-claude-tool.receivingProposal_2dfe67")}</summary>
+    <p><LocalizedText id="native-claude-tool.providerBlockCaller_c07946" components={{ s0: <>{retained.index + 1}</>, s1: <>{retained.caller === null ? copy("native-claude-tool.notReported_adadfa") : copy("native-claude-tool.direct_002c7c")}</> }} /></p>
+    <details><summary>{copy("native-claude-tool.initialInput_f6c601")}</summary><pre>{retained.initial_input}</pre></details>
+    {retained.input_delta !== null ? <details><summary>{copy("native-claude-tool.streamedInput_bafbd1")}</summary><pre>{retained.input_delta}</pre></details> : null}
+    {retained.proposal ? <><details><summary>{copy("native-claude-tool.originalProposedInput_0ecc84")}</summary><pre>{retained.proposal.proposed}</pre></details><details><summary>{copy("native-claude-tool.nativeAppliedInput_6397df")}</summary><pre>{retained.proposal.applied}</pre></details></> : null}
+    {result ? <section aria-label={copy("native-claude-tool.originalToolResult_2b1077")}>
+      <p><LocalizedText id="native-claude-tool.nativeErrorFlag_e3d9ff" components={{ s0: <>{result.is_error === null ? copy("native-claude-tool.notReported_adadfa") : result.is_error ? copy("native-claude-tool.errorReported_284ccd") : copy("native-claude-tool.noErrorReported_71376f")}</> }} /></p>
+      {result.non_execution ? <p>{result.non_execution.non_execution_kind === "user-rejected" ? copy("native-claude-tool.theOriginalUserRejectionPreventedThis_97b97e") : copy("native-claude-tool.nativePermissionPolicyPreventedThisTool_8e5f57")}</p> : null}
       {result.text !== null ? <pre>{result.text}</pre> : null}
-      {result.blocks !== null ? <ol aria-label="Tool result blocks">{result.blocks.map((b, index) => <li key={index}><pre>{b.text}</pre></li>)}</ol> : null}
-      {result.structured !== null ? <details><summary>Structured native result</summary><pre>{result.structured}</pre></details> : null}
-    </section> : <p>No tool result has been observed.</p>}
-    <p>Proposal completion does not establish approval or execution. Tool results do not determine the session outcome.</p>
+      {result.blocks !== null ? <ol aria-label={copy("native-claude-tool.toolResultBlocks_7800be")}>{result.blocks.map((b, index) => <li key={index}><pre>{b.text}</pre></li>)}</ol> : null}
+      {result.structured !== null ? <details><summary>{copy("native-claude-tool.structuredNativeResult_762fc2")}</summary><pre>{result.structured}</pre></details> : null}
+    </section> : <p>{copy("native-claude-tool.noToolResultHasBeenObserved_39f5c0")}</p>}
+    <p>{copy("native-claude-tool.proposalCompletionDoesNotEstablishApproval_0d9759")}</p>
   </details></section>;
 }

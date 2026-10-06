@@ -10,6 +10,8 @@ fn main() {
             "choose_repository_folder",
             "read_appearance",
             "update_appearance",
+            "read_language",
+            "update_language",
             "open_github",
             "open_provider_guidance",
             "connect_local",
@@ -64,6 +66,7 @@ fn build_widget_bridge() {
     assert!(sdk.status.success(), "Cannot resolve the macOS SDK");
     let sources = [
         "../macos-widget/Shared/Snapshot.swift",
+        "../macos-widget/Shared/Localization.swift",
         "../macos-widget/Shared/SnapshotStore.swift",
         "../macos-widget/Bridge/Bridge.swift",
     ];

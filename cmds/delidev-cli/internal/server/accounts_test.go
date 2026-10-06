@@ -120,7 +120,7 @@ func (f *accountFixture) start() {
 	f.done = make(chan error, 1)
 	ready := make(chan Endpoint, 1)
 	go func() {
-		f.done <- Serve(ctx, Config{DataDir: f.root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), accountSecrets: f.secrets, disableCatalogMaintenance: !f.automaticCatalog}, func(e Endpoint) { ready <- e })
+		f.done <- Serve(ctx, Config{disableKnownModelMaintenance: true, DataDir: f.root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), accountSecrets: f.secrets, disableCatalogMaintenance: !f.automaticCatalog}, func(e Endpoint) { ready <- e })
 	}()
 	select {
 	case f.endpoint = <-ready:

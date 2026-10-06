@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { affectedGoPackages, GoMode, selectionOptions } from "./go-affected.mjs";
 
 export const GoTestShard = Object.freeze({
   All: "all",
@@ -31,11 +32,21 @@ export function selectPackages(output, shard) {
   return selected;
 }
 
-export function runGoTests(shard, { run = spawnSync, log = console.log, platform = process.platform } = {}) {
+export function runGoTests(shard, { run = spawnSync, log = console.log, platform = process.platform, ...options } = selectionOptions()) {
   if (!Object.values(GoTestShard).includes(shard)) throw new Error("Unknown Go test shard");
   const started = performance.now();
+  const commandOptions = { shell: false, stdio: "inherit", ...(options.cwd ? { cwd: options.cwd } : {}) };
   let packages = ["./..."];
-  if (shard !== GoTestShard.All) {
+  const mode = options.mode ?? GoMode.Full;
+  if (!Object.values(GoMode).includes(mode)) throw new Error("Unknown Go validation mode");
+  if (mode === GoMode.Affected) {
+    const selection = affectedGoPackages({ ...options, run, log });
+    packages = selection.packages.filter((name) => shard === GoTestShard.All || shardForPackage(name) === shard);
+    if (packages.length === 0) {
+      log(JSON.stringify({ event: "ci_go_test_empty", shard, mode, packageCount: 0 }));
+      return 0;
+    }
+  } else if (shard !== GoTestShard.All) {
     const discovery = run("go", ["list", "-f", "{{.ImportPath}}", "./..."], {
       shell: false, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], maxBuffer: 8 * 1024 * 1024,
     });
@@ -57,7 +68,7 @@ export function runGoTests(shard, { run = spawnSync, log = console.log, platform
     // Go recognizes literal NUL on Windows, not Node's extended device path
     // from os.devNull. That spelling is required for its multi-package exception.
     const nullOutput = platform === "win32" ? "NUL" : "/dev/null";
-    const compilation = run("go", ["test", "-c", "-o", nullOutput, ...packages], { shell: false, stdio: "inherit" });
+    const compilation = run("go", ["test", "-c", "-o", nullOutput, ...packages], commandOptions);
     if (compilation.error) throw compilation.error;
     const exitCode = compilation.status ?? 1;
     log(JSON.stringify({ event: "ci_go_test_compile", shard, elapsedSeconds: Math.round((performance.now() - compileStarted) / 1000), exitCode, signal: compilation.signal }));
@@ -71,9 +82,11 @@ export function runGoTests(shard, { run = spawnSync, log = console.log, platform
   // exceeds 20 minutes; this watchdog does not extend any product deadline.
   // Reassess the larger budget after native fixture timings permit reduction.
   const timeout = shard === GoTestShard.Worker ? "45m" : "20m";
-  const args = ["test", ...(shard === GoTestShard.All ? [] : ["-p=1"]), `-timeout=${timeout}`, ...packages];
+  // Subprocess command changes can leave a consumer's test binary unchanged.
+  // Disable result reuse so TestMain runs; compiled objects remain cacheable.
+  const args = ["test", "-count=1", ...(shard === GoTestShard.All ? [] : ["-p=1"]), `-timeout=${timeout}`, ...packages];
   const testStarted = performance.now();
-  const result = run("go", args, { shell: false, stdio: "inherit" });
+  const result = run("go", args, commandOptions);
   if (result.error) throw result.error;
   const exitCode = result.status ?? 1;
   log(JSON.stringify({ event: "ci_go_test_complete", shard, elapsedSeconds: Math.round((performance.now() - started) / 1000), testSeconds: Math.round((performance.now() - testStarted) / 1000), exitCode, signal: result.signal }));
@@ -82,7 +95,7 @@ export function runGoTests(shard, { run = spawnSync, log = console.log, platform
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const args = process.argv.slice(2);
+    const args = process.argv.length === 2 && process.env.CI_GO_TEST_SHARD ? ["--shard", process.env.CI_GO_TEST_SHARD] : process.argv.slice(2);
     if (args.length !== 2 || args[0] !== "--shard") throw new Error("Expected --shard all|core|server|harness|worker");
     process.exitCode = runGoTests(args[1]);
   } catch (error) {

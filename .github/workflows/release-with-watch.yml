@@ -159,6 +159,7 @@ jobs:
       - prepare
       - build
     env:
+      RELEASE_PROJECT: with-watch
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
@@ -187,20 +188,10 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.1.1
 
-      - name: Generate checksums and signatures
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x ./scripts/release/generate-checksums.sh
-          ./scripts/release/generate-checksums.sh --artifacts-dir dist
-
-      - name: Create GitHub release
-        if: env.DRY_RUN != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: dist/*
-          generate_release_notes: true
+      - name: Verify or publish signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/legacy-cli-release.mjs --artifacts-dir dist
 
       - name: Render Homebrew update
         if: env.DRY_RUN == 'true'

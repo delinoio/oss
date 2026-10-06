@@ -1,8 +1,9 @@
+import { ProductError, copy } from "./localization";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { encode, object, document, Mode, type Document } from "./documents";
 import { Comparison, readDiff, type Diff } from "./session-diff-model";
 
-export class ReviewContextError extends Error {}
+export class ReviewContextError extends ProductError {}
 
 export enum AnchorKind { File = "file", Lines = "lines" }
 export enum ReviewSide { Old = "old", New = "new" }
@@ -38,13 +39,13 @@ export function readComment(resource: Resource, session: string): Comment | unde
   return v as Comment;
 }
 export function readReviewContext(raw: Uint8Array, expected: Diff): ReviewContext {
-  const invalid = () => { throw new ReviewContextError("The review locations are unavailable. Refresh the comparison."); };
+  const invalid = () => { throw new ReviewContextError("validation.03d54ce010c1"); };
   if (raw.byteLength > 1048576) return invalid();
   let value: Document;
   try { value = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw))); } catch { return invalid(); }
   if (!exact(value, ["diff", "files"]) || !Array.isArray(value.files) || value.files.length > 256) return invalid();
   const diff = readDiff(encode({ size: "0", binary: false, truncated: false, diff: value.diff }), expected.repository_id, expected.comparison, expected.path);
-  if (diff.revision !== expected.revision) throw new ReviewContextError("The diff changed before comment editing. Close this editor, refresh the diff, and select the location again.");
+  if (diff.revision !== expected.revision) throw new ReviewContextError("validation.376b1888b589");
   const seen = new Set<string>();
   for (const item of value.files) {
     const file = object(item);
@@ -76,6 +77,6 @@ export function selectedContext(file: ReviewFile | undefined, pick: Selection): 
   return bounded(result, 8192) ? result : undefined;
 }
 export function freshness(anchor: Anchor, diff: Diff): string {
-  if (anchor.repository_id !== diff.repository_id || anchor.comparison !== diff.comparison || anchor.query_path !== diff.path) return "Not checked in this comparison";
-  return anchor.diff_revision === diff.revision ? "Current for this comparison" : "Stale · Original diff changed";
+  if (anchor.repository_id !== diff.repository_id || anchor.comparison !== diff.comparison || anchor.query_path !== diff.path) return copy("local-review-model.extra.a05610ae5f5f");
+  return anchor.diff_revision === diff.revision ? copy("local-review-model.extra.85c996c70928") : copy("local-review-model.extra.01167438c368");
 }

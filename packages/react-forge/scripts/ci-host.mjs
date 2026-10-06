@@ -1,0 +1,11 @@
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+const root = fileURLToPath(new URL("../../../", import.meta.url));
+const target = process.env.REACT_FORGE_TARGET;
+const hosts = JSON.parse(readFileSync(new URL("../src/native-platforms.json", import.meta.url), "utf8"));
+if (!hosts.some((host) => host.target === target && host.platform === process.platform && host.architecture === process.arch)) throw new Error("CI target must match the native host");
+const child = spawn("bash", ["packages/react-forge/scripts/validate-host.sh", target], { cwd: root, stdio: "inherit", env: { ...process.env, REACT_FORGE_TASK_GRAPH: "1" } });
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => child.kill(signal));
+child.on("error", (error) => { console.error(error); process.exitCode = 1; });
+child.on("exit", (code) => { process.exitCode = code ?? 1; });

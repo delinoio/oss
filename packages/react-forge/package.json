@@ -82,7 +82,8 @@
     "package:verify": "node scripts/package.mjs verify",
     "test:package": "node scripts/install-smoke.mjs",
     "test:scenes": "node scripts/render-scenes.mjs",
-    "example:scenes": "node --import tsx scripts/generate-scene-examples.mjs"
+    "example:scenes": "node --import tsx scripts/generate-scene-examples.mjs",
+    "ci:host": "node scripts/ci-host.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.1",

@@ -1,0 +1,8 @@
+{
+  "toast-notifications.notifications_788011": "알림",
+  "toast-notifications.success_c88a0b": "성공",
+  "toast-notifications.information_1cb0ba": "안내",
+  "toast-notifications.warning_e981dd": "주의",
+  "toast-notifications.error_54a0e8": "오류",
+  "toast-notifications.dismissNotification_1dd388": "알림 닫기: {{v0}}"
+}
