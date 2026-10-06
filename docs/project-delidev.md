@@ -49,7 +49,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
-- [OpenRouter account OAuth PKCE](cmds-delidev-account-oauth-contract.md)
+- [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)

@@ -50,7 +50,7 @@ CLI framing/authentication and command groups have separate files. They retain
 existing order, authorization, cleanup and output behavior.
 
 The original structural change retained schema 24. The current executable registry
-implements real migrations through 28; later reserved versions remain inactive. Versioned migration
+implements real migrations through 30; later reserved versions remain inactive. Versioned migration
 definitions share creation and upgrade paths while retaining backup-first atomic
 upgrade and all recognized historical layout repairs. Historical migration tests
 start from fixed historical SQL, not a newer schema with an expanding drop list.
@@ -60,6 +60,14 @@ Unknown or newer databases, including unmerged variant schema-25 databases, rema
 preserved and require recovery rather than being inferred from their version alone.
 
 ## Validation and rollout
+
+The general API browser OAuth extension reserves migration 31 under issue #964
+after real 26–30 and retains the original 29/30 owners. Inventory capability 6,
+device connection method 4 and the additive flow/options/state fields belong to
+the same main-first reservation closure in the allocation ledger. Reservations
+grant no provider registration, exchange or native capability. Deliver complete
+common/Hugging Face, Gemini and Baseten feature PRs in that dependency order under
+the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 Use the existing protocol, Go, frontend and CI-contract suites. No new GitHub
 ruleset, required check or merge-queue policy is introduced. Record validation and

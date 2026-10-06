@@ -2521,6 +2521,29 @@
         "user_code": 2,
         "canceled": 3
       }
+    },
+    "StartAccountOAuthRequest": {
+      "kind": "message",
+      "members": {
+        "provider": 1,
+        "callback_url": 2
+      }
+    },
+    "StartAccountOAuthResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "authorization_url": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
+    },
+    "CompleteAccountOAuthRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1,
+        "authorization_code": 2
+      }
     }
   },
   "reservations": [
@@ -5991,6 +6014,80 @@
       "member": "CODEX_DIAGNOSTIC_PHASE_CLEANUP",
       "number": 12,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ProviderInventoryCapability",
+      "member": "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ProviderConnectionMethod",
+      "member": "PROVIDER_CONNECTION_METHOD_OAUTH_DEVICE",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "AccountOAuthFlow",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_FLOW_UNSPECIFIED",
+      "number": 0
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "AccountOAuthFlow",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_FLOW_PKCE",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "AccountOAuthFlow",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_FLOW_DEVICE",
+      "number": 2
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AccountOAuthGoogleOptions",
+      "newDeclaration": true,
+      "member": "quota_project_id",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartAccountOAuthRequest",
+      "member": "google",
+      "number": 3
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartAccountOAuthResponse",
+      "member": "flow",
+      "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartAccountOAuthResponse",
+      "member": "user_code",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CompleteAccountOAuthRequest",
+      "member": "authorization_state",
+      "number": 3
     }
   ]
 }
