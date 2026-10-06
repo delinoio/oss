@@ -54,6 +54,7 @@ function LocalDesktop() {
   const [busy, setBusy] = useState(isTauri());
   const connecting = useRef(false);
   const acceptConnection = async (connection: NativeConnection, current: () => boolean = () => true) => {
+    if (!current()) return;
     const generation = connectionReadGeneration.current;
     const candidate = createDeliDevTransport({ origin: connection.endpoint, getToken: () => connection.token });
     await verifyLocalServer(candidate, connection.server_id);
@@ -69,11 +70,16 @@ function LocalDesktop() {
     if (busy || connecting.current) return;
     connecting.current = true;
     setBusy(true); setError(undefined);
+    const generation = connectionReadGeneration.current;
     try {
-      const generation = connectionReadGeneration.current;
       const connection = await invoke<NativeConnection>(action);
       await acceptConnection(connection, () => generation === connectionReadGeneration.current);
-    } catch (reason) { setError(reason); } finally { connecting.current = false; setBusy(false); }
+    } catch (reason) {
+      if (generation === connectionReadGeneration.current) setError(reason);
+    } finally {
+      connecting.current = false;
+      if (generation === connectionReadGeneration.current) setBusy(false);
+    }
   };
   useEffect(() => {
     if (!isTauri()) return;
@@ -109,7 +115,7 @@ function LocalDesktop() {
         await acceptConnection(connection, () => !canceled && generation === connectionReadGeneration.current);
         if (!canceled && generation === connectionReadGeneration.current) setBusy(false);
       } catch (reason) {
-        if (!canceled && generation === connectionReadGeneration.current) setError(reason);
+        if (!canceled && generation === connectionReadGeneration.current) { setError(reason); setBusy(false); }
       }
     };
     const subscription = listen("local-connection-changed", () => { if (!canceled) void reread(); }).catch(() => () => {});

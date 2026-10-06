@@ -19,7 +19,7 @@ use tauri_runtime_cef::CefRuntime;
 
 use super::{
     ProductWindows, SavedBinding, WindowAuthority, capture_authority, recheck_authority,
-    recheck_registered, saved_csp, show, trusted_url,
+    recheck_registered, reconcile_saved_label, saved_csp, show, trusted_url,
 };
 
 const NEW_WINDOW: &str = "delidev-new-window";
@@ -67,25 +67,28 @@ pub fn create(
         .as_ref()
         .map(|v| delidev_desktop::connection_origin(&v.endpoint))
         .transpose()?;
+    // Reconcile and register under the same binding lock so an accepted rename
+    // cannot miss a queued creation and leave its title at an older revision.
+    let mut bindings = windows.bindings.lock().map_err(|_| NativeFailure::Busy)?;
+    let profile = profile
+        .map(|value| reconcile_saved_label(&bindings, value))
+        .transpose()?;
     let entry = windows
         .registry
         .lock()
         .map_err(|_| NativeFailure::Busy)?
         .reserve(role, initial)?;
     if let Some(profile) = &profile {
-        windows
-            .bindings
-            .lock()
-            .map_err(|_| NativeFailure::Busy)?
-            .insert(
-                entry.label.clone(),
-                SavedBinding {
-                    profile: profile.clone(),
-                    instance: entry.instance.clone(),
-                    closing: false,
-                },
-            );
+        bindings.insert(
+            entry.label.clone(),
+            SavedBinding {
+                profile: profile.clone(),
+                instance: entry.instance.clone(),
+                closing: false,
+            },
+        );
     }
+    drop(bindings);
     drop(barriers);
     // No registry mutex is held while Tauri synchronizes native creation.
     let result = (|| -> tauri::Result<WebviewWindow<CefRuntime>> {

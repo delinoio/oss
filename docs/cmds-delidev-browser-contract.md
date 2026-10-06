@@ -254,7 +254,7 @@ requests cannot extend that list. Popups, downloads, file pickers and permission
 denied; script clipboard/paste access is disabled. Ordinary external HTTP(S) pages
 receive only their profile's web credentials, never product or platform credentials.
 The external CEF client has no app process-message handler or native capability.
-Product controls are accepted only from trusted main/saved app documents and
+Product controls are accepted only from registered trusted local/saved app documents and
 independently reread current Go ownership before browsing mutations.
 
 The Go-prepared root enforces private Unix permissions or owner-only inherited

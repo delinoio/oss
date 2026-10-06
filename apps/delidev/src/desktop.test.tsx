@@ -283,3 +283,32 @@ it("rechecks an adopted local identity without startup and resets only changed-d
   view.unmount();
   await waitFor(() => expect(unlisten).toHaveBeenCalled());
 });
+
+it("leaves startup after a failed authority reread and ignores the old observation error", async () => {
+  localFixture();
+  const original = bridge.invoke.getMockImplementation()!;
+  let changed!: () => void;
+  let rejectOld!: (reason: string) => void;
+  const pending = new Promise((_, reject) => { rejectOld = reject; });
+  let observations = 0;
+  bridge.listen.mockImplementation(async (event, callback) => {
+    if (event === "local-connection-changed") changed = callback;
+    return () => {};
+  });
+  bridge.invoke.mockImplementation(async (command: string, args?: unknown) => {
+    if (command === "launch_local") {
+      if (++observations === 1) return pending;
+      throw "credential-unavailable";
+    }
+    return original(command, args);
+  });
+  render(<Desktop />);
+  await screen.findByText("Starting DeliDev…");
+  await act(async () => changed());
+  await screen.findByText(/This desktop credential is unavailable or revoked/);
+  expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+  await act(async () => rejectOld("sidecar-missing"));
+  expect(screen.queryByText(/The bundled DeliDev executable is missing/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("Your sessions, in one place");
+});

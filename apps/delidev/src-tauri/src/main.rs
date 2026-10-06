@@ -992,32 +992,33 @@ async fn rename_connection(
     result
 }
 
-fn apply_saved_label(
-    windows: &ProductWindows,
+fn reconcile_saved_label(
+    values: &BTreeMap<String, SavedBinding>,
     mut profile: SavedConnection,
 ) -> Result<SavedConnection, NativeFailure> {
-    {
-        let mut values = windows
-            .bindings
-            .lock()
-            .map_err(|_| NativeFailure::SidecarFailed)?;
-        let affected: Vec<_> = values
-            .iter()
-            .filter(|(_, binding)| binding.profile.id == profile.id)
-            .map(|(label, _)| label.clone())
-            .collect();
-        for label in &affected {
-            let binding = &values[label];
-            if binding.closing || !binding.profile.same_authority(&profile) {
-                return Err(NativeFailure::InvalidEvidence);
-            }
-            if binding.profile.revision > profile.revision {
-                profile = binding.profile.clone();
-            }
+    let id = profile.id.clone();
+    for binding in values.values().filter(|v| v.profile.id == id) {
+        if binding.closing || !binding.profile.same_authority(&profile) {
+            return Err(NativeFailure::InvalidEvidence);
         }
-        for label in affected {
-            values.get_mut(&label).unwrap().profile = profile.clone();
+        if binding.profile.revision > profile.revision {
+            profile = binding.profile.clone();
         }
+    }
+    Ok(profile)
+}
+
+fn apply_saved_label(
+    windows: &ProductWindows,
+    profile: SavedConnection,
+) -> Result<SavedConnection, NativeFailure> {
+    let mut values = windows
+        .bindings
+        .lock()
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+    let profile = reconcile_saved_label(&values, profile)?;
+    for binding in values.values_mut().filter(|v| v.profile.id == profile.id) {
+        binding.profile = profile.clone();
     }
     Ok(profile)
 }
@@ -1934,9 +1935,13 @@ mod product_window_tests {
         renamed.revision = 3;
         renamed.name = "Renamed".into();
         apply_saved_label(&windows, renamed).unwrap();
-        let stale = apply_saved_label(&windows, first.saved.unwrap()).unwrap();
+        let original = first.saved.unwrap();
+        let stale = apply_saved_label(&windows, original.clone()).unwrap();
         assert_eq!(stale.revision, 3);
         let values = windows.bindings.lock().unwrap();
+        let queued = reconcile_saved_label(&values, original).unwrap();
+        assert_eq!(queued.name, "Renamed");
+        assert_eq!(queued.revision, 3);
         assert_eq!(values[&second.entry.label].profile.name, "Renamed");
         assert_eq!(values[&other.entry.label].profile.name, "Original");
     }
