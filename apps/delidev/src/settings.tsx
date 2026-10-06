@@ -1,3 +1,4 @@
+import type { UsageEntry } from "./usage-entry";
 import { providerPresetNames } from "@delinoio/delidev-api-client";
 import { useOpenRouterOAuth } from "./account-oauth";
 import { SubscriptionAccounts } from "./subscription-accounts";
@@ -170,7 +171,7 @@ function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: (
   </article>;
 }
 
-interface SettingsProps { readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
+interface SettingsProps { openUsage?: (entry: UsageEntry) => void; readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
 enum SettingsEntryKind { NewProject, ManageAccounts, AddAccount }
 type SettingsCategoryEntry = { kind: SettingsEntryKind.NewProject } | { kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount; providerId: string; provider?: AccountProviderSummary };
 interface SettingsSelection { category: SettingsCategory; key: string; entry?: SettingsCategoryEntry }
@@ -221,7 +222,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
   </>;
 }
 
-function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, entry, navigate }: SettingsProps & { selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
+function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, entry, navigate }: SettingsProps & { selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
   const oauth = useOpenRouterOAuth();
   const oauthStarted = useRef(false);
   useEffect(() => {
@@ -366,7 +367,7 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
             {controlLocalWorker && isRunnerDevices ? <div hidden={Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div hidden={Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             {isApiAccounts ? <div hidden={hasOverlay}>
-              <AccountSettings oauth={oauth} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
+              <AccountSettings openUsage={openUsage} oauth={oauth} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
             </div> : null}
             {isSubscriptionAccounts ? <div hidden={hasOverlay}>
               <SubscriptionAccounts active={visible && isSubscriptionAccounts && !hasOverlay} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} />
