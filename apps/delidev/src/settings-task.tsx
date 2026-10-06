@@ -82,6 +82,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
   const [activeStep, setActiveStep] = useState<string>();
   const [stepTarget, setStepTarget] = useState<HTMLDivElement | null>(null);
   const [signalStatus, setSignalStatus] = useState(SettingsTaskStatus.AwaitingConfirmation);
+  const committed = useRef(false);
   const signals = useRef(new Map<string, SettingsTaskStatus>()), dismissals = useRef(new Map<string, () => void>()), presentations = useRef(new Map<string, SettingsTaskPresentation>());
   const host = useContext(HostContext), register = host?.register;
   const retain = useCallback((key: string, retained: boolean, status = SettingsTaskStatus.AwaitingConfirmation) => {
@@ -108,6 +109,12 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
   useLayoutEffect(() => {
     const node = dialog.current;
     if (!visible || !node) return;
+    // React Strict Mode replays this layout effect before the first microtask.
+    // A later unmount without dismissWithClose is a programmatic completion
+    // (for example, a successful save closing its parent task), so it must use
+    // the same focus restoration path as an explicit close.
+    let live = true;
+    queueMicrotask(() => { if (live) committed.current = true; });
     node.showModal();
     const frame = requestAnimationFrame(() => {
       if (!node.open || anotherModal(node)) return;
@@ -117,11 +124,12 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
       (target ?? heading.current)?.focus({ preventScroll: true });
     });
     return () => {
+      live = false;
       cancelAnimationFrame(frame);
       node.close();
       // StrictMode and retained-task visibility changes also clean up this
       // effect. They must not unlock the background or steal focus.
-      if (!closeRequested.current) return;
+      if (!closeRequested.current && !committed.current) return;
       // A retained operation is hidden, not dismissed. Keep its background
       // locked and leave focus on the retained-operation destination.
       if (retained || signals.current.size > 0) return;

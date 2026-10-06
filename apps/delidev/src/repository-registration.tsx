@@ -63,6 +63,14 @@ function SaveCompletion({ state, saved }: { state: string; saved: () => void }) 
   useEffect(() => { if (state === JobState.Succeeded) saved(); }, [state, saved]);
   return null;
 }
+function repositoryRegistrationDocument(data: Document, legacy: boolean): Document {
+  if (!legacy) return data;
+  // Servers before capability 37 reject the URL-only field as an unknown
+  // property. Their inspected-folder registration contract already accepts
+  // the remaining repository document, so omit only the newly allocated field.
+  const { remote_url: _remoteURL, ...legacyData } = data;
+  return legacyData;
+}
 
 export function RepositoryRegistration({ active, readLocalWorker, controlLocalWorker, chooseFolder, saved, cancel }: {
   active: boolean; readLocalWorker?: ReadLocalWorkerProof; controlLocalWorker?: ControlLocalWorker; chooseFolder?: ChooseRepositoryFolder; saved: () => void; cancel: () => void;
@@ -270,7 +278,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {ready && !cloneLocally ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} registration requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error || clone.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
-      <SettingsTaskActions className="repository-add-footer"><button type="button" data-settings-task-cancel onClick={cancelTask}>Cancel</button><button type="button" className="primary" disabled={blocked || !ready} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button>{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
+      <SettingsTaskActions className="repository-add-footer"><button type="button" data-settings-task-cancel onClick={cancelTask}>Cancel</button><button type="button" className="primary" disabled={blocked || !ready} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(repositoryRegistrationDocument(data, legacyReady)) })}>Add repository</button>{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
     </>}
   </section>;
 }

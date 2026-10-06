@@ -81,7 +81,7 @@ it("keeps inspected-folder registration available on older servers", async () =>
   fireEvent.click(add); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
   expect(saved).toMatchObject({ name: "oss", checkouts: [{ machine_id: f.machine.id, path: "/canonical/oss" }] });
-  expect(saved.remote_url).toBe("");
+  expect(saved.remote_url).toBeUndefined();
 });
 
 it("registers the canonical checkout using folder selection and Add repository only", async () => {

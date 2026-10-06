@@ -107,14 +107,18 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const exportText = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
   const opening = useSettingsOpening();
-  const containsRepositories = loaded?.bundle.entries.some(entry => entry.kind === "repository") === true;
-  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && containsRepositories, retry: false });
+  // Legacy exports contain checkout-backed repositories without the URL-only
+  // field. Those documents use the pre-capability save/import contract and
+  // must remain available on older servers; only the new remote shape needs
+  // capability 37.
+  const containsRemoteRepositories = loaded?.bundle.entries.some(entry => entry.kind === "repository" && Object.hasOwn(entry.document, "remote_url")) === true;
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && containsRemoteRepositories, retry: false });
   // Unsupported is a successful status response without capability 37. A
   // failed status read is a separate recoverable condition and must expose its
   // error/retry path instead of presenting misleading upgrade guidance.
-  const remoteUnsupported = containsRepositories && status.data !== undefined && !status.data.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1);
-  const statusPending = containsRepositories && status.data === undefined && !status.error;
-  const statusFailed = containsRepositories && Boolean(status.error);
+  const remoteUnsupported = containsRemoteRepositories && status.data !== undefined && !status.data.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1);
+  const statusPending = containsRemoteRepositories && status.data === undefined && !status.error;
+  const statusFailed = containsRemoteRepositories && Boolean(status.error);
   const exportRead = useMutation(ConfigurationQuery.exportConfiguration, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   const previewRead = useMutation(ConfigurationQuery.previewConfigurationImport, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; }; }, []);
@@ -206,7 +210,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
       <p className="transfer-load-guidance">You will map resources and review changes before applying.</p>
     </section>
     {loading || exportRead.isPending || previewRead.isPending || mutation.busy ? <p role="status">{loading ? "Reading configuration file…" : exportRead.isPending ? "Exporting configuration…" : previewRead.isPending ? "Loading configuration change preview…" : "Sending configuration import request…"}</p> : null}
-    {remoteUnsupported ? <p role="status">Update the selected server before importing repositories.</p> : null}
+    {remoteUnsupported ? <p role="status">Update the selected server before importing repositories by URL.</p> : null}
     {status.error ? <Problem error={status.error} /> : null}
     {status.error ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry server capability check</button> : null}
     {loaded ? <fieldset className="transfer-panel transfer-mapping" disabled={blocked}>

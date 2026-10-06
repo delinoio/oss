@@ -212,3 +212,13 @@ it("separates capability-read failure from unsupported repository imports and of
   await screen.findByRole("button", { name: "Apply reviewed configuration" });
   expect(value.preview).toHaveBeenCalledTimes(1);
 });
+
+it("keeps legacy checkout-backed repository imports available without capability 37", async () => {
+  const value = fixture();
+  const repositoryBundle = { version: 1, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Legacy", checkouts: [{ machine_id: newRequestId(), path: "/owned/legacy" }], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
+  render(value.view()); load(repositoryBundle);
+  fireEvent.click(await screen.findByRole("button", { name: "Preview configuration changes" }));
+  await screen.findByRole("button", { name: "Apply reviewed configuration" });
+  expect(value.status).not.toHaveBeenCalled();
+  expect(value.preview).toHaveBeenCalledTimes(1);
+});
