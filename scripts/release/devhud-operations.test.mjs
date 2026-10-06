@@ -205,6 +205,20 @@ test("operations contract preserves high-risk CEF, rollback, retention, and reda
   assert.match(operations, /track per-device secure-store cleanup separately as best-effort reconciliation/iu);
 });
 
+test("Chrome operations and support retain explicit availability and exposure boundaries", () => {
+  const controller = readFileSync(`${root}/docs/servers-devhud-release-controller-contract.md`, "utf8");
+  const project = readFileSync(`${root}/docs/project-devhud.md`, "utf8");
+  const agents = readFileSync(`${root}/AGENTS.md`, "utf8");
+  for (const text of [operations, support, controller, project, agents]) {
+    assert.match(text, /`PUBLISHED`/u);
+    assert.match(text, /100 percent|equal to 100/u);
+    assert.match(text, /unknown or missing|unknown, or missing/u);
+    assert.match(text, /takedown|takenDown/u);
+    assert.match(text, /automatic withdrawal|withdrawal refusal/iu);
+    assert.match(text, /regardless of its state|including tester, unknown, or missing states/u);
+  }
+});
+
 test("CI validates release fixtures without publication authority", () => {
   assert.match(ciWorkflow, /permissions:\n  contents: read\n  pull-requests: read/u);
   assert.doesNotMatch(ciWorkflow, /\$\{\{\s*secrets\./u);
