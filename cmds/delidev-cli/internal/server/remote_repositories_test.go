@@ -4,13 +4,115 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"path/filepath"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/testgit"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
+
+func TestRemoteScheduleClonesWithoutCheckoutAndClaimsExecution(t *testing.T) {
+	// Native discovery/account state is a private protocol fixture. Real Git
+	// preparation and the execution lease prove the scheduled workspace boundary,
+	// without invoking an installed harness or an external account.
+	f := newFirstDispatchFixtureWorkspaceProfile(t, domain.Codex, domain.PlanMode, "/fixture/codex", "", "fixture-model", domain.Worktree)
+	ctx := context.Background()
+	projectRecord, err := f.service.Store.Get(ctx, domain.ProjectKind, f.selection.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := store.Decode[domain.Project](projectRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := map[string]string{}
+	_, err = f.service.Store.Mutate(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), domain.NewID(), "fixture.remote-schedule", nil, func(tx *store.Tx) (any, error) {
+		for _, id := range project.Repositories {
+			row, err := tx.Get(domain.RepositoryKind, id)
+			if err != nil {
+				return nil, err
+			}
+			repository, err := store.Decode[domain.Repository](row)
+			if err != nil {
+				return nil, err
+			}
+			sources[repository.RemoteURL] = repository.Checkouts[0].Path
+			repository.Checkouts = nil
+			if _, err := tx.Put(row.Kind, row.ID, row.Revision, "", "", repository); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := delidevv1connect.NewScheduleServiceClient(http.DefaultClient, f.endpoint.URL)
+	definition := domain.ScheduleDefinition{Name: "Remote scheduled clone", AgentID: f.selection.AgentID, MachineID: f.selection.MachineID, ProjectID: f.selection.ProjectID, Workspace: domain.Worktree, Mode: domain.PlanMode, Prompt: "scheduled fixture input", Cron: "0 0 1 1 *", Timezone: "UTC", Overlap: domain.ScheduleAllowOverlap}
+	raw, _ := json.Marshal(definition)
+	saved, err := client.SaveSchedule(ctx, ownerRequest(f.identity, &pb.SaveScheduleRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, SchemaVersion: 1, DefinitionJson: raw}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := client.RunScheduleNow(ctx, ownerRequest(f.identity, &pb.RunScheduleNowRequest{Mutation: acctMutation(saved.Msg.Schedule, domain.NewID())}))
+	if err != nil || run.Msg.Session == nil {
+		t.Fatal("schedule did not accept a session", err)
+	}
+	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
+		t.Fatal("schedule preparation was not assigned", f.workerStream.Err())
+	}
+	assigned := f.workerStream.Msg().Job
+	var job domain.Job
+	var preparation workspace.PrepareRequest
+	if domain.Decode(assigned.DocumentJson, &job) != nil || job.Type != domain.PrepareWorkspaceJob || domain.Decode(job.Input, &preparation) != nil || string(preparation.SessionID) != run.Msg.Session.Id {
+		t.Fatal("schedule preparation identity changed")
+	}
+	for _, repository := range preparation.Repositories {
+		if repository.Checkout != "" || repository.SourceKind != workspace.RemoteCloneSource || sources[repository.RemoteURL] == "" {
+			t.Fatal("schedule depended on a connected checkout")
+		}
+	}
+	manager := workspace.Manager{Root: f.workerRoot, Git: workspace.Git{Executable: testgit.Executable(t, sources)}}
+	manifest, err := manager.Prepare(ctx, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = json.Marshal(manifest)
+	if _, err := f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(assigned, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw})); err != nil {
+		t.Fatal(err)
+	}
+	current, err := f.service.Store.Get(ctx, domain.SessionKind, preparation.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.dispatchExecution(ctx, current); err != nil {
+		t.Fatal("prepared schedule did not dispatch", err)
+	}
+	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
+		t.Fatal("scheduled execution was not assigned", f.workerStream.Err())
+	}
+	execution := f.workerStream.Msg().Job
+	var input domain.ExecutionJobInput
+	if domain.Decode(execution.DocumentJson, &job) != nil || job.Type != domain.ExecuteSessionJob || domain.Decode(job.Input, &input) != nil || input.SessionID != preparation.SessionID || input.Input.Prompt != definition.Prompt {
+		t.Fatal("scheduled execution lost its accepted input")
+	}
+	var accepted workspace.Manifest
+	if domain.Decode(input.Manifest, &accepted) != nil || accepted.PrimaryPath != manifest.PrimaryPath {
+		t.Fatal("execution did not retain the managed clone")
+	}
+	lease, err := manager.ClaimFirstExecution(ctx, domain.ID(execution.Id), input.ExecutionID, preparation, accepted)
+	if err != nil {
+		t.Fatal("scheduled clone was not executable", err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestRemoteRepositoryRegistrationWithoutMachineAndPortableImport(t *testing.T) {
 	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
