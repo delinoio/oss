@@ -111,7 +111,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const opening = useSettingsOpening();
   // Legacy exports contain checkout-backed repositories without the URL-only
   // field. Only imports that contain a remote repository need capability 37.
-  const containsRemoteRepositories = loaded?.bundle.entries.some(entry => entry.kind === "repository" && Object.hasOwn(entry.document, "remote_url")) === true;
+  const containsRemoteRepositories = loaded?.bundle.entries.some(entry => entry.kind === "repository" && typeof entry.document.remote_url === "string" && entry.document.remote_url !== "") === true;
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && containsRemoteRepositories, retry: false });
   const remoteUnsupported = containsRemoteRepositories && status.data !== undefined && !status.data.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1);
   const statusPending = containsRemoteRepositories && status.data === undefined && !status.error;

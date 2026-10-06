@@ -630,7 +630,9 @@ func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Ma
 	if err := m.requireNoSidechatReferences(ctx, manifest.SessionID); err != nil {
 		return err
 	}
+	rootPresent := false
 	if _, err := os.Lstat(root); err == nil {
+		rootPresent = true
 		if err := security.CheckPrivateDir(root); err != nil {
 			return ResultUncertain()
 		}
@@ -645,11 +647,21 @@ func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Ma
 	if manifest.Reference != nil {
 		return m.removeSidechatMetadata(ctx, root, manifest)
 	}
-	if claim != nil {
+	if claim == nil || claim.ManifestDigest != manifestDigest(manifest) || claim.SessionID != manifest.SessionID || claim.Version != 1 {
+		return ResultUncertain()
+	}
+	// A persisted cleanup claim is also the authority for replay after the
+	// managed root has already been removed. Re-hashing an absent root would
+	// turn an interrupted, otherwise safe cleanup into a permanent recovery
+	// failure. When the root is still present, retain the stronger replacement
+	// check before inspecting or unlinking any child.
+	if rootPresent {
 		current, err := directoryIdentityDigest(root)
-		if err != nil || current != claim.RootIdentity || claim.ManifestDigest != manifestDigest(manifest) || claim.SessionID != manifest.SessionID || claim.Version != 1 {
+		if err != nil || current != claim.RootIdentity {
 			return ResultUncertain()
 		}
+	} else {
+		return nil
 	}
 	for i := len(manifest.Repositories) - 1; i >= 0; i-- {
 		repo := manifest.Repositories[i]
@@ -696,9 +708,6 @@ func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Ma
 		}
 	}
 	if manifest.ManagedRootDigest != "" {
-		if claim == nil {
-			return ResultUncertain()
-		}
 		if current, err := directoryIdentityDigest(root); err != nil || current != claim.RootIdentity {
 			return ResultUncertain()
 		}
