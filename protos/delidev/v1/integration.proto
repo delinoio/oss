@@ -7,6 +7,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 
 // Server-owned read-only integration profiles are separate from AI Accounts.
 service IntegrationService {
+  rpc InspectGitHubToken(InspectGitHubTokenRequest) returns (InspectGitHubTokenResponse);
+  rpc PrepareGitHubTokenForm(PrepareGitHubTokenFormRequest) returns (PrepareGitHubTokenFormResponse);
   rpc SaveIntegrationProfile(SaveIntegrationProfileRequest) returns (SaveIntegrationProfileResponse);
   rpc ReplaceIntegrationToken(ReplaceIntegrationTokenRequest) returns (ReplaceIntegrationTokenResponse);
   rpc ValidateIntegrationProfile(ValidateIntegrationProfileRequest) returns (ValidateIntegrationProfileResponse);
@@ -20,6 +22,58 @@ service IntegrationService {
   rpc DismissPullRequestProblem(DismissPullRequestProblemRequest) returns (DismissPullRequestProblemResponse);
   rpc ListPullRequestRemediationAttempts(ListPullRequestRemediationAttemptsRequest) returns (ListPullRequestRemediationAttemptsResponse);
   rpc ResumePullRequestRemediation(ResumePullRequestRemediationRequest) returns (ResumePullRequestRemediationResponse);
+}
+
+enum GitHubTokenKind {
+  GIT_HUB_TOKEN_KIND_UNSPECIFIED = 0;
+  GIT_HUB_TOKEN_KIND_FINE_GRAINED = 1;
+  GIT_HUB_TOKEN_KIND_CLASSIC = 2;
+}
+
+enum GitHubTokenIdentityState {
+  GIT_HUB_TOKEN_IDENTITY_STATE_UNSPECIFIED = 0;
+  GIT_HUB_TOKEN_IDENTITY_STATE_VERIFIED = 1;
+  GIT_HUB_TOKEN_IDENTITY_STATE_INVALID_TOKEN = 2;
+  GIT_HUB_TOKEN_IDENTITY_STATE_ACCESS_RESTRICTED = 3;
+  GIT_HUB_TOKEN_IDENTITY_STATE_SSO_REQUIRED = 4;
+  GIT_HUB_TOKEN_IDENTITY_STATE_RATE_LIMITED = 5;
+  GIT_HUB_TOKEN_IDENTITY_STATE_UNAVAILABLE = 6;
+}
+
+message InspectGitHubTokenRequest {
+  string request_id = 1;
+  // Transient write-only input. Inspection does not store a token or profile.
+  bytes token = 2;
+}
+
+message InspectGitHubTokenResponse {
+  string request_id = 1;
+  GitHubTokenIdentityState state = 2;
+  // Present only for verified identity; never a repository access grant.
+  GitHubTokenIdentity identity = 3;
+  bytes problem_json = 4;
+}
+
+message GitHubTokenIdentity {
+  string id = 1;
+  string node_id = 2;
+  string login = 3;
+}
+
+message PrepareGitHubTokenFormRequest {
+  string request_id = 1;
+  GitHubTokenKind token_kind = 2;
+  string resource_owner = 3;
+  GitHubTokenAccess access = 4;
+}
+
+message PrepareGitHubTokenFormResponse {
+  string request_id = 1;
+  GitHubTokenKind token_kind = 2;
+  string resource_owner = 3;
+  GitHubTokenAccess access = 4;
+  // Canonical official form only; preparation has no credential side effects.
+  string url = 5;
 }
 
 message RefreshPullRequestProblemsRequest {
