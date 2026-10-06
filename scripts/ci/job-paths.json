@@ -114,6 +114,8 @@
   "rust-fmt": {
     "paths": [
       "**/*.rs",
+      "**/.rustfmt.toml",
+      "**/rustfmt.toml",
       "**/Cargo.lock",
       "**/Cargo.toml",
       "**/rust-toolchain",

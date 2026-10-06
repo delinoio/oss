@@ -45,6 +45,20 @@ function namedStep(job, name) {
   return job.steps.find((candidate) => candidate.name === name);
 }
 
+test("rustfmt runs the uncached real cache regression with the pinned formatter", () => {
+  const job = workflow.jobs["rust-fmt"];
+  const graph = jobTaskGraph(job);
+  const fixture = graph.get("@delinoio/ci#ci:rust:fmt-fixture");
+  assert.ok(fixture);
+  assert.equal(fixture.task.cache, false);
+  assert.deepEqual(fixture.task.dependsOn, []);
+  assert.match(fixture.command, /node --test scripts\/ci\/rustfmt-cache\.fixture\.mjs/u);
+  const setup = job.steps.findIndex(({ uses }) => uses === "dtolnay/rust-toolchain@v1");
+  assert.equal(job.steps[setup].with.toolchain, readFileSync(`${root}/rust-toolchain`, "utf8").trim());
+  assert.equal(job.steps[setup].with.components, "rustfmt");
+  assert.ok(setup < job.steps.findIndex(({ run }) => run?.includes("ci:rust:fmt-fixture")));
+});
+
 test("protocol launcher fixtures run uncached on every native CI contract host", () => {
   const job = workflow.jobs["ci-contracts"];
   assert.equal(job["runs-on"], "${{ matrix.os }}");

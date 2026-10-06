@@ -43,5 +43,7 @@
   "account-oauth.connectHuggingFaceInferenceProviders_7b4d2c": "Connect Hugging Face Inference Providers",
   "account-oauth.approveAccessOnProviderDelidevWill_7f1c4a": "Approve access on {{v0}}. DeliDev will finish connecting automatically.",
   "account-oauth.providerConnected_5a9a4f": "{{v0}} connected",
-  "account-oauth.invalidGoogleCloudProjectId_9e2b1c": "Enter a valid Google Cloud project ID (6–30 lowercase letters, digits or hyphens)."
+  "account-oauth.invalidGoogleCloudProjectId_9e2b1c": "Enter a valid Google Cloud project ID (6–30 lowercase letters, digits or hyphens).",
+  "account-oauth.ifAskedEnterThisCode_6d3a1f": "If asked, enter this code:",
+  "account-oauth.temporaryAuthorizationCode_1d4e7a": "Temporary authorization code"
 }

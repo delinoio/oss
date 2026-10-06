@@ -28,6 +28,8 @@ Credentials use the existing WorkerSSH protected vault purpose. Durable operatio
 
 No ambient SSH config, agent, known-host fallback, password prompt or arbitrary remote command is permitted. Observe host identity without authentication, and authenticate only the explicitly confirmed original identity. Cancellation closes and joins owned transport/session children; connection loss after a send remains uncertain until original remote status is inspected. Setup cannot remove existing private roots, install harnesses or grant inbound Worker execution ports. Remote Worker uses the existing authenticated outbound pairing/network contracts.
 
+Each command installs child-context cancellation before opening its session. The callback closes the owned transport and joins SSH transport shutdown, so channel creation, exec replies, command exit and session cleanup cannot wait for the longer connection parent deadline. Keep the callback active through session cleanup and join it before returning. A canceled transport cannot authorize another command; Stage and Setup still require original-operation recovery after a potentially sent remote effect, without automatic replay.
+
 ## Logging
 
 Structured logs contain original operation IDs, typed phase/error code, target and public version only. Exclude credentials, host paths, raw SSH output, native content and signing material.

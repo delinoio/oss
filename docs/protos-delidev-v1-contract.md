@@ -13,7 +13,7 @@ introduced by this prerequisite.
 
 
 
-## Known subscription model reservations
+## Known subscription model allocation and activation
 
 Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
 and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
@@ -22,9 +22,14 @@ UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
 reserves native ID/display name/order/minimum harness version/retirement date
 fields 1–5. The request reserves subscription service field 1; the response
 reserves subscription service/models/catalog version/updated at/source fields 1–5.
-Establish these allocations on main before dependent implementation. Reservations
-grant no catalog retrieval, authentication, account entitlement, native discovery
-or execution capability. No database migration is introduced.
+These allocations reached main in PR #1370 before dependent activation. The
+complete feature activates capability 35 and the owner/client read-only RPC in
+provider.proto; generated bindings use the normal compatibility pipeline.
+Reservations alone grant no feature support. The active advisory read grants no
+authentication, account entitlement, native discovery or execution capability.
+The response echoes the exact closed service, includes at most 200 models and
+uses BUNDLED/CACHE/ONLINE provenance; unsupported service values fail. No database
+migration is introduced. Follow the catalog, desktop and network contracts.
 
 ## GitHub token-first onboarding reservations
 
@@ -745,3 +750,10 @@ no provider support. The common/Hugging Face implementation returns PKCE flow
 only on a live Start, advertises capability 6 only for accepted exact profiles,
 and keeps authorization URL/code/state outside cached query variables. Device
 user codes remain Start-only; later provider implementations retain their gates.
+- For server-owned Baseten Device approval, Start returns flow DEVICE and the
+  temporary user code only with the original live Start reply. Status is a read.
+  After the sole Go completion claim, its existing response request_id identifies
+  that original completion receipt; code-free local recovery retains the original
+  expected attempt revision 1. Cancellation keeps its own mutation receipt.
+  Public Complete cannot supply a Device callback or initiate polling. These
+  semantics reuse the main-reserved fields and grant no unregistered capability.

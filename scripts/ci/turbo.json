@@ -338,7 +338,10 @@
         "$TURBO_ROOT$/**/*.rs",
         "$TURBO_ROOT$/Cargo.toml",
         "$TURBO_ROOT$/**/Cargo.toml",
-        "$TURBO_ROOT$/rustfmt.toml"
+        "!.turbo/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
+        "$TURBO_ROOT$/**/.rustfmt.toml",
+        "$TURBO_ROOT$/**/rustfmt.toml"
       ],
       "outputs": [],
       "env": [
@@ -355,6 +358,15 @@
         "npm_execpath",
         "RUNNER_TEMP",
         "GITHUB_SHA"
+      ]
+    },
+    "ci:rust:fmt-fixture": {
+      "cache": false,
+      "dependsOn": [],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME"
       ]
     },
     "ci:rust:clippy": {

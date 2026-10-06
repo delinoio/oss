@@ -43,5 +43,7 @@
   "account-oauth.connectHuggingFaceInferenceProviders_7b4d2c": "Hugging Face 추론 제공업체 연결",
   "account-oauth.approveAccessOnProviderDelidevWill_7f1c4a": "{{v0}}에서 액세스를 승인하세요. DeliDev가 자동으로 연결을 완료합니다.",
   "account-oauth.providerConnected_5a9a4f": "{{v0}} 연결됨",
-  "account-oauth.invalidGoogleCloudProjectId_9e2b1c": "유효한 Google Cloud 프로젝트 ID를 입력하세요(소문자, 숫자 또는 하이픈 6~30자)."
+  "account-oauth.invalidGoogleCloudProjectId_9e2b1c": "유효한 Google Cloud 프로젝트 ID를 입력하세요(소문자, 숫자 또는 하이픈 6~30자).",
+  "account-oauth.ifAskedEnterThisCode_6d3a1f": "요청되면 이 코드를 입력하세요:",
+  "account-oauth.temporaryAuthorizationCode_1d4e7a": "임시 인증 코드"
 }

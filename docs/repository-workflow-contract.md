@@ -1,5 +1,33 @@
 # Repository Workflow Contract
 
+## DeliDev known model catalog
+
+`.github/workflows/delidev-known-models.yml` runs daily at 04:17 Asia/Seoul
+(`17 19 * * *` UTC) and supports manual dispatch on main in `delinoio/oss`.
+Its public-source collector and fixtures validate all three service inventories
+before issuing any write token. Reuse the existing release-bot GitHub App, scoped
+to `oss` with contents and pull-requests write permissions only. Checkout keeps no
+credential. Raw upstream responses and secret values are excluded from logs.
+
+Use one bot branch and one open review PR. Catalog/date/source-byte-only equality
+creates no PR. A candidate model or related metadata change records additions,
+changes, removals, source revision/digest, validation commands/results and account,
+native/platform limits in the PR and CI summary. An unchanged source revision is
+required at publication. Every branch-only commit must belong to the bot and every
+changed path to the catalog. A human edit or incomplete ownership inspection stops
+publication. Exact old-ref force-with-lease protects against a concurrent human
+push; credentials exist only in ephemeral Git configuration environment. Existing
+PRs are edited, and no automatic merge or automatic publication retry is enabled.
+Runs also inspect the bot branch and open review PR when the candidate already
+matches main, closing a stale review instead of leaving obsolete catalog data
+open. Immediately before a candidate commit, the publisher re-fetches every
+recorded source and compares its exact URL, revision and digest; any source or
+main revision drift aborts publication and requires a new collection.
+Only a person-merged main catalog is consumed by installed servers. GitHub schedule
+delivery is best effort; manual dispatch can recover a missed run. A real workflow
+run and App permission acceptance are separate from local fixture validation.
+
+
 DeliDev source decomposition, independent evidence and stable numeric reservations
 follow [the structure contract](cmds-delidev-structure-contract.md). These are source
 ownership changes; existing required checks and repository rulesets remain intact.
@@ -172,6 +200,19 @@ Forge uses `forge-test` on Linux, macOS, and Windows for its three private Rust 
 
 Both Forge jobs are selected for root `rust-toolchain` changes on pull requests and main pushes. The alternate `rust-toolchain.toml` filename remains covered for a future toolchain configuration migration.
 
+Rustfmt-only changes to `.rustfmt.toml` or `rustfmt.toml` select `rust-fmt` on
+pull requests and main pushes. This applies at the root and to nested package or
+source-directory overrides, even when a broad package rule would otherwise
+select compilation or native packaging. Mixed changes retain their other job
+owners. The cacheable `ci:rust:fmt` task hashes both filenames at every repository
+depth and excludes generated `.turbo` logs from its broad script inputs so an
+unchanged run can reuse its result. Its formatting job also runs the uncached
+`ci:rust:fmt-fixture` task with the pinned formatter and locked Turbo. Disposable
+offline workspaces verify
+cold success, unchanged cache hits, configuration-only hash changes and fresh
+formatting failures, plus override addition and removal. Fixture results do not
+establish hosted remote-cache performance.
+
 The `go-test` matrix has one Linux runner, one macOS runner, and four independent Windows runners. `scripts/ci/go-test.mjs --shard all` runs `go test -count=1 -timeout=20m ./...` on Linux/macOS for selected main jobs, manual dispatch and forced validation. Ordinary PR validation uses the exact planned base/head to select affected packages on each native host. Each Windows runner discovers its native `go list ./...` inventory and passes its selected package paths to `go test -count=1 -p=1` with a 20-minute package watchdog for `core`, `server` and `harness`, and a 45-minute package watchdog for `worker`. All runners hydrate LFS assets and generate the real administrator and ach UI embeds before testing. The matrix retains `fail-fast: false`, the existing affected selection, and the required `CI Result` aggregate.
 
 | Windows shard | Package ownership |
@@ -202,6 +243,19 @@ The `async-commit-hook` CI job follows the central change plan and validates the
 The `async-commit-hook` job also owns shared protocol freshness for DevHud schemas and Go bindings under `protos/**` and TypeScript output under `packages/devhud-api-client/src/gen/**`. A change confined to that generated TypeScript tree selects the job on PRs and main pushes. Its `ci:proto:check` dependency runs the uncached `ci:proto:fresh` leaf, which regenerates and rejects tracked or untracked drift even with a warm cache. DevHud consumer jobs retain their existing selection, DevHud-only inputs do not select DeliDev jobs, and handwritten DevHud client changes do not select this shared protocol owner.
 
 The always-running `changes` job computes the execution plan with `scripts/ci/plan.mjs` and `scripts/ci/job-paths.json`. Domain jobs depend on this plan and use job-level conditions, so unrelated jobs do not allocate runners. `ci-contracts` always validates the workflow and planner. Rules cover Go, Rust, every Node workspace, environment tooling, all implemented DevHud domains, packaging, public documentation, and private-package, public-release, and CEF-review workflows. Runmoor-only release scripts do not select DevHud native packaging.
+
+Job ownership, configuration forcing and workspace forcing share one dependency-free
+dot-aware path matcher. Wildcards include hidden files and directories at every
+depth; literal-dot patterns retain their literal dots. Match Git's POSIX paths
+without removing filename characters, including whitespace, newlines and literal
+backslashes. Preserve single-segment wildcards, zero-or-more-directory globstars
+and event eligibility. Planning works before pnpm installation. In particular,
+changes limited to `apps/devhud-admin/.env.example` or
+`servers/devhud-api/.env.example` select `repository-environment` on both PRs and
+main pushes, and hidden descendants of `.github/actions/` force every eligible
+job. Hidden inputs inside a job's workspace retain ordinary affected execution;
+owned inputs outside that workspace force it. Unrelated hidden paths do not
+select jobs.
 
 The `devhud-release-contracts` job runs the complete top-level `scripts/release/*.test.mjs` suite, including release fixtures shared with other projects. Every test fixture in that suite, committed data under `scripts/release/fixtures/`, and the shared `project.mjs`, `runmoor.mjs`, and `update-homebrew.sh` implementations they exercise select this Ubuntu job on PRs and main pushes. Other project-specific release scripts retain their narrower owners. A Runmoor fixture or implementation change does not select DevHud desktop or mobile packaging.
 

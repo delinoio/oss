@@ -24,6 +24,7 @@ pub enum OAuthAction {
     Begin,
     BeginHuggingFace,
     BeginGoogleGemini,
+    BeginBaseten,
     Profiles,
     BindOpen,
     SubscriptionOpen,
@@ -53,6 +54,7 @@ pub enum OAuthProfile {
     Openrouter,
     HuggingFace,
     GoogleGemini,
+    Baseten,
 }
 
 fn registered_client(profile: OAuthProfile) -> Option<String> {
@@ -69,6 +71,7 @@ fn registered_client(profile: OAuthProfile) -> Option<String> {
             "http://localhost/oauth/hugging-face/callback",
         ),
         OAuthProfile::GoogleGemini => ("gemini", "http://127.0.0.1/oauth/google-gemini/callback"),
+        OAuthProfile::Baseten => ("baseten", ""),
         OAuthProfile::Openrouter => return Some(String::new()),
     };
     let registration = registrations.get(key)?;
@@ -76,11 +79,42 @@ fn registered_client(profile: OAuthProfile) -> Option<String> {
     (registration.get("registration")?.as_str()? == "registered"
         && registration.get("api_compatibility")?.as_str()? == "accepted"
         && registration.get("redirect_uri")?.as_str()? == redirect
+        && (profile != OAuthProfile::Baseten || registered_verification_uri().is_some())
         && !id.is_empty()
+        && !id.chars().any(char::is_control)
         && id.len() <= 256)
         .then(|| id.to_owned())
 }
 
+fn valid_device_authorization(raw: &str) -> bool {
+    let Ok(u) = url::Url::parse(raw) else {
+        return false;
+    };
+    u.scheme() == "https"
+        && u.host_str() == Some("app.baseten.co")
+        && u.port().is_none()
+        && u.username().is_empty()
+        && u.password().is_none()
+        && u.path() != "/"
+        && u.query().is_none()
+        && u.fragment().is_none()
+        && u.as_str() == raw
+        && !raw.contains("..")
+}
+fn registered_verification_uri() -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../cmds/delidev-cli/internal/providers/oauth_clients.json"
+    ))
+    .ok()?;
+    let raw = v.get("baseten")?.get("verification_uri")?.as_str()?;
+    valid_device_authorization(raw).then(|| raw.to_owned())
+}
+fn validate_device_authorization(raw: &str, registered: &str) -> Result<(), NativeFailure> {
+    if raw != registered || !valid_device_authorization(raw) {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(())
+}
 impl Drop for OAuthResult {
     fn drop(&mut self) {
         if let Some(state) = &mut self.state {
@@ -340,6 +374,7 @@ impl OAuthHost {
                     OAuthProfile::Openrouter,
                     OAuthProfile::HuggingFace,
                     OAuthProfile::GoogleGemini,
+                    OAuthProfile::Baseten,
                 ]
                 .into_iter()
                 .filter(|p| registered_client(*p).is_some())
@@ -353,14 +388,19 @@ impl OAuthHost {
         }
         if matches!(
             action,
-            OAuthAction::Begin | OAuthAction::BeginHuggingFace | OAuthAction::BeginGoogleGemini
+            OAuthAction::Begin
+                | OAuthAction::BeginHuggingFace
+                | OAuthAction::BeginGoogleGemini
+                | OAuthAction::BeginBaseten
         ) {
             let profile = if action == OAuthAction::Begin {
                 OAuthProfile::Openrouter
             } else if action == OAuthAction::BeginHuggingFace {
                 OAuthProfile::HuggingFace
-            } else {
+            } else if action == OAuthAction::BeginGoogleGemini {
                 OAuthProfile::GoogleGemini
+            } else {
+                OAuthProfile::Baseten
             };
             if registered_client(profile).is_none() {
                 return Err(NativeFailure::InvalidEvidence);
@@ -456,6 +496,11 @@ impl OAuthHost {
                 }
                 if original.profile == OAuthProfile::Openrouter {
                     validate_authorization(authorization, &original.callback)?;
+                } else if original.profile == OAuthProfile::Baseten {
+                    validate_device_authorization(
+                        authorization,
+                        &registered_verification_uri().ok_or(NativeFailure::InvalidEvidence)?,
+                    )?;
                 } else {
                     let client = registered_client(original.profile)
                         .ok_or(NativeFailure::InvalidEvidence)?;
@@ -486,6 +531,9 @@ impl OAuthHost {
                 }
             }
             OAuthAction::Take => {
+                if original.profile == OAuthProfile::Baseten {
+                    return Err(NativeFailure::InvalidEvidence);
+                }
                 if original.attempt != attempt_id || !authorization.is_empty() {
                     return Err(NativeFailure::InvalidEvidence);
                 }
@@ -570,6 +618,27 @@ impl Drop for OAuthHost {
 }
 
 fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, NativeFailure> {
+    if profile == OAuthProfile::Baseten {
+        return Ok(Attempt {
+            profile,
+            scope,
+            generation: uuid::Uuid::now_v7().to_string(),
+            callback: String::new(),
+            attempt: String::new(),
+            authorization: Zeroizing::new(String::new()),
+            until: Instant::now() + Duration::from_secs(600),
+            shared: Arc::new(Shared {
+                expected_state: None,
+                api_state: Mutex::new(None),
+                api_profile: Some(profile),
+                bound: AtomicBool::new(false),
+                consumed: AtomicBool::new(false),
+                stop: AtomicBool::new(false),
+                code: Mutex::new(None),
+            }),
+            thread: None,
+        });
+    }
     // Both families use the same ephemeral port. Never bind a wildcard or
     // silently omit one family: localhost resolver choice cannot change scope.
     let mut sockets = None;
@@ -927,7 +996,9 @@ fn validate_public_authorization(
             "https://www.googleapis.com/auth/cloud-platform",
             9,
         ),
-        OAuthProfile::Openrouter => return Err(NativeFailure::InvalidInput),
+        OAuthProfile::Openrouter | OAuthProfile::Baseten => {
+            return Err(NativeFailure::InvalidInput);
+        }
     };
     let url = url::Url::parse(raw).map_err(|_| NativeFailure::InvalidInput)?;
     if url.scheme() != "https"
@@ -1018,6 +1089,30 @@ mod tests {
         stream.read_to_string(&mut response).unwrap();
         response
     }
+    #[test]
+    fn device_owner_has_no_listener_and_requires_the_registered_approval_uri() {
+        assert!(registered_client(OAuthProfile::Baseten).is_none());
+        let attempt = begin_profile(scope(), OAuthProfile::Baseten).unwrap();
+        assert!(attempt.callback.is_empty());
+        assert!(attempt.thread.is_none());
+        assert!(attempt.shared.api_state.lock().unwrap().is_none());
+        let registered = "https://app.baseten.co/delidev-fixture-approval";
+        assert!(validate_device_authorization(registered, registered).is_ok());
+        for raw in [
+            "https://evil.example/approve",
+            "https://app.baseten.co/delidev-fixture-approval?device_code=private",
+            "https://app.baseten.co:443/delidev-fixture-approval",
+            "https://app.baseten.co/other",
+        ] {
+            assert!(validate_device_authorization(raw, registered).is_err());
+        }
+        let host = OAuthHost::default();
+        assert!(
+            host.control(scope(), OAuthAction::BeginBaseten, "", "", "")
+                .is_err()
+        );
+    }
+
     #[test]
     fn google_profile_binds_loopback_scope_and_closed_callback_fields() {
         assert!(registered_client(OAuthProfile::GoogleGemini).is_none());

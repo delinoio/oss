@@ -10,8 +10,8 @@ import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
 
-export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", BeginGoogleGemini = "begin-google-gemini", Profiles = "profiles", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
-export enum AccountOAuthProfile { OpenRouter = "openrouter", HuggingFace = "hugging-face", GoogleGemini = "google-gemini" }
+export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", BeginGoogleGemini = "begin-google-gemini", BeginBaseten = "begin-baseten", Profiles = "profiles", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
+export enum AccountOAuthProfile { OpenRouter = "openrouter", HuggingFace = "hugging-face", GoogleGemini = "google-gemini", Baseten = "baseten" }
 export interface OAuthNativeResult { generation: string; callback_url?: string; code?: number[]; state?: number[]; profiles?: AccountOAuthProfile[]; denied?: boolean }
 export type OAuthNativeControl = (opening: string, action: OAuthNativeAction, generation: string, attempt: string, authorization: string) => Promise<OAuthNativeResult>;
 const NativeContext = createContext<OAuthNativeControl | undefined>(undefined);
@@ -19,9 +19,9 @@ export const useOAuthNativeControl = () => useContext(NativeContext);
 export function OAuthNativeProvider({ control, children }: { control: OAuthNativeControl; children: ReactNode }) {
   useLocale(); return <NativeContext.Provider value={control}>{children}</NativeContext.Provider>; }
 enum Stage { Configure, Starting, Awaiting, Exchanging, Saving, Canceling, Recovering, Connected, Canceled, Expired, Interrupted, Recovery }
-interface View { provider: AccountProviderSummary; stage: Stage; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string | OwnedMessage; openFailed?: boolean }
+interface View { provider: AccountProviderSummary; stage: Stage; userCode?: string; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string | OwnedMessage; openFailed?: boolean }
 interface Pending {
-  provider: AccountProviderSummary; quotaProject?: string; nativeOpening: string; generation: string; callback: string; startId: string;
+  provider: AccountProviderSummary; quotaProject?: string; userCode?: string; nativeOpening: string; generation: string; callback: string; startId: string;
   attempt?: AccountOAuthAttempt; completion?: Mutation; cancel?: Mutation; problem?: string | OwnedMessage; openFailed?: boolean; bound: boolean; serverStartDispatched: boolean; polling: boolean; busy: boolean; disposed: boolean;
 }
 const validId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
@@ -61,7 +61,7 @@ export function useAccountOAuth() {
     let active = true;
     // This is an inventory read. It creates no listener and opens no browser.
     void native(newRequestId(), OAuthNativeAction.Profiles, "", "", "").then(result => {
-      if (active && !opening?.disposed) setProfiles((result.profiles ?? []).filter(profile => profile === AccountOAuthProfile.OpenRouter || profile === AccountOAuthProfile.HuggingFace || profile === AccountOAuthProfile.GoogleGemini));
+      if (active && !opening?.disposed) setProfiles((result.profiles ?? []).filter(profile => profile === AccountOAuthProfile.OpenRouter || profile === AccountOAuthProfile.HuggingFace || profile === AccountOAuthProfile.GoogleGemini || profile === AccountOAuthProfile.Baseten));
     }).catch(() => { if (active) setProfiles([]); });
     return () => { active = false; };
   }, [native, opening]);
@@ -72,7 +72,7 @@ export function useAccountOAuth() {
     // This uses the known local opening even when Begin's response was lost.
     // Native keeps its tombstone, so a queued late Begin cannot recreate it.
     if (native) void native(value.nativeOpening, OAuthNativeAction.Dispose, value.generation, value.attempt?.id ?? "", "").catch(() => undefined);
-    value.callback = "";
+    value.callback = ""; value.userCode = undefined;
   };
   useEffect(() => {
     alive.current = true;
@@ -80,12 +80,19 @@ export function useAccountOAuth() {
     opening?.controller.signal.addEventListener("abort", close, { once: true });
     return () => { alive.current = false; opening?.controller.signal.removeEventListener("abort", close); close(); };
   }, [opening, native]);
-  const failure = (value: Pending, message: string | OwnedMessage) => { value.problem = message; if (current(value)) setView(previous => ({ provider: value.provider, stage: previous?.stage ?? Stage.Recovery, attempt: value.attempt, account: previous?.account, problem: message, openFailed: previous?.openFailed })); };
-  const accept = (value: Pending, result: CompleteAccountOAuthResponse | CancelAccountOAuthResponse | GetAccountOAuthStatusResponse) => {
+  const failure = (value: Pending, message: string | OwnedMessage) => { value.problem = message; if (current(value)) setView(previous => ({ provider: value.provider, stage: previous?.stage ?? Stage.Recovery, attempt: value.attempt, account: previous?.account, userCode: value.userCode, problem: message, openFailed: previous?.openFailed })); };
+  const accept = (value: Pending, result: CompleteAccountOAuthResponse | CancelAccountOAuthResponse | GetAccountOAuthStatusResponse, deviceReceipt = false) => {
     const attempt = checkedAttempt(result.attempt, value), account = checkedAccount(result.account, value);
+    if (deviceReceipt && profileOf(value.provider) === AccountOAuthProfile.Baseten && result.requestId && validId(result.requestId)) {
+      // Device attempts remain at revision 1 until their sole Go completion.
+      // Status returns that non-secret receipt after the original claim exists.
+      if (value.completion && value.completion.requestId !== result.requestId) throw new Error("Device receipt ownership");
+      value.completion ??= { $typeName: "delidev.v1.Mutation", id: attempt.id, expectedRevision: 1n, requestId: result.requestId };
+    }
     value.attempt = attempt;
+    if (attempt.state !== AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION) value.userCode = undefined;
     if (attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_CONNECTED) { value.problem = undefined; value.openFailed = false; }
-    if (current(value)) setView({ provider: value.provider, stage: stage(attempt.state), attempt, account,
+    if (current(value)) setView({ provider: value.provider, stage: stage(attempt.state), attempt, account, userCode: value.userCode,
       problem: attempt.problem?.code === "permission_denied" ? ownedMessage("account-oauth.extra.50181bfbea4a") : attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? ownedMessage("account-oauth.extra.02b9057706ae") : ownedMessage("account-oauth.extra.50181bfbea4a") : value.problem, openFailed: value.openFailed });
   };
   const finish = async (value: Pending, code: Uint8Array, state: Uint8Array) => {
@@ -105,18 +112,22 @@ export function useAccountOAuth() {
     value.busy = true;
     try {
       if (!value.generation) {
-        const result = await native(value.nativeOpening, profileOf(value.provider) === AccountOAuthProfile.HuggingFace ? OAuthNativeAction.BeginHuggingFace : profileOf(value.provider) === AccountOAuthProfile.GoogleGemini ? OAuthNativeAction.BeginGoogleGemini : OAuthNativeAction.Begin, "", "", "");
+        const result = await native(value.nativeOpening, profileOf(value.provider) === AccountOAuthProfile.HuggingFace ? OAuthNativeAction.BeginHuggingFace : profileOf(value.provider) === AccountOAuthProfile.GoogleGemini ? OAuthNativeAction.BeginGoogleGemini : profileOf(value.provider) === AccountOAuthProfile.Baseten ? OAuthNativeAction.BeginBaseten : OAuthNativeAction.Begin, "", "", "");
         if (!current(value)) { disposeNative(value); return; }
-        if (!validId(result.generation) || !result.callback_url) throw new Error("callback");
-        value.generation = result.generation; value.callback = result.callback_url;
+        if (!validId(result.generation) || (profileOf(value.provider) === AccountOAuthProfile.Baseten ? Boolean(result.callback_url) : !result.callback_url)) throw new Error("callback");
+        value.generation = result.generation; value.callback = result.callback_url ?? "";
       }
       value.serverStartDispatched = true;
       const result = await service.startAccountOAuth({ provider: { id: value.provider.providerId, expectedRevision: value.provider.provider.revision, requestId: value.startId }, callbackUrl: value.callback, google: value.quotaProject ? { quotaProjectId: value.quotaProject } : undefined });
       if (!current(value)) return;
       if (result.requestId !== value.startId) throw new Error("start receipt");
       value.attempt = checkedAttempt(result.attempt, value);
-      if (profileOf(value.provider) !== AccountOAuthProfile.OpenRouter && result.flow !== WireOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE) throw new Error("OAuth flow");
-      setView({ provider: value.provider, stage: stage(value.attempt.state), attempt: value.attempt });
+      const device = profileOf(value.provider) === AccountOAuthProfile.Baseten;
+      if (profileOf(value.provider) !== AccountOAuthProfile.OpenRouter && result.flow !== (device ? WireOAuthFlow.ACCOUNT_OAUTH_FLOW_DEVICE : WireOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE)) throw new Error("OAuth flow");
+      if (device && result.userCode && (!/^[!-~]{1,64}$/.test(result.userCode))) throw new Error("Device user code");
+      if (!device && result.userCode) throw new Error("Unexpected Device code");
+ value.userCode = device && value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION ? result.userCode : undefined;
+      setView({ provider: value.provider, stage: stage(value.attempt.state), attempt: value.attempt, userCode:value.userCode });
       if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && result.authorizationUrl && !value.bound) {
         try { await native(value.nativeOpening, OAuthNativeAction.BindOpen, value.generation, value.attempt.id, result.authorizationUrl); value.bound = true; value.openFailed = false; value.problem = undefined; }
         catch { value.openFailed = true; failure(value, ownedMessage("account-oauth.extra.f0d9ec9fd7e7")); }
@@ -141,7 +152,7 @@ export function useAccountOAuth() {
   };
   const observe = async (value: Pending) => {
     if (!current(value) || !value.attempt) return;
-    try { const result = await service.getAccountOAuthStatus({ attemptId: value.attempt.id }); if (current(value)) accept(value, result); }
+    try { const result = await service.getAccountOAuthStatus({ attemptId: value.attempt.id }); if (current(value)) accept(value, result, true); }
     catch { failure(value, ownedMessage("account-oauth.extra.f6dcc33443bb")); }
   };
   useEffect(() => {
@@ -151,7 +162,7 @@ export function useAccountOAuth() {
       if (!value || !current(value) || value.polling || !value.attempt || !native) return;
       value.polling = true;
       try {
-        if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && value.bound && !value.completion && !value.busy) {
+        if (profileOf(value.provider) !== AccountOAuthProfile.Baseten && value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && value.bound && !value.completion && !value.busy) {
           const result = await native(value.nativeOpening, OAuthNativeAction.Take, value.generation, value.attempt.id, "");
           if (result.code || result.denied) {
             let code: Uint8Array | undefined, state: Uint8Array | undefined;
@@ -234,7 +245,7 @@ export type AccountOAuthFlow = ReturnType<typeof useAccountOAuth>;
 export type OpenRouterOAuthFlow = AccountOAuthFlow;
 function profileOf(provider: AccountProviderSummary): AccountOAuthProfile | undefined {
   const preset = provider.presetId ?? document(provider.provider).preset_id;
-  return preset === AccountOAuthProfile.OpenRouter ? AccountOAuthProfile.OpenRouter : preset === AccountOAuthProfile.HuggingFace ? AccountOAuthProfile.HuggingFace : preset === "gemini" ? AccountOAuthProfile.GoogleGemini : undefined;
+  return preset === AccountOAuthProfile.OpenRouter ? AccountOAuthProfile.OpenRouter : preset === AccountOAuthProfile.HuggingFace ? AccountOAuthProfile.HuggingFace : preset === "gemini" ? AccountOAuthProfile.GoogleGemini : preset === "baseten" ? AccountOAuthProfile.Baseten : undefined;
 }
 function providerServiceName(provider: AccountProviderSummary): string {
   return profileOf(provider) === AccountOAuthProfile.HuggingFace ? "Hugging Face" : provider.displayName;
@@ -264,6 +275,7 @@ export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow:
     {configuring ? <p>{copy("account-oauth.useGoogleCloudProjectToPay_2b7c11")}</p> : <p>{huggingFace ? copy("account-oauth.approveAccessOnProviderDelidevWill_7f1c4a", { v0: providerServiceName(view.provider) }) : copy("account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0")}</p>}
     {configuring ? <label className="account-oauth-project">{copy("account-oauth.googleCloudProjectId_4e7d2a")}<input value={project} maxLength={30} autoComplete="off" spellCheck={false} onChange={event => setProject(event.target.value)} /></label> : null}
     {!configuring ? <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div> : null}
+    {waiting && view.userCode ? <div className="account-oauth-device"><p>{copy("account-oauth.ifAskedEnterThisCode_6d3a1f")}</p><output aria-label={copy("account-oauth.temporaryAuthorizationCode_1d4e7a")} className="account-oauth-user-code">{view.userCode}</output></div> : null}
     {view.problem ? <p role="alert">{resolveMessage(view.problem)}</p> : null}
     {connected ? <SettingsTaskActions><button onClick={() => leave(false, () => edit(connected))}>{copy("account-oauth.editAccount_ab6a16")}</button><button onClick={() => leave(false, () => manage(connected))}>{copy("account-oauth.manageAccount_ddb585")}</button><button onClick={() => leave(false, done)}>{copy("account-oauth.done_11a676")}</button></SettingsTaskActions> : <>
       <SettingsTaskActions>{configuring ? <button onClick={() => flow.continueInBrowser(project)}>{copy("account-oauth.continueInBrowser_7c2d9b")}</button> : <button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button>}<button hidden={configuring} data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></SettingsTaskActions>
