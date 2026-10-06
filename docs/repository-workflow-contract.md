@@ -180,6 +180,14 @@ The always-running `changes` job computes the execution plan with `scripts/ci/pl
 
 The `devhud-release-contracts` job runs the complete top-level `scripts/release/*.test.mjs` suite, including release fixtures shared with other projects. Every test fixture in that suite, committed data under `scripts/release/fixtures/`, and the shared `project.mjs`, `runmoor.mjs`, and `update-homebrew.sh` implementations they exercise select this Ubuntu job on PRs and main pushes. Other project-specific release scripts retain their narrower owners. A Runmoor fixture or implementation change does not select DevHud desktop or mobile packaging.
 
+Changes to `scripts/release/generate-delidev-updater.mjs` select both
+`devhud-release-contracts` for signing/inventory fixtures and `delidev-frontend`
+for dependent packaging-script checks on PRs and main pushes. This external
+input forces the DeliDev workspace through the affected runner so Turbo cannot
+discard its checks. Both consumers must succeed in `CI Result`. The separate
+credential-free native dry runs, production signing restrictions and event-based
+packaging skips remain unchanged.
+
 The `node-public-docs-test` job owns the consolidated root and subpath publication checks. Its path rule includes `packages/docs-site-switcher/**` and `docs/apps-react-forge-docs-foundation.md`; the latter contract alone forces the job. Its public-docs test boundary runs the shared selector interaction suite before building the assembled site, so changes to the shared navigation cannot bypass documentation CI.
 
 The `node-pnport-test` job owns pnport launcher, packaging, installer and fail-closed release fixtures on affected PRs and main pushes. The four-host `pnport-native` job runs native execution, TypeScript, installed npm/Yarn PnP consumer, archive and direct-installer checks on macOS/glibc Linux x64/arm64 for 0.1.0 on affected main pushes and manual CI; PRs skip that native matrix. Both CI and release derive their matrices from the package-owned target registry. Release Project does not wait for this CI matrix. The separate pnport tag workflow independently requires its four-host gate before publication. Windows x64/arm64 is deferred to 0.2.0 with the same complete acceptance requirements.

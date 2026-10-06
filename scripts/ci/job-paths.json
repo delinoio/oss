@@ -561,6 +561,7 @@
       "scripts/release/*.test.mjs",
       "scripts/release/*devhud*",
       "scripts/release/fixtures/**",
+      "scripts/release/generate-delidev-updater.mjs",
       "scripts/release/linux/**",
       "scripts/release/project.mjs",
       "scripts/release/runmoor.mjs",
@@ -767,6 +768,7 @@
       "protos/gen/go/delidev/**",
       "scripts/ci/fixture-binary*",
       "scripts/ci/prepare-delidev-test-binary.mjs",
+      "scripts/release/generate-delidev-updater.mjs",
       "scripts/spawn-dev-server.mjs",
       "scripts/dev-environment/process.mjs"
     ],
