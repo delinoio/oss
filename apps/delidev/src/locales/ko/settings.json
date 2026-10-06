@@ -33,7 +33,7 @@
   "settings.runnerDevices_a176a8": "실행 장치",
   "settings.pairedDevices_f72c6a": "페어링된 장치",
   "settings.serverPreferences_eba66b": "서버 환경 설정",
-  "settings.gitWorkflow": "Git",
+  "settings.gitWorkflow": "Git 워크플로",
   "settings.gitWorkflowDescription": "기본 브랜치, Worktree fetch 및 풀 리퀘스트 문제 해결입니다.",
   "settings.integrations_090512": "연동",
   "settings.manageGithubProfilesForRepositoryAccess_42adb1": "저장소 접근을 위한 GitHub 프로필을 관리하세요. AI 계정은 별도로 구성합니다.",

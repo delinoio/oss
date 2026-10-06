@@ -177,18 +177,19 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
 }
 
 function UsageModelDetail({ id, active, close }: { id: string; active: boolean; close: () => void }) {
+  useLocale();
   const [pricing, setPricing] = useState(false);
   const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const model = current.data?.resource;
   const value = document(model);
-  return <section className="usage-detail" aria-label="Model details">
-    <h2>Model details · {model ? resourceName(model) : id}</h2>
+  return <section className="usage-detail" aria-label={copy("usage.modelDetails")}>
+    <h2>{copy("usage.modelDetailsTitle", { v0: model ? resourceName(model) : id })}</h2>
     <Problem error={current.error} />
-    {current.isLoading ? <p role="status">Loading model details…</p> : null}
-    {current.error && model ? <p role="status">The displayed model details may be stale.</p> : null}
-    {model ? <><p>Model ID: {id} · Native ID: {text(value.native_id) || "Unavailable"}</p><p>{value.source_kind === "subscription" ? `Subscription service: ${text(value.subscription_service)}` : `API provider: ${text(value.provider_id)}`}</p>
-      {value.retired === true ? <p>Retired configuration retains its historical attribution. Current pricing cannot be edited.</p> : pricing ? <ModelPricing model={model} active={active && !current.error} close={() => { setPricing(false); void current.refetch(); }} /> : <button type="button" disabled={!supportsResourceSchema(model) || Boolean(current.error)} onClick={() => setPricing(true)}>Token pricing</button>}
+    {current.isLoading ? <p role="status">{copy("usage.loadingModelDetails")}</p> : null}
+    {current.error && model ? <p role="status">{copy("usage.staleModelDetails")}</p> : null}
+    {model ? <><p>{copy("usage.modelAndNativeId", { v0: id, v1: text(value.native_id) || copy("usage.extra.ca1844969742") })}</p><p>{value.source_kind === "subscription" ? copy("usage.subscriptionServiceDetail", { v0: text(value.subscription_service) }) : copy("usage.apiProviderDetail", { v0: text(value.provider_id) })}</p>
+      {value.retired === true ? <p>{copy("usage.retiredModelPricingUnavailable")}</p> : pricing ? <ModelPricing model={model} active={active && !current.error} close={() => { setPricing(false); void current.refetch(); }} /> : <button type="button" disabled={!supportsResourceSchema(model) || Boolean(current.error)} onClick={() => setPricing(true)}>{copy("usage.tokenPricing")}</button>}
     </> : null}
-    <div className="actions"><button type="button" disabled={current.isFetching} onClick={() => void current.refetch()}>Refresh model details</button><button type="button" onClick={close}>Back to Usage</button></div>
+    <div className="actions"><button type="button" disabled={current.isFetching} onClick={() => void current.refetch()}>{copy("usage.refreshModelDetails")}</button><button type="button" onClick={close}>{copy("usage.backToUsage")}</button></div>
   </section>;
 }
