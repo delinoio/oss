@@ -41,7 +41,7 @@ func transferLimit() error {
 // Observed readiness/provenance cannot cross a server boundary. In particular,
 // even keyless accounts require a fresh explicit connection and validation.
 func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, error) {
-	value, err := configurationValue(kind, raw)
+	value, err := configurationValue(kind, raw, incoming)
 	if err != nil {
 		return nil, err
 	}

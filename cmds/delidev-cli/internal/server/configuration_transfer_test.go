@@ -62,7 +62,7 @@ func TestConfigurationTransferExportExcludesRuntimeAndKeepsExactInstructions(t *
 	selection := transferSelection()
 	var accountID domain.ID
 	for _, entry := range selection.Bundle.Entries {
-		value, err := configurationValue(entry.Kind, entry.Document)
+		value, err := configurationValue(entry.Kind, entry.Document, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -153,9 +153,9 @@ func TestConfigurationTransferExportReferencedMachineLimit(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				repositories := []domain.Repository{{Name: "first", AutoFetch: true}}
+				repositories := []domain.Repository{{RemoteURL: "https://github.com/fixture/first.git", Name: "first", AutoFetch: true}}
 				if test.duplicateMachine {
-					repositories = append(repositories, domain.Repository{Name: "second", AutoFetch: true})
+					repositories = append(repositories, domain.Repository{RemoteURL: "https://github.com/fixture/second.git", Name: "second", AutoFetch: true})
 				}
 				for i, machineID := range machines {
 					repositoryIndex := 0
