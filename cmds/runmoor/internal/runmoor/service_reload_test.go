@@ -365,6 +365,52 @@ func TestServiceReloadInterruptedNativeOutcomesAreRecoverable(t *testing.T) {
 	}
 }
 
+func TestServiceReloadJournalDefersToForegroundPeer(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newReloadFixture(t, platform)
+			failed := false
+			f.onCommand = func(command string) error {
+				if !failed && (strings.Contains(command, " --signal=SIGKILL ") || strings.Contains(command, " bootstrap ")) {
+					failed = true
+					f.replaceManager()
+					f.loaded = true
+					return errors.New("private native failure")
+				}
+				return nil
+			}
+			if err := f.reload(); err == nil {
+				t.Fatal("interrupted replacement unexpectedly succeeded")
+			}
+			if j, err := readReloadJournal(f.r.Unit); err != nil || j == nil {
+				t.Fatalf("recovery intent was not retained: %v", err)
+			}
+
+			// The service was stopped after the failed replacement and a separate
+			// foreground manager now owns the socket. Reload must not consume the
+			// service journal or mutate the stopped service.
+			f.onCommand = nil
+			f.commands = nil
+			f.actions = nil
+			f.pid = 0
+			f.peer = 404
+			f.loaded = false
+			if err := f.reload(); err != nil {
+				t.Fatal(err)
+			}
+			if f.mutated() {
+				t.Fatal("foreground reload resumed service recovery")
+			}
+			if len(f.actions) == 0 || f.actions[len(f.actions)-1] != "reload" {
+				t.Fatal("foreground manager did not receive ordinary reload")
+			}
+			if j, err := readReloadJournal(f.r.Unit); err != nil || j == nil {
+				t.Fatalf("foreground reload consumed service recovery intent: %v", err)
+			}
+		})
+	}
+}
+
 func TestServiceReloadRejectsDefinitionReplacementAndConcurrentStop(t *testing.T) {
 	for _, scenario := range []string{"file replacement", "stop", "wrong replacement manager"} {
 		t.Run(scenario, func(t *testing.T) {

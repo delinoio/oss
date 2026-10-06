@@ -360,6 +360,19 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 			_, _, err = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
 			return err
 		}
+	} else if controlErr == nil {
+		// A reachable socket owned by a different process takes precedence over
+		// journal recovery. The service may have stopped while a foreground
+		// manager started, so resuming native recovery would operate on the wrong
+		// generation or start a competing service.
+		pid, _, err := r.nativePID(ctx)
+		if err != nil {
+			return err
+		}
+		if pid != peer {
+			_, _, err = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
+			return err
+		}
 	}
 	lock, err := lockServiceOperation(r.Unit)
 	if err != nil {
