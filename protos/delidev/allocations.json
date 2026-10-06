@@ -6412,6 +6412,392 @@
       "member": "expected_model_revision",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1",
+      "number": 34
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenKind",
+      "member": "GIT_HUB_TOKEN_KIND_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenKind",
+      "member": "GIT_HUB_TOKEN_KIND_FINE_GRAINED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenKind",
+      "member": "GIT_HUB_TOKEN_KIND_CLASSIC",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenIdentityState",
+      "member": "GIT_HUB_TOKEN_IDENTITY_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenIdentityState",
+      "member": "GIT_HUB_TOKEN_IDENTITY_STATE_VERIFIED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenIdentityState",
+      "member": "GIT_HUB_TOKEN_IDENTITY_STATE_INVALID_TOKEN",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenIdentityState",
+      "member": "GIT_HUB_TOKEN_IDENTITY_STATE_ACCESS_RESTRICTED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenIdentityState",
+      "member": "GIT_HUB_TOKEN_IDENTITY_STATE_SSO_REQUIRED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenIdentityState",
+      "member": "GIT_HUB_TOKEN_IDENTITY_STATE_RATE_LIMITED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GitHubTokenIdentityState",
+      "member": "GIT_HUB_TOKEN_IDENTITY_STATE_UNAVAILABLE",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectGitHubTokenRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectGitHubTokenRequest",
+      "member": "token",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectGitHubTokenResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectGitHubTokenResponse",
+      "member": "state",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectGitHubTokenResponse",
+      "member": "identity",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "InspectGitHubTokenResponse",
+      "member": "problem_json",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GitHubTokenIdentity",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GitHubTokenIdentity",
+      "member": "node_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GitHubTokenIdentity",
+      "member": "login",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormRequest",
+      "member": "token_kind",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormRequest",
+      "member": "resource_owner",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormRequest",
+      "member": "access",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormResponse",
+      "member": "token_kind",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormResponse",
+      "member": "resource_owner",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormResponse",
+      "member": "access",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PrepareGitHubTokenFormResponse",
+      "member": "url",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_KNOWN_SUBSCRIPTION_MODELS_V1",
+      "number": 35
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "KnownSubscriptionModelCatalogSource",
+      "member": "KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "KnownSubscriptionModelCatalogSource",
+      "member": "KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_BUNDLED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "KnownSubscriptionModelCatalogSource",
+      "member": "KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_CACHE",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "KnownSubscriptionModelCatalogSource",
+      "member": "KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_ONLINE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "KnownSubscriptionModel",
+      "member": "native_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "KnownSubscriptionModel",
+      "member": "display_name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "KnownSubscriptionModel",
+      "member": "order",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "KnownSubscriptionModel",
+      "member": "minimum_harness_version",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "KnownSubscriptionModel",
+      "member": "retirement_date",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListKnownSubscriptionModelsRequest",
+      "member": "subscription_service",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListKnownSubscriptionModelsResponse",
+      "member": "subscription_service",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListKnownSubscriptionModelsResponse",
+      "member": "models",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListKnownSubscriptionModelsResponse",
+      "member": "catalog_version",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListKnownSubscriptionModelsResponse",
+      "member": "updated_at",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListKnownSubscriptionModelsResponse",
+      "member": "source",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_AGENT_WORKER_SOURCE_ROUTES_V1",
+      "number": 36
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "route_models",
+      "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1",
+      "number": 37
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1",
+      "number": 19
     }
   ]
 }

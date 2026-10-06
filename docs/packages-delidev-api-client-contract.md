@@ -65,7 +65,7 @@ The library does not log resource documents, credentials, cursors, exception obj
 ## Build and Test
 - `pnpm --filter @delinoio/delidev-api-client lint`, `test`, and `build` validate types, synchronization/transport fixtures and generated exports.
 - The test command compiles and starts the real Go server in a private temporary scope, exercises binary RPC, coherent snapshots, revision events, idempotent mutation replay, indexed deletion and typed authentication failure, then stops its owned process. It never reads user credentials, invokes inference, or starts a Worker. Go is required; the integration task is uncached.
-- Run root protocol formatting/lint/compatibility and repeat generation without drift. The existing shared protocol CI job runs client validation and is selected by DeliDev command/client inputs. Generated `dist` is an explicit compilation output and is removed from the final worktree.
+- Run root protocol formatting/lint/compatibility and repeat generation without drift. The dedicated `delidev-protocol` CI job runs client validation, DeliDev Go binding tests and desktop tests. DeliDev desktop/command/protocol/client and shared configuration inputs select it; DevHud-only source inputs do not. Shared `pnpm proto:check` retains repository-wide schema checks. Generated `dist` is an explicit compilation output and is removed from the final worktree.
 
 ## Dependencies and Integrations
 Pinned Buf protobuf 2.14.0, Connect/Connect Web 2.1.2 and Connect Query 2.3.1 follow repository versions. React Query integration uses generated service namespaces; no second product transport or client-side routing/eligibility engine is introduced. The Go server and its canonical resource schemas remain authoritative.
@@ -237,3 +237,13 @@ Independent server subscription login exports capability 30, the closed Subscrip
 ## Codex login diagnostic client
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
+
+## Agent Worker wizard bindings
+
+Generate ConfigurationQuery.saveAgentWorker, typed model-selection oneof and
+System capability 33 from their canonical schemas. Source-scoped account/model
+queries use the closed service enum and server pagination; keys retain each exact
+source/cursor. Keep original uint64 model/Worker revisions and exact uncertain
+wire requests. The canonical model resource remains an internal identity used by
+existing APIs, Usage and historical snapshots. Configured compatibility and
+catalog results grant no execution readiness. Follow the desktop/catalog contracts.

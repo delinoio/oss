@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskActions } from "./settings-task";
+import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask } from "./settings-task-context";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -231,8 +233,10 @@ function recoveryMessage(provider: AccountProviderSummary): string {
 }
 
 export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; edit: (account: Resource) => void; manage: (account: Resource) => void; done: () => void }) {
+  const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
-  useEffect(() => { heading.current?.focus(); }, [view?.provider.providerId]);
+  useRetainSettingsTask(Boolean(view));
+  useEffect(() => { if (visible) heading.current?.focus(); }, [view?.provider.providerId, visible]);
   if (!view) return null;
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;
   const connected = view.stage === Stage.Connected && view.account;
@@ -245,10 +249,10 @@ export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow:
     <p>Approve access on {providerServiceName(view.provider)}. DeliDev will finish connecting automatically.</p>
     <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div>
     {view.problem ? <p role="alert">{view.problem}</p> : null}
-    {connected ? <div className="actions"><button onClick={() => leave(false, () => edit(connected))}>Edit account</button><button onClick={() => leave(false, () => manage(connected))}>Manage account</button><button onClick={() => leave(false, done)}>Done</button></div> : <>
-      <div className="actions"><button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>Open browser again</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>Cancel</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>Back to providers</button></div>
+    {connected ? <SettingsTaskActions><button onClick={() => leave(false, () => edit(connected))}>Edit account</button><button onClick={() => leave(false, () => manage(connected))}>Manage account</button><button onClick={() => leave(false, done)}>Done</button></SettingsTaskActions> : <>
+      <SettingsTaskActions><button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>Open browser again</button><button data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>Cancel</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>Back to providers</button></SettingsTaskActions>
       <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>Use an API key instead</button>
-      {view.problem ? <div className="actions"><button onClick={flow.observe} disabled={!view.attempt}>Inspect original attempt</button>{!view.attempt ? <button onClick={flow.retryStart}>Retry original start</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>Recover saved result</button> : null}</div> : null}
+      {view.problem ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>Inspect original attempt</button>{!view.attempt ? <button onClick={flow.retryStart}>Retry original start</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>Recover saved result</button> : null}</SettingsTaskActions> : null}
     </>}
     <footer><p>Your credential will be stored securely on the selected server.</p><p>You can validate your account after connecting.</p></footer>
   </section>;

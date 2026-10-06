@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskActions } from "./settings-task";
+import { useRetainSettingsTask, useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
@@ -91,7 +93,10 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const lastSeen = Date.parse(text(workerData.last_seen));
   const offline = Boolean(serverMachine.data?.resource && Number.isFinite(lastSeen) && Date.now() - lastSeen > 45_000);
   const blocked = busy || inspect.busy || inspect.uncertain || Boolean(inspection) || unknown || save.busy || save.uncertain || Boolean(saveJob) || childPending;
-  useEffect(() => { alive.current = true; initialAction.current?.focus(); return () => { alive.current = false; }; }, []);
+  const taskVisible = useSettingsTaskVisible(), cancelTask = useCloseSettingsTask(cancel), inTask = useInSettingsTask();
+  useRetainSettingsTask(Boolean(saveJob || inspection) || unknown || childPending);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { if (taskVisible) initialAction.current?.focus(); }, [taskVisible]);
   const live = () => alive.current && !opening?.disposed;
   const native = <T,>(operation: () => Promise<T>) => opening ? opening.native(operation) : operation();
   const inspectSource = async (selected: Source) => {
@@ -164,8 +169,8 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     return checkout.machine_id === primaryCheckout.machine_id && checkout.path === primaryCheckout.path;
   }));
   return <section className="repository-registration" aria-label="Add repository">
-    <button type="button" disabled={blocked} onClick={cancel}>Back to repositories</button>
-    <h2>Add repository</h2>
+    <button type="button" disabled={blocked} onClick={cancelTask}>Back to repositories</button>
+    <h2 hidden={inTask}>Add repository</h2>
     {saveJob ? <><h3>Repository save accepted</h3>{saveJob === "unknown" ? <p role="alert">The save was acknowledged without a readable job. Inspect its receipt before another save.</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>Return to current draft</button> : null}</>}</TrackedJob>}</> : <>
       {summary ? <section className="repository-summary" aria-label="Repository detected">
         <div className="repository-summary-heading"><div><h3>{text(data.name)}</h3><p>Repository detected</p></div><button type="button" disabled={blocked} onClick={() => void start(true)}>Change folder</button></div>
@@ -183,7 +188,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
-      <div className="actions">{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</div>
+      <SettingsTaskActions>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
     </>}
   </section>;
 }

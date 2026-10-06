@@ -68,6 +68,7 @@ it("requires inspected confirmation and retains the exact deletion after an unce
   const view = render(f.view());
   expect(screen.queryByRole("button", { name: "Permanently delete selected backup" })).toBeNull();
   fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
   const button = await screen.findByRole("button", { name: "Permanently delete selected backup" });
   expect((button as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("checkbox", { name: `I confirm permanent deletion of backup ${f.id}` }));
@@ -103,6 +104,7 @@ it.each(["hide", "reinspect"])("requires fresh deletion confirmation after %s re
   const view = render(f.view());
   fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
   const checkboxName = `I confirm permanent deletion of backup ${f.id}`;
+  fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: checkboxName }));
   expect((screen.getByRole("button", { name: "Permanently delete selected backup" }) as HTMLButtonElement).disabled).toBe(false);
   f.inspect.mockResolvedValueOnce({ backup: { id: f.id, revision: 1n, sizeBytes: 123n, modifiedAt: "2026-09-29T01:00:00Z" }, sha256: "b".repeat(64), schemaVersion: 21, serverId: newRequestId() });
@@ -110,9 +112,11 @@ it.each(["hide", "reinspect"])("requires fresh deletion confirmation after %s re
     view.rerender(f.view(false));
     view.rerender(f.view());
   } else {
-    fireEvent.click(screen.getByRole("button", { name: `Inspect backup ${f.id}` }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep backup" }));
+    fireEvent.click(screen.getByRole("button", { name: "Recheck selected backup" }));
   }
   await screen.findByText("b".repeat(64));
+  if (!screen.queryByRole("checkbox")) fireEvent.click(screen.getByRole("button", { name: "Delete selected backup…" }));
   const checkbox = screen.getByRole("checkbox", { name: checkboxName }) as HTMLInputElement;
   const remove = screen.getByRole("button", { name: "Permanently delete selected backup" }) as HTMLButtonElement;
   expect(checkbox.checked).toBe(false);
@@ -136,6 +140,7 @@ it("polls each accepted operation beyond the first history page and refreshes in
   await within(created).findByText("Accepted creation pending");
   expect(f.getCreation.mock.calls[0]![0].id).toBe(f.creation.id);
   fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: `I confirm permanent deletion of backup ${f.id}` }));
   fireEvent.click(screen.getByRole("button", { name: "Permanently delete selected backup" }));
   const removed = await screen.findByRole("article", { name: `Tracked deletion ${f.deletion.id}` });
@@ -221,8 +226,9 @@ it("preserves fractional timestamps and exact BigInt deletion operands, with raw
   const detail = screen.getByRole("region", { name: "Backup integrity inspection" });
   await within(detail).findByText("9,007,199,254,740,993 bytes");
   expect(within(detail).getByText(backup.modifiedAt)).toBeTruthy();
-  fireEvent.click(within(detail).getByRole("checkbox"));
-  fireEvent.click(within(detail).getByRole("button", { name: "Permanently delete selected backup" }));
+  fireEvent.click(within(detail).getByRole("button", { name: "Delete selected backup…" }));
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "Permanently delete selected backup" }));
   await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
   expect(f.remove.mock.calls[0]![0]).toMatchObject({ backup, sha256: "a".repeat(64) });
 });
@@ -289,13 +295,14 @@ it("focuses inspection only at activation and restores the opener or list-headin
   fireEvent.click(opener);
   const heading = screen.getByRole("heading", { name: `Inspection: ${f.id}` });
   expect(document.activeElement).toBe(heading);
-  const tab = screen.getByRole("tab", { name: "Creation jobs" });
-  tab.focus();
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Backup integrity inspection" })));
+  const stableAction = screen.getByRole("button", { name: "Close backup inspection" });
+  stableAction.focus();
   await waitFor(() => expect(f.inspect).toHaveBeenCalledTimes(1));
   await act(async () => finish({ backup: f.backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() }));
-  expect(document.activeElement).toBe(tab);
+  expect(document.activeElement).toBe(stableAction);
   fireEvent.click(screen.getByRole("button", { name: "Close backup inspection" }));
-  expect(document.activeElement).toBe(opener);
+  await waitFor(() => expect(document.activeElement).toBe(opener));
   fireEvent.click(opener);
   await screen.findByText("Database integrity and original server identity verified.");
   f.list.mockResolvedValueOnce({ backups: [] });
@@ -377,9 +384,11 @@ it("clears fresh confirmation on a failed or in-flight reinspection", async () =
   const f = fixture();
   render(f.view());
   fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
   fireEvent.click(await screen.findByRole("checkbox"));
   let fail!: (reason: unknown) => void;
   f.inspect.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  fireEvent.click(screen.getByRole("button", { name: "Keep backup" }));
   fireEvent.click(screen.getByRole("button", { name: "Recheck selected backup" }));
   await screen.findByText("Checking the selected backup…");
   expect(screen.queryByRole("checkbox")).toBeNull();
@@ -396,7 +405,8 @@ it("disposes tab, inspection and uncertain-write presentation on a Strict Mode o
   f.create.mockRejectedValueOnce(new ConnectError("lost acknowledgement", Code.Unavailable));
   const view = render(f.lifetimeView());
   fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
-  await screen.findByRole("checkbox");
+  await screen.findByRole("button", { name: "Delete selected backup…" });
+  fireEvent.click(screen.getByRole("button", { name: "Close backup inspection" }));
   fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
   fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
   await screen.findByRole("button", { name: "Retry the same backup creation" });

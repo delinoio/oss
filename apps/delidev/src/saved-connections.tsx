@@ -140,7 +140,7 @@ export function SavedConnections({ visible, close, actions }: { visible: boolean
       {edit.requestId ? <p>The original name edit may already be saved. Retrying checks the same request; discarding this draft does not undo an accepted change.</p> : null}
     </section> : null}
     {removal ? <section aria-label="Confirm connection removal"><h3>Remove {removal.profile.name}</h3>
-      <p>This closes this server's window and discards its unsent drafts. It deletes this computer's saved client credential and pairing material. Server sessions, independent Workers and work files continue unchanged.</p>
+      <p>This closes all windows for this saved connection and discards their unsent drafts. It deletes this computer's saved client credential and pairing material. Server sessions, independent Workers and work files continue unchanged.</p>
       <p>This is local removal. Previously copied credentials and other running clients are not revoked. Use the server's Paired devices settings to revoke a device explicitly.</p>
       {staleRemoval ? <p role="alert">The connection changed. Keep it, refresh, and confirm the current name before removing it.</p> : null}
       <button disabled={busy || staleRemoval} onClick={() => void remove()}>{removal.requestId ? "Retry original connection removal" : "Confirm connection removal"}</button>

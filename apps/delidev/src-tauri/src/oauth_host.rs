@@ -8,7 +8,7 @@ use delidev_desktop::{
 use tauri::WebviewWindow;
 use tauri_runtime_cef::CefRuntime;
 
-use super::{SavedWindows, saved_binding, trusted_main};
+use super::{ProductWindows, saved_binding, trusted_local};
 
 #[derive(Debug)]
 enum OAuthPhase {
@@ -27,7 +27,7 @@ enum OAuthPhase {
 pub async fn account_oauth_native(
     window: WebviewWindow<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<OAuthHost>>,
     server: String,
     opening: String,
@@ -37,9 +37,11 @@ pub async fn account_oauth_native(
     authorization: String,
 ) -> Result<OAuthResult, NativeFailure> {
     let mut phase = OAuthPhase::WindowAuthority;
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
     let result = async {
-        let binding = if window.label() == "main" {
-            trusted_main(&window)?;
+        let binding = if super::is_local(&window) {
+            trusted_local(&window)?;
             None
         } else {
             Some(saved_binding(&window, &windows)?)
@@ -57,7 +59,7 @@ pub async fn account_oauth_native(
                 instance: binding
                     .as_ref()
                     .map(|v| v.instance.clone())
-                    .unwrap_or_else(|| "main".into()),
+                    .unwrap_or_else(|| window.label().into()),
                 server,
                 opening,
                 window_epoch,
@@ -87,7 +89,7 @@ pub async fn account_oauth_native(
             instance: binding
                 .as_ref()
                 .map(|v| v.instance.clone())
-                .unwrap_or_else(|| "main".into()),
+                .unwrap_or_else(|| window.label().into()),
             server,
             opening,
             window_epoch,
@@ -119,7 +121,7 @@ pub async fn account_oauth_native(
                 current.instance == binding.instance
                     && current.profile.same_authority(&binding.profile)
             })
-        } else if trusted_main(&window).is_err() {
+        } else if trusted_local(&window).is_err() {
             Err(NativeFailure::InvalidEvidence)
         } else {
             let connector = Arc::clone(connector.inner());
@@ -145,6 +147,10 @@ pub async fn account_oauth_native(
     .await;
     // Record only closed lifecycle metadata. Authorization URLs, callback
     // addresses, code bytes and native scopes must never enter diagnostics.
+    let result = match super::recheck_authority(&response_window, &original_authority) {
+        Ok(()) => result,
+        Err(code) => Err(code),
+    };
     match &result {
         Ok(_) if action != OAuthAction::Take => tracing::info!(
             operation = "account_oauth_native",
