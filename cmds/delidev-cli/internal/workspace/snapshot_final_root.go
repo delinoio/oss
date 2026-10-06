@@ -17,17 +17,18 @@ import (
 type storageFinalRootStage string
 
 const (
-	storageFinalRootBeforeClaim  storageFinalRootStage = "before-claim"
-	storageFinalRootPrepared     storageFinalRootStage = "prepared"
-	storageFinalRootRenamed      storageFinalRootStage = "renamed"
-	storageFinalRootClaimed      storageFinalRootStage = "claimed"
-	storageFinalRootUnlinkReady  storageFinalRootStage = "unlink-ready"
-	storageFinalRootVerified     storageFinalRootStage = "verified"
-	storageFinalRootBeforeUnlink storageFinalRootStage = "before-unlink"
-	storageFinalRootNativeGone   storageFinalRootStage = "native-unlinked"
-	storageFinalRootUnlinked     storageFinalRootStage = "unlinked"
-	storageFinalRootSynced       storageFinalRootStage = "synced"
-	storageFinalRootRemoved      storageFinalRootStage = "removed"
+	storageFinalRootBeforeClaim       storageFinalRootStage = "before-claim"
+	storageFinalRootPrepared          storageFinalRootStage = "prepared"
+	storageFinalRootRenamed           storageFinalRootStage = "renamed"
+	storageFinalRootClaimed           storageFinalRootStage = "claimed"
+	storageFinalRootUnlinkReady       storageFinalRootStage = "unlink-ready"
+	storageFinalRootVerified          storageFinalRootStage = "verified"
+	storageFinalRootBeforeUnlink      storageFinalRootStage = "before-unlink"
+	storageFinalRootNativeGone        storageFinalRootStage = "native-unlinked"
+	storageFinalRootAfterVerification storageFinalRootStage = "after-verification"
+	storageFinalRootUnlinked          storageFinalRootStage = "unlinked"
+	storageFinalRootSynced            storageFinalRootStage = "synced"
+	storageFinalRootRemoved           storageFinalRootStage = "removed"
 )
 
 // The separate private parent is outside the directory retained by source
@@ -274,6 +275,8 @@ func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r Sto
 	}
 	if err := removeVerifiedFinalRoot(private, claim.RootIdentity, func() error {
 		return m.finalRootFault(storageFinalRootBeforeUnlink)
+	}, func() error {
+		return m.finalRootFault(storageFinalRootAfterVerification)
 	}); err != nil {
 		return ResultUncertain()
 	}

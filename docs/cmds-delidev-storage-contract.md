@@ -664,6 +664,12 @@ a directory or symlink appearing there is preserved and blocks completion.
 On Unix, retain the opened final root, remove its search permission, and repeat
 the anchored identity check immediately before `unlinkat`; this closes the
 retained-root-handle path to the private parent during the final name operation.
+Repeat that anchored check after the last mutation checkpoint as well. If a
+retained parent moves the original and the name operation removes a replacement,
+the second check retains recovery ownership before any post-unlink receipt can
+be published. Linux additionally verifies the opened directory's post-unlink
+link count so a retained-parent race in the final kernel interval remains
+recovery-required.
 Keep unlink preparation separate from the durable receipt recorded after native
 unlink. Recovery with a missing root and no unlink receipt remains uncertain,
 including interruption between unlink and receipt publication. With the original

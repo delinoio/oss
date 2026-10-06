@@ -48,6 +48,53 @@ func TestFinalRootRemovalPreservesPrivateReplacementAfterIdentityCheck(t *testin
 	}
 }
 
+func TestFinalRootRemovalRejectsPrivateReplacementAfterLastIdentityCheck(t *testing.T) {
+	m, r := finalRootFixture(t, StorageCleanup)
+	m.storageFinalRootFault = func(stage storageFinalRootStage) error {
+		if stage == storageFinalRootClaimed {
+			return errors.New("fixture interruption")
+		}
+		return nil
+	}
+	if _, err := m.Storage(context.Background(), r); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("fixture did not retain final-root transition", err)
+	}
+	private := finalRootFixturePath(t, m, r.OperationID)
+	moved := filepath.Join(m.Root, "moved-after-final-check")
+	m.storageFinalRootFault = func(stage storageFinalRootStage) error {
+		if stage != storageFinalRootAfterVerification {
+			return nil
+		}
+		// macOS requires the directory itself to remain writable for a rename;
+		// Linux permits a retained parent handle to move it after the final check.
+		if err := os.Chmod(private, 0700); err != nil {
+			return err
+		}
+		if err := os.Rename(private, moved); err != nil {
+			return err
+		}
+		return os.Mkdir(private, 0700)
+	}
+
+	intent, err := os.ReadFile(m.removalIntentPath(r.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, _, _, err := m.readRemovalClaimState(r, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.finishFinalRootRemoval(context.Background(), r, claim); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("replacement after the last identity check granted completion", err)
+	}
+	if _, err := os.Lstat(private); err != nil {
+		t.Fatal("private replacement was removed", err)
+	}
+	if _, err := os.Lstat(moved); err != nil {
+		t.Fatal("original private root was removed", err)
+	}
+}
+
 func TestFinalRootRemovalRestoresModeAfterFailedUnlink(t *testing.T) {
 	m, r := finalRootFixture(t, StorageCleanup)
 	injected := false

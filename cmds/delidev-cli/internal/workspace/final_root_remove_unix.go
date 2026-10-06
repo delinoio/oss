@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -18,7 +20,7 @@ import (
 // reach the private parent through .. and move that root between the final
 // identity check and unlinkat. The final check then rejects a replacement
 // installed by a writer that already retained the private parent.
-func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink func() error) error {
+func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink, afterIdentityCheck func() error) error {
 	parent, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
@@ -49,6 +51,21 @@ func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink func() 
 	if lockedErr != nil || currentErr != nil || lockedIdentity != expectedIdentity || currentIdentity != lockedIdentity || currentMode.Perm() != 0 {
 		return ResultUncertain()
 	}
+	// There is no portable POSIX unlink-by-open-directory-handle operation.
+	// Give the caller's last mutation checkpoint a final opportunity to report a
+	// retained-parent race, then repeat the anchored check immediately before
+	// unlinkat. The postcondition below also rejects a replacement that wins the
+	// narrow kernel-level interval after this check.
+	if afterIdentityCheck != nil {
+		if err := afterIdentityCheck(); err != nil {
+			return err
+		}
+	}
+	lockedIdentity, lockedErr = directoryFileIdentity(root)
+	currentIdentity, currentMode, currentErr = directoryIdentityAt(parent, filepath.Base(path))
+	if lockedErr != nil || currentErr != nil || lockedIdentity != expectedIdentity || currentIdentity != lockedIdentity || currentMode.Perm() != 0 {
+		return ResultUncertain()
+	}
 
 	if err := unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR); err != nil {
 		// A retained writer can make the directory non-empty after the final
@@ -61,6 +78,16 @@ func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink func() 
 			return fmt.Errorf("unlink final root: %w; sync restored mode: %v", err, syncErr)
 		}
 		return err
+	}
+	if runtime.GOOS == "linux" {
+		info, statErr := root.Stat()
+		stat, statOK := info.Sys().(*syscall.Stat_t)
+		if statErr != nil || !statOK || stat.Nlink != 0 {
+			// Linux updates an open directory's link count when its final name is
+			// removed. A retained parent can otherwise remove a replacement after
+			// the final check; do not publish a receipt for that outcome.
+			return ResultUncertain()
+		}
 	}
 	return nil
 }
