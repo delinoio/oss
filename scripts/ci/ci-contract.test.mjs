@@ -45,6 +45,20 @@ function namedStep(job, name) {
   return job.steps.find((candidate) => candidate.name === name);
 }
 
+test("rustfmt runs the uncached real cache regression with the pinned formatter", () => {
+  const job = workflow.jobs["rust-fmt"];
+  const graph = jobTaskGraph(job);
+  const fixture = graph.get("@delinoio/ci#ci:rust:fmt-fixture");
+  assert.ok(fixture);
+  assert.equal(fixture.task.cache, false);
+  assert.deepEqual(fixture.task.dependsOn, []);
+  assert.match(fixture.command, /node --test scripts\/ci\/rustfmt-cache\.fixture\.mjs/u);
+  const setup = job.steps.findIndex(({ uses }) => uses === "dtolnay/rust-toolchain@v1");
+  assert.equal(job.steps[setup].with.toolchain, readFileSync(`${root}/rust-toolchain`, "utf8").trim());
+  assert.equal(job.steps[setup].with.components, "rustfmt");
+  assert.ok(setup < job.steps.findIndex(({ run }) => run?.includes("ci:rust:fmt-fixture")));
+});
+
 test("cache setup receives workflow variables through composite inputs and retains fallback", () => {
   const source = readFileSync(`${root}/.github/actions/setup-turbo-cache/action.yml`, "utf8");
   // The runner's action-manifest context excludes vars even though workflow

@@ -16,6 +16,7 @@
     "ci:go:vet": "node from-root.mjs go vet ./...",
     "ci:go:test": "node from-root.mjs node scripts/ci/go-test.mjs",
     "ci:rust:fmt": "node from-root.mjs cargo fmt --all --check",
+    "ci:rust:fmt-fixture": "node from-root.mjs node --test scripts/ci/rustfmt-cache.fixture.mjs",
     "ci:rust:clippy": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
     "ci:pnport:companion": "node from-root.mjs cargo build --locked -p pnport -p pnport-preload",
     "ci:rust:test": "node from-root.mjs node scripts/ci/rust-affected.mjs test",

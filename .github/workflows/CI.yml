@@ -390,7 +390,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run rustfmt
-        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:fmt
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:fmt ci:rust:fmt-fixture
         env:
           FORCE_RUN: 'true'
 

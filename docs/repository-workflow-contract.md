@@ -151,6 +151,19 @@ Forge uses `forge-test` on Linux, macOS, and Windows for its three private Rust 
 
 Both Forge jobs are selected for root `rust-toolchain` changes on pull requests and main pushes. The alternate `rust-toolchain.toml` filename remains covered for a future toolchain configuration migration.
 
+Rustfmt-only changes to `.rustfmt.toml` or `rustfmt.toml` select `rust-fmt` on
+pull requests and main pushes. This applies at the root and to nested package or
+source-directory overrides, even when a broad package rule would otherwise
+select compilation or native packaging. Mixed changes retain their other job
+owners. The cacheable `ci:rust:fmt` task hashes both filenames at every repository
+depth and excludes generated `.turbo` logs from its broad script inputs so an
+unchanged run can reuse its result. Its formatting job also runs the uncached
+`ci:rust:fmt-fixture` task with the pinned formatter and locked Turbo. Disposable
+offline workspaces verify
+cold success, unchanged cache hits, configuration-only hash changes and fresh
+formatting failures, plus override addition and removal. Fixture results do not
+establish hosted remote-cache performance.
+
 The `go-test` matrix has one Linux runner, one macOS runner, and four independent Windows runners. `scripts/ci/go-test.mjs --shard all` preserves `go test -timeout=20m ./...` on Linux/macOS for selected main jobs, manual dispatch and forced validation. Ordinary PR validation uses the exact planned base/head to select affected packages on each native host. Each Windows runner discovers its native `go list ./...` inventory and passes its selected package paths to `go test -p=1` with a 20-minute package watchdog for `core`, `server` and `harness`, and a 45-minute package watchdog for `worker`. All runners hydrate LFS assets and generate the real administrator and ach UI embeds before testing. The matrix retains `fail-fast: false`, the existing affected selection, and the required `CI Result` aggregate.
 
 | Windows shard | Package ownership |
