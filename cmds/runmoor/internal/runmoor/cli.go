@@ -424,7 +424,7 @@ func runForegroundReady(ctx context.Context, path string, c Config, out io.Write
 		return e
 	}
 	defer server.Close()
-	if recovery != nil {
+	if recovery != nil && reloader.reloadInitiatorFinished(recovery) {
 		if e = reloader.retire(recovery); e != nil {
 			return e
 		}

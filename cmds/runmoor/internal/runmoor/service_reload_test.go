@@ -397,6 +397,31 @@ func TestServiceReloadContinuesAfterPreviousManagerRestart(t *testing.T) {
 	}
 }
 
+func TestServiceReloadReestablishesMacHandoffAfterPreviousManagerRestart(t *testing.T) {
+	f := newReloadFixture(t, "darwin")
+	f.onCommand = func(command string) error {
+		if strings.Contains(command, " debug ") {
+			return errors.New("interrupted after handoff journal")
+		}
+		return nil
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("interrupted handoff unexpectedly succeeded")
+	}
+	j, err := readReloadJournal(f.r.Unit)
+	if err != nil || j == nil || j.Stage != reloadHandoffPending {
+		t.Fatalf("handoff recovery intent was not retained: %v", err)
+	}
+	f.onCommand = nil
+	f.pid = 404
+	f.peer = 404
+	f.version = j.PreviousVersion
+	f.args[f.pid] = f.args[101]
+	if err := f.reload(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestServiceReloadPreviousManagerStartsFromCommittedConfiguration(t *testing.T) {
 	f := newReloadFixture(t, "linux")
 	f.onCommand = func(command string) error {
@@ -428,6 +453,60 @@ func TestServiceReloadPreviousManagerStartsFromCommittedConfiguration(t *testing
 	}
 	if got, err := readReloadJournal(f.r.Unit); err != nil || got == nil {
 		t.Fatalf("previous manager consumed recovery intent: %v", err)
+	}
+}
+
+func TestServiceReloadKeepsExternalDefinitionReplacement(t *testing.T) {
+	f := newReloadFixture(t, "linux")
+	foreign, err := serviceDefinition("linux", "/foreign/runmoor", f.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.r.BeforePublish = func() {
+		replacement := f.r.Unit + ".replacement"
+		if err := os.WriteFile(replacement, []byte(foreign), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(replacement, f.r.Unit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("external definition replacement was overwritten")
+	}
+	got, err := os.ReadFile(f.r.Unit)
+	if err != nil || !bytes.Equal(got, []byte(foreign)) {
+		t.Fatalf("external definition was not preserved: %v", err)
+	}
+	for _, command := range f.commands {
+		if strings.Contains(command, " --signal=SIGKILL ") {
+			t.Fatal("changed service was killed")
+		}
+	}
+}
+
+func TestServiceReloadManagerWaitsForInitiatorBeforeRetiringJournal(t *testing.T) {
+	f := newReloadFixture(t, "linux")
+	f.onCommand = func(command string) error {
+		if strings.Contains(command, " daemon-reload") {
+			return errors.New("retain recovery intent")
+		}
+		return nil
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("interrupted replacement unexpectedly succeeded")
+	}
+	j, err := readReloadJournal(f.r.Unit)
+	if err != nil || j == nil {
+		t.Fatalf("recovery intent was not retained: %v", err)
+	}
+	if f.r.reloadInitiatorFinished(j) {
+		t.Fatal("active initiating reload was treated as finished")
+	}
+	j.ReloadPID = 999
+	j.ReloadStart = "fixture:dead"
+	if !f.r.reloadInitiatorFinished(j) {
+		t.Fatal("finished initiating reload was not reclaimable")
 	}
 }
 

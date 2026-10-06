@@ -52,6 +52,8 @@ type serviceReloadJournal struct {
 	TargetFileID    string             `json:"target_file_id"`
 	PID             int                `json:"pid"`
 	ProcessStart    string             `json:"process_start"`
+	ReloadPID       int                `json:"reload_pid,omitempty"`
+	ReloadStart     string             `json:"reload_start,omitempty"`
 	Stage           serviceReloadStage `json:"stage"`
 }
 
@@ -64,6 +66,7 @@ type serviceReloader struct {
 	ProcessStart                    func(int) (string, error)
 	Preflight                       func(context.Context, Config, Snapshot) error
 	Wait                            func(context.Context) bool
+	BeforePublish                   func()
 }
 
 func newServiceReloader(out io.Writer) *serviceReloader {
@@ -131,7 +134,7 @@ func readReloadJournal(unit string) (*serviceReloadJournal, error) {
 		return nil, reloadFailure()
 	}
 	var extra any
-	if d.Decode(&extra) != io.EOF || j.Schema != 1 || !validID(j.Token) || !validID(j.Installation) || j.PID <= 0 || j.ProcessStart == "" || j.OriginalFileID == "" || j.TargetFileID == "" {
+	if d.Decode(&extra) != io.EOF || j.Schema != 1 || !validID(j.Token) || !validID(j.Installation) || j.PID <= 0 || j.ProcessStart == "" || j.ReloadPID < 0 || j.ReloadPID == 0 && j.ReloadStart != "" || j.ReloadPID > 0 && j.ReloadStart == "" || j.OriginalFileID == "" || j.TargetFileID == "" {
 		return nil, reloadFailure()
 	}
 	for _, path := range []string{j.Unit, j.ConfigPath, j.Binary, j.Storage.State, j.Storage.Data} {
@@ -361,10 +364,62 @@ func (r *serviceReloader) publish(path string, j *serviceReloadJournal) error {
 	if _, err := r.definition(path, j); err != nil {
 		return err
 	}
-	if err := os.Rename(reloadTargetPath(j), r.Unit); err != nil {
+	if r.BeforePublish != nil {
+		r.BeforePublish()
+	}
+	if err := conditionalReplaceServiceDefinition(r.Unit, reloadTargetPath(j), j.OriginalFileID, j.Original, j.TargetFileID, j.Target); err != nil {
 		return reloadFailure()
 	}
 	return syncPrivateDir(filepath.Dir(r.Unit))
+}
+
+// conditionalReplaceServiceDefinition uses an atomic exchange on Unix. If
+// the path changed after the last ordinary read, it exchanges the files back
+// only while the installed path still contains the exact target. This keeps a
+// concurrent external replacement authoritative instead of overwriting it.
+func conditionalReplaceServiceDefinition(unit, staged, expectedID string, expected []byte, targetID string, target []byte) error {
+	current, info, err := readPrivateServiceDefinitionWithLimit(unit, serviceDefinitionLimit)
+	if err != nil || hostFileIdentity(info) != expectedID || !bytes.Equal(current, expected) {
+		return reloadFailure()
+	}
+	stagedBody, stagedInfo, err := readPrivateServiceDefinitionWithLimit(staged, serviceDefinitionLimit)
+	if err != nil || hostFileIdentity(stagedInfo) != targetID || !bytes.Equal(stagedBody, target) {
+		return reloadFailure()
+	}
+	if err := exchangeServiceFiles(staged, unit); err != nil {
+		return reloadFailure()
+	}
+
+	oldBody, oldInfo, oldErr := readPrivateServiceDefinitionWithLimit(staged, serviceDefinitionLimit)
+	currentBody, currentInfo, currentErr := readPrivateServiceDefinitionWithLimit(unit, serviceDefinitionLimit)
+	oldMatches := oldErr == nil && hostFileIdentity(oldInfo) == expectedID && bytes.Equal(oldBody, expected)
+	currentMatches := currentErr == nil && hostFileIdentity(currentInfo) == targetID && bytes.Equal(currentBody, target)
+	if oldMatches && currentMatches {
+		if err := os.Remove(staged); err != nil {
+			return reloadFailure()
+		}
+		return nil
+	}
+	// Restore the current path only when it still contains the exact target we
+	// exchanged into it. If another writer changed that path after the exchange,
+	// preserve that writer's definition and leave the operation retryable.
+	if currentMatches {
+		if err := exchangeServiceFiles(staged, unit); err != nil {
+			return reloadFailure()
+		}
+	}
+	return reloadFailure()
+}
+
+func (r *serviceReloader) reloadInitiatorFinished(j *serviceReloadJournal) bool {
+	if j.ReloadPID <= 0 || j.ReloadStart == "" {
+		// Journals written before the initiator identity was added are retained
+		// conservatively. The initiating CLI remains the only safe owner of
+		// completion for those records.
+		return false
+	}
+	start, err := r.ProcessStart(j.ReloadPID)
+	return err != nil || start != j.ReloadStart
 }
 
 func (r *serviceReloader) retire(j *serviceReloadJournal) error {
@@ -520,7 +575,11 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 		if err != nil {
 			return reloadFailure()
 		}
-		j = &serviceReloadJournal{Schema: 1, Token: newID(), Installation: s.Installation, Storage: c.Storage, Platform: r.Platform, Unit: r.Unit, ConfigPath: path, Binary: r.Binary, Version: r.Version, PreviousVersion: response.Status.Version, Original: snapshot.data, Target: []byte(text), PID: pid, ProcessStart: start, Stage: reloadPrepared}
+		reloadStart, err := r.ProcessStart(os.Getpid())
+		if err != nil {
+			return reloadFailure()
+		}
+		j = &serviceReloadJournal{Schema: 1, Token: newID(), Installation: s.Installation, Storage: c.Storage, Platform: r.Platform, Unit: r.Unit, ConfigPath: path, Binary: r.Binary, Version: r.Version, PreviousVersion: response.Status.Version, Original: snapshot.data, Target: []byte(text), PID: pid, ProcessStart: start, ReloadPID: os.Getpid(), ReloadStart: reloadStart, Stage: reloadPrepared}
 		j.OriginalFileID = hostFileIdentity(snapshot.info)
 		if err := requireServiceDefinitionUnchanged(r.Platform, r.Unit, path, snapshot); err != nil {
 			return err
@@ -674,15 +733,17 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 	if err != nil {
 		return err
 	}
-	if loaded && (pid == j.PID || j.Stage == reloadPrepared) {
+	runHandoff := func(stage bool) error {
 		if err := r.originalProcess(ctx, c, j); err != nil {
 			return err
 		}
 		if err := r.stopping(c, j); err != nil {
 			return err
 		}
-		if err := r.stage(c, j, reloadHandoffPending); err != nil {
-			return err
+		if stage {
+			if err := r.stage(c, j, reloadHandoffPending); err != nil {
+				return err
+			}
 		}
 		// launchd's one-run debug override consumes a harmless helper instead
 		// of relaunching the old cached manager. Unloading the helper cannot
@@ -712,6 +773,22 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 			}
 			if !r.Wait(ctx) {
 				return reloadFailure()
+			}
+		}
+		return nil
+	}
+	if loaded && (pid == j.PID || j.Stage == reloadPrepared) {
+		if err := runHandoff(true); err != nil {
+			return err
+		}
+	} else if loaded && j.Stage == reloadHandoffPending {
+		// A previous manager can restart after the handoff stage is journaled but
+		// before launchd starts the one-run helper. Re-establish the helper only
+		// when the loaded process still proves the original invocation/version;
+		// a helper process falls through to its existing verified path below.
+		if err := r.originalProcess(ctx, c, j); err == nil {
+			if err := runHandoff(false); err != nil {
+				return err
 			}
 		}
 	}
