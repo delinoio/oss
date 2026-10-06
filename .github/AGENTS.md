@@ -38,6 +38,8 @@
 
 - DevHud Linux Xvfb smokes must provide an explicit session-local StatusNotifierWatcher fixture for the pinned ksni tray backend, retain Chromium sandbox requirements, and keep fixture-only tray registration distinct from real desktop-panel acceptance. Only AppImage smokes may set APPDIR and APPIMAGE.
 
+- DevHud Windows private packaging checks `$LASTEXITCODE` immediately after SignTool verification and stops before installer execution on failure. Keep the failure diagnostic limited to stable context and numeric status. The read-only `devhud-supply-chain` job retains Ubuntu fixtures and runs native PowerShell failure/success stubs on Windows through an uncached Turbo task; stub results do not establish certificate or signed-package acceptance.
+
 - PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.
 
 - Load repository-local actions only after checkout. Cache authentication requires the `delinoio/oss` repository, GitHub workflow name `CI` and exact `CI.yml` workflow-ref prefix. Prepare the pinned Rust toolchain before native tasks and retain serial DevHud conformance; export prepared Go cache locations explicitly for Turbo strict environments.

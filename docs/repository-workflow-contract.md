@@ -90,6 +90,17 @@ The shared checksum generator keeps sorted recursive paths, GNU filename escapin
 
 `.github/workflows/CI.yml` is a read-only validation workflow. It uses `contents: read` and `pull-requests: read`, does not consume repository secrets, and must not push tags, create or upload releases, submit stores, push OCI images, deploy documentation or infrastructure, promote updater state, or call any mutating release-controller operation. Release workflows and packaging inputs are tested as source and deterministic fixtures only.
 
+The `ci-contracts` matrix runs workflow syntax and the full Node contract suite on
+Linux, plus the uncached `ci:proto:launcher` fixtures on native macOS and Windows.
+Linux runs the launcher fixtures within the full suite. Protocol lint, format and
+freshness launch `node_modules/@bufbuild/buf/bin/buf` through `process.execPath`
+with explicit argv, root cwd and `shell: false`. They do not require a standalone
+Buf executable or Windows package-manager shim. The fixtures remove Buf from
+PATH, use checkout paths with spaces, check literal shell metacharacters and
+failure statuses, and run minimal offline generation with tracked/untracked
+freshness rejection. Full generation retains the compatibility step after Buf;
+the launcher fixture does not establish broader Windows plugin acceptance.
+
 The central `changes` job runs on Ubuntu 24.04 and resolves one Rust package
 selection for the generic `rust-test` and `rust-clippy` jobs. It prepares the
 first-party `cargo-mono@v0.6.9` Linux x64 release only when the initial path plan
@@ -145,6 +156,16 @@ Those same jobs build the DevHud frontend only when `devhud` is selected, and th
 
 CI never builds a signed private candidate and never publishes.
 
+The read-only `devhud-supply-chain` job uses Ubuntu 22.04 for the existing
+installer, SBOM, provenance and updater fixtures and Windows for
+`ci:windows-signature`, an uncached Turbo task. Windows prepares the pinned Go
+toolchain to build a temporary native SignTool stub, then executes the private
+workflow's PowerShell validation prefix. MSI and NSIS fixtures require nonzero
+verification status to stop before installation, SBOM, evidence or upload
+sentinels; zero status reaches every sentinel. Both rows remain required by
+`CI Result`, without release credentials or publication authority. These fixtures
+do not establish actual certificate verification or signed-package acceptance.
+
 Changes to the shared checksum generator select the DevHud supply-chain fixture job that exercises it, including on pull requests where desktop packaging is skipped.
 
 Forge uses `forge-test` on Linux, macOS, and Windows for its three private Rust crates, DSL, preservation, state and official MCP-client tests. `forge-render` installs LibreOffice Impress and Poppler on Linux and explicitly runs the normally ignored renderer integration test, retaining PNG/PDF evidence for seven days. Both jobs participate in central path selection and `CI Result`; neither publishes packages or artifacts outside the workflow run.
@@ -162,7 +183,7 @@ The `go-test` matrix has one Linux runner, one macOS runner, and four independen
 
 Partition rules match full path segments, so similarly named siblings cannot be mistaken for owned descendants. The four sets cover the discovered inventory exactly once; newly added and Windows-only packages require no allowlist update. Invalid selectors, empty inventories, empty shards, discovery errors, compilation errors and test failures fail validation. The runner uses literal argument arrays without a shell, preserves Go output and nonzero statuses, and logs shard membership, package counts, compile time, serial test time and total elapsed seconds.
 
-Ordinary PR Go validation discovers the native `go list -mod=readonly -json ./...` inventory after generating both real UI embeds. The affected runner consumes production, internal-test and external-test imports. Production changes include reverse dependents; test-only and nested testdata changes select their owner. Explicit command-to-test edges cover DeliDev CLI/server, Runmoor native and ach integration fixtures that build commands in subprocesses. Administrator/client and ach UI/client inputs also seed their real embed owners. Deletions, moves and unknown resources expand to the owning command/server domain; an unknown or missing domain expands to the full inventory. Shared Go/CI inputs force full selection. Missing comparisons, malformed inventories and discovery failures fail instead of producing an empty selection. An empty affected shard is a logged successful no-op; full Windows shards still reject empty inventories. Go Quality uses the same selection and checks tracked formatting without rewriting files before vet. Every Go host runs real temporary Git/Go fixtures for native OS file selection and subprocess result-cache regressions. A private Go cache is seeded with a successful integration result, then a command-only change must fail fresh All and Core execution. Repeated valid runs must execute `TestMain`, and warm compile-only calls must reuse compiled objects.
+Ordinary PR Go validation discovers the native `go list -mod=readonly -test -json ./...` inventory after generating both real UI embeds. Only original package records own affected selections and shards; synthetic `.test` binaries and `ForTest` records are excluded. The affected runner retains production, internal-test and external-test imports and resolved `EmbedFiles`, `TestEmbedFiles` and `XTestEmbedFiles`. Production changes include reverse dependents; test-only and nested testdata changes select their owner. Explicit command-to-test edges cover DeliDev CLI/server, Runmoor native and ach integration fixtures that build commands in subprocesses. Administrator/client and ach UI/client inputs also seed their real embed owners. Deletions, moves and unknown resources expand to the owning command/server domain; an unknown or missing domain expands to the full inventory. Shared Go/CI inputs force full selection. Missing comparisons, malformed inventories and discovery failures fail instead of producing an empty selection. An empty affected shard is a logged successful no-op; full Windows shards still reject empty inventories. Go Quality uses the same selection and checks tracked formatting without rewriting files before vet. Every Go host runs real temporary Git/Go fixtures for native OS file selection and subprocess result-cache regressions. A private Go cache is seeded with a successful integration result, then a command-only change must fail fresh All and Core execution. Repeated valid runs must execute `TestMain`, and warm compile-only calls must reuse compiled objects.
 
 Every actual execution through the central Go runner includes `-count=1` in both full and affected modes, for All and every Windows shard. Turbo's `cache: false` alone does not disable Go's successful test-result cache restored in `GOCACHE`. A subprocess consumer's test binary can remain unchanged when its command source changes, so result reuse can skip `TestMain` and hide a regression. `-count=1` forces execution while retaining compiled-object reuse. Discovery, compile-only arguments, shard watchdogs and successful-main-only cache saves remain unchanged.
 
@@ -193,6 +214,8 @@ credential-free native dry runs, production signing restrictions and event-based
 packaging skips remain unchanged.
 
 The `node-public-docs-test` job owns the consolidated root and subpath publication checks. Its path rule includes `packages/docs-site-switcher/**` and `docs/apps-react-forge-docs-foundation.md`; the latter contract alone forces the job. Its public-docs test boundary runs the shared selector interaction suite before building the assembled site, so changes to the shared navigation cannot bypass documentation CI.
+
+Public-docs owns package-local external installer inputs for cached `build`, `build:frontend`, and `ci:routes` tasks. Each hashes `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}`; build overrides use `$TURBO_EXTENDS$` to retain root inputs and leave generated outputs intact. Forced job selection does not bypass cache reads. `scripts/ci/public-docs-cache.test.mjs`, included in `pnpm ci:contracts`, checks all eight independent source mutations, complete cold/warm build and route validation, unchanged output restoration, and stale-asset failure with a frozen producer. It uses disposable source/output and local-only cache storage; hosted cache acceptance and production deployment remain separate.
 
 The `node-pnport-test` job owns pnport launcher, packaging, installer and fail-closed release fixtures on affected PRs and main pushes. The four-host `pnport-native` job runs native execution, TypeScript, installed npm/Yarn PnP consumer, archive and direct-installer checks on macOS/glibc Linux x64/arm64 for 0.1.0 on affected main pushes and manual CI; PRs skip that native matrix. Both CI and release derive their matrices from the package-owned target registry. Release Project does not wait for this CI matrix. The separate pnport tag workflow independently requires its four-host gate before publication. Windows x64/arm64 is deferred to 0.2.0 with the same complete acceptance requirements.
 

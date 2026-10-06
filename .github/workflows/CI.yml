@@ -93,7 +93,11 @@ jobs:
 
   ci-contracts:
     name: CI contracts and workflow syntax
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     permissions:
       contents: read
       pull-requests: read
@@ -116,6 +120,7 @@ jobs:
           policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Setup Go
+        if: ${{ runner.os == 'Linux' }}
         id: ci-go
         uses: ./.github/actions/setup-ci-go
         with:
@@ -125,12 +130,20 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Validate workflow syntax
+        if: ${{ runner.os == 'Linux' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:workflows
         env:
           FORCE_RUN: 'true'
 
       - name: Validate CI contracts and affected behavior
+        if: ${{ runner.os == 'Linux' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:contracts
+        env:
+          FORCE_RUN: 'true'
+
+      - name: Validate protocol launcher on native host
+        if: ${{ runner.os != 'Linux' }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:launcher
         env:
           FORCE_RUN: 'true'
 
@@ -142,7 +155,7 @@ jobs:
           key: ${{ steps.ci-node.outputs.cache-key }}
 
       - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outcome == 'success' && steps.ci-go.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}
@@ -2171,7 +2184,11 @@ jobs:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-supply-chain'] }}
     name: DevHud installers, SBOM, provenance, and signature fixtures
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
     permissions:
       contents: read
       pull-requests: read
@@ -2199,10 +2216,31 @@ jobs:
         with:
           install: 'false'
 
+      - name: Setup Go for native signature fixture
+        id: ci-go
+        if: ${{ runner.os == 'Windows' }}
+        uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: devhud-signature-fixture
+
       - name: Validate installer, SPDX, provenance, updater, and key-rotation fixtures
+        if: ${{ runner.os != 'Windows' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:supply-chain
         env:
           FORCE_RUN: 'true'
+
+      - name: Validate Windows signature failure and success fixtures
+        if: ${{ runner.os == 'Windows' }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:windows-signature
+        env:
+          FORCE_RUN: 'true'
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && runner.os == 'Windows' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}

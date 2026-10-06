@@ -102,6 +102,15 @@ configuration has an installed service. An unreachable manager does not start a
 stopped service. Stable SemVer triplets compare numerically; equal/newer managers
 reload configuration without changing their service definition or downgrading.
 
+Without a pending recovery journal, failed native PID inspection falls back to
+ordinary reload of the authenticated socket peer. Bind that request to the PID
+observed by status and return its result unchanged, including candidate-validation
+and Stop errors. This fallback acquires no service lock, writes no definition or
+journal, and performs no native mutation. A changed or unreachable peer remains
+an error. Log only a structured diagnostic with the platform and safe error code;
+omit raw native errors and output. Pending-journal recovery retains its native
+inspection requirements and fails closed when inspection is unavailable.
+
 Before replacement, the newer CLI reads state without migration and applies the
 same whole-candidate capacity, backend and remote validation as manager reload.
 Managed pools defer image preparation as before. Verify the installed executable

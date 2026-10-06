@@ -289,6 +289,89 @@ func TestServiceReloadLeavesCurrentNewerAndForegroundManagers(t *testing.T) {
 	}
 }
 
+func TestServiceReloadNativeInspectionFailureUsesBoundPeer(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		for _, scenario := range []string{"foreground", "service peer", "invalid candidate", "stop error", "changed peer", "unreachable peer"} {
+			t.Run(platform+"/"+scenario, func(t *testing.T) {
+				f := newReloadFixture(t, platform)
+				f.peer = 404
+				if scenario == "service peer" {
+					f.peer = f.pid
+				}
+				originalPeer := f.peer
+				definition, info, err := readPrivateServiceDefinition(f.r.Unit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "invalid candidate" {
+					if err := os.WriteFile(f.path, []byte("invalid TOML ["), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				query := "launchctl list"
+				if platform == "linux" {
+					query = "systemctl --user show --property=MainPID --value runmoor.service"
+				}
+				f.onCommand = func(command string) error {
+					if command != query {
+						t.Fatalf("unexpected native command: %s", command)
+					}
+					if scenario == "changed peer" {
+						f.peer = 505
+					} else if scenario == "unreachable peer" {
+						f.peer = 0
+					}
+					return errors.New("private native failure " + f.path + " private-fixture-value")
+				}
+				var peerErr error
+				f.r.Control = func(ctx context.Context, c Config, req ControlRequest, expected int) (ControlResponse, int, error) {
+					if req.Action == "reload" {
+						if expected != originalPeer {
+							t.Fatalf("reload bound to %d, want %d", expected, originalPeer)
+						}
+						if scenario == "stop error" {
+							f.actions = append(f.actions, req.Action)
+							peerErr = problem(ErrControl, "Manager is stopping.", "Start the manager before reloading.")
+							return ControlResponse{}, f.peer, peerErr
+						}
+					}
+					response, peer, err := f.control(ctx, c, req, expected)
+					if req.Action == "reload" {
+						peerErr = err
+					}
+					return response, peer, err
+				}
+				err = f.reload()
+				wantError := scenario != "foreground" && scenario != "service peer"
+				if (err != nil) != wantError || err != peerErr {
+					t.Fatalf("reload returned %v, peer returned %v, want error: %t", err, peerErr, wantError)
+				}
+				if strings.Join(f.actions, ",") != "status,reload" || len(f.commands) != 1 {
+					t.Fatalf("unexpected dispatch: actions=%v commands=%v", f.actions, f.commands)
+				}
+				current, currentInfo, err := readPrivateServiceDefinition(f.r.Unit)
+				if err != nil || !bytes.Equal(definition, current) || !os.SameFile(info, currentInfo) {
+					t.Fatalf("service definition changed: %v", err)
+				}
+				entries, err := os.ReadDir(filepath.Dir(f.r.Unit))
+				if err != nil || len(entries) != 1 || entries[0].Name() != filepath.Base(f.r.Unit) {
+					t.Fatalf("ordinary reload created service authority: entries=%v error=%v", entries, err)
+				}
+				if strings.Contains(f.log.String(), f.path) || strings.Contains(f.log.String(), "private-fixture-value") {
+					t.Fatal("native inspection diagnostic exposed private content")
+				}
+				code := ErrControl
+				if platform == "linux" {
+					code = ErrDependency
+				}
+				if !strings.Contains(f.log.String(), "service_reload_native_inspection_unavailable") || !strings.Contains(f.log.String(), "platform="+platform) || !strings.Contains(f.log.String(), "code="+string(code)) {
+					t.Fatalf("missing structured native inspection diagnostic: %s", f.log.String())
+				}
+			})
+		}
+	}
+}
+
 func TestServiceReloadRejectsUnsafeCandidatesBeforeReplacement(t *testing.T) {
 	for _, scenario := range []string{"invalid version", "invalid CLI version", "preflight", "stopping", "wrong arguments", "reused PID", "invalid unit", "wrong config", "unreachable", "concurrent service"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -326,6 +409,46 @@ func TestServiceReloadRejectsUnsafeCandidatesBeforeReplacement(t *testing.T) {
 			}
 			if f.mutated() {
 				t.Fatal("unsafe reload reached native mutation")
+			}
+		})
+	}
+}
+
+func TestServiceReloadNativeInspectionFailureRetainsPendingJournal(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newReloadFixture(t, platform)
+			f.onCommand = func(command string) error {
+				if strings.Contains(command, " daemon-reload") || strings.Contains(command, " debug ") {
+					return errors.New("retain recovery intent")
+				}
+				return nil
+			}
+			if err := f.reload(); err == nil {
+				t.Fatal("interrupted replacement unexpectedly succeeded")
+			}
+			journal, err := readPrivate(reloadJournalPath(f.r.Unit), reloadJournalLimit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			definition, info, err := readPrivateServiceDefinition(f.r.Unit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.commands = nil
+			f.actions = nil
+			f.peer = 404
+			f.onCommand = func(string) error { return errors.New("native inspection unavailable") }
+			if err := f.reload(); err == nil || strings.Join(f.actions, ",") != "status" || len(f.commands) != 1 || f.mutated() {
+				t.Fatalf("pending recovery did not fail closed: error=%v actions=%v commands=%v", err, f.actions, f.commands)
+			}
+			currentJournal, err := readPrivate(reloadJournalPath(f.r.Unit), reloadJournalLimit)
+			if err != nil || !bytes.Equal(journal, currentJournal) {
+				t.Fatalf("recovery intent changed: %v", err)
+			}
+			current, currentInfo, err := readPrivateServiceDefinition(f.r.Unit)
+			if err != nil || !bytes.Equal(definition, current) || !os.SameFile(info, currentInfo) {
+				t.Fatalf("service definition changed: %v", err)
 			}
 		})
 	}

@@ -46,20 +46,50 @@ export function parseInventory(output, root, { paths = nativePaths, canonicalize
   }
   if (depth !== 0 || quoted || records.length === 0) throw new Error("Empty or incomplete Go inventory");
   const seen = new Set();
-  return records.map((record) => {
-    if (!within(record.ImportPath ?? "", modulePath) || typeof record.Dir !== "string" || record.Error || record.DepsErrors?.length || seen.has(record.ImportPath)) throw new Error("Invalid Go package discovery");
-    seen.add(record.ImportPath);
+  const originalDirectories = new Map();
+  for (const record of records) {
+    const originalPath = record.ForTest === undefined ? record.ImportPath : typeof record.ForTest === "string" ? record.ForTest : null;
+    if (!originalPath) continue;
+    const directories = originalDirectories.get(originalPath) ?? new Set();
+    directories.add(record.Dir);
+    originalDirectories.set(originalPath, directories);
+  }
+  const inventory = [];
+  for (const record of records) {
+    if (typeof record.ImportPath !== "string" || !within(record.ImportPath, modulePath) || typeof record.Dir !== "string" || record.Error || record.DepsErrors?.length || (record.ForTest !== undefined && typeof record.ForTest !== "string")) throw new Error("Invalid Go package discovery");
     if (!paths.isAbsolute(record.Dir)) throw new Error("Go package directory must be absolute");
     const nativeRelative = paths.relative(checkout, canonicalize(record.Dir));
     const directory = nativeRelative.replaceAll("\\", "/") || ".";
     if (paths.isAbsolute(nativeRelative) || directory.startsWith("../") || directory === "..") throw new Error("Go package is outside the checkout");
+    // -test resolves test embed files on original records, but also emits test
+    // binaries and rewritten packages. Those records must never own CI shards
+    // or turn test-only embed bytes into production dependency seeds. Match a
+    // test binary to a known original path and directory so a real package
+    // ending in `.test` remains in the inventory.
+    const isTestBinary = record.ImportPath.endsWith(".test") &&
+      originalDirectories.get(record.ImportPath.slice(0, -".test".length))?.has(record.Dir) &&
+      record.Name === "main";
+    if (record.ForTest || isTestBinary) continue;
+    if (/\s/u.test(record.ImportPath) || seen.has(record.ImportPath)) throw new Error("Invalid Go package discovery");
+    seen.add(record.ImportPath);
     const imports = ["Imports", "TestImports", "XTestImports"].flatMap((key) => {
       const values = record[key] ?? [];
       if (!Array.isArray(values) || values.some((value) => typeof value !== "string")) throw new Error("Invalid Go import inventory");
       return values;
     });
-    return { path: record.ImportPath, directory, imports: [...new Set(imports)] };
-  });
+    const embeds = (key) => {
+      const values = record[key] ?? [];
+      if (!Array.isArray(values) || values.some((value) => typeof value !== "string")) throw new Error("Invalid Go embed inventory");
+      return [...new Set(values.map((value) => {
+        const file = value.replaceAll("\\", "/");
+        if (paths.isAbsolute(value) || /^[A-Za-z]:/u.test(file) || file.split("/").some((part) => !part || part === "." || part === "..")) throw new Error("Go embed file must be package-relative");
+        return directory === "." ? file : `${directory}/${file}`;
+      }))];
+    };
+    inventory.push({ path: record.ImportPath, directory, imports: [...new Set(imports)], embedFiles: embeds("EmbedFiles"), testEmbedFiles: embeds("TestEmbedFiles"), xTestEmbedFiles: embeds("XTestEmbedFiles") });
+  }
+  if (inventory.length === 0) throw new Error("Empty Go package inventory");
+  return inventory;
 }
 
 function domain(path) {
@@ -90,11 +120,16 @@ export function selectAffected(inventory, changes) {
         source.add(target.path);
       }
     }
+    let embedded = false;
+    for (const item of inventory) {
+      if (item.embedFiles?.includes(path)) { source.add(item.path); embedded = true; }
+      if (item.testEmbedFiles?.includes(path) || item.xTestEmbedFiles?.includes(path)) { tests.add(item.path); embedded = true; }
+    }
     const owner = inventory.filter((item) => item.directory === dirname(path).replaceAll("\\", "/") || within(path, `${item.directory}/testdata`)).sort((a, b) => b.directory.length - a.directory.length)[0];
     if (status === "D" || !["A", "M"].includes(status)) { if (path.endsWith(".go") || domain(path)) selectDomain(path); continue; }
     if (owner && (path.endsWith("_test.go") || within(path, `${owner.directory}/testdata`))) tests.add(owner.path);
     else if (owner && path.endsWith(".go")) source.add(owner.path);
-    else if (path.endsWith(".go") || domain(path)) selectDomain(path);
+    else if (!embedded && (path.endsWith(".go") || domain(path))) selectDomain(path);
   }
   let changed = true;
   while (changed) {
@@ -136,7 +171,7 @@ export function affectedGoPackages({ base, head, cwd = process.cwd(), run = spaw
   // Git and Go can report different drive casing or long/8.3 spellings for the
   // same Windows directory. Compare native filesystem identities, then reject
   // parent traversal and different-drive absolute results from path.relative.
-  const inventory = parseInventory(execute(run, "go", ["list", "-mod=readonly", "-json", "./..."], cwd), root, { canonicalize: realpathSync.native });
+  const inventory = parseInventory(execute(run, "go", ["list", "-mod=readonly", "-test", "-json", "./..."], cwd), root, { canonicalize: realpathSync.native });
   const selection = selectAffected(inventory, changes);
   log(JSON.stringify({ event: "ci_go_affected", base, head, packageCount: selection.packages.length, packages: selection.packages, reasons: selection.reasons }));
   return { ...selection, inventory, root };

@@ -72,9 +72,14 @@ export function classifyGoogle(state) {
   return StoreStatus.Pending;
 }
 
-export function classifyChrome({ submitted, published, version }) {
+function assertChromeNotTakenDown(takenDown) {
+  if (takenDown === true) throw new Error("Chrome Web Store item is taken down; automatic release actions are blocked");
+}
+
+export function classifyChrome({ submitted, published, takenDown, version }) {
+  assertChromeNotTakenDown(takenDown);
   const publishedChannel = published?.distributionChannels?.find(({ crxVersion }) => crxVersion === version);
-  if (publishedChannel?.deployPercentage === 100) return StoreStatus.Public;
+  if (published?.state === "PUBLISHED" && publishedChannel?.deployPercentage === 100) return StoreStatus.Public;
   if (publishedChannel) return StoreStatus.Pending;
   const submittedChannel = submitted?.distributionChannels?.find(({ crxVersion }) => crxVersion === version);
   if (submittedChannel?.deployPercentage === 100 && ["STAGED", "APPROVED"].includes(submitted?.state)) return StoreStatus.ApprovedHeld;
@@ -275,7 +280,7 @@ async function status(provider, environment, metadata, fetchImpl) {
   }
   const token = await chromeToken(environment, fetchImpl);
   const value = await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${chromeName(environment)}:fetchStatus`, { headers: bearer(token) }, "Chrome Web Store release status");
-  return { provider, status: classifyChrome({ submitted: value.submittedItemRevisionStatus, published: value.publishedItemRevisionStatus, version: metadata.version }), version: metadata.version };
+  return { provider, status: classifyChrome({ submitted: value.submittedItemRevisionStatus, published: value.publishedItemRevisionStatus, takenDown: value.takenDown, version: metadata.version }), version: metadata.version };
 }
 
 async function publish(provider, environment, metadata, fetchImpl) {
@@ -292,7 +297,7 @@ async function publish(provider, environment, metadata, fetchImpl) {
     const token = await chromeToken(environment, fetchImpl);
     const name = chromeName(environment);
     const value = await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${name}:fetchStatus`, { headers: bearer(token) }, "Chrome Web Store release status");
-    const current = classifyChrome({ submitted: value.submittedItemRevisionStatus, published: value.publishedItemRevisionStatus, version: metadata.version });
+    const current = classifyChrome({ submitted: value.submittedItemRevisionStatus, published: value.publishedItemRevisionStatus, takenDown: value.takenDown, version: metadata.version });
     if ([StoreStatus.Public, StoreStatus.Pending].includes(current)) return { provider, status: current, version: metadata.version };
     if (current !== StoreStatus.ApprovedHeld) throw new Error(`Chrome Web Store version cannot be published from state ${current}`);
     await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${name}:publish`, { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ publishType: "DEFAULT_PUBLISH", deployInfos: [{ deployPercentage: 100 }], blockOnWarnings: true }) }, "Chrome Web Store immediate publication");
@@ -326,8 +331,11 @@ async function withdraw(provider, environment, metadata, options, fetchImpl) {
   }
   const token = await chromeToken(environment, fetchImpl);
   const current = await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${chromeName(environment)}:fetchStatus`, { headers: bearer(token) }, "Chrome Web Store release status");
-  const exactPublic = current.publishedItemRevisionStatus?.distributionChannels?.some(({ crxVersion, deployPercentage }) => crxVersion === metadata.version && deployPercentage === 100);
-  if (exactPublic) throw new Error("Chrome Web Store release is already public and cannot be withdrawn automatically");
+  assertChromeNotTakenDown(current.takenDown);
+  // Exact published evidence still blocks withdrawal when the state cannot certify
+  // public availability. Reclassification must not grant automatic rollback authority.
+  const exactPublished = current.publishedItemRevisionStatus?.distributionChannels?.some(({ crxVersion, deployPercentage }) => crxVersion === metadata.version && deployPercentage === 100);
+  if (exactPublished) throw new Error("Chrome Web Store release has an exact published revision and cannot be withdrawn automatically");
   const exactSubmitted = current.submittedItemRevisionStatus?.distributionChannels?.some(({ crxVersion, deployPercentage }) => crxVersion === metadata.version && deployPercentage === 100);
   if (!exactSubmitted || current.submittedItemRevisionStatus?.state === "CANCELLED") return { provider, status: StoreStatus.Withdrawn };
   await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${chromeName(environment)}:cancelSubmission`, { method: "POST", headers: bearer(token) }, "Chrome Web Store review withdrawal");
