@@ -360,13 +360,13 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			a.wait.Done()
 		})
 	}
-	lease.Key = func(ctx context.Context) ([]byte, error) {
+	lease.Credential = func(ctx context.Context) (apiproxy.Credential, error) {
 		if leaseContext.Err() != nil {
-			return nil, executionDenied()
+			return apiproxy.Credential{}, executionDenied()
 		}
 		unlock, err := a.service.lockAccounts(ctx)
 		if err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
 		locked := true
 		defer func() {
@@ -375,10 +375,10 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			}
 		}()
 		if leaseContext.Err() != nil {
-			return nil, executionDenied()
+			return apiproxy.Credential{}, executionDenied()
 		}
 		if _, err := a.resolve(ctx, grant); err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
 
 		unlock()
@@ -387,18 +387,23 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		// original execution immediately before and after that operation.
 		credential, err := a.service.resolveAPICredential(ctx, scope.AccountID, scope.ConnectionID, scope.ProviderID)
 		if err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
 		if leaseContext.Err() != nil {
 			clear(credential.key)
-			return nil, executionDenied()
+			return apiproxy.Credential{}, executionDenied()
 		}
 		if _, err = a.resolve(ctx, grant); err != nil {
 			clear(credential.key)
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
-		return credential.key, nil
+		return apiproxy.Credential{Key: credential.key, QuotaProject: credential.quotaProject}, nil
 	}
+	lease.Key = func(ctx context.Context) ([]byte, error) {
+		credential, err := lease.Credential(ctx)
+		return credential.Key, err
+	}
+
 	if scope.Purpose != domain.SessionTitleUsage && scope.Provider.Protocol == domain.OpenAIResponses {
 		lease.ObserveHistory = func(ctx context.Context, accountBound bool) error {
 			if leaseContext.Err() != nil {

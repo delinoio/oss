@@ -35,5 +35,13 @@
   "account-oauth.extra.92b4263f2141": "인증 만료됨",
   "account-oauth.extra.3b6a9f24087b": "인증이 중단됨",
   "account-oauth.extra.9198736066a6": "연결 취소됨",
-  "account-oauth.extra.dcf547440e7c": "연결에 복구 필요"
+  "account-oauth.extra.dcf547440e7c": "연결에 복구 필요",
+  "account-oauth.chooseGoogleCloudProject_0f5a3e": "Google Cloud 프로젝트를 선택하세요",
+  "account-oauth.useGoogleCloudProjectToPay_2b7c11": "API 사용 요금을 결제할 Google Cloud 프로젝트를 사용하세요.",
+  "account-oauth.googleCloudProjectId_4e7d2a": "Google Cloud 프로젝트 ID",
+  "account-oauth.continueInBrowser_7c2d9b": "브라우저에서 계속",
+  "account-oauth.connectHuggingFaceInferenceProviders_7b4d2c": "Hugging Face 추론 제공업체 연결",
+  "account-oauth.approveAccessOnProviderDelidevWill_7f1c4a": "{{v0}}에서 액세스를 승인하세요. DeliDev가 자동으로 연결을 완료합니다.",
+  "account-oauth.providerConnected_5a9a4f": "{{v0}} 연결됨",
+  "account-oauth.invalidGoogleCloudProjectId_9e2b1c": "유효한 Google Cloud 프로젝트 ID를 입력하세요(소문자, 숫자 또는 하이픈 6~30자)."
 }

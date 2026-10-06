@@ -74,6 +74,9 @@ func (a AccountOAuthAttempt) Validate() error {
 	if (a.Version != 1 && a.Version != 2) || a.Revision == 0 || a.ProviderRevision == 0 || UniqueIDs([]ID{a.ID, a.StartRequestID, a.AccountID, a.CreateRequestID, a.ConnectRequestID}) != nil || a.ServerID.Validate() != nil || a.ProviderID.Validate() != nil || a.Generation.Validate() != nil || !a.State.Valid() || (a.Actor.Type != OwnerDevice && a.Actor.Type != ClientDevice) || a.Actor.MachineID != "" || a.Actor.Type == ClientDevice && a.Actor.DeviceID.Validate() != nil || a.StartedAt.IsZero() || a.UpdatedAt.Before(a.StartedAt) || !a.ExpiresAt.Equal(a.StartedAt.Add(10*time.Minute)) || a.CallbackCommitment != "" && !validDigest(a.CallbackCommitment) || (a.CompletionRequestID != "") != (a.CompletionRevision != 0 && validDigest(a.CodeCommitment)) || a.CompletionRequestID != "" && a.CompletionRequestID.Validate() != nil || a.StagingClaimed && a.CompletionRequestID == "" || a.Sealed && !a.StagingClaimed || a.CleanupPending && !a.StagingClaimed || a.State == OAuthConnected && (!a.Sealed || a.CleanupPending) {
 		return Fail(RecoveryRequired, "OAuth attempt ownership is invalid.", "Preserve the original attempt and protected credential evidence.")
 	}
+	if a.Version == 2 && a.Preset == PresetGemini && !ValidGoogleProjectID(a.QuotaProject) {
+		return Fail(RecoveryRequired, "OAuth project binding is invalid.", "Preserve the original quota project.")
+	}
 	if a.Version == 2 && (a.Preset != PresetHuggingFace && a.Preset != PresetGemini && a.Preset != PresetBaseten || !validDigest(a.StateCommitment)) {
 		return Fail(RecoveryRequired, "OAuth authentication profile is invalid.", "Preserve the original attempt.")
 	}

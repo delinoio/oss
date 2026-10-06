@@ -35,5 +35,13 @@
   "account-oauth.extra.92b4263f2141": "Authorization expired",
   "account-oauth.extra.3b6a9f24087b": "Authorization was interrupted",
   "account-oauth.extra.9198736066a6": "Connection canceled",
-  "account-oauth.extra.dcf547440e7c": "Connection requires recovery"
+  "account-oauth.extra.dcf547440e7c": "Connection requires recovery",
+  "account-oauth.chooseGoogleCloudProject_0f5a3e": "Choose your Google Cloud project",
+  "account-oauth.useGoogleCloudProjectToPay_2b7c11": "Use the Google Cloud project that will pay for API usage.",
+  "account-oauth.googleCloudProjectId_4e7d2a": "Google Cloud project ID",
+  "account-oauth.continueInBrowser_7c2d9b": "Continue in browser",
+  "account-oauth.connectHuggingFaceInferenceProviders_7b4d2c": "Connect Hugging Face Inference Providers",
+  "account-oauth.approveAccessOnProviderDelidevWill_7f1c4a": "Approve access on {{v0}}. DeliDev will finish connecting automatically.",
+  "account-oauth.providerConnected_5a9a4f": "{{v0}} connected",
+  "account-oauth.invalidGoogleCloudProjectId_9e2b1c": "Enter a valid Google Cloud project ID (6–30 lowercase letters, digits or hyphens)."
 }
