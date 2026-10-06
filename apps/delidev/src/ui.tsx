@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 import { clientFailure, type ClientFailure } from "@delinoio/delidev-api-client";
 
 export function Problem({ error }: { error: unknown }) {
@@ -10,17 +10,18 @@ export function Failure({ failure }: { failure?: ClientFailure }) {
   if (!failure) return null;
   return <div role="alert" className="problem"><strong>{failure.message}</strong><p>{failure.guidance}</p>{failure.correlationId ? <small>Reference: {failure.correlationId}</small> : null}</div>;
 }
-export function Modal({ title, close, children, visible = true }: { title: string; close: () => void; children: ReactNode; visible?: boolean }) {
+export function Modal({ title, close, children, visible = true, className, initialFocus }: { title: string; close: () => void; children: ReactNode; visible?: boolean; className?: string; initialFocus?: RefObject<HTMLElement | null> }) {
   const id = useId();
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!visible) return;
     const opener = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
     dialog.showModal();
+    initialFocus?.current?.focus();
     return () => { dialog.close(); if (opener?.isConnected) opener.focus(); };
-  }, [visible]);
-  return <dialog ref={ref} aria-labelledby={id} onCancel={(event) => { event.preventDefault(); close(); }}>
+  }, [visible, initialFocus]);
+  return <dialog ref={ref} className={className} aria-labelledby={id} onCancel={(event) => { event.preventDefault(); close(); }}>
     <header><h2 id={id}>{title}</h2><button onClick={close} aria-label={`Close ${title}`}>Close</button></header>
     {children}
   </dialog>;

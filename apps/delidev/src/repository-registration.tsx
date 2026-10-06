@@ -10,7 +10,8 @@ import { useRetainedMutation } from "./mutation";
 import { useSettingsOpening } from "./settings-lifetime";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { LocalWorkerAction, LocalWorkerState, type ControlLocalWorker } from "./local-worker-controls";
-import { Problem } from "./ui";
+import { Modal, Problem } from "./ui";
+import "./repository-registration.css";
 
 export type ChooseRepositoryFolder = () => Promise<string | null>;
 enum Computer { Local = "local", Remote = "remote" }
@@ -163,16 +164,15 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     const checkout = object(raw);
     return checkout.machine_id === primaryCheckout.machine_id && checkout.path === primaryCheckout.path;
   }));
-  return <section className="repository-registration" aria-label="Add repository">
-    <button type="button" disabled={blocked} onClick={cancel}>Back to repositories</button>
-    <h2>Add repository</h2>
+  return <Modal title="Add repository" close={cancel} visible={active} className="repository-add-dialog" initialFocus={initialAction}><section className="repository-registration" aria-label="Add repository">
+    <p className="repository-add-description">Choose an existing folder or clone a repository.</p>
     {saveJob ? <><h3>Repository save accepted</h3>{saveJob === "unknown" ? <p role="alert">The save was acknowledged without a readable job. Inspect its receipt before another save.</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>Return to current draft</button> : null}</>}</TrackedJob>}</> : <>
       {summary ? <section className="repository-summary" aria-label="Repository detected">
         <div className="repository-summary-heading"><div><h3>{text(data.name)}</h3><p>Repository detected</p></div><button type="button" disabled={blocked} onClick={() => void start(true)}>Change folder</button></div>
         <p className="repository-path">{text(summary.output.root)}</p>
         <dl><div><dt>Computer</dt><dd>{summary.source.name}</dd></div><div><dt>Git remote</dt><dd>{remote || "Unavailable"}</dd></div><div><dt>Default branch</dt><dd>{text(object(summary.output.default_refs)[remote]) || "Unavailable locally"}</dd></div><div><dt>GitHub</dt><dd>{text(github.owner) && text(github.name) ? `${text(github.owner)}/${text(github.name)}` : "Unavailable"}</dd></div></dl>
         <p>GitHub detection is metadata only. Select a profile in Optional settings to configure access.</p>
-      </section> : <section className="repository-folder-card"><h3>Choose your repository folder</h3><p>Select an existing Git repository on this computer.</p><button ref={initialAction} type="button" className="primary" disabled={blocked || !chooseFolder} onClick={() => void start(true)}>Choose folder</button><button type="button" disabled={blocked} aria-expanded={manual} onClick={() => setManual(value => !value)}>Enter a path…</button><p>This computer</p></section>}
+      </section> : <section className="repository-folder-card"><h3>Local folder</h3><p>Add an existing Git repository on this computer.</p><div className="repository-folder-actions"><button ref={initialAction} type="button" disabled={blocked || !chooseFolder} onClick={() => void start(true)}>Choose folder</button><button type="button" disabled={blocked} aria-expanded={manual} onClick={() => setManual(value => !value)}>Enter a path…</button></div></section>}
       {summary && !manual ? <button type="button" disabled={blocked} onClick={() => setManual(true)}>Enter a path…</button> : null}
       {manual || (!summary && path) ? <fieldset disabled={blocked}><legend>Repository folder</legend><label>Computer<select value={computer} onChange={event => setComputer(event.target.value as Computer)}><option value={Computer.Local}>This computer</option><option value={Computer.Remote}>Another computer</option></select></label>{computer === Computer.Remote ? <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine} active={active} showStatus change={(id, value, resource) => { setMachine(id); setMachineName(resource ? resourceName(resource) : text(value?.name)); }} /> : null}<TextField label="Absolute checkout path" value={path} max={4096} change={setPath} /><button type="button" disabled={!path || (computer === Computer.Remote && !machine)} onClick={() => void start(false)}>Inspect folder</button></fieldset> : null}
       {inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <><InspectionCompletion state={state} output={output} completed={completeInspection} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setInspection(undefined)}>Return to selected folder</button> : null}</>}</TrackedJob> : null}
@@ -183,7 +183,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
-      <div className="actions">{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</div>
+      <div className="actions repository-add-footer"><button type="button" onClick={cancel}>Cancel</button>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</div>
     </>}
-  </section>;
+  </section></Modal>;
 }

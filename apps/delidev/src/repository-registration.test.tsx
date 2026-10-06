@@ -53,7 +53,7 @@ it("registers the canonical checkout using folder selection and Add repository o
   expect(screen.queryByRole("button", { name: "Add inspected checkout" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expect(screen.getByRole("button", { name: "Optional settings" }).getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
   expect(saved).toMatchObject({ name: "oss", checkouts: [{ machine_id: f.machine.id, path: "/canonical/oss" }], base: {}, starting: {}, auto_fetch: true, github_owner: "delinoio", github_name: "oss" });
@@ -76,7 +76,7 @@ it("preserves cancellation and resets repository-bound options on a successful r
   f.inspected.mockImplementationOnce(async request => { const job = row(EntityKind.JOB, { state: "succeeded", machine_id: request.machineId, output: { ...metadata, root: "/canonical/B", name: "B" } }); f.resources.set(job.id, job); return { job }; });
   fireEvent.click(screen.getByRole("button", { name: "Change folder" }));
   await screen.findByText("/canonical/B");
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson))).toMatchObject({ name: "B", github_owner: "delinoio", starting: {} });
 });
@@ -104,7 +104,7 @@ it.each([false, true])("retains the confirmed primary checkout when additional c
   expect((secondary.getByRole("button", { name: "Remove checkout" }) as HTMLButtonElement).disabled).toBe(false);
   if (removeAdditional) fireEvent.click(secondary.getByRole("button", { name: "Remove checkout" }));
   expect(within(screen.getByRole("region", { name: "Repository detected" })).getByText("/canonical/oss")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
   expect(saved).toMatchObject({ name: "oss", github_owner: "delinoio", github_name: "oss" });
@@ -138,7 +138,7 @@ it.each([
 ])("allows missing defaults and legacy metadata for $name", async output => {
   const f = fixture(output); f.mount(); await f.chooseAndReview();
   expect(screen.getByText("Unavailable locally")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const value = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
   expect(value.base).toEqual({}); expect(value.starting).toEqual({}); expect(value.github_owner).toBe("");
@@ -165,7 +165,7 @@ it.each(["picker", "proof", "inspection", "save"])("discards a late %s result af
   f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   if (phase !== "picker") await waitFor(() => expect(f.proof).toHaveBeenCalledTimes(1));
   if (phase === "inspection") await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
-  if (phase === "save") { await screen.findByRole("region", { name: "Repository detected" }); fireEvent.click(screen.getByRole("button", { name: "Add repository" })); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1)); }
+  if (phase === "save") { await screen.findByRole("region", { name: "Repository detected" }); fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" })); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1)); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Reopen settings" }));
   expect(await screen.findByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
@@ -187,7 +187,7 @@ it("retries uncertain inspection and save with the original exact requests", asy
   f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same inspection" }));
   await screen.findByRole("region", { name: "Repository detected" }); expect(f.inspected.mock.calls[0][0]).toEqual(f.inspected.mock.calls[1][0]);
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   const retry = await screen.findByRole("button", { name: "Retry the same repository save" });
   expect((screen.getByRole("button", { name: "Change folder" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2)); expect(f.save.mock.calls[0][0]).toEqual(f.save.mock.calls[1][0]);
@@ -261,7 +261,7 @@ it("observes an accepted save after close without restoring or replaying the wiz
   const accepted = row(EntityKind.REPOSITORY, { name: "Accepted while closed", checkouts: [{ machine_id: f.machine.id, path: "/canonical/oss" }] });
   f.save.mockImplementationOnce(async () => { f.resources.set(accepted.id, accepted); return pending.promise as Promise<{ job: Resource }>; });
   f.mount(); await f.chooseAndReview();
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Reopen settings" }));
@@ -271,4 +271,37 @@ it("observes an accepted save after close without restoring or replaying the wiz
   await screen.findByRole("heading", { name: "Accepted while closed" });
   expect(screen.queryByRole("region", { name: "Repository detected" })).toBeNull();
   expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+
+it.each(["Cancel", "Close Add repository", "Escape"])("dismisses with %s, restores the opener and discards the draft", async action => {
+  const f = fixture(); f.mount();
+  const opener = await screen.findByRole("button", { name: "Add repository" });
+  opener.focus(); await f.add();
+  const dialog = screen.getByRole("dialog", { name: "Add repository" });
+  expect(window.document.activeElement).toBe(within(dialog).getByRole("button", { name: "Choose folder" }));
+  expect(screen.getByText("No saved entries.")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Enter a path…" }));
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Absolute checkout path" }), { target: { value: "/discard" } });
+  if (action === "Escape") fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
+  else fireEvent.click(within(dialog).getByRole("button", { name: action }));
+  expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull();
+  expect(window.document.activeElement).toBe(opener);
+  await f.add();
+  expect(screen.queryByRole("textbox", { name: "Absolute checkout path" })).toBeNull();
+  expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
+});
+
+it("discards a pending inspection when the child dialog closes inside Settings", async () => {
+  const f = fixture(); const pending = deferred<any>();
+  f.inspected.mockReturnValueOnce(pending.promise); f.mount(); await f.add();
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await f.add();
+  pending.resolve({ job: row(EntityKind.JOB, { machine_id: f.machine.id, state: "succeeded", output: metadata }) });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(screen.queryByRole("region", { name: "Repository detected" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Retry the same/ })).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
 });
