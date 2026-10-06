@@ -52,6 +52,34 @@
         "CARGO_HOME",
         "RUSTUP_HOME"
       ]
+    },
+    "ci:host": {
+      "cache": false,
+      "dependsOn": [
+        "build",
+        "typecheck",
+        "lint",
+        "test",
+        "typecheck:examples"
+      ],
+      "passThroughEnv": [
+        "REACT_FORGE_TARGET",
+        "REACT_FORGE_SKIP_SCENE_TESTS",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "RUNNER_TEMP",
+        "RUNNER_OS",
+        "REACT_FORGE_SOFFICE",
+        "REACT_FORGE_PDFTOPPM",
+        "REACT_FORGE_PYTHON",
+        "npm_execpath"
+      ]
+    },
+    "typecheck:examples": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false
     }
   }
 }

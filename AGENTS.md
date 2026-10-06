@@ -558,3 +558,5 @@ Release automation baseline:
 - The owner permits Chromium without a process sandbox on Windows DevHud and DeliDev only while upstream lacks executable-host broker support. Keep this exception explicit in runtime selection, validation and user documentation. macOS/Linux require Chromium sandboxing; all desktop hosts use OS-backed secret storage. Keep protected-browser IPC isolation, exact profile ownership and joined cleanup unchanged.
 
 - DevHud and DeliDev CEF AppImage packaging must share verified helper preparation through `scripts/appimage-tools.mjs` and the canonical DevHud runtime pins. Preserve each caller’s environment restrictions and private staging cleanup; follow `docs/repository-prebuilt-dependencies-contract.md`.
+
+- PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.

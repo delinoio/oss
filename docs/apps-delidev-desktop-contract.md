@@ -28,6 +28,7 @@ API discovery and saved-model stale-revision guards remain unchanged. Recommenda
 removal cannot delete saved configurations or execution history. These browser
 interactions do not establish installed native/account/platform acceptance.
 
+PR validation is owned by the desktop Turbo task graph: cache type checks, pure UI assertions and frontend output; execute Go-server integration, QA, widget and native packaging fixtures every time. Serialize pure UI, client Go integration, desktop Go integration and QA, and keep jsdom `maxWorkers: 4`. Local `pnpm test` retains the complete validation sequence. Follow `docs/repository-workflow-contract.md` for cache authentication and evidence limits.
 
 ## In-app toast notifications
 
@@ -613,22 +614,29 @@ OpenAI, Anthropic, Open source and xAI. Use 16px grid gaps, 24px card padding,
 widths of at least 640px; below that width use one column. The selected card uses
 the semantic selected background, accent border and a checked circular indicator;
 unselected cards use the ordinary surface, border and empty circular indicator.
-Keep the existing Harness heading/helper and footer guidance. Cards use a
+Keep the existing Harness heading/helper. The footer guidance is
+"Choose a harness to continue to Accounts." and joins the group's accessible
+description. Cards use a
 button-based single-selection radiogroup with one selected Tab entry, wrapping
 Arrow Up/Down/Left/Right selection, Home/End and native Space/Enter activation.
 With an unsupported saved harness, select no card and use the first card as the
-Tab entry and validation focus target. Preserve the new Codex default and saved
-edit selection. Card selection never advances or saves; Next owns advancement.
-Reselecting the current harness preserves account/model choices, while an actual
-change retains the existing explicit reset. Buttons retain visible keyboard focus
-and disabled server-support/mutation guards. Local SVG masks use semantic ink in
+Tab entry. Preserve the new Codex default and saved edit selection. Click or
+native Space/Enter confirmation immediately opens Accounts and focuses its
+heading, including confirmation of the already selected card. Arrows and Home/End
+change selection and focus without advancing. Initial display and edit loading
+never advance. Harness has no Next button, and submitting its form does not
+advance. Stage navigation never saves or discovers models. Reselecting the
+current harness preserves account/model choices, while an actual change retains
+the existing explicit reset only after the bounded draft is accepted. Buttons
+retain visible keyboard focus and active/server-support/mutation guards. Local SVG masks use semantic ink in
 both themes without network access, inline styles or additional dependencies.
 Input/select focus preserves ordinary
 boundaries; buttons/disclosures retain visible focus. The combobox supports
 Arrow Up/Down, Enter and Escape with active-descendant semantics. Stage changes
 focus their heading; invalid configuration returns to its stage and input. Narrow
-windows use one column and compact stage labels. Footer Cancel/Back/Next and the
-final Save remain in normal document flow. Verify 1280×800, 960×640, 640×480,
+windows use one column and compact stage labels. Footer Cancel remains in all
+steps; Back/Next from Accounts onward and the final Save remain in normal
+document flow. Verify 1280×800, 960×640, 640×480,
 effective zoom and light/dark browser fixtures separately from actual browser
 zoom, packaged native platforms and real-account acceptance. Usage model details
 provide current revision-bound Token pricing, including models without usage;

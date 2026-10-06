@@ -43,8 +43,8 @@ it("configures a real Go server through the settings forms and explicitly valida
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
-  next();
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
   const source = await screen.findByRole("option", { name: "Owned local API" }) as HTMLOptionElement;
   change("Account source", source.value);
   fireEvent.click(await screen.findByRole("checkbox", { name: /Owned keyless account/ }));
