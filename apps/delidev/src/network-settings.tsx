@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useRef, useState } from "react";
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
+import { useSettingsTaskDismiss } from "./settings-task-context";
+import { useRef, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, NetworkQuery, ResourceQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text } from "./documents";
@@ -14,7 +16,7 @@ import { NativeRouteState, ProxyMode, ciphertextBase64, workerRecipient, workerR
 // presentation never cancels an accepted server/native operation or retries it.
 export function NetworkSettings({ active, machine = "", authority }: { active: boolean; machine?: string; authority?: PairingAuthority }) {
   const [open, setOpen] = useState(false);
-  return <section aria-label={machine ? "Runner Device network" : "Server network"}><button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? "Hide network settings" : "Network settings"}</button>{open ? <NetworkWorkspace active={active} machine={machine} authority={authority} /> : null}</section>;
+  return <section aria-label={machine ? "Runner Device network" : "Server network"}><button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? "Hide network settings" : "Network settings"}</button>{open ? <SettingsTaskDialog title={machine ? "Runner Device network" : "Server network"} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={() => setOpen(false)}><NetworkWorkspace active={active} machine={machine} authority={authority} /></SettingsTaskDialog> : null}</section>;
 }
 function NetworkWorkspace({ active, machine, authority }: { active: boolean; machine: string; authority?: PairingAuthority }) {
   const [page, setPage] = useState(""), [draft, setDraft] = useState<Resource | "new">();
@@ -51,9 +53,9 @@ function NetworkWorkspace({ active, machine, authority }: { active: boolean; mac
       </form>
       <button type="button" disabled={pending} onClick={() => setDraft("new")}>New network profile</button>
       {rows.map(row => <article className="result" key={row.id}><h4>{resourceName(row)}</h4><p>{text(document(row).mode)} · Revision {row.revision.toString()}{text(document(row).credential_generation) ? " · Protected credential configured" : ""}</p><button disabled={pending} onClick={() => setDraft(row)}>Edit profile</button><button disabled={pending || text(currentData.profile_id) === row.id} onClick={() => setDeleting(row)}>Delete profile</button></article>)}
-      {deleting ? <section aria-label="Confirm network profile deletion"><p>Delete {resourceName(deleting)} at revision {deleting.revision.toString()}? Profiles selected by any server or Runner Device cannot be deleted.</p><button disabled={pending} onClick={() => void remove.send({ mutation: { requestId: newRequestId(), id: deleting.id, expectedRevision: deleting.revision } })}>Confirm profile deletion</button><button disabled={pending} onClick={() => setDeleting(undefined)}>Keep profile</button></section> : null}
+      {deleting ? <SettingsTaskDialog title="Delete network profile" size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setDeleting(undefined)}><section aria-label="Confirm network profile deletion"><p>Delete {resourceName(deleting)} at revision {deleting.revision.toString()}? Profiles selected by any server or Runner Device cannot be deleted.</p><SettingsTaskActions><button disabled={pending} onClick={() => void remove.send({ mutation: { requestId: newRequestId(), id: deleting.id, expectedRevision: deleting.revision } })}>Confirm profile deletion</button><button data-settings-task-cancel disabled={pending} onClick={() => setDeleting(undefined)}>Keep profile</button></SettingsTaskActions></section></SettingsTaskDialog> : null}
       <nav aria-label="Network profile pages"><button disabled={!page || profiles.isFetching} onClick={() => { setPage(""); setSelected(""); }}>First page</button><button disabled={!profiles.data?.nextPageToken || profiles.isFetching} onClick={() => { setPage(profiles.data!.nextPageToken); setSelected(""); }}>Next page</button></nav>
-      {draft ? <ProfileEditor key={draft === "new" ? "new" : draft.id} initial={draft === "new" ? undefined : draft} saved={() => { setDraft(undefined); changed(); }} close={() => setDraft(undefined)} /> : null}
+      {draft ? <SettingsTaskDialog key={draft === "new" ? "new" : draft.id} title={draft === "new" ? "New network profile" : "Edit network profile"} size={SettingsDialogSize.Form} close={() => setDraft(undefined)}><ProfileEditor initial={draft === "new" ? undefined : draft} saved={() => { setDraft(undefined); changed(); }} close={() => setDraft(undefined)} /></SettingsTaskDialog> : null}
       <button disabled={profiles.isFetching || route.isFetching || observation.isFetching} onClick={changed}>Refresh routing</button>
       {select.uncertain ? <button disabled={select.busy} onClick={select.retry}>Retry original route selection</button> : null}{remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>Retry original profile deletion</button> : null}
       {authority && bootstrap ? <EncryptedWorkerExport active={active} authority={authority} machine={machine} profiles={rows} /> : null}
@@ -62,6 +64,7 @@ function NetworkWorkspace({ active, machine, authority }: { active: boolean; mac
   </>;
 }
 function ProfileEditor({ initial, saved, close }: { initial?: Resource; saved: () => void; close: () => void }) {
+  const formId = useId();
   const data = document(initial);
   const [name, setName] = useState(text(data.name)), [mode, setMode] = useState((data.mode ?? ProxyMode.Direct) as ProxyMode);
   const [host, setHost] = useState(text(data.host)), [port, setPort] = useState(String(data.port ?? ""));
@@ -69,7 +72,8 @@ function ProfileEditor({ initial, saved, close }: { initial?: Resource; saved: (
   const [username, setUsername] = useState(""), [password, setPassword] = useState(""), [clear, setClear] = useState(false);
   const save = useRetainedMutation(`network-save:${initial?.id ?? "new"}`, NetworkQuery.saveNetworkProfile, () => { setUsername(""); setPassword(""); saved(); });
   const pending = save.busy || save.uncertain;
-  return <form aria-label="Network profile editor" onSubmit={event => { event.preventDefault(); if (pending) return; const definition = { name, mode, ...(mode === ProxyMode.Direct ? {} : { host, port: Number(port), bypass: bypasses.map(row => ({ host: row.host, ...(row.port ? { port: Number(row.port) } : {}) })) }) }; void save.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(definition), ...(mode !== ProxyMode.Direct && (username || password) ? { credentialJson: encode({ username, password }) } : {}), clearCredential: mode !== ProxyMode.Direct && clear }); }}>
+  useSettingsTaskDismiss(() => { setUsername(""); setPassword(""); });
+  return <form id={formId} aria-label="Network profile editor" onSubmit={event => { event.preventDefault(); if (pending) return; const definition = { name, mode, ...(mode === ProxyMode.Direct ? {} : { host, port: Number(port), bypass: bypasses.map(row => ({ host: row.host, ...(row.port ? { port: Number(row.port) } : {}) })) }) }; void save.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(definition), ...(mode !== ProxyMode.Direct && (username || password) ? { credentialJson: encode({ username, password }) } : {}), clearCredential: mode !== ProxyMode.Direct && clear }); }}>
     <h4>{initial ? "Edit network profile" : "New network profile"}</h4><fieldset disabled={pending}>
       <label>Profile name<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} /></label>
       <label>Connection mode<select value={mode} onChange={event => setMode(event.target.value as ProxyMode)}>{Object.values(ProxyMode).map(value => <option key={value} value={value}>{value}</option>)}</select></label>
@@ -79,8 +83,7 @@ function ProfileEditor({ initial, saved, close }: { initial?: Resource; saved: (
         <p>Blank credentials preserve an existing credential only if mode, host and port stay the same. Changing that destination clears its association unless replacement credentials are supplied.</p>
         <label>Proxy username<input autoComplete="off" maxLength={255} value={username} disabled={clear} onChange={event => setUsername(event.target.value)} /></label><label>Proxy password<input type="password" autoComplete="new-password" maxLength={255} value={password} disabled={clear} onChange={event => setPassword(event.target.value)} /></label><label><input type="checkbox" checked={clear} onChange={event => { setClear(event.target.checked); if (event.target.checked) { setUsername(""); setPassword(""); } }} />Clear protected credential association</label>
       </> : null}
-      <button type="submit">Save profile</button><button type="button" onClick={close}>Cancel profile edit</button>
-    </fieldset><Problem error={save.error} />{save.uncertain ? <><p role="status">The save outcome is unknown. Keep the original request or inspect the latest profile.</p><button disabled={save.busy} onClick={save.retry}>Retry original profile save</button></> : null}
+    </fieldset><SettingsTaskActions form={formId}><button type="button" data-settings-task-cancel disabled={pending} onClick={close}>Cancel profile edit</button><button type="submit" className="primary" disabled={pending}>Save profile</button></SettingsTaskActions><Problem error={save.error} />{save.uncertain ? <><p role="status">The save outcome is unknown. Keep the original request or inspect the latest profile.</p><button disabled={save.busy} onClick={save.retry}>Retry original profile save</button></> : null}
   </form>;
 }
 function EncryptedWorkerExport({ active, authority, machine, profiles }: { active: boolean; authority: PairingAuthority; machine: string; profiles: Resource[] }) {

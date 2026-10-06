@@ -33,6 +33,8 @@ function LocalDesktop() {
   const [showConnection, setShowConnection] = useState(false);
   const [connectionTarget, setConnectionTarget] = useState<HTMLDivElement | null>(null);
   const previous = useRef<NativeConnection>(undefined);
+  const connectionReadGeneration = useRef(0);
+  const [connectionVerified, setConnectionVerified] = useState(true);
   const [status, setStatus] = useState<LocalServerStatus>();
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   useEffect(() => {
@@ -52,12 +54,15 @@ function LocalDesktop() {
   const [busy, setBusy] = useState(isTauri());
   const connecting = useRef(false);
   const acceptConnection = async (connection: NativeConnection, current: () => boolean = () => true) => {
+    if (!current()) return;
+    const generation = connectionReadGeneration.current;
     const candidate = createDeliDevTransport({ origin: connection.endpoint, getToken: () => connection.token });
     await verifyLocalServer(candidate, connection.server_id);
-    if (!current()) return;
+    if (!current() || generation !== connectionReadGeneration.current) return;
     const old = previous.current;
     if (!old || old.server_id !== connection.server_id || old.device_id !== connection.device_id || old.endpoint !== connection.endpoint || old.token !== connection.token) setTransport(candidate);
     previous.current = connection;
+    setConnectionVerified(true);
     setConnectionEpoch((epoch) => epoch + 1);
     setError(undefined);
   };
@@ -65,28 +70,56 @@ function LocalDesktop() {
     if (busy || connecting.current) return;
     connecting.current = true;
     setBusy(true); setError(undefined);
+    const generation = connectionReadGeneration.current;
     try {
       const connection = await invoke<NativeConnection>(action);
-      await acceptConnection(connection);
-    } catch (reason) { setError(reason); } finally { connecting.current = false; setBusy(false); }
+      await acceptConnection(connection, () => generation === connectionReadGeneration.current);
+    } catch (reason) {
+      if (generation === connectionReadGeneration.current) setError(reason);
+    } finally {
+      connecting.current = false;
+      if (generation === connectionReadGeneration.current) setBusy(false);
+    }
   };
   useEffect(() => {
     if (!isTauri()) return;
     let canceled = false;
     let timer: ReturnType<typeof setTimeout>;
     const observe = async () => {
+      const generation = connectionReadGeneration.current;
       try {
         // Native owns the operation across every renderer lifecycle. A null
         // observation is pending; reading it never starts another attempt.
         const connection = await invoke<NativeConnection | null>("launch_local");
-        if (canceled) return;
+        if (canceled || generation !== connectionReadGeneration.current) return;
         if (!connection) { timer = setTimeout(() => void observe(), 250); return; }
-        await acceptConnection(connection, () => !canceled);
-        if (!canceled) setBusy(false);
-      } catch (reason) { if (!canceled) { setError(reason); setBusy(false); } }
+        await acceptConnection(connection, () => !canceled && generation === connectionReadGeneration.current);
+        if (!canceled && generation === connectionReadGeneration.current) setBusy(false);
+      } catch (reason) { if (!canceled && generation === connectionReadGeneration.current) { setError(reason); setBusy(false); } }
     };
     void observe();
     return () => { canceled = true; clearTimeout(timer); };
+  }, []);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let canceled = false;
+    const reread = async () => {
+      const generation = ++connectionReadGeneration.current;
+      setConnectionVerified(false);
+      try {
+        // Native publishes only a change signal. Observe its adopted outcome;
+        // a sibling registration change never authorizes startup or pairing.
+        const connection = await invoke<NativeConnection | null>("launch_local");
+        if (canceled || generation !== connectionReadGeneration.current) return;
+        if (!connection) throw "credential-unavailable";
+        await acceptConnection(connection, () => !canceled && generation === connectionReadGeneration.current);
+        if (!canceled && generation === connectionReadGeneration.current) setBusy(false);
+      } catch (reason) {
+        if (!canceled && generation === connectionReadGeneration.current) { setError(reason); setBusy(false); }
+      }
+    };
+    const subscription = listen("local-connection-changed", () => { if (!canceled) void reread(); }).catch(() => () => {});
+    return () => { canceled = true; connectionReadGeneration.current++; void subscription.then((unlisten) => unlisten()).catch(() => {}); };
   }, []);
   const chooseRepositoryFolder = async () => {
     const selected = previous.current;
@@ -124,7 +157,7 @@ function LocalDesktop() {
   const controls = <><LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} /><Updates active={showConnection} controls={updateControls} /></>;
   const oauthServer = previous.current?.server_id ?? "";
   const controlOAuth = useCallback<OAuthNativeControl>((opening, action, generation, attempt, authorization) => invoke("account_oauth_native", { server: oauthServer, opening, action, generation, attempt, authorization }), [oauthServer]);
-  return <>{transport ? <OAuthNativeProvider control={controlOAuth}><WorkerNetworkControlProvider control={controlWorkerNetwork}><App serverPresentation={{ kind: ServerPresentationKind.Local }} pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} connectionSettings={connectionSettings} connectionTarget={connectionTarget ?? undefined} localServer={controls} /></WorkerNetworkControlProvider></OAuthNativeProvider> : <main className="connect-page"><h1>DeliDev</h1>{isTauri() ? <><p role="status">{busy ? "Starting DeliDev…" : "DeliDev could not connect."}</p>{error ? <><p role="alert">{error === "stopped" ? "DeliDev is disconnected on this computer. Open Troubleshooting to start it when you are ready." : "DeliDev could not finish starting. Retry or open Troubleshooting for help."}</p><button className="primary" disabled={busy || error === "stopped"} onClick={() => void connect("retry_local")}>Retry</button></> : null}<button onClick={() => setShowConnection(true)}>Troubleshooting</button></> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}</main>}
+  return <>{transport ? <OAuthNativeProvider control={controlOAuth}><WorkerNetworkControlProvider control={controlWorkerNetwork}><App serverPresentation={{ kind: ServerPresentationKind.Local }} pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} readLocalWorker={readLocalWorker} transport={transport} connectionReady={connectionVerified && status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} connectionSettings={connectionSettings} connectionTarget={connectionTarget ?? undefined} localServer={controls} /></WorkerNetworkControlProvider></OAuthNativeProvider> : <main className="connect-page"><h1>DeliDev</h1>{isTauri() ? <><p role="status">{busy ? "Starting DeliDev…" : "DeliDev could not connect."}</p>{error ? <><p role="alert">{error === "stopped" ? "DeliDev is disconnected on this computer. Open Troubleshooting to start it when you are ready." : "DeliDev could not finish starting. Retry or open Troubleshooting for help."}</p><button className="primary" disabled={busy || error === "stopped"} onClick={() => void connect("retry_local")}>Retry</button></> : null}<button onClick={() => setShowConnection(true)}>Troubleshooting</button></> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}</main>}
     <Modal title="Connection & diagnostics" visible={showConnection} close={() => setShowConnection(false)}>
       <section aria-label="Connection"><h3>Connection on this computer</h3><div ref={setConnectionTarget} />{!transport ? <><LocalServerStatusText status={status} /><button disabled={busy} onClick={() => void connect()}>Start local server</button>{problem}</> : null}
         <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptConnection} active={showConnection} />

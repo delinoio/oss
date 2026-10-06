@@ -3,9 +3,9 @@ import { resolve } from "node:path";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { ConfigurationService, EntityKind, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
+import { AccountService, ConfigurationService, EntityKind, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { document, encode } from "./documents";
@@ -18,6 +18,8 @@ it("persists native Claude permission selection through the desktop and real Go 
   const configurations = createClient(ConfigurationService, transport);
   const save = async (kind: EntityKind, value: Record<string, unknown>) => (await configurations.saveConfiguration({ kind, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(value) })).resource!;
   const provider = await save(EntityKind.PROVIDER, { name: "Claude settings API", endpoint: providerOrigin, protocol: "anthropic-messages", authentication: "keyless", discovery: false });
+  const account = await save(EntityKind.ACCOUNT, { alias: "Claude API account", type: "api", provider_id: provider.id, enabled: true, health: "disconnected" });
+  await createClient(AccountService, transport).connectAccount({ mutation: { id: account.id, expectedRevision: account.revision, requestId: newRequestId() }, keyless: true });
   const model = await save(EntityKind.MODEL, { name: "Claude settings model", provider_id: provider.id, native_id: "claude-settings-fixture", harnesses: ["claude-code"], manual: true, metadata_source: "user-declared" });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   // Model choices wait for a provider-capability read and then model search.
@@ -36,9 +38,17 @@ it("persists native Claude permission selection through the desktop and real Go 
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
-  change("Name", "Native Claude settings"); change("Harness", "claude-code");
-  await screen.findByRole("option", { name: "Claude settings model" }, { timeout: 5000 });
-  change("Model", model.id); change("Claude permission mode", "dontAsk");
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" }));
+  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  next();
+  await screen.findByRole("option", { name: "Claude settings API" }, { timeout: 5000 });
+  change("Account source", `api:${provider.id}`);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Claude API account/ })); next();
+  fireEvent.focus(screen.getByRole("combobox", { name: "Model" }));
+  fireEvent.click(await screen.findByRole("option", { name: /Claude settings model/ }, { timeout: 5000 })); next();
+  change("Name", "Native Claude settings"); change("Claude permission mode", "dontAsk");
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await screen.findByRole("heading", { name: "Native Claude settings" });
   const resources = createClient(ResourceService, transport);
@@ -49,4 +59,3 @@ it("persists native Claude permission selection through the desktop and real Go 
   await expect(configurations.saveConfiguration({ kind: EntityKind.AGENT, mutation: { id: agent.id, expectedRevision: agent.revision, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ ...prior, options: { permission: "read-only", claude_permission: "plan" } }) })).rejects.toThrow();
   expect(document((await resources.getResource({ id: agent.id, kind: EntityKind.AGENT })).resource)).toEqual(prior);
 }, 15000);
-

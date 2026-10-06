@@ -1,0 +1,37 @@
+{
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "test": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false
+    },
+    "test:ci:checks": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false
+    },
+    "test:ci:tests-1": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "passThroughEnv": [
+        "DELIDEV_TEST_BINARY"
+      ]
+    },
+    "test:ci:tests-2": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "passThroughEnv": [
+        "DELIDEV_TEST_BINARY"
+      ]
+    }
+  }
+}

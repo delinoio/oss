@@ -1,7 +1,9 @@
+import { useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask, useSettingsTaskDismiss, useSettingsTaskVisible } from "./settings-task-context";
+import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
 import { ProviderGuidance } from "./provider-guidance";
 import { AccountOAuth, useAccountOAuth, type AccountOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, useId } from "react";
 import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { ApiEntryRow } from "./api-entry-row";
@@ -154,6 +156,7 @@ function AccountCreationWizard({
   openManage: (resource: Resource) => void;
   saved: (resource: Resource) => void;
 }) {
+  const taskFormId = useId(), taskVisible = useSettingsTaskVisible(), inTask = useInSettingsTask(), closeTask = useCloseSettingsTask(close);
   const localOAuth = useAccountOAuth();
   const oauth = suppliedOAuth ?? localOAuth;
   const [step, setStep] = useState(initialProvider ? WizardStep.Account : WizardStep.Provider);
@@ -194,12 +197,13 @@ function AccountCreationWizard({
   const selectedProvider = selectedHint?.providerId === providerId ? selectedHint :
     providers.find((provider) => provider.providerId === providerId) ?? eligibleProviders.find((provider) => provider.providerId === providerId);
   useEffect(() => {
+    if (!taskVisible) return;
     if (!active) { setFocusTarget(WizardFocus.None); return; }
     if ((focusTarget === WizardFocus.Account && step === WizardStep.Account) ||
       (focusTarget === WizardFocus.Picker && step === WizardStep.Provider)) heading.current?.focus();
     if (focusTarget === WizardFocus.Provider && step === WizardStep.Provider) providerButtons.current.get(providerId)?.focus();
     setFocusTarget(WizardFocus.None);
-  }, [active, focusTarget, providerId, step]);
+  }, [active, focusTarget, providerId, step, taskVisible]);
   const selectedProviderDocument = document(selectedProvider?.provider);
   const selectedAuthentication = text(selectedProviderDocument.authentication);
   const selectedProviderContract = selectedProvider ? providerContract(selectedProvider) : undefined;
@@ -259,6 +263,14 @@ function AccountCreationWizard({
     }
     if (!activeRef.current || connectGeneration.current !== generation.current) return;
     setConnected(result.account);
+  });
+
+  useRetainSettingsTask(Boolean(createdAccount || unknownResponse || oauth.view) || providerChecking);
+  useSettingsTaskDismiss(() => {
+    setApiKey(""); setConnectionKey("");
+    // The submitted Add-and-connect intent owns its one-shot credential handoff.
+    // Clear only editable inputs while that original intent can still complete.
+    if (!create.busy && !create.uncertain && autoConnect === undefined && !providerChecking) clearHandoff();
   });
 
   useEffect(() => {
@@ -357,6 +369,7 @@ function AccountCreationWizard({
   }, [accountTypeFilteringReady, autoConnect, connect.send, createdAccount, keyless, selectedAuthentication, selectedProvider, selectedProviderDocument.endpoint, selectedProviderDocument.protocol]);
 
   const navigateBack = () => {
+    if (unknownResponse) { closeTask(); return; }
     if (create.busy || create.uncertain || connect.busy || connect.uncertain) return;
     clearHandoff();
     close();
@@ -486,13 +499,13 @@ function AccountCreationWizard({
       {connect.uncertain ? <p role="status">Result not confirmed. The original connection request is retained for exact retry.</p> : null}
       {connect.error && !connect.uncertain ? <p role="status">{keyless ? "Entry created; connection failed. Retry the local endpoint connection when ready." : "Entry created; connection failed. Re-enter the key and retry connection when ready."}</p> : null}
       {!hasCredentials && selectedProvider && selectedProvider.enabled ? keyless ? <p>Connect to this local endpoint on the selected server.</p> : <label>API key<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} disabled={providerChecking} value={connectionKey} onChange={(event) => setConnectionKey(event.target.value)} /></label> : !hasCredentials && selectedProvider ? <p role="status">The selected provider is off. Enable it in API Providers before connecting.</p> : !hasCredentials ? <p role="status">The selected provider is unavailable. Refresh API Providers before connecting.</p> : null}
-      {!hasCredentials ? <div className="actions"><button className="primary" type="button" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !selectedProvider?.enabled || (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) || connect.busy || connect.uncertain} onClick={connectExisting}>{providerChecking ? "Checking provider…" : keyless ? "Connect local endpoint" : "Connect API key"}</button>{connect.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || connect.busy} onClick={retryConnection}>Retry the same connection</button> : null}</div> : null}
+      {!hasCredentials ? <SettingsTaskActions className=""><button className="primary" type="button" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !selectedProvider?.enabled || (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) || connect.busy || connect.uncertain} onClick={connectExisting}>{providerChecking ? "Checking provider…" : keyless ? "Connect local endpoint" : "Connect API key"}</button>{connect.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || connect.busy} onClick={retryConnection}>Retry the same connection</button> : null}</SettingsTaskActions> : null}
       {providerMismatch ? <p role="alert">{keyless ? "This provider changed or is no longer available. Review the current API Providers entry before connecting." : "This provider changed or is no longer available. The API key was cleared. Review the current API Providers entry before connecting."}</p> : null}
       {providerChecking ? <p role="status">Checking the current provider settings…</p> : null}
       <Problem error={providerRead.error} />
       {unknownResponse ? <p role="alert">The server acknowledged a request without a matching entry result. Inspect the original request before starting another operation.</p> : null}
       <Problem error={connect.error} />
-      <div className="actions"><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>Manage connection</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={close}>Done</button></div>
+      <SettingsTaskActions className=""><button type="button" disabled={unknownResponse || providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>Manage connection</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={unknownResponse ? closeTask : close}>Done</button></SettingsTaskActions>
     </section>;
   }
 
@@ -500,7 +513,7 @@ function AccountCreationWizard({
 
   return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to AI API Keys</button>
-    <SettingsHeading title="AI API Keys" /><h2 id="api-account-wizard-title">Add AI API key</h2>
+    <SettingsHeading title="AI API Keys" /><h2 hidden={inTask} id="api-account-wizard-title">Add AI API key</h2>
     {step === WizardStep.Provider ? <>
       <h2 ref={heading} tabIndex={-1}>Choose an API provider</h2>
       <p>Select a provider to connect your entry.</p>
@@ -525,7 +538,7 @@ function AccountCreationWizard({
       <h2 ref={heading} tabIndex={-1}>Connect your entry</h2>
       <div className="api-entry-provider"><div><strong>{selectedProvider?.displayName ?? "Unavailable"}</strong><span>{keyless ? "Local endpoint" : "API key"}</span></div><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain || unknownResponse} onClick={returnToProviders}>Change</button></div>
       {!accountTypeFilteringReady ? <p role="status">This server no longer reports the provider inventory and account-type filtering capabilities required here. Update the server before submitting or retrying.</p> : null}
-      <form onSubmit={(event) => { event.preventDefault(); createAccount(); }}>
+      <form id={`${taskFormId}-1`} onSubmit={(event) => { event.preventDefault(); createAccount(); }}>
         <fieldset disabled={!accountTypeFilteringReady || providerChecking || create.busy || create.uncertain}>
           <label>Entry name<input autoComplete="off" maxLength={256} value={alias} aria-invalid={(attempted || alias.length > 0) && !aliasValid} onChange={(event) => setAlias(event.target.value)} /></label>
           {(attempted || alias.length > 0) && !aliasValid ? <p role="alert">Enter a non-empty entry name no longer than 256 UTF-8 bytes.</p> : null}
@@ -549,7 +562,7 @@ function AccountCreationWizard({
         {providerMismatch ? <p role="alert">{keyless ? "This provider changed or is no longer available. Review the current API Providers entry before submitting again." : "This provider changed or is no longer available. The API key was cleared. Review the current API Providers entry before submitting again."}</p> : null}
         {providerChecking ? <p role="status">Checking the current provider settings…</p> : null}
         <Problem error={providerRead.error} />
-        <div className="actions"><button className="primary" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? "Checking provider…" : "Add and connect"}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>Retry the same entry creation</button> : null}</div>
+        <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? "Checking provider…" : "Add and connect"}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>Retry the same entry creation</button> : null}</SettingsTaskActions>
       </form>
     </>}
   </section>;
@@ -614,7 +627,7 @@ function ApiAccountSettings({
     filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken },
     providerId: providerIdFilter,
     accountType,
-  }, { enabled: active && accountTypeFilteringReady && !wizard && !selectedAccount });
+  }, { enabled: active && accountTypeFilteringReady });
   const providersById = useMemo(() => {
     const values = new Map<string, { displayName: string; enabled: boolean }>();
     for (const provider of providerSummaries) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled });
@@ -645,9 +658,6 @@ function ApiAccountSettings({
     openApiProviders();
   };
 
-  if (selectedAccount && section === AccountSettingsSection.Api) return <><SettingsHeading title="AI API Keys" /><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></>;
-
-  if (wizard) return <AccountCreationWizard oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
 
   const inventoryProblem = accountTypeFilteringProblem || providerSearchError;
   const readProblem = inventoryProblem || rows.error;
@@ -676,5 +686,7 @@ function ApiAccountSettings({
     </> : null}
     {accountTypeFilteringReady ? <p className="api-entry-storage-note">Known usage may be incomplete. Estimates are not billed amounts.</p> : null}
     <p className="api-entry-storage-note">Credentials are stored securely on the selected server.</p>
+    {selectedAccount && section === AccountSettingsSection.Api ? <SettingsTaskDialog key={selectedAccount.id} title="Manage connection" size={SettingsDialogSize.Wide} close={() => { setSelectedAccount(undefined); void rows.refetch(); }}>{<AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />}</SettingsTaskDialog> : null}
+    {wizard ? <SettingsTaskDialog title="Add AI API key" size={SettingsDialogSize.Wide} retained={Boolean(oauth?.view)} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}>{<AccountCreationWizard oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />}</SettingsTaskDialog> : null}
   </section>;
 }
