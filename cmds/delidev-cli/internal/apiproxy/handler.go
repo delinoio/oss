@@ -89,7 +89,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Delidev-Correlation-Id", correlation)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	fail := func(status int, code domain.Code) { writeError(w, status, protocol, code, correlation) }
+	var guard secretGuard
+	fail := func(status int, code domain.Code) { writeError(w, status, protocol, code, correlation, guard) }
 	if r.TLS == nil {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil || !net.ParseIP(host).IsLoopback() {
@@ -106,6 +107,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, domain.Unauthenticated)
 		return
 	}
+	guard = newSecretGuard([]byte(token))
 	// Claude's native beta Messages client uses this exact query spelling. It
 	// selects the same scoped operation, not another route/provider. Preserve
 	// it upstream; every other query (including equivalent encodings) fails.
@@ -301,6 +303,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			key, err = lease.Key(ctx)
 		}
 		defer clear(key)
+		// Guard every local failure as soon as protected bytes are available,
+		// including a key returned together with an error or cancellation.
+		guard = newSecretGuard(key, []byte(token))
 		if err != nil {
 			code = safeCode(err)
 			fail(errorStatus(err), code)
@@ -317,7 +322,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, domain.Unauthenticated)
 		return
 	}
-	guard := newSecretGuard(key, []byte(token))
 	if values := r.Header.Values("X-Client-Request-Id"); len(values) == 1 && domain.SafeDiagnosticID(values[0]) && !guard.contains(values[0]) {
 		diagnostic.NativeRequestID = values[0]
 	}

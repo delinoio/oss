@@ -1,5 +1,7 @@
 # DeliDev TypeScript client
 
+Pure client fixtures use the cacheable `test:unit` Turbo leaf; the real temporary Go server uses uncached `test:integration`. CI serializes that integration after desktop pure UI and before desktop integration/QA through explicit task dependencies. Local `pnpm test` executes both client suites. Historical-order fixtures hash the shared fixed protocol snapshot. See `docs/repository-workflow-contract.md`.
+
 Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAccountOAuth, CancelAccountOAuth and GetAccountOAuthStatus, with exact bigint revisions and closed OAuth state/connection-method enums. Authorization URL exists only in original live Start; status carries metadata only. Completion code is a write-only bounded byte array: use a direct authenticated RPC without query/mutation-cache retention, clear transient buffers, and recover only the original completion identity without code. No client-side retry may repeat an exchange. Preserve all four existing account-flow gates independently of capability 5 under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Request diagnostic client
@@ -11,6 +13,13 @@ Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to reproduce historical module and
 Connect Query import paths. Package-root exports and existing `./gen/*` consumers
 remain compatible; facades contain re-exports, never handwritten descriptors.
+Legacy aggregate reflection retains the fixed 358-declaration historical prefix
+(303 messages, 36 enums and 19 services), including PullRequestFix, Terminal and
+Browser. Compatibility tests use the shared protocol testdata snapshot from
+`54187b780d48e94a49763e87fc140f449869d9f4`, independently of the editable
+relocation map; the client unit-test cache includes that snapshot. Additive
+WorkspaceStorage, Network and Subscription services follow the historical prefix
+in direct enumeration and remain available in reconstructed registries.
 
 ## Scope
 `packages/delidev-api-client` owns private `@delinoio/delidev-api-client`, generated messages and service-specific Connect Query namespaces, explicit transport, typed errors, UUID-v7 request identities and bounded resource synchronization. This is the client integration boundary for desktop implementation; it does not itself constitute a desktop app or complete issue #964.
@@ -41,6 +50,7 @@ Generated `ListResourcesRequest` exposes optional account-only provider and acco
 - `clientFailure` preserves versioned Go problem classifications, guidance and valid correlation IDs; untyped browser/proxy errors never disclose raw exception contents.
 - `synchronizeResources` is a read-only async iterator over one resource-kind/session/project scope. It atomically replaces the consumer's scope with a coherent complete server snapshot, then emits indexed current resources or removals. It never substitutes partial lists for snapshots. The existing server snapshot limit is 200 resources and its byte budget; larger histories require a separately paginated presentation and cannot be claimed complete by this helper.
 - Consumers apply each update before requesting another. Only afterward does the helper commit its opaque event cursor. Duplicate events, older revisions and unrelated kinds do not reload complete history. A failed indexed read keeps the preceding cursor; NotFound after an update removes the now-deleted resource. Project reassignment removes resources outside the scope.
+- Public event streams omit private store kinds, including routing, while advancing over their durable rows. Cursors remain opaque and may skip private sequences. The client still rejects unsupported or zero event kinds before scope filtering; omission does not grant client routing or execution authority.
 - Typed expired/gap cursors trigger a fresh coherent snapshot. Transient failures preserve displayed state and reconnect with capped exponential backoff and jitter; authentication/revocation, compatibility, invalid evidence and capacity errors stop with an explicit problem. Disconnection cannot imply completion or dispatch elsewhere. Signals cancel reads, streaming and retry waits, suppressing late publication.
 - The helper bounds live resource metadata/document accounting, defaults to 1,000 resources and 4 MiB, permits at most 10,000 resources/16 MiB, and retains at most 512 event IDs. It holds no growing transcript copy or retry queue. Native notification deduplication, paginated large-history presentation and desktop lifecycle remain separate required work.
 
@@ -237,6 +247,10 @@ Independent server subscription login exports capability 30, the closed Subscrip
 ## Codex login diagnostic client
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
+
+## GitHub token-first client boundary
+
+Generated IntegrationService/IntegrationQuery expose InspectGitHubToken and PrepareGitHubTokenForm under System capability 34. Use the direct generated Connect client for PAT inspection and final connection in the creation wizard, keeping write-only bytes outside React Query. Validate request IDs, closed states, canonical identity fields and exact form kind/owner/access/URL before progression or native dispatch. Only the current verified wizard draft may retain owned PAT memory until explicit save; clear every request copy and the original on failure, Back, cancellation, departure or save termination. Original non-secret create requests and token-replacement identities survive uncertainty only for explicit reconciliation; token reentry is required. Existing profile/revision-bound form descriptors, Manage/Rename/deletion and CLI compatibility remain unchanged. Follow the integration and desktop contracts.
 
 ## Agent Worker wizard bindings
 

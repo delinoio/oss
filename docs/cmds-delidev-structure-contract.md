@@ -80,6 +80,16 @@ Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
 
+Issue #1203's shared compaction RPC closure reserves
+`CompactSessionRequest.expected_execution_id = 2` and
+`CompactSessionResponse.session = 4`, with #1093/#1202 as shared consumers.
+Record PR #1221's already-active request/response assignments in the immutable
+baseline without renumbering them. Establish the additive reservations on main
+before implementing exact predecessor admission and joined current-session/job
+responses. The existing response request ID remains the original action ID.
+Reservations do not add active schema fields, generated bindings, capabilities
+or migrations and do not establish complete native acceptance.
+
 Wholly new messages and closed enums use explicit `newDeclaration: true` member
 reservations under one original owner, including the zero UNSPECIFIED member of
 each enum. Later additions retain their own original issue/PR owner; they do not
@@ -221,6 +231,16 @@ of `delidev.proto`, including newly added services. The relocation manifest rema
 a historical order and breaking-check map; it is not the current service inventory.
 Both aggregate views therefore include `NetworkService` and `SubscriptionService`
 without adding their declarations to the relocation map.
+The historical prefix contains 358 declarations: 303 messages, 36 enums and
+19 services, including PullRequestFix, Terminal and Browser. Preserve their
+per-kind positions from the intact map at
+`54187b780d48e94a49763e87fc140f449869d9f4`. Go and TypeScript regression tests
+share the fixed `protos/delidev/v1/contracttest/testdata/legacy-declaration-order.json`
+snapshot; expected order must not come from the editable relocation map.
+The fixed snapshot also pins the relocation names, kinds, files and complete
+map order, including moves across declaration kinds.
+WorkspaceStorage and other additive declarations follow this prefix and remain
+discoverable through public imports, direct enumeration and reconstructed registries.
 Issue #1084 activates its already reserved wire allocations without changing
 that historical map. Generated service/query facades retain both services.
 

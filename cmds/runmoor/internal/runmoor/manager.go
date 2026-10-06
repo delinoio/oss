@@ -13,6 +13,8 @@ import (
 )
 
 type Manager struct {
+	// Service reload starts from committed configuration without revoking Stop.
+	PreserveStop    bool
 	ResolveCapacity func(context.Context, Config) (Config, error)
 	Store           *Store
 	ConfigPath      string
@@ -101,6 +103,7 @@ func (m *Manager) accept(c Config, restart bool) error {
 }
 func (m *Manager) acceptWithValidatedReload(c Config, restart, validatedReload bool) error {
 	return m.Store.Update(func(s *Snapshot) error {
+		stopping := s.Stopping
 		if validatedReload {
 			recordValidatedManagedRecovery(s, c)
 		}
@@ -111,7 +114,11 @@ func (m *Manager) acceptWithValidatedReload(c Config, restart, validatedReload b
 				q.NextCheck = time.Time{}
 			}
 		}
-		return acceptSnapshotWithValidatedReload(s, managedConfig(*s), restart, validatedReload)
+		err := acceptSnapshotWithValidatedReload(s, managedConfig(*s), restart, validatedReload)
+		if m.PreserveStop && stopping {
+			s.Stopping = true
+		}
+		return err
 	})
 }
 func acceptSnapshot(s *Snapshot, c Config, restart bool) error {
@@ -276,6 +283,30 @@ func executionChanged(a, b Pool) bool {
 	return imageChanged(a, b) || a.Mode != b.Mode || a.Resources != b.Resources || a.DaemonResources != b.DaemonResources
 }
 func (m *Manager) Run(ctx context.Context, c Config) error {
+	if err := m.initializeRun(c); err != nil {
+		return err
+	}
+	return m.runActivated(ctx)
+}
+
+// Complete startup before exposing control: a reload received immediately
+// after readiness must not be overwritten by another startup acceptance.
+func (m *Manager) initializeRun(c Config) error {
+	if err := m.activate(c); err != nil {
+		return err
+	}
+	// Session secrets are deliberately not persisted. A fresh session uses the
+	// stable installation/pool owner and begins from its authoritative statistics.
+	return m.Store.Update(func(s *Snapshot) error {
+		for _, p := range s.Pools {
+			p.Session = ""
+			p.LastMessage = 0
+		}
+		return nil
+	})
+}
+
+func (m *Manager) runActivated(ctx context.Context) error {
 	defer func() {
 		m.cancel()
 		m.mu.Lock()
@@ -289,20 +320,6 @@ func (m *Manager) Run(ctx context.Context, c Config) error {
 		m.wg.Wait()
 		m.Power.Release()
 	}()
-	if e := m.activate(c); e != nil {
-		return e
-	}
-	// Session secrets are deliberately not persisted. A fresh session uses the
-	// stable installation/pool owner and begins from its authoritative statistics.
-	if e := m.Store.Update(func(s *Snapshot) error {
-		for _, p := range s.Pools {
-			p.Session = ""
-			p.LastMessage = 0
-		}
-		return nil
-	}); e != nil {
-		return e
-	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	signal := ctx.Done()
@@ -1450,30 +1467,10 @@ func (m *Manager) Reload(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	if m.ResolveCapacity != nil {
-		c, e = m.ResolveCapacity(ctx, c)
-		if e != nil {
-			return e
-		}
-	}
 	s := m.Store.View()
-	if c.Storage != s.Config.Storage {
-		return problem(ErrConfig, "Storage locations cannot change during reload.", "Drain and stop before restoring a complete installation into new locations.")
-	}
-	for _, p := range c.Pools {
-		if managesRunner(p) {
-			remote, err := m.RemoteFactory(c.Connection(p.Connection))
-			if err != nil {
-				return err
-			}
-			if err = remote.Check(ctx, p); err != nil {
-				return err
-			}
-			continue
-		}
-		if e = m.validatePool(ctx, c, p, s); e != nil {
-			return e
-		}
+	c, e = validateReloadCandidate(ctx, c, s, m.ResolveCapacity, m.Drivers, m.RemoteFactory)
+	if e != nil {
+		return e
 	}
 	if e = m.acceptWithValidatedReload(c, false, true); e != nil {
 		return e
@@ -1491,6 +1488,40 @@ func (m *Manager) Reload(ctx context.Context) error {
 	}
 	m.Log.Info("configuration_accepted", "generation", committed.Generation)
 	return nil
+}
+
+// Preflight is also used by the newer CLI before replacing a legacy manager.
+// It reads a snapshot and probes dependencies without publishing a generation.
+func validateReloadCandidate(ctx context.Context, c Config, s Snapshot, capacity func(context.Context, Config) (Config, error), drivers DriverFactory, remotes func(Connection) (Remote, error)) (Config, error) {
+	if capacity != nil {
+		var err error
+		c, err = capacity(ctx, c)
+		if err != nil {
+			return c, err
+		}
+	}
+	if c.Storage != s.Config.Storage {
+		return c, problem(ErrConfig, "Storage locations cannot change during reload.", "Drain and stop before restoring a complete installation into new locations.")
+	}
+	for _, p := range c.Pools {
+		if !managesRunner(p) {
+			driver, err := drivers(p.Backend)
+			if err != nil {
+				return c, err
+			}
+			if err = driver.Validate(ctx, c, p, s); err != nil {
+				return c, err
+			}
+		}
+		remote, err := remotes(c.Connection(p.Connection))
+		if err != nil {
+			return c, err
+		}
+		if err = remote.Check(ctx, p); err != nil {
+			return c, err
+		}
+	}
+	return c, nil
 }
 func sortedPools(s Snapshot) []*PoolState {
 	v := make([]*PoolState, 0, len(s.Pools))

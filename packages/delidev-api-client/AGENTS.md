@@ -88,4 +88,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Device approval reuses the existing OAuth RPCs. Only Start returns the temporary user code. Status exposes the original Go completion request ID after its sole claim; code-free local recovery uses that receipt and original expected revision 1. Public Complete grants no Device polling authority.
 
+- PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.
+
 - CI fixture executable reuse follows `docs/repository-workflow-contract.md`: accept only the runner-owned absolute `DELIDEV_TEST_BINARY` test input, preserve local source-build fallback and keep every server/process/credential/data lifetime private to its fixture. Client/Vitest integration is uncached; desktop CI retains the complete checks/two-shard inventory.

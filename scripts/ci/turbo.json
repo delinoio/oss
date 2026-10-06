@@ -1,0 +1,1217 @@
+{
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "ci:workflows": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT",
+        "CI_GO_CACHE_CONTEXT"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:contracts": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:environment": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:environment:turbo": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:tools": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:release-fixtures": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:supply-chain": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:windows-signature": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.github/workflows/package-devhud-private.yml",
+        "$TURBO_ROOT$/scripts/release/devhud-private-workflow.test.mjs",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": ["GOCACHE", "GOPATH", "GOFLAGS"]
+    },
+    "ci:go:format": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md",
+        "$TURBO_ROOT$/**/*.go"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT",
+        "CI_GO_CACHE_CONTEXT"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:go:vet": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded",
+        "async-commit-hook#build:embedded"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:go:test": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded",
+        "async-commit-hook#build:embedded"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_GO_TEST_SHARD",
+        "CI_GO_MODE",
+        "CI_GO_BASE",
+        "CI_GO_HEAD"
+      ]
+    },
+    "ci:rust:fmt": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md",
+        "$TURBO_ROOT$/**/*.rs",
+        "$TURBO_ROOT$/Cargo.toml",
+        "$TURBO_ROOT$/**/Cargo.toml",
+        "$TURBO_ROOT$/rustfmt.toml"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT",
+        "CI_RUST_CACHE_CONTEXT"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:rust:clippy": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:pnport:companion": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:rust:test": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:forge:test": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:forge:clippy": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:forge:render": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "FORGE_RENDER_ARTIFACTS"
+      ]
+    },
+    "ci:proto:launcher": {
+      "cache": false,
+      "dependsOn": [],
+      "outputs": []
+    },
+    "ci:proto:lint": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md",
+        "$TURBO_ROOT$/buf.yaml",
+        "$TURBO_ROOT$/protos/**"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT",
+        "CI_PROTO_CACHE_CONTEXT"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:proto:format": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md",
+        "$TURBO_ROOT$/buf.yaml",
+        "$TURBO_ROOT$/protos/**"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT",
+        "CI_PROTO_CACHE_CONTEXT"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:proto:breaking": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "DEVHUD_PROTO_BASELINE"
+      ]
+    },
+    "ci:proto:fresh": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:proto:check": {
+      "cache": false,
+      "dependsOn": [
+        "ci:proto:lint",
+        "ci:proto:format",
+        "ci:proto:breaking",
+        "ci:proto:fresh"
+      ]
+    },
+    "ci:delidev:bindings": {
+      "cache": false,
+      "dependsOn": [
+        "ci:proto:check"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:clibox:native": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:runner": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:ach:native": {
+      "cache": false,
+      "dependsOn": [
+        "async-commit-hook#build:embedded"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:ach:release": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:ach:package": {
+      "cache": false,
+      "dependsOn": [
+        "ci:ach:native"
+      ],
+      "passThroughEnv": [
+        "RUNNER_TEMP",
+        "GOCACHE",
+        "GOPATH"
+      ]
+    },
+    "ci:ach:check": {
+      "cache": false,
+      "dependsOn": [
+        "ci:ach:native",
+        "async-commit-hook#ci:check",
+        "public-docs#ci:check",
+        "@delinoio/async-commit-hook-api-client#test",
+        "ci:proto:check",
+        "ci:ach:release",
+        "ci:ach:package"
+      ]
+    },
+    "ci:rust:test:devhud": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:delidev": {
+      "cache": false,
+      "dependsOn": [
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:pnport": {
+      "cache": false,
+      "dependsOn": [
+        "ci:pnport:companion"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:devhud-delidev": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend",
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:devhud-pnport": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend",
+        "ci:pnport:companion"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:delidev-pnport": {
+      "cache": false,
+      "dependsOn": [
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar",
+        "ci:pnport:companion"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:devhud-delidev-pnport": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend",
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar",
+        "ci:pnport:companion"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:clippy:devhud": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:clippy:delidev": {
+      "cache": false,
+      "dependsOn": [
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:clippy:devhud-delidev": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend",
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:selection-fixture": {
+      "cache": false,
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CARGO_NET_OFFLINE",
+        "CARGO_MONO_TEST_BINARY"
+      ]
+    },
+    "ci:go:quality": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded",
+        "async-commit-hook#build:embedded"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_GO_MODE",
+        "CI_GO_BASE",
+        "CI_GO_HEAD"
+      ]
+    },
+    "ci:go:discovery": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_GO_TEST_SHARD"
+      ]
+    },
+    "ci:delidev:fixture": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_GO_TEST_SHARD",
+        "GITHUB_ENV"
+      ]
+    },
+    "ci:runmoor:unit": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUNMOOR_DOCKER_TEST",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT"
+      ]
+    },
+    "ci:runmoor:docker": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUNMOOR_DOCKER_TEST",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT"
+      ]
+    }
+  }
+}

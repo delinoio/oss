@@ -125,6 +125,8 @@
 
 ### runmoor-docs Rules
 
+- Describe service-version reload as unreleased until a containing release is verified. It advances an older owned service to an already installed CLI, preserves active jobs, never downloads releases or downgrades, and leaves foreground reload and stopped services unchanged. Explain incomplete-operation recovery without exposing the private journal or native handoff implementation.
+
 - DinD CPU admission changes must distinguish releases through 0.2.7, which reserve runner plus daemon CPU, from the unreleased runner-only CPU policy. Explain that daemon memory remains reserved, daemon CPU remains a container limit, and existing reservations remain until the prior resources terminate. Do not assign a release version before publication is verified.
 
 - The `/runmoor/host` guide documents unreleased explicit macOS 14+ arm64 host selection, admission-only CPU/memory reservations, same-account trusted workflows, disposable directories, operator toolchains, cleanup/recovery limits and the absence of actual host, unsigned Xcode and live GitHub validation. Tart is required only for Tart execution.
@@ -170,6 +172,7 @@
 - If `apps/devhud` changes, run `pnpm --filter devhud test` and `pnpm --filter devhud verify:pins`; run its platform smoke on a supported native production artifact when the host is available.
 - If `apps/public-docs/docs/binpm` or `apps/public-docs/docs/nodeup` changes, run `pnpm --filter public-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
+- Public-docs `build`, `build:frontend`, and `ci:routes` must hash all eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources through package-local external inputs. Preserve inherited build inputs, dependencies, outputs, and deterministic caching; installer changes must not invalidate unrelated workspace caches.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
 
 ### async-commit-hook
@@ -219,3 +222,7 @@
 
 - Shared dependency executables follow `docs/repository-prebuilt-dependencies-contract.md`. Use the locked public Tauri CLI through `scripts/tauri-cli.mjs`; never compile a CLI wrapper in consumers or fall back to source in CI. New source/recipe versions require six-host public release verification before updating both consumer locks.
 - The owner permits Chromium without a process sandbox on Windows DevHud and DeliDev only while upstream lacks executable-host broker support. Keep this exception explicit in runtime selection, validation and user documentation. macOS/Linux require Chromium sandboxing. Desktop hosts use OS-backed secret storage except DeliDev macOS builds with `debug_assertions`, which use an explicit Mock cookie key in a separate development CEF root under the desktop/browser contracts. Keep Go credentials OS-protected, protected-browser IPC isolated, profile ownership exact and cleanup joined across both cookie paths. This exception grants no production Keychain or shutdown acceptance.
+
+- PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.
+- Public-docs cached `build`, `build:frontend`, and `ci:routes` tasks must hash the eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources. Preserve inherited build inputs, generated outputs, and exact installer byte checks; CI job selection alone does not invalidate task caches.
+- Chrome extension CI must order the uncached repeated clean-build regression before the cached test build or output restoration, then run the final ZIP parity check. These tasks share `dist`, `build` and `artifacts` output directories; preserve controlled cold/warm interleaving and failure-propagation fixtures.

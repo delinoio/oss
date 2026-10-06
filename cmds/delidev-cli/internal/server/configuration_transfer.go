@@ -162,7 +162,7 @@ func exportConfiguration(tx *store.Tx) (domain.ConfigurationBundle, error) {
 				return bundle, err
 			}
 			size += len(raw)
-			if size > domain.MaxConfigurationBundleBytes || checkouts > domain.MaxConfigurationCheckouts {
+			if size > domain.MaxConfigurationBundleBytes || checkouts > domain.MaxConfigurationCheckouts || len(machineIDs) > domain.MaxConfigurationCheckouts {
 				return bundle, transferLimit()
 			}
 			bundle.Entries = append(bundle.Entries, domain.ConfigurationEntry{ID: row.ID, Kind: kind, Document: raw})

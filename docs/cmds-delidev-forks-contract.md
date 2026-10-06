@@ -325,6 +325,11 @@ session revision and native thread, spans at most 10,000 records/8 MiB and
 rejects repeated/incomplete pages, tool/artifact content and non-empty changes.
 An original-revision read before and after pagination detects changed sources.
 Submit refreshes the profile and does not use stale success after read failure.
+Desktop preflight captures one immutable source/revision/turn and draft generation
+before refreshing. Discard or replacement invalidates that generation; recheck it
+after each asynchronous prerequisite and before ForkSession admission. Late reads
+cannot submit the old source or populate another draft. Hiding the operation
+retains its original preflight, accepted job and exact uncertain retry.
 These reads grant no child/native authority: Go independently validates complete
 canonical history at acceptance/publication, and the Worker verifies complete
 native history before exposing the child.

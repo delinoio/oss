@@ -42,6 +42,8 @@ Use redacted structured diagnostics. Never log page content, credentials, cookie
 
 Validate manifest permissions, unique localized origin permission names, stale-origin grant removal only after successful popup and capture configuration refreshes, extension ID/origin pairing, malformed/replayed/oversized messages including the shared 256 KiB pre-framing ceiling, no-active-tab and sensitive-form behavior, absent/denied/revoked permissions, unsupported incognito behavior, pointer-sequence isolation and localized keyboard completion during selection, element/attribute allowlist enforcement, selector omission, path-segment redaction, URL-value redaction (including signed URLs and `data-*` secrets), sanitized DOM cap, reproducible ZIP parity, and Web Store packaging.
 
+CI completes the uncached cross-time-zone package regression before the final test build or cached output restoration, then checks ZIP parity. All three tasks share `build`, `dist` and `artifacts`; preserve stale-output cleanup and the `test:package → build:test → ci:zip` dependency chain. Controlled cold/warm interleaving fixtures must keep the final build and verifier blocked while the regression has removed artifacts, and package-test or final-build failures must stop ZIP validation.
+
 ## Dependencies and Integrations
 
 Integrates with the Native Messaging host, DevHud local IPC, configured URL mappings, and desktop RealQA only. It never calls `devhud-api` or GitHub directly.

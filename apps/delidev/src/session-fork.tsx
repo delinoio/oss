@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ForkPurpose, ForkWorkspace, ResourceQuery, SessionQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -43,6 +43,10 @@ export function SessionForkProvider({ children, openSession, readLocalWorker }: 
   const [workspace, setWorkspace] = useState(ForkWorkspace.UNSPECIFIED);
   const [job, setJob] = useState<Resource>();
   const [invalid, setInvalid] = useState(false);
+  const generation = useRef(0);
+  const preflight = useRef<number | undefined>(undefined);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => () => { generation.current += 1; preflight.current = undefined; }, []);
   const local = useLocalWorkerProof(readLocalWorker);
   const client = useQueryClient();
   const mutation = useRetainedMutation("session-fork", SessionQuery.forkSession, (response, request) => {
@@ -57,30 +61,41 @@ export function SessionForkProvider({ children, openSession, readLocalWorker }: 
   const profile = useOpenCodeForkProfile(source, visible && Boolean(source) && sourceHarness(source!) === "opencode" && !job);
   const stale = Boolean(source && current.data?.resource && current.data.resource.revision !== source.revision);
   const blocked = mutation.busy || mutation.uncertain || local.busy || invalid;
+  const invalidatePreflight = () => { generation.current += 1; preflight.current = undefined; setChecking(false); };
   const show = (resource: Resource, requestedPurpose = ForkPurpose.UNSPECIFIED) => {
-    if (!source || (!blocked && !job && (source.id !== resource.id || purpose !== requestedPurpose))) { setSource(resource); setPurpose(requestedPurpose); setName(`${resourceName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(0, 256)); setWorkspace(ForkWorkspace.UNSPECIFIED); }
+    if (!source || (!blocked && !job && (source.id !== resource.id || purpose !== requestedPurpose))) { invalidatePreflight(); setSource(resource); setPurpose(requestedPurpose); setName(`${resourceName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(0, 256)); setWorkspace(ForkWorkspace.UNSPECIFIED); }
     setVisible(true);
   };
   const submit = async () => {
-    if (!source || blocked || job || stale || !name.trim() || !settled(source) || current.data?.resource && !settled(current.data.resource)) return;
-    if (sourceHarness(source) === "opencode") {
-      const fresh = await profile.refetch();
-      if (fresh.isError || fresh.data !== true) return;
-    }
+    if (!source || preflight.current !== undefined || blocked || job || stale || !name.trim() || !settled(source) || current.data?.resource && !settled(current.data.resource)) return;
+    const originalGeneration = generation.current;
+    preflight.current = originalGeneration;
+    setChecking(true);
+    // Bind all asynchronous checks to this draft and immutable source boundary.
+    // Discard/replacement invalidates preflight; hiding retains the operation.
+    const active = () => generation.current === originalGeneration && preflight.current === originalGeneration;
     const request = { mutation: { id: source.id, expectedRevision: source.revision, requestId: newRequestId() }, expectedTurnId: text(object(document(source).execution).native_turn_id), name, workspace, ...(sidechat ? { purpose: ForkPurpose.SIDECHAT } : {}) };
-    const proof = workspace === ForkWorkspace.LOCAL ? await local.load(text(document(source).machine_id)) : undefined;
-    if (workspace === ForkWorkspace.LOCAL && !proof) return;
-    void mutation.send({ ...request, localWorkerToken: proof?.token });
+    try {
+      if (sourceHarness(source) === "opencode") {
+        const fresh = await profile.refetch();
+        if (!active() || fresh.isError || fresh.data !== true) return;
+      }
+      const proof = workspace === ForkWorkspace.LOCAL ? await local.load(text(document(source).machine_id)) : undefined;
+      if (!active() || workspace === ForkWorkspace.LOCAL && !proof) return;
+      void mutation.send({ ...request, localWorkerToken: proof?.token });
+    } finally {
+      if (active()) { preflight.current = undefined; setChecking(false); }
+    }
   };
   const resultJob = fork.data?.job ?? job;
   const state = text(document(resultJob).state);
   const problem = object(document(resultJob).problem);
   const child = state === JobState.Succeeded && fork.data?.session?.kind === EntityKind.SESSION && text(object(document(fork.data.session).fork).source_session_id) === source?.id ? fork.data.session : undefined;
-  const reset = () => { setSource(undefined); setJob(undefined); setVisible(false); setInvalid(false); void client.invalidateQueries({ refetchType: "active" }); };
+  const reset = () => { invalidatePreflight(); setSource(undefined); setJob(undefined); setVisible(false); setInvalid(false); void client.invalidateQueries({ refetchType: "active" }); };
   return <Context.Provider value={show}>{children}{source && visible ? <Modal title={sidechat ? "Open Sidechat" : "Fork session"} close={() => setVisible(false)}>
     {sidechat ? <p>Discuss the completed turn with the same account and settings. Sidechat reads the parent's current workspace and keeps its own conversation. Parent cleanup or permanent deletion also permanently deletes dependent Sidechats after their work stops.</p> : <p>Create an independent conversation from {resourceName(source)} at its completed turn, using the same computer, account and settings. {sourceHarness(source) === "opencode" ? "The child keeps a separate copy of this conversation and its General Chat files." : "Source messages stay in their original session; the new native conversation retains that context."}</p>}
     <p>Source: {source.id} · Turn: {text(object(document(source).execution).native_turn_id)}</p>
-    {!job ? <form onSubmit={(event) => { event.preventDefault(); void submit(); }}><label>Fork name<input autoFocus required maxLength={256} value={name} disabled={blocked} onChange={(event) => setName(event.target.value)} /></label>{!sidechat ? <label>Workspace<select value={workspace} disabled={blocked} onChange={(event) => setWorkspace(Number(event.target.value) as ForkWorkspace)}><option value={ForkWorkspace.UNSPECIFIED}>Independent workspace</option>{document(source).workspace === "local" ? <option value={ForkWorkspace.LOCAL} disabled={!local.available}>Share this computer's Local checkouts</option> : null}</select></label> : null}{sidechat ? <p>Sidechat starts paused with native read-only permissions. Add a message and Resume; explicitly select replies to send to the parent queue.</p> : <p>{sourceHarness(source) === "opencode" ? "OpenCode forks support completed plain-text General Chat on macOS and Linux. The child starts paused; add a new message and Resume when ready." : "Independent project workspaces copy every repository's current commit and files. Local sharing is available for user-owned Local checkouts and requires proof from this computer's Worker."}</p>}{stale ? <p role="alert">The source changed. Close and discard this draft, then inspect the current turn before another fork.</p> : null}<Problem error={current.error} />{local.problem ? <p role="alert">{local.problem}</p> : null}<button disabled={blocked || stale || !name.trim() || !settled(current.data?.resource ?? source) || sourceHarness(source) === "opencode" && (profile.isFetching || profile.isError || profile.data !== true)}>{sidechat ? "Create Sidechat" : "Create fork"}</button>{!blocked ? <button type="button" onClick={reset}>Discard fork draft</button> : null}</form> : <section aria-label="Fork operation"><p role="status">Fork operation: {state || "Accepted"}</p><small>{job.id}</small>{!child ? <p>The child appears after native history, every workspace and process cleanup are verified.</p> : <button onClick={() => { reset(); openSession(child.id); }}>Open forked session</button>}{text(problem.message) ? <p role="alert">{text(problem.message)} {text(problem.guidance)}</p> : null}<Problem error={fork.error} /><button disabled={fork.isFetching} onClick={() => void fork.refetch()}>Refresh fork operation</button>{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={reset}>Finish fork operation</button> : null}</section>}
+    {!job ? <form onSubmit={(event) => { event.preventDefault(); void submit(); }}><label>Fork name<input autoFocus required maxLength={256} value={name} disabled={blocked} onChange={(event) => setName(event.target.value)} /></label>{!sidechat ? <label>Workspace<select value={workspace} disabled={blocked} onChange={(event) => setWorkspace(Number(event.target.value) as ForkWorkspace)}><option value={ForkWorkspace.UNSPECIFIED}>Independent workspace</option>{document(source).workspace === "local" ? <option value={ForkWorkspace.LOCAL} disabled={!local.available}>Share this computer's Local checkouts</option> : null}</select></label> : null}{sidechat ? <p>Sidechat starts paused with native read-only permissions. Add a message and Resume; explicitly select replies to send to the parent queue.</p> : <p>{sourceHarness(source) === "opencode" ? "OpenCode forks support completed plain-text General Chat on macOS and Linux. The child starts paused; add a new message and Resume when ready." : "Independent project workspaces copy every repository's current commit and files. Local sharing is available for user-owned Local checkouts and requires proof from this computer's Worker."}</p>}{stale ? <p role="alert">The source changed. Close and discard this draft, then inspect the current turn before another fork.</p> : null}<Problem error={current.error} />{local.problem ? <p role="alert">{local.problem}</p> : null}<button disabled={blocked || checking || stale || !name.trim() || !settled(current.data?.resource ?? source) || sourceHarness(source) === "opencode" && (profile.isFetching || profile.isError || profile.data !== true)}>{sidechat ? "Create Sidechat" : "Create fork"}</button>{!blocked ? <button type="button" onClick={reset}>Discard fork draft</button> : null}</form> : <section aria-label="Fork operation"><p role="status">Fork operation: {state || "Accepted"}</p><small>{job.id}</small>{!child ? <p>The child appears after native history, every workspace and process cleanup are verified.</p> : <button onClick={() => { reset(); openSession(child.id); }}>Open forked session</button>}{text(problem.message) ? <p role="alert">{text(problem.message)} {text(problem.guidance)}</p> : null}<Problem error={fork.error} /><button disabled={fork.isFetching} onClick={() => void fork.refetch()}>Refresh fork operation</button>{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={reset}>Finish fork operation</button> : null}</section>}
     <Problem error={mutation.error} />{mutation.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>Retry the same fork request</button> : null}{invalid ? <p role="alert">The fork acknowledgment is incomplete. Retain the original request and inspect its operation before another fork.</p> : null}
   </Modal> : null}{source && !visible ? <button className="notice" onClick={() => setVisible(true)}>Return to retained fork operation</button> : null}</Context.Provider>;
 }

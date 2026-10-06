@@ -84,7 +84,7 @@ client ID, `registered` status and ordinary API `accepted` status. Native profil
 inventory and server capability 6 must agree before a new browser option appears;
 older native hosts retain OpenRouter behavior. Current new registrations remain
 pending/unverified. Implemented fixture paths do not establish activation or real
-account/native acceptance. Baseten remains subsequent work.
+account/native acceptance. Gemini and Baseten adapters remain subsequent work.
 
 CLI Start accepts `--callback-url`; Hugging Face requires the registered callback.
 OpenRouter alone retains no-callback headless mode. `--callback-stdin` accepts a
@@ -259,7 +259,6 @@ recovery or used to publish a connection, its private metadata must match the
 original account/connection/provider, client digest, quota project, staging token
 ID and idle refresh state. A changed app registration cannot adopt an earlier
 protected result. Explicit cancellation remains available for its original cleanup.
-
 ## Baseten Device OAuth
 
 Baseten uses the server-owned Device adapter only for its exact enabled managed

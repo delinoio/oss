@@ -217,32 +217,51 @@ func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlRespon
 	return resp
 }
 func SendControl(ctx context.Context, c Config, req ControlRequest) (ControlResponse, error) {
+	response, _, err := sendControlPeer(ctx, c, req, 0, false)
+	return response, err
+}
+
+// The peer PID ties a legacy manager's response to its native user service
+// without adding fields that older control servers would reject.
+func sendControlPeer(ctx context.Context, c Config, req ControlRequest, expectedPID int, inspectPeer bool) (ControlResponse, int, error) {
 	var out ControlResponse
+	peerPID := 0
 	path := filepath.Join(c.Storage.State, "control.sock")
 	st, e := os.Lstat(path)
 	if e != nil || st.Mode()&os.ModeSocket == 0 || st.Mode().Perm()&0077 != 0 {
-		return out, problem(ErrControl, "The private manager socket is unavailable.", "Start 'runmoor run' or the installed user service.")
+		return out, peerPID, problem(ErrControl, "The private manager socket is unavailable.", "Start 'runmoor run' or the installed user service.")
 	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", path)
+		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", path)
+		if err == nil && inspectPeer {
+			peerPID, err = controlPeerPID(conn)
+			if err == nil && expectedPID != 0 && peerPID != expectedPID {
+				err = problem(ErrControl, "The manager changed during reload.", "Inspect status and retry reload.")
+			}
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+		}
+		return conn, err
 	}}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport}
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	data, _ := json.Marshal(req)
 	r, e := http.NewRequestWithContext(ctx, http.MethodPost, "http://runmoor/v1/control", bytes.NewReader(data))
 	if e != nil {
-		return out, e
+		return out, peerPID, e
 	}
 	res, e := client.Do(r)
 	if e != nil {
-		return out, problem(ErrControl, "Cannot contact the local manager.", "Check manager status; a stopped manager may leave a stale socket.")
+		return out, peerPID, problem(ErrControl, "Cannot contact the local manager.", "Check manager status; a stopped manager may leave a stale socket.")
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 || json.NewDecoder(io.LimitReader(res.Body, 16<<20)).Decode(&out) != nil || out.SchemaVersion != 1 {
-		return out, problem(ErrControl, "The manager returned an incompatible response.", "Use the CLI matching the running manager version.")
+		return out, peerPID, problem(ErrControl, "The manager returned an incompatible response.", "Use the CLI matching the running manager version.")
 	}
 	if out.Problem != nil {
-		return out, out.Problem
+		return out, peerPID, out.Problem
 	}
-	return out, nil
+	return out, peerPID, nil
 }

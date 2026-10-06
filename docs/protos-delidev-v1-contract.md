@@ -42,6 +42,10 @@ before dependent implementation. This prerequisite introduces no active schema,
 generated binding, advertised support, credential lifetime, browser authority or
 database migration. Existing profile/revision-bound token forms remain unchanged.
 
+### Activated onboarding boundary
+
+After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
+
 ## Agent Worker wizard
 
 PR #1351 established the issue #964 allocations on main before implementation.
@@ -126,6 +130,18 @@ reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
 ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
+
+The additional shared RPC closure records PR #1221's existing
+`CompactSessionRequest` and `CompactSessionResponse` assignments in the immutable
+baseline, then reserves `CompactSessionRequest.expected_execution_id = 2` and
+`CompactSessionResponse.session = 4` under issue #1203 with #1093/#1202 as shared
+consumers. Establish these reservations on main before adding active fields or
+generated bindings. The expected execution must join the exact original source
+at acceptance and remain part of the actor-bound receipt identity. The response
+must join the current session and original job in one authorized read, including
+reference-only replay; its existing `request_id` remains the original action ID.
+Current native compaction support does not imply these additional fields exist.
+The reservation change adds no capability or migration.
 
 Issue #1206's [native Codex model observation contract](cmds-delidev-native-models-contract.md)
 activates main-established server capability 16 and Worker capability 7.
@@ -729,7 +745,6 @@ no provider support. The common/Hugging Face implementation returns PKCE flow
 only on a live Start, advertises capability 6 only for accepted exact profiles,
 and keeps authorization URL/code/state outside cached query variables. Device
 user codes remain Start-only; later provider implementations retain their gates.
-
 - For server-owned Baseten Device approval, Start returns flow DEVICE and the
   temporary user code only with the original live Start reply. Status is a read.
   After the sole Go completion claim, its existing response request_id identifies

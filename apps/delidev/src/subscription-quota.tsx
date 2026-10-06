@@ -3,7 +3,8 @@ import { useRetainSettingsTask } from "./settings-task-context";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, SubscriptionObservationAction, SubscriptionQuery, SystemCapability, SystemQuery, EntityKind, isEntityId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
-import { document, encode, object, text } from "./documents";
+import { document, object, text } from "./documents";
+import { accountPreferencesDocument } from "./account-preferences";
 import { serviceAccount } from "./subscription-accounts";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
@@ -28,6 +29,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const data = document(current), state = object(data.subscription), connection = text(object(data.connection).id), generation = text(state.generation), observation = object(state.observation), inventory = object(state.reset_credits);
   const ownerMachine = quotaObservationMachine(state, machine);
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
+  const [preferenceProblem, setPreferenceProblem] = useState("");
   const observe = useRetainedMutation("subscription:observe:" + current.id, SubscriptionQuery.requestSubscriptionObservation, (result) => { if (result.account) accepted(result.account); setConfirmation(undefined); }, (result, request) => result.operationId === request.mutation?.requestId && serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
   const reconcile = useRetainedMutation("subscription:credit:reconcile:" + current.id, SubscriptionQuery.reconcileSubscriptionCredit, (result) => { if (result.account) accepted(result.account); }, (result, request) => serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
   const preferences = useRetainedMutation("subscription:quota:preferences:" + current.id, ConfigurationQuery.saveConfiguration, (result) => { if (result.resource) accepted(result.resource); }, (result, request) => serviceAccount(result.resource, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
@@ -47,10 +49,18 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
     setConfirmation({ account: current, creditId, next, inventoryId: text(inventory.observation_id), connection, generation });
   };
   const exactConfirmation = confirmation && confirmation.account.revision === current.revision && confirmation.connection === connection && confirmation.generation === generation && confirmation.inventoryId === inventory.observation_id;
+  const saveRecoveryNotifications = (enabled: boolean) => {
+    let documentJson: Uint8Array;
+    try { documentJson = accountPreferencesDocument(current, { recovery_notifications: enabled }); }
+    catch { setPreferenceProblem("Account preferences could not be saved. Reload the current account before saving."); return; }
+    setPreferenceProblem("");
+    void preferences.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson });
+  };
   return <section aria-label="Native quota and reset credits">
     <h3>Quota</h3>
     {!quotaSupported ? <p role="status">Update the server and Runner Device to use native quota observations.</p> : <><p>Last successful observation: {text(state.quota_observed_at) || "Unavailable"}. {state.quota_state === "failed" ? "The latest refresh failed; the last successful values remain." : "Quota is observed by the original Codex owner every five minutes while connected."}</p><button type="button" disabled={!ready || originalActive} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: ownerMachine, action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation })}>Refresh quota</button></>}
-    <label className="checkbox"><input type="checkbox" checked={data.recovery_notifications === true} disabled={!active || !quotaSupported || busy} onChange={(event) => void preferences.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson: encode({ ...data, recovery_notifications: event.target.checked }) })} />Notify me of observed quota recovery</label>
+    <label className="checkbox"><input type="checkbox" checked={data.recovery_notifications === true} disabled={!active || !quotaSupported || busy} onChange={(event) => saveRecoveryNotifications(event.target.checked)} />Notify me of observed quota recovery</label>
+    {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
     <h3>Reset credits</h3>
     {!creditsSupported ? <p role="status">Reset credit consumption is unavailable on this server.</p> : <><p>{countValid ? `${count} available reset credits` : "Available credit count unknown"}{countValid && details === null ? "; individual credit details unavailable" : credits ? `; ${credits.length} returned details` : ""}.</p>{selectable.map((credit) => <button key={text(credit.id)} type="button" disabled={!ready || originalActive || !inventoryFresh} onClick={() => confirmCredit(text(credit.id), false)}>Review reset credit {text(credit.id)}</button>)}{countValid && details === null && BigInt(count) > 0n ? <button type="button" disabled={!ready || originalActive || !inventoryFresh} onClick={() => confirmCredit("", true)}>Review native next-credit selection</button> : null}</>}
     {confirmation ? <section aria-label="Confirm reset credit consumption"><p>{confirmation.next ? "Let Codex select its next available reset credit" : `Consume reset credit ${confirmation.creditId}`} for this account? This consumes a credit. Quota recovery is verified separately afterward.</p>{!exactConfirmation ? <p role="alert">The account or inventory changed. Refresh and confirm the current selection again.</p> : null}<div className="actions"><button type="button" disabled={!ready || originalActive || !exactConfirmation || !inventoryFresh} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: ownerMachine, action: SubscriptionObservationAction.RESET_CREDIT, connectionId: confirmation.connection, generationId: confirmation.generation, creditsObservationId: confirmation.inventoryId, creditId: confirmation.creditId, nextCredit: confirmation.next, confirmed: true })}>Confirm credit consumption</button><button type="button" disabled={busy} onClick={() => setConfirmation(undefined)}>Keep credit</button></div></section> : null}
