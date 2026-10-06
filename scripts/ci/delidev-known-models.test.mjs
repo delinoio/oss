@@ -44,6 +44,7 @@ test("retirement subjects require an exact model name or ID, not a family prefix
   const input = JSON.parse(inputs.codex);
   input.models.push({ slug: "gpt", display_name: "GPT", visibility: "list", available_in_plans: ["plus"], priority: 6 });
   assert.ok(extractChatGPT(JSON.stringify(input), inputs.openai, "2026-10-14").some(row => row.native_id === "gpt"));
+  assert.throws(() => extractChatGPT(inputs.codex, inputs.openai.replace("September 14", "February 30"), "2026-10-06"));
   assert.equal(canonical({ display_name: "<&>\u2028\u2029" }), '{"display_name":"\\u003c\\u0026\\u003e\\u2028\\u2029"}');
 });
 test("duplicate models, invalid dates/versions, unbound sources and over-limit pages fail", () => {

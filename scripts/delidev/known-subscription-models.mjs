@@ -18,8 +18,17 @@ const sourceHosts = new Map([
 ]);
 const digest = value => createHash("sha256").update(value).digest("hex");
 const fail = reason => { throw new Error(`Known-model validation failed: ${reason}`); };
-const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-const validDate = value => datePattern.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const datePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const utcDate = (year, month, day) => {
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(0, 0, 0, 0);
+  return Number.isFinite(date.getTime()) && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date : undefined;
+};
+const validDate = value => {
+  const match = typeof value === "string" && value.match(datePattern);
+  return Boolean(match && utcDate(Number(match[1]), Number(match[2]), Number(match[3])));
+};
 const exactKeys = (value, required, optional = []) => {
   if (!value || typeof value !== "object" || Array.isArray(value) || required.some(key => !(key in value)) || Object.keys(value).some(key => ![...required, ...optional].includes(key))) fail("object shape");
 };
@@ -70,8 +79,11 @@ function retirement(markdown, model, today) {
     if (/already deprecated/i.test(sentence)) return { excluded: true };
     const match = sentence.match(/(?:retires?|retired|will retire).*?(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (\d{4})/i);
     if (!match) fail("unrecognized retirement notice");
-    const date = new Date(`${match[1]} ${match[2]}, ${match[3]} UTC`).toISOString().slice(0, 10);
-    return { excluded: date <= today, retirement_date: date };
+    const month = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"].indexOf(match[1].toLowerCase()) + 1;
+    const date = utcDate(Number(match[3]), month, Number(match[2]));
+    if (!date) fail("retirement date");
+    const retirementDate = date.toISOString().slice(0, 10);
+    return { excluded: retirementDate <= today, retirement_date: retirementDate };
   }
   return {};
 }
