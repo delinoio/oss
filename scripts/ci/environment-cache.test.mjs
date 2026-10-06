@@ -75,13 +75,25 @@ test("environment verification reuses valid cache and rejects each changed devel
   assert.equal(warm.task.cache.status, "HIT", warm.output);
   assert.equal(warm.task.hash, cold.task.hash);
 
-  const paths = ["apps/devhud/turbo.json", "apps/devhud-admin/turbo.json", "servers/devhud-api/turbo.json", "pnpm-workspace.yaml"];
+  const paths = [
+    "apps/devhud/turbo.json",
+    "apps/devhud-admin/turbo.json",
+    "servers/devhud-api/turbo.json",
+    "apps/devhud/package.json",
+    "apps/devhud-admin/package.json",
+    "servers/devhud-api/package.json",
+    "pnpm-workspace.yaml",
+  ];
   for (const path of paths) {
     const original = readFileSync(join(cwd, path), "utf8");
     try {
       if (path === "pnpm-workspace.yaml") {
         assert.match(original, /^  - servers\/\*\r?\n/mu);
         write(path, original.replace(/^  - servers\/\*\r?\n/mu, ""));
+      } else if (path.endsWith("/package.json")) {
+        const manifest = JSON.parse(original);
+        manifest.name = `${manifest.name}-renamed`;
+        write(path, JSON.stringify(manifest));
       } else {
         const config = JSON.parse(original);
         config.tasks.dev = { ...config.tasks.dev, env: ["INFISICAL_TOKEN"] };
