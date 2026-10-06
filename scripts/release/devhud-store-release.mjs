@@ -244,10 +244,13 @@ async function submitGoogle(environment, metadata, artifact, fetchImpl) {
   return { provider: StoreProvider.GooglePlay, status: StoreStatus.Pending, versionCode: String(upload.versionCode) };
 }
 
-async function submitChrome(environment, artifact, fetchImpl) {
+async function submitChrome(environment, metadata, artifact, fetchImpl) {
   const token = await chromeToken(environment, fetchImpl);
   const name = chromeName(environment);
-  await checked(fetchImpl, `https://chromewebstore.googleapis.com/upload/v2/${name}:upload`, { method: "POST", headers: { ...bearer(token), "content-type": "application/zip" }, body: readFileSync(resolve(artifact)) }, "Chrome Web Store upload");
+  const upload = await checked(fetchImpl, `https://chromewebstore.googleapis.com/upload/v2/${name}:upload`, { method: "POST", headers: { ...bearer(token), "content-type": "application/zip" }, body: readFileSync(resolve(artifact)) }, "Chrome Web Store upload");
+  if (upload?.uploadState !== "SUCCEEDED") throw new Error("Chrome Web Store upload is not ready for review submission");
+  if (typeof upload.itemId !== "string" || upload.itemId !== environment.DEVHUD_CHROME_EXTENSION_ID) throw new Error("Chrome Web Store upload does not match the selected item");
+  if (typeof upload.crxVersion !== "string" || upload.crxVersion !== metadata.version) throw new Error("Chrome Web Store upload does not match the release version");
   await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${name}:publish`, { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ publishType: "STAGED_PUBLISH", deployInfos: [{ deployPercentage: 100 }], skipReview: false, blockOnWarnings: true }) }, "Chrome Web Store review submission");
   return { provider: StoreProvider.ChromeWebStore, status: StoreStatus.Pending };
 }
@@ -344,7 +347,7 @@ export async function run(command, provider, options, environment = process.env,
   if (command === "withdraw") return withdraw(provider, environment, metadata, options, fetchImpl);
   if (provider === StoreProvider.Apple) return submitApple(environment, metadata, fetchImpl);
   if (!options.artifact) throw new Error("--artifact is required for Google Play and Chrome submissions");
-  return provider === StoreProvider.GooglePlay ? submitGoogle(environment, metadata, options.artifact, fetchImpl) : submitChrome(environment, options.artifact, fetchImpl);
+  return provider === StoreProvider.GooglePlay ? submitGoogle(environment, metadata, options.artifact, fetchImpl) : submitChrome(environment, metadata, options.artifact, fetchImpl);
 }
 
 export async function main(arguments_ = process.argv.slice(2), environment = process.env) {
