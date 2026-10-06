@@ -859,7 +859,12 @@ mod tests {
     #[test]
     fn native_staging_checks_actual_bytes_and_never_replaces_a_generation() {
         let root = tempfile::tempdir().unwrap();
-        let downloads = root.path().join("downloads");
+        // macOS exposes the temporary directory through `/var`, which is a
+        // symlink to `/private/var`. Use the physical path so this fixture
+        // exercises the staging checks instead of rejecting the platform's
+        // stable system alias as an untrusted ancestor.
+        let root_path = root.path().canonicalize().unwrap();
+        let downloads = root_path.join("downloads");
         fs::create_dir(&downloads).unwrap();
         let source = downloads.join("source.dmg");
         fs::write(&source, b"verified").unwrap();

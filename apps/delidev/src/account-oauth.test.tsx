@@ -197,7 +197,7 @@ it("asks for the Google quota project before any browser or server Start", async
  const f = fixture({ gemini: true });
  await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Profiles)).toBe(true));
  fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
- await screen.findByRole("heading", { name: "Connect Google Gemini" });
+ await screen.findByRole("heading", { name: "Choose your Google Cloud project" });
  expect(screen.getByText("Use the Google Cloud project that will pay for API usage.")).toBeTruthy();
  expect(f.start).not.toHaveBeenCalled();
  expect(f.native.mock.calls.every(call => call[1] === OAuthNativeAction.Profiles)).toBe(true);

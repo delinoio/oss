@@ -18,6 +18,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
 mod browser_opener;
+pub mod language;
 pub mod oauth;
 pub mod provider_guidance;
 pub mod updater;
@@ -869,3 +870,5 @@ mod repository_folder_tests {
         );
     }
 }
+
+pub mod localization;

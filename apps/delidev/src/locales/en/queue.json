@@ -1,0 +1,15 @@
+{
+  "queue.input_3547c5": "Input <s0/>",
+  "queue.removedInputOriginalOrderingRetained_3f3155": "Removed input · original ordering retained",
+  "queue.editInput_f7680c": "Edit input",
+  "queue.removeInput_95e788": "Remove input",
+  "queue.steerWithThisInput_d835aa": "Steer with this input",
+  "queue.editedInput_e6f7fe": "Edited input",
+  "queue.thisInputChangedWhileYouWere_cfe47a": "This input changed while you were editing. Review the current text before saving.",
+  "queue.saveInput_9f11a2": "Save input",
+  "queue.cancelEdit_6fa271": "Cancel edit",
+  "queue.edit_262121": "edit",
+  "queue.removal_e57388": "removal",
+  "queue.steer_1cf39e": "Steer",
+  "queue.retryTheSame_4cb78a": "Retry the same <s0/>"
+}

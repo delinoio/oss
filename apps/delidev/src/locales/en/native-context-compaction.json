@@ -1,0 +1,13 @@
+{
+  "native-context-compaction.contextCompactionUnavailable_368e82": "Context compaction · Unavailable",
+  "native-context-compaction.theRetainedContextObservationIsUnavailable_e3e304": "The retained context observation is unavailable or inconsistent.",
+  "native-context-compaction.started_ecbc89": "Started",
+  "native-context-compaction.completed_22a970": "Completed",
+  "native-context-compaction.contextCompactionAutomatic_e2d9be": "Context compaction · Automatic · <s0/>",
+  "native-context-compaction.opencode_3af0e5": "OpenCode",
+  "native-context-compaction.codex_616efb": "Codex",
+  "native-context-compaction.isCompactingItsWorkingContextThe_3d6bfb": "<s0/> is compacting its working context. The conversation remains retained.",
+  "native-context-compaction.currentContextTokens_77a977": "Current context tokens",
+  "native-context-compaction.notReported_adadfa": "Not reported",
+  "native-context-compaction.originalContextReference_ad006e": "Original context reference"
+}

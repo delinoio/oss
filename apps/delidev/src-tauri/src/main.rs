@@ -41,6 +41,7 @@ impl Drop for DesktopLifetime {
 }
 
 use appearance_host::{read_appearance, update_appearance};
+mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
     Connection, Connector, DesktopRegistration, LocalServerStatus, LocalWorkerAction,
@@ -48,6 +49,7 @@ use delidev_desktop::{
     SavedConnectionState, Supervision, WorkerNetworkAction, browser_storage::BrowserStorageMode,
     bundled_sidecar, canonical_id, connection_origin, default_data_root,
 };
+use language_host::{read_language, update_language};
 use notification_host::{
     NotificationHost, begin_notifications, end_notifications, notification_permission,
     present_notification, request_notification_permission,
@@ -116,7 +118,9 @@ async fn choose_repository_folder(
         let _guard = FolderPickerGuard;
         tracing::info!(operation = "repository_folder", phase = "choosing");
         let selected = rfd::AsyncFileDialog::new()
-            .set_title("Choose your repository folder")
+            .set_title(delidev_desktop::localization::text(
+                delidev_desktop::localization::Message::ChooseRepository,
+            ))
             .set_parent(&window)
             .pick_folder()
             .await;
@@ -1645,6 +1649,8 @@ fn run() -> Result<(), NativeFailure> {
             choose_repository_folder,
             read_appearance,
             update_appearance,
+            read_language,
+            update_language,
             open_browser,
             control_browser,
             browser_state,
@@ -1755,8 +1761,18 @@ fn run() -> Result<(), NativeFailure> {
                 );
             }
             app.manage(Arc::new(delidev_desktop::appearance::AppearanceStore::new(
-                config_dir,
+                config_dir.clone(),
             )));
+            let language = Arc::new(delidev_desktop::language::LanguageStore::new(config_dir));
+            let initial = language.read();
+            delidev_desktop::language::activate(initial.resolved_language);
+            if widget_host::set_language(initial.language).is_err() {
+                tracing::warn!(
+                    operation = "language_initialize",
+                    code = "widget-unavailable"
+                );
+            }
+            app.manage(language);
             let result = (|| -> Result<(), NativeFailure> {
                 window_host::install_menu(app.handle())
                     .map_err(|_| NativeFailure::SidecarFailed)?;

@@ -1,3 +1,4 @@
+import { ownedMessage, resolveMessage, type OwnedMessage, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskActions } from "./settings-task";
 import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask } from "./settings-task-context";
@@ -15,12 +16,13 @@ export interface OAuthNativeResult { generation: string; callback_url?: string; 
 export type OAuthNativeControl = (opening: string, action: OAuthNativeAction, generation: string, attempt: string, authorization: string) => Promise<OAuthNativeResult>;
 const NativeContext = createContext<OAuthNativeControl | undefined>(undefined);
 export const useOAuthNativeControl = () => useContext(NativeContext);
-export function OAuthNativeProvider({ control, children }: { control: OAuthNativeControl; children: ReactNode }) { return <NativeContext.Provider value={control}>{children}</NativeContext.Provider>; }
+export function OAuthNativeProvider({ control, children }: { control: OAuthNativeControl; children: ReactNode }) {
+  useLocale(); return <NativeContext.Provider value={control}>{children}</NativeContext.Provider>; }
 enum Stage { Configure, Starting, Awaiting, Exchanging, Saving, Canceling, Recovering, Connected, Canceled, Expired, Interrupted, Recovery }
-interface View { provider: AccountProviderSummary; stage: Stage; userCode?: string; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string; openFailed?: boolean }
+interface View { provider: AccountProviderSummary; stage: Stage; userCode?: string; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string | OwnedMessage; openFailed?: boolean }
 interface Pending {
   provider: AccountProviderSummary; quotaProject?: string; userCode?: string; nativeOpening: string; generation: string; callback: string; startId: string;
-  attempt?: AccountOAuthAttempt; completion?: Mutation; cancel?: Mutation; problem?: string; openFailed?: boolean; bound: boolean; serverStartDispatched: boolean; polling: boolean; busy: boolean; disposed: boolean;
+  attempt?: AccountOAuthAttempt; completion?: Mutation; cancel?: Mutation; problem?: string | OwnedMessage; openFailed?: boolean; bound: boolean; serverStartDispatched: boolean; polling: boolean; busy: boolean; disposed: boolean;
 }
 const validId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
 function stage(state: AccountOAuthState): Stage {
@@ -78,7 +80,7 @@ export function useAccountOAuth() {
     opening?.controller.signal.addEventListener("abort", close, { once: true });
     return () => { alive.current = false; opening?.controller.signal.removeEventListener("abort", close); close(); };
   }, [opening, native]);
-  const failure = (value: Pending, message: string) => { value.problem = message; if (current(value)) setView(previous => ({ provider: value.provider, stage: previous?.stage ?? Stage.Recovery, attempt: value.attempt, account: previous?.account, userCode: value.userCode, problem: message, openFailed: previous?.openFailed })); };
+  const failure = (value: Pending, message: string | OwnedMessage) => { value.problem = message; if (current(value)) setView(previous => ({ provider: value.provider, stage: previous?.stage ?? Stage.Recovery, attempt: value.attempt, account: previous?.account, userCode: value.userCode, problem: message, openFailed: previous?.openFailed })); };
   const accept = (value: Pending, result: CompleteAccountOAuthResponse | CancelAccountOAuthResponse | GetAccountOAuthStatusResponse, deviceReceipt = false) => {
     const attempt = checkedAttempt(result.attempt, value), account = checkedAccount(result.account, value);
     if (deviceReceipt && profileOf(value.provider) === AccountOAuthProfile.Baseten && result.requestId && validId(result.requestId)) {
@@ -91,7 +93,7 @@ export function useAccountOAuth() {
     if (attempt.state !== AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION) value.userCode = undefined;
     if (attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_CONNECTED) { value.problem = undefined; value.openFailed = false; }
     if (current(value)) setView({ provider: value.provider, stage: stage(attempt.state), attempt, account, userCode: value.userCode,
-      problem: attempt.problem?.code === "permission_denied" ? `${value.provider.displayName} authorization was denied. Cancel before starting another connection.` : attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? "Authorization is no longer available for this provider. Cancel the original attempt and refresh the provider, or use an API key instead." : recoveryMessage(value.provider) : value.problem, openFailed: value.openFailed });
+      problem: attempt.problem?.code === "permission_denied" ? ownedMessage("account-oauth.extra.50181bfbea4a") : attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? ownedMessage("account-oauth.extra.02b9057706ae") : ownedMessage("account-oauth.extra.50181bfbea4a") : value.problem, openFailed: value.openFailed });
   };
   const finish = async (value: Pending, code: Uint8Array, state: Uint8Array) => {
     if (!current(value) || !value.attempt || value.completion) { code.fill(0); state.fill(0); return; }
@@ -102,7 +104,7 @@ export function useAccountOAuth() {
       const result = await service.completeAccountOAuth({ mutation: value.completion, authorizationCode: code, authorizationState: state });
       if (result.requestId !== value.completion.requestId) throw new Error("completion receipt");
       if (current(value)) accept(value, result);
-    } catch { failure(value, "Completion was not confirmed. Inspect the original attempt. An uncertain exchange is never repeated."); }
+    } catch { failure(value, ownedMessage("account-oauth.extra.c91835a315d9")); }
     finally { code.fill(0); state.fill(0); value.busy = false; }
   };
   const startOriginal = async (value: Pending) => {
@@ -128,7 +130,7 @@ export function useAccountOAuth() {
       setView({ provider: value.provider, stage: stage(value.attempt.state), attempt: value.attempt, userCode:value.userCode });
       if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && result.authorizationUrl && !value.bound) {
         try { await native(value.nativeOpening, OAuthNativeAction.BindOpen, value.generation, value.attempt.id, result.authorizationUrl); value.bound = true; value.openFailed = false; value.problem = undefined; }
-        catch { value.openFailed = true; failure(value, "The browser could not be opened. Open it again deliberately or cancel this connection."); }
+        catch { value.openFailed = true; failure(value, ownedMessage("account-oauth.extra.f0d9ec9fd7e7")); }
       }
     } catch (error) {
       const rejected = ConnectError.from(error).findDetails(ErrorDetailSchema).some(detail => detail.cause === "oauth_start_not_admitted");
@@ -136,8 +138,8 @@ export function useAccountOAuth() {
         value.serverStartDispatched = false;
         // Keep the opening until explicit Cancel/Back performs native disposal.
         // The cause proves admission rolled back; transport errors cannot do so.
-        failure(value, "Authorization was not started. Cancel or return to providers to refresh this provider, or use an API key instead.");
-      } else failure(value, "Authorization could not be confirmed. Retry only the original start or inspect the original attempt before starting another connection.");
+        failure(value, ownedMessage("account-oauth.extra.3843239cf0da"));
+      } else failure(value, ownedMessage("account-oauth.extra.66c9a691ff0d"));
     }
     finally { value.busy = false; }
   };
@@ -151,7 +153,7 @@ export function useAccountOAuth() {
   const observe = async (value: Pending) => {
     if (!current(value) || !value.attempt) return;
     try { const result = await service.getAccountOAuthStatus({ attemptId: value.attempt.id }); if (current(value)) accept(value, result, true); }
-    catch { failure(value, "The original connection status is unavailable. Inspect again; this does not repeat authorization or exchange."); }
+    catch { failure(value, ownedMessage("account-oauth.extra.f6dcc33443bb")); }
   };
   useEffect(() => {
     if (!view) return;
@@ -180,7 +182,7 @@ export function useAccountOAuth() {
           }
         }
         if (current(value) && !value.busy) await observe(value);
-      } catch { failure(value, "The original browser callback could not be verified. Inspect or cancel this attempt; no new exchange was sent."); }
+      } catch { failure(value, ownedMessage("account-oauth.extra.1890f536687d")); }
       finally { value.polling = false; }
     };
     const timer = setInterval(() => void poll(), 500);
@@ -211,7 +213,7 @@ export function useAccountOAuth() {
       // A typed revision conflict proves this cancellation was not admitted.
       // Unknown/cleanup outcomes retain their original exact request instead.
       if (clientFailure(error).code === FailureCode.Conflict) value.cancel = undefined;
-      failure(value, "Cancellation or credential cleanup was not confirmed. Keep this original attempt and retry its cancellation before another connection.");
+      failure(value, ownedMessage("account-oauth.extra.9668547d218a"));
     }
     finally { value.busy = false; }
   };
@@ -219,20 +221,20 @@ export function useAccountOAuth() {
     const value = pending.current; if (!native || !value?.attempt || !current(value) || value.busy || value.completion) return;
     if (!value.bound) { await startOriginal(value); return; }
     try { await native(value.nativeOpening, OAuthNativeAction.Reopen, value.generation, value.attempt.id, ""); value.problem = undefined; value.openFailed = false; if (current(value)) setView(previous => previous ? { ...previous, openFailed: false, problem: undefined } : previous); }
-    catch { failure(value, "The browser could not be opened for this original live attempt. Cancel before starting another."); }
+    catch { failure(value, ownedMessage("account-oauth.extra.12e9df66c23f")); }
   };
   const recover = async () => {
     const value = pending.current; if (!value?.completion || !current(value) || value.busy) return;
     value.busy = true;
     setView(previous => previous ? { ...previous, stage: Stage.Recovering, problem: undefined } : previous);
     try { const result = await service.completeAccountOAuth({ mutation: value.completion, authorizationCode: new Uint8Array() }); if (result.requestId !== value.completion.requestId) throw new Error("recovery receipt"); if (current(value)) accept(value, result); }
-    catch { failure(value, recoveryMessage(value.provider)); }
+    catch { failure(value, ownedMessage("account-oauth.extra.01b9ed071310")); }
     finally { value.busy = false; }
   };
   const continueInBrowser = (project: string) => {
     const value = pending.current;
     if (!value || !current(value) || value.serverStartDispatched || value.busy || value.quotaProject) return;
-    if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)) { failure(value,"Enter a valid Google Cloud project ID (6–30 lowercase letters, digits or hyphens)."); return; }
+    if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)) { failure(value, ownedMessage("account-oauth.invalidGoogleCloudProjectId_9e2b1c")); return; }
     value.quotaProject = project;
     setView({ provider: value.provider, stage: Stage.Starting }); void startOriginal(value);
   };
@@ -253,6 +255,7 @@ function recoveryMessage(provider: AccountProviderSummary): string {
 }
 
 export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; edit: (account: Resource) => void; manage: (account: Resource) => void; done: () => void }) {
+  useLocale();
   const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
   const [project, setProject] = useState("");
@@ -263,22 +266,23 @@ export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow:
   const connected = view.stage === Stage.Connected && view.account;
   const waiting = view.stage === Stage.Awaiting;
   const configuring = view.stage === Stage.Configure;
-  const progress = view.stage === Stage.Starting ? "Preparing authorization…" : view.stage === Stage.Exchanging ? "Exchanging authorization…" : view.stage === Stage.Saving ? "Saving your connection…" : view.stage === Stage.Canceling ? "Confirming cancellation and cleanup…" : view.stage === Stage.Recovering ? "Recovering the original saved result…" : connected ? `${view.provider.displayName} connected` : waiting ? "Waiting for authorization…" : view.stage === Stage.Expired ? "Authorization expired" : view.stage === Stage.Interrupted ? "Authorization was interrupted" : view.stage === Stage.Canceled ? "Connection canceled" : "Connection requires recovery";
+  const huggingFace = profileOf(view.provider) === AccountOAuthProfile.HuggingFace;
+  const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : connected ? copy("account-oauth.providerConnected_5a9a4f", { v0: view.provider.displayName }) : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());
   return <section className="api-keys-view account-oauth-card" aria-labelledby="account-oauth-title">
-    <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>Connect {view.provider.displayName}</h2>
-    <p className="account-oauth-subheading">{configuring ? "Choose your Google Cloud project" : "Complete sign-in in your browser"}</p>
-    {configuring ? <p>Use the Google Cloud project that will pay for API usage.</p> : <p>Approve access on {providerServiceName(view.provider)}. DeliDev will finish connecting automatically.</p>}
-    {configuring ? <label className="account-oauth-project">Google Cloud project ID<input value={project} maxLength={30} autoComplete="off" spellCheck={false} onChange={event => setProject(event.target.value)} /></label> : null}
+    <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>{configuring ? copy("account-oauth.chooseGoogleCloudProject_0f5a3e") : huggingFace ? copy("account-oauth.connectHuggingFaceInferenceProviders_7b4d2c") : copy("account-oauth.connectOpenrouter_6c38bc")}</h2>
+    <p className="account-oauth-subheading">{configuring ? copy("account-oauth.chooseGoogleCloudProject_0f5a3e") : copy("account-oauth.completeSignInInYourBrowser_64e524")}</p>
+    {configuring ? <p>{copy("account-oauth.useGoogleCloudProjectToPay_2b7c11")}</p> : <p>{huggingFace ? copy("account-oauth.approveAccessOnProviderDelidevWill_7f1c4a", { v0: providerServiceName(view.provider) }) : copy("account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0")}</p>}
+    {configuring ? <label className="account-oauth-project">{copy("account-oauth.googleCloudProjectId_4e7d2a")}<input value={project} maxLength={30} autoComplete="off" spellCheck={false} onChange={event => setProject(event.target.value)} /></label> : null}
     {!configuring ? <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div> : null}
-    {waiting && view.userCode ? <div className="account-oauth-device"><p>If asked, enter this code:</p><output aria-label="Temporary authorization code" className="account-oauth-user-code">{view.userCode}</output></div> : null}
-    {view.problem ? <p role="alert">{view.problem}</p> : null}
-    {connected ? <SettingsTaskActions><button onClick={() => leave(false, () => edit(connected))}>Edit account</button><button onClick={() => leave(false, () => manage(connected))}>Manage account</button><button onClick={() => leave(false, done)}>Done</button></SettingsTaskActions> : <>
-      <SettingsTaskActions>{configuring ? <button onClick={() => flow.continueInBrowser(project)}>Continue in browser</button> : <button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>Open browser again</button>}<button hidden={configuring} data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>Cancel</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>Back to providers</button></SettingsTaskActions>
-      <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>Use an API key instead</button>
-      {view.problem && !configuring ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>Inspect original attempt</button>{!view.attempt ? <button onClick={flow.retryStart}>Retry original start</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>Recover saved result</button> : null}</SettingsTaskActions> : null}
+    {waiting && view.userCode ? <div className="account-oauth-device"><p>{copy("account-oauth.ifAskedEnterThisCode_6d3a1f")}</p><output aria-label={copy("account-oauth.temporaryAuthorizationCode_1d4e7a")} className="account-oauth-user-code">{view.userCode}</output></div> : null}
+    {view.problem ? <p role="alert">{resolveMessage(view.problem)}</p> : null}
+    {connected ? <SettingsTaskActions><button onClick={() => leave(false, () => edit(connected))}>{copy("account-oauth.editAccount_ab6a16")}</button><button onClick={() => leave(false, () => manage(connected))}>{copy("account-oauth.manageAccount_ddb585")}</button><button onClick={() => leave(false, done)}>{copy("account-oauth.done_11a676")}</button></SettingsTaskActions> : <>
+      <SettingsTaskActions>{configuring ? <button onClick={() => flow.continueInBrowser(project)}>{copy("account-oauth.continueInBrowser_7c2d9b")}</button> : <button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button>}<button hidden={configuring} data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></SettingsTaskActions>
+      <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>{copy("account-oauth.useAnApiKeyInstead_b728ab")}</button>
+      {view.problem && !configuring ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>{copy("account-oauth.inspectOriginalAttempt_887b78")}</button>{!view.attempt ? <button onClick={flow.retryStart}>{copy("account-oauth.retryOriginalStart_eefc3a")}</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>{copy("account-oauth.recoverSavedResult_3cb5e6")}</button> : null}</SettingsTaskActions> : null}
     </>}
-    <footer><p>Your credential will be stored securely on the selected server.</p>{!configuring ? <p>You can validate your account after connecting.</p> : null}</footer>
+    <footer><p>{copy("account-oauth.yourCredentialWillBeStoredSecurely_26be74")}</p>{!configuring ? <p>{copy("account-oauth.youCanValidateYourAccountAfter_70f97e")}</p> : null}</footer>
   </section>;
 }
 

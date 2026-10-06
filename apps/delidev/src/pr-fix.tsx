@@ -1,3 +1,4 @@
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { type MessageShape } from "@bufbuild/protobuf";
@@ -24,26 +25,28 @@ function fixAcknowledgement({ repositoryId, remoteRepositoryId, pullRequestId, n
 }
 
 export function PRFixAction({ row, set, value, selection, disabled, refreshed }: { row: Resource; set: Resource; value: Document; selection: PRProblemSelection; disabled: boolean; refreshed: () => void }) {
- const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useState("");
+ useLocale();
+ const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useProductMessage("");
  const fix = useRetainedMutation(`pr-fix:${selection.remoteRepositoryId}:${selection.pullRequestId}`, PullRequestFixQuery.requestPullRequestFix, (response) => {
-  setNotice(`Fix accepted in session ${response.session!.id}. Evidence changes to handled only after a verified push.`); setOpen(false); refreshed();
+  setNotice(ownedMessage("pr-fix.sentence.613a13e6da0e", { v0: response.session!.id })); setOpen(false); refreshed();
  });
  const chain = readRemediationChain(document(set).remediation);
  const owner = text(chain?.active_attempt_id);
  const blocked = disabled || fix.busy || fix.uncertain || Boolean(owner);
- return <div>{owner ? <p>Fix attempt <code>{owner}</code> owns this PR. Inspect its retained history before another fix.</p> : null}<button disabled={blocked} aria-expanded={open} onClick={() => setOpen(!open)}>Fix now</button>
+ return <div>{owner ? <p><LocalizedText id="pr-fix.fixAttemptOwnsThisPrInspect_85a121" components={{ s0: <code>{owner}</code> }} /></p> : null}<button disabled={blocked} aria-expanded={open} onClick={() => setOpen(!open)}>{copy("pr-fix.fixNow_879349")}</button>
   {open ? <PRFixForm blocked={blocked} project={project} setProject={setProject} cancel={() => setOpen(false)} send={() => { setNotice(""); void fix.send({ requestId: newRequestId(), schemaVersion: 1, documentJson: encode({ set_id: set.id, set_revision: set.revision.toString(), project_id: project, repository_id: selection.repositoryId, problems: [{ id: row.id, revision: row.revision.toString(), content_version: text(value.content_version) }] }) }, fixAcknowledgement(selection)); }} /> : null}
-  <Problem error={fix.error} />{fix.uncertain ? <button disabled={fix.busy} onClick={fix.retry}>Retry original fix request</button> : null}{notice ? <p role="status">{notice}</p> : null}
+  <Problem error={fix.error} />{fix.uncertain ? <button disabled={fix.busy} onClick={fix.retry}>{copy("pr-fix.retryOriginalFixRequest_3ecf60")}</button> : null}{notice ? <p role="status">{notice}</p> : null}
  </div>;
 }
 
 function PRFixForm({ blocked, project, setProject, cancel, send }: { blocked: boolean; project: string; setProject: (value: string) => void; cancel: () => void; send: () => void }) {
+  useLocale();
  const capability = useQuery(PullRequestFixQuery.getPullRequestFixCapabilities, {}, { retry: false, gcTime: 0, staleTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false });
  const supported = capability.data?.profiles.includes(PullRequestFixProfile.CODEX_GIT_V1) && !capability.error;
- return <form aria-label="Manual PR fix" onSubmit={event => { event.preventDefault(); if (!blocked && uuid(project) && supported) send(); }}>
-  <ResourceChoice label="Fix project" kind={EntityKind.PROJECT} value={project} change={setProject} active disabled={blocked} required autoFocus />
-  <p>The server reuses the most recent eligible linked session or prepares a new PR-head workspace with its configured Codex Agent and Worker. Paused and archived sessions stay paused. The execution Worker uses its prepared Git identity.</p>
-  <Problem error={capability.error} />{capability.data && !supported ? <p>This server has no supported manual PR fix profile.</p> : null}
-  <button disabled={blocked || !uuid(project) || !supported}>Start fix</button><button type="button" disabled={blocked} onClick={cancel}>Cancel</button>
+ return <form aria-label={copy("pr-fix.manualPrFix_5b64d4")} onSubmit={event => { event.preventDefault(); if (!blocked && uuid(project) && supported) send(); }}>
+  <ResourceChoice label={copy("pr-fix.fixProject_e1ce32")} kind={EntityKind.PROJECT} value={project} change={setProject} active disabled={blocked} required autoFocus />
+  <p>{copy("pr-fix.theServerReusesTheMostRecent_add8ed")}</p>
+  <Problem error={capability.error} />{capability.data && !supported ? <p>{copy("pr-fix.thisServerHasNoSupportedManual_5d3d3f")}</p> : null}
+  <button disabled={blocked || !uuid(project) || !supported}>{copy("pr-fix.startFix_039be8")}</button><button type="button" disabled={blocked} onClick={cancel}>{copy("pr-fix.cancel_19766e")}</button>
  </form>;
 }

@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { NativeClaudeCompactionBoundary, NativeClaudeCompactionSummary, validClaudeCompactionBoundary, validClaudeCompactionSummary } from "./native-claude-compaction";
 import { NativeClaudeTask, validClaudeTask } from "./native-claude-tasks";
 import { NativeClaudeToolProgress, NativeClaudeToolSummary, validClaudeToolProgress, validClaudeToolSummary } from "./native-claude-tool-progress";
@@ -38,31 +39,33 @@ function valid(data: Document) {
 }
 
 export function NativeClaudeProgress({ data }: { data: Document }) {
-  if (!valid(data)) return <article className="message" aria-label="Claude progress unavailable"><p>The retained Claude progress is unavailable or inconsistent.</p></article>;
+  useLocale();
+  if (!valid(data)) return <article className="message" aria-label={copy("native-claude-progress.claudeProgressUnavailable_b578af")}><p>{copy("native-claude-progress.theRetainedClaudeProgressIsUnavailable_f7ac03")}</p></article>;
   const v = object(data.claude_progress), s = object(v.status), t = object(v.thinking);
-  return <article className="message" aria-label="Claude progress observation">
-    <header><strong>Claude progress</strong><small>{v.input_accepted ? "After input acceptance" : "Before input acceptance"}</small></header>
+  return <article className="message" aria-label={copy("native-claude-progress.claudeProgressObservation_c7a8db")}>
+    <header><strong>{copy("native-claude-progress.claudeProgress_6fd5f4")}</strong><small>{v.input_accepted ? copy("native-claude-progress.afterInputAcceptance_048042") : copy("native-claude-progress.beforeInputAcceptance_d6a50c")}</small></header>
     {v.kind === Kind.Compaction ? <NativeClaudeCompactionBoundary value={v.compaction} /> : v.kind === Kind.CompactionSummary ? <NativeClaudeCompactionSummary value={v.compaction_summary} /> : v.kind === Kind.Task ? <NativeClaudeTask value={v.task} /> : v.kind === Kind.Tool ? <NativeClaudeToolProgress value={v.tool} /> : v.kind === Kind.ToolSummary ? <NativeClaudeToolSummary value={v.tool_summary} /> : v.kind === Kind.Retry ? <NativeClaudeAPIRetry value={v.api_retry} /> : v.kind === Kind.Status ? <>
-      <dl><dt>Reported status</dt><dd>{s.status === null ? "Status cleared" : s.status === "requesting" ? "Requesting" : "Compacting"}</dd>
-        <dt>Reported permission mode</dt><dd>{s.permission === null ? "Not reported" : s.permission as string}</dd>
-        {s.compact_result !== null ? <><dt>Compaction result</dt><dd>{s.compact_result === "success" ? "Succeeded" : "Failed"}</dd></> : null}
+      <dl><dt>{copy("native-claude-progress.reportedStatus_e8dbb8")}</dt><dd>{s.status === null ? copy("native-claude-progress.statusCleared_0836e6") : s.status === "requesting" ? copy("native-claude-progress.requesting_4ba9d8") : copy("native-claude-progress.compacting_df7779")}</dd>
+        <dt>{copy("native-claude-progress.reportedPermissionMode_eb94a5")}</dt><dd>{s.permission === null ? copy("native-claude-progress.notReported_adadfa") : s.permission as string}</dd>
+        {s.compact_result !== null ? <><dt>{copy("native-claude-progress.compactionResult_5a6b3c")}</dt><dd>{s.compact_result === "success" ? copy("native-claude-progress.succeeded_6d9a6f") : copy("native-claude-progress.failed_031a8f")}</dd></> : null}
       </dl>
-      {s.compact_error !== null ? <details><summary>Compaction diagnostic</summary><pre>{s.compact_error as string}</pre></details> : null}
-      <p>This status does not confirm input acceptance, idle state or execution completion.</p>
+      {s.compact_error !== null ? <details><summary>{copy("native-claude-progress.compactionDiagnostic_f316f6")}</summary><pre>{s.compact_error as string}</pre></details> : null}
+      <p>{copy("native-claude-progress.thisStatusDoesNotConfirmInput_8c3d56")}</p>
     </> : <>
-      <dl><dt>Estimated thinking tokens</dt><dd>{t.estimated_tokens as string}</dd><dt>Estimated thinking token delta</dt><dd>{t.estimated_tokens_delta as string}</dd></dl>
-      <p>These native progress estimates are separate from provider usage and billed cost.</p>
+      <dl><dt>{copy("native-claude-progress.estimatedThinkingTokens_8bcb46")}</dt><dd>{t.estimated_tokens as string}</dd><dt>{copy("native-claude-progress.estimatedThinkingTokenDelta_4b1b48")}</dt><dd>{t.estimated_tokens_delta as string}</dd></dl>
+      <p>{copy("native-claude-progress.theseNativeProgressEstimatesAreSeparate_a3ca3d")}</p>
     </>}
   </article>;
 }
 
 export function NativeClaudePermissionProgress({ progress }: { progress: Document }) {
+  useLocale();
   if (progress.claude_progress == null) return null;
   const state = object(progress.claude_progress);
   const valid = Object.keys(state).every((key) => ["native_turn_id", "latest_status_id", "latest_thinking_id", "latest_retry_id", "latest_tool_id", "latest_tool_summary_id", "latest_task_id", "latest_compaction_id", "latest_compaction_summary_id", "permission", "permission_changed"].includes(key)) && nativeID(state.native_turn_id) && (progress.native_turn_id == null || progress.native_turn_id === "" || state.native_turn_id === progress.native_turn_id) && (state.latest_compaction_id === undefined || id(state.latest_compaction_id)) && (state.latest_compaction_summary_id === undefined || id(state.latest_compaction_summary_id)) && (state.latest_status_id === undefined || id(state.latest_status_id)) && (state.latest_thinking_id === undefined || id(state.latest_thinking_id)) && (state.latest_retry_id === undefined || id(state.latest_retry_id)) && (state.latest_task_id === undefined || id(state.latest_task_id)) && (state.latest_tool_id === undefined || id(state.latest_tool_id)) && (state.latest_tool_summary_id === undefined || id(state.latest_tool_summary_id)) && (state.latest_compaction_id !== undefined || state.latest_compaction_summary_id !== undefined || state.latest_task_id !== undefined || state.latest_status_id !== undefined || state.latest_thinking_id !== undefined || state.latest_retry_id !== undefined || state.latest_tool_id !== undefined || state.latest_tool_summary_id !== undefined) && (state.permission === undefined || permission(state.permission) && state.latest_status_id !== undefined) && (state.permission_changed === undefined || typeof state.permission_changed === "boolean" && state.permission !== undefined);
-  if (!valid) return <p>Retained Claude permission progress is unavailable or inconsistent.</p>;
-  return <section aria-label="Claude permission progress">
-    <dl><dt>Latest reported Claude permission</dt><dd>{state.permission === undefined ? "Not reported" : state.permission as string}</dd></dl>
-    {state.permission_changed === true ? <p className="notice">Claude changed permission mode during this recorded execution. Its initial settings remain unchanged in this record. Further input requires configuration reconciliation.</p> : null}
+  if (!valid) return <p>{copy("native-claude-progress.retainedClaudePermissionProgressIsUnavailable_647e88")}</p>;
+  return <section aria-label={copy("native-claude-progress.claudePermissionProgress_cad9ea")}>
+    <dl><dt>{copy("native-claude-progress.latestReportedClaudePermission_506a56")}</dt><dd>{state.permission === undefined ? copy("native-claude-progress.notReported_adadfa") : state.permission as string}</dd></dl>
+    {state.permission_changed === true ? <p className="notice">{copy("native-claude-progress.claudeChangedPermissionModeDuringThis_7b8108")}</p> : null}
   </section>;
 }

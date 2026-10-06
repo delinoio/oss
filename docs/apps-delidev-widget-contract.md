@@ -92,6 +92,11 @@ reload and timeline delivery are OS best effort and cannot establish live data.
 Small/medium/large views use bounded presentation and disclose additional records
 in DeliDev rather than treating a partial view as complete inventory.
 
+
+### Widget language
+
+English/Korean presentation follows [the localization contract](apps-delidev-localization-contract.md). The independent device Language controller and protected preference stay above connection and Settings visit ownership. Preserve stable category/enum/RPC values, drafts, focus, exact operation identities and original technical evidence. Native/widget catalogs generate typed resources during preparation, tests and packaging; widget language publication never advances server observation timestamps. App body language follows the saved device choice; OS-owned standard UI and widget gallery/selection guidance follow native localization. Fixture/build/package results remain distinct from actual platform and provisioned WidgetKit acceptance.
+
 ## Storage
 
 The OS entitlement API resolves the App Group, never a renderer-selected path.
