@@ -114,6 +114,8 @@
         "$TURBO_ROOT$/go.sum",
         "$TURBO_ROOT$/scripts/**",
         "!.turbo/**",
+        "!$TURBO_ROOT$/.turbo/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
         "$TURBO_ROOT$/.github/**",
         "$TURBO_ROOT$/docs/repository-*-contract.md"
       ],
