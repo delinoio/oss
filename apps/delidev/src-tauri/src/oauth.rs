@@ -115,7 +115,6 @@ fn validate_device_authorization(raw: &str, registered: &str) -> Result<(), Nati
     }
     Ok(())
 }
-
 impl Drop for OAuthResult {
     fn drop(&mut self) {
         if let Some(state) = &mut self.state {
@@ -640,7 +639,6 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
             thread: None,
         });
     }
-
     // Both families use the same ephemeral port. Never bind a wildcard or
     // silently omit one family: localhost resolver choice cannot change scope.
     let mut sockets = None;
