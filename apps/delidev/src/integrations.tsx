@@ -163,7 +163,7 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
   const successfulEmpty = Boolean(result.data && !result.error && !page && result.data.resources.length === 0 && !result.data.nextPageToken);
   const createProfile = <button className="primary" onClick={() => setEditing({ key: newRequestId() })}><span aria-hidden="true">+ </span>New GitHub profile</button>;
   return <section className="github-integrations" aria-label="GitHub integrations">
-    {showCategoryIntro ? <SettingsHeading title="Integrations" description="Manage GitHub profiles for repository access. AI accounts are configured separately." actions={<><button aria-label="Refresh GitHub profiles" onClick={() => void result.refetch()}>Refresh</button>{createProfile}</>} /> : null}
+    {showCategoryIntro ? <SettingsHeading title="Git Profiles" description="Manage GitHub profiles for repository access. AI accounts are configured separately." actions={!editing && !selected ? <><button aria-label="Refresh GitHub profiles" onClick={() => void result.refetch()}>Refresh</button>{createProfile}</> : undefined} /> : null}
     <>
       <section className="integration-panel" aria-label="GitHub profiles" aria-busy={result.isFetching}>
         <header className="integration-panel-header"><div className="integration-provider"><span className="integration-provider-mark"><IntegrationIcon kind={IntegrationIconKind.GitHub} /></span><div><h3>GitHub</h3><p>GitHub.com · Personal access tokens</p></div></div>
