@@ -245,9 +245,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 				continue
 			}
-			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") || filepath.Dir(path) == filepath.Join(root, "workspace-removal-roots") {
-				// Workspace cleanup already checked the original native staging or
-				// final-root identity. A later replacement remains protected here.
+			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") || filepath.Dir(path) == filepath.Join(root, "workspace-removals") || filepath.Dir(path) == filepath.Join(root, "workspace-removal-roots") {
+				// Workspace cleanup already checked the original native staging,
+				// public removal, or final-root identity. A later replacement or an
+				// old name without a published proof remains protected here. The
+				// generic session remover must never acquire authority over it.
 				if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
 					return domain.SessionDeletionPending()
 				}

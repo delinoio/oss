@@ -797,9 +797,6 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := m.finalRemovalAbsent(ref.OperationID); err != nil {
-		return err
-	}
 	path, claimPath, journalPath := m.removalIntentPath(ref.OperationID), m.removalClaimPath(ref.OperationID), m.removalClaimJournalPath(ref.OperationID)
 	for _, artifact := range []string{path, claimPath, journalPath} {
 		if err := security.PrivateDir(filepath.Dir(artifact)); err != nil {
@@ -838,6 +835,21 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 		}
 	} else if !errors.Is(finalErr, os.ErrNotExist) {
 		return ResultUncertain()
+	}
+	namespace, namespaceErr := finalRemovalNamespaceInventory(ctx, m.Root, map[domain.ID]bool{ref.OperationID: true})
+	if namespaceErr != nil || len(namespace[ref.OperationID]) != 0 {
+		return ResultUncertain()
+	}
+	// A foreign public removal name may exist when the initial no-replace rename
+	// failed before any claim was published. It is safe to retire this operation's
+	// intent only when both claim records and the private final-root namespace are
+	// absent; the foreign name remains untouched and blocks generic deletion.
+	if err := storageNameAbsent(filepath.Join(m.Root, "workspace-removals", string(ref.OperationID))); err != nil {
+		claimRaw, claimErr := security.ReadPrivate(claimPath, maxStorageRemovalClaim)
+		journalRaw, journalErr := security.ReadPrivate(journalPath, maxStorageRemovalJournal)
+		if !errors.Is(claimErr, os.ErrNotExist) || !errors.Is(journalErr, os.ErrNotExist) || claimRaw != nil || journalRaw != nil {
+			return ResultUncertain()
+		}
 	}
 	claim, err := security.ReadPrivate(claimPath, maxStorageRemovalClaim)
 	if err == nil {

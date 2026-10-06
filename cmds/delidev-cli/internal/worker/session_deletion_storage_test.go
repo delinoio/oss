@@ -276,3 +276,26 @@ func TestSessionDeletionPreservesFinalRootWithoutOriginalProof(t *testing.T) {
 		t.Fatal("foreign final root changed", err)
 	}
 }
+
+func TestSessionDeletionPreservesOldRemovalNameWithoutFinalRootProof(t *testing.T) {
+	config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	jobID := domain.NewID()
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: jobID, SnapshotID: domain.NewID(), Type: domain.WorkspaceStorageJob, Revision: 2, InstanceID: domain.NewID(), Digest: work.Copies[0].Digest})
+	removal := filepath.Join(config.Root, "workspace-removals", string(jobID))
+	if err := security.PrivateDir(filepath.Dir(removal)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(removal, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(removal, "sentinel")
+	if err := os.WriteFile(sentinel, []byte("foreign"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+		t.Fatal("missing final-root proof granted generic removal")
+	}
+	if raw, err := os.ReadFile(sentinel); err != nil || string(raw) != "foreign" {
+		t.Fatal("foreign old removal name changed", err)
+	}
+}

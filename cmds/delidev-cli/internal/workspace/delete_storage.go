@@ -189,9 +189,12 @@ func SessionStorageRemnantPaths(ctx context.Context, root string, w domain.Sessi
 			paths = append(paths, file)
 		}
 	}
-	finalRoots, err := finalRemovalNamespacePaths(ctx, root, jobs)
+	namespace, err := finalRemovalNamespaceInventory(ctx, root, jobs)
 	if err != nil {
 		return nil, domain.SessionDeletionPending()
 	}
-	return append(paths, finalRoots...), nil
+	for _, finalRoots := range namespace {
+		paths = append(paths, finalRoots...)
+	}
+	return paths, nil
 }

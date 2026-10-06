@@ -100,6 +100,17 @@ func (m *Manager) finalRemovalAbsent(id domain.ID) error {
 	return nil
 }
 
+// Once the claim is decoded, its exact private name is the only expected
+// namespace entry. This avoids rescanning the shared namespace during every
+// recovery step while still rejecting a reappearing public name or private
+// replacement.
+func (m *Manager) finalRemovalClaimAbsent(claim storageFinalRootClaim) error {
+	if err := storageNameAbsent(filepath.Join(m.Root, "workspace-removals", string(claim.Reference.OperationID))); err != nil {
+		return err
+	}
+	return storageNameAbsent(m.finalRemovalRoot(claim))
+}
+
 func (m *Manager) claimFinalRemovalRoot(ctx context.Context, r StorageRequest, original storageRemovalClaim) error {
 	if err := m.finalRootFault(storageFinalRootBeforeClaim); err != nil {
 		return err
@@ -125,6 +136,14 @@ func (m *Manager) claimFinalRemovalRoot(ctx context.Context, r StorageRequest, o
 // root with unlink-ready proof is uncertain: a crash between unlink and its
 // durable receipt cannot be distinguished from an external namespace move.
 func (m *Manager) finishFinalRootRemoval(ctx context.Context, r StorageRequest, original storageRemovalClaim) (returned error) {
+	return m.finishFinalRootRemovalWithNamespace(ctx, r, original, nil)
+}
+
+// finishFinalRootRemovalWithNamespace optionally consumes one inventory of the
+// shared final-root namespace. Permanent session deletion passes that inventory
+// through all copies, so recovery checks each operation's names without
+// rereading up to 65,536 directory entries for every historical copy.
+func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r StorageRequest, original storageRemovalClaim, namespace map[domain.ID][]string) (returned error) {
 	stage := storageFinalRootPrepared
 	defer func() {
 		if returned != nil {
@@ -138,6 +157,13 @@ func (m *Manager) finishFinalRootRemoval(ctx context.Context, r StorageRequest, 
 	stage = claim.State
 	removal := filepath.Join(m.Root, "workspace-removals", string(r.OperationID))
 	private := m.finalRemovalRoot(claim)
+	if namespace != nil {
+		for _, path := range namespace[claim.Reference.OperationID] {
+			if path != private {
+				return ResultUncertain()
+			}
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -145,7 +171,7 @@ func (m *Manager) finishFinalRootRemoval(ctx context.Context, r StorageRequest, 
 		return ResultUncertain()
 	}
 	if claim.State == storageFinalRootUnlinked || claim.State == storageFinalRootRemoved {
-		if err := m.finalRemovalAbsent(r.OperationID); err != nil {
+		if err := m.finalRemovalClaimAbsent(claim); err != nil {
 			return err
 		}
 		if err := security.SyncParent(private); err != nil {
@@ -157,7 +183,7 @@ func (m *Manager) finishFinalRootRemoval(ctx context.Context, r StorageRequest, 
 		if err := m.finalRootFault(storageFinalRootSynced); err != nil {
 			return err
 		}
-		if err := m.finalRemovalAbsent(r.OperationID); err != nil {
+		if err := m.finalRemovalClaimAbsent(claim); err != nil {
 			return err
 		}
 		return m.writeFinalRemovalClaim(ctx, claim, storageFinalRootRemoved)
@@ -245,7 +271,7 @@ func (m *Manager) finishFinalRootRemoval(ctx context.Context, r StorageRequest, 
 	if err := storageNameAbsent(removal); err != nil {
 		return err
 	}
-	if err := parent.Remove(name); err != nil {
+	if err := removeVerifiedFinalRoot(private, claim.RootIdentity); err != nil {
 		return ResultUncertain()
 	}
 	stage = storageFinalRootNativeGone
@@ -258,20 +284,32 @@ func (m *Manager) finishFinalRootRemoval(ctx context.Context, r StorageRequest, 
 	if err := m.finalRootFault(storageFinalRootUnlinked); err != nil {
 		return err
 	}
-	return m.finishFinalRootRemoval(ctx, r, original)
+	if namespace != nil {
+		delete(namespace, claim.Reference.OperationID)
+	}
+	return m.finishFinalRootRemovalWithNamespace(ctx, r, original, namespace)
 }
 
 // Permanent deletion cannot send this namespace through generic copy removal.
 // The immutable deletion job must name the same original intent and root proof.
 func (m *Manager) cleanupDeletionFinalRoots(ctx context.Context, w domain.SessionDeletionWork) error {
+	jobs := map[domain.ID]bool{}
+	for _, copy := range w.Copies {
+		if copy.Type == domain.WorkspaceStorageJob {
+			jobs[copy.JobID] = true
+		}
+	}
+	namespace, err := finalRemovalNamespaceInventory(ctx, m.Root, jobs)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
 	for _, copy := range w.Copies {
 		if copy.Type != domain.WorkspaceStorageJob {
 			continue
 		}
 		_, finalErr := os.Lstat(m.finalRemovalClaimPath(copy.JobID))
 		if errors.Is(finalErr, os.ErrNotExist) {
-			paths, err := finalRemovalNamespacePaths(ctx, m.Root, map[domain.ID]bool{copy.JobID: true})
-			if err != nil || len(paths) != 0 {
+			if len(namespace[copy.JobID]) != 0 {
 				return domain.SessionDeletionPending()
 			}
 			continue
@@ -283,9 +321,10 @@ func (m *Manager) cleanupDeletionFinalRoots(ctx context.Context, w domain.Sessio
 		}
 		r := StorageRequest{OperationID: copy.JobID, SnapshotID: copy.SnapshotID, Action: intent.Action, Preparation: PrepareRequest{SessionID: w.SessionID}}
 		claim, _, _, err := m.readRemovalClaimState(r, raw)
-		if err != nil || m.finishFinalRootRemoval(ctx, r, claim) != nil {
+		if err != nil || m.finishFinalRootRemovalWithNamespace(ctx, r, claim, namespace) != nil {
 			return domain.SessionDeletionPending()
 		}
+		delete(namespace, copy.JobID)
 	}
 	return nil
 }
@@ -294,9 +333,21 @@ func (m *Manager) cleanupDeletionFinalRoots(ctx context.Context, w domain.Sessio
 // completed-proof replay can inventory it even after proof retirement. A missing
 // proof never authorizes removing an observed name.
 func finalRemovalNamespacePaths(ctx context.Context, root string, jobs map[domain.ID]bool) ([]string, error) {
+	namespace, err := finalRemovalNamespaceInventory(ctx, root, jobs)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, entries := range namespace {
+		paths = append(paths, entries...)
+	}
+	return paths, nil
+}
+
+func finalRemovalNamespaceInventory(ctx context.Context, root string, jobs map[domain.ID]bool) (map[domain.ID][]string, error) {
 	parent := filepath.Join(root, "workspace-removal-roots")
 	if err := security.CheckPrivateDir(parent); errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return map[domain.ID][]string{}, nil
 	} else if err != nil {
 		return nil, ResultUncertain()
 	}
@@ -309,7 +360,7 @@ func finalRemovalNamespacePaths(ctx context.Context, root string, jobs map[domai
 	if readErr != nil && readErr != io.EOF || closeErr != nil || len(entries) > 65536 {
 		return nil, ResultUncertain()
 	}
-	paths := []string{}
+	namespace := map[domain.ID][]string{}
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -319,8 +370,9 @@ func finalRemovalNamespacePaths(ctx context.Context, root string, jobs map[domai
 			return nil, ResultUncertain()
 		}
 		if jobs[domain.ID(name[:36])] {
-			paths = append(paths, filepath.Join(parent, name))
+			operationID := domain.ID(name[:36])
+			namespace[operationID] = append(namespace[operationID], filepath.Join(parent, name))
 		}
 	}
-	return paths, nil
+	return namespace, nil
 }
