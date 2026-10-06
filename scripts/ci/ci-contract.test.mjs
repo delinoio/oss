@@ -269,6 +269,28 @@ test("DeliDev schema validation preserves shared freshness without client or des
   assert.equal(job.steps.filter(({ run }) => run?.includes("pnpm install")).length, 1);
 });
 
+test("DevHud signature fixtures run on Windows without release authority", () => {
+  const job = workflow.jobs["devhud-supply-chain"];
+  assert.equal(job["runs-on"], "${{ matrix.os }}");
+  assert.deepEqual(job.strategy.matrix.os, ["ubuntu-22.04", "windows-latest"]);
+  assert.equal(job.strategy["fail-fast"], false);
+  const setup = namedStep(job, "Setup Go for native signature fixture");
+  const native = namedStep(job, "Validate Windows signature failure and success fixtures");
+  assert.equal(setup.if, "${{ runner.os == 'Windows' }}");
+  assert.equal(setup.uses, "./.github/actions/setup-ci-go");
+  assert.ok(job.steps.indexOf(setup) < job.steps.indexOf(native));
+  assert.equal(native.if, "${{ runner.os == 'Windows' }}");
+  assert.equal(native.env.FORCE_RUN, "true");
+  assert.equal(namedStep(job, "Validate installer, SPDX, provenance, updater, and key-rotation fixtures").if, "${{ runner.os != 'Windows' }}");
+  const task = jobTaskGraph(job).get("@delinoio/ci#ci:windows-signature");
+  assert.equal(task.command, "node from-root.mjs node --test scripts/release/devhud-private-workflow.test.mjs");
+  assert.equal(task.task.cache, false);
+  assert.equal(job.environment, undefined);
+  assert.equal(job.permissions.contents, "read");
+  assert.equal(job.permissions["id-token"], "write");
+  assert.doesNotMatch(JSON.stringify(job), /secrets\./u);
+});
+
 test("implemented DevHud conformance commands are wired to their owning jobs", () => {
   const commands = new Map([
     ["delidev-protocol", ["proto:check", "go test ./protos/"]],

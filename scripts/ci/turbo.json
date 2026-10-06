@@ -209,6 +209,19 @@
         "GITHUB_SHA"
       ]
     },
+    "ci:windows-signature": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.github/workflows/package-devhud-private.yml",
+        "$TURBO_ROOT$/scripts/release/devhud-private-workflow.test.mjs",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": ["GOCACHE", "GOPATH", "GOFLAGS"]
+    },
     "ci:go:format": {
       "cache": true,
       "dependsOn": [],

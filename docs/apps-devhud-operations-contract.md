@@ -56,6 +56,14 @@ Validate the exact primary artifacts before retaining a candidate:
 
 Use `scripts/release/validate-devhud-private-build.mjs`, `scripts/release/validate-devhud-public-assets.mjs`, `scripts/release/validate-devhud-ios-signing.mjs`, `apps/devhud/scripts/validate-updater-release.mjs`, and the release test suite. Never replace a missing SBOM, provenance statement, signature, or validation record with a placeholder.
 
+Windows private packaging checks `$LASTEXITCODE` immediately after
+`signtool.exe verify /pa /all /v`. A nonzero status fails the step before installer
+execution, SBOM generation, validation evidence or artifact upload. The diagnostic
+contains only stable Authenticode context and the numeric status. Successful
+verification continues through the existing lifecycle and evidence checks. The
+Windows supply-chain CI row tests this boundary with temporary native stubs for
+MSI and NSIS; actual certificate and signed-package acceptance remain separate.
+
 ## Coordinated publication, delays, withdrawal, and rollback
 
 Store providers are `apple`, `google-play`, and `chrome-web-store`. `submit_stores` submits or reconciles exact versions; `review_gate` waits in `devhud-store-review-approved` until each provider reports `approved-held` or `public`. Store review delay is expected: leave the gate pending and resume it after independently checking the exact version. Do not upload another package for a processing, processed, pending, approved-held, or public exact version.
