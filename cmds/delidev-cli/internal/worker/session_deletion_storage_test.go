@@ -16,6 +16,28 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+func TestSessionDeletionRemovesFinalRootProofBeforeIntent(t *testing.T) {
+	work := domain.SessionDeletionWork{
+		SessionID: domain.NewID(),
+		Copies:    []domain.SessionDeletionCopy{{JobID: domain.NewID(), Type: domain.WorkspaceStorageJob}},
+	}
+	paths := workspace.SessionStorageCopyPaths("/private-root", work)
+	claimPath := filepath.Join("/private-root", "storage-removal-root-claims", string(work.Copies[0].JobID)+".json")
+	intentPath := filepath.Join("/private-root", "storage-removal-intents", string(work.Copies[0].JobID)+".json")
+	claimIndex, intentIndex := -1, -1
+	for index, path := range paths {
+		switch path {
+		case claimPath:
+			claimIndex = index
+		case intentPath:
+			intentIndex = index
+		}
+	}
+	if claimIndex < 0 || intentIndex < 0 || claimIndex >= intentIndex {
+		t.Fatalf("final-root proof must precede its intent: claim=%d intent=%d paths=%v", claimIndex, intentIndex, paths)
+	}
+}
+
 func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 	for _, kind := range []domain.WorkspaceType{domain.GeneralChat, domain.Worktree} {
 		for _, action := range []string{"create", "cleanup", "restore"} {

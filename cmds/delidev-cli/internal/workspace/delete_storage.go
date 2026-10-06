@@ -35,7 +35,7 @@ func SessionStorageCopyPaths(root string, w domain.SessionDeletionWork) []string
 			seen[copy.SnapshotID] = true
 			paths = append(paths, filepath.Join(root, "snapshots", string(copy.SnapshotID)))
 		}
-		for _, directory := range []string{"storage-removal-intents", "storage-removal-root-claims", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+		for _, directory := range []string{"storage-removal-root-claims", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
 			paths = append(paths, filepath.Join(root, directory, string(copy.JobID)+".json"))
 		}
 		paths = append(paths, filepath.Join(root, "storage-removal-claims", string(copy.JobID)+".pending"))
