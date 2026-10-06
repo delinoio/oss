@@ -70,6 +70,10 @@ new running version and configuration acceptance. Keep state and managed data;
 never use an older binary with a newer database. The drained backup and rollback
 procedure below remains available.
 
+If another tool or a manual edit conflicts with publication of the updated
+service definition, Runmoor preserves that edit and reports a conflict before
+replacing the running service. Resolve the conflicting definitions before retrying.
+
 ## Recover an Ubuntu user service
 
 Run these checks as the Runmoor user in a working login session, without

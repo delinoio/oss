@@ -36,25 +36,28 @@ const reloadJournalLimit = 256 << 10
 // This journal contains references and native identities only. It neither
 // backs up state nor grants authority to stop a runner or downgrade a database.
 type serviceReloadJournal struct {
-	Schema          int                `json:"schema"`
-	Token           string             `json:"token"`
-	Installation    string             `json:"installation"`
-	Storage         Storage            `json:"storage"`
-	Platform        string             `json:"platform"`
-	Unit            string             `json:"unit"`
-	ConfigPath      string             `json:"config_path"`
-	Binary          string             `json:"binary"`
-	Version         string             `json:"version"`
-	PreviousVersion string             `json:"previous_version"`
-	Original        []byte             `json:"original"`
-	Target          []byte             `json:"target"`
-	OriginalFileID  string             `json:"original_file_id"`
-	TargetFileID    string             `json:"target_file_id"`
-	PID             int                `json:"pid"`
-	ProcessStart    string             `json:"process_start"`
-	ReloadPID       int                `json:"reload_pid,omitempty"`
-	ReloadStart     string             `json:"reload_start,omitempty"`
-	Stage           serviceReloadStage `json:"stage"`
+	Schema          int                     `json:"schema"`
+	Token           string                  `json:"token"`
+	Installation    string                  `json:"installation"`
+	Storage         Storage                 `json:"storage"`
+	Platform        string                  `json:"platform"`
+	Unit            string                  `json:"unit"`
+	ConfigPath      string                  `json:"config_path"`
+	Binary          string                  `json:"binary"`
+	Version         string                  `json:"version"`
+	PreviousVersion string                  `json:"previous_version"`
+	Original        []byte                  `json:"original"`
+	Target          []byte                  `json:"target"`
+	OriginalFileID  string                  `json:"original_file_id"`
+	TargetFileID    string                  `json:"target_file_id"`
+	PID             int                     `json:"pid"`
+	ProcessStart    string                  `json:"process_start"`
+	ReloadPID       int                     `json:"reload_pid,omitempty"`
+	ReloadStart     string                  `json:"reload_start,omitempty"`
+	Stage           serviceReloadStage      `json:"stage"`
+	Publication     servicePublicationStage `json:"publication,omitempty"`
+	ClaimFileID     string                  `json:"claim_file_id,omitempty"`
+	ClaimSHA256     string                  `json:"claim_sha256,omitempty"`
 }
 
 type serviceReloader struct {
@@ -67,6 +70,8 @@ type serviceReloader struct {
 	Preflight                       func(context.Context, Config, Snapshot) error
 	Wait                            func(context.Context) bool
 	BeforePublish                   func()
+	RenameDefinition                func(string, string) error
+	SyncDefinitionDir               func(string) error
 }
 
 func newServiceReloader(out io.Writer) *serviceReloader {
@@ -167,6 +172,9 @@ func readReloadJournal(unit string) (*serviceReloadJournal, error) {
 	default:
 		return nil, reloadFailure()
 	}
+	if !validServicePublication(&j) {
+		return nil, reloadFailure()
+	}
 	return &j, nil
 }
 
@@ -221,14 +229,11 @@ func readPrivateServiceDefinitionWithLimit(path string, limit int64) ([]byte, os
 }
 
 func (r *serviceReloader) stage(c Config, j *serviceReloadJournal, next serviceReloadStage) error {
-	old, _ := json.Marshal(j)
 	copy := *j
 	copy.Stage = next
-	body, _ := json.Marshal(&copy)
-	if err := replaceReloadFile(reloadJournalPath(r.Unit), old, reloadJournalLimit, body); err != nil {
+	if err := r.saveJournal(j, &copy); err != nil {
 		return err
 	}
-	*j = copy
 	r.Log.Info("service_reload_stage", "stage", next, "previous_version", j.PreviousVersion, "target_version", j.Version)
 	return nil
 }
@@ -352,65 +357,6 @@ func (r *serviceReloader) stopping(c Config, j *serviceReloadJournal) error {
 	return nil
 }
 
-func (r *serviceReloader) publish(path string, j *serviceReloadJournal) error {
-	target, err := r.definition(path, j)
-	if err != nil || target {
-		return err
-	}
-	body, info, err := readPrivateServiceDefinitionWithLimit(reloadTargetPath(j), serviceDefinitionLimit)
-	if err != nil || hostFileIdentity(info) != j.TargetFileID || !bytes.Equal(body, j.Target) {
-		return reloadFailure()
-	}
-	if _, err := r.definition(path, j); err != nil {
-		return err
-	}
-	if r.BeforePublish != nil {
-		r.BeforePublish()
-	}
-	if err := conditionalReplaceServiceDefinition(r.Unit, reloadTargetPath(j), j.OriginalFileID, j.Original, j.TargetFileID, j.Target); err != nil {
-		return reloadFailure()
-	}
-	return syncPrivateDir(filepath.Dir(r.Unit))
-}
-
-// conditionalReplaceServiceDefinition uses an atomic exchange on Unix. If
-// the path changed after the last ordinary read, it exchanges the files back
-// only while the installed path still contains the exact target. This keeps a
-// concurrent external replacement authoritative instead of overwriting it.
-func conditionalReplaceServiceDefinition(unit, staged, expectedID string, expected []byte, targetID string, target []byte) error {
-	current, info, err := readPrivateServiceDefinitionWithLimit(unit, serviceDefinitionLimit)
-	if err != nil || hostFileIdentity(info) != expectedID || !bytes.Equal(current, expected) {
-		return reloadFailure()
-	}
-	stagedBody, stagedInfo, err := readPrivateServiceDefinitionWithLimit(staged, serviceDefinitionLimit)
-	if err != nil || hostFileIdentity(stagedInfo) != targetID || !bytes.Equal(stagedBody, target) {
-		return reloadFailure()
-	}
-	if err := exchangeServiceFiles(staged, unit); err != nil {
-		return reloadFailure()
-	}
-
-	oldBody, oldInfo, oldErr := readPrivateServiceDefinitionWithLimit(staged, serviceDefinitionLimit)
-	currentBody, currentInfo, currentErr := readPrivateServiceDefinitionWithLimit(unit, serviceDefinitionLimit)
-	oldMatches := oldErr == nil && hostFileIdentity(oldInfo) == expectedID && bytes.Equal(oldBody, expected)
-	currentMatches := currentErr == nil && hostFileIdentity(currentInfo) == targetID && bytes.Equal(currentBody, target)
-	if oldMatches && currentMatches {
-		if err := os.Remove(staged); err != nil {
-			return reloadFailure()
-		}
-		return nil
-	}
-	// Restore the current path only when it still contains the exact target we
-	// exchanged into it. If another writer changed that path after the exchange,
-	// preserve that writer's definition and leave the operation retryable.
-	if currentMatches {
-		if err := exchangeServiceFiles(staged, unit); err != nil {
-			return reloadFailure()
-		}
-	}
-	return reloadFailure()
-}
-
 func (r *serviceReloader) reloadInitiatorFinished(j *serviceReloadJournal) bool {
 	if j.ReloadPID <= 0 || j.ReloadStart == "" {
 		// Journals written before the initiator identity was added are retained
@@ -430,6 +376,9 @@ func (r *serviceReloader) retire(j *serviceReloadJournal) error {
 	actual, err := readPrivate(reloadJournalPath(r.Unit), reloadJournalLimit)
 	if err != nil || !bytes.Equal(actual, body) {
 		return reloadFailure()
+	}
+	if err := r.retirePublication(j); err != nil {
+		return err
 	}
 	if err := os.Remove(reloadJournalPath(r.Unit)); err != nil {
 		return reloadFailure()
@@ -579,7 +528,7 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 		if err != nil {
 			return reloadFailure()
 		}
-		j = &serviceReloadJournal{Schema: 1, Token: newID(), Installation: s.Installation, Storage: c.Storage, Platform: r.Platform, Unit: r.Unit, ConfigPath: path, Binary: r.Binary, Version: r.Version, PreviousVersion: response.Status.Version, Original: snapshot.data, Target: []byte(text), PID: pid, ProcessStart: start, ReloadPID: os.Getpid(), ReloadStart: reloadStart, Stage: reloadPrepared}
+		j = &serviceReloadJournal{Schema: 1, Token: newID(), Installation: s.Installation, Storage: c.Storage, Platform: r.Platform, Unit: r.Unit, ConfigPath: path, Binary: r.Binary, Version: r.Version, PreviousVersion: response.Status.Version, Original: snapshot.data, Target: []byte(text), PID: pid, ProcessStart: start, ReloadPID: os.Getpid(), ReloadStart: reloadStart, Stage: reloadPrepared, Publication: publicationPrepared}
 		j.OriginalFileID = hostFileIdentity(snapshot.info)
 		if err := requireServiceDefinitionUnchanged(r.Platform, r.Unit, path, snapshot); err != nil {
 			return err
@@ -609,6 +558,13 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 			return reloadFailure()
 		}
 		if err := r.Preflight(ctx, c, s); err != nil {
+			return err
+		}
+	}
+	// The canonical path can be vacant during a journaled claim. Reconcile
+	// publication before ordinary definition checks or any native replacement.
+	if j.Publication != publicationPrepared {
+		if err := r.publish(path, j); err != nil {
 			return err
 		}
 	}
@@ -650,15 +606,7 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 	if !r.ready(ctx, c, j) {
 		return reloadFailure()
 	}
-	body, _ := json.Marshal(j)
-	actual, err := readPrivate(reloadJournalPath(r.Unit), reloadJournalLimit)
-	if err != nil || !bytes.Equal(actual, body) {
-		return reloadFailure()
-	}
-	if err := os.Remove(reloadJournalPath(r.Unit)); err != nil {
-		return reloadFailure()
-	}
-	if err := syncPrivateDir(filepath.Dir(r.Unit)); err != nil {
+	if err := r.retire(j); err != nil {
 		return err
 	}
 	r.Log.Info("service_reload_completed", "previous_version", j.PreviousVersion, "target_version", j.Version)
@@ -733,6 +681,17 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 	if err != nil {
 		return err
 	}
+	if err := r.stopping(c, j); err != nil {
+		return err
+	}
+	if loaded && (pid == j.PID || j.Stage == reloadPrepared) {
+		if err := r.originalProcess(ctx, c, j); err != nil {
+			return err
+		}
+	}
+	if err := r.publish(path, j); err != nil {
+		return err
+	}
 	runHandoff := func(stage bool) error {
 		if err := r.originalProcess(ctx, c, j); err != nil {
 			return err
@@ -744,6 +703,9 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 			if err := r.stage(c, j, reloadHandoffPending); err != nil {
 				return err
 			}
+		}
+		if target, err := r.definition(path, j); err != nil || !target {
+			return reloadFailure()
 		}
 		// launchd's one-run debug override consumes a harmless helper instead
 		// of relaunching the old cached manager. Unloading the helper cannot
@@ -757,8 +719,8 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 		if err := r.stopping(c, j); err != nil {
 			return err
 		}
-		if _, err := r.definition(path, j); err != nil {
-			return err
+		if target, err := r.definition(path, j); err != nil || !target {
+			return reloadFailure()
 		}
 		if err := r.command(ctx, "launchctl", "kickstart", "-k", target); err != nil {
 			return err
@@ -803,8 +765,8 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 		if err := r.invocation(pid, expected); err != nil {
 			return err
 		}
-		if _, err := r.definition(path, j); err != nil {
-			return err
+		if target, err := r.definition(path, j); err != nil || !target {
+			return reloadFailure()
 		}
 		if err := r.command(ctx, "launchctl", "bootout", target); err != nil {
 			return err
