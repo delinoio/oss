@@ -397,7 +397,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			if job.State == domain.JobQueued && job.Type == domain.WorkspaceStorageJob {
 				var storageInput workspace.StorageRequest
-				if domain.Decode(job.Input, &storageInput) != nil {
+				if workspace.DecodeStorageRequest(job.Input, &storageInput) != nil {
 					return rpc.Error(workspace.ResultUncertain(), correlation)
 				}
 				pending := false
@@ -488,7 +488,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					}
 					if j.Type == domain.WorkspaceStorageJob {
 						var storageInput workspace.StorageRequest
-						if domain.Decode(j.Input, &storageInput) != nil {
+						if workspace.DecodeStorageRequest(j.Input, &storageInput) != nil {
 							return nil, workspace.ResultUncertain()
 						}
 						if storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover {
