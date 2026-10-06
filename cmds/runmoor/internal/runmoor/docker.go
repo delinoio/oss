@@ -375,8 +375,8 @@ func (d *DockerDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapsh
 
 // Label discovery alone cannot prove absence: a replacement with foreign labels
 // is omitted by that query. Check both deterministic names and persisted IDs,
-// including partial preparations, before stopping anything and before releasing
-// the execution's reservation.
+// including partial preparations, before stopping or removing anything and
+// before releasing the execution's reservation.
 func verifyDockerContainers(ctx context.Context, cli *client.Client, r Runner, s Snapshot, stopped bool) error {
 	refs := []struct{ ref, id, role string }{
 		{r.Name, r.Handle.Container, "runner"},
@@ -397,10 +397,10 @@ func verifyDockerContainers(ctx context.Context, cli *client.Client, r Runner, s
 			return dockerProblem()
 		}
 		if v.Container.Config == nil || !ownedDocker(v.Container.Config.Labels, s, r) || v.Container.Config.Labels[roleKey] != ref.role || (ref.id != "" && v.Container.ID != ref.id) {
-			return problem(ErrOwnership, "Docker container ownership is ambiguous during termination.", "Keep the execution quarantined and inspect its recorded container identities and ownership labels.")
+			return problem(ErrOwnership, "Docker container ownership is ambiguous during termination or cleanup.", "Keep the execution quarantined and inspect its recorded container identities and ownership labels.")
 		}
 		if stopped && (v.Container.State == nil || v.Container.State.Running || v.Container.State.Restarting) {
-			return problem(ErrCleanup, "Container termination is not confirmed.", "Restore Docker access and retry cleanup; reservations remain held.")
+			return problem(ErrCleanup, "Container termination is not confirmed.", "Restore Docker access and retry cleanup; preserve unresolved resources.")
 		}
 	}
 	return nil
@@ -443,6 +443,11 @@ func (d *DockerDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapsh
 		return e
 	}
 	defer cli.Close()
+	// Cleanup retries skip Stop after durable termination. Recheck current
+	// identities before removal so copied labels cannot authorize replacements.
+	if e = verifyDockerContainers(ctx, cli, r, s, true); e != nil {
+		return e
+	}
 	list, e := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: dockerFilter(s, r)})
 	if e != nil {
 		return dockerProblem()
