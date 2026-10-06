@@ -172,13 +172,9 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 		g.Logger.InfoContext(ctx, "repository_clone", "job_id", request.JobID, "phase", cloneCreated)
 	}
 	// Empty hooks/templates and explicit transport policy prevent repository hook
-	// or external helper execution. Submodules and optional LFS smudging stay off.
-	g.cloneDiagnostics = true
-	g.Timeout = RepositoryCloneTimeout
-	g.environment = append(gitEnvironment(), "GIT_LFS_SKIP_SMUDGE=1")
-	// A null-device hook path cannot acquire executable hooks even if another
-	// same-user process changes the staging template while Git is running.
-	g.HooksDir = os.DevNull
+	// or external Git transport-helper execution. Native credential helpers stay
+	// available through the sanitized clone profile. Submodules and optional LFS
+	// smudging stay off.
 	template := filepath.Join(staging, "template")
 	if err := os.Mkdir(template, 0700); err != nil {
 		return result, domain.SafeError(err)
@@ -202,7 +198,15 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	if identity, err := directoryPathIdentity(staging); err != nil || identity != stagingIdentity {
 		return result, cloneRecoveryRequired()
 	}
-	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "clone", "--origin=origin", "--no-recurse-submodules", "--template=" + template, "--", request.URL, checkout}
+	if err := g.validateManagedCloneSource(bounded, staging, request.URL); err != nil {
+		return result, err
+	}
+	var profileErr error
+	g, profileErr = g.cloneProfile(bounded, staging)
+	if profileErr != nil {
+		return result, profileErr
+	}
+	args := cloneArguments(request.URL, checkout, template, "origin", false, false)
 	if _, err := g.run(bounded, staging, args...); err != nil {
 		return result, err
 	}

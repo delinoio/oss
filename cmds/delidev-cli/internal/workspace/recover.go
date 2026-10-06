@@ -45,10 +45,18 @@ type RecoveryResult struct {
 	Manifest    *Manifest       `json:"manifest,omitempty"`
 }
 type cleanupProof struct {
-	Version  int       `json:"version"`
-	JobID    domain.ID `json:"job_id"`
-	Complete bool      `json:"complete"`
-	Manifest Manifest  `json:"manifest"`
+	Version  int           `json:"version"`
+	JobID    domain.ID     `json:"job_id"`
+	Complete bool          `json:"complete"`
+	Manifest Manifest      `json:"manifest"`
+	Claim    *cleanupClaim `json:"claim,omitempty"`
+}
+type cleanupClaim struct {
+	Version        int       `json:"version"`
+	JobID          domain.ID `json:"job_id"`
+	SessionID      domain.ID `json:"session_id"`
+	RootIdentity   string    `json:"root_identity"`
+	ManifestDigest string    `json:"manifest_digest"`
 }
 
 func preparationDigest(input PrepareRequest) string {
@@ -152,6 +160,11 @@ func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedC
 		if proofErr != nil || input.Action != CleanupPreparation {
 			return result, ResultUncertain()
 		}
+		if err := m.validateCleanupClaim(input, root, proof, false); err != nil {
+			return result, err
+		}
+		result.Outcome = RecoveredClean
+		return result, nil
 	} else {
 		manifest, err := m.Read(request.SessionID)
 		if err != nil {
@@ -180,6 +193,15 @@ func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedC
 		} else {
 			proof = cleanupProof{Version: 1, JobID: input.JobID, Manifest: manifest}
 		}
+		if proof.Claim == nil {
+			claim, err := m.newCleanupClaim(input.JobID, root, proof.Manifest)
+			if err != nil {
+				return result, err
+			}
+			proof.Claim = &claim
+		} else if err := m.validateCleanupClaim(input, root, proof, true); err != nil {
+			return result, err
+		}
 	}
 	// Retain the original ownership manifest outside the removed tree. If the
 	// process dies between removal and completion publication, another explicit
@@ -187,7 +209,7 @@ func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedC
 	if err := writeCleanupProof(proofPath, proof); err != nil {
 		return result, err
 	}
-	if err := m.cleanup(ctx, root, proof.Manifest); err != nil {
+	if err := m.cleanupWithClaim(ctx, root, proof.Manifest, proof.Claim); err != nil {
 		return result, err
 	}
 	proof.Complete = true
@@ -205,6 +227,33 @@ func writeCleanupProof(path string, proof cleanupProof) error {
 	}
 	return security.WriteAtomic(path, raw)
 }
+func (m *Manager) newCleanupClaim(jobID domain.ID, root string, manifest Manifest) (cleanupClaim, error) {
+	identity, err := directoryIdentityDigest(root)
+	if err != nil {
+		return cleanupClaim{}, err
+	}
+	claim := cleanupClaim{Version: 1, JobID: jobID, SessionID: manifest.SessionID, RootIdentity: identity, ManifestDigest: manifestDigest(manifest)}
+	if manifest.ManagedRootDigest != "" && manifest.ManagedRootDigest != identity {
+		return cleanupClaim{}, ResultUncertain()
+	}
+	return claim, nil
+}
+func (m *Manager) validateCleanupClaim(input RecoveryRequest, root string, proof cleanupProof, rootPresent bool) error {
+	claim := proof.Claim
+	if claim == nil || claim.Version != 1 || claim.JobID != input.JobID || claim.SessionID != input.Preparation.SessionID || !digestValid(claim.RootIdentity) || claim.ManifestDigest != manifestDigest(proof.Manifest) {
+		return ResultUncertain()
+	}
+	if proof.Manifest.ManagedRootDigest != "" && proof.Manifest.ManagedRootDigest != claim.RootIdentity {
+		return ResultUncertain()
+	}
+	if rootPresent {
+		current, err := directoryIdentityDigest(root)
+		if err != nil || current != claim.RootIdentity {
+			return ResultUncertain()
+		}
+	}
+	return nil
+}
 func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error {
 	if manifest.Version != 1 || manifest.SessionID != input.SessionID || manifest.MachineID != input.MachineID || manifest.Type != input.Type || manifest.InputDigest != preparationDigest(input) || (manifest.State != Preparing && manifest.State != CleanupPending) || len(manifest.Repositories) > len(input.Repositories) {
 		return ResultUncertain()
@@ -219,10 +268,21 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 	primaryFound := manifest.PrimaryPath == ""
 	for i, repo := range manifest.Repositories {
 		expected := input.Repositories[i]
-		if !validPreparedPR(expected, repo, input.Type) {
+		if expected.SourceKind.managed() {
+			if validatePRPreparation(expected, input.Type) != nil || !samePRTarget(expected.PRTarget, repo.PRTarget) || repo.SourceKind != expected.SourceKind || repo.RemoteURL != expected.RemoteURL {
+				return ResultUncertain()
+			}
+		} else if !validPreparedPR(expected, repo, input.Type) {
 			return ResultUncertain()
 		}
-		if repo.ID != expected.ID || repo.Source != expected.Checkout {
+		registration := expected.Checkout
+		if expected.SourceKind.managed() {
+			registration = repo.Path
+			if repo.SourceKind != expected.SourceKind || repo.RemoteURL != expected.RemoteURL || !digestValid(manifest.ManagedRootDigest) || repo.CloneRootDigest != "" && !digestValid(repo.CloneRootDigest) || repo.CloneIdentityDigest != "" && !digestValid(repo.CloneIdentityDigest) {
+				return ResultUncertain()
+			}
+		}
+		if repo.ID != expected.ID || repo.Source != registration {
 			return ResultUncertain()
 		}
 		if input.Type == domain.Local {
@@ -231,7 +291,7 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 			if !validLocalRepository(repo) || repo.Base != expected.Base {
 				return ResultUncertain()
 			}
-		} else if repo.Path != filepath.Join(root, string(repo.ID)) || !repo.Owned || repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || !canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit) {
+		} else if repo.Path != filepath.Join(root, string(repo.ID)) || !repo.Owned || repo.SourceKind == CheckoutSource && repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || repo.SourceKind == CheckoutSource && (!canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit)) {
 			return ResultUncertain()
 		}
 		if repo.ID == input.PrimaryRepository && manifest.PrimaryPath == repo.Path {
@@ -323,6 +383,12 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", ResultUncertain()
 	}
+	if restored == nil && manifest.ManagedRootDigest != "" {
+		current, err := directoryIdentityDigest(root)
+		if err != nil || !digestValid(manifest.ManagedRootDigest) || current != manifest.ManagedRootDigest {
+			return "", ResultUncertain()
+		}
+	}
 	git := m.Git
 	git.OwnerID = owner
 	if restored != nil {
@@ -392,6 +458,10 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 			if localIdentityDigest(entry) != repo.LocalIdentityDigest {
 				return "", ResultUncertain()
 			}
+		} else if repo.SourceKind.managed() {
+			if verifyIndependentDirectory(repo, true) != nil || common != filepath.Join(repo.Path, ".git") || gitDirectory != common {
+				return "", ResultUncertain()
+			}
 		} else {
 			// Managed worktrees must retain their own linked administration;
 			// Local may instead use the main checkout's common Git directory.
@@ -421,6 +491,17 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 			return "", ResultUncertain()
 		}
 		return restored.OriginalIdentity, nil
+	}
+	if manifest.ManagedRootDigest != "" {
+		current, err := directoryIdentityDigest(root)
+		if err != nil || current != manifest.ManagedRootDigest {
+			return "", ResultUncertain()
+		}
+		for _, repo := range manifest.Repositories {
+			if repo.SourceKind.managed() && verifyIndependentDirectory(repo, true) != nil {
+				return "", ResultUncertain()
+			}
+		}
 	}
 	raw, err := json.Marshal(identity)
 	if err != nil {

@@ -606,3 +606,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Signed updates negotiate independent Worker capability 17. Private original journals precede claims/spawn and retain the exact compiled-root manifest, current registration and old/new generations. Join every native lane before replacement; report only after authenticated replacement attachment. Ambiguous success cannot authorize rollback or another native attempt. Later local starts independently verify the positively installed private executable.
 
 - Update response-loss reconciliation reads the exact original claim or success by original ID. Resume reversible pre-native preparation only under the retained accepted claim; never resend native installation or reverse a possibly accepted success. Missing/conflicting proof retains uncertainty.
+
+- Negotiate capability 19 before managed workspace or independent Fork cloning. Preserve original source enums, URL, once-only ownership and process-exit uncertainty through leases, recovery, snapshots and deletion; Git authentication belongs to the selected Worker's helper/SSH environment. Follow the workspace/protocol contracts.

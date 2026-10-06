@@ -62,7 +62,7 @@ func TestConfigurationTransferExportExcludesRuntimeAndKeepsExactInstructions(t *
 	selection := transferSelection()
 	var accountID domain.ID
 	for _, entry := range selection.Bundle.Entries {
-		value, err := configurationValue(entry.Kind, entry.Document)
+		value, err := configurationValue(entry.Kind, entry.Document, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -153,9 +153,9 @@ func TestConfigurationTransferExportReferencedMachineLimit(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				repositories := []domain.Repository{{Name: "first", AutoFetch: true}}
+				repositories := []domain.Repository{{RemoteURL: "https://github.com/fixture/first.git", Name: "first", AutoFetch: true}}
 				if test.duplicateMachine {
-					repositories = append(repositories, domain.Repository{Name: "second", AutoFetch: true})
+					repositories = append(repositories, domain.Repository{RemoteURL: "https://github.com/fixture/second.git", Name: "second", AutoFetch: true})
 				}
 				for i, machineID := range machines {
 					repositoryIndex := 0
@@ -432,7 +432,7 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 			selection := transferSelection()
 			sources := []domain.ID{domain.NewID(), domain.NewID()}
 			targets := []domain.ID{domain.NewID(), domain.NewID()}
-			repository := domain.Repository{Name: "Both checkouts", AutoFetch: true}
+			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Both checkouts", AutoFetch: true}
 			for i, source := range sources {
 				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"})
 				selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: source, Name: "source", OS: "linux", Architecture: "amd64"})
@@ -475,6 +475,27 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 				report := transferApply(t, s, preview, domain.NewID())
 				if report.State != domain.JobQueued {
 					t.Fatal(report)
+				}
+				var children []store.Record
+				if err := s.Store.Read(context.Background(), func(tx *store.Tx) error {
+					var err error
+					children, err = tx.Jobs("", report.JobID, "", "", 10)
+					return err
+				}); err != nil {
+					t.Fatal(err)
+				}
+				for _, child := range children {
+					job, err := store.Decode[domain.Job](child)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var input domain.RepositoryInspectionInput
+					if err := domain.Decode(job.Input, &input); err != nil {
+						t.Fatal(err)
+					}
+					if input.ExpectedRemoteIdentity != "" {
+						t.Fatal("legacy Worker received the post-capability source identity")
+					}
 				}
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
 			}

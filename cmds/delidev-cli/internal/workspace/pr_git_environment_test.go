@@ -61,3 +61,12 @@ func TestOriginalPRGitEnvironmentPreservesPOSIXNames(t *testing.T) {
 		t.Fatal("an inert POSIX entry became an active Git lookup setting")
 	}
 }
+
+func TestAppendGitConfigPreservesExistingEntries(t *testing.T) {
+	environment := []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=fixture", "GIT_CONFIG_KEY_1=core.sshCommand", "GIT_CONFIG_VALUE_1=ssh fixture"}
+	got := appendGitConfig(environment, "core.longpaths", "true")
+	want := []string{"GIT_CONFIG_COUNT=3", "GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=fixture", "GIT_CONFIG_KEY_1=core.sshCommand", "GIT_CONFIG_VALUE_1=ssh fixture", "GIT_CONFIG_KEY_2=core.longpaths", "GIT_CONFIG_VALUE_2=true"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("existing Git config entries were replaced: %v", got)
+	}
+}

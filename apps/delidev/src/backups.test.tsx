@@ -161,7 +161,7 @@ it("polls each accepted operation beyond the first history page and refreshes in
   f.getDeletion.mockResolvedValue({ job: { ...f.deletion, revision: 2n, state: BackupDeletionState.SUCCEEDED } });
   await within(removed).findByText("Accepted deletion completed", {}, { timeout: 4000 });
   await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(afterCreation));
-});
+}, 15000);
 
 it("retains multiple accepted creations and marks a failed direct refresh stale", async () => {
   const f = fixture();

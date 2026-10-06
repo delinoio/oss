@@ -43,16 +43,16 @@ export function repositoryClonePath(parent: string, directory: string): string {
   return `${parent.replace(/[\\/]+$/, "")}${separator}${directory}`;
 }
 
-export function RepositoryCloneFields({ draft, change, busy, browse, github, supported }: {
-  draft: RepositoryCloneDraft; change: (draft: RepositoryCloneDraft) => void; busy: boolean; browse: () => void; github?: ReactNode; supported: boolean;
+export function RepositoryCloneFields({ draft, change, busy, browse, github, supported, showURL = true }: {
+  draft: RepositoryCloneDraft; change: (draft: RepositoryCloneDraft) => void; busy: boolean; browse: () => void; github?: ReactNode; supported: boolean; showURL?: boolean;
 }) {
   const parentId = useId();
   const parsed = repositoryCloneURL(draft.url);
   const directory = draft.directory ?? parsed?.directory ?? "";
   return <section className="repository-clone-fields" aria-label="Clone repository">
-    <label>Git URL<input type="text" value={draft.url} maxLength={4096} placeholder="https://github.com/owner/repository.git" disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, url: event.target.value })} /></label>
+    {showURL ? <><label>Git URL<input type="text" value={draft.url} maxLength={4096} placeholder="https://github.com/owner/repository.git" disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, url: event.target.value })} /></label>
     {draft.url && !parsed ? <p role="alert">Enter a credential-free HTTPS or SSH Git URL.</p> : null}
-    {github}
+    {github}</> : null}
     <div><label htmlFor={parentId}>Clone to</label><div className="repository-clone-destination"><input id={parentId} type="text" value={draft.parent} maxLength={4096} placeholder="Choose a parent folder" disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, parent: event.target.value })} /><button type="button" disabled={busy} onClick={browse}>Browse…</button></div></div>
     <p>A new repository folder will be created here.</p>
     {parsed ? <><label>Repository folder name<input type="text" value={directory} maxLength={255} disabled={busy} onChange={event => change({ ...draft, directory: event.target.value })} /></label>{!repositoryCloneDirectory(directory) ? <p role="alert">Enter a portable folder name without separators or reserved device names.</p> : null}</> : null}

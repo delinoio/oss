@@ -36,7 +36,7 @@ try {
   // zoom and packaged CEF behavior require independent platform acceptance.
   for (const theme of ["light", "dark"]) for (const [width, height] of [[1440, 900], [960, 640], [640, 480], [480, 320]]) {
     await page.setViewportSize({ width, height });
-    await page.goto(`${origin}/?theme=${theme}&repository-pat=true`);
+    await page.goto(`${origin}/?theme=${theme}&repository-pat=true&populated=true`);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const categories = page.getByRole("button", { name: "Open settings categories", exact: true });
     if (await categories.isVisible()) await categories.click();
@@ -45,20 +45,22 @@ try {
     await opener.click();
     const dialog = page.getByRole("dialog", { name: "Add repository", exact: true });
     await dialog.waitFor();
-    assert(await dialog.getByRole("button", { name: "Choose folder", exact: true }).evaluate(node => node === document.activeElement));
-    assert(await page.getByRole("heading", { name: "Repositories", exact: true }).isVisible());
+    assert(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).evaluate(node => node === document.activeElement));
+    assert(await page.locator(".settings-content h1").filter({ hasText: /^Repositories$/ }).isVisible());
     assert(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).isVisible());
-    assert(await dialog.getByRole("textbox", { name: "Clone to", exact: true }).isVisible());
+    assert.equal(await dialog.getByRole("textbox", { name: "Clone to", exact: true }).count(), 0);
     await dialog.getByRole("button", { name: "Choose from GitHub", exact: true }).waitFor();
     const layout = await dialog.evaluate(node => {
       const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
-      return { width: rect.width, height: rect.height, top: rect.top, padding: style.paddingLeft, overflow: node.scrollWidth > node.clientWidth, scroll: node.scrollHeight > node.clientHeight, title: getComputedStyle(node.querySelector("header h2")).fontSize, controls: [...node.querySelectorAll("button,input")].every(control => control.getBoundingClientRect().height >= 39.5) };
+      return { width: rect.width, height: rect.height, top: rect.top, padding: style.paddingLeft, overflow: node.scrollWidth > node.clientWidth, scroll: node.querySelector(".settings-task-body").scrollHeight > node.querySelector(".settings-task-body").clientHeight, title: getComputedStyle(node.querySelector("header h2")).fontSize, controls: [...node.querySelectorAll("button,input")].every(control => control.getBoundingClientRect().height >= 39.5) };
     });
     assert(layout.width <= 640.5 && layout.width <= width - 31 && layout.height <= height - 31 && layout.top >= 15 && !layout.overflow && layout.controls, JSON.stringify(layout));
-    assert.equal(layout.padding, "24px"); assert.equal(layout.title, "22px");
+    assert.equal(layout.padding, "0px"); assert.equal(layout.title, "22px");
     if (height <= 480) assert(layout.scroll, "Small viewports require vertical dialog scrolling");
     for (const key of ["Tab", "Shift+Tab"]) for (let step = 0; step < 14; step++) { await page.keyboard.press(key); assert(await dialog.evaluate(node => node.contains(document.activeElement)), "Focus escaped the native dialog"); }
     await dialog.getByRole("textbox", { name: "Git URL", exact: true }).fill("https://github.com/owner/repo.git");
+    assert(await dialog.getByRole("button", { name: "Add repository", exact: true }).isEnabled());
+    await dialog.getByRole("button", { name: "Clone to this computer (optional)", exact: true }).click();
     await dialog.getByRole("textbox", { name: "Clone to", exact: true }).fill("/parent");
     await dialog.getByText("Final path: /parent/repo", { exact: true }).waitFor();
     await page.keyboard.press("Escape"); await dialog.waitFor({ state: "detached" });

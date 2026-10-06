@@ -29,21 +29,22 @@ import (
 )
 
 type Config struct {
-	network            *workerNetworkRuntime
-	observations       *managedObservationRegistry
-	inspectionMetadata bool
-	repositoryClone    bool
-	updatesEnabled     bool
-	terminals          *terminalManager
-	Root               string
-	StartupID          domain.ID
-	Logger             *slog.Logger
-	Ready              func(domain.ID)
-	execution          *PublicationConfig
-	executionContext   context.Context
-	questionControls   <-chan *pb.QuestionResponseControl
-	approvalControls   <-chan *pb.ApprovalResponseControl
-	steerControls      <-chan *pb.SteerInputControl
+	network              *workerNetworkRuntime
+	observations         *managedObservationRegistry
+	inspectionMetadata   bool
+	remoteWorkspaceClone bool
+	repositoryClone      bool
+	updatesEnabled       bool
+	terminals            *terminalManager
+	Root                 string
+	StartupID            domain.ID
+	Logger               *slog.Logger
+	Ready                func(domain.ID)
+	execution            *PublicationConfig
+	executionContext     context.Context
+	questionControls     <-chan *pb.QuestionResponseControl
+	approvalControls     <-chan *pb.ApprovalResponseControl
+	steerControls        <-chan *pb.SteerInputControl
 }
 type journalState string
 
@@ -247,6 +248,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
 		metadataExpected := false
+		remoteCloneExpected := false
 		cloneExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
@@ -262,6 +264,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if config.network != nil && (!networkExpected || !proxyExpected) {
 				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
 			}
+			remoteCloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
 			cloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			installation := codexTitleInstallation(attached.Msg.Machine)
@@ -323,6 +326,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				profile += "\x00verified"
 			} else {
 				profile += "\x00unsupported"
+			}
+			if remoteCloneExpected {
+				profile += "\x00remote-workspace-clone-v1"
 			}
 			if cloneExpected {
 				profile += "\x00repository-clone-v1"
@@ -392,6 +398,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if metadataExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			}
+			if remoteCloneExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
+			}
 			if cloneExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			}
@@ -437,6 +446,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
+			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
 			err = watchAttached(ctx, config, client, credential, instance, auxiliary, managedCapabilityExpected && managedSubscriptionCapability(attached.Msg.Machine))
@@ -1006,6 +1016,17 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		}
 		return json.Marshal(result)
 	case domain.ForkSessionJob:
+		var input domain.ForkJobInput
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		clones, err := workspace.ForkRequiresManagedClone(input)
+		if err != nil {
+			return nil, err
+		}
+		if clones && !config.remoteWorkspaceClone {
+			return nil, domain.Fail(domain.Unsupported, "Independent Fork cloning was not negotiated.", "Update and reconnect the original Worker.")
+		}
 		return forkSession(ctx, config, owner, job)
 	case domain.ExecuteSessionJob:
 		return executeSession(ctx, config, owner, job)
@@ -1094,6 +1115,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if input.MachineID != job.MachineID {
 			return nil, domain.Fail(domain.PermissionDenied, "Workspace preparation targets another machine.", "Reconcile the accepted assignment before retrying.")
 		}
+		for _, repo := range input.Repositories {
+			if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !config.remoteWorkspaceClone {
+				return nil, domain.Fail(domain.Unsupported, "Remote workspace cloning was not negotiated.", "Update and reconnect the original Worker.")
+			}
+		}
 		manager := workspace.Manager{Root: root, Logger: config.Logger}
 		manifest, err := manager.Prepare(ctx, input)
 		if err != nil {
@@ -1130,6 +1156,9 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 			if !slices.Contains(inspection.Remotes, remote) {
 				return nil, domain.Fail(domain.InvalidArgument, "The configured remote is missing on this Worker.", "Refresh inspection and select an existing remote.")
 			}
+		}
+		if err := git.ValidateRemoteIdentity(ctx, inspection, input.PreferredRemote, input.ExpectedRemoteIdentity); err != nil {
+			return nil, err
 		}
 		if config.inspectionMetadata {
 			if err := git.EnrichInspection(ctx, &inspection); err != nil {

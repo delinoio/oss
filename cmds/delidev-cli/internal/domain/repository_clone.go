@@ -2,6 +2,8 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net"
 	"net/url"
 	"path"
@@ -23,6 +25,7 @@ type RepositoryCloneURL struct {
 	Transport     RepositoryCloneTransport
 	Host          string
 	Path          string
+	SSHUser       string
 	DirectoryName string
 	GitHubOwner   string
 	GitHubName    string
@@ -64,7 +67,15 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 	}
 	if strings.Contains(value, "://") {
 		u, err := url.Parse(value)
-		if err != nil || u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Host, ":") || !cloneHost(u.Hostname()) || (u.Scheme != "https" && u.Scheme != "ssh") {
+		// url.Parse exposes an escaped slash as a path separator in Path. Reject
+		// it instead of allowing distinct server-side namespaces to collapse into
+		// one opaque identity; the same rule also keeps encoded backslashes out of
+		// the path before the decoded-path validation below.
+		if err != nil {
+			return result, cloneInvalidURL()
+		}
+		escapedPath := strings.ToLower(u.EscapedPath())
+		if u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" || strings.Contains(escapedPath, "%2f") || strings.Contains(escapedPath, "%5c") || strings.HasSuffix(u.Host, ":") || !cloneHost(u.Hostname()) || (u.Scheme != "https" && u.Scheme != "ssh") {
 			return result, cloneInvalidURL()
 		}
 		if u.Port() != "" {
@@ -87,6 +98,9 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 		result.Transport = RepositoryCloneHTTPS
 		if u.Scheme == "ssh" {
 			result.Transport = RepositoryCloneSSH
+			if u.User != nil {
+				result.SSHUser = u.User.Username()
+			}
 		}
 		result.Host, result.Path = u.Hostname(), u.Path
 		if u.Port() != "" && !((u.Scheme == "https" && u.Port() == "443") || (u.Scheme == "ssh" && u.Port() == "22")) {
@@ -107,7 +121,10 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 		if !cloneHost(host) || remotePath == "" {
 			return result, cloneInvalidURL()
 		}
-		result.Transport, result.Host, result.Path = RepositoryCloneSSH, host, remotePath
+		result.Transport, result.Host, result.Path, result.SSHUser = RepositoryCloneSSH, host, remotePath, ""
+		if user, _, hasUser := strings.Cut(endpoint, "@"); hasUser {
+			result.SSHUser = user
+		}
 	}
 	if Text(result.Path, "remote repository path", 4096, true) != nil {
 		return RepositoryCloneURL{}, cloneInvalidURL()
@@ -130,6 +147,47 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 		}
 	}
 	return result, nil
+}
+
+// RepositoryCloneSourceIdentity returns an opaque identity for the repository
+// named by a credential-free clone URL. GitHub's HTTPS and SSH forms have one
+// established repository namespace. Other hosts retain transport, SSH user,
+// and absolute-vs-relative SSH path namespace because those values can select
+// different repositories on a generic Git server. The digest lets a Worker
+// compare a checkout without returning its raw remote URL.
+func RepositoryCloneSourceIdentity(value string) (string, error) {
+	parsed, err := ParseRepositoryCloneURL(value)
+	if err != nil {
+		return "", err
+	}
+	repositoryPath := strings.TrimSuffix(parsed.Path, "/")
+	repositoryPath = strings.TrimSuffix(repositoryPath, ".git")
+	if repositoryPath == "" {
+		return "", cloneInvalidURL()
+	}
+	identity := []string{strings.ToLower(parsed.Host)}
+	if strings.EqualFold(parsed.Host, "github.com") {
+		// GitHub documents HTTPS, ssh://git@github.com and SCP-style SSH as
+		// equivalent access forms for one owner/repository namespace.
+		// GitHub repository names are case-insensitive. Normalize only this
+		// established provider namespace; generic hosts retain their exact path.
+		repositoryPath = strings.ToLower(strings.TrimPrefix(repositoryPath, "/"))
+	} else {
+		identity = append(identity, string(parsed.Transport), parsed.SSHUser, repositoryPath)
+	}
+	if len(identity) == 1 {
+		identity = append(identity, repositoryPath)
+	}
+	digest := sha256.Sum256([]byte(strings.Join(identity, "\x00")))
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func ValidRepositoryCloneSourceIdentity(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func cloneSSHUser(value string) bool {

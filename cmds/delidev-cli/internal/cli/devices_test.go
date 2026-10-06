@@ -41,7 +41,7 @@ func TestCLIPairWorkerAndInspectRealRepository(t *testing.T) {
 	if err := exec.Command("git", "init", "--quiet", repo).Run(); err != nil {
 		t.Fatal(err)
 	}
-	if err := exec.Command("git", "-C", repo, "remote", "add", "origin", "https://example.invalid/repository.git").Run(); err != nil {
+	if err := exec.Command("git", "-C", repo, "remote", "add", "origin", "https://github.com/fixture/repo.git").Run(); err != nil {
 		t.Fatal(err)
 	}
 	sub := filepath.Join(repo, "nested")
@@ -150,7 +150,7 @@ func TestCLIPairWorkerAndInspectRealRepository(t *testing.T) {
 		t.Fatalf("wrong canonical root: %v", data)
 	}
 
-	repository, err := json.Marshal(domain.Repository{Name: "fixture", PreferredRemote: "origin", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: sub}}})
+	repository, err := json.Marshal(domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "fixture", PreferredRemote: "origin", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: sub}}})
 	if err != nil {
 		t.Fatal(err)
 	}

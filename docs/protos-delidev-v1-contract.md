@@ -76,29 +76,23 @@ compatibility is a configuration declaration, never native/account/platform proo
 No database migration is added. Follow the [catalog contract](cmds-delidev-catalog-contract.md)
 and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
-## Repository addition reservations
+## Repository addition contracts
 
-### Remote-first repository reservations
+### Remote repositories
 
-The approved remote-first extension under issue #964 reserves System
-`REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19`.
-Establish both allocations on main before active declarations, generated bindings
-or advertisements. URL-only registration will be an owner/client configuration
-operation without Worker admission; managed Worktree preparation will clone the
-immutable remote source on its selected Worker. Optional checkouts remain the
-source only for explicit Local execution. System 31/32 and Worker 18 retain their
-separate immediate-clone/listing contracts. Reservations grant no configuration,
-Git, filesystem or execution capability and add no SQLite migration.
+Main reservation PR #1377 established System `REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19` before activation. System 31/32 and Worker 18 retain their separate immediate Local Clone and GitHub metadata contracts. Capability 37 permits credential-free URL registration with no checkout, Worker or local proof. Clients must verify it before repository saves/imports. Worker 19 permits managed session clones; acceptance and assignment independently require it on the selected machine.
 
-Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
+Schema-1 Repository JSON adds required `remote_url` for explicit saves/imports and permits an empty `checkouts` list. Historical omitted URLs and original accepted preparations remain readable without conversion, extraction, migration or rewrite. Each new preparation binds `source_kind` (`remote-clone`, `local-checkout` or an internally derived `independent-fork`) and `remote_url` in the immutable request digest. Legacy omitted source kinds keep their existing linked-checkout contract. Ready managed repositories bind SHA-256 native directory commitments; these are ownership metadata, never raw native identities. The ordered complete result must match the original source kind and URL. Unknown kinds grant no execution or deletion authority.
+
+PR #1355 activates main-established System `REPOSITORY_CLONE_V1 = 31` and
 `GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
 `ListGitHubRepositoriesRequest`/`Response`, `RepositoryCloneGitHubSelection`,
 `CloneRepositoryRequest`/`Response` fields in the allocation ledger. These
-reservations must reach main before active declarations, generated bindings or
-capability advertisements. Listing will be an explicit revision-bound
-owner/client profile read. Clone will be a durable originating-Worker operation
+allocations reached main before active declarations, generated bindings and
+capability advertisements. Listing is an explicit revision-bound
+owner/client profile read. Clone is a durable originating-Worker operation
 using existing job receipts; its proof token is transient and PAT bytes never
-enter its assignment. Reservations alone grant no support or Git authority.
+enter its assignment. System 31/32 and Worker 18 retain that separate authority.
 
 ## Metadata-only request diagnostics
 

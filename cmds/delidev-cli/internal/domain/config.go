@@ -133,7 +133,7 @@ func (r Reference) Validate(optional bool) error {
 		if err := Text(r.Remote, "Git remote", 256, true); err != nil {
 			return err
 		}
-		if strings.HasPrefix(r.Remote, "-") || strings.ContainsAny(r.Remote, " /\\:\r\n") {
+		if !validGitRemoteName(r.Remote) {
 			return Fail(InvalidArgument, "Invalid Git remote name.", "Use the name from repository inspection.")
 		}
 	} else if r.Remote != "" {
@@ -142,11 +142,27 @@ func (r Reference) Validate(optional bool) error {
 	return nil
 }
 
+func validGitRemoteName(value string) bool {
+	if value == "" || value == "@" || strings.HasPrefix(value, "-") || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") || strings.HasSuffix(value, ".lock") {
+		return false
+	}
+	if strings.Contains(value, "..") || strings.Contains(value, "@{") || strings.ContainsAny(value, " /\\:~^?*[") {
+		return false
+	}
+	for _, character := range value {
+		if character <= ' ' || character == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 type Checkout struct {
 	MachineID ID     `json:"machine_id"`
 	Path      string `json:"path"`
 }
 type Repository struct {
+	RemoteURL       string             `json:"remote_url,omitempty"`
 	Name            string             `json:"name"`
 	Checkouts       []Checkout         `json:"checkouts"`
 	PreferredRemote string             `json:"preferred_remote,omitempty"`
@@ -163,8 +179,22 @@ func (r Repository) Validate() error {
 	if err := Text(r.Name, "repository name", 256, true); err != nil {
 		return err
 	}
-	if len(r.Checkouts) == 0 || len(r.Checkouts) > 1000 {
+	if len(r.Checkouts) > 1000 || len(r.Checkouts) == 0 && r.RemoteURL == "" {
 		return Fail(InvalidArgument, "A repository requires an execution-machine checkout.", "Inspect a checkout on its Worker first.")
+	}
+	if r.RemoteURL != "" {
+		parsed, err := ParseRepositoryCloneURL(r.RemoteURL)
+		if err != nil {
+			return err
+		}
+		if r.GitHubOwner != "" || r.GitHubName != "" {
+			if err := ValidateGitHubRepository(r.GitHubOwner, r.GitHubName); err != nil {
+				return err
+			}
+			if parsed.GitHubOwner == "" || !strings.EqualFold(parsed.GitHubOwner, r.GitHubOwner) || !strings.EqualFold(parsed.GitHubName, r.GitHubName) {
+				return Fail(InvalidArgument, "GitHub repository metadata does not match the remote URL.", "Use the owner and repository name from the configured GitHub URL.")
+			}
+		}
 	}
 	ids := make([]ID, 0, len(r.Checkouts))
 	for _, c := range r.Checkouts {
@@ -205,7 +235,7 @@ func (r Repository) Validate() error {
 	if err := Text(r.PreferredRemote, "preferred remote", 256, false); err != nil {
 		return err
 	}
-	if strings.ContainsAny(r.PreferredRemote, " /\\:\r\n") || strings.HasPrefix(r.PreferredRemote, "-") {
+	if r.PreferredRemote != "" && !validGitRemoteName(r.PreferredRemote) {
 		return Fail(InvalidArgument, "Invalid preferred remote name.", "Use a remote returned by Worker inspection.")
 	}
 	return nil
@@ -679,7 +709,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

@@ -76,3 +76,23 @@ Compact settled removal proof to one original inventory path per entry, without 
 - Failed unpublished Sidechat reference preparation rolls back only the original inode-bound metadata through independent bounded cleanup. Foreign or replaced metadata remains pending; referenced parent files are never removed.
 
 - Sidechat preparation synchronizes a private 4 MiB original-job/parent/child/inode-bound claim in sidechat-preparations/ before manifest publication. Failure and restart cleanup remove only matching original metadata; missing, malformed or changed claims cannot adopt existing roots. Published-child deletion retires the matching claim only after metadata absence. Parent files and native thread ownership never follow from this claim.
+
+- Remote Worktree sources follow the workspace contract: persist original clone ownership before Git, require native commitments and joined process cleanup, retain uncertain outcomes and legacy accepted requests, and keep independent Fork Git stores and metadata-only Sidechat lifetimes. Managed session clones are an explicit scratch-creation exception with session ownership; they grant no Local folder deletion authority.
+- Managed Worktree clones use the restricted clone Git profile for remote URL
+  changes, inspection, PR preparation and automatic fetches. Add every configured
+  preferred/base/starting remote name against the one pinned repository URL and
+  mirror initial tracking refs without stale fallback. Validate Git's effective
+  source URL before networking, isolate `insteadOf` rules, and retain only the
+  configured credential-helper and SSH settings in the restricted environment.
+  When Windows adds the command-local `core.longpaths` setting, append it to
+  the existing indexed `GIT_CONFIG_*` entries; never replace retained
+  credentials or SSH configuration with a second config count.
+  One ten-minute context covers the complete clone, validation, resolution and
+  checkout flow; never widen the ambient transport policy for an alias or later
+  fetch.
+- Local repository saves bind each configured checkout to the server's opaque
+  source identity. The Worker computes that identity from the selected effective
+  remote without returning the raw URL; GitHub transport forms normalize only
+  within their established namespace, while generic SSH user/path namespaces
+  remain distinct. A mismatch fails the save before the checkout can become
+  Local execution authority.

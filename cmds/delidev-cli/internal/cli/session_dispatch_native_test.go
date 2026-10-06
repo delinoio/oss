@@ -403,7 +403,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 						}
 						localCheckouts = append(localCheckouts, localCheckout{canonical, head})
 					}
-					repo := run([]string{"repository", "create", "--wait"}, domain.Repository{Name: "Private native fixture", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: starting})["resource"].(map[string]any)
+					repo := run([]string{"repository", "create", "--wait"}, domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Private native fixture", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: starting})["resource"].(map[string]any)
 					id := domain.ID(repo["id"].(string))
 					repositories = append(repositories, id)
 				}

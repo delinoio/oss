@@ -22,13 +22,13 @@ func TestRepositoryValidationIsAtomicAcrossWorkersAndRevisions(t *testing.T) {
 	machines := []domain.ID{domain.NewID(), domain.NewID()}
 	for _, id := range machines {
 		_, err := db.Mutate(ctx, domain.NewID(), "fixture.machine", nil, func(tx *store.Tx) (any, error) {
-			return tx.Put(domain.MachineKind, id, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: "0.1.0"})
+			return tx.Put(domain.MachineKind, id, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: "0.1.0", WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}})
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	configuration := domain.Repository{Name: "repo", PreferredRemote: "origin", AutoFetch: true, Checkouts: []domain.Checkout{{MachineID: machines[0], Path: "/tmp/one/sub"}, {MachineID: machines[1], Path: "/tmp/two/sub"}}}
+	configuration := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "repo", PreferredRemote: "origin", AutoFetch: true, Checkouts: []domain.Checkout{{MachineID: machines[0], Path: "/tmp/one/sub"}, {MachineID: machines[1], Path: "/tmp/two/sub"}}}
 	raw, _ := json.Marshal(configuration)
 	accepted := func(id domain.ID, revision uint64) (store.Record, []store.Record) {
 		t.Helper()
@@ -141,5 +141,52 @@ func TestRepositoryValidationIsAtomicAcrossWorkersAndRevisions(t *testing.T) {
 	job, _ = store.Decode[domain.Job](record)
 	if job.Problem == nil || job.Problem.Code != domain.Conflict {
 		t.Fatal("stale asynchronous revision was not surfaced")
+	}
+}
+
+func TestRepositoryValidationOmitsSourceIdentityForLegacyWorkers(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	machine := domain.NewID()
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.machine", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "legacy", OS: "linux", Architecture: "amd64", Version: "0.1.0"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(domain.Repository{RemoteURL: "https://github.com/source/repo.git", Name: "repo", Checkouts: []domain.Checkout{{MachineID: machine, Path: "/tmp/repo"}}})
+	result, err := SaveConfiguration(ctx, db, ConfigurationMutation{RequestID: domain.NewID(), Kind: domain.RepositoryKind, Document: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parent store.Record
+	if err := domain.Decode(result.Data, &parent); err != nil {
+		t.Fatal(err)
+	}
+	var children []store.Record
+	if err := db.Read(ctx, func(tx *store.Tx) error {
+		var err error
+		children, err = tx.Jobs("", parent.ID, "", "", store.MaxPage)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("legacy inspection jobs: %d", len(children))
+	}
+	job, err := store.Decode[domain.Job](children[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input domain.RepositoryInspectionInput
+	if err := domain.Decode(job.Input, &input); err != nil {
+		t.Fatal(err)
+	}
+	if input.ExpectedRemoteIdentity != "" {
+		t.Fatal("legacy Worker received the post-capability source identity")
 	}
 }

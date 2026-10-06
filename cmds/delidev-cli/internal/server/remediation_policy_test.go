@@ -31,7 +31,7 @@ func TestRemediationPolicyConfigurationRejectsMissingReferences(t *testing.T) {
 				settings.Remediation = policy
 				value = settings
 			} else {
-				value = domain.Repository{Name: "fixture", Checkouts: []domain.Checkout{{MachineID: machineID, Path: "/fixture"}}, IntegrationID: integrationID, Remediation: &policy}
+				value = domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "fixture", Checkouts: []domain.Checkout{{MachineID: machineID, Path: "/fixture"}}, IntegrationID: integrationID, Remediation: &policy}
 			}
 			raw, _ := json.Marshal(value)
 			_, err := SaveConfiguration(transferOwner(), s.Store, ConfigurationMutation{RequestID: domain.NewID(), Kind: kind, Document: raw})
@@ -55,7 +55,7 @@ func TestRemediationPolicyTransferRemapsExecutionButKeepsGitHubIdentity(t *testi
 	policy.ReviewFeedback, policy.CIFailure, policy.MergeConflict = true, true, true
 	policy.AgentID = selection.Bundle.Entries[0].ID
 	policy.ReviewerSelectors = []domain.ReviewerSelector{{Kind: domain.ReviewerBot, ID: "9007199254740993", NodeID: "BOT_exact"}, {Kind: domain.ReviewerApp, ID: "42", NodeID: "A_exact"}, {Kind: domain.ReviewerMinimumPermission, Permission: domain.PermissionMaintain}}
-	repository := domain.Repository{Name: "portable", AutoFetch: true, Remediation: &policy}
+	repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "portable", AutoFetch: true, Remediation: &policy}
 	var executionTarget domain.ID
 	for i := 0; i < 3; i++ {
 		source, target := domain.NewID(), domain.NewID()

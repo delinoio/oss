@@ -67,3 +67,5 @@ Read the relevant owner before changing its behavior, including cross-domain con
 Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
 - DeliDev BrowserService follows `docs/cmds-delidev-browser-contract.md`: use its own typed profile/state/capability declarations, exact original mutation identities and metadata-only payloads. Preserve all existing numeric allocations and migration reservations; generated compatibility exports must reproduce.
+
+- Remote repositories activate the main-established System 37 / Worker 19 allocations; retain System 31/32 and Worker 18 immediate Local Clone/metadata meanings. Source-kind enums and pinned URL JSON remain additive and historical omitted fields are never rewritten. Regenerate bindings from reconciled schemas.

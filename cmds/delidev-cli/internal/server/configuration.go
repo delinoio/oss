@@ -22,7 +22,7 @@ type ConfigurationMutation struct {
 
 type validatable interface{ Validate() error }
 
-func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
+func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool) (validatable, error) {
 	var value validatable
 	switch kind {
 	case domain.ProjectKind:
@@ -47,13 +47,28 @@ func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
 	if err := domain.Decode(raw, value); err != nil {
 		return nil, err
 	}
+	if repository, ok := value.(*domain.Repository); ok {
+		if repository.RemoteURL == "" {
+			if requireRepositoryURL {
+				return nil, domain.Fail(domain.InvalidArgument, "Enter a credential-free HTTPS or SSH Git URL.", "Use HTTPS, ssh:// or SCP-style SSH. Local paths, passwords, tokens and helper transports are unsupported.")
+			}
+		} else {
+			parsed, err := domain.ParseRepositoryCloneURL(repository.RemoteURL)
+			if err != nil {
+				return nil, err
+			}
+			if repository.Name == "" {
+				repository.Name = parsed.DirectoryName
+			}
+		}
+	}
 	if err := value.Validate(); err != nil {
 		return nil, err
 	}
 	return value, nil
 }
 func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationMutation) (store.Result, error) {
-	value, err := configurationValue(input.Kind, input.Document)
+	value, err := configurationValue(input.Kind, input.Document, true)
 	if err != nil {
 		return store.Result{}, err
 	}
