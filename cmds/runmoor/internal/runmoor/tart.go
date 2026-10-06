@@ -1098,7 +1098,10 @@ agent=$(tart-guest-agent --version | awk '{print $NF}')
 case "$agent" in "$2"|"$2"-*) ;; *) invalid;; esac
 p="$1"; while [ "$p" != / ]; do [ ! -L "$p" ] || invalid; p=$(dirname "$p"); done
 for f in .runner .credentials .credentials_rsaparams; do [ ! -e "$1/$f" ] || invalid; done
-[ ! -d "$1/_work" ] || [ -z "$(ls -A "$1/_work")" ] || invalid
+if [ -d "$1/_work" ]; then
+  work=$(ls -A "$1/_work") || invalid
+  [ -z "$work" ] || invalid
+fi
 printf 'RUNMOOR_READY\n'`
 
 // A reachable guest returns a bounded validation result with a successful RPC.
