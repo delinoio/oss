@@ -10,6 +10,14 @@ Go and the execution machine's installed Git. No harness or Git installation is 
 The single-user server submits validated workspace jobs to the selected Worker. Local workspace identity is the actual originating machine, not the computer currently viewing a session.
 
 ## Interfaces and Contracts
+### Repository clone ownership
+
+Repository Clone accepts only credential-free HTTPS, `ssh://` and SCP-style SSH URLs and one portable folder name. Reject passwords/tokens, query/fragment, controls, local paths and external Git helper transports. The ten-minute deadline covers Clone, validation and publication. Execute Git with argv through the existing owned process boundary, the computer's existing Git credentials/SSH keys and no server PAT. Disable hooks, template hooks, recursive submodules and optional LFS smudging; retain full Git history without shallow/filter options. LFS payload hydration and submodule initialization remain explicit later Git operations.
+
+Create an exclusive private staging wrapper in the canonical selected parent, and synchronize a separate original-job/request-digest/parent-inode/staging-inode claim before launching Git. Generic Worker execution journals independently prevent a second Clone after restart or uncertainty. Validate the canonical checkout and publish it through the existing platform no-replace primitive; an existing destination, including an empty directory, is a conflict. Recheck original parent/staging and published checkout identity around publication and synchronize before success.
+
+Failure cleanup requires the original durable claim and independently joined original processes. Claim the original staging name through a no-replace private removal rename, verify its native identity, and walk/remove through anchored directory handles without following links. Changed/missing ownership, incomplete process termination or cleanup retains files and recovery ownership. Publication transfers the final checkout to user-owned Local lifetime: registration failure, job retry and repository configuration deletion cannot remove or replace it. This staging exception grants no session/snapshot cleanup authority. Feature/RPC capability activation still requires the main-first allocation prerequisites in the structure and protocol contracts; helper code alone grants no product capability.
+
 Inspection accepts an absolute root, subdirectory, or linked worktree and resolves its canonical working-tree root, display name, remote names, and locally recorded remote defaults. It neither fetches nor returns remote URLs. An invalid preferred remote fails. Default reference selection uses the configured preferred remote, otherwise `origin`, otherwise the sole remote; missing or ambiguous defaults require input.
 
 ### Negotiated repository metadata
