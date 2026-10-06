@@ -86,6 +86,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const transport = useTransport();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const remoteSupported = status.data?.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1) === true;
+  const remoteUnsupported = status.data !== undefined && !remoteSupported;
   const cloneSupported = status.data?.capabilities.includes(SystemCapability.REPOSITORY_CLONE_V1) === true && Boolean(readLocalWorker);
   const pickerSupported = status.data?.capabilities.includes(SystemCapability.GITHUB_REPOSITORY_PICKER_V1) === true;
   const clone = useRetainedMutation("repository-add:clone", WorkerQuery.cloneRepository, (result, request) => {
@@ -164,7 +165,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const completeInspection = useCallback((output: Document) => {
     if (!inspection || !alive.current || opening?.disposed) return;
     if (!validRepositoryInspection(output)) { setUnknown(true); setProblem("The inspection summary is unreadable. Inspect the original operation before continuing."); return; }
-    setData(current => ({ ...current, checkouts: [{ machine_id: inspection.source.machine, path: text(output.root) }] }));
+    setData(current => ({ ...current, name: text(current.name) || text(output.name), checkouts: [{ machine_id: inspection.source.machine, path: text(output.root) }] }));
     setSummary({ output, source: inspection.source });
     setOptions(false); setManual(false); setInspection(undefined);
   }, [inspection, opening]);
@@ -215,10 +216,15 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const primaryCheckout = summary ? { machine_id: summary.source.machine, path: text(summary.output.root) } : undefined;
   // The confirmation and inferred metadata describe this exact inspected checkout.
   // Additional checkout edits cannot make a different checkout its silent replacement.
-  const ready = Boolean(!cloneLocally && remoteSupported && parsedClone && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256 && (!primaryCheckout || items(data.checkouts).some(raw => {
+  const checkoutConfirmed = Boolean(primaryCheckout && items(data.checkouts).some(raw => {
     const checkout = object(raw);
     return checkout.machine_id === primaryCheckout.machine_id && checkout.path === primaryCheckout.path;
-  })));
+  }));
+  // Capability 37 is a URL-first admission gate. A successful status response
+  // without it retains the older inspected-folder registration path; a failed
+  // status read leaves both paths disabled until the user retries the read.
+  const legacyReady = Boolean(!cloneLocally && remoteUnsupported && checkoutConfirmed && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256);
+  const ready = Boolean(!cloneLocally && ((remoteSupported && parsedClone && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256 && (!primaryCheckout || checkoutConfirmed)) || legacyReady));
   return <section className="repository-registration" aria-label="Add repository">
     <button type="button" disabled={blocked} onClick={cancelTask}>Back to repositories</button>
     <h2 hidden={inTask}>Add repository</h2>
@@ -229,7 +235,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
         <RepositoryGitHubPicker active={active} supported={pickerSupported} disabled={blocked} choose={(selection, url) => { changeCloneDraft({ ...cloneDraft, url, directory: undefined }); setGitHubSelection(selection); setData(current => ({ ...current, integration_id: selection.profileId, github_owner: selection.owner, github_name: selection.name })); }} />
         {cloneLocally ? <p className="repository-clone-name">Clone registration uses the folder name <strong>{cloneDirectory}</strong>.</p> : <TextField label="Repository name" value={data.name} required change={name => { nameEdited.current = true; change({ ...data, name }); }} />}
         <p>The selected Runner Device clones this repository when a Worktree session starts.</p>
-        {!remoteSupported ? <p role="status">Update the selected server to add repositories by URL.</p> : null}
+        {remoteUnsupported ? <p role="status">Update the selected server to add repositories by URL.</p> : null}
         <Problem error={status.error} />
         {status.error ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry server capability check</button> : null}
       </section>

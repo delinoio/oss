@@ -69,6 +69,21 @@ it("retries a transient capability read without losing the registration draft", 
   expect(url.value).toBe("https://github.com/delinoio/oss.git");
 });
 
+it("keeps inspected-folder registration available on older servers", async () => {
+  const f = fixture(metadata, false, false); f.mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByRole("region", { name: "Repository detected" });
+  const add = within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement;
+  await waitFor(() => expect(add.disabled).toBe(false));
+  fireEvent.click(add); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
+  expect(saved).toMatchObject({ name: "oss", checkouts: [{ machine_id: f.machine.id, path: "/canonical/oss" }] });
+  expect(saved.remote_url).toBe("");
+});
+
 it("registers the canonical checkout using folder selection and Add repository only", async () => {
   const f = fixture(); f.mount(); await f.chooseAndReview();
   expect(f.choose).toHaveBeenCalledTimes(1); expect(f.proof).toHaveBeenCalledTimes(1);
