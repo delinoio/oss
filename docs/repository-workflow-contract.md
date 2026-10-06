@@ -90,6 +90,17 @@ The shared checksum generator keeps sorted recursive paths, GNU filename escapin
 
 `.github/workflows/CI.yml` is a read-only validation workflow. It uses `contents: read` and `pull-requests: read`, does not consume repository secrets, and must not push tags, create or upload releases, submit stores, push OCI images, deploy documentation or infrastructure, promote updater state, or call any mutating release-controller operation. Release workflows and packaging inputs are tested as source and deterministic fixtures only.
 
+The `ci-contracts` matrix runs workflow syntax and the full Node contract suite on
+Linux, plus the uncached `ci:proto:launcher` fixtures on native macOS and Windows.
+Linux runs the launcher fixtures within the full suite. Protocol lint, format and
+freshness launch `node_modules/@bufbuild/buf/bin/buf` through `process.execPath`
+with explicit argv, root cwd and `shell: false`. They do not require a standalone
+Buf executable or Windows package-manager shim. The fixtures remove Buf from
+PATH, use checkout paths with spaces, check literal shell metacharacters and
+failure statuses, and run minimal offline generation with tracked/untracked
+freshness rejection. Full generation retains the compatibility step after Buf;
+the launcher fixture does not establish broader Windows plugin acceptance.
+
 The central `changes` job runs on Ubuntu 24.04 and resolves one Rust package
 selection for the generic `rust-test` and `rust-clippy` jobs. It prepares the
 first-party `cargo-mono@v0.6.9` Linux x64 release only when the initial path plan

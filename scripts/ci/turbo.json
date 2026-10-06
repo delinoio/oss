@@ -517,6 +517,11 @@
         "FORGE_RENDER_ARTIFACTS"
       ]
     },
+    "ci:proto:launcher": {
+      "cache": false,
+      "dependsOn": [],
+      "outputs": []
+    },
     "ci:proto:lint": {
       "cache": true,
       "dependsOn": [],
