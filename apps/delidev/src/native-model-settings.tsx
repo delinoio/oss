@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, NativeModelQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text, type Document } from "./documents";
@@ -7,7 +7,7 @@ import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { More, Problem } from "./ui";
 
-export function NativeModelSettings({ active, createModel }: { active: boolean; createModel: (data: Document) => void }) {
+export function NativeModelSettings({ active, createModel, selectedAccounts, pendingOperation }: { active: boolean; createModel: (data: Document) => void; selectedAccounts?: Resource[]; pendingOperation?: (pending: boolean) => void }) {
   const [opened, setOpened] = useState(false);
   const [machine, setMachine] = useState<Resource>();
   const [account, setAccount] = useState<Resource>();
@@ -41,18 +41,19 @@ export function NativeModelSettings({ active, createModel }: { active: boolean; 
     } catch { malformed = true; }
   }
   const observedScope = object(document(models.data?.job).input);
-  const canRegister = observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
+  const canRegister = (!selectedAccounts || selectedAccounts.some(row => row.id === account?.id)) && observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
   const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain;
+  useEffect(() => { pendingOperation?.(blocked); return () => pendingOperation?.(false); }, [blocked, pendingOperation]);
   const reset = () => { setJobID(""); setObservationID(""); setPage(""); };
   return <details onToggle={(event) => setOpened(event.currentTarget.open)}><summary>Native Codex model observations</summary>{opened ? <section aria-label="Native Codex model observations">
     <h2>Observe native Codex models</h2>
-    <p>Choose a Runner Device with Codex 0.151.0 and a connected account. Advisory observations do not establish account support, entitlement, readiness or fresh provider data. Saving a model requires explicit registration.</p>
+    <p>Choose a Runner Device with Codex 0.151.0 and a connected account. Advisory observations do not establish account support, entitlement, readiness or fresh provider data. Choosing a model does not save configuration.</p>
     <Problem error={status.error} />
     {status.data && !supported ? <p>This server does not support native model observation.</p> : null}
     <fieldset disabled={!supported || blocked}>
       <legend>Observation scope</legend>
       <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setMachine(row); reset(); }} />
-      <ResourceChoice label="Connected account" kind={EntityKind.ACCOUNT} value={account?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setAccount(row); reset(); }} />
+      {selectedAccounts ? <label>Connected selected account<select value={account?.id ?? ""} onChange={event => { setAccount(selectedAccounts.find(row => row.id === event.target.value)); reset(); }}><option value="">Select account</option>{selectedAccounts.map(row => <option key={row.id} value={row.id}>{text(document(row).alias) || row.id}</option>)}</select></label> : <ResourceChoice label="Connected account" kind={EntityKind.ACCOUNT} value={account?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setAccount(row); reset(); }} />}
       <label><input type="checkbox" checked={hidden} onChange={(event) => { setHidden(event.target.checked); reset(); }} /> Include hidden models</label>
       <button type="button" disabled={!machine || !account || !document(account).connection} onClick={() => void discovery.send({ mutation: { requestId: newRequestId(), id: machine!.id, expectedRevision: machine!.revision }, accountId: account!.id, accountRevision: account!.revision, includeHidden: hidden })}>Observe models</button>
     </fieldset>
@@ -74,7 +75,7 @@ export function NativeModelSettings({ active, createModel }: { active: boolean; 
       {entries.length === 0 ? <p>No native models in this observation page.</p> : entries.map((entry) => <article key={text(entry.id)}>
         <h3>{text(entry.display_name)}</h3><p>Picker ID: {text(entry.id)} · Executable model: {text(entry.model)}</p>
         <p>{text(entry.description)}</p><p>Reasoning: {items(entry.reasoning).map(text).join(", ")}. Input: {items(entry.modalities).map(text).join(", ")}. Service tiers: {items(entry.service_tiers).map(text).join(", ")}. {entry.hidden === true ? "Hidden" : "Visible"}.</p>
-        <button type="button" disabled={!canRegister || blocked} onClick={() => createModel({ name: text(entry.display_name), provider_id: text(observedScope.provider_id), native_id: text(entry.model), alias: "", harnesses: ["codex"], hidden: false, order: 0, manual: true, new: false, metadata_source: "unknown" })}>Register {text(entry.display_name)}…</button>
+        <button type="button" disabled={!canRegister || blocked} onClick={() => createModel({ name: text(entry.display_name), provider_id: text(observedScope.provider_id), native_id: text(entry.model), alias: "", harnesses: ["codex"], hidden: false, order: 0, manual: true, new: false, metadata_source: "unknown" })}>{selectedAccounts ? "Use model" : "Register"} {text(entry.display_name)}…</button>
       </article>)}
       <button type="button" disabled={!page || models.isFetching} onClick={() => setPage("")}>First observation page</button><More available={Boolean(models.data.nextPageToken)} busy={models.isFetching} load={() => setPage(models.data!.nextPageToken)} />
     </> : null}
