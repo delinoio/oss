@@ -7,6 +7,7 @@ import { AccountQuery, EntityKind, ProviderQuery, ResourceQuery, newRequestId, t
 import { document, object, resourceName, text, type Document } from "./documents";
 import { Authentication } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
+import { accountRemovalMutation } from "./account-removal";
 import { Problem } from "./ui";
 import "./api-account.css";
 
@@ -45,11 +46,11 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
   useEffect(() => { if (!active || !disconnected) setKey(""); }, [active, disconnected]);
   useSettingsTaskDismiss(() => setKey(""));
   const mutation = () => ({ id: initial.id, expectedRevision: current.revision, requestId: newRequestId() });
-  const removal = object(data.removal);
+  const removal = current.id === initial.id ? accountRemovalMutation(current) : undefined;
   useRetainSettingsTask(Boolean(data.removal));
   const retryRemoval = () => {
-    if (!text(removal.request_id) || !Number.isSafeInteger(removal.expected_revision)) return;
-    void disconnect.send({ mutation: { id: initial.id, requestId: text(removal.request_id), expectedRevision: BigInt(removal.expected_revision as number) } });
+    if (blocked || !removal) return;
+    void disconnect.send({ mutation: removal });
   };
   return <section className={isApi ? "api-entry-workflow" : undefined}>{isApi ? <><button className="api-entry-back" onClick={closeTask}>Back to AI API Keys</button><header className="api-entry-heading"><h2 hidden={inTask}>Manage connection</h2><p>{resourceName(current)}</p><p className="api-entry-scope">Saved on the selected server.</p></header></> : <header><h3>{resourceName(current)}</h3><button onClick={closeTask}>Back to accounts</button></header>}<p>Health: {text(data.health)} · {data.connection ? "Credential connected" : "Disconnected"}</p><p>Provider: {resourceName(provider.data?.resource)} · {text(metadata.authentication)} · {provider.data?.resource ? providerEnabled ? "Enabled" : "Off" : "Unavailable"}</p>
     {data.type === "subscription" ? <p>Subscription login is not implemented yet. No existing system login will be used.</p> : disconnected ? <><form id={formId} onSubmit={(event) => {
@@ -61,7 +62,7 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
     {data.type !== "subscription" && data.connection ? <SettingsTaskActions className=""><button disabled={blocked} onClick={() => void validate.send({ mutation: mutation() })}>{isApi ? "Validate connection" : "Validate account"}</button><button disabled={blocked || !providerEnabled || metadata.discovery !== true} onClick={() => void discover.send({ mutation: mutation() })}>Refresh models</button><button disabled={blocked} onClick={() => setConfirm(true)}>{isApi ? "Disconnect" : "Disconnect account"}</button></SettingsTaskActions> : null}
     {confirm && data.type !== "subscription" ? <SettingsTaskDialog title="Disconnect account" size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setConfirm(false)}><div className="notice"><p>{isApi ? "Disconnecting cancels this entry's active executions and removes its protected credentials. Other entries remain connected. Worker cleanup is confirmed separately." : "Disconnecting cancels this account's active executions and removes its protected credentials. Other accounts remain connected. Worker cleanup is confirmed separately."}</p><SettingsTaskActions><button disabled={blocked} onClick={() => void disconnect.send({ mutation: mutation() })}>Confirm disconnection</button><button data-settings-task-cancel disabled={blocked} onClick={() => setConfirm(false)}>{isApi ? "Keep entry connected" : "Keep account connected"}</button></SettingsTaskActions></div></SettingsTaskDialog> : null}
     {data.type === "subscription" && data.removal ? <p role="status">Credential cleanup pending. Subscription credential cleanup is not supported by this server.</p> : null}
-    {data.type !== "subscription" && data.removal ? <p>Disconnected · credential cleanup is pending. <button disabled={blocked || !Number.isSafeInteger(removal.expected_revision)} onClick={retryRemoval}>Retry original credential cleanup</button></p> : null}
+    {data.type !== "subscription" && data.removal ? <p>Disconnected · credential cleanup is pending. <button disabled={blocked || !removal} onClick={retryRemoval}>Retry original credential cleanup</button></p> : null}
     {cleanup ? <p role="alert">{text(cleanup.message)} {text(cleanup.guidance)}</p> : null}
     <Observation label="Validation" value={data.validation} /><Observation label="Model discovery" value={data.catalog} />
     <Problem error={result.error || provider.error} />{data.type !== "subscription" ? operations.map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}>Retry the same {index === 0 ? "connection" : index === 1 ? "disconnection" : index === 2 ? "validation" : "model refresh"}</button> : null}</div>) : null}
