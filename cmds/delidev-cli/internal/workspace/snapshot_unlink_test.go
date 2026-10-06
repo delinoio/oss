@@ -5,6 +5,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -34,27 +36,78 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 					trigger = "."
 				}
 				removal := filepath.Join(m.Root, "workspace-removals", string(input.OperationID))
-				// Hold only the mutable child directory. Holding the source root
-				// itself blocks Windows MoveFileEx before the namespace claim; a
-				// child handle remains anchored through the later private rename and
-				// still exercises writes that race entry unlink.
-				sourceRoot := filepath.Join(m.Root, "workspaces", string(prepare.SessionID))
-				if action == StorageDelete {
-					sourceRoot = m.snapshotPath(input.SnapshotID)
+				// POSIX permits a descendant handle to remain usable after the
+				// source namespace is renamed. Windows does not permit that handle
+				// during MoveFileEx, so the Windows writer resolves the claimed
+				// private parent by name after the namespace move instead.
+				var heldParent *os.Root
+				if runtime.GOOS != "windows" {
+					sourceRoot := filepath.Join(m.Root, "workspaces", string(prepare.SessionID))
+					if action == StorageDelete {
+						sourceRoot = m.snapshotPath(input.SnapshotID)
+					}
+					parent, err := os.OpenRoot(filepath.Dir(sourceRoot))
+					if err != nil {
+						t.Fatal(err)
+					}
+					heldParent, err = parent.OpenRoot(filepath.Join(filepath.Base(sourceRoot), filepath.FromSlash(prefix)))
+					if err != nil {
+						parent.Close()
+						t.Fatal(err)
+					}
+					if err := parent.Close(); err != nil {
+						t.Fatal(err)
+					}
+					defer heldParent.Close()
 				}
-				parent, err := os.OpenRoot(filepath.Dir(sourceRoot))
-				if err != nil {
-					t.Fatal(err)
+				claimedParent := func(relative string) (string, error) {
+					directory := filepath.ToSlash(filepath.Dir(filepath.FromSlash(relative)))
+					current := removal
+					if directory == "." {
+						return current, nil
+					}
+					for _, component := range strings.Split(directory, "/") {
+						if component == "" || component == "." {
+							continue
+						}
+						entries, err := os.ReadDir(current)
+						if err != nil {
+							return "", err
+						}
+						var next string
+						for _, entry := range entries {
+							if strings.HasPrefix(entry.Name(), ".removing-") && entry.IsDir() {
+								next = filepath.Join(current, entry.Name())
+								break
+							}
+						}
+						if next == "" {
+							return "", os.ErrNotExist
+						}
+						current = next
+					}
+					return current, nil
 				}
-				heldParent, err := parent.OpenRoot(filepath.Join(filepath.Base(sourceRoot), filepath.FromSlash(prefix)))
-				if err != nil {
-					parent.Close()
-					t.Fatal(err)
+				writeMutation := func(relative string, data []byte) error {
+					if heldParent != nil && filepath.ToSlash(filepath.Dir(filepath.FromSlash(relative))) == prefix {
+						return heldParent.WriteFile(filepath.Base(filepath.FromSlash(relative)), data, 0600)
+					}
+					parent, err := claimedParent(relative)
+					if err != nil {
+						return err
+					}
+					return os.WriteFile(filepath.Join(parent, filepath.Base(filepath.FromSlash(relative))), data, 0600)
 				}
-				if err := parent.Close(); err != nil {
-					t.Fatal(err)
+				removeMutation := func(relative string) error {
+					if heldParent != nil && filepath.ToSlash(filepath.Dir(filepath.FromSlash(relative))) == prefix {
+						return heldParent.Remove(filepath.Base(filepath.FromSlash(relative)))
+					}
+					parent, err := claimedParent(relative)
+					if err != nil {
+						return err
+					}
+					return os.Remove(filepath.Join(parent, filepath.Base(filepath.FromSlash(relative))))
 				}
-				defer heldParent.Close()
 				raced := false
 				m.storageBeforeRemovalUnlink = func(relative string) {
 					if raced || relative != trigger {
@@ -67,7 +120,7 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 					case "add-child":
 						changed = prefix + "/late"
 					case "replace":
-						if err := heldParent.Remove(filepath.Base(changed)); err != nil {
+						if err := removeMutation(changed); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -75,7 +128,7 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 						if err := os.WriteFile(filepath.Join(removal, filepath.FromSlash(changed)), []byte("uncaptured writer bytes"), 0600); err != nil {
 							t.Fatal(err)
 						}
-					} else if err := heldParent.WriteFile(filepath.Base(changed), []byte("uncaptured writer bytes"), 0600); err != nil {
+					} else if err := writeMutation(changed, []byte("uncaptured writer bytes")); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -84,7 +137,7 @@ func TestClaimedRemovalPreservesUncapturedWritesDuringUnlink(t *testing.T) {
 						return
 					}
 					raced = true
-					if err := heldParent.WriteFile(filepath.Base(changed), []byte("uncaptured writer bytes"), 0600); err != nil {
+					if err := writeMutation(changed, []byte("uncaptured writer bytes")); err != nil {
 						t.Fatal(err)
 					}
 				}
