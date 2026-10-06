@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, FailureCode, ResourceQuery, SystemQuery, isEntityId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, ResourceQuery, SystemQuery, isEntityId, subscriptionService, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text, type Document } from "./documents";
 import { Problem } from "./ui";
 
@@ -134,16 +134,21 @@ function validAgentConfiguration(value: Document, schemaVersion: number): boolea
     return true;
   });
 }
+function validAccountConfiguration(value: Document, schemaVersion: number): boolean {
+  if (!healthStates.has(text(value.health)) || typeof value.enabled !== "boolean" || (value.connection !== undefined && !isEntityId(text(object(value.connection).id)))) return false;
+  if (schemaVersion === 1) return isEntityId(text(value.provider_id));
+  return schemaVersion === 2 && value.retired !== true && value.type === "subscription" && Boolean(subscriptionService(value.subscription_service)) && !Object.hasOwn(value, "provider_id");
+}
 function configurations(rows: Resource[] | undefined, kind: EntityKind): Document[] | undefined {
   if (!rows || rows.length > 50) return;
   const seen = new Set();
   const values = [];
   for (const row of rows) {
-    if (row.kind !== kind || !isEntityId(row.id) || row.revision <= 0n || kind === EntityKind.ACCOUNT && row.schemaVersion !== 1 || kind === EntityKind.AGENT && row.schemaVersion !== 1 && row.schemaVersion !== 3 || seen.has(row.id) || row.sessionId || row.projectId) return;
+    if (row.kind !== kind || !isEntityId(row.id) || row.revision <= 0n || kind === EntityKind.ACCOUNT && row.schemaVersion !== 1 && row.schemaVersion !== 2 || kind === EntityKind.AGENT && row.schemaVersion !== 1 && row.schemaVersion !== 3 || seen.has(row.id) || row.sessionId || row.projectId) return;
     seen.add(row.id);
     const value = document(row);
     if (kind === EntityKind.ACCOUNT) {
-      if (!healthStates.has(text(value.health)) || typeof value.enabled !== "boolean" || !isEntityId(text(value.provider_id)) || (value.connection !== undefined && !isEntityId(text(object(value.connection).id)))) return;
+      if (!validAccountConfiguration(value, row.schemaVersion)) return;
     } else if (!validAgentConfiguration(value, row.schemaVersion)) return;
     values.push(value);
   }

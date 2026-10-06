@@ -58,6 +58,16 @@ it("accepts a valid schema-3 routed Worker alongside a legacy Worker", async () 
   await screen.findByText("Agent Worker configuration: Observed");
 });
 
+it("accepts a valid schema-2 subscription account alongside an API account", async () => {
+  const f = fixture();
+  const subscription = create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson: encode({ type: "subscription", subscription_service: "chatgpt", enabled: true, health: "disconnected" }) });
+  f.list.mockImplementation(async input => ({ resources: input.filter?.kind === EntityKind.ACCOUNT ? [f.account, subscription] : [f.agent], nextPageToken: "" }));
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText("AI account: Observed");
+  expect(screen.getByText("2 account(s) inspected; 1 enabled account(s) have a connection and saved ready status.")).toBeTruthy();
+});
+
 it("does not retain successful checks after a failed refresh or count disabled/disconnected accounts as ready", async () => {
   const f = fixture();
   render(f.view());

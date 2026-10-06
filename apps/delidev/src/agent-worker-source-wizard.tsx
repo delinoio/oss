@@ -47,7 +47,7 @@ function SourceGroup({ value, index, count, step, harness, active, locked, dupli
   const source = value.source, ids = value.accounts.map(account => text(account.id));
   const sourceID = sourceKey(source);
   const query = useDeferredValue(value.input);
-  const initialModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: value.modelID }, { enabled: active && Boolean(value.modelID), refetchInterval: active && value.modelID ? 5000 : false });
+  const initialModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: value.modelID }, { enabled: active && Boolean(value.modelID), refetchInterval: active && step === Step.Model && Boolean(value.modelID) ? 5000 : false });
   const providers = useQuery(ProviderQuery.listProviderInventory, { enabledOnly: true, pageSize: 50, pageToken: providerPage }, { enabled: active && step === Step.Accounts });
   const provider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: source?.kind === SourceKind.Api ? source.id : "" }, { enabled: active && source?.kind === SourceKind.Api });
   const rows = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: accountPage }, providerId: source?.kind === SourceKind.Api ? source.id : "", accountType: source?.kind === SourceKind.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION, subscriptionService: wireService(source) }, { enabled: active && Boolean(source) && step === Step.Accounts });
