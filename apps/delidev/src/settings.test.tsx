@@ -471,7 +471,7 @@ it("blocks stale settings writes without erasing the staged instructions", async
   render(value.view(<ConfigurationEditor kind={EntityKind.TEMPLATE} initial={initial} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), { target: { value: "My staged instructions" } });
   await screen.findByText(/This entry changed elsewhere/);
-  fireEvent.submit(screen.getByRole("button", { name: "Save Instructions" }).closest("form")!);
+  fireEvent.submit((screen.getByRole("button", { name: "Save Instructions" }) as HTMLButtonElement).form!);
   expect(value.save).not.toHaveBeenCalled();
   expect((screen.getByRole("textbox", { name: "Instructions" }) as HTMLTextAreaElement).value).toBe("My staged instructions");
 });

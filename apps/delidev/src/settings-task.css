@@ -1,0 +1,34 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.settings-task-background { min-width: 0; margin: 0; padding: 0; border: 0; }
+.settings-task-outlet { display: contents; }
+dialog.settings-task-dialog { width: min(768px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--border); border-radius: 16px; color: var(--text); background: var(--surface); box-shadow: 0 16px 48px var(--shadow-soft); overflow: hidden; }
+.settings-task-dialog:not([open]) { display: none; }
+.settings-task-dialog[open] { display: flex; flex-direction: column; }
+.settings-task-dialog[data-size=confirmation] { width: min(480px, calc(100vw - 32px)); }
+.settings-task-dialog[data-size=wide] { width: min(960px, calc(100vw - 32px)); }
+.settings-task-dialog::backdrop { background: var(--backdrop); }
+.settings-task-header { display: flex; align-items: flex-start; justify-content: space-between; flex: none; gap: 16px; padding: 24px; border-bottom: 1px solid var(--border); }
+.settings-task-header h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; overflow-wrap: anywhere; }
+.settings-task-header p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
+.settings-task-close { flex: none; width: 40px; height: 40px; padding: 0; font-size: 24px; }
+.settings-task-body { min-width: 0; min-height: 0; width: 100%; max-width: none; margin: 0; padding: 24px; overflow: auto; overscroll-behavior: contain; container: settings-body / inline-size; font-size: 14px; line-height: 20px; }
+.settings-task-body :is(h1, h2, h3, h4, legend) { font-size: 16px; line-height: 24px; font-weight: 600; }
+.settings-task-body :is(p, label, button, input, textarea, select) { font-size: 14px; line-height: 20px; }
+.settings-task-body :is(h1, h2, h3, h4, p, small, li, code, dt, dd, button, summary) { overflow-wrap: anywhere; }
+.settings-task-body :is(form, .account-wizard, .api-entry-workflow, .agent-configuration, .project-editor, .integration-editor) { width: 100%; max-width: 720px; margin-inline: 0; }
+.settings-task-body :is(button, input:not([type=checkbox]):not([type=radio]), textarea, select, summary), .settings-task-footer button { min-height: 40px; max-width: 100%; border-radius: 8px; }
+.settings-task-body textarea { white-space: pre-wrap; }
+.settings-task-body :is(section, article, header, fieldset, form, label, header > div) { min-width: 0; }
+.settings-task-footer { flex: none; padding: 16px 24px; border-top: 1px solid var(--border); }
+.settings-task-footer:empty { display: none; }
+.settings-task-footer .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0; }
+.settings-task-footer button { white-space: normal; overflow-wrap: anywhere; }
+.settings-task-retained { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface-muted); }
+@media (max-width: 759px) { .settings-task-header, .settings-task-body { padding: 16px; } .settings-task-footer { padding: 16px; } }
+
+.settings-task-body :is(.account-wizard, .subscription-account-create, .agent-core, .project-field-group, .project-deletion, .server-preferences-panel, .paired-device-form, .integration-editor, .integration-manage) { padding: 0; border: 0; border-radius: 0; background: var(--surface); }
+.settings-task-body :is(.project-field-group, .agent-optional, .integration-section) { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.settings-task-body :is(.settings-scope, .api-entry-scope, small) { font-size: 12px; line-height: 18px; color: var(--muted); }
+.settings-task-body :is(input:not([type=checkbox]):not([type=radio]), select, textarea, button), .settings-task-footer button { border-color: var(--control-border); }
+.settings-task-footer button.primary { border-color: var(--accent); }
+@container settings-body (width < 640px) { .settings-task-body :is(.account-provider-choices, .agent-core-columns, .integration-form-grid) { grid-template-columns: minmax(0, 1fr); } }

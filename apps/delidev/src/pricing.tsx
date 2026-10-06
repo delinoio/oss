@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useRetainSettingsTask } from "./settings-task-context";
+import { SettingsTaskActions } from "./settings-task";
+import { useState , useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { subscriptionServiceLabel, InputPricingMode, UsageQuery, newRequestId, type PricingVersion, type Resource, type TokenPricing } from "@delinoio/delidev-api-client";
 import { resourceName } from "./documents";
@@ -33,13 +35,14 @@ function priceInput(draft: Draft) {
   return basis;
 }
 function PricingEditor({ model, initial, modelRevision, current, readError, saved, cancel }: { model: Resource; initial?: PricingVersion; modelRevision: bigint; current?: { pricing?: PricingVersion; modelRevision: bigint }; readError?: unknown; saved: (value?: PricingVersion) => void; cancel: () => void }) {
+  const taskFormId = useId();
   const [draft, setDraft] = useState(() => draftPrice(initial?.basis));
   const [problem, setProblem] = useState("");
   const mutation = useRetainedMutation(`pricing:${model.id}`, UsageQuery.setModelPricing, (value) => saved(value.pricing));
   const stale = current && (current.modelRevision !== modelRevision || current.pricing?.id !== initial?.id);
   const blocked = mutation.busy || mutation.uncertain;
   const change = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  return <form onSubmit={(event) => {
+  return <form id={`${taskFormId}-1`} onSubmit={(event) => {
     event.preventDefault(); if (blocked || stale || readError || !current) return;
     try { const basis = priceInput(draft); setProblem(""); void mutation.send({ mutation: { id: model.id, expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, expectedModelRevision: modelRevision, basis }); }
     catch (error) { setProblem(error instanceof Error ? error.message : "Review the pricing fields."); }
@@ -56,7 +59,7 @@ function PricingEditor({ model, initial, modelRevision, current, readError, save
     {draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? <p>Input/cache estimates require consistent native cache-read counts and explicitly zero cache writes. Missing or unsupported breakdowns remain unavailable.</p> : null}
     {stale ? <p role="alert">The model or price changed elsewhere. Your draft is retained. Cancel this edit and reopen current pricing before saving.</p> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={readError || mutation.error} />
-    <div className="actions"><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>Save pricing version</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same price</button> : null}<button type="button" disabled={blocked} onClick={cancel}>Cancel pricing edit</button></div>
+    <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>Save pricing version</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same price</button> : null}<button type="button" disabled={blocked} onClick={cancel}>Cancel pricing edit</button></SettingsTaskActions>
   </form>;
 }
 export function ModelPricing({ model, active, close }: { model: Resource; active: boolean; close: () => void }) {
@@ -64,13 +67,14 @@ export function ModelPricing({ model, active, close }: { model: Resource; active
   const [editing, setEditing] = useState<{ initial?: PricingVersion; modelRevision: bigint }>();
   const [accepted, setAccepted] = useState<PricingVersion>();
   const [missingResult, setMissingResult] = useState(false);
+  useRetainSettingsTask(missingResult);
   const data = current.data;
   return <section><header><h3>Token pricing · {resourceName(model)}</h3><button disabled={current.isFetching} onClick={() => void current.refetch()}>Refresh pricing</button></header>
     <p>Enter a source-backed estimate basis for this model. Rates are not fetched or verified automatically.</p>
     {accepted ? <p role="status">Accepted pricing version {accepted.revision.toString()}. Current selection is shown after refresh.</p> : null}
     {missingResult ? <p role="alert">The server acknowledged the price without a readable version. Inspect current pricing before starting another save.</p> : null}
-    {editing ? <PricingEditor model={model} initial={editing.initial} modelRevision={editing.modelRevision} current={data} readError={current.error} saved={(value) => { setEditing(undefined); setAccepted(value); setMissingResult(!value); void current.refetch(); }} cancel={() => setEditing(undefined)} /> : <><Problem error={current.error} />{data && current.error ? <p>The last retrieved pricing may be stale.</p> : null}{data?.pricing ? <PricingBasis value={data.pricing} /> : data ? <p>No pricing basis has been configured. Earlier responses stay unpriced.</p> : <p role="status">Loading pricing…</p>}
+    {editing ? <PricingEditor model={model} initial={editing.initial} modelRevision={editing.modelRevision} current={data} readError={current.error} saved={(value) => { setEditing(undefined); setAccepted(value); setMissingResult(!value); void current.refetch(); if (value) close(); }} cancel={() => setEditing(undefined)} /> : <><Problem error={current.error} />{data && current.error ? <p>The last retrieved pricing may be stale.</p> : null}{data?.pricing ? <PricingBasis value={data.pricing} /> : data ? <p>No pricing basis has been configured. Earlier responses stay unpriced.</p> : <p role="status">Loading pricing…</p>}
     {data && data.modelRevision !== model.revision ? <p role="alert">The model configuration changed. Return to Models and refresh before editing its pricing.</p> : null}
-    <div className="actions"><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>Edit token pricing</button><button onClick={close}>Back to Models</button></div></>}
+    <SettingsTaskActions className=""><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>Edit token pricing</button><button onClick={close}>Back to Models</button></SettingsTaskActions></>}
   </section>;
 }

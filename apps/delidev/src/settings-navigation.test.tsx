@@ -36,7 +36,7 @@ function fixture(delay?: "begin" | "start") {
 async function add() {
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   fireEvent.click(await screen.findByRole("button", { name: "Add AI API key" }));
-  expect(screen.getByRole("heading", { level: 1, name: "AI API Keys" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: "AI API Keys", hidden: true })).toBeTruthy();
 }
 it("starts a provider entry once after mounting its destination under Strict Mode and disposes only local callback authority", async () => {
   const value = fixture();

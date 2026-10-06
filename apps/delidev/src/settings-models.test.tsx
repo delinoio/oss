@@ -51,7 +51,7 @@ it("composes one Models heading/action and a neutral successful empty page with 
   const value = fixture();
   render(value.view()); openModels();
   await screen.findByRole("heading", { name: "No models yet" });
-  expect(screen.getAllByRole("heading", { name: "Models", level: 1 })).toHaveLength(1);
+  expect(screen.getAllByRole("heading", { name: "Models", level: 1, hidden: true })).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: "New Model" })).toHaveLength(1);
   expect(screen.getByText("Saved on the selected server.", { selector: ".models-list .settings-scope" })).toBeTruthy();
   expect(screen.getByText("Add models manually using New Model.")).toBeTruthy();
@@ -65,7 +65,7 @@ it("composes one Models heading/action and a neutral successful empty page with 
   expect(value.search.mock.calls[0][0]).toMatchObject({ query: "", pageToken: "", pageSize: 50, enabledProvidersOnly: true, includeHidden: true });
   fireEvent.click(screen.getByRole("button", { name: "New Model" }));
   expect(await screen.findByRole("heading", { name: "New Model" })).toBeTruthy();
-  expect(screen.getAllByRole("heading", { name: "Models", level: 1 })).toHaveLength(1);
+  expect(screen.getAllByRole("heading", { name: "Models", level: 1, hidden: true })).toHaveLength(1);
   expect(value.save).not.toHaveBeenCalled(); expect(value.price).not.toHaveBeenCalled();
 });
 
