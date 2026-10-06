@@ -250,6 +250,10 @@ Independent server subscription login exports capability 30, the closed Subscrip
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
 
+## GitHub token-first client boundary
+
+Generated IntegrationService/IntegrationQuery expose InspectGitHubToken and PrepareGitHubTokenForm under System capability 34. Use the direct generated Connect client for PAT inspection and final connection in the creation wizard, keeping write-only bytes outside React Query. Validate request IDs, closed states, canonical identity fields and exact form kind/owner/access/URL before progression or native dispatch. Only the current verified wizard draft may retain owned PAT memory until explicit save; clear every request copy and the original on failure, Back, cancellation, departure or save termination. Original non-secret create requests and token-replacement identities survive uncertainty only for explicit reconciliation; token reentry is required. Existing profile/revision-bound form descriptors, Manage/Rename/deletion and CLI compatibility remain unchanged. Follow the integration and desktop contracts.
+
 ## Agent Worker wizard bindings
 
 Generate ConfigurationQuery.saveAgentWorker, typed model-selection oneof and

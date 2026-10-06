@@ -47,6 +47,10 @@ before dependent implementation. This prerequisite introduces no active schema,
 generated binding, advertised support, credential lifetime, browser authority or
 database migration. Existing profile/revision-bound token forms remain unchanged.
 
+### Activated onboarding boundary
+
+After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
+
 ## Agent Worker wizard
 
 PR #1351 established the issue #964 allocations on main before implementation.
