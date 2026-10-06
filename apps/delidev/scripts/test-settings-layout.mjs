@@ -2,22 +2,55 @@
 // Explicit browser validation; Playwright is supplied by the validation host,
 // without adding a product/workspace dependency. All data is synthetic.
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const playwright = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
+const screenshots = process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR;
+const screenshot = process.env.DELIDEV_LAYOUT_SCREENSHOT;
+const checkout = resolve(app, "..", "..");
+
+const resolveDestination = async value => {
+  let candidate = resolve(value);
+  const missingParts = [];
+  while (true) {
+    try {
+      const existing = await realpath(candidate);
+      return resolve(existing, ...missingParts.reverse());
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      const parent = dirname(candidate);
+      if (parent === candidate) throw error;
+      missingParts.push(basename(candidate));
+      candidate = parent;
+    }
+  }
+};
+
+// Resolve existing ancestors before browser work so symlinked destinations cannot redirect optional screenshots into the checkout.
+const ensureOutsideCheckout = async value => {
+  const destination = await resolveDestination(value);
+  const relativePath = relative(checkout, destination);
+  const insideCheckout = relativePath === "" || (!isAbsolute(relativePath) && relativePath !== ".." && !relativePath.startsWith(`..${sep}`));
+  if (insideCheckout) throw new Error("Optional screenshot destinations must resolve outside the repository checkout");
+  return destination;
+};
+
+const screenshotDirectory = screenshots ? await ensureOutsideCheckout(screenshots) : null;
+const screenshotPath = screenshot ? await ensureOutsideCheckout(screenshot) : null;
+
 const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [1280,800], [960,640], [640,480]];
-let checked = 0, formsChecked = 0, hiddenChoicesChecked = 0;
+let checked = 0, formsChecked = 0, harnessChecks = 0, keyboardChecks = 0, hiddenChoicesChecked = 0;
 try {
   const build = await createRsbuild({ cwd: app, rsbuildConfig: { plugins: [pluginReact()], source: { entry: { index: join(app, "src/settings-layout.fixture.tsx") } }, html: { template: join(app, "index.html") }, output: { distPath: { root: directory }, assetPrefix: "/", sourceMap: false, cleanDistPath: true } } });
   await build.build();
@@ -47,6 +80,52 @@ try {
     const form = page.locator(".worker-wizard");
     assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), "Wizard form cap");
     assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Wizard content overflow");
+    const group = form.getByRole("radiogroup", { name: "Harness", exact: true });
+    if (await group.isVisible()) {
+      // The picker is visible while its independent server-support read settles.
+      // Exercise keyboard input only after the fixture grants that capability.
+      await page.waitForFunction(() => document.querySelector(".worker-harness-card")?.matches(":enabled"));
+      const cards = group.getByRole("radio");
+      assert.deepEqual(await cards.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-label"))), ["Codex", "Claude Code", "OpenCode", "Grok Build"]);
+      const layout = await group.evaluate(node => {
+        const style = getComputedStyle(node), form = node.closest("form");
+        return { columns: style.gridTemplateColumns.split(" ").length, width: form.getBoundingClientRect().width, gap: style.gap, cards: [...node.children].map(card => ({ height: card.getBoundingClientRect().height, padding: getComputedStyle(card).padding, radius: getComputedStyle(card).borderRadius, mark: getComputedStyle(card.querySelector(".worker-harness-mark")).width, ink: getComputedStyle(card.querySelector(".worker-harness-mark")).backgroundColor, hasMask: getComputedStyle(card.querySelector(".worker-harness-mark")).maskImage !== "none", overflow: card.scrollWidth > card.clientWidth, inline: Boolean(card.getAttribute("style")) })) };
+      });
+      assert.equal(layout.columns, layout.width >= 640 ? 2 : 1, JSON.stringify(layout));
+      assert.equal(layout.gap, "16px");
+      for (const card of layout.cards) {
+        assert(card.height >= 176 && !card.overflow && !card.inline, JSON.stringify(card));
+        assert.equal(card.padding, "24px"); assert.equal(card.radius, "8px"); assert.equal(card.mark, "48px");
+        assert(card.hasMask); assert.notEqual(card.ink, "rgba(0, 0, 0, 0)");
+      }
+      const codex = cards.filter({ hasText: "Codex" }), claude = cards.filter({ hasText: "Claude Code" });
+      await codex.focus(); await codex.press("ArrowLeft");
+      assert.equal(await group.getByRole("radio", { checked: true }).getAttribute("aria-label"), "Grok Build");
+      await page.keyboard.press("Home");
+      assert(await codex.evaluate(node => node === document.activeElement && node.tabIndex === 0));
+      assert.equal(await codex.evaluate(node => getComputedStyle(node).outlineWidth), "3px");
+      await claude.focus(); await claude.press("Space");
+      assert.equal(await claude.getAttribute("aria-checked"), "true");
+      await codex.focus(); await codex.press("Enter");
+      assert.equal(await codex.getAttribute("aria-checked"), "true");
+      assert(await group.isVisible(), "Native button activation cannot advance the wizard");
+      assert.equal(await cards.evaluateAll(nodes => nodes.filter(node => node.tabIndex === 0).length), 1);
+      await codex.hover();
+      const selection = await codex.evaluate(node => {
+        const style = getComputedStyle(node);
+        return { background: style.backgroundColor, border: style.borderTopColor, selected: getComputedStyle(document.querySelector(".settings-category-button[aria-pressed=true]")).backgroundColor, accent: getComputedStyle(node.closest("form").querySelector("button.primary")).backgroundColor };
+      });
+      assert.equal(selection.background, selection.selected, "Selected card retains its semantic fill on hover");
+      assert.equal(selection.border, selection.accent, "Selected card retains its accent border on hover");
+      if (screenshotDirectory) {
+        await mkdir(screenshotDirectory, { recursive: true });
+        await codex.click();
+        await form.scrollIntoViewIfNeeded();
+        const viewport = page.viewportSize(), theme = await page.locator("html").getAttribute("data-theme");
+        await page.screenshot({ path: join(screenshotDirectory, `harness-${theme}-${viewport.width}x${viewport.height}.png`) });
+      }
+      harnessChecks++;
+    }
     const next = form.getByRole("button", { name: /^(Next|Save Agent Worker)$/ });
     await next.scrollIntoViewIfNeeded();
     const footer = await next.boundingBox();
@@ -124,8 +203,18 @@ try {
       await checkHiddenAccountChoices();
     }
     if (!populated) {
-      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", "New Server preferences"], ["Git", "New Git workflow"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
-        await select(category); await page.getByRole("button", { name: action, exact: true }).click();
+      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", null], ["Git", "New Git workflow"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
+        await select(category); if (action) await page.getByRole("button", { name: action, exact: true }).click();
+        if (category === "Server preferences") {
+          const form = page.getByRole("form", { name: "Server preferences form", exact: true }); await form.waitFor();
+          assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
+          assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
+          assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
+          assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
+          assert(await page.getByRole("button", { name: "Save changes", exact: true }).isDisabled());
+          formsChecked++;
+          continue;
+        }
         if (category === "Repositories") {
           // Registration first inspects a folder before exposing saved fields.
           // Exercise its manual entry without inventing native folder authority.
@@ -138,19 +227,36 @@ try {
           continue;
         }
         if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
-        const form = page.locator(".settings-content form:visible"); await form.waitFor();
-        assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
-        assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
-        assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
-        assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
+        const dialog = page.getByRole("dialog"); await dialog.waitFor();
+        const form = dialog.locator("form:visible");
+        if (category !== "Repositories") await form.waitFor();
+        const dialogLayout = await dialog.evaluate(node => {
+          const box = node.getBoundingClientRect(), header = node.querySelector(".settings-task-header"), footer = node.querySelector(".settings-task-footer"), body = node.querySelector(".settings-task-body");
+          return { width: box.width, left: box.left, right: innerWidth - box.right, height: box.height, overflow: body.scrollWidth > body.clientWidth, title: getComputedStyle(header.querySelector("h2")).fontSize, radius: getComputedStyle(node).borderRadius, footerInside: !footer.getClientRects().length || footer.getBoundingClientRect().bottom <= box.bottom, bodyScroll: getComputedStyle(body).overflowY };
+        });
+        assert(dialogLayout.left >= 15.5 && dialogLayout.right >= 15.5 && dialogLayout.height <= viewport[1] - 47.5 && !dialogLayout.overflow && dialogLayout.footerInside, `${category} dialog bounds: ${JSON.stringify(dialogLayout)}`);
+        assert.equal(dialogLayout.title, "20px"); assert.equal(dialogLayout.radius, "16px"); assert.equal(dialogLayout.bodyScroll, "auto");
+        assert.equal(await page.locator(".settings-content h1:visible").count(), 1, "Mounted background category title");
+        assert.equal(await page.locator("dialog[open]:not([role=region])").count(), 1, "One native dialog");
+        if (category !== "Repositories") {
+          assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline controls preserve whitespace`);
+          assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
+        }
         if (category === "Agent Workers") {
           assert.equal(await form.locator(".worker-steps li").count(), 4);
           assert.equal(await form.getByRole("heading", { name: "Harness", exact: true }).count(), 1);
           assert.equal(await form.getByRole("button", { name: "Save Agent Worker", exact: true }).count(), 0);
+          await checkWizard();
         }
+        const close = dialog.locator(".settings-task-close"); await close.focus();
+        for (const key of ["Shift+Tab", "Tab", "Tab"]) {
+          await page.keyboard.press(key);
+          assert(await dialog.evaluate(node => node.contains(document.activeElement)), `${category} ${key} stays in dialog`); keyboardChecks++;
+        }
+        await page.mouse.click(2, 2); assert(await dialog.isVisible(), "Backdrop preserves task");
         formsChecked++;
-        await page.getByRole("button", { name: category === "AI API Keys" ? "Back to AI API Keys" : category === "Notifications" ? "Cancel notification edit" : category === "Agent Workers" ? "Cancel" : "Cancel edit", exact: true }).click();
-        if (category === "AI API Keys" && await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).isVisible()) await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).click();
+        await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+        await page.waitForFunction(() => document.querySelector(".settings-content")?.contains(document.activeElement), { timeout: 2000 }); keyboardChecks++;
       }
     }
   }
@@ -160,11 +266,52 @@ try {
     await page.setViewportSize({ width: width / 2, height: height / 2 });
     await page.goto(`${origin}/?theme=dark`); await page.getByRole("button", { name: "Settings", exact: true }).click();
     for (const category of categories) { await select(category); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
+    await select("Agent Workers"); await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
+    await checkWizard(); await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+  for (const [width,height] of viewports) {
+    await page.setViewportSize({ width: width / 2, height: height / 2 });
     await page.goto(`${origin}/?theme=dark&populated=true&hiddenWorkerChoices=true`);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await checkHiddenAccountChoices();
   }
-  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, hiddenAccountChoiceChecks: hiddenChoicesChecked, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length, nativeAcceptance: "not-performed" }));
+  for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
+    await page.setViewportSize({ width: width / 2, height: height / 2 });
+    await page.goto(`${origin}/?theme=${theme}`); await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await select("Projects"); await page.getByRole("button", { name: "New Project", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    assert(await dialog.evaluate(node => { const box = node.getBoundingClientRect(), body = node.querySelector(".settings-task-body"); return box.width <= innerWidth - 31 && box.height <= innerHeight - 47 && body.scrollWidth <= body.clientWidth; }), `${theme} Project dialog effective 200% ${width}`);
+    await page.keyboard.press("Escape"); formsChecked++;
+  }
+  for (const theme of ["light", "dark"]) {
+    await page.setViewportSize({ width: 1280, height: 820 }); await page.goto(`${origin}/?theme=${theme}&populated=true`);
+    await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Projects");
+    await page.getByRole("button", { name: /^Delete Example PROJECT/ }).click();
+    const dialog = page.getByRole("dialog"); await dialog.waitFor();
+    await page.waitForFunction(() => document.activeElement?.textContent === "Keep configuration");
+    assert.equal(await dialog.evaluate(node => Math.round(node.getBoundingClientRect().width)), 480);
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    await select("Backups");
+    const main = page.locator("#main");
+    const position = await main.evaluate(node => { node.scrollTop = 80; return node.scrollTop; });
+    await page.getByRole("button", { name: /^Inspect backup/ }).click(); await dialog.waitFor();
+    await page.getByText("Database integrity and original server identity verified.", { exact: true }).waitFor();
+    assert.equal(await main.evaluate(node => node.scrollTop), position, "Opening preserves list scroll");
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    assert.equal(await main.evaluate(node => node.scrollTop), position, "Closing preserves list scroll");
+    await select("Agent Workers");
+    await page.getByRole("button", { name: /^Preview routing for Example AGENT/ }).click(); await dialog.waitFor();
+    assert.equal(await dialog.evaluate(node => Math.round(node.getBoundingClientRect().width)), 768, "Routing uses the ordinary form width");
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    keyboardChecks += 4;
+  }
+  if (screenshotPath) {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.goto(`${origin}/?theme=light&populated=true`);
+    await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Projects");
+    await page.getByRole("button", { name: /^Edit Example PROJECT/ }).click(); await page.getByRole("dialog").waitFor();
+    await page.screenshot({ path: screenshotPath });
+  }
+  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length, keyboardChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

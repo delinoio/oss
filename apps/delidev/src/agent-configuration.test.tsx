@@ -73,6 +73,11 @@ it("changes only Name while preserving the complete document, exact revision and
   const accountSelector = screen.getByLabelText("Add AI account");
   const before = [value.list.mock.calls.length, value.inventory.mock.calls.length, value.search.mock.calls.length, value.get.mock.calls.length];
   for (const section of document.querySelectorAll<HTMLDetailsElement>(".agent-disclosure")) { toggle(section, true); toggle(section, false); }
+  for (const [title, label] of [["Reasoning", "Reasoning effort"], ["Native harness options", "Subagent effort"]]) {
+    const section = disclosure(title!); toggle(section, true);
+    const input = screen.getByRole("combobox", { name: label! }); fireEvent.focus(input); fireEvent.keyDown(input, { key: "Escape" });
+    toggle(section, false);
+  }
   fireEvent(window, new Event("resize"));
   expect(screen.getByLabelText("Add AI account")).toBe(accountSelector);
   expect([value.list.mock.calls.length, value.inventory.mock.calls.length, value.search.mock.calls.length, value.get.mock.calls.length]).toEqual(before);
@@ -80,6 +85,30 @@ it("changes only Name while preserving the complete document, exact revision and
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(decoded(value.save.mock.calls[0][0])).toEqual({ ...data, name: "Changed name" });
   expect(value.save.mock.calls[0][0]).toMatchObject({ mutation: { id: agent.id, expectedRevision: 9n } });
+});
+
+it("changes harness hints while preserving both effort drafts and unrelated fields", async () => {
+  const value = fixture();
+  const original = { name: "Hints", harness: "codex", model_id: value.model.id, accounts: [], templates: [], options: { permission: "default", future_option: "retained" }, future_field: { retained: true } };
+  const agent = resource(EntityKind.AGENT, original); value.resources.push(agent);
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value);
+  toggle(disclosure("Reasoning"), true); toggle(disclosure("Native harness options"), true);
+  for (const [harness, expected] of [["codex", 9], ["claude-code", 5], ["opencode", 0], ["grok-build", 0]] as const) {
+    change("Harness", harness); change("Reasoning effort", "");
+    const input = screen.getByRole("combobox", { name: "Reasoning effort" }); fireEvent.focus(input);
+    expect(within(screen.getByRole("listbox", { name: "Reasoning effort suggestions" })).getAllByRole("option")).toHaveLength(expected + 1);
+    fireEvent.keyDown(input, { key: "Escape" });
+    const child = screen.getByRole("combobox", { name: "Subagent effort" }); fireEvent.focus(child);
+    expect(within(screen.getByRole("listbox", { name: "Subagent effort suggestions" })).getAllByRole("option")).toHaveLength(harness === "codex" ? 10 : 1);
+    fireEvent.keyDown(child, { key: "Escape" });
+  }
+  change("Reasoning effort", " Future-Effort "); change("Subagent effort", " Future-Child ");
+  change("Harness", "claude-code");
+  expect((screen.getByRole("combobox", { name: "Reasoning effort" }) as HTMLInputElement).value).toBe(" Future-Effort ");
+  expect((screen.getByRole("combobox", { name: "Subagent effort" }) as HTMLInputElement).value).toBe(" Future-Child ");
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(decoded(value.save.mock.calls[0][0])).toEqual({ ...original, harness: "claude-code", effort: " Future-Effort ", options: { ...original.options, subagent_effort: " Future-Child " } });
 });
 
 it("keeps ordered reference operations, relative weights and duplicate prevention through collapse", async () => {

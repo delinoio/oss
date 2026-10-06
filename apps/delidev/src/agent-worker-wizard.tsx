@@ -18,6 +18,8 @@ interface Source { kind: SourceKind; id: string }
 const steps = [Step.Harness, Step.Accounts, Step.Model, Step.Configure];
 const stepNames = { [Step.Harness]: "Harness", [Step.Accounts]: "Accounts", [Step.Model]: "Model", [Step.Configure]: "Configure" };
 const harnessNames: Record<Harness, string> = { [Harness.Codex]: "Codex", [Harness.Claude]: "Claude Code", [Harness.OpenCode]: "OpenCode", [Harness.Grok]: "Grok Build" };
+const harnesses = Object.values(Harness);
+const harnessOrigins: Record<Harness, string> = { [Harness.Codex]: "OpenAI", [Harness.Claude]: "Anthropic", [Harness.OpenCode]: "Open source", [Harness.Grok]: "xAI" };
 const sourceKey = (source?: Source) => source ? `${source.kind}:${source.id}` : "";
 function fromKey(value: string): Source | undefined {
   const [kind, id] = value.split(":");
@@ -123,6 +125,11 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const change = (value: Document) => { if (encode(value).byteLength > 1 << 20) { setProblem("This configuration is too large."); return; } setData(value); setProblem(""); };
   const clearModel = () => { setModel(undefined); setInput(""); setModelPage(""); setPopup(false); setHighlight(-1); };
+  const chooseHarness = (harness: Harness) => {
+    if (blocked || !active || !supported || harness === data.harness) return;
+    initialized.current = true; setSource(undefined); clearModel();
+    change({ ...data, harness, accounts: [], model_id: "" });
+  };
   const chooseSource = (value: string) => {
     initialized.current = true;
     setSource(fromKey(value)); setAccountPage(""); clearModel();
@@ -180,8 +187,32 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     {initial && data.reconfiguration_required === true ? <p role="status">This Worker needs explicit account and model reconfiguration. Historical executions keep their original attribution.</p> : null}
     <fieldset disabled={blocked || !supported}>
       <section hidden={step !== Step.Harness}>
-        <p>Choose the tool that runs this Worker.</p>
-        <label>Harness<select data-wizard-field="harness" value={text(data.harness)} onChange={event => { initialized.current = true; setSource(undefined); clearModel(); change({ ...data, harness: event.target.value, accounts: [], model_id: "" }); }}>{Object.values(Harness).map(value => <option key={value} value={value}>{harnessNames[value]}</option>)}</select></label>
+        <p id={`${listID}-harness-help`}>Choose the tool that runs this Worker.</p>
+        <div className="worker-harness-grid" role="radiogroup" aria-label="Harness" aria-describedby={`${listID}-harness-help`}>
+          {harnesses.map((harness, index) => {
+            const selected = data.harness === harness;
+            const entry = selected || !harnesses.includes(data.harness as Harness) && index === 0;
+            return <button key={harness} type="button" role="radio" className="worker-harness-card" aria-checked={selected} aria-label={harnessNames[harness]} aria-describedby={`${listID}-${harness}-origin`} tabIndex={entry ? 0 : -1} data-wizard-field={entry ? "harness" : undefined} data-harness={harness} disabled={blocked || !active || !supported} onClick={() => chooseHarness(harness)} onKeyDown={event => {
+              if (blocked || !active || !supported) return;
+              let next: number;
+              switch (event.key) {
+                case "ArrowRight": case "ArrowDown": next = (index + 1) % harnesses.length; break;
+                case "ArrowLeft": case "ArrowUp": next = (index + harnesses.length - 1) % harnesses.length; break;
+                case "Home": next = 0; break;
+                case "End": next = harnesses.length - 1; break;
+                default: return;
+              }
+              event.preventDefault(); chooseHarness(harnesses[next]!);
+              event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[data-harness="${harnesses[next]}"]`)?.focus();
+            }}>
+              <span className={`worker-harness-mark worker-harness-mark-${harness}`} aria-hidden="true" />
+              <span className="worker-harness-indicator" aria-hidden="true">{selected ? <svg viewBox="0 0 16 16" width="16" height="16"><path d="m3.5 8 3 3 6-6" /></svg> : null}</span>
+              <strong className="worker-harness-name">{harnessNames[harness]}</strong>
+              <small id={`${listID}-${harness}-origin`}>{harnessOrigins[harness]}</small>
+            </button>;
+          })}
+        </div>
+        <p className="worker-harness-guidance">Select accounts and a model for this source.</p>
       </section>
       <section hidden={step !== Step.Accounts} aria-label="Choose accounts">
         <p>{harnessNames[data.harness as Harness]} <button type="button" onClick={() => { setStep(Step.Harness); setFocusField(""); }}>Change harness</button></p>

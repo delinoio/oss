@@ -39,7 +39,7 @@ it("persists native Claude permission selection through the desktop and real Go 
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
-  change("Harness", "claude-code");
+  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" }));
   const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
   next();
   await screen.findByRole("option", { name: "Claude settings API" }, { timeout: 5000 });
