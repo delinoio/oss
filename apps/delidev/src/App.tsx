@@ -21,6 +21,7 @@ import type { PairingAuthority } from "./pairing-grant";
 import { TrayPresentation } from "./tray-presentation";
 import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
+import { NotificationProvider } from "./toast-notifications";
 import { Sidebar } from "./sidebar";
 import type { ChooseRepositoryFolder } from "./repository-registration";
 import { SettingsEntryDestination } from "./settings";
@@ -118,5 +119,5 @@ export function App({ transport, localServer, serverPresentation, connectionSett
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><PRWorkflowProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><PRWorkflowProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></PRWorkflowProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider>;
 }

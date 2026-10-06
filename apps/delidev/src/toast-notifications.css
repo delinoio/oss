@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.toast-viewport { position: fixed; z-index: 1100; top: 80px; left: 50%; transform: translateX(-50%); width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 96px); display: grid; align-content: start; gap: 8px; overflow: auto; pointer-events: none; filter: drop-shadow(0 4px 8px var(--shadow-soft)); }
+.toast-viewport[hidden] { display: none; }
+.toast-notification { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); pointer-events: auto; animation: toast-arrive 160ms ease-out; }
+.toast-content { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
+.toast-content p { margin: 0; min-width: 0; font-size: 14px; font-weight: 550; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.toast-icon { flex: 0 0 20px; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.toast-notification[data-kind="success"] .toast-icon { color: var(--success-text); }
+.toast-notification[data-kind="info"] .toast-icon { color: var(--link); }
+.toast-notification[data-kind="warning"] .toast-icon { color: var(--warning-text); }
+.toast-notification[data-kind="error"] .toast-icon { color: var(--danger-text); }
+.toast-notification .toast-close { flex: 0 0 32px; display: grid; place-items: center; width: 32px; height: 32px; min-height: 32px; padding: 6px; border: 0; border-radius: 6px; background: var(--surface-muted); color: var(--text-secondary); }
+.toast-notification .toast-close:hover { background: var(--surface-hover); }
+.toast-notification .toast-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.toast-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.toast-kind-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@keyframes toast-arrive { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .toast-notification { animation: none; } }

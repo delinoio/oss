@@ -2,6 +2,7 @@
 
 # DeliDev desktop
 
+- In-app toast presentation follows the desktop contract and scoped source ownership. Mount its provider within the existing connection boundary, preserve Settings disposal and native notification/Inbox authority, and keep layout/component evidence separate from native platform acceptance.
 - Form controls use the shared desktop focus treatment in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`: inputs, textareas and selects keep their ordinary boundaries and keyboard behavior without pointer or keyboard focus rings. Other focusable controls retain their existing focus indicators.
 
 - Execution-device presentation follows issue #1136 and `docs/apps-delidev-desktop-contract.md`: New session's visible and accessible machine-selector label is exactly `Runs on`; its resource noun and other former Execution Worker labels/messages are `Runner Device` / `Runner Devices`. Preserve Agent Worker, generic technical Worker terms, user-assigned names, machine IDs, RPC/storage fields, CLI commands, logs, error codes and the `execution-workers` Settings category value. `ResourceChoice.resourceLabel` defaults to `label` and changes only placeholder/status nouns.

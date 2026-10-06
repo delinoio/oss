@@ -69,6 +69,19 @@ grant no provider registration, exchange or native capability. Deliver complete
 common/Hugging Face, Gemini and Baseten feature PRs in that dependency order under
 the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
 
+### Repository addition prerequisites
+
+The Add repository extension under issue #964 reserves System capabilities 31
+(`REPOSITORY_CLONE_V1`) and 32 (`GITHUB_REPOSITORY_PICKER_V1`), Worker capability
+18 (`REPOSITORY_CLONE_V1`), and the five new repository-list/clone message
+declarations in the allocation ledger. Establish these reservations on main
+before implementation. Reservations grant no GitHub listing, Git authentication,
+filesystem write, clone or registration capability. No migration is reserved:
+the implementation uses the existing repository schema and durable job/receipt
+boundary. PATs remain server-only GitHub API credentials; the original Worker
+uses only its own Git/SSH authentication. Existing Local checkout deletion
+ownership is unchanged.
+
 Use the existing protocol, Go, frontend and CI-contract suites. No new GitHub
 ruleset, required check or merge-queue policy is introduced. Record validation and
 remaining acceptance limits in the owning pull request, issue and CI runs.
