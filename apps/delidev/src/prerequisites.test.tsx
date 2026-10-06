@@ -4,17 +4,27 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, SubscriptionServiceId, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { Prerequisites } from "./prerequisites";
+
+function accountResource(subscriptionService?: SubscriptionServiceId): Resource {
+  return create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.ACCOUNT, schemaVersion: subscriptionService ? 2 : 1, documentJson: encode({
+    alias: "Saved account", type: subscriptionService ? "subscription" : "api",
+    ...(subscriptionService ? { subscription_service: subscriptionService } : { provider_id: newRequestId() }),
+    enabled: true, exclude_automatic: false, recovery_notifications: false, health: "ready", quota: [], confirmed_exhausted: false,
+    connection: { id: newRequestId(), authentication: subscriptionService ? "subscription" : "bearer", connected_at: "2026-10-01T12:00:00Z" },
+  }) });
+}
 
 function fixture() {
   const serverId = newRequestId();
   const report = { schema_version: 2, server_id: serverId, version: "0.1.0", protocol_version: 1, database_schema_version: 24, os: "darwin", architecture: "arm64", listener: "http://127.0.0.1:46310", credential_store: "owner-credential-ready", credentials: [], more_credentials: false, inference_probes: false, observed_at: new Date().toISOString(), database: "ready", storage: { result: { state: "observed" }, database_bytes: "4096", wal_bytes: "0", logical_database_bytes: "4096", volume_capacity_bytes: "8192", volume_available_bytes: "4096", resources: [] }, more_machines: false, machines: [{ machine_id: newRequestId(), name: "Worker", os: "darwin", architecture: "arm64", version: "0.1.0", last_seen: new Date().toISOString(), active_stream: true, disabled: false, installations: [{ harness: "codex", state: "detected", version: "0.151.0", protocol_verified: true, protocol_state: "verified", capabilities: [] as string[], observed_at: new Date().toISOString() }, ...["claude-code", "opencode", "grok-build"].map(harness => ({ harness, state: "unchecked", protocol_verified: false, capabilities: [] as string[] }))] }] };
-  const account = create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.ACCOUNT, schemaVersion: 1, documentJson: encode({ provider_id: newRequestId(), enabled: true, health: "ready", connection: { id: newRequestId() } }) });
+  const account = accountResource();
   const agent = create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.AGENT, schemaVersion: 1, documentJson: encode({ harness: "codex", model_id: newRequestId(), accounts: [] }) });
   const doctor = vi.fn(async () => ({ reportJson: encode(report) }));
-  const list = vi.fn(async (input: { filter?: { kind: EntityKind } }) => ({ resources: input.filter?.kind === EntityKind.ACCOUNT ? [account] : [agent], nextPageToken: "" }));
+  const accountPage = { resources: [account], nextPageToken: "" };
+  const list = vi.fn(async (input: { filter?: { kind: EntityKind } }) => input.filter?.kind === EntityKind.ACCOUNT ? accountPage : { resources: [agent], nextPageToken: "" });
   const mutation = vi.fn();
   const settings = vi.fn();
   const status = vi.fn(async () => ({ serverId, version: "0.1.0", stopping: false }));
@@ -22,10 +32,131 @@ function fixture() {
     router.service(SystemService, { getStatus: status, getDoctor: doctor, createBackup: mutation });
     router.service(ResourceService, { listResources: list });
   });
+  const rpc = vi.spyOn(transport, "unary");
+  const stream = vi.spyOn(transport, "stream");
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Prerequisites active={active} openSettings={settings} /></QueryClientProvider></TransportProvider>;
-  return { serverId, report, account, agent, doctor, list, mutation, status, settings, view };
+  return { serverId, report, account, accountPage, agent, doctor, list, mutation, rpc, stream, status, settings, view };
 }
+
+it.each(Object.values(SubscriptionServiceId))("observes saved ready %s subscriptions without invoking account or native operations", async service => {
+  const f = fixture();
+  f.accountPage.resources = [accountResource(service)];
+  render(f.view());
+  await screen.findByText("Connected to server 0.1.0.");
+  expect(f.list).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText("AI account: Observed");
+  expect(screen.getByText("1 account(s) inspected; 1 enabled account(s) have a connection and saved ready status.")).toBeTruthy();
+  expect(screen.getByText("Saved status does not prove current quota or provider access.")).toBeTruthy();
+  expect(f.rpc.mock.calls.map(([method]) => method.name).sort()).toEqual(["GetDoctor", "GetStatus", "ListResources", "ListResources"]);
+  expect(f.stream).not.toHaveBeenCalled();
+  expect(f.mutation).not.toHaveBeenCalled();
+});
+
+it("observes a mixed API/subscription page with independent saved health", async () => {
+  const f = fixture();
+  const subscription = accountResource(SubscriptionServiceId.ChatGPT);
+  const data = JSON.parse(new TextDecoder().decode(subscription.documentJson));
+  subscription.documentJson = encode({ ...data, confirmed_exhausted: true });
+  f.accountPage.resources = [f.account, subscription];
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText("AI account: Observed");
+  expect(screen.getByText("2 account(s) inspected; 2 enabled account(s) have a connection and saved ready status.")).toBeTruthy();
+  expect(f.mutation).not.toHaveBeenCalled();
+});
+
+it.each([
+  { enabled: false }, { health: "unverified" }, { health: "expired" },
+  { health: "revoked" }, { health: "failed" },
+  { health: "disconnected", connection: undefined },
+  { health: "disconnected", connection: undefined, removal: { request_id: newRequestId(), expected_revision: 1 } },
+])("keeps valid unavailable subscription accounts in Needs setup: %j", async changes => {
+  const f = fixture();
+  const account = accountResource(SubscriptionServiceId.ChatGPT);
+  account.documentJson = encode({ ...JSON.parse(new TextDecoder().decode(account.documentJson)), ...changes });
+  f.accountPage.resources = [account];
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText("AI account: Needs setup");
+  expect(screen.getByText("1 account(s) inspected; 0 enabled account(s) have a connection and saved ready status.")).toBeTruthy();
+});
+
+it.each([
+  { type: undefined }, { type: "future" }, { type: "api" },
+  { subscription_service: undefined }, { subscription_service: "future" }, { subscription_service: "" },
+  { provider_id: newRequestId() }, { provider_id: "" }, { provider_id: null },
+  { retired: true }, { health: "future" }, { health: undefined }, { enabled: "true" },
+  { connection: null }, { connection: { id: "invalid" } },
+  { connection: { id: newRequestId(), authentication: "future", connected_at: "2026-10-01T12:00:00Z" } },
+  { connection: { id: newRequestId(), authentication: "subscription", connected_at: "2026-02-30T12:00:00Z" } },
+  { validation: {} }, { catalog: {} }, { future_field: true },
+])("invalidates the whole mixed page for malformed subscription identity/status: %j", async changes => {
+  const f = fixture();
+  const account = accountResource(SubscriptionServiceId.ChatGPT);
+  account.documentJson = encode({ ...JSON.parse(new TextDecoder().decode(account.documentJson)), ...changes });
+  f.accountPage.resources = [f.account, account];
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("AI account: Unknown")).toBeTruthy();
+  expect(screen.queryByText(/account\(s\) inspected/)).toBeNull();
+});
+
+it.each([
+  { type: undefined }, { type: "subscription" }, { type: "future" },
+  { provider_id: undefined }, { provider_id: "invalid" },
+  { subscription_service: "chatgpt" }, { subscription_service: "" }, { subscription: {} },
+])("rejects malformed or mixed schema-1 API identity: %j", async changes => {
+  const f = fixture();
+  f.account.documentJson = encode({ ...JSON.parse(new TextDecoder().decode(f.account.documentJson)), ...changes });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("AI account: Unknown")).toBeTruthy();
+});
+
+it.each([
+  { schemaVersion: 0 }, { schemaVersion: 1 }, { schemaVersion: 3 },
+  { revision: 0n }, { kind: EntityKind.MODEL }, { id: "invalid" },
+  { projectId: newRequestId() }, { sessionId: newRequestId() },
+  { documentJson: new TextEncoder().encode("{invalid") }, { documentJson: new Uint8Array([0xff]) },
+  { documentJson: new Uint8Array((1 << 20) + 1) },
+])("rejects unsupported, foreign or unreadable subscription resources: $schemaVersion $kind", async changes => {
+  const f = fixture();
+  f.accountPage.resources = [f.account, create(ResourceSchema, { ...accountResource(SubscriptionServiceId.ChatGPT), ...changes })];
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("AI account: Unknown")).toBeTruthy();
+});
+
+it.each([2, 51])("rejects duplicate or oversized account inventories (%i records)", async count => {
+  const f = fixture();
+  f.accountPage.resources = count === 2 ? [f.account, f.account] : Array.from({ length: count }, () => accountResource(SubscriptionServiceId.ChatGPT));
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("AI account: Unknown")).toBeTruthy();
+});
+
+it("preserves partial-page uncertainty and does not infer later account health", async () => {
+  const f = fixture();
+  f.accountPage.resources = [accountResource(SubscriptionServiceId.ChatGPT)];
+  f.accountPage.nextPageToken = "more";
+  f.accountPage.resources[0]!.documentJson = encode({ type: "subscription", subscription_service: "chatgpt", enabled: true, health: "disconnected" });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("AI account: Unknown")).toBeTruthy();
+  expect(screen.getByText("More accounts exist. Open AI accounts for the remaining records.")).toBeTruthy();
+  f.accountPage.resources = [accountResource(SubscriptionServiceId.ChatGPT)];
+  fireEvent.click(screen.getByRole("button", { name: "Refresh prerequisites" }));
+  await screen.findByText("AI account: Observed");
+  expect(screen.getByText("More accounts exist. Open AI accounts for the remaining records.")).toBeTruthy();
+  expect(f.list).toHaveBeenCalledTimes(4);
+});
 
 it("checks live read surfaces only after the user's action and distinguishes observations from readiness", async () => {
   const f = fixture();
@@ -55,7 +186,7 @@ it("does not retain successful checks after a failed refresh or count disabled/d
   fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
   await screen.findByText("Server diagnostics: Observed");
   f.doctor.mockRejectedValueOnce(new ConnectError("private native failure", Code.Unavailable));
-  f.list.mockResolvedValueOnce({ resources: [create(ResourceSchema, { ...f.account, documentJson: encode({ provider_id: newRequestId(), enabled: false, health: "ready", connection: { id: newRequestId() } }) })], nextPageToken: "" });
+  f.list.mockResolvedValueOnce({ resources: [create(ResourceSchema, { ...f.account, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(f.account.documentJson)), enabled: false }) })], nextPageToken: "" });
   fireEvent.click(screen.getByRole("button", { name: "Refresh prerequisites" }));
   await screen.findByText("Server diagnostics: Check failed");
   expect(screen.queryByText("Runner Device and harness: Observed")).toBeNull();

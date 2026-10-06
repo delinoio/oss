@@ -1,12 +1,16 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, FailureCode, ResourceQuery, SystemQuery, isEntityId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, ResourceQuery, SystemQuery, isEntityId, subscriptionService, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text, type Document } from "./documents";
 import { Problem } from "./ui";
 
 enum CheckState { NotChecked = "Not checked", Observed = "Observed", Setup = "Needs setup", Unknown = "Unknown", Failed = "Check failed" }
 const harnesses = new Set(["codex", "claude-code", "opencode", "grok-build"]);
 const healthStates = new Set(["disconnected", "unverified", "ready", "expired", "revoked", "failed"]);
+enum AccountType { Api = "api", Subscription = "subscription" }
+const accountFields = new Set(["alias", "provider_id", "subscription_service", "type", "enabled", "exclude_automatic", "recovery_notifications", "health", "quota", "confirmed_exhausted", "connection", "removal", "validation", "catalog", "subscription"]);
+const connectionFields = new Set(["id", "authentication", "connected_at"]);
+const apiAuthentication = new Set(["bearer", "api-key", "keyless"]);
 enum InstallationState { Unchecked = "unchecked", Detected = "detected", Missing = "missing", Denied = "permission-denied", Incompatible = "incompatible", Failed = "failed" }
 enum ProtocolState { Verified = "verified", Unsupported = "unsupported", Failed = "failed" }
 const installationFields = new Set(["harness", "state", "version", "capabilities", "observed_at", "protocol_verified", "protocol_state", "problem_code", "guidance"]);
@@ -105,17 +109,31 @@ function reportFrom(bytes: Uint8Array | undefined, server: string): Document | u
     return report;
   } catch { return; }
 }
+function validAccount(row: Resource, value: Document): boolean {
+  if (!shape(value, accountFields) || !healthStates.has(text(value.health)) || typeof value.enabled !== "boolean") return false;
+  if (row.schemaVersion === 1) {
+    if (value.type !== AccountType.Api || !isEntityId(text(value.provider_id)) || Object.hasOwn(value, "subscription_service") || Object.hasOwn(value, "subscription")) return false;
+  } else if (row.schemaVersion === 2) {
+    if (value.type !== AccountType.Subscription || !subscriptionService(value.subscription_service) || Object.hasOwn(value, "provider_id") || Object.hasOwn(value, "validation") || Object.hasOwn(value, "catalog")) return false;
+  } else return false;
+  if (value.connection !== undefined) {
+    const connection = value.connection;
+    if (!shape(connection, connectionFields) || !isEntityId(text(connection.id)) || !timestamp(connection.connected_at) || value.health === "disconnected" || value.removal !== undefined) return false;
+    if (value.type === AccountType.Subscription ? connection.authentication !== "subscription" : !apiAuthentication.has(text(connection.authentication))) return false;
+  } else if (value.health === "ready" || value.health === "unverified") return false;
+  return true;
+}
 function configurations(rows: Resource[] | undefined, kind: EntityKind): Document[] | undefined {
   if (!rows || rows.length > 50) return;
   const seen = new Set();
   const values = [];
   for (const row of rows) {
-    if (row.kind !== kind || !isEntityId(row.id) || row.revision <= 0n || row.schemaVersion !== 1 || seen.has(row.id) || row.sessionId || row.projectId) return;
+    if (row.kind !== kind || !isEntityId(row.id) || row.revision <= 0n || seen.has(row.id) || row.sessionId || row.projectId) return;
     seen.add(row.id);
     const value = document(row);
     if (kind === EntityKind.ACCOUNT) {
-      if (!healthStates.has(text(value.health)) || typeof value.enabled !== "boolean" || !isEntityId(text(value.provider_id)) || (value.connection !== undefined && !isEntityId(text(object(value.connection).id)))) return;
-    } else if (!harnesses.has(text(value.harness)) || !isEntityId(text(value.model_id)) || !Array.isArray(value.accounts)) return;
+      if (!validAccount(row, value)) return;
+    } else if (row.schemaVersion !== 1 || !harnesses.has(text(value.harness)) || !isEntityId(text(value.model_id)) || !Array.isArray(value.accounts)) return;
     values.push(value);
   }
   return values;
