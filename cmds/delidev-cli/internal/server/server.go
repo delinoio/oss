@@ -69,6 +69,7 @@ type Service struct {
 	integrationOnce               sync.Once
 	integrationGate               chan struct{}
 	integrationChecks             map[domain.ID]*integrationCheck
+	integrationPreviews           map[domain.ID]*integrationCheck
 	integrationSecrets            integrationSecrets
 	ownedPAT                      *credentials.PATStore
 	github                        githubIdentity
