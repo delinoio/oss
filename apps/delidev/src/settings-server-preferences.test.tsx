@@ -98,7 +98,7 @@ it("opens saved values directly with no New, Edit, summary or deletion workflow"
   const row = resource(EntityKind.SETTINGS, known), value = fixture([row]);
   render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
   expect(routing().value).toBe("priority");
-  expect((screen.getByLabelText("Allow automatic fetch before Worktree preparation") as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByLabelText("Allow reference fetches after the initial Worktree clone") as HTMLInputElement).checked).toBe(false);
   for (const label of ["New Server preferences", "Edit Server preferences", "Delete Server preferences"]) expect(screen.queryByRole("button", { name: label })).toBeNull();
   expect(screen.queryByText("Saved server preferences")).toBeNull(); expect(saveButton().disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ it("adopts the first save and keeps the same form, disclosure and singleton for 
   await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
   expect(screen.getByRole("form")).toBe(form); expect(details().open).toBe(true); expect(saveButton().disabled).toBe(true);
   const first = (await value.save.mock.results[0].value).resource;
-  fireEvent.click(screen.getByLabelText("Allow automatic fetch before Worktree preparation"));
+  fireEvent.click(screen.getByLabelText("Allow reference fetches after the initial Worktree clone"));
   await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[1][0].mutation).toMatchObject({ id: first.id, expectedRevision: first.revision });

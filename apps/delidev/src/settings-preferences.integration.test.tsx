@@ -30,7 +30,7 @@ it("edits singleton server preferences inline while preserving the separate Git 
   expect((await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources).toHaveLength(0);
   fireEvent.change(routing, { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull(), serverRoundTripWait);
+  await waitFor(() => { expect(screen.queryByText("Unsaved changes")).toBeNull(); expect(screen.queryByText("Saving changes…")).toBeNull(); }, serverRoundTripWait);
   const first = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(first).toHaveLength(1);
   expect(document(first[0])).toEqual({ ...defaults, default_routing: "priority" });
@@ -52,7 +52,7 @@ it("edits singleton server preferences inline while preserving the separate Git 
   fireEvent.click(editGit);
   expect(screen.queryByLabelText("Default account routing")).toBeNull();
   expect(screen.getByText("Remediation details").closest("details")!.open).toBe(false);
-  fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Allow reference fetches after the initial Worktree clone" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Automatically fix required CI failures" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Git workflow" }));
   await screen.findByRole("button", { name: "Edit Git workflow" }, serverRoundTripWait);
@@ -68,7 +68,7 @@ it("edits singleton server preferences inline while preserving the separate Git 
   fireEvent.change(finalRouting, { target: { value: "fixed" } });
   await waitFor(() => expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(false), serverRoundTripWait);
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull(), serverRoundTripWait);
+  await waitFor(() => { expect(screen.queryByText("Unsaved changes")).toBeNull(); expect(screen.queryByText("Saving changes…")).toBeNull(); }, serverRoundTripWait);
   const final = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(final).toHaveLength(1); expect(final[0].id).toBe(first[0].id);
   expect(document(final[0])).toEqual({ ...document(git[0]), default_routing: "fixed" });

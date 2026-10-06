@@ -30,7 +30,7 @@ it("saves and inspects a real immutable model price through desktop settings and
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   change("Currency", "USD"); change("Pricing source", "Owned explicit source"); change("As-of date", "2026-09-25"); change("Input rate per million", "0.000000001");
   fireEvent.click(screen.getByRole("button", { name: "Save pricing version" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Save pricing version" })).toBeNull());
   const usage = createClient(UsageService, transport);
   const original = await usage.getModelPricing({ modelId: model.id });
   expect(original.modelRevision).toBe(model.revision);
@@ -42,7 +42,7 @@ it("saves and inspects a real immutable model price through desktop settings and
   fireEvent.click(screen.getByRole("button", { name: "Edit token pricing" }));
   change("Input rate per million", "2.5");
   fireEvent.click(screen.getByRole("button", { name: "Save pricing version" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Save pricing version" })).toBeNull());
   const retained = await usage.getPricingVersion({ id: original.pricing!.id });
   expect(retained.pricing?.basis?.inputPerMillion).toBe("0.000000001");
   const summary = await usage.getUsageSummary({ modelId: model.id });

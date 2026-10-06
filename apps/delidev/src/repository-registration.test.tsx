@@ -50,7 +50,7 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
     fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "https://github.com/delinoio/oss.git" } });
     if (local) fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
   };
-  const chooseAndReview = async () => { await add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByRole("region", { name: "Repository detected" }); };
+  const chooseAndReview = async () => { await add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByRole("region", { name: "Repository detected" }); await waitFor(() => expect((within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(false)); };
   return { machine, resources, jobs, clone, repositories, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource };
 }
 
@@ -301,19 +301,18 @@ it.each(["Cancel", "Close Add repository", "Escape"])("dismisses with %s, restor
   expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
 });
 
-it("retains a pending inspection behind its original operation opener", async () => {
+it("discards a pending inspection when the child dialog closes inside Settings", async () => {
   const f = fixture(); const pending = deferred<any>();
   f.inspected.mockReturnValueOnce(pending.promise); f.mount(); await f.add();
   fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull();
-  const opener = await screen.findByRole("button", { name: "View original operation" });
-  const job = row(EntityKind.JOB, { machine_id: f.machine.id, state: "succeeded", output: metadata }); f.resources.set(job.id, job);
-  pending.resolve({ job });
-  fireEvent.click(opener);
-  await screen.findByRole("region", { name: "Repository detected" });
-  expect(f.inspected).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
+  await f.add();
+  pending.resolve({ job: row(EntityKind.JOB, { machine_id: f.machine.id, state: "succeeded", output: metadata }) });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(screen.queryByRole("region", { name: "Repository detected" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Retry the same/ })).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
 });
 
 function cloneInputs() {

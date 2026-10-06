@@ -170,7 +170,7 @@ export function NewSession({ active, ownsActivation, activation, readLocalWorker
           <div className="new-session-hints"><span>Sessions are named automatically.</span><span>Shift + Enter for a new line</span></div>
           {optionsOpen ? <section className="new-session-options" aria-label="Session options">
             {project ? <>
-              <p>A separate detached worktree is prepared for every project repository. Choose Local to use this computer's existing checkouts as-is.</p>
+              <p>The selected Runner Device clones each project repository into a separate detached workspace. Choose Local to use this computer's connected folders as-is.</p>
               <div className="actions">
                 <button type="button" aria-pressed={workspace === Workspace.Worktree} onClick={() => { setWorkspace(Workspace.Worktree); setMachine(""); setStarting([]); }}>Use separate Worktrees</button>
                 <button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { void local.load().then((proof) => { if (proof) { setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>Use this computer's Local checkouts</button>

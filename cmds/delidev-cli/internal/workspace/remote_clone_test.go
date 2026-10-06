@@ -50,7 +50,7 @@ func TestManagedCloneFailedAuthenticationAndCanceledProcessCleanup(t *testing.T)
 			}
 			err := <-completed
 			problem := domain.SafeError(err)
-			if cancelProcess && problem.Cause != "clone_timeout" || !cancelProcess && problem.Cause != "clone_authentication" || strings.Contains(logs.String(), "private-native-content") || strings.Contains(problem.Error(), "private-native-content") {
+			if cancelProcess && problem.Code != domain.Canceled || !cancelProcess && problem.Cause != "clone_authentication" || strings.Contains(logs.String(), "private-native-content") || strings.Contains(problem.Error(), "private-native-content") {
 				t.Fatal("clone failure lost its bounded classification", problem)
 			}
 			if _, err := os.Stat(filepath.Join(m.Root, "workspaces", string(input.SessionID))); !os.IsNotExist(err) {

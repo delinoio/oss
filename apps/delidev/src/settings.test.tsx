@@ -22,7 +22,7 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   const disconnect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1] }) });
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
     router.service(ResourceService, { listResources: list, getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
@@ -505,11 +505,12 @@ it("preserves explicit empty restrictions and requires a primary repository afte
 });
 
 it("keeps repository save acknowledgment separate from completed Worker validation", async () => {
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
   const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
   const value = fixture([repository, job]), saved = vi.fn();
   value.save.mockResolvedValue({ job });
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await screen.findByText("Worker operation: queued");
   expect(saved).not.toHaveBeenCalled();
@@ -534,6 +535,7 @@ it("retries an original checkout inspection and uses only its owning Worker's ca
   value.inspect.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Repository" } });
+  fireEvent.change(screen.getByLabelText("Remote Git URL"), { target: { value: "https://github.com/fixture/repo.git" } });
   await screen.findByRole("option", { name: "Owned Worker" });
   fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: machine.id } });
   fireEvent.change(screen.getByLabelText("Absolute checkout path on this Worker"), { target: { value: "/alias/checkout" } });
@@ -542,6 +544,7 @@ it("retries an original checkout inspection and uses only its owning Worker's ca
   expect((screen.getByRole("button", { name: "Cancel edit" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry);
   fireEvent.click(await screen.findByRole("button", { name: "Add inspected checkout" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(value.inspect.mock.calls[0][0]).toEqual(value.inspect.mock.calls[1][0]);
@@ -581,7 +584,7 @@ it("edits global routing preferences without rewriting unrelated policy or creat
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Delete Server preferences/ })).toBeNull();
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
-  expect(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: "Allow reference fetches after the initial Worktree clone" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
@@ -659,7 +662,7 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
 });
 
 it("starts a repository override with automation off and removes it only through explicit inheritance", async () => {
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true });
   const value = fixture([repository]);
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
   expect(screen.getByText(/inherits the complete server remediation policy/)).toBeTruthy();
@@ -670,21 +673,23 @@ it("starts a repository override with automation off and removes it only through
   fireEvent.click(screen.getByLabelText("Automatically fix required CI failures"));
   fireEvent.click(screen.getByRole("button", { name: "Use server remediation policy" }));
   expect(screen.queryByLabelText("Automatically fix required CI failures")).toBeNull();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
-  expect(saved).toEqual({ name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  expect(saved).toEqual({ name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true });
 });
 
 it("retains empty repository selectors and clears incompatible identity fields when changing selector type", async () => {
   const policy = { ci_failure: false, review_feedback: true, merge_conflict: false, conflict_strategy: "merge", session_strategy: "reuse", attempt_limit: 3, reviewer_selectors: [{ kind: "app", id: "42", node_id: "A_exact" }] };
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true, remediation: policy }, 4n);
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true, remediation: policy }, 4n);
   const value = fixture([repository]);
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Selector 1 type"), { target: { value: "minimum-permission" } });
   expect(screen.queryByLabelText("Selector 1 GitHub numeric ID")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Remove reviewer selector 1" }));
   expect(screen.getByText(/No reviewer selectors/)).toBeTruthy();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = input(value.save.mock.calls[0][0]);

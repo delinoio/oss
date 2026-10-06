@@ -37,6 +37,8 @@ try {
     await run.processes.run("git", ["init", "--initial-branch=main", path]);
     await run.processes.run("git", ["-C", path, "-c", "user.name=QA", "-c", "user.email=qa@example.invalid", "commit", "--allow-empty", "-m", "Browser QA fixture"]);
     await category(page, "Repositories"); await page.getByRole("button", { name: "Add repository", exact: true }).click();
+    await page.getByRole("textbox", { name: "Git URL", exact: true }).fill("https://github.com/fixture/browser-git-fixture.git");
+    await page.getByRole("button", { name: "Connect a Local folder (optional)", exact: true }).click();
     assert(await page.getByRole("button", { name: "Choose folder", exact: true }).isDisabled());
     await page.getByRole("button", { name: "Enter a path…", exact: true }).click();
     await page.getByLabel("Absolute checkout path", { exact: true }).fill(path);
