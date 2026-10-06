@@ -50,10 +50,11 @@ and installation generations in job JSON are decimal strings, preserving uint64
 precision.
 
 CLI controls are `model native-discover`, `model native-observation`,
-`model native-list` and `model native-cancel`. Desktop Models settings has an
-explicit native observation disclosure, scope selectors, status/cancellation,
-immutable pages and retained last-success selection. Register prepares the
-existing model editor; only its separate Save action writes a canonical model.
+`model native-list` and `model native-cancel`. The desktop Agent Worker wizard Model
+step has an explicit native observation disclosure, selected-account and Runner
+Device scope, status/cancellation, immutable pages and retained last-success
+selection. Use model selects the executable ID; only final atomic Worker saving
+resolves or creates its canonical model.
 
 The feature exposes authenticated owner/client acceptance,
 status, bounded observation pages and cancellation, with equivalent explicit CLI
@@ -78,8 +79,8 @@ observation after failure. Public pages retain the existing 1–200/default-50
 bounds and opaque observation-bound cursors; continuing an old page cannot select
 a newer observation or a different account/installation scope.
 
-Registration remains a separate explicit existing model-save action. Use the
-selected account's provider identity and the observed executable native model ID,
+Registration remains an explicit model-save CLI/RPC action or the final atomic
+Worker save. Use the selected account's provider identity and observed executable ID,
 preserving manual provenance, canonical duplicate and alias rules, revision
 checks, idempotent save and user-selected metadata. Discovery changes no canonical
 model, account readiness or quota, session or execution capability. Existing

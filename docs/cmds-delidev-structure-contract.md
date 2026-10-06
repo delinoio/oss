@@ -33,9 +33,10 @@ The Agent Worker wizard amendment under issue #964 reserves System capability
 `SaveAgentWorkerRequest` and `AgentWorkerModelSelection` declarations. The request
 reserves mutation/document/model/schema-version fields 1–4; model selection
 reserves canonical model ID/native ID/expected model revision fields 1–3.
-Establish this closure on main before implementing the source-scoped wizard and
-atomic model/Agent save. It changes no active schema, runtime capability or
-database migration, and grants no native execution or account authority.
+PR #1351 established this closure on main before the source-scoped wizard and
+atomic model/Agent save. The implementation reuses the existing acknowledgement
+and storage schemas without a database migration. Reservations alone still grant
+no runtime support, native execution or account authority.
 
 Keep package `delidev.v1`, Go import paths, RPC procedure names, existing field and
 enum numbers, JSON meanings and TypeScript exports stable. Service-specific schema

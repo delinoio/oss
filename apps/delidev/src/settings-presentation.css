@@ -89,3 +89,5 @@
   .settings-content[aria-label] .subscription-provider-card { grid-template-columns: 40px minmax(0, 1fr); }
   .settings-content[aria-label] .subscription-provider-card button { grid-column: 2; grid-row: auto; justify-self: start; }
 }
+
+.settings-content[aria-label] .settings-breadcrumb { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 18px; }

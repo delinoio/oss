@@ -21,14 +21,30 @@ database migration. Existing profile/revision-bound token forms remain unchanged
 
 After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
 
-## Agent Worker wizard reservations
+## Agent Worker wizard
 
-The planned Agent Worker wizard uses main-first reservations under issue #964:
-System capability 33, list-only subscription-service selectors on resource and
-model pages, and typed `SaveAgentWorkerRequest` / `AgentWorkerModelSelection`.
-Reservation-only publication does not activate these declarations or operations.
-The existing configuration, CLI, native observation and migration boundaries
-remain authoritative until the complete feature is implemented.
+PR #1351 established the issue #964 allocations on main before implementation.
+System `AGENT_WORKER_WIZARD_V1 = 33` advertises source-scoped account/model lists
+and atomic `ConfigurationService.SaveAgentWorker`. `ListResourcesRequest` field
+4 and `SearchModelsRequest` field 7 select a closed subscription service. Reject
+unknown services, API/provider combinations and account selectors on other kinds.
+Filter in SQL before pagination and bind the source into each cursor. Unspecified
+selectors preserve legacy behavior; shared Filter, snapshots and events do not
+change.
+
+`SaveAgentWorkerRequest` carries mutation, document, typed model selection and
+schema version in fields 1–4. `AgentWorkerModelSelection` uses a oneof canonical
+model ID or exact executable/native ID, plus the canonical model's expected
+revision. A canonical selection requires a nonzero revision; a direct ID requires
+zero. The RPC reuses the existing `SaveConfigurationResponse` acknowledgement,
+with narrow Buf lint exceptions on the two save methods for this deliberate reuse.
+Existing RPCs, CLI operations and resource/storage schemas remain compatible.
+The new path requires at least one account and one common API provider or native
+subscription service. Fixed routing requires exactly one account. Go resolves or
+creates the model and saves the Worker in one receipt transaction. Saved harness
+compatibility is a configuration declaration, never native/account/platform proof.
+No database migration is added. Follow the [catalog contract](cmds-delidev-catalog-contract.md)
+and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
 ## Repository addition reservations
 

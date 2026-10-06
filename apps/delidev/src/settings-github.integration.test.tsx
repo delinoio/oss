@@ -35,7 +35,7 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
     },
   };
   render(<TransportProvider transport={slowTransport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
-  fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
+  fireEvent.click(screen.getByRole("button", { name: "Git Profiles" }));
   fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
   fireEvent.change(await screen.findByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "fixture-owner" } });
