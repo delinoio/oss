@@ -28,7 +28,7 @@ Usage: runmoor [--config PATH] COMMAND [OPTIONS]
   run                       Run the foreground manager
   status [--json]            Inspect pools, capacity, active work and cleanup
   doctor [--json]            Check credentials, dependencies, images and power
-  reload                    Atomically accept a completely validated configuration
+  reload                    Reload settings; upgrade an older user-service manager to this CLI
   pause [--pool NAME]        Stop accepting work; preserve busy runners
   resume [--pool NAME]       Revalidate and resume paused or suspended pools
   drain [--pool NAME]        Pause and wait for owned jobs and local cleanup
@@ -47,6 +47,9 @@ func printHelp(out io.Writer) {
 }
 
 func Execute(args []string, out, errOut io.Writer) int {
+	if len(args) == 3 && args[0] == "__service-reload-handoff" {
+		return serviceReloadHandoff(args[1], args[2])
+	}
 	if len(args) == 2 && args[0] == "__host-exec" {
 		return hostExecute(args[1])
 	}
@@ -187,7 +190,16 @@ func Execute(args []string, out, errOut io.Writer) int {
 		}
 		return 0
 	}
-	c, e := LoadConfig(path)
+	var c Config
+	useCommitted := false
+	if command == "run" {
+		startup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		c, useCommitted, e = newServiceReloader(errOut).startup(startup, path, c)
+		cancel()
+	}
+	if e == nil && !useCommitted {
+		c, e = LoadConfig(path)
+	}
 	if e != nil {
 		return printFailure(errOut, *jsonOutput, e)
 	}
@@ -327,7 +339,14 @@ func Execute(args []string, out, errOut io.Writer) int {
 		}
 		writeJSON(out, ControlResponse{SchemaVersion: 1, Images: all})
 		return 0
-	case "reload", "pause", "resume", "drain", "stop":
+	case "reload":
+		probe, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		e = newServiceReloader(errOut).Reload(probe, path, c)
+		cancel()
+		if e == nil {
+			fmt.Fprintln(out, "reload completed.")
+		}
+	case "pause", "resume", "drain", "stop":
 		probe, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		_, e = SendControl(probe, c, ControlRequest{Action: command, Pool: *pool, Force: *force})
 		cancel()
@@ -356,6 +375,13 @@ func runForegroundReady(ctx context.Context, path string, c Config, out io.Write
 			ready <- result
 		}
 	}()
+	startup, startupCancel := context.WithTimeout(ctx, 10*time.Second)
+	committed, preserveStop, e := newServiceReloader(out).startup(startup, path, c)
+	startupCancel()
+	if e != nil {
+		return e
+	}
+	c = committed
 	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
 	resolved, capacityErr := resolveDockerCapacity(probe, c)
 	cancel()
@@ -388,7 +414,8 @@ func runForegroundReady(ctx context.Context, path string, c Config, out io.Write
 		logProblem(logger, "docker_capacity_retry", classify(capacityErr, ErrRetry, "Docker capacity is temporarily unavailable.", "Restore the engine; managed pools retry automatically."))
 	}
 	m := NewManager(store, path, logger)
-	if e = m.activate(c); e != nil {
+	m.PreserveStop = preserveStop
+	if e = m.initializeRun(c); e != nil {
 		return e
 	}
 	server, e := m.ServeControl()
@@ -401,7 +428,7 @@ func runForegroundReady(ctx context.Context, path string, c Config, out io.Write
 		announced = true
 	}
 	logger.Info("manager_started", "version", Version, "installation", store.View().Installation)
-	return m.Run(ctx, c)
+	return m.runActivated(ctx)
 }
 func waitStopped(ctx context.Context, c Config, pool string) error {
 	for {

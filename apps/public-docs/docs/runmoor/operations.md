@@ -36,6 +36,40 @@ cached by launchd in that state. Inspect and reconcile the loaded job in the
 logged-in GUI session before retrying. If the manager is running, stop it with
 its original configuration path first.
 
+## Reload an installed service after upgrading the CLI
+
+> **Unreleased service reload:** After you install a newer Runmoor CLI,
+> `runmoor reload` also checks the running launchd/systemd user service. If its
+> manager is older, reload updates the service to that installed CLI and restarts
+> only the manager. Active jobs retain their execution environment and timeout.
+> Equal or newer managers reload settings without a version change. Foreground
+> managers keep their existing reload behavior. Reload does not download releases,
+> downgrade a manager or start a stopped service. Releases through 0.2.7 reload
+> configuration only.
+
+Install the new CLI with your existing package manager or verified archive, then
+run reload in the service user's login session with its installed configuration:
+
+```sh
+runmoor version
+runmoor reload --config CONFIG_PATH
+runmoor status --config CONFIG_PATH --json
+```
+
+Reload verifies the service's configuration and running manager before replacing
+its executable reference. It preserves pause decisions and a committed stop
+request. Use `runmoor service start` explicitly for a stopped service. A directly
+started `runmoor run` process requires your existing manual restart workflow to
+change its version.
+
+If reload fails or is interrupted, inspect `runmoor status` and the OS user
+service. The service executable may already have changed while the last accepted
+configuration remains in effect. Correct the reported problem and retry reload
+with the same installed CLI and configuration. A successful reload confirms the
+new running version and configuration acceptance. Keep state and managed data;
+never use an older binary with a newer database. The drained backup and rollback
+procedure below remains available.
+
 ## Recover an Ubuntu user service
 
 Run these checks as the Runmoor user in a working login session, without
