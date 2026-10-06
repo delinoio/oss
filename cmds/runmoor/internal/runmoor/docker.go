@@ -406,6 +406,45 @@ func verifyDockerContainers(ctx context.Context, cli *client.Client, r Runner, s
 	return nil
 }
 
+func dockerSummaryHasName(v container.Summary, name string) bool {
+	for _, candidate := range v.Names {
+		if strings.TrimPrefix(candidate, "/") == name {
+			return true
+		}
+	}
+	return false
+}
+
+// A container list is filtered by labels only. Validate each returned item
+// against the durable ID when one exists, or the deterministic name used while
+// preparing an unrecorded partial container, before any item is stopped or
+// removed. This preserves the no-mutation boundary when the list contains a
+// copied-label replacement with an unrelated name.
+func verifyDockerContainerSummary(v container.Summary, r Runner, s Snapshot) error {
+	if !ownedDocker(v.Labels, s, r) {
+		return problem(ErrOwnership, "Container ownership changed during termination or cleanup.", "Inspect the resource before retrying cleanup.")
+	}
+	valid := false
+	switch v.Labels[roleKey] {
+	case "runner":
+		valid = r.Handle.Container != "" && v.ID == r.Handle.Container
+		if r.Handle.Container == "" {
+			valid = dockerSummaryHasName(v, r.Name)
+		}
+	case "daemon":
+		valid = r.Handle.Daemon != "" && v.ID == r.Handle.Daemon
+		if r.Handle.Daemon == "" {
+			valid = dockerSummaryHasName(v, r.Name+"-daemon")
+		}
+	case "init":
+		valid = dockerSummaryHasName(v, r.Name+"-init")
+	}
+	if !valid {
+		return problem(ErrOwnership, "Container ownership is ambiguous during termination or cleanup.", "Keep the execution quarantined and inspect its recorded container identities and ownership labels.")
+	}
+	return nil
+}
+
 func (d *DockerDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) error {
 	cli, e := dockerClient(ctx, c)
 	if e != nil {
@@ -420,9 +459,11 @@ func (d *DockerDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot)
 		return dockerProblem()
 	}
 	for _, v := range list.Items {
-		if !ownedDocker(v.Labels, s, r) {
-			return problem(ErrOwnership, "Container ownership changed during termination.", "Inspect the resource before retrying cleanup.")
+		if e = verifyDockerContainerSummary(v, r, s); e != nil {
+			return e
 		}
+	}
+	for _, v := range list.Items {
 		seconds := 10
 		if _, e = cli.ContainerStop(ctx, v.ID, client.ContainerStopOptions{Timeout: &seconds}); e != nil && !errdefs.IsNotFound(e) && !errdefs.IsNotModified(e) {
 			return dockerProblem()
@@ -451,6 +492,11 @@ func (d *DockerDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapsh
 	list, e := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: dockerFilter(s, r)})
 	if e != nil {
 		return dockerProblem()
+	}
+	for _, v := range list.Items {
+		if e = verifyDockerContainerSummary(v, r, s); e != nil {
+			return e
+		}
 	}
 	for _, v := range list.Items {
 		if v.State == "running" || v.State == "restarting" {

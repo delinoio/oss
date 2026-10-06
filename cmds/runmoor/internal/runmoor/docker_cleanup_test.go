@@ -203,6 +203,7 @@ func TestDockerCleanupRetryVerifiesRecordedContainers(t *testing.T) {
 	}{
 		{"copied labels runner replacement", "runner", ErrOwnership},
 		{"copied labels daemon replacement", "daemon", ErrOwnership},
+		{"copied labels renamed runner replacement", "runner", ErrOwnership},
 		{"foreign init", "init", ErrOwnership},
 		{"wrong role", "runner", ErrOwnership},
 		{"foreign renamed runner", "runner", ErrOwnership},
@@ -249,14 +250,14 @@ func TestDockerCleanupRetryVerifiesRecordedContainers(t *testing.T) {
 				labels := dockerLabels(snap, *r, role)
 				if tc.role == role {
 					switch tc.name {
-					case "copied labels runner replacement", "copied labels daemon replacement":
+					case "copied labels runner replacement", "copied labels daemon replacement", "copied labels renamed runner replacement":
 						cid = "replacement-id"
 					case "foreign init", "foreign renamed runner":
 						labels[ownerKey] = "another-installation"
 					case "wrong role":
 						labels[roleKey] = "daemon"
 					}
-					if tc.name == "foreign renamed runner" || tc.name == "renamed original" {
+					if tc.name == "foreign renamed runner" || tc.name == "renamed original" || tc.name == "copied labels renamed runner replacement" {
 						name = "renamed-container"
 					}
 				}
