@@ -30,6 +30,33 @@ cancels an active run.
 This bounded investigation mode preserves read-only access and is separate from
 complete required CI, packaging and installed-platform acceptance.
 
+## Renovate scheduling
+
+Root `renovate.json` extends `github>delinoio/renovate-config` and defines this
+repository's scheduling policy through local overrides. Ordinary branch
+creation and existing branch updates are allowed on Mondays from 00:00 inclusive
+to 04:00 exclusive in `Asia/Seoul`, using `schedule: ["* 0-3 * * 1"]` and
+`updateNotScheduled: false`. Lock file maintenance uses the same explicit
+schedule while retaining its inherited enablement and automerge rules.
+
+Vulnerability-fix updates remain enabled and bypass the ordinary schedule.
+Preserve the inherited security labels, immediate PR creation, automerge and
+vulnerability-fix strategy, plus ordinary release-age and automerge rules.
+The schedule limits branch work; it does not control the hosted Renovate
+service's scan cadence or GitHub's already queued automatic merges.
+See the official [schedule](https://docs.renovatebot.com/configuration-options/#schedule),
+[existing branch update](https://docs.renovatebot.com/configuration-options/#updatenotscheduled)
+and [vulnerability alert](https://docs.renovatebot.com/configuration-options/#vulnerabilityalerts)
+contracts.
+
+Validate configuration changes with
+`npx --yes --package renovate -- renovate-config-validator --strict --no-global renovate.json`.
+Inspect resolved presets to confirm that ordinary and lock file maintenance
+work share the weekly window and security updates remain exempt. Check the
+Monday 00:00 and 03:59 allowed boundaries, Monday 04:00 rejection and rejection
+on other weekdays. Configuration validation is not evidence of a hosted bot
+run; record that distinction in change summaries.
+
 ## Continuous integration
 
 ### Git LFS assets

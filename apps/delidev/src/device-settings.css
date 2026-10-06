@@ -5,7 +5,7 @@
 .settings-paired-column .paired-device-scope { margin-top: 4px; font-size: 12px; }
 .settings-paired-column button { min-height: 40px; max-width: 100%; border-radius: 8px; border-color: var(--control-border); white-space: normal; overflow-wrap: anywhere; }
 .settings-paired-column button.primary { border-color: var(--accent); background: var(--accent); }
-.settings-paired-column :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.settings-paired-column :focus-visible:not(:where(input, select, textarea)) { outline: 3px solid var(--focus); outline-offset: 3px; }
 .settings-paired-column .paired-device-explanation, .settings-paired-column .paired-device-guidance { color: var(--muted); font-size: 13px; line-height: 1.5; }
 .settings-paired-column .paired-device-guidance { margin: 16px 0 0; }
 .settings-paired-column .paired-device-list { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }

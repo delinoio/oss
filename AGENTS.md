@@ -1,3 +1,5 @@
+- Normal desktop Quit follows `docs/apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown` and the CLI contract: `server desktop-host --mode launch|retry|ensure` shares Go admission and runs newly admitted servers in their original child. Retain native child handles/control pipes before readiness, fence starts on Quit, join final browser discovery before Stop, then allow 35 seconds before original-child force and observed exit. Preserve close-to-tray, borrowed CLI/service/remote servers, independent Workers and crash/forced-desktop sidecar survival. EOF grants no Stop; original-generation suppression and forced-exit/native-cleanup uncertainty remain separate. Keep the complete Quit operation off the UI loop and record native/platform evidence separately.
+
 ### Instructions
 
 - DeliDev Sidechat follows `docs/cmds-delidev-sidechat-contract.md`. Preserve the parent fork-point account/snapshot, native read-only and external-write restrictions, metadata-only workspace reference ownership and durable dependent cleanup. Independent Fork lifetime and deletion ownership remain separate; reserved System 27 / Worker 16 numbers grant no support.
@@ -34,6 +36,7 @@
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
 - Follow `docs/repository-dependency-security-contract.md` for dependency security updates, validation evidence, and unresolved upstream constraints. Keep unresolved advisories visible; a fixed runtime pin or an unavailable patch is not a vulnerability fix.
+- Renovate ordinary branch creation, existing branch updates and lock file maintenance are limited to Mondays from 00:00 inclusive to 04:00 exclusive in `Asia/Seoul`. Keep `updateNotScheduled: false` and preserve immediate vulnerability-fix handling, shared presets, automerge and release-age rules. Follow `docs/repository-workflow-contract.md`; repository schedules restrict branch work, not the hosted service's scan cadence.
 - Debug by logging. You should write enough logging code.
 - Write sufficient logs for debugging and operational troubleshooting.
 - Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
@@ -137,7 +140,7 @@ enum ProjectId {
 
 ### DeliDev desktop launch amendment
 
-- Issue #1137 treats each fresh trusted main desktop process as intentional Go-admitted local Start, with one native-owned launch outcome and authenticated renderer verification. Preserve same-process Stop, native-service scope arbitration through shared control admission and spawn, independent saved authority and detached lifetimes. Keep routine startup/sidebar/tray in product terms and retain connection/recovery controls outside disposable Settings openings under Connection & diagnostics. Follow the desktop, CLI and user-service contracts; ordinary CLI product commands never implicitly start a server.
+- Issue #1137 treats each fresh trusted main desktop process as intentional Go-admitted local Start, with one native-owned launch outcome and authenticated renderer verification. Preserve same-process Stop, native-service scope arbitration through shared control admission and spawn, independent saved authority and borrowed/abnormal-exit lifetimes; normal Quit follows the app-owned sidecar shutdown boundary. Keep routine startup/sidebar/tray in product terms and retain connection/recovery controls outside disposable Settings openings under Connection & diagnostics. Follow the desktop, CLI and user-service contracts; ordinary CLI product commands never implicitly start a server.
 
 ### Project Domain Ownership
 

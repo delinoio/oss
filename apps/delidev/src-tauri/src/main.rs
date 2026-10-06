@@ -16,6 +16,30 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+// Setup failures also own their admitted sidecars. Unwinding crashes preserve
+// the agreed independent lifetime; normal return performs joined shutdown.
+struct DesktopLifetime {
+    connector: Arc<Connector>,
+    supervision: Arc<Supervision>,
+    quit_started: Arc<std::sync::atomic::AtomicBool>,
+}
+impl Drop for DesktopLifetime {
+    fn drop(&mut self) {
+        if std::thread::panicking() || self.quit_started.load(std::sync::atomic::Ordering::Acquire)
+        {
+            return;
+        }
+        self.supervision.stop();
+        if let Err(code) = self.connector.shutdown_owned() {
+            tracing::error!(
+                operation = "desktop_sidecar_shutdown",
+                phase = "return-cleanup-failed",
+                ?code
+            );
+        }
+    }
+}
+
 use appearance_host::{read_appearance, update_appearance};
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
@@ -1566,6 +1590,12 @@ fn run() -> Result<(), NativeFailure> {
     let executable = std::env::current_exe().map_err(|_| NativeFailure::SidecarMissing)?;
     let connector = Arc::new(Connector::new(bundled_sidecar(&executable)?, root)?);
     let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
+    let quit_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let _lifetime = DesktopLifetime {
+        connector: Arc::clone(&connector),
+        supervision: Arc::clone(&supervision),
+        quit_started: Arc::clone(&quit_started),
+    };
     let tray = Arc::new(TrayHost::default());
     let notifications = Arc::new(NotificationHost::default());
     let oauth = Arc::new(delidev_desktop::oauth::OAuthHost::default());
@@ -1595,7 +1625,7 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::clone(&tray))
         .manage(Arc::clone(&notifications))
         .manage(Arc::clone(&oauth))
-        .manage(connector)
+        .manage(Arc::clone(&connector))
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
             account_oauth_native,
@@ -1740,13 +1770,42 @@ fn run() -> Result<(), NativeFailure> {
     browser.start(app.handle().clone());
     let exiting_browser = Arc::clone(&browser);
     let window_actions = Arc::clone(app.state::<Arc<window_host::WindowActions>>().inner());
+    let quit_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let quit_task = Arc::new(Mutex::new(None));
+    let joining_quit = Arc::clone(&quit_task);
     app.run(move |_app, event| {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
             _app.state::<Arc<window_host::WindowActions>>().stop();
             if let Ok(mut registry) = _app.state::<Arc<ProductWindows>>().registry.lock() {
                 registry.stop();
             }
-            if exiting_browser.begin_exit(code.unwrap_or(0)) {
+            let exit_code = code.unwrap_or(0);
+            let browser_pending = exiting_browser.begin_exit(exit_code);
+            if !quit_started.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                // Fence fresh starts synchronously. Browser discovery keeps its
+                // separate observer until its final bounded read pass joins.
+                exiting_supervision.request_stop();
+                let host = Arc::clone(&exiting_supervision);
+                let sidecar = Arc::clone(&connector);
+                let browser = Arc::clone(&exiting_browser);
+                let complete = Arc::clone(&quit_done);
+                let app = _app.clone();
+                *quit_task.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Some(std::thread::spawn(move || {
+                        host.stop();
+                        browser.stop();
+                        if let Err(code) = sidecar.shutdown_owned() {
+                            tracing::error!(
+                                operation = "desktop_sidecar_shutdown",
+                                phase = "quit-cleanup-failed",
+                                ?code
+                            );
+                        }
+                        complete.store(true, std::sync::atomic::Ordering::Release);
+                        app.exit(exit_code);
+                    }));
+            }
+            if browser_pending || !quit_done.load(std::sync::atomic::Ordering::Acquire) {
                 api.prevent_exit();
             }
             tracing::info!(operation = "desktop_exit", state = "runtime-requested");
@@ -1773,6 +1832,13 @@ fn run() -> Result<(), NativeFailure> {
     tracing::info!(operation = "desktop_exit", state = "runtime-returned");
     window_actions.stop();
     window_actions.join();
+    if let Some(task) = joining_quit
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+    {
+        let _ = task.join();
+    }
     supervision.stop();
     notifications.stop();
     tray.stop();
@@ -1796,6 +1862,94 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_oauth_acl_preserves_trusted_webview_boundaries() {
+        use tauri::{
+            ipc::{Origin, RuntimeAuthority},
+            utils::{
+                acl::{
+                    APP_ACL_KEY, capability::Capability, manifest::Manifest, resolved::Resolved,
+                },
+                platform::Target,
+            },
+        };
+
+        // Use the build's actual permission resolution. Handler-only tests
+        // cannot detect commands removed or denied by Tauri's generated ACL.
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/acl-manifests.json"
+        )))
+        .unwrap();
+        let app = manifests.get(APP_ACL_KEY).unwrap();
+        assert!(
+            app.permissions.contains_key("allow-account-oauth-native")
+                || app
+                    .command_permission("allow-account-oauth-native", false)
+                    .is_some()
+        );
+        assert_eq!(
+            app.permissions["account-oauth"].commands.allow,
+            ["account_oauth_native"]
+        );
+        let capabilities: BTreeMap<String, Capability> =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/capabilities.json")))
+                .unwrap();
+        let resolved = Resolved::resolve(&manifests, capabilities, Target::current()).unwrap();
+        assert!(resolved.has_app_acl);
+        assert!(
+            resolved
+                .allowed_commands
+                .contains_key("account_oauth_native")
+        );
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        for label in ["main", "server-fixture"] {
+            assert!(
+                authority
+                    .resolve_access("account_oauth_native", label, label, &Origin::Local)
+                    .is_some()
+            );
+            // A raw child in a trusted containing window inherits no access.
+            assert!(
+                authority
+                    .resolve_access(
+                        "account_oauth_native",
+                        label,
+                        "external-fixture",
+                        &Origin::Local
+                    )
+                    .is_none()
+            );
+            assert!(
+                authority
+                    .resolve_access(
+                        "account_oauth_native",
+                        label,
+                        label,
+                        &Origin::Remote {
+                            url: "https://openrouter.ai/".parse().unwrap()
+                        }
+                    )
+                    .is_none()
+            );
+        }
+        assert!(
+            authority
+                .resolve_access(
+                    "account_oauth_native",
+                    "external-fixture",
+                    "external-fixture",
+                    &Origin::Local
+                )
+                .is_none()
+        );
+    }
+
     #[test]
     fn saved_policy_replaces_only_the_exact_connection_source() {
         let original = "default-src 'none'; script-src 'self' 'sha256-fixed'; connect-src ipc: http://ipc.localhost http://127.0.0.1:46310; frame-src 'none'";

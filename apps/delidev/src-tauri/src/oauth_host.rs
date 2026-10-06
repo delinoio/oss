@@ -10,6 +10,14 @@ use tauri_runtime_cef::CefRuntime;
 
 use super::{ProductWindows, saved_binding, trusted_local};
 
+#[derive(Debug)]
+enum OAuthPhase {
+    WindowAuthority,
+    ServerAuthority,
+    Control,
+    AuthorityRecheck,
+}
+
 // Tauri injects the independent native owners alongside the fixed renderer
 // schema. Limit this exception to the IPC boundary; internal operations use
 // cohesive requests. Remove it if native injection can be grouped without
@@ -28,6 +36,7 @@ pub async fn account_oauth_native(
     attempt: String,
     authorization: String,
 ) -> Result<OAuthResult, NativeFailure> {
+    let mut phase = OAuthPhase::WindowAuthority;
     let response_window = window.clone();
     let original_authority = super::capture_authority(&response_window)?;
     let result = async {
@@ -56,12 +65,14 @@ pub async fn account_oauth_native(
                 window_epoch,
             };
             let native = Arc::clone(host.inner());
+            phase = OAuthPhase::Control;
             return tauri::async_runtime::spawn_blocking(move || {
                 native.control(scope, action, &generation, &attempt, &authorization)
             })
             .await
             .map_err(|_| NativeFailure::SidecarFailed)?;
         }
+        phase = OAuthPhase::ServerAuthority;
         let expected = if let Some(binding) = &binding {
             binding.profile.server_id.clone()
         } else {
@@ -98,11 +109,13 @@ pub async fn account_oauth_native(
             .unwrap_or(true);
         let original_scope = scope.clone();
         let native = Arc::clone(host.inner());
+        phase = OAuthPhase::Control;
         let result = tauri::async_runtime::spawn_blocking(move || {
             native.control_subscription(scope, action, &generation, &attempt, &authorization, local)
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)??;
+        phase = OAuthPhase::AuthorityRecheck;
         let authority = if let Some(binding) = binding {
             saved_binding(&window, &windows).map(|current| {
                 current.instance == binding.instance
@@ -132,6 +145,27 @@ pub async fn account_oauth_native(
         Ok(result)
     }
     .await;
-    super::recheck_authority(&response_window, &original_authority)?;
+    // Record only closed lifecycle metadata. Authorization URLs, callback
+    // addresses, code bytes and native scopes must never enter diagnostics.
+    let result = match super::recheck_authority(&response_window, &original_authority) {
+        Ok(()) => result,
+        Err(code) => Err(code),
+    };
+    match &result {
+        Ok(_) if action != OAuthAction::Take => tracing::info!(
+            operation = "account_oauth_native",
+            ?action,
+            ?phase,
+            outcome = "completed"
+        ),
+        Err(code) => tracing::warn!(
+            operation = "account_oauth_native",
+            ?action,
+            ?phase,
+            outcome = "failed",
+            ?code
+        ),
+        _ => {}
+    }
     result
 }

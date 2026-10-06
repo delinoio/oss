@@ -216,7 +216,7 @@ it("preserves every model identity/status/metadata and both original resource ac
   expect(value.save).not.toHaveBeenCalled(); expect(value.price).not.toHaveBeenCalled();
 });
 
-it("retains list state across edit/pricing/category/responsive/reconnect transitions in one opening", async () => {
+it("retains list state within a category and resets it after category departure", async () => {
   const value = fixture();
   value.search.mockResolvedValue(create(SearchModelsResponseSchema, { models: value.models, providers: [value.provider], nextPageToken: "model-page-2" }));
   const view = render(value.view()); openModels();
@@ -243,8 +243,8 @@ it("retains list state across edit/pricing/category/responsive/reconnect transit
   const upstream: Transport = { ...value.transport, unary: (...args) => { replacement(); return value.transport.unary(...args); } };
   view.rerender(value.view(true, upstream));
   fireEvent.click(screen.getByRole("button", { name: "Models" }));
-  expect(searchInput().value).toBe("Example");
-  await waitFor(() => expect(value.search.mock.calls.at(-1)?.[0]).toMatchObject({ query: "Example", pageToken: "model-page-2" }));
+  expect(searchInput().value).toBe("");
+  await waitFor(() => expect(value.search.mock.calls.at(-1)?.[0]).toMatchObject({ query: "", pageToken: "" }));
   expect(replacement).toHaveBeenCalled();
 });
 
@@ -277,7 +277,7 @@ it.each(["navigation", "Escape then navigation"])("discards Models search/page a
   expect(value.save).not.toHaveBeenCalled(); expect(value.price).not.toHaveBeenCalled();
 });
 
-it("retains the original uncertain model write and list scope through reconnect without granting navigation", async () => {
+it("retains the original uncertain model write and list scope through reconnect with category navigation available", async () => {
   const value = fixture();
   value.search.mockResolvedValue(create(SearchModelsResponseSchema, { models: value.models, providers: [value.provider], nextPageToken: "model-page-2" }));
   value.save.mockRejectedValue(new ConnectError("Lost model acknowledgment", Code.Unavailable));
@@ -290,8 +290,8 @@ it("retains the original uncertain model write and list scope through reconnect 
   fireEvent.change(screen.getByRole("textbox", { name: "Display name" }), { target: { value: "Retained edit" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Model" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
-  expect((screen.getByRole("button", { name: "Instructions" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Instructions" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
   const original = value.save.mock.calls[0][0];
   const upstream: Transport = { ...value.transport, unary: (...args) => value.transport.unary(...args) };
   view.rerender(value.view(true, upstream));

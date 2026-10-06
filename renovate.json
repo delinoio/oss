@@ -1,6 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>delinoio/renovate-config"],
+  "timezone": "Asia/Seoul",
+  "schedule": ["* 0-3 * * 1"],
+  "updateNotScheduled": false,
+  "lockFileMaintenance": {
+    "schedule": ["* 0-3 * * 1"]
+  },
   "semanticCommits": "enabled",
   "semanticCommitScope": "deps"
 }
