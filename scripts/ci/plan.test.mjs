@@ -368,7 +368,7 @@ function results(event, paths) {
   const { jobs } = planJobs(event, paths);
   const matrices = matricesForEvent(event);
   return {
-    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix) } },
+    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), rust_packages: JSON.stringify(jobs["rust-test"] || jobs["rust-clippy"] ? ["fixture-package"] : []), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix) } },
     "ci-contracts": { result: "success" },
     ...Object.fromEntries(Object.entries(jobs).map(([id, run]) => [id, { result: run ? "success" : "skipped" }])),
   };
@@ -475,4 +475,15 @@ test("unrelated packages and protocols do not select DevHud jobs", () => {
   for (const path of ["packages/devhud-api-client/src/index.ts", "protos/devhud/v1/settings.proto", "protos/gen/go/devhud/v1/settings.pb.go", "servers/devhud-api/internal/rpc/settings.go"]) {
     assert.ok(Object.entries(planJobs(Event.Push, [path]).jobs).some(([id, run]) => id.startsWith("devhud-") && run), path);
   }
+});
+
+test("aggregate rejects missing, excluded and inconsistent Rust package selections", () => {
+  for (const value of [undefined, "{}", '["forge-scene"]', '["fixture-package","fixture-package"]', "[]"]) {
+    const needs = results(Event.PullRequest, ["crates/binpm/src/main.rs"]);
+    needs.changes.outputs.rust_packages = value;
+    assert.throws(() => validateResults(needs));
+  }
+  const needs = results(Event.PullRequest, ["docs/project-with-watch.md"]);
+  needs.changes.outputs.rust_packages = '["fixture-package"]';
+  assert.throws(() => validateResults(needs), /Rust package selection/u);
 });
