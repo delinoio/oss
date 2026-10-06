@@ -1,0 +1,18 @@
+{
+  "native-changes.snapshotReference_7c953a": "스냅샷 참조",
+  "native-changes.changedFileReferences_9d7464": "변경된 파일 참조",
+  "native-changes.stepStartSnapshot_d9105a": "단계 시작 스냅샷",
+  "native-changes.stepFinishSnapshot_835810": "단계 완료 스냅샷",
+  "native-changes.nativeRevisionUnavailable_5ba088": "네이티브 리비전 · 확인할 수 없음",
+  "native-changes.theRetainedRevisionObservationIsIncomplete_cf4770": "유지된 리비전 관측이 불완전하거나 일관되지 않습니다.",
+  "native-changes.originalNativeReference_bbb471": "네이티브 참조 원문: <s0/>",
+  "native-changes.theOriginalFileListIsEmpty_e072b3": "원래 파일 목록이 비어 있습니다.",
+  "native-changes.nativeChangesUnavailable_06d3fa": "네이티브 변경 사항 · 확인할 수 없음",
+  "native-changes.theRetainedChangeObservationIsUnavailable_2cf048": "유지된 변경 관측을 확인할 수 없거나 일관되지 않습니다.",
+  "native-changes.nativeSessionDiff_dd228a": "네이티브 세션 변경 사항",
+  "native-changes.nativeInputChangeSummary_a7b5ad": "네이티브 입력 변경 요약",
+  "native-changes.fileUnavailable_b3b9ef": "파일을 확인할 수 없음",
+  "native-changes.statusUnavailable_7eb5af": "상태를 확인할 수 없음",
+  "native-changes.patchUnavailable_87d458": "패치를 확인할 수 없습니다.",
+  "native-changes.theOriginalDiffListIsEmpty_078d07": "원래 변경 사항 목록이 비어 있습니다."
+}

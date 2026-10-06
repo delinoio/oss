@@ -1,11 +1,14 @@
+import { formatTimestamp } from "./localization";
+import { statusLabel } from "./product-status";
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { IntegrationQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
-import { Problem } from "./ui";
+import { ServiceProblem, Problem  } from "./ui";
 
 const features = ["repository-metadata", "repository-contents", "pull-requests", "issues", "checks", "commit-statuses", "rulesets", "reviewer-permissions"] as const;
-const names = ["Repository metadata", "Repository contents", "Pull requests", "Issues", "Checks API", "Commit statuses API", "Active rulesets API", "Current user's permission lookup"] as const;
+const names = () => [copy("integration-access.extra.9321ce8b747f"), copy("integration-access.extra.20ad15d71388"), copy("integration-access.extra.d9e3f2602825"), copy("integration-access.extra.666067dd376e"), copy("integration-access.extra.40f4aaf395fa"), copy("integration-access.extra.9af1097a731a"), copy("integration-access.extra.6c51ec4256e3"), copy("integration-access.extra.8a1e8ff841e0")] as const;
 const states = new Set(["available", "invalid-token", "restricted", "not-found-or-inaccessible", "sso-required", "rate-limited", "unavailable", "not-evaluated"]);
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 const positive = (value: unknown): value is string => typeof value === "string" && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18446744073709551615n;
@@ -33,16 +36,18 @@ export function repositoryAccess(raw: Uint8Array, selected: Resource): Document 
   return result;
 }
 function AccessObservation({ selected, active }: { selected: Resource; active: boolean }) {
+  useLocale();
   const result = useQuery(IntegrationQuery.inspectRepositoryIntegration, { repositoryId: selected.id }, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, staleTime: 0, gcTime: 0 });
   const observed = result.data?.schemaVersion === 1 ? repositoryAccess(result.data.documentJson, selected) : undefined;
   const remote = object(observed?.repository), identity = object(observed?.identity);
-  return <section aria-label="Repository GitHub access"><p>These are fresh reads using this repository's selected profile. API availability does not mean CI passed, that rules are satisfied, or that another reviewer has been verified.</p><button disabled={!active || result.isFetching} onClick={() => void result.refetch()}>Refresh GitHub access</button>{result.isFetching ? <p role="status">Inspecting GitHub read access…</p> : null}<Problem error={result.error} />
-    {result.data && !observed ? <p role="alert">The access observation does not match this repository revision. Refresh repository settings before inspecting again.</p> : null}
-    {observed ? <><p>{result.error || result.isFetching ? "Previous observation" : "Observed"}: {text(observed.observed_at)}</p>{text(identity.login) ? <p>Authenticated as {text(identity.login)}</p> : null}{text(remote.name) ? <p>{text(remote.owner)}/{text(remote.name)} · {remote.private ? "Private" : "Public"}{text(remote.default_branch) ? ` · default branch ${text(remote.default_branch)}` : ""}</p> : null}{text(remote.head_commit) ? <p>Observed default-branch commit: <code>{text(remote.head_commit)}</code></p> : null}<table><caption>Access to this repository's read endpoints</caption><thead><tr><th scope="col">Feature</th><th scope="col">Access</th><th scope="col">Details</th></tr></thead><tbody>{(observed.features as unknown[]).map((entry, index) => { const access = object(entry), problem = object(access.problem); return <tr key={features[index]}><th scope="row">{names[index]}</th><td>{text(access.state)}</td><td>{text(problem.message)} {text(problem.guidance)}</td></tr>; })}</tbody></table></> : null}
+  return <section aria-label={copy("integration-access.repositoryGithubAccess_c34944")}><p>{copy("integration-access.theseAreFreshReadsUsingThis_c5a236")}</p><button disabled={!active || result.isFetching} onClick={() => void result.refetch()}>{copy("integration-access.refreshGithubAccess_7c6810")}</button>{result.isFetching ? <p role="status">{copy("integration-access.inspectingGithubReadAccess_1c79bc")}</p> : null}<Problem error={result.error} />
+    {result.data && !observed ? <p role="alert">{copy("integration-access.theAccessObservationDoesNotMatch_bfb142")}</p> : null}
+    {observed ? <><p>{result.error || result.isFetching ? copy("integration-access.previousObservation_1bd8a6") : copy("integration-access.observed_64fa8a")}: {formatTimestamp(text(observed.observed_at))}</p>{text(identity.login) ? <p><LocalizedText id="integration-access.authenticatedAs_cbb51c" components={{ s0: <>{text(identity.login)}</> }} /></p> : null}{text(remote.name) ? <p>{text(remote.owner)}/{text(remote.name)} · {remote.private ? copy("integration-access.private_c63eb6") : copy("integration-access.public_591935")}{text(remote.default_branch) ? copy("integration-access.defaultBranch_7e2236", { v0: text(remote.default_branch) }) : ""}</p> : null}{text(remote.head_commit) ? <p><LocalizedText id="integration-access.observedDefaultBranchCommit_952af4" components={{ s0: <code>{text(remote.head_commit)}</code> }} /></p> : null}<table><caption>{copy("integration-access.accessToThisRepositorySRead_5e16b2")}</caption><thead><tr><th scope={"col"}>{copy("integration-access.feature_3d377a")}</th><th scope={"col"}>{copy("integration-access.access_ec5ba0")}</th><th scope={"col"}>{copy("integration-access.details_45989d")}</th></tr></thead><tbody>{(observed.features as unknown[]).map((entry, index) => { const access = object(entry), problem = object(access.problem); return <tr key={features[index]}><th scope={"row"}>{names()[index]}</th><td>{statusLabel(text(access.state))}</td><td><ServiceProblem code={text(problem.code) || text(problem.problem_code)}>{text(problem.message)}{text(problem.guidance)}</ServiceProblem></td></tr>; })}</tbody></table></> : null}
   </section>;
 }
 export function RepositoryGitHubAccess({ selected, active }: { selected: Resource; active: boolean }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const data = document(selected), configured = Boolean(text(data.integration_id) && text(data.github_owner) && text(data.github_name));
-  return <div><button disabled={!configured || selected.schemaVersion !== 1} aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? "Close GitHub access" : "Inspect GitHub access"}</button>{!configured ? <p>Set the GitHub owner, repository name and profile to inspect access.</p> : null}{open && active ? <AccessObservation key={`${selected.id}:${selected.revision}`} selected={selected} active={active} /> : null}</div>;
+  return <div><button disabled={!configured || selected.schemaVersion !== 1} aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? copy("integration-access.closeGithubAccess_d2bb98") : copy("integration-access.inspectGithubAccess_6b8ce0")}</button>{!configured ? <p>{copy("integration-access.setTheGithubOwnerRepositoryName_fcad01")}</p> : null}{open && active ? <AccessObservation key={`${selected.id}:${selected.revision}`} selected={selected} active={active} /> : null}</div>;
 }

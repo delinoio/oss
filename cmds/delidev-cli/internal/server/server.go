@@ -6,6 +6,8 @@ import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/knownmodels"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
@@ -21,18 +23,24 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
-	releaseVerifier           func([]byte, string, time.Time) (updates.Verified, error)
-	releaseFactory            func() (releaseClient, error)
-	userServiceBackend        userservice.Backend
-	StartupID                 domain.ID
-	DataDir                   string
-	Listen                    string
-	TLSCertificate            string
-	TLSKey                    string
-	AllowedOrigins            []string
-	Logger                    *slog.Logger
-	accountSecrets            accountSecrets
-	disableCatalogMaintenance bool
+	releaseVerifier    func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory     func() (releaseClient, error)
+	userServiceBackend userservice.Backend
+	StartupID          domain.ID
+	DataDir            string
+	Listen             string
+	TLSCertificate     string
+	TLSKey             string
+	AllowedOrigins     []string
+	Logger             *slog.Logger
+	// DisableBackgroundMaintenanceForTesting prevents isolated external test
+	// fixtures from contacting the official catalog endpoints. Production
+	// startup leaves this false so maintenance remains enabled.
+	DisableBackgroundMaintenanceForTesting bool
+
+	accountSecrets               accountSecrets
+	disableCatalogMaintenance    bool
+	disableKnownModelMaintenance bool
 }
 
 type Endpoint struct {
@@ -46,6 +54,8 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	knownModelsOnce sync.Once
+	knownModels     *knownmodels.Manager
 	releaseVerifier func([]byte, string, time.Time) (updates.Verified, error)
 	releaseFactory  func() (releaseClient, error)
 	delidevv1connect.UnimplementedInstallationServiceHandler
@@ -68,6 +78,7 @@ type Service struct {
 	integrationOnce               sync.Once
 	integrationGate               chan struct{}
 	integrationChecks             map[domain.ID]*integrationCheck
+	integrationPreviews           map[domain.ID]*integrationCheck
 	integrationSecrets            integrationSecrets
 	ownedPAT                      *credentials.PATStore
 	github                        githubIdentity
@@ -87,6 +98,13 @@ type Service struct {
 	accountGate                   chan struct{}
 	oauthGeneration               domain.ID
 	oauthLive                     map[domain.ID]*oauthLive
+	oauthRegistrations            map[domain.ProviderPresetID]providers.OAuthRegistration
+	oauthDeviceJobs               sync.WaitGroup
+	oauthClosing                  bool
+	oauthDeviceClient             oauthDeviceClient
+	oauthTokenClient              oauthTokenClient
+	oauthRefreshMu                sync.Mutex
+	oauthRefreshes                map[domain.ID]chan struct{}
 	oauthExchange                 oauthExchange
 	accountChecks                 map[domain.ID]map[domain.ID]accountCheck
 	accountSecrets                accountSecrets

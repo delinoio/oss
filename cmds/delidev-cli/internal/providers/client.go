@@ -344,7 +344,14 @@ func getURL(ctx context.Context, client *http.Client, p domain.Provider, key []b
 	if p.Protocol == domain.AnthropicMessages {
 		req.Header.Set("anthropic-version", "2023-06-01")
 	}
-	if header == geminiHeader {
+	project, _ := ctx.Value(oauthProjectKey{}).(string)
+	if project != "" {
+		if ApplyOAuthProject(req, p, project) != nil {
+			failure.Failure = AccessDenied
+			return nil, failure
+		}
+		req.Header.Set("Authorization", "Bearer "+string(key))
+	} else if header == geminiHeader {
 		req.Header.Set("x-goog-api-key", string(key))
 	} else {
 		switch p.Authentication {

@@ -1,0 +1,22 @@
+{
+  "native-interaction.theRetainedOpencodeRequestIsUnavailable_0b6341": "The retained OpenCode request is unavailable or inconsistent.",
+  "native-interaction.originalOpencodeRequest_3b6e23": "Original OpenCode request",
+  "native-interaction.opencode_fc9056": "OpenCode <s0/>",
+  "native-interaction.nativeDefault_2bab94": "Native default",
+  "native-interaction.allowed_1bb201": "Allowed",
+  "native-interaction.notAllowed_f0406a": "Not allowed",
+  "native-interaction.multipleChoicesCustomAnswers_845859": "Multiple choices: <s0/> · Custom answers: <s1/>",
+  "native-interaction.requestedPermission_994993": "Requested permission: <s0/>",
+  "native-interaction.requestedPatterns_9611b0": "Requested patterns",
+  "native-interaction.nativeAlwaysPatterns_6ac4e0": "Native “always” patterns",
+  "native-interaction.originalNativeMetadata_d7e8f9": "Original native metadata",
+  "native-interaction.theOriginalQuestionListIsEmpty_e8fe41": "The original question list is empty.",
+  "native-interaction.opencodeAutomaticallyAllowedThisPendingRequest_d45a67": "OpenCode automatically allowed this pending request after an earlier session allowance.",
+  "native-interaction.opencodeAutomaticallyRejectedThisPendingRequest_f95bb9": "OpenCode automatically rejected this pending request after another permission request was rejected.",
+  "native-interaction.noNativeResponseWasSentFor_a39de4": "<s0/> No native response was sent for this request.",
+  "native-interaction.thisUnansweredRequestWasCanceledAfter_66419c": "This unanswered request was canceled after Stop and verified process cleanup. No answer or rejection was sent.",
+  "native-interaction.theOriginalRequestRemainsPendingUntil_89aa8f": "The original request remains pending until its native response is confirmed.",
+  "native-interaction.thisRetainedRequestIsClosed_655dbe": "This retained request is closed.",
+  "native-interaction.thisRequestIsPendingOpenIts_6a1db0": "This request is pending. Open its original interaction to respond.",
+  "native-interaction.sentence.49c0fedf3648": "Question {{v0}}"
+}

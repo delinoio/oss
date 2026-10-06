@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
 enum ReadStatus {
@@ -87,37 +88,39 @@ function retainedRead(tool: Record<string, unknown>, state: string): ReadSnapsho
   return snapshots;
 }
 
-const labels: Record<ReadStatus, string> = { pending: "Pending", running: "Running", completed: "Completed", failed: "Failed" };
+const labels: Record<ReadStatus, string> = { get pending() { return copy("native-read.pending_331551"); }, get running() { return copy("native-read.running_f4ccae"); }, get completed() { return copy("native-read.completed_22a970"); }, get failed() { return copy("native-read.failed_031a8f"); } };
 
 function Arguments({ input }: { input: ReadSnapshot["input"] }) {
+  useLocale();
   return <dl>
-    {input.path !== undefined ? <><dt>Requested path</dt><dd><pre>{input.path}</pre></dd></> : null}
-    {input.offset !== undefined ? <><dt>Requested offset</dt><dd>{input.offset}</dd></> : null}
-    {input.limit !== undefined ? <><dt>Requested limit</dt><dd>{input.limit}</dd></> : null}
+    {input.path !== undefined ? <><dt>{copy("native-read.requestedPath_a7d291")}</dt><dd><pre>{input.path}</pre></dd></> : null}
+    {input.offset !== undefined ? <><dt>{copy("native-read.requestedOffset_262ecb")}</dt><dd>{input.offset}</dd></> : null}
+    {input.limit !== undefined ? <><dt>{copy("native-read.requestedLimit_ee2a77")}</dt><dd>{input.limit}</dd></> : null}
   </dl>;
 }
 
 // Render only retained content. A path is not a link or filesystem capability,
 // and a tool error does not become an assistant answer or execution outcome.
 export function NativeRead({ tool, state }: { tool: Record<string, unknown>; state: string }) {
+  useLocale();
   const snapshots = retainedRead(tool, state);
   const latest = snapshots?.at(-1);
-  if (!snapshots || !latest) return <details><summary>Read · Unavailable</summary><p>The retained Read operation is unavailable or inconsistent.</p></details>;
+  if (!snapshots || !latest) return <details><summary>{copy("native-read.readUnavailable_c88714")}</summary><p>{copy("native-read.theRetainedReadOperationIsUnavailable_1b346a")}</p></details>;
   const first = snapshots[0]!;
   return <details>
-    <summary>Read · {labels[latest.status]}</summary>
+    <summary><LocalizedText id="native-read.read_b6b49e" components={{ s0: <>{labels[latest.status]}</> }} /></summary>
     <Arguments input={latest.input} />
     {latest.title !== undefined ? <p>{latest.title}</p> : null}
-    {latest.output !== undefined ? <section aria-label="Read result"><pre>{latest.output}</pre></section> : null}
-    {latest.error !== undefined ? <section aria-label="Read error"><pre>{latest.error}</pre></section> : null}
-    {typeof latest.metadata.truncated === "boolean" ? <p>{latest.metadata.truncated ? "The native Read result is truncated." : "The native Read result is not truncated."}</p> : null}
-    {typeof latest.metadata.interrupted === "boolean" ? <p>Native interruption: {latest.metadata.interrupted ? "Observed" : "Not observed"}</p> : null}
-    <details><summary>Original proposal and observations</summary>
+    {latest.output !== undefined ? <section aria-label={copy("native-read.readResult_7000d0")}><pre>{latest.output}</pre></section> : null}
+    {latest.error !== undefined ? <section aria-label={copy("native-read.readError_dbb719")}><pre>{latest.error}</pre></section> : null}
+    {typeof latest.metadata.truncated === "boolean" ? <p>{latest.metadata.truncated ? copy("native-read.theNativeReadResultIsTruncated_827385") : copy("native-read.theNativeReadResultIsNot_846aa5")}</p> : null}
+    {typeof latest.metadata.interrupted === "boolean" ? <p><LocalizedText id="native-read.nativeInterruption_edde92" components={{ s0: <>{latest.metadata.interrupted ? copy("native-read.observed_64fa8a") : copy("native-read.notObserved_1d3efc")}</> }} /></p> : null}
+    <details><summary>{copy("native-read.originalProposalAndObservations_8d63b6")}</summary>
       <Arguments input={first.input} />
       <pre>{first.raw}</pre>
-      <ol>{snapshots.map((snapshot, index) => <li key={index}>{labels[snapshot.status]}{snapshot.title !== undefined ? ` · ${snapshot.title}` : ""}</li>)}</ol>
-      {typeof latest.metadata.preview === "string" ? <details><summary>Native preview</summary><pre>{latest.metadata.preview}</pre></details> : null}
-      {Array.isArray(latest.metadata.loaded) ? <><p>Loaded instruction files: {latest.metadata.loaded.length}</p><ul>{latest.metadata.loaded.map((path, index) => <li key={index}><pre>{path as string}</pre></li>)}</ul></> : null}
+      <ol>{snapshots.map((snapshot, index) => <li key={index}>{labels[snapshot.status]}{snapshot.title !== undefined ? copy("native-read.message_2fa20b", { v0: snapshot.title }) : ""}</li>)}</ol>
+      {typeof latest.metadata.preview === "string" ? <details><summary>{copy("native-read.nativePreview_31ab5c")}</summary><pre>{latest.metadata.preview}</pre></details> : null}
+      {Array.isArray(latest.metadata.loaded) ? <><p><LocalizedText id="native-read.loadedInstructionFiles_2266b4" components={{ s0: <>{latest.metadata.loaded.length}</> }} /></p><ul>{latest.metadata.loaded.map((path, index) => <li key={index}><pre>{path as string}</pre></li>)}</ul></> : null}
     </details>
   </details>;
 }

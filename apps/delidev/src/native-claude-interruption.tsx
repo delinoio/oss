@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 import { NativeClaudeResultUsage, validClaudeResultUsage } from "./native-claude-usage";
 
@@ -16,14 +17,15 @@ function valid(data: Document) {
 }
 
 export function NativeClaudeInterruption({ data }: { data: Document }) {
-  if (!valid(data)) return <article className="message" aria-label="Claude interruption unavailable"><p>The retained Claude interruption is unavailable or inconsistent.</p></article>;
+  useLocale();
+  if (!valid(data)) return <article className="message" aria-label={copy("native-claude-interruption.claudeInterruptionUnavailable_b7e91c")}><p>{copy("native-claude-interruption.theRetainedClaudeInterruptionIsUnavailable_5eeb04")}</p></article>;
   const value = object(data.claude_interruption);
-  return <article className="message" aria-label="Claude interruption observation">
-    <header><strong>Claude interruption</strong><small>{value.kind === Kind.Context ? "Original context" : "Session result observed"}</small></header>
-    {value.kind === Kind.Context ? <><pre>{value.context as string}</pre><p>Claude added this context after processing the original denial.</p></> : <>
-      <p>Claude stopped after the denied request. It did not report an input result identity.</p>
-      <p>This session-result observation does not establish input completion or process cleanup. See the separate execution cleanup report.</p>
-      <details><summary>Native session-result usage</summary><NativeClaudeResultUsage value={object(value.result).usage} /><p>These overlapping native reports do not establish billed cost or an input outcome. Cumulative values belong to the original runtime.</p></details>
+  return <article className="message" aria-label={copy("native-claude-interruption.claudeInterruptionObservation_9e2876")}>
+    <header><strong>{copy("native-claude-interruption.claudeInterruption_665b83")}</strong><small>{value.kind === Kind.Context ? copy("native-claude-interruption.originalContext_3b390a") : copy("native-claude-interruption.sessionResultObserved_7e1175")}</small></header>
+    {value.kind === Kind.Context ? <><pre>{value.context as string}</pre><p>{copy("native-claude-interruption.claudeAddedThisContextAfterProcessing_fad43c")}</p></> : <>
+      <p>{copy("native-claude-interruption.claudeStoppedAfterTheDeniedRequest_c27488")}</p>
+      <p>{copy("native-claude-interruption.thisSessionResultObservationDoesNot_14e92c")}</p>
+      <details><summary>{copy("native-claude-interruption.nativeSessionResultUsage_1cb51d")}</summary><NativeClaudeResultUsage value={object(value.result).usage} /><p>{copy("native-claude-interruption.theseOverlappingNativeReportsDoNot_a741ea")}</p></details>
     </>}
   </article>;
 }

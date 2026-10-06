@@ -8,15 +8,22 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"},
-    "./gen/*": {"types": "./dist/gen/*.d.ts", "import": "./dist/gen/*.js"}
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./gen/*": {
+      "types": "./dist/gen/*.d.ts",
+      "import": "./dist/gen/*.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "vitest run",
-    "test:unit": "vitest run"
+    "test": "pnpm test:unit && pnpm test:integration",
+    "test:unit": "vitest run --exclude \"**/*.integration.test.*\"",
+    "test:integration": "vitest run .integration.test."
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",

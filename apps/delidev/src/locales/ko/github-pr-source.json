@@ -1,0 +1,9 @@
+{
+  "github-pr-source.sourceRepositoryNotRecordedInThis_fe8030": "원본 저장소: 이 관측에 기록되지 않았습니다. 새로 고쳐 확인하세요.",
+  "github-pr-source.sourceRepositoryUnavailableOnGithubIts_9fb632": "원본 저장소: GitHub에서 사용할 수 없습니다. 현재 브랜치를 수정용으로 준비할 수 없습니다.",
+  "github-pr-source.private_c9faf8": " · 비공개",
+  "github-pr-source.public_3469de": " · 공개",
+  "github-pr-source.sourceRepository_62ff85": "원본 저장소: <s0/><s1/>",
+  "github-pr-source.sourceRepositoryIdentity_996ce5": "원본 저장소 식별 정보",
+  "github-pr-source.repositoryIdNodeId_31fb4b": "저장소 ID: <s0/> · 노드 ID: <s1/>"
+}

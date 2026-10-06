@@ -12,6 +12,9 @@
 .worker-wizard label { display: grid; gap: 8px; margin: 16px 0; }
 .worker-wizard input:not([type="checkbox"]), .worker-wizard select { min-height: 40px; border-radius: 8px; width: 100%; }
 .worker-account-list { border-top: 1px solid var(--border); margin-top: 24px; }
+.worker-account-empty { padding: 16px 0; }
+.worker-account-empty p { margin: 0; }
+.worker-account-empty p + p { margin-top: 4px; color: var(--muted); }
 .worker-wizard .worker-account-row { display: flex; gap: 14px; align-items: flex-start; margin: 0; padding: 16px 0; border-bottom: 1px solid var(--border); }
 .worker-account-row > input { margin-top: 4px; flex-shrink: 0; }
 .worker-account-row > span { display: grid; gap: 4px; }
@@ -21,10 +24,14 @@
 .worker-harness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
 .worker-wizard .worker-harness-guidance { margin: 16px 0 0; color: var(--muted); }
 /* Large Harness cards override the shared Settings control minimum and borders.
-   Keep this scoped specificity while the shared :is() rule includes all buttons. */
-.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; min-height: 176px; padding: 24px; border: 2px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); text-align: left; }
-.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card[aria-checked="false"]:enabled:hover { border-color: var(--control-border); background: var(--surface-subtle); }
-.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card[aria-checked="true"] { border-color: var(--accent); background: var(--selected-background); }
+   Keep this scoped specificity while the shared :is() rule includes all buttons.
+   The wizard mounts both in the category page and in the task dialog. */
+.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card,
+.settings-task-body .agent-configuration.worker-wizard .worker-harness-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; min-height: 176px; padding: 24px; border: 2px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); text-align: left; }
+.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card[aria-checked="false"]:enabled:hover,
+.settings-task-body .agent-configuration.worker-wizard .worker-harness-card[aria-checked="false"]:enabled:hover { border-color: var(--control-border); background: var(--surface-subtle); }
+.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card[aria-checked="true"],
+.settings-task-body .agent-configuration.worker-wizard .worker-harness-card[aria-checked="true"] { border-color: var(--accent); background: var(--selected-background); }
 .worker-harness-mark { display: block; flex: 0 0 48px; width: 48px; height: 48px; margin-bottom: 16px; background: var(--text); mask-position: center; mask-size: contain; mask-repeat: no-repeat; }
 .worker-harness-mark-codex { mask-image: url("../public/subscription-marks/openai.svg"); }
 .worker-harness-mark-claude-code { mask-image: url("../public/subscription-marks/claude.svg"); }
@@ -56,3 +63,6 @@
 }
 
 .worker-wizard input[type="checkbox"] { width: 16px; min-height: 16px; height: 16px; }
+
+.worker-model-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.worker-model-origin { font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }

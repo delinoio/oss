@@ -434,6 +434,15 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			return nil
 		}
 	}
+	if err := m.verifyRemovalInventory(ctx, r, path, partial, intent, pending, removed); err != nil {
+		return err
+	}
+	return m.retainRemovalClaim(ctx, r, raw)
+}
+
+// Compare remaining entries and replay only original journal transitions. This
+// check grants no new claim, so permanent deletion can require preexisting proof.
+func (m *Manager) verifyRemovalInventory(ctx context.Context, r StorageRequest, path string, partial bool, intent storageRemovalIntent, pending []storageRemovalRename, removed map[string]storageRemovalRename) error {
 	entryLimit := MaxSnapshotEntries
 	if r.Action == StorageDelete {
 		entryLimit = maxSnapshotRemovalEntries
@@ -550,7 +559,7 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			}
 		}
 	}
-	return m.retainRemovalClaim(ctx, r, raw)
+	return nil
 }
 func storageExists(path string) (bool, error) {
 	info, err := os.Lstat(path)

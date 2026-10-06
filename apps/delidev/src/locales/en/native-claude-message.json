@@ -1,0 +1,14 @@
+{
+  "native-claude-message.streaming_a951c5": "Streaming",
+  "native-claude-message.contentComplete_829c09": "Content complete",
+  "native-claude-message.streamClosed_5eab18": "Stream closed",
+  "native-claude-message.interruptedPartialResponse_637011": "Interrupted · partial response",
+  "native-claude-message.claudeMessageUnavailable_9efc2c": "Claude message unavailable",
+  "native-claude-message.theRetainedClaudeMessageIsUnavailable_453226": "The retained Claude message is unavailable or inconsistent.",
+  "native-claude-message.claudeMessageContent_fa712d": "Claude message content",
+  "native-claude-message.toolProposal_e8bdb5": "Tool proposal: <s0/>. <s1/>",
+  "native-claude-message.reasoning_4d3137": "Reasoning · <s0/>",
+  "native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3": "Reasoning was redacted by the harness. <s0/>",
+  "native-claude-message.nativeStopReason_e2e029": "Native stop reason: <s0/>",
+  "native-claude-message.nativeStopSequence_96951d": "Native stop sequence"
+}

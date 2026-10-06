@@ -106,12 +106,15 @@ before dropping any handle or advancing any generation. Failure retains the
 original views for exact Hide cleanup; no replacement child is created. Presentation
 reservation/open obey the same unmap-before-release rule. Removal and quit retain
 closing handles until their exact callbacks, so Hide can still reach a child whose
-asynchronous close has not completed. Discovered profile removal synchronously
-unmaps every matching child before requesting closure, attempts later users even
-after an unmap failure, and retains each original presentation for exact Hide
-retry or its close callback. Failed unmapping never permits directory purge.
-Close requests after tab replacement and profile removal run
-outside native state; pending old creation callbacks remain generation-guarded.
+asynchronous close has not completed. Discovered profile removal and forgetting
+a saved server/device scope mark every matching view closing, then synchronously
+unmap every child before requesting closure. Both paths attempt later users even
+after an unmap failure and retain each original handle and presentation for exact
+Hide retry or its close callback. Scope forgetting preserves unrelated server/device
+profiles and pending-creation guards. Failed unmapping never permits directory purge.
+Removal unmaps and close requests run outside native state. Close requests after
+tab replacement also run outside native state; pending old creation callbacks
+remain generation-guarded.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
@@ -286,7 +289,7 @@ requests cannot extend that list. Popups, downloads, file pickers and permission
 denied; script clipboard/paste access is disabled. Ordinary external HTTP(S) pages
 receive only their profile's web credentials, never product or platform credentials.
 The external CEF client has no app process-message handler or native capability.
-Product controls are accepted only from trusted main/saved app documents and
+Product controls are accepted only from registered trusted local/saved app documents and
 independently reread current Go ownership before browsing mutations.
 
 The Go-prepared root enforces private Unix permissions or owner-only inherited

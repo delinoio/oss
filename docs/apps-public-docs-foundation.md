@@ -55,6 +55,8 @@
 - Development: package-local `pnpm dev` or repository-root `pnpm dev:public-docs`.
 - Local validation: `pnpm --filter public-docs test`, which runs the shared `@delinoio/docs-site-switcher` interaction suite, builds the complete root and project-subpath tree, and validates every route artifact, required heading/link/accessibility landmark, site-selector state, public-content limit, clean link, and forbidden path or URL credential.
 - CI alignment: `node-public-docs-test`, selected and forced for this app and the shared site-switcher package.
+- Cached `build`, `build:frontend`, and `ci:routes` tasks declare all eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources as package-local external inputs. Build overrides extend the root inputs and retain inherited dependencies, outputs, and environment hashes. Each installer change invalidates public-docs build and route validation without invalidating unrelated workspace tasks; generated installer bytes must match the current source, and unchanged cached output restores byte-identically.
+- Cache regression: `node --test scripts/ci/public-docs-cache.test.mjs` uses a disposable checkout and local-only cache. It independently mutates all eight installers, checks each consuming task's hash, runs complete cold/warm site validation, restores output for unchanged sources, rebuilds changed assets, and rejects stale installer bytes with a frozen cached producer. The repository CI contract suite includes this fixture; local results do not establish hosted cache or deployment acceptance.
 - Production build: `pnpm --filter public-docs build`; Cloudflare Pages must publish `apps/public-docs/doc_build`.
 
 ## Dependencies and Integrations

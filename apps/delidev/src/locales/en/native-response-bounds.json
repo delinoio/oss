@@ -1,0 +1,9 @@
+{
+  "native-response-bounds.keepOpenCodeAnswerWithin64Kib": "Keep each OpenCode answer within 64 KiB. Your previous draft was kept.",
+  "native-response-bounds.keepOpenCodeCorrectionFeedbackWithin64Kib": "Keep OpenCode correction feedback within 64 KiB. Your previous draft was kept.",
+  "native-response-bounds.keepClaudeDenialReasonWithin4Kib": "Keep the Claude denial reason within 4 KiB. Your previous draft was kept.",
+  "native-response-bounds.keepClaudeAnswerWithin256Kib": "Keep each Claude answer within 256 KiB. Your previous draft was kept.",
+  "native-response-bounds.keepGrokAnswerWithin64Kib": "Keep each Grok answer within 64 KiB. Your previous draft was kept.",
+  "native-response-bounds.keepGrokNoteWithin64Kib": "Keep each Grok note within 64 KiB. Your previous draft was kept.",
+  "native-response-bounds.completeResponseExceeds256Kib": "The complete response exceeds 256 KiB. Shorten it before adding more text. Your previous draft was kept."
+}

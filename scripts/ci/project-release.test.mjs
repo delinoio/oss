@@ -11,6 +11,31 @@ import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/nati
 const source = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
 const workflow = yaml.load(source(".github/workflows/release-project.yml"));
 
+test("legacy CLI workflows verify or reuse public releases before signing and tap recovery", () => {
+  for (const project of [Project.Binpm, Project.CargoMono, Project.Nodeup, Project.WithWatch, Project.Derun]) {
+    const release = yaml.load(source(`.github/workflows/release-${project}.yml`));
+    const job = release.jobs.publish;
+    assert.equal(job.env.RELEASE_PROJECT, project);
+    assert.equal(job.env.RELEASE_TAG, "${{ needs.prepare.outputs.tag }}");
+    assert.equal(job.env.RELEASE_VERSION, "${{ needs.prepare.outputs.version }}");
+    assert.equal(job.env.DRY_RUN, "${{ needs.prepare.outputs.dry_run }}");
+    const publisher = job.steps.find((step) => step.name === "Verify or publish signed release");
+    assert.equal(publisher.run, "node scripts/release/legacy-cli-release.mjs --artifacts-dir dist");
+    assert.equal(publisher.env.GH_TOKEN, "${{ github.token }}");
+    assert.equal(publisher.if, undefined);
+    assert.equal(publisher["continue-on-error"], undefined);
+    assert.ok(job.steps.indexOf(publisher) > job.steps.findIndex((step) => step.name === "Install cosign"));
+    assert.doesNotMatch(JSON.stringify(job.steps), /softprops\/action-gh-release|generate-checksums\.sh|cosign sign-blob/u);
+    if (project !== Project.CargoMono) {
+      for (const name of ["Render Homebrew update", "Create Homebrew repository token", "Submit Homebrew update"]) {
+        assert.ok(job.steps.findIndex((step) => step.name === name) > job.steps.indexOf(publisher));
+      }
+    }
+    assert.deepEqual(release.jobs["linux-packages"].needs, ["prepare", "publish"]);
+    assert.equal(release.on.workflow_dispatch.inputs.dry_run.default, "true");
+  }
+});
+
 test("Selected release is manual, serialized, main-only and permission bounded", () => {
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   const inputs = workflow.on.workflow_dispatch.inputs;

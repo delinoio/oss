@@ -19,6 +19,7 @@
 - Stable clean routes: `/runmoor/`, `/runmoor/install`, `/runmoor/configuration`, `/runmoor/commands`, `/runmoor/docker`, `/runmoor/tart`, `/runmoor/host`, and `/runmoor/operations`.
 - The overview and seven guides are owned by this content section and published under `/runmoor` without removing their content, verification limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Links use the consolidated site's `/runmoor` base.
 - The operations guide explains that service start, stop, and uninstall use the same configuration path recorded at installation, and provides safe inspection and recovery steps for a configuration mismatch without exposing repository-internal paths.
+- The operations guide identifies completed-Stop recovery after an interrupted service reload as unreleased. It explains that one explicit Start resumes a verified inactive service after the reload command and cleanup finish, preserves pauses, and requires inspection of uncertain ownership instead of deleting recovery files.
 - Every page includes the shared site selector with Runmoor selected via `aria-current`; it must offer the root, Nodeup, binpm, async-commit-hook, and clibox subpaths.
 - Use the default Rspress theme with every stable route in the navigation and sidebar, plus visible GitHub repository links in the social navigation and footer.
 - Validate top-navigation, sidebar, social-link, and document-footer regions separately on every stable page. Removing a link from one region must fail even when article content or another region still links to that destination.
@@ -82,6 +83,21 @@ Runmoor `0.1.3` native packages have passed the complete public installation mat
 The public installation surface documents the exact repository key fingerprint, supported Linux distribution/architecture matrix, stable or explicit preview registration, and package-manager install/update/remove commands. Operational details remain in `docs/repository-linux-packages-contract.md`. Installation guidance must preserve the existing release-archive and other supported installation methods.
 
 The Runmoor install page links directly to the shared key-verification and stable-registration sections before showing installation commands. It explains that key inspection alone does not register an APT source, requires a successful package-list refresh and a visible package candidate, and links to shared troubleshooting for missing packages. Installation, upgrade, and removal commands use separate copyable blocks so copying an installation example cannot immediately uninstall the package. The shared registration page owns architecture, source, suite, update-error, and candidate diagnostics.
+
+## Service reload documentation
+
+Describe version-aware service reload as unreleased until a containing release
+is verified. After the operator installs a newer CLI, `runmoor reload` checks the
+running owned launchd/systemd manager and advances it to that installed CLI while
+preserving active jobs and their timeouts. Equal/newer managers perform the
+existing configuration reload. Foreground managers remain unchanged in version;
+reload never starts a stopped service, downloads a release or downgrades.
+Explain that an interrupted operation can have changed the service executable
+before configuration acceptance. Users inspect status/the user service and retry
+with the same CLI/configuration; incompatible rollback remains prohibited.
+Keep the internal journal, temporary helper and native command choreography out
+of public guides. Preserve manual package installation and drained backup/rollback
+workflows and distinguish fixtures/builds from actual platform and job acceptance.
 
 ## Automatic configuration documentation
 

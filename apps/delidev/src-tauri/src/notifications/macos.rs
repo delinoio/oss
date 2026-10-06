@@ -37,7 +37,7 @@ pub async fn present(notice: &Notice) -> Result<Presented, PresentationResult> {
         .message(notice.kind.body())
         .action(mac_usernotifications::Action::button(
             "open",
-            "Open DeliDev",
+            crate::localization::text(crate::localization::Message::Open),
         ))
         .send()
         .await

@@ -21,7 +21,12 @@ func CleanupRuntime(home string, original os.FileInfo) error {
 	if err != nil {
 		return Invalid()
 	}
-	defer root.Close()
+	rootClosed := false
+	defer func() {
+		if !rootClosed {
+			_ = root.Close()
+		}
+	}()
 	anchored, err := root.Stat(".")
 	if err != nil || !os.SameFile(anchored, original) {
 		return Invalid()
@@ -56,6 +61,13 @@ func CleanupRuntime(home string, original os.FileInfo) error {
 			return Invalid()
 		}
 	}
+	// Windows does not allow removing a directory while its OpenRoot handle is
+	// still live. Close the anchored traversal before checking and unlinking the
+	// original runtime directory; the deferred close remains for error paths.
+	if err := root.Close(); err != nil {
+		return Invalid()
+	}
+	rootClosed = true
 	current, err = os.Stat(home)
 	if err != nil || !os.SameFile(current, original) {
 		return Invalid()

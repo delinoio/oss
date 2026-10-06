@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
 // Explicit opt-in prepares and cancels a native browser login in empty temporary
@@ -56,6 +57,50 @@ func TestInstalledCodexSubscriptionBrowserPreparation(t *testing.T) {
 		t.Fatal("preparation unexpectedly created account credentials")
 	}
 	t.Logf("version=%s callback=%s; preparation only, no browser, OAuth completion or inference", native.Version(), callback)
+}
+
+// This opt-in interrupts an actual installed Codex login in a temporary server
+// account. It uses no user credential, browser, OAuth completion or inference.
+func TestInstalledCodexInterruptedLoginCleanup(t *testing.T) {
+	executable := os.Getenv("DELIDEV_NATIVE_INITIALIZE_EXECUTABLE")
+	if executable == "" {
+		t.Skip("explicit installed Codex opt-in required")
+	}
+	if !filepath.IsAbs(executable) {
+		t.Fatal("absolute native executable required")
+	}
+	t.Setenv("PATH", filepath.Dir(executable)+string(os.PathListSeparator)+"/usr/bin"+string(os.PathListSeparator)+"/bin")
+	f := unreferencedInitialSubscription(t)
+	f.service.subscriptionOpen = openServerSubscription
+	op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	ctx, stop := context.WithTimeout(failedLoginContext(), 90*time.Second)
+	done := make(chan struct{})
+	go func() { defer close(done); f.service.runServerSubscription(ctx, f.input.AccountID) }()
+	defer func() { stop(); awaitServerFixture(t, done) }()
+	for {
+		p := f.progressFor(op.OperationId)
+		if p.State == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING {
+			break
+		}
+		if p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_PREPARING || ctx.Err() != nil {
+			t.Fatal("isolated native login did not reach its original waiting state", p.State)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	stop()
+	awaitServerFixture(t, done)
+	_, a := f.record()
+	if a.Health != domain.AccountDisconnected || a.Subscription.RecoveryRequired || a.Subscription.Pending != nil || a.Subscription.ServerOperation.NativeStarted || a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupConfirmed || a.Subscription.ServerOperation.State != domain.SubscriptionCanceled {
+		t.Fatal("interrupted native login did not confirm resource cleanup")
+	}
+	home := filepath.Join(f.service.Store.Root(), "subscription-runtime", "auth", op.OperationId)
+	if _, err := os.Lstat(home); !os.IsNotExist(err) {
+		t.Fatal("original native runtime was retained")
+	}
+	if err := f.deleteFailedLogin(f.failedLoginDeletion()); err != nil {
+		t.Fatal("cleaned native account could not be deleted", domain.SafeError(err).Code)
+	}
+	t.Log("installed Codex initial login interruption and explicit account deletion passed in temporary state; no browser, OAuth completion or inference")
 }
 
 // Explicit opt-in validates account/read after a credential-free local logout.

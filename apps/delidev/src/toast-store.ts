@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import { resolveMessage, type OwnedMessage } from "./localization";
 export enum ToastKind { Success = "success", Info = "info", Warning = "warning", Error = "error" }
 export enum ToastPause { Hover, Focus }
-export interface ToastOptions { kind: ToastKind; message: string; id?: string; durationMs?: number }
-export interface ToastNotification { id: string; kind: ToastKind; message: string }
+export interface ToastOptions { kind: ToastKind; message: string | OwnedMessage; id?: string; durationMs?: number }
+export interface ToastNotification { id: string; kind: ToastKind; message: string | OwnedMessage }
 export interface NotificationController { notify(options: ToastOptions): string; dismiss(id: string): void }
 interface Entry extends ToastNotification {
   remaining: number;
@@ -32,7 +33,8 @@ export class ToastStore implements NotificationController {
   }
   notify = ({ kind, message, id = `toast-${++this.sequence}`, durationMs = 5000 }: ToastOptions): string => {
     if (!this.alive) return id;
-    if (!Object.values(ToastKind).includes(kind) || !message.trim() || message.length > 4096) throw new Error("Toast content is invalid.");
+    const presentation = resolveMessage(message)!;
+    if (!Object.values(ToastKind).includes(kind) || !presentation.trim() || presentation.length > 4096) throw new Error("Toast content is invalid.");
     if (!Number.isInteger(durationMs) || durationMs < 0 || durationMs > 0x7fffffff) throw new Error("Toast duration is invalid.");
     const previous = this.entries.get(id);
     if (previous) this.stop(previous);

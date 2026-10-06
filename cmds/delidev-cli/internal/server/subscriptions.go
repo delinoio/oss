@@ -177,6 +177,11 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if state.ServerOperation != nil && state.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
+			// A fresh explicit Worker login supersedes the settled server attempt.
+			// Its cleanup checkpoint cannot describe the new pending/native owner.
+			state.ServerOperation = nil
+		}
 		state.Pending = &domain.SubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, MachineID: input.Machine, Actor: actor, DeviceCode: input.DeviceCode, Phase: domain.SubscriptionQueued}
 		if action == domain.SubscriptionLogout {
 			// Deny new executions at acceptance. Existing ownership remains leased

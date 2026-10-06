@@ -25,6 +25,10 @@ type oauthLive struct {
 	verifier      []byte
 	authorization string
 	expires       time.Time
+	profile       oauthProfile
+	callback      string
+	state         []byte
+	userCode      []byte
 }
 type oauthExchange interface {
 	Exchange(context.Context, []byte, []byte) ([]byte, error)
@@ -35,6 +39,12 @@ type oauthReceipt struct {
 
 func oauthProblem() *domain.Error {
 	return domain.Fail(domain.RecoveryRequired, "The OAuth exchange or local connection has an uncertain outcome.", "Inspect the OpenRouter keys dashboard. Retry only the original local completion if its credential is already protected; never resend an exchange.")
+}
+func oauthProblemFor(a domain.AccountOAuthAttempt) *domain.Error {
+	if a.Version == 2 {
+		return oauthCredentialProblem()
+	}
+	return oauthProblem()
 }
 func requireOAuthActor(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
@@ -53,6 +63,9 @@ func (s *Service) oauthCommitment(kind string, id domain.ID, value []byte) strin
 // accountGate owns ephemeral state. Initialization never recovers a verifier or
 // sends HTTP; a new lifetime only interrupts prior private dispatch authority.
 func (s *Service) initializeOAuthLocked(ctx context.Context) error {
+	if s.oauthClosing {
+		return domain.Fail(domain.Unavailable, "OAuth is shutting down.", "Use the next admitted server lifetime.")
+	}
 	if s.oauthGeneration != "" {
 		return nil
 	}
@@ -76,20 +89,6 @@ func (s *Service) initializeOAuth(ctx context.Context) error {
 	defer unlock()
 	return s.initializeOAuthLocked(ctx)
 }
-func oauthProvider(tx *store.Tx, id domain.ID, revision uint64) error {
-	if err := tx.Authorize(); err != nil {
-		return err
-	}
-	row, err := tx.Get(domain.ProviderKind, id)
-	if err != nil {
-		return err
-	}
-	p, err := store.Decode[domain.Provider](row)
-	if err != nil || row.Revision != revision || p.Validate() != nil || p.PresetID == nil || *p.PresetID != domain.PresetOpenRouter || !p.EnabledValue() || p.Endpoint != "https://openrouter.ai/api/v1" || p.Protocol != domain.OpenAIChat || p.Authentication != domain.BearerAuth {
-		return domain.Fail(domain.Unsupported, "OAuth requires the enabled saved official OpenRouter preset.", "Select the original managed OpenRouter provider or use its manual API-key flow.")
-	}
-	return nil
-}
 func (s *Service) oauthRead(ctx context.Context, id domain.ID) (domain.AccountOAuthAttempt, error) {
 	var a domain.AccountOAuthAttempt
 	actor, err := requireOAuthActor(ctx)
@@ -112,6 +111,9 @@ func (s *Service) oauthRead(ctx context.Context, id domain.ID) (domain.AccountOA
 func (s *Service) clearOAuthLive(id domain.ID) {
 	if live := s.oauthLive[id]; live != nil {
 		clear(live.verifier)
+		clear(live.state)
+		clear(live.userCode)
+		live.callback = ""
 		live.authorization = ""
 		delete(s.oauthLive, id)
 	}
@@ -134,9 +136,6 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 	if err == nil {
 		err = validateAccountMutation(req.Msg.Provider)
 	}
-	if err == nil {
-		err = domain.ValidateOAuthCallback(req.Msg.CallbackUrl)
-	}
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -144,7 +143,12 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	defer unlock()
+	locked := true
+	defer func() {
+		if locked {
+			unlock()
+		}
+	}()
 	if err = s.initializeOAuthLocked(ctx); err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -159,7 +163,9 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 		Revision           uint64
 		Actor              domain.Principal
 		CallbackCommitment string
-	}{domain.ID(m.Id), m.ExpectedRevision, actor, s.oauthCommitment("callback", domain.ID(m.RequestId), []byte(req.Msg.CallbackUrl))}
+		GoogleProject      string `json:",omitempty"`
+		GoogleOptions      bool   `json:",omitempty"`
+	}{domain.ID(m.Id), m.ExpectedRevision, actor, s.oauthCommitment("callback", domain.ID(m.RequestId), []byte(req.Msg.CallbackUrl)), req.Msg.GetGoogle().GetQuotaProjectId(), req.Msg.Google != nil}
 	result, replayed, err := s.Store.Replay(ctx, domain.ID(m.RequestId), "oauth.start", input)
 	var original domain.ID
 	var live *oauthLive
@@ -179,8 +185,57 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 		live = &oauthLive{verifier: verifier, authorization: "https://openrouter.ai/auth?" + q.Encode(), expires: now.Add(10 * time.Minute)}
 		a := domain.AccountOAuthAttempt{Version: 1, ID: domain.NewID(), Revision: 1, ServerID: s.Identity.ServerID, ProviderID: input.Provider, ProviderRevision: input.Revision, Actor: actor, Generation: s.oauthGeneration, StartRequestID: domain.ID(m.RequestId), AccountID: domain.NewID(), CreateRequestID: domain.NewID(), ConnectRequestID: domain.NewID(), State: domain.OAuthAwaiting, StartedAt: now, ExpiresAt: now.Add(10 * time.Minute), UpdatedAt: now, CallbackCommitment: input.CallbackCommitment}
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "oauth.start", input, func(tx *store.Tx) (any, error) {
-			if err := oauthProvider(tx, input.Provider, input.Revision); err != nil {
+			if err := s.oauthProvider(tx, input.Provider, input.Revision); err != nil {
 				return nil, oauthStartNotAdmitted(err)
+			}
+
+			row, e := tx.Get(domain.ProviderKind, input.Provider)
+			if e != nil {
+				return nil, e
+			}
+			provider, e := store.Decode[domain.Provider](row)
+			if e != nil {
+				return nil, e
+			}
+			profile, e := s.oauthProfile(provider)
+			if e != nil {
+				return nil, oauthStartNotAdmitted(e)
+			}
+			if e = profile.callback(req.Msg.CallbackUrl); e != nil {
+				return nil, e
+			}
+			if profile.preset == domain.PresetGemini {
+				if !input.GoogleOptions || !domain.ValidGoogleProjectID(input.GoogleProject) {
+					return nil, domain.Fail(domain.InvalidArgument, "A valid Google Cloud project ID is required.", "Choose the project that pays for API usage before continuing.")
+				}
+				a.QuotaProject = input.GoogleProject
+			} else if input.GoogleOptions {
+				return nil, domain.Fail(domain.InvalidArgument, "Google project options are unsupported for this provider.", "Use the selected provider's own connection options.")
+			}
+			live.profile = profile
+			live.callback = req.Msg.CallbackUrl
+			if profile.preset != domain.PresetOpenRouter {
+				stateBytes := make([]byte, 32)
+				if _, e = rand.Read(stateBytes); e != nil {
+					return nil, domain.SafeError(e)
+				}
+				live.state = []byte(base64.RawURLEncoding.EncodeToString(stateBytes))
+				clear(stateBytes)
+				a.Version = 2
+				a.Preset = profile.preset
+				a.StateCommitment = s.oauthCommitment("state", a.StartRequestID, live.state)
+				q = url.Values{"client_id": {profile.registration.ClientID}, "redirect_uri": {live.callback}, "response_type": {"code"}, "scope": {profile.scope}, "code_challenge": {base64.RawURLEncoding.EncodeToString(hash[:])}, "code_challenge_method": {"S256"}, "state": {string(live.state)}}
+				if profile.preset == domain.PresetGemini {
+					q.Set("access_type", "offline")
+					q.Set("prompt", "consent")
+				}
+				live.authorization = profile.authorization + "?" + q.Encode()
+				if profile.preset == domain.PresetBaseten {
+					a.DeviceRequestID = domain.NewID()
+					clear(live.verifier)
+					live.verifier = nil
+					live.authorization = ""
+				}
 			}
 			if err := tx.ExpireAccountOAuth(now); err != nil {
 				return nil, err
@@ -218,10 +273,37 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	if a.Preset == domain.PresetBaseten && original != "" && !replayed {
+		work := domain.WithPrincipal(context.Background(), actor)
+		jobCtx, cancel := context.WithDeadline(work, a.ExpiresAt)
+		checkCtx, finish, e := s.startAccountCheck(jobCtx, a.AccountID, a.DeviceRequestID, a.ProviderID, oauthInspection)
+		if e != nil {
+			cancel()
+			s.oauthRecoveryLocked(a, oauthProblemFor(a))
+		} else {
+			profile := live.profile
+			s.oauthDeviceJobs.Add(1)
+			unlock()
+			locked = false
+			e = s.authorizeOAuthDevice(checkCtx, a, profile, actor, func() { finish(); cancel(); s.oauthDeviceJobs.Done() })
+			unlock, err = s.lockAccounts(ctx)
+			if err != nil {
+				return nil, rpc.Error(err, c)
+			}
+			locked = true
+			if e != nil {
+				return nil, rpc.Error(e, c)
+			}
+		}
+		a, err = s.oauthRead(ctx, a.ID)
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
+	}
 	// Replay preserves the original attempt but cannot recover browser authority
 	// after its provider was edited or disabled.
 	if a.State == domain.OAuthAwaiting {
-		if providerErr := s.Store.Read(ctx, func(tx *store.Tx) error { return oauthProvider(tx, a.ProviderID, a.ProviderRevision) }); providerErr != nil {
+		if providerErr := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthAttemptProvider(tx, a) }); providerErr != nil {
 			switch domain.SafeError(providerErr).Code {
 			case domain.Unsupported, domain.NotFound, domain.PermissionDenied:
 				s.clearOAuthLive(a.ID)
@@ -239,10 +321,18 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 			}
 		}
 	}
-	response := &pb.StartAccountOAuthResponse{Attempt: oauthProjection(a), RequestId: m.RequestId, Replayed: result.Replayed}
+	response := &pb.StartAccountOAuthResponse{Attempt: oauthProjection(a), RequestId: m.RequestId, Replayed: result.Replayed, Flow: pb.AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_PKCE}
+	if a.Preset == domain.PresetBaseten {
+		response.Flow = pb.AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_DEVICE
+	}
 	if a.State == domain.OAuthAwaiting && a.Generation == s.oauthGeneration && time.Now().Before(a.ExpiresAt) {
 		if live := s.oauthLive[a.ID]; live != nil {
 			response.AuthorizationUrl = live.authorization
+			response.Flow = pb.AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_PKCE
+			if a.Preset == domain.PresetBaseten {
+				response.Flow = pb.AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_DEVICE
+				response.UserCode = string(live.userCode)
+			}
 		}
 	}
 	s.logger.InfoContext(ctx, "account_oauth_started", "attempt_id", a.ID, "state", a.State, "replayed", result.Replayed, "correlation_id", c)
@@ -263,6 +353,9 @@ func oauthProjection(a domain.AccountOAuthAttempt) *pb.AccountOAuthAttempt {
 	return r
 }
 func (s *Service) oauthResponse(ctx context.Context, a domain.AccountOAuthAttempt, request string, replayed bool) (*pb.CompleteAccountOAuthResponse, error) {
+	if request == "" && a.Preset == domain.PresetBaseten {
+		request = string(a.CompletionRequestID)
+	}
 	r := &pb.CompleteAccountOAuthResponse{Attempt: oauthProjection(a), RequestId: request, Replayed: replayed}
 	if a.State == domain.OAuthConnected || a.StagingClaimed {
 		row, err := s.accountRecord(ctx, a.AccountID)
@@ -331,10 +424,11 @@ func (s *Service) oauthRecoveryLocked(a domain.AccountOAuthAttempt, problem *dom
 }
 
 type oauthCompleteInput struct {
-	Attempt        domain.ID
-	Revision       uint64
-	Actor          domain.Principal
-	CodeCommitment string
+	Attempt         domain.ID
+	Revision        uint64
+	Actor           domain.Principal
+	CodeCommitment  string
+	StateCommitment string `json:",omitempty"`
 }
 
 func oauthSameActor(a domain.AccountOAuthAttempt, actor domain.Principal, server domain.ID) error {
@@ -354,7 +448,7 @@ func (s *Service) oauthLocalAuthority(tx *store.Tx, a domain.AccountOAuthAttempt
 	if a.State != domain.OAuthSaving && a.State != domain.OAuthRecovery {
 		return oauthProblem()
 	}
-	return oauthProvider(tx, a.ProviderID, a.ProviderRevision)
+	return s.oauthAttemptProvider(tx, a)
 }
 
 func (s *Service) oauthUpdate(ctx context.Context, a domain.AccountOAuthAttempt, state domain.AccountOAuthState, apply func(*domain.AccountOAuthAttempt)) (domain.AccountOAuthAttempt, error) {
@@ -382,6 +476,11 @@ func (s *Service) oauthUpdate(ctx context.Context, a domain.AccountOAuthAttempt,
 		if err := tx.PutAccountOAuth(current, a.Revision); err != nil {
 			return nil, err
 		}
+		if current.Version == 2 && current.State == domain.OAuthCanceled && current.StagingClaimed && !current.CleanupPending {
+			if err := tx.RetireAccountOAuthCredentials(current.AccountID); err != nil {
+				return nil, err
+			}
+		}
 		a = current
 		return oauthReceipt{current.ID}, nil
 	})
@@ -391,7 +490,7 @@ func (s *Service) oauthUpdate(ctx context.Context, a domain.AccountOAuthAttempt,
 // The original protected reference is the sole recovery authority. Neither a
 // supplied code nor a new request can replace its missing/tombstoned payload.
 func (s *Service) oauthFinishLocalLocked(ctx context.Context, a domain.AccountOAuthAttempt, actor domain.Principal, key []byte) (domain.AccountOAuthAttempt, error) {
-	err := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthLocalAuthority(tx, a, actor) })
+	err := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthProtectedAuthority(tx, a, actor) })
 	if err != nil {
 		return a, err
 	}
@@ -404,7 +503,23 @@ func (s *Service) oauthFinishLocalLocked(ctx context.Context, a domain.AccountOA
 			return a, err
 		}
 	}
-	account := domain.Account{Alias: "OpenRouter", ProviderID: a.ProviderID, Type: domain.APIAccount, Enabled: true, RecoveryNotifications: true, Health: domain.AccountDisconnected}
+	alias := "OpenRouter"
+	if a.Version == 2 {
+		row, e := s.Store.Get(ctx, domain.ProviderKind, a.ProviderID)
+		if e != nil {
+			return a, e
+		}
+		p, e := store.Decode[domain.Provider](row)
+		if e != nil {
+			return a, e
+		}
+		profile, e := s.oauthProfile(p)
+		if e != nil {
+			return a, e
+		}
+		alias = profile.name
+	}
+	account := domain.Account{Alias: alias, ProviderID: a.ProviderID, Type: domain.APIAccount, Enabled: true, RecoveryNotifications: true, Health: domain.AccountDisconnected}
 	// Reuse ordinary configuration admission/validation and the reserved exact
 	// creation receipt. A deleted or edited account never becomes a fresh create.
 	raw, _ := json.Marshal(account)
@@ -448,6 +563,7 @@ func (s *Service) oauthFinishLocalLocked(ctx context.Context, a domain.AccountOA
 func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request[pb.CompleteAccountOAuthRequest]) (*connect.Response[pb.CompleteAccountOAuthResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	defer clear(req.Msg.AuthorizationCode)
+	defer clear(req.Msg.AuthorizationState)
 	actor, err := requireOAuthActor(ctx)
 	if err == nil {
 		err = validateAccountMutation(req.Msg.Mutation)
@@ -476,11 +592,24 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	deviceResult, serverDevice := ctx.Value(deviceOAuthResultKey{}).(deviceOAuthResult)
+	if a.Preset == domain.PresetBaseten && (!serverDevice || deviceResult.attempt != a.ID) && (len(req.Msg.AuthorizationCode) != 0 || len(req.Msg.AuthorizationState) != 0 || a.CompletionRequestID != domain.ID(m.RequestId)) {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Device approval is owned by the original server operation.", "Observe Status. Recover only its already protected original completion receipt."), c)
+	}
 	commitment := a.CodeCommitment
-	if len(req.Msg.AuthorizationCode) > 0 {
+	if len(req.Msg.AuthorizationCode) > 0 || a.Version == 2 && a.State == domain.OAuthAwaiting {
 		commitment = s.oauthCommitment("code", domain.ID(m.RequestId), req.Msg.AuthorizationCode)
 	}
-	input := oauthCompleteInput{a.ID, m.ExpectedRevision, actor, commitment}
+	stateCommitment := a.StateCommitment
+	if a.Version == 2 && (len(req.Msg.AuthorizationCode) > 0 || a.State == domain.OAuthAwaiting) {
+		if domain.ValidateOAuthCode(req.Msg.AuthorizationState) != nil || !hmac.Equal([]byte(s.oauthCommitment("state", a.StartRequestID, req.Msg.AuthorizationState)), []byte(a.StateCommitment)) {
+			return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "The original OAuth state does not match.", "Use the original native callback."), c)
+		}
+	}
+	input := oauthCompleteInput{Attempt: a.ID, Revision: m.ExpectedRevision, Actor: actor, CodeCommitment: commitment}
+	if a.Version == 2 {
+		input.StateCommitment = stateCommitment
+	}
 	result, replayed, err := s.Store.Replay(ctx, domain.ID(m.RequestId), "oauth.complete", input)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -500,11 +629,15 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 			return nil, rpc.Error(oauthProblem(), c)
 		}
 		if a.State == domain.OAuthExchanging {
-			check, active := s.accountChecks[a.AccountID][a.CompletionRequestID]
+			checkID := a.CompletionRequestID
+			if a.Preset == domain.PresetBaseten {
+				checkID = a.DeviceRequestID
+			}
+			check, active := s.accountChecks[a.AccountID][checkID]
 			if a.Generation != s.oauthGeneration || !active || check.operation != oauthInspection {
 				// A committed dispatch claim without its original live owner is
 				// uncertain even in this process. Observation cannot dispatch it.
-				s.oauthRecoveryLocked(a, oauthProblem())
+				s.oauthRecoveryLocked(a, oauthProblemFor(a))
 				var err error
 				a, err = s.oauthRead(ctx, a.ID)
 				if err != nil {
@@ -518,28 +651,77 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		if a.State != domain.OAuthSaving && a.State != domain.OAuthRecovery {
 			return respond(a, true)
 		}
-		if err := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthLocalAuthority(tx, a, actor) }); err != nil {
+		if err := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthProtectedAuthority(tx, a, actor) }); err != nil {
 			return nil, rpc.Error(err, c)
 		}
 		vault, err := s.secrets()
 		var key []byte
 		if err == nil {
 			key, err = vault.Get(ctx, credentials.Ref{Owner: a.AccountID, ID: a.ConnectRequestID, Purpose: credentials.AccountAPI})
+			if err == nil && a.Version == 2 {
+				tokens, e := decodeOAuthTokens(key)
+				clear(key)
+				key = tokens.Access
+				clear(tokens.Refresh)
+				err = e
+			}
 		}
 		defer clear(key)
 		if err == nil {
 			a, err = s.oauthFinishLocalLocked(ctx, a, actor, key)
 		}
 		if err != nil {
-			s.oauthRecoveryLocked(a, oauthProblem())
+			s.oauthRecoveryLocked(a, oauthProblemFor(a))
 			a, _ = s.oauthRead(ctx, a.ID)
 		}
 		return respond(a, true)
 	}
-	if len(req.Msg.AuthorizationCode) == 0 || a.State != domain.OAuthAwaiting || a.Revision != m.ExpectedRevision || a.Generation != s.oauthGeneration || !time.Now().Before(a.ExpiresAt) || s.oauthLive[a.ID] == nil {
+	if len(req.Msg.AuthorizationCode) == 0 && a.Version != 2 || a.State != domain.OAuthAwaiting || a.Revision != m.ExpectedRevision || a.Generation != s.oauthGeneration || !time.Now().Before(a.ExpiresAt) || s.oauthLive[a.ID] == nil {
 		return nil, rpc.Error(domain.Fail(domain.Conflict, "The original live authorization is unavailable.", "Read the original attempt. Only an already claimed original completion permits code-free local recovery."), c)
 	}
-	checkCtx, finish, err := s.startAccountCheck(ctx, a.AccountID, domain.ID(m.RequestId), a.ProviderID, oauthInspection)
+	if len(req.Msg.AuthorizationCode) == 0 {
+		// An original state-bound access_denied callback records a terminal
+		// receipt. It never gains authority to send a token request.
+		_, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "oauth.complete", input, func(tx *store.Tx) (any, error) {
+			if err := s.oauthAttemptProvider(tx, a); err != nil {
+				return nil, err
+			}
+			current, err := tx.AccountOAuth(a.ID)
+			if err != nil {
+				return nil, err
+			}
+			if current.Revision != a.Revision || current.State != domain.OAuthAwaiting {
+				return nil, domain.Fail(domain.Conflict, "Authorization changed.", "Read the original attempt.")
+			}
+			current.Revision++
+			current.State = domain.OAuthFailed
+			current.CompletionRequestID = domain.ID(m.RequestId)
+			current.CompletionRevision = m.ExpectedRevision
+			current.CodeCommitment = commitment
+			current.Problem = domain.SafeError(domain.Fail(domain.PermissionDenied, "Authorization was denied.", "Cancel before starting another connection."))
+			current.UpdatedAt = time.Now().UTC().Truncate(time.Millisecond)
+			if err := tx.PutAccountOAuth(current, a.Revision); err != nil {
+				return nil, err
+			}
+			a = current
+			return oauthReceipt{a.ID}, nil
+		})
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
+		s.clearOAuthLive(a.ID)
+		return respond(a, false)
+	}
+	checkCtx := ctx
+	finish := func() {}
+	if !serverDevice {
+		checkCtx, finish, err = s.startAccountCheck(ctx, a.AccountID, domain.ID(m.RequestId), a.ProviderID, oauthInspection)
+	} else {
+		check, active := s.accountChecks[a.AccountID][a.DeviceRequestID]
+		if !active || check.operation != oauthInspection || ctx.Err() != nil {
+			err = oauthCredentialProblem()
+		}
+	}
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -551,7 +733,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		finish()
 	}()
 	result, err = s.Store.Mutate(checkCtx, domain.ID(m.RequestId), "oauth.complete", input, func(tx *store.Tx) (any, error) {
-		if err := oauthProvider(tx, a.ProviderID, a.ProviderRevision); err != nil {
+		if err := s.oauthAttemptProvider(tx, a); err != nil {
 			return nil, err
 		}
 		current, err := tx.AccountOAuth(a.ID)
@@ -579,6 +761,8 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	if result.Replayed {
 		return nil, rpc.Error(oauthProblem(), c)
 	}
+	profile := s.oauthLive[a.ID].profile
+	callback := s.oauthLive[a.ID].callback
 	verifier := bytes.Clone(s.oauthLive[a.ID].verifier)
 	s.clearOAuthLive(a.ID)
 	defer clear(verifier)
@@ -589,7 +773,23 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	unlock()
 	locked = false
 	s.logger.InfoContext(ctx, "account_oauth_exchange_claimed", "attempt_id", a.ID, "request_id", m.RequestId, "correlation_id", c)
-	key, exchangeErr := exchange.Exchange(checkCtx, req.Msg.AuthorizationCode, verifier)
+	var key []byte
+	var exchangeErr error
+	var tokenResult oauthTokenResult
+	if serverDevice && a.Preset == domain.PresetBaseten {
+		tokenResult = deviceResult.result
+		key = tokenResult.tokens.Access
+	} else if a.Version == 1 {
+		key, exchangeErr = exchange.Exchange(checkCtx, req.Msg.AuthorizationCode, verifier)
+	} else {
+		client := s.oauthTokenClient
+		if client == nil {
+			client = ownedOAuthTokenClient{route: s.outboundResolver()}
+		}
+		tokenResult, exchangeErr = client.Exchange(checkCtx, profile, req.Msg.AuthorizationCode, verifier, callback)
+		defer tokenResult.tokens.clear()
+		key = tokenResult.tokens.Access
+	}
 	clear(verifier)
 	clear(req.Msg.AuthorizationCode)
 	defer clear(key)
@@ -610,7 +810,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		return respond(a, false)
 	}
 	if exchangeErr != nil || domain.ValidateAPIKey(key, false) != nil {
-		s.oauthRecoveryLocked(a, oauthProblem())
+		s.oauthRecoveryLocked(a, oauthProblemFor(a))
 		a, err = s.oauthRead(settleCtx, a.ID)
 		if err != nil {
 			return nil, rpc.Error(err, c)
@@ -621,24 +821,42 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		if a.State != domain.OAuthExchanging {
 			return oauthProblem()
 		}
-		return oauthProvider(tx, a.ProviderID, a.ProviderRevision)
+		return s.oauthAttemptProvider(tx, a)
 	})
 	if err == nil {
 		a, err = s.oauthUpdate(settleCtx, a, domain.OAuthSaving, func(v *domain.AccountOAuthAttempt) { v.StagingClaimed = true; v.CleanupPending = true })
+	}
+
+	if err == nil && a.Version == 2 {
+		_, err = s.Store.Mutate(settleCtx, domain.NewID(), "oauth.protect-token-generation", a.ID, func(tx *store.Tx) (any, error) {
+			if e := s.oauthLocalAuthority(tx, a, actor); e != nil {
+				return nil, e
+			}
+			v := domain.AccountOAuthCredential{AccountID: a.AccountID, ConnectionID: a.ConnectRequestID, ProviderID: a.ProviderID, Preset: a.Preset, Revision: 1, TokenID: a.ConnectRequestID, ExpiresAt: tokenResult.expires, ClientDigest: profile.digest(), QuotaProject: a.QuotaProject, RefreshState: domain.OAuthRefreshIdle}
+			return nil, tx.PutAccountOAuthCredential(v, 0)
+		})
 	}
 	if err == nil {
 		vault, e := s.secrets()
 		err = e
 		if err == nil {
-			_, err = vault.Put(settleCtx, credentials.Ref{Owner: a.AccountID, ID: a.ConnectRequestID, Purpose: credentials.AccountAPI}, key)
+			payload := key
+			if a.Version == 2 {
+				payload, err = encodeOAuthTokens(tokenResult.tokens)
+				defer clear(payload)
+			}
+			if err == nil {
+				_, err = vault.Put(settleCtx, credentials.Ref{Owner: a.AccountID, ID: a.ConnectRequestID, Purpose: credentials.AccountAPI}, payload)
+			}
 		}
 	}
+
 	if err == nil {
 		a, err = s.oauthFinishLocalLocked(settleCtx, a, actor, key)
 	}
 	clear(key)
 	if err != nil {
-		s.oauthRecoveryLocked(a, oauthProblem())
+		s.oauthRecoveryLocked(a, oauthProblemFor(a))
 		a, err = s.oauthRead(settleCtx, a.ID)
 	}
 	if err != nil {
@@ -694,7 +912,7 @@ func (s *Service) CancelAccountOAuth(ctx context.Context, req *connect.Request[p
 		a.State = domain.OAuthCanceled
 		a.UpdatedAt = time.Now().UTC().Truncate(time.Millisecond)
 		if a.CompletionRequestID != "" {
-			a.Problem = oauthProblem()
+			a.Problem = oauthProblemFor(a)
 		}
 		if a.StagingClaimed {
 			a.CleanupPending = true

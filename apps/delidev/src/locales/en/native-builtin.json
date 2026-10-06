@@ -1,0 +1,23 @@
+{
+  "native-builtin.write_3f0092": "Write",
+  "native-builtin.edit_464c4f": "Edit",
+  "native-builtin.applyPatch_01bcfe": "Apply Patch",
+  "native-builtin.glob_18d00f": "Glob",
+  "native-builtin.grep_16970e": "Grep",
+  "native-builtin.questionTool_1a05b1": "Question tool",
+  "native-builtin.foregroundTask_168e9c": "Foreground task",
+  "native-builtin.nativeToolUnavailable_efe84c": "Native tool · Unavailable",
+  "native-builtin.theRetainedNativeOperationIsUnavailable_ed146e": "The retained native operation is unavailable or inconsistent.",
+  "native-builtin.originalNativeInput_b3b718": "Original native input",
+  "native-builtin.nativeToolResult_1cf5a0": "Native tool result",
+  "native-builtin.nativeToolError_440d26": "Native tool error",
+  "native-builtin.originalNativeMetadata_d7e8f9": "Original native metadata",
+  "native-builtin.originalProposalAndObservations_8d63b6": "Original proposal and observations",
+  "native-builtin.nativeFileEdited_132303": "Native file edited",
+  "native-builtin.nativeFileAdded_82ed0c": "Native file added",
+  "native-builtin.nativeFileChanged_05aac0": "Native file changed",
+  "native-builtin.nativeFileUnlinked_b796f3": "Native file unlinked",
+  "native-builtin.nativeWorkspaceEventUnavailable_904936": "Native workspace event · Unavailable",
+  "native-builtin.theRetainedFileNotificationIsUnavailable_ebdf4c": "The retained file notification is unavailable or inconsistent.",
+  "native-builtin.thisNativeWorkspaceNotificationDoesNot_5280e0": "This native workspace notification does not identify a tool or prove the current file state."
+}
