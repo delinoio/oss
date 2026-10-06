@@ -11,7 +11,7 @@
     },
     {
       "key": "openai-retirement",
-      "url": "https://learn.chatgpt.com/docs/models",
+      "url": "https://learn.chatgpt.com/docs/models.md",
       "revision": "content-digest",
       "sha256": "4ec433ea907935c05961dfc6617f314e8d04e60c571be30587f2ce415710f428"
     },

@@ -124,6 +124,9 @@ export function reconcile(previous, next) {
   // A successful daily read alone does not change the reviewed catalog date.
   return JSON.stringify(previous.services) === JSON.stringify(next.services) ? previous : next;
 }
+export function sameSourceProvenance(left, right) {
+  return JSON.stringify(left.sources) === JSON.stringify(right.sources);
+}
 export function changes(previous, next) {
   const rows = catalog => new Map(catalog.services.flatMap(entry => entry.models.map(row => [`${entry.service}/${row.native_id}`, row])));
   const before = rows(previous), after = rows(next);

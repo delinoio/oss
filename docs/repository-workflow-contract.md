@@ -18,6 +18,11 @@ changed path to the catalog. A human edit or incomplete ownership inspection sto
 publication. Exact old-ref force-with-lease protects against a concurrent human
 push; credentials exist only in ephemeral Git configuration environment. Existing
 PRs are edited, and no automatic merge or automatic publication retry is enabled.
+Runs also inspect the bot branch and open review PR when the candidate already
+matches main, closing a stale review instead of leaving obsolete catalog data
+open. Immediately before a candidate commit, the publisher re-fetches every
+recorded source and compares its exact URL, revision and digest; any source or
+main revision drift aborts publication and requires a new collection.
 Only a person-merged main catalog is consumed by installed servers. GitHub schedule
 delivery is best effort; manual dispatch can recover a missed run. A real workflow
 run and App permission acceptance are separate from local fixture validation.

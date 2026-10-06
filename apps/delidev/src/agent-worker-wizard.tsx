@@ -22,6 +22,11 @@ const stepNames = { [Step.Harness]: "Harness", [Step.Accounts]: "Accounts", [Ste
 const harnessNames: Record<Harness, string> = { [Harness.Codex]: "Codex", [Harness.Claude]: "Claude Code", [Harness.OpenCode]: "OpenCode", [Harness.Grok]: "Grok Build" };
 const harnesses = Object.values(Harness);
 const harnessOrigins: Record<Harness, string> = { [Harness.Codex]: "OpenAI", [Harness.Claude]: "Anthropic", [Harness.OpenCode]: "Open source", [Harness.Grok]: "xAI" };
+function validCatalogDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 const sourceKey = (source?: Source) => source ? `${source.kind}:${source.id}` : "";
 function fromKey(value: string): Source | undefined {
   const [kind, id] = value.split(":");
@@ -70,6 +75,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const [knownAccounts, setKnownAccounts] = useState<Record<string, Resource | undefined>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [model, setModel] = useState<Resource>();
+  const [savedModels, setSavedModels] = useState<{ key: string; rows: Record<string, Resource> }>({ key: "", rows: {} });
   const [input, setInput] = useState("");
   const [popup, setPopup] = useState(false);
   const [highlight, setHighlight] = useState(-1);
@@ -94,11 +100,13 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const models = useQuery(ProviderQuery.searchModels, { query, providerId: source?.kind === SourceKind.Api ? source.id : "", subscriptionService: wireService(source), includeHidden: true, enabledProvidersOnly: true, pageSize: 50, pageToken: modelPage }, { enabled: active && supported && Boolean(source) && step === Step.Model, placeholderData: previous => previous });
   const knownSupported = status.data?.capabilities.includes(SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1) === true;
   const known = useQuery(ProviderQuery.listKnownSubscriptionModels, { subscriptionService: wireService(source) }, { enabled: active && supported && knownSupported && source?.kind === SourceKind.Subscription && step === Step.Model });
-  const knownValid = source?.kind === SourceKind.Subscription && known.data?.subscriptionService === wireService(source) && known.data.models.length <= 200 && /^sha256:[a-f0-9]{64}$/.test(known.data.catalogVersion) && /^\d{4}-\d{2}-\d{2}$/.test(known.data.updatedAt) && [KnownSubscriptionModelCatalogSource.BUNDLED, KnownSubscriptionModelCatalogSource.CACHE, KnownSubscriptionModelCatalogSource.ONLINE].includes(known.data.source) && known.data.models.every(row => row.nativeId && row.displayName) && new Set(known.data.models.map(row => row.nativeId)).size === known.data.models.length;
+  const knownValid = knownSupported && source?.kind === SourceKind.Subscription && known.data?.subscriptionService === wireService(source) && known.data.models.length <= 200 && /^sha256:[a-f0-9]{64}$/.test(known.data.catalogVersion) && validCatalogDate(known.data.updatedAt) && [KnownSubscriptionModelCatalogSource.BUNDLED, KnownSubscriptionModelCatalogSource.CACHE, KnownSubscriptionModelCatalogSource.ONLINE].includes(known.data.source) && known.data.models.every(row => row.nativeId && row.displayName) && new Set(known.data.models.map(row => row.nativeId)).size === known.data.models.length;
   const currentModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: model?.id ?? "" }, { enabled: active && supported && Boolean(model), refetchInterval: active && model ? 5000 : false });
   const accountPageValid = accountRows.data?.resources.every(row => sameSource(row, source));
   const accountChoices = accountPageValid ? accountRows.data!.resources.filter(showAccountChoice) : [];
   const modelPageValid = models.data?.models.every(row => supportsResourceSchema(row) && sourceKey(modelSource(row)) === sourceKey(source));
+  const savedModelKey = `${sourceKey(source)}\u0000${query}`;
+  const cachedSavedModels = savedModels.key === savedModelKey ? savedModels.rows : {};
   const links = items(data.accounts).map(object);
   const ids = links.map(link => text(link.id));
   const remember = useCallback((id: string, row?: Resource) => setKnownAccounts(previous => previous[id] === row ? previous : { ...previous, [id]: row }), []);
@@ -168,8 +176,25 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     else if (model && (currentModel.error || currentModel.data?.resource && currentModel.data.resource.revision !== model.revision)) fail(Step.Model, "The selected model is unavailable or changed. Reload the catalog and explicitly select its current revision, or enter an exact model ID.", "model");
   }, [active, mutation.error, mutation.uncertain, step, data.accounts, knownAccounts, source, model, currentModel.data, currentModel.error]);
   const pick = (row?: ModelSuggestion) => { setModelPage(""); if (row?.resource && row.resource.id === model?.id) void currentModel.refetch(); setModel(row?.resource); if (row) setInput(row.nativeId); setPopup(false); setHighlight(-1); setProblem(""); };
-  const suggestions: ModelSuggestion[] = modelPageValid ? models.data!.models.map(resource => ({ nativeId: text(document(resource).native_id), name: resourceName(resource), kind: SuggestionKind.Saved, resource })) : [];
-  const savedIDs = new Set(suggestions.map(row => row.nativeId));
+  const pageSuggestions: ModelSuggestion[] = modelPageValid ? models.data!.models.map(resource => ({ nativeId: text(document(resource).native_id), name: resourceName(resource), kind: SuggestionKind.Saved, resource })) : [];
+  useEffect(() => {
+    if (!modelPageValid || !models.data || models.isFetching || models.error) return;
+    setSavedModels(previous => {
+      const current = previous.key === savedModelKey ? previous.rows : {};
+      const next = { ...current };
+      let changed = false;
+      for (const row of models.data.models) {
+        const nativeId = text(document(row).native_id);
+        const prior = current[nativeId];
+        if (!nativeId || prior && prior.id === row.id && prior.revision === row.revision) continue;
+        next[nativeId] = row;
+        changed = true;
+      }
+      return changed ? { key: savedModelKey, rows: next } : previous;
+    });
+  }, [modelPageValid, models.data, models.error, models.isFetching, savedModelKey]);
+  const savedIDs = new Set([...Object.keys(cachedSavedModels), ...pageSuggestions.map(row => row.nativeId)]);
+  const suggestions: ModelSuggestion[] = [...pageSuggestions];
   const search = query.trim().toLocaleLowerCase();
   if (knownValid) for (const row of known.data!.models) {
     if (!savedIDs.has(row.nativeId) && (!search || `${row.displayName} ${row.nativeId}`.toLocaleLowerCase().includes(search))) suggestions.push({ nativeId: row.nativeId, name: row.displayName, kind: SuggestionKind.Known });

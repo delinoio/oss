@@ -61,7 +61,9 @@ test("daily date/digest-only reads retain reviewed bytes; model metadata changes
   assert.deepEqual(changes(previous, next), { added: [], changed: ["chatgpt/gpt-current"], retired: [] });
 });
 test("committed catalog validates through the collector contract", async () => {
-  validateCatalog(JSON.parse(await readFile(catalogPath, "utf8")));
+  const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
+  validateCatalog(catalog);
+  assert.equal(catalog.sources.find(source => source.key === "openai-retirement").url, "https://learn.chatgpt.com/docs/models.md");
 });
 test("existing PR updates require complete bot-only history and catalog-only changes", () => {
   const bot = { login: "delino-release-bot[bot]" };
@@ -84,5 +86,7 @@ test("daily workflow validates before a narrowly scoped write token and protects
   assert.equal((publisher.match(/const branch =/g) ?? []).length, 1); assert.ok(branch.startsWith("kdy1/"));
   assert.match(publisher, /--force-with-lease=refs\/heads/); assert.match(publisher, /--body-file/);
   assert.match(publisher, /current.catalog_version === candidate.catalog_version && pulls.length/);
+  assert.match(publisher, /sameSourceProvenance/); assert.match(publisher, /collect\(\)/); assert.match(publisher, /pr", "close/);
+  assert.doesNotMatch(workflow, /if: steps\.collect\.outputs\.changed == 'true'/);
   assert.doesNotMatch(publisher, /pr.*merge.*--auto|--admin|--no-verify/);
 });

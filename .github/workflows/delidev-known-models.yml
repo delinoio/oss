@@ -50,7 +50,6 @@ jobs:
             echo 'Limits: public metadata and parser fixtures only; no real subscription/native execution verification.'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Create repository-scoped write token after validation
-        if: steps.collect.outputs.changed == 'true'
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -61,7 +60,6 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
       - name: Create or update the review PR
-        if: steps.collect.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: node scripts/delidev/known-subscription-models-pr.mjs

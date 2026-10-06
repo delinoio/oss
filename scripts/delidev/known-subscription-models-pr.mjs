@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { catalogPath, validateCatalog, changes } from "./known-subscription-models.mjs";
+import { catalogPath, collect, validateCatalog, changes, sameSourceProvenance } from "./known-subscription-models.mjs";
 
 export const branch = "kdy1/delidev-known-subscription-model-catalog";
 export const repository = "delinoio/oss";
@@ -49,7 +49,7 @@ export async function publish() {
   if (main !== revision) throw new Error("Main changed during collection; collect again from its new revision");
   const candidate = validateCatalog(JSON.parse(await readFile(catalogPath, "utf8")));
   const previous = validateCatalog(JSON.parse(command("git", ["show", `${revision}:${catalogPath}`])));
-  if (candidate.catalog_version === previous.catalog_version) return { changed: false };
+  const candidateChanged = candidate.catalog_version !== previous.catalog_version;
   const pulls = api(`repos/${repository}/pulls?state=open&head=delinoio:${branch}&base=main&per_page=100`);
   // Inspect refs without treating a permission/network error as branch absence.
   const refs = api(`repos/${repository}/git/matching-refs/heads/${branch}`);
@@ -63,9 +63,28 @@ export async function publish() {
     const currentFile = api(`repos/${repository}/contents/${catalogPath}?ref=${old}`);
     if (currentFile.encoding !== "base64" || currentFile.size > 1 << 20) throw new Error("Existing candidate unavailable");
     const current = validateCatalog(JSON.parse(Buffer.from(currentFile.content, "base64").toString("utf8")));
+    if (!candidateChanged) {
+      if (pulls.length) {
+        // Main has caught up to the candidate. Close the stale review instead
+        // of leaving an obsolete, apparently mergeable catalog PR open.
+        gh(["pr", "close", String(pulls[0].number), "--repo", repository, "--comment", "Closing this review because the candidate is already present on main."]);
+        return { changed: false, closed_pull_request: pulls[0].html_url };
+      }
+      return { changed: false };
+    }
     // A pending review must not receive daily date-only commits either.
     if (current.catalog_version === candidate.catalog_version && pulls.length) return { changed: false, pull_request: pulls[0].html_url };
-  } else assertBotBranch({ commits: [], files: [], total: 0, pullRequests: pulls });
+  } else {
+    assertBotBranch({ commits: [], files: [], total: 0, pullRequests: pulls });
+    if (!candidateChanged) return { changed: false };
+  }
+  // Re-fetch every recorded source after branch ownership checks and before
+  // any candidate commit or push. A source revision/digest change means the
+  // collected bytes are stale and must never become a review PR.
+  const refreshed = await collect();
+  if (!sameSourceProvenance(candidate, refreshed)) throw new Error("Official source changed during publication; collect again");
+  const latestMain = api(`repos/${repository}/git/ref/heads/main`).object.sha;
+  if (latestMain !== revision) throw new Error("Main changed during publication; collect again from its new revision");
   const identity = api(`users/${encodeURIComponent(bot)}`);
   if (identity.login !== bot || identity.type !== "Bot" || !Number.isSafeInteger(identity.id)) throw new Error("Bot identity unavailable");
   const email = `${identity.id}+${bot}@users.noreply.github.com`;
