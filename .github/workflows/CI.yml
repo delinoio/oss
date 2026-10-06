@@ -18,9 +18,10 @@ concurrency:
 jobs:
   changes:
     name: Plan affected CI jobs
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
-      jobs: ${{ steps.plan.outputs.jobs }}
+      jobs: ${{ steps.rust.outputs.jobs || steps.plan.outputs.jobs }}
+      rust_packages: ${{ steps.rust.outputs.rust_packages || '[]' }}
       forced: ${{ steps.plan.outputs.forced }}
       event: ${{ steps.plan.outputs.event }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
@@ -40,6 +41,32 @@ jobs:
       - name: Compare commits and select jobs
         id: plan
         run: node scripts/ci/plan.mjs
+
+      - name: Install Rust for package metadata
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+          components: clippy
+      - name: Prepare verified prebuilt cargo-mono
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        id: cargo-mono
+        run: node scripts/ci/cargo-mono-prebuilt.mjs
+      - name: Verify published cargo-mono selection behavior
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        env:
+          CARGO_MONO_TEST_BINARY: ${{ steps.cargo-mono.outputs.binary }}
+        run: node --test scripts/ci/rust-affected-live.test.mjs
+      - name: Select final Rust packages and jobs
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        id: rust
+        env:
+          CI_BASE: ${{ steps.plan.outputs.base }}
+          CI_HEAD: ${{ steps.plan.outputs.head }}
+          CI_JOBS: ${{ steps.plan.outputs.jobs }}
+          CI_FORCED: ${{ steps.plan.outputs.forced }}
+          CARGO_MONO_BINARY: ${{ steps.cargo-mono.outputs.binary }}
+        run: node scripts/ci/rust-affected.mjs plan
 
   ci-contracts:
     name: CI contracts and workflow syntax
@@ -264,6 +291,7 @@ jobs:
           components: clippy
 
       - name: Setup Go for DeliDev sidecar
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
         id: ci-go
         uses: ./.github/actions/setup-ci-go
 
@@ -275,15 +303,18 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build DevHUD frontend
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') }}
         run: pnpm --filter devhud build:frontend
 
       - name: Build DeliDev native inputs
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
         run: |
           pnpm --filter @delinoio/delidev-api-client build
           pnpm --filter delidev-desktop build:frontend
           pnpm --filter delidev-desktop prepare:sidecar
 
       - name: Install DevHUD Linux prerequisites
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
@@ -295,7 +326,9 @@ jobs:
           cache-on-failure: false
 
       - name: Run clippy
-        run: cargo clippy --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets --all-features -- -D warnings
+        env:
+          RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
+        run: node scripts/ci/rust-affected.mjs clippy
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -305,7 +338,7 @@ jobs:
           key: ${{ steps.ci-node.outputs.cache-key }}
 
       - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outcome == 'success' && steps.ci-go.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}
@@ -328,7 +361,8 @@ jobs:
         with:
           toolchain: nightly-2026-09-28
 
-      - name: Setup Go for DeliDev sidecar
+      - name: Setup Go for Rust test prerequisites
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') || contains(fromJSON(needs.changes.outputs.rust_packages), 'pnport') }}
         id: ci-go
         uses: ./.github/actions/setup-ci-go
 
@@ -340,15 +374,18 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build DevHUD frontend
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') }}
         run: pnpm --filter devhud build:frontend
 
       - name: Build DeliDev native inputs
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
         run: |
           pnpm --filter @delinoio/delidev-api-client build
           pnpm --filter delidev-desktop build:frontend
           pnpm --filter delidev-desktop prepare:sidecar
 
       - name: Install DevHUD Linux prerequisites
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
@@ -360,10 +397,13 @@ jobs:
           cache-on-failure: false
 
       - name: Build pnport injection companion
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'pnport') }}
         run: cargo build --locked -p pnport -p pnport-preload
 
       - name: Run cargo test
-        run: cargo test --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets
+        env:
+          RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
+        run: node scripts/ci/rust-affected.mjs test
 
 
       - name: Save pnpm cache after successful main validation
@@ -374,7 +414,7 @@ jobs:
           key: ${{ steps.ci-node.outputs.cache-key }}
 
       - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outcome == 'success' && steps.ci-go.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}

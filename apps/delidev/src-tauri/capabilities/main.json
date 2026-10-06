@@ -1,6 +1,6 @@
 {
   "identifier": "main",
-  "description": "Trusted DeliDev main document: local bootstrap, owned browser presentation, and device-local appearance.",
+  "description": "Registered DeliDev local product documents: local bootstrap, owned browser presentation, and device-local appearance.",
   "permissions": [
     "local-bootstrap",
     "saved-manage",
@@ -17,6 +17,7 @@
     "worker-network"
   ],
   "webviews": [
-    "main"
+    "main",
+    "local-*"
   ]
 }

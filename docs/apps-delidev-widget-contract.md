@@ -35,7 +35,12 @@ The desktop reuses its direct authenticated Connect Query reads for overview,
 UTC-day usage and bounded account quota metadata. Native saved-window ownership,
 fresh presentation scope and increasing revision checks precede publication.
 Only the native binding supplies the saved profile ID/name; the renderer cannot
-choose a profile, directory or file. The local owner window is excluded.
+choose a profile, directory or file. Local product windows are excluded. Within one process, only the oldest ready
+window for a saved profile publishes that profile's Widget snapshot. Closing it
+hands publication to the next ready window without creating another record,
+changing profile identity or manufacturing a refresh timestamp. Tray publication
+remains independent for every window; its existing serialized publication lock
+also prevents an old writer from overwriting a newer writer's snapshot.
 
 Snapshot publication keeps exact integer token strings, known zero, missing
 observations and explicitly incomplete coverage. Optional historical token-price
