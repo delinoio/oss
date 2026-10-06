@@ -835,6 +835,11 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 		}
 	} else if !errors.Is(finalErr, os.ErrNotExist) {
 		return ResultUncertain()
+	} else if err := security.SyncParent(finalPath); err != nil {
+		// A previous retirement may have removed the final proof but failed to
+		// flush its parent. Re-sync the already-absent name before retiring the
+		// dependent claim, journal, and intent on this retry.
+		return err
 	}
 	namespace, namespaceErr := finalRemovalNamespaceInventory(ctx, m.Root, map[domain.ID]bool{ref.OperationID: true})
 	if namespaceErr != nil || len(namespace[ref.OperationID]) != 0 {
