@@ -249,7 +249,7 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 	// Replay preserves the original attempt but cannot recover browser authority
 	// after its provider was edited or disabled.
 	if a.State == domain.OAuthAwaiting {
-		if providerErr := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthProvider(tx, a.ProviderID, a.ProviderRevision) }); providerErr != nil {
+		if providerErr := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthAttemptProvider(tx, a) }); providerErr != nil {
 			switch domain.SafeError(providerErr).Code {
 			case domain.Unsupported, domain.NotFound, domain.PermissionDenied:
 				s.clearOAuthLive(a.ID)
@@ -384,7 +384,7 @@ func (s *Service) oauthLocalAuthority(tx *store.Tx, a domain.AccountOAuthAttempt
 	if a.State != domain.OAuthSaving && a.State != domain.OAuthRecovery {
 		return oauthProblem()
 	}
-	return s.oauthProvider(tx, a.ProviderID, a.ProviderRevision)
+	return s.oauthAttemptProvider(tx, a)
 }
 
 func (s *Service) oauthUpdate(ctx context.Context, a domain.AccountOAuthAttempt, state domain.AccountOAuthState, apply func(*domain.AccountOAuthAttempt)) (domain.AccountOAuthAttempt, error) {
@@ -426,7 +426,7 @@ func (s *Service) oauthUpdate(ctx context.Context, a domain.AccountOAuthAttempt,
 // The original protected reference is the sole recovery authority. Neither a
 // supplied code nor a new request can replace its missing/tombstoned payload.
 func (s *Service) oauthFinishLocalLocked(ctx context.Context, a domain.AccountOAuthAttempt, actor domain.Principal, key []byte) (domain.AccountOAuthAttempt, error) {
-	err := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthLocalAuthority(tx, a, actor) })
+	err := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthProtectedAuthority(tx, a, actor) })
 	if err != nil {
 		return a, err
 	}
@@ -579,7 +579,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		if a.State != domain.OAuthSaving && a.State != domain.OAuthRecovery {
 			return respond(a, true)
 		}
-		if err := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthLocalAuthority(tx, a, actor) }); err != nil {
+		if err := s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthProtectedAuthority(tx, a, actor) }); err != nil {
 			return nil, rpc.Error(err, c)
 		}
 		vault, err := s.secrets()
@@ -611,7 +611,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		// An original state-bound access_denied callback records a terminal
 		// receipt. It never gains authority to send a token request.
 		_, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "oauth.complete", input, func(tx *store.Tx) (any, error) {
-			if err := s.oauthProvider(tx, a.ProviderID, a.ProviderRevision); err != nil {
+			if err := s.oauthAttemptProvider(tx, a); err != nil {
 				return nil, err
 			}
 			current, err := tx.AccountOAuth(a.ID)
@@ -652,7 +652,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		finish()
 	}()
 	result, err = s.Store.Mutate(checkCtx, domain.ID(m.RequestId), "oauth.complete", input, func(tx *store.Tx) (any, error) {
-		if err := s.oauthProvider(tx, a.ProviderID, a.ProviderRevision); err != nil {
+		if err := s.oauthAttemptProvider(tx, a); err != nil {
 			return nil, err
 		}
 		current, err := tx.AccountOAuth(a.ID)
@@ -737,7 +737,7 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		if a.State != domain.OAuthExchanging {
 			return oauthProblem()
 		}
-		return s.oauthProvider(tx, a.ProviderID, a.ProviderRevision)
+		return s.oauthAttemptProvider(tx, a)
 	})
 	if err == nil {
 		a, err = s.oauthUpdate(settleCtx, a, domain.OAuthSaving, func(v *domain.AccountOAuthAttempt) { v.StagingClaimed = true; v.CleanupPending = true })

@@ -4,6 +4,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -370,5 +371,87 @@ func TestHuggingFaceRefreshCannotPublishAfterDisconnect(t *testing.T) {
 	_, _, active := f.vault.counts()
 	if active != 0 {
 		t.Fatal("late token escaped account cleanup")
+	}
+}
+
+func TestOAuthRecoveryRetainsOriginalAdapterAndClientDigest(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy-%t", legacy), func(t *testing.T) {
+			f := newHuggingFaceFixture(t)
+			inventory, e := f.s.ListProviderInventory(f.ctx, connect.NewRequest(&pb.ListProviderInventoryRequest{}))
+			if e != nil {
+				t.Fatal(e)
+			}
+			var router *pb.Resource
+			for _, entry := range inventory.Msg.Entries {
+				if entry.PresetId == pb.ProviderPresetId_PROVIDER_PRESET_ID_OPENROUTER {
+					router = entry.Provider
+				}
+			}
+			var start *pb.StartAccountOAuthResponse
+			var state string
+			foreign := router
+			if legacy {
+				foreign = f.provider
+				f.provider = router
+				start = f.start(t)
+			} else {
+				start, state = f.startHF(t)
+			}
+			_, e = f.s.Store.Mutate(f.ctx, domain.NewID(), "fixture.invalid-oauth-profile", nil, func(tx *store.Tx) (any, error) {
+				a, e := tx.AccountOAuth(domain.ID(start.Attempt.Id))
+				if e != nil {
+					return nil, e
+				}
+				rev := a.Revision
+				a.ProviderID = domain.ID(foreign.Id)
+				a.ProviderRevision = foreign.Revision
+				a.Revision++
+				return nil, tx.PutAccountOAuth(a, rev)
+			})
+			if e != nil {
+				t.Fatal(e)
+			}
+			start.Attempt.ProviderId = foreign.Id
+			start.Attempt.Revision++
+			var calls atomic.Int32
+			f.s.oauthExchange = oauthExchangeFunc(func(context.Context, []byte, []byte) ([]byte, error) {
+				calls.Add(1)
+				return []byte("unexpected-key"), nil
+			})
+			f.s.oauthTokenClient = oauthTokenFixture{exchange: func(context.Context, oauthProfile, []byte, []byte, string) (oauthTokenResult, error) {
+				calls.Add(1)
+				return tokenResult("unexpected-access", "unexpected-refresh", time.Now().Add(time.Hour)), nil
+			}}
+			_, e = f.completeHF(start.Attempt, domain.NewID(), "original-code", state)
+			wantAccountCode(t, e, domain.Unsupported)
+			if calls.Load() != 0 {
+				t.Fatal("another adapter gained exchange authority")
+			}
+		})
+	}
+	f := newHuggingFaceFixture(t)
+	f.vault.putError = io.ErrUnexpectedEOF
+	f.s.oauthTokenClient = oauthTokenFixture{exchange: func(context.Context, oauthProfile, []byte, []byte, string) (oauthTokenResult, error) {
+		return tokenResult("original-access", "original-refresh", time.Now().Add(time.Hour)), nil
+	}}
+	start, state := f.startHF(t)
+	id := domain.NewID()
+	r, e := f.completeHF(start.Attempt, id, "original-code", state)
+	if e != nil || r.Msg.Attempt.State != pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED {
+		t.Fatal("missing original staged result")
+	}
+	registration := f.s.oauthRegistrations[domain.PresetHuggingFace]
+	registration.ClientID = "different-public-client"
+	f.s.oauthRegistrations[domain.PresetHuggingFace] = registration
+	f.vault.putError = nil
+	_, e = f.completeHF(start.Attempt, id, "", "")
+	wantAccountCode(t, e, domain.RecoveryRequired)
+	original, e := f.s.oauthRead(f.ctx, domain.ID(start.Attempt.Id))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = f.s.accountRecord(f.ctx, original.AccountID); domain.SafeError(e).Code != domain.NotFound {
+		t.Fatal("changed app published an account")
 	}
 }
