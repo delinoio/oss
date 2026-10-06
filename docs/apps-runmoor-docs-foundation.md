@@ -83,6 +83,21 @@ The public installation surface documents the exact repository key fingerprint, 
 
 The Runmoor install page links directly to the shared key-verification and stable-registration sections before showing installation commands. It explains that key inspection alone does not register an APT source, requires a successful package-list refresh and a visible package candidate, and links to shared troubleshooting for missing packages. Installation, upgrade, and removal commands use separate copyable blocks so copying an installation example cannot immediately uninstall the package. The shared registration page owns architecture, source, suite, update-error, and candidate diagnostics.
 
+## Service reload documentation
+
+Describe version-aware service reload as unreleased until a containing release
+is verified. After the operator installs a newer CLI, `runmoor reload` checks the
+running owned launchd/systemd manager and advances it to that installed CLI while
+preserving active jobs and their timeouts. Equal/newer managers perform the
+existing configuration reload. Foreground managers remain unchanged in version;
+reload never starts a stopped service, downloads a release or downgrades.
+Explain that an interrupted operation can have changed the service executable
+before configuration acceptance. Users inspect status/the user service and retry
+with the same CLI/configuration; incompatible rollback remains prohibited.
+Keep the internal journal, temporary helper and native command choreography out
+of public guides. Preserve manual package installation and drained backup/rollback
+workflows and distinguish fixtures/builds from actual platform and job acceptance.
+
 ## Automatic configuration documentation
 
 DinD capacity guidance must retain the released behavior through 0.2.7 and label

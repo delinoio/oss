@@ -125,6 +125,8 @@
 
 ### runmoor-docs Rules
 
+- Describe service-version reload as unreleased until a containing release is verified. It advances an older owned service to an already installed CLI, preserves active jobs, never downloads releases or downgrades, and leaves foreground reload and stopped services unchanged. Explain incomplete-operation recovery without exposing the private journal or native handoff implementation.
+
 - DinD CPU admission changes must distinguish releases through 0.2.7, which reserve runner plus daemon CPU, from the unreleased runner-only CPU policy. Explain that daemon memory remains reserved, daemon CPU remains a container limit, and existing reservations remain until the prior resources terminate. Do not assign a release version before publication is verified.
 
 - The `/runmoor/host` guide documents unreleased explicit macOS 14+ arm64 host selection, admission-only CPU/memory reservations, same-account trusted workflows, disposable directories, operator toolchains, cleanup/recovery limits and the absence of actual host, unsigned Xcode and live GitHub validation. Tart is required only for Tart execution.

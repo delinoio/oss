@@ -30,8 +30,8 @@ it("edits singleton server preferences inline while preserving the separate Git 
   expect((await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources).toHaveLength(0);
   fireEvent.change(routing, { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-  // The dirty status disappears during the save. Wait for both statuses to
-  // settle before reading Go state, so an in-flight mutation is not a success.
+  // The dirty status clears while the mutation is still in flight. Wait for
+  // the explicit saving state to settle before reading the Go-owned resource.
   await waitFor(() => {
     expect(screen.queryByText("Saving changes…")).toBeNull();
     expect(screen.queryByText("Unsaved changes")).toBeNull();
