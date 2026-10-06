@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { dirname, relative, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import * as nativePaths from "node:path";
+import { dirname } from "node:path";
 
 export const GoMode = Object.freeze({ Full: "full", Affected: "affected" });
 const modulePath = "github.com/delinoio/oss";
@@ -22,7 +24,8 @@ const embeddedSources = [
   { inputs: ["apps/async-commit-hook", "packages/async-commit-hook-api-client"], owner: "cmds/async-commit-hook/internal/webassets" },
 ];
 
-export function parseInventory(output, root) {
+export function parseInventory(output, root, { paths = nativePaths, canonicalize = paths.resolve } = {}) {
+  const checkout = canonicalize(root);
   const records = [];
   let start = 0, depth = 0, quoted = false, escaped = false;
   for (let index = 0; index < output.length; index++) {
@@ -46,8 +49,10 @@ export function parseInventory(output, root) {
   return records.map((record) => {
     if (!within(record.ImportPath ?? "", modulePath) || typeof record.Dir !== "string" || record.Error || record.DepsErrors?.length || seen.has(record.ImportPath)) throw new Error("Invalid Go package discovery");
     seen.add(record.ImportPath);
-    const directory = relative(root, record.Dir).replaceAll("\\", "/") || ".";
-    if (directory.startsWith("../") || directory === ".." || resolve(root, directory) !== resolve(record.Dir)) throw new Error("Go package is outside the checkout");
+    if (!paths.isAbsolute(record.Dir)) throw new Error("Go package directory must be absolute");
+    const nativeRelative = paths.relative(checkout, canonicalize(record.Dir));
+    const directory = nativeRelative.replaceAll("\\", "/") || ".";
+    if (paths.isAbsolute(nativeRelative) || directory.startsWith("../") || directory === "..") throw new Error("Go package is outside the checkout");
     const imports = ["Imports", "TestImports", "XTestImports"].flatMap((key) => {
       const values = record[key] ?? [];
       if (!Array.isArray(values) || values.some((value) => typeof value !== "string")) throw new Error("Invalid Go import inventory");
@@ -128,7 +133,10 @@ export function affectedGoPackages({ base, head, cwd = process.cwd(), run = spaw
     if (!/^[AMDTU]$/u.test(fields[index]) || !fields[index + 1]) throw new Error("Invalid Go change record");
     changes.push({ status: fields[index], path: fields[index + 1] });
   }
-  const inventory = parseInventory(execute(run, "go", ["list", "-mod=readonly", "-json", "./..."], cwd), root);
+  // Git and Go can report different drive casing or long/8.3 spellings for the
+  // same Windows directory. Compare native filesystem identities, then reject
+  // parent traversal and different-drive absolute results from path.relative.
+  const inventory = parseInventory(execute(run, "go", ["list", "-mod=readonly", "-json", "./..."], cwd), root, { canonicalize: realpathSync.native });
   const selection = selectAffected(inventory, changes);
   log(JSON.stringify({ event: "ci_go_affected", base, head, packageCount: selection.packages.length, packages: selection.packages, reasons: selection.reasons }));
   return { ...selection, inventory, root };

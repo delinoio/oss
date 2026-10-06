@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, win32 } from "node:path";
 import test from "node:test";
 import { affectedGoPackages, commandConsumers, parseInventory, selectAffected, selectionOptions } from "./go-affected.mjs";
 import { GoTestShard, runGoTests } from "./go-test.mjs";
@@ -66,6 +66,18 @@ test("native inventory includes production, internal-test and external-test impo
     assert.throws(() => parseInventory(output, root));
   }
   assert.throws(() => parseInventory([records[0], records[0]].map(JSON.stringify).join("\n"), root));
+});
+
+test("Windows discovery accepts equivalent native paths and rejects other drives", () => {
+  const checkout = "D:\\a\\oss\\oss";
+  const record = { ImportPath: path("cmds/sample"), Dir: "d:\\a\\oss\\oss\\cmds\\sample" };
+  assert.equal(parseInventory(JSON.stringify(record), checkout, { paths: win32 })[0].directory, "cmds/sample");
+  for (const Dir of ["C:\\a\\oss\\oss\\cmds\\sample", "D:\\a\\oss\\foreign", "cmds\\sample"]) {
+    assert.throws(() => parseInventory(JSON.stringify({ ...record, Dir }), checkout, { paths: win32 }));
+  }
+  const canonicalize = (value) => win32.resolve(value.replace("RUNNER~1", "runneradmin"));
+  const temporary = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\fixture";
+  assert.equal(parseInventory(JSON.stringify({ ...record, Dir: "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\fixture\\cmds\\sample" }), temporary, { paths: win32, canonicalize })[0].directory, "cmds/sample");
 });
 
 function mock(discovery = {}, selectedPath = "cmds/delidev-cli/internal/apiproxy/proxy.go", failure = null) {
