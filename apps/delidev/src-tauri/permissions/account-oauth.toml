@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "account-oauth"
+description = "Control only the original trusted-window account authorization browser and callback lifetime; Go retains account and credential ownership."
+commands.allow = ["account_oauth_native"]

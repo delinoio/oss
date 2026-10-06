@@ -20,6 +20,8 @@ function guarded<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+// One active category owns this scope. A category change disposes it while
+// the Settings navigation and independent connection controllers stay mounted.
 export class SettingsOpening {
   readonly id = newRequestId();
   readonly controller = new AbortController();

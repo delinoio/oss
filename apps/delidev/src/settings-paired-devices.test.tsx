@@ -76,13 +76,15 @@ it("renders the approved server order and local Details without an RPC or inferr
 
 // Keep retained-state transitions and the two reset boundaries independent so
 // each scenario fits the normal test deadline when CI runs files concurrently.
-it("retains matching disclosure through refresh, categories, reflow, reconnect and canceled revocation", async () => {
+it("retains disclosure within a category and resets it after category departure", async () => {
   const value = fixture();
   const view = render(value.view()); await open(); fireEvent.click(workerDetails());
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE)).toHaveLength(2));
   expect(workerDetails().getAttribute("aria-expanded")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); await open();
+  expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(workerDetails());
   view.rerender(value.view({ transport: value.transport() }));
   fireEvent(window, new Event("resize"));
   expect(workerDetails().getAttribute("aria-expanded")).toBe("true");
@@ -188,10 +190,10 @@ it("preserves opaque paging on empty continuation and later pages without unrela
   value.state.next = ""; fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
   expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).map(([request]) => request.filter?.pageToken)).toEqual(["", "opaque-continuation"]);
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "opaque-continuation"]);
 });
 
-it("retains one pairing editor and focuses only explicit entry/cancel through category/reconnect changes", async () => {
+it("retains pairing through reconnect and discards it after category departure", async () => {
   const value = fixture(); const view = render(value.view({ pairing: true })); await open();
   fireEvent.click(screen.getByRole("button", { name: "Create pairing document" }));
   const name = screen.getByRole("textbox", { name: "Device name" });
@@ -202,7 +204,9 @@ it("retains one pairing editor and focuses only explicit entry/cancel through ca
   view.rerender(value.view({ pairing: true, transport: value.transport() })); fireEvent(window, new Event("resize"));
   expect(window.document.activeElement).toBe(type);
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); await open();
-  expect((screen.getByRole("textbox", { name: "Device name" }) as HTMLInputElement).value).toBe("Retained draft");
+  expect(screen.queryByRole("textbox", { name: "Device name" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Create pairing document" }));
+  expect((screen.getByRole("textbox", { name: "Device name" }) as HTMLInputElement).value).toBe("");
   fireEvent.click(screen.getByRole("button", { name: "Cancel pairing" }));
   const trigger = screen.getByRole("button", { name: "Create pairing document" });
   expect(window.document.activeElement).toBe(trigger);

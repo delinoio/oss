@@ -36,16 +36,18 @@ import { SettingsLifetime } from "./settings-lifetime";
 import { AppearanceSettings } from "./appearance";
 import { readableServerPreferences, revealServerPreferenceInvalidControl, ServerPreferencesEmpty, ServerPreferencesSummary } from "./server-preferences";
 import { SettingsLoading } from "./settings-presentation";
+import { ToastKind, useNotifications } from "./toast-notifications";
 import "./api-account.css";
 
 export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, active, saved, cancel, focusName = false, nameFocused }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; active: boolean; saved: () => void; cancel: () => void; focusName?: boolean; nameFocused?: () => void }) {
+  const notifications = useNotifications();
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
   const [problem, setProblem] = useState("");
   const form = useRef<HTMLFormElement>(null);
   const current = useQuery(ResourceQuery.getResource, { kind, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
-  const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result) => { if (result.job) setJob(result.job); else if (result.resource) saved(); else setJob("unknown"); });
+  const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result, request) => { if (result.job) setJob(result.job); else if (result.resource) { notifications.notify({ kind: ToastKind.Success, message: `${kindNames[kind]} saved.`, id: request.mutation?.requestId }); saved(); } else setJob("unknown"); });
   const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const blocked = mutation.busy || mutation.uncertain;
   useEffect(() => {
@@ -80,7 +82,6 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
 
 export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance }
-enum SettingsWorkflow { Integrations = "integrations", Notifications = "notifications", Transfer = "transfer", Accounts = "accounts" }
 enum SettingsCategory {
   Appearance = "appearance",
   SubscriptionAccounts = "subscription-accounts", ApiAccounts = "api-accounts", Providers = "providers", Models = "models", AgentWorkers = "agent-workers", Instructions = "instructions",
@@ -172,14 +173,71 @@ function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: (
 }
 
 interface SettingsProps { readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
-export function Settings({ visible = true, ...props }: SettingsProps) {
-  return visible ? <SettingsLifetime>{(opening) => <MutationIntents><SettingsWorkspace {...props} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime> : null;
+enum SettingsEntryKind { NewProject, ManageAccounts, AddAccount }
+type SettingsCategoryEntry = { kind: SettingsEntryKind.NewProject } | { kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount; providerId: string; provider?: AccountProviderSummary };
+interface SettingsSelection { category: SettingsCategory; key: string; entry?: SettingsCategoryEntry }
+type NavigateSettings = (category: SettingsCategory, entry?: SettingsCategoryEntry) => void;
+
+function entrySelection(destination?: SettingsEntryDestination): SettingsSelection {
+  return { category: destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
 }
 
-function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, entryDestination, destinationConsumed }: SettingsProps) {
-  const oauth = useOpenRouterOAuth();
+export function Settings({ visible = true, ...props }: SettingsProps) {
+  return visible ? <SettingsVisit {...props} /> : null;
+}
+
+function SettingsVisit({ entryDestination, destinationConsumed, ...props }: SettingsProps) {
   const closeDrawer = useCloseSidebarDrawer();
-  const [selectedCategory, setSelectedCategory] = useState(() => entryDestination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : entryDestination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts);
+  const [selection, setSelection] = useState(() => entrySelection(entryDestination));
+  const initialDestination = useRef(entryDestination);
+  const handledDestination = useRef<SettingsEntryDestination | undefined>(undefined);
+  const navigate = useCallback<NavigateSettings>((category, entry) => {
+    closeDrawer();
+    setSelection(current => current.category === category && !entry ? current : { category, entry, key: newRequestId() });
+  }, [closeDrawer]);
+  useEffect(() => {
+    if (!entryDestination) { handledDestination.current = undefined; return; }
+    if (handledDestination.current === entryDestination) return;
+    handledDestination.current = entryDestination;
+    if (initialDestination.current === entryDestination) initialDestination.current = undefined;
+    else {
+      const target = entrySelection(entryDestination);
+      navigate(target.category, target.entry);
+    }
+    destinationConsumed?.();
+  }, [destinationConsumed, entryDestination, navigate]);
+  return <>
+    <SidebarSurface active title="Settings" className="settings-navigation">
+      <nav aria-label="Settings categories">
+        {settingsGroups.map(group => <section className="settings-nav-group" key={group.label}>
+          <h2>{group.label}</h2>
+          {group.categories.map(category => <button type="button" className="settings-category-button" key={category} data-settings-category={category} aria-current={selection.category === category ? "page" : undefined} aria-pressed={selection.category === category} onClick={() => navigate(category)}>
+            <SettingsIcon category={category} /><span>{settingsCategories[category].label}</span>
+          </button>)}
+        </section>)}
+      </nav>
+    </SidebarSurface>
+    {/* Each category owns its waits and drafts. Disposal rejects late results
+        without canceling or replaying already accepted server/native work. */}
+    <SettingsLifetime key={selection.key}>{opening => <MutationIntents><SettingsWorkspace {...props} selectedCategory={selection.category} entry={selection.entry} navigate={navigate} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime>
+  </>;
+}
+
+function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, entry, navigate }: SettingsProps & { selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
+  const oauth = useOpenRouterOAuth();
+  const oauthStarted = useRef(false);
+  useEffect(() => {
+    if (oauthStarted.current || entry?.kind !== SettingsEntryKind.AddAccount || !entry.provider?.oauthAvailable || !oauth.available) return;
+    let active = true;
+    // Wait until mount effects settle so Strict Mode's setup replay cannot
+    // create an OAuth owner that its simulated cleanup immediately disposes.
+    queueMicrotask(() => {
+      if (!active || oauthStarted.current) return;
+      oauthStarted.current = true;
+      oauth.start(entry.provider!);
+    });
+    return () => { active = false; };
+  }, [entry, oauth]);
   const [device, setDevice] = useState<Resource>();
   const [expandedDevices, setExpandedDevices] = useState<ReadonlySet<string>>(() => new Set());
   const pairedPageIds = useRef<ReadonlySet<string>>(new Set());
@@ -187,7 +245,7 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
   const deviceContent = useRef<HTMLDivElement>(null), refreshDevices = useRef<HTMLButtonElement>(null);
   const deviceReturnFocus = useRef<{ id: string; exit: DeviceRevocationExit } | undefined>(undefined);
   const [page, setPage] = useState("");
-  const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean }>();
+  const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean } | undefined>(() => entry?.kind === SettingsEntryKind.NewProject ? { key: newRequestId() } : undefined);
   const [machine, setMachine] = useState<Resource>();
   const [deleting, setDeleting] = useState<Resource>();
   const [routing, setRouting] = useState<Resource>();
@@ -196,13 +254,11 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
   const [providerList, setProviderList] = useState<ProviderListState>({ query: "", page: "" });
   const [modelList, setModelList] = useState<ModelListState>({ query: "", page: "" });
   const [providerChoicePage, setProviderChoicePage] = useState("");
-  const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary }>();
-  const [apiProviderID, setApiProviderID] = useState("");
-  const [apiProviderHint, setApiProviderHint] = useState<AccountProviderSummary>();
+  const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary } | undefined>(() => entry?.kind === SettingsEntryKind.AddAccount ? { key: newRequestId(), providerId: entry.providerId, provider: entry.provider } : undefined);
+  const [apiProviderID, setApiProviderID] = useState(() => entry && entry.kind !== SettingsEntryKind.NewProject ? entry.providerId : "");
+  const [apiProviderHint, setApiProviderHint] = useState<AccountProviderSummary | undefined>(() => entry && entry.kind !== SettingsEntryKind.NewProject ? entry.provider : undefined);
   const [apiProviderPage, setApiProviderPage] = useState("");
-  const [childWorkflows, setChildWorkflows] = useState<ReadonlySet<SettingsWorkflow>>(() => new Set());
-  const [focusNewProjectName, setFocusNewProjectName] = useState(false);
-  const handledDestination = useRef<SettingsEntryDestination | undefined>(undefined);
+  const [focusNewProjectName, setFocusNewProjectName] = useState(entry?.kind === SettingsEntryKind.NewProject);
   const client = useQueryClient();
   const selected = settingsCategories[selectedCategory];
   const area = selected.area;
@@ -224,8 +280,8 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
     : kind === EntityKind.MACHINE && !controlLocalWorker ? "Configure these entries through the DeliDev CLI."
     : selected.description;
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration && !hasSpecializedPanel });
-  // Generic category selection resets its cursor, not these opening-local
-  // disclosures. Only a successful paired page can prune retained identities.
+  // Within this category, only a successful paired page can prune retained
+  // identities. Leaving the category disposes every disclosure with its scope.
   useEffect(() => {
     if (!isPairedDevices || !result.isSuccess || !result.data) return;
     const ids = new Set(result.data.resources.slice(0, 50).map((row) => row.id));
@@ -278,70 +334,15 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
   } : undefined;
   const apiProviders = (apiInventory.data?.entries ?? []).map(entry => providerSummary(entry, Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1)))).filter((value): value is AccountProviderSummary => value !== undefined);
   const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(entry => providerSummary(entry, Boolean(eligibleInventory.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1)))).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
-  const reportChildWorkflow = useCallback((workflow: SettingsWorkflow, active: boolean) => setChildWorkflows((current) => {
-    if (current.has(workflow) === active) return current;
-    const next = new Set(current);
-    if (active) next.add(workflow); else next.delete(workflow);
-    return next;
-  }), []);
-  const reportIntegrationWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Integrations, active), [reportChildWorkflow]);
-  const reportTransferWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Transfer, active), [reportChildWorkflow]);
-  const reportNotificationWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Notifications, active), [reportChildWorkflow]);
-  const reportAccountWorkflow = useCallback((active: boolean) => reportChildWorkflow(SettingsWorkflow.Accounts, active), [reportChildWorkflow]);
-  const parentWorkflow = Boolean(editing || account || deleting || routing || machine || device || pricing);
-  const workflowProtected = parentWorkflow || childWorkflows.size > 0;
-  const categoryLocked = workflowProtected;
-  const configurationList = area === SettingsArea.Configuration && !categoryLocked && !hasSpecializedPanel;
+  const configurationList = area === SettingsArea.Configuration && !hasOverlay && !hasSpecializedPanel;
   const successfulEmptyFirstPage = !page && Boolean(result.data && result.data.resources.length === 0 && !result.error && !result.data.nextPageToken);
   const retainedServerEmpty = isServerPreferences && !page && Boolean(result.data && result.data.resources.length === 0 && !result.data.nextPageToken);
   const hidePagination = successfulEmptyFirstPage || (isServerPreferences && !page && Boolean(result.data && !result.data.nextPageToken));
   const serverSingleton = isServerPreferences && result.data?.resources.length === 1 ? result.data.resources[0] : undefined;
-  useEffect(() => {
-    if (!entryDestination) {
-      handledDestination.current = undefined;
-      return;
-    }
-    if (!visible || handledDestination.current === entryDestination) return;
-    if (entryDestination === SettingsEntryDestination.NewProject && editing && kind === EntityKind.PROJECT && !editing.initial) {
-      handledDestination.current = entryDestination;
-      destinationConsumed?.();
-      return;
-    }
-    if (workflowProtected) return;
-    setSelectedCategory(entryDestination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : SettingsCategory.Projects);
-    setPage("");
-    if (entryDestination === SettingsEntryDestination.NewProject) {
-      setEditing({ key: newRequestId() });
-      setFocusNewProjectName(true);
-    }
-    handledDestination.current = entryDestination;
-    destinationConsumed?.();
-  }, [destinationConsumed, editing, entryDestination, kind, visible, workflowProtected]);
   const projectNameFocused = useCallback(() => setFocusNewProjectName(false), []);
-  const chooseCategory = (category: SettingsCategory) => {
-    if (categoryLocked) return;
-    closeDrawer();
-    if (category === SettingsCategory.ApiAccounts) {
-      setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined);
-    }
-    setSelectedCategory(category);
-    if (settingsCategories[category].area === SettingsArea.Configuration) {
-      setPage("");
-    }
-  };
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   const providerEntrySummary = (entry?: ProviderInventoryEntry, oauthSupported = false) => entry ? providerSummary(entry, oauthSupported) : undefined;
   return <>
-      <SidebarSurface active title="Settings" className="settings-navigation">
-        <nav aria-label="Settings categories">
-          {settingsGroups.map((group) => <section className="settings-nav-group" key={group.label}>
-            <h2>{group.label}</h2>
-            {group.categories.map((category) => <button type="button" className="settings-category-button" key={category} data-settings-category={category} disabled={categoryLocked} aria-current={selectedCategory === category ? "page" : undefined} aria-pressed={selectedCategory === category} onClick={() => chooseCategory(category)}>
-              <SettingsIcon category={category} /><span>{settingsCategories[category].label}</span>
-            </button>)}
-          </section>)}
-        </nav>
-      </SidebarSurface>
       <section className={isProjects ? "settings-content settings-projects" : isServerPreferences ? "settings-content settings-server-preferences" : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices && !hasOverlay ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
         <div className="settings-content-column">
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices && !hasOverlay ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
@@ -357,23 +358,23 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
           </div> : null}
         </div> : null}
         <div className="settings-panels">
-          <div hidden={area !== SettingsArea.Appearance}><AppearanceSettings /></div>
-          <div hidden={area !== SettingsArea.Backups}><Backups active={visible && area === SettingsArea.Backups} /></div>
-          <div hidden={area !== SettingsArea.Integrations}><Integrations active={visible && area === SettingsArea.Integrations} showCategoryIntro={false} onWorkflowReadyChange={reportIntegrationWorkflow} /></div>
-          <div hidden={area !== SettingsArea.Transfer}><ConfigurationTransfer active={visible && area === SettingsArea.Transfer} showCategoryIntro={false} onWorkflowReadyChange={reportTransferWorkflow} /></div>
-          <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} showCategoryIntro={false} onWorkflowReadyChange={reportNotificationWorkflow} /></div>
-          <div hidden={area !== SettingsArea.Diagnostics}>{connectionSettings ? <section aria-label="Connection"><h2>Connection</h2>{connectionSettings}</section> : null}<Doctor title={DoctorTitle.ConnectionDiagnostics} active={visible && area === SettingsArea.Diagnostics} visible={visible} /></div>
-          <div hidden={area !== SettingsArea.Configuration}>
-            {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
-            {pairingAuthority ? <div hidden={kind !== EntityKind.DEVICE || Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
-            <div hidden={!isApiAccounts || hasOverlay}>
-              <AccountSettings oauth={oauth} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => { setSelectedCategory(SettingsCategory.Providers); setPage(""); }} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
-            </div>
-            <div hidden={!isSubscriptionAccounts || hasOverlay}>
-              <SubscriptionAccounts active={visible && isSubscriptionAccounts && !hasOverlay} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} onWorkflowReadyChange={reportAccountWorkflow} />
-            </div>
+          {area === SettingsArea.Appearance ? <div><AppearanceSettings /></div> : null}
+          {area === SettingsArea.Backups ? <div><Backups active={visible} /></div> : null}
+          {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}
+          {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}
+          {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} /></div> : null}
+          {area === SettingsArea.Diagnostics ? <div>{connectionSettings ? <section aria-label="Connection"><h2>Connection</h2>{connectionSettings}</section> : null}<Doctor title={DoctorTitle.ConnectionDiagnostics} active={visible && area === SettingsArea.Diagnostics} visible={visible} /></div> : null}
+          {area === SettingsArea.Configuration ? <div>
+            {controlLocalWorker && isRunnerDevices ? <div hidden={Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
+            {pairingAuthority && isPairedDevices ? <div hidden={Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
+            {isApiAccounts ? <div hidden={hasOverlay}>
+              <AccountSettings oauth={oauth} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
+            </div> : null}
+            {isSubscriptionAccounts ? <div hidden={hasOverlay}>
+              <SubscriptionAccounts active={visible && isSubscriptionAccounts && !hasOverlay} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} />
+            </div> : null}
 
-            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={(exit) => { deviceReturnFocus.current = { id: device.id, exit }; setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} authority={pairingAuthority} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing && (editing.kind ?? kind) === EntityKind.REPOSITORY && !editing.initial ? <RepositoryRegistration key={editing.key} active={visible} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} chooseFolder={chooseRepositoryFolder} saved={done} cancel={() => setEditing(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} state={providerList} changeState={setProviderList} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => { const provider = providerEntrySummary(entry); setSelectedCategory(SettingsCategory.ApiAccounts); setApiProviderID(providerID); setApiProviderHint(provider); setApiProviderPage(""); setPage(""); }} addAccount={(providerID, entry, oauthSupported) => { const provider = providerEntrySummary(entry, oauthSupported); if (provider?.oauthAvailable && oauth.available) oauth.start(provider); setSelectedCategory(SettingsCategory.ApiAccounts); setApiProviderID(providerID); setApiProviderHint(provider); setApiProviderPage(""); setStartApiWizard({ key: newRequestId(), providerId: providerID, provider }); setPage(""); }} deleteCustom={setDeleting} /> : isModels ? <ActiveModelSettings state={modelList} changeState={setModelList} active={visible && isModels} createModel={(initialData) => setEditing({ kind: EntityKind.MODEL, initialData, key: newRequestId() })} editModel={(initial) => setEditing({ kind: EntityKind.MODEL, initial, key: newRequestId() })} priceModel={setPricing} /> : isRunnerDevices ? <><SSHSetup active={visible} /><RunnerDeviceInventory resources={result.data?.resources} error={result.error} loading={result.isPending && !result.data} fetching={result.isFetching} page={page} nextPage={result.data?.nextPageToken ?? ""} hidePagination={hidePagination} first={() => setPage("")} next={() => setPage(result.data!.nextPageToken)} inspect={setMachine} /></> : hasSpecializedPanel ? null : <>
+            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={(exit) => { deviceReturnFocus.current = { id: device.id, exit }; setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} authority={pairingAuthority} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing && (editing.kind ?? kind) === EntityKind.REPOSITORY && !editing.initial ? <RepositoryRegistration key={editing.key} active={visible} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} chooseFolder={chooseRepositoryFolder} saved={done} cancel={() => setEditing(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} state={providerList} changeState={setProviderList} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.ManageAccounts, providerId: providerID, provider: providerEntrySummary(entry) })} addAccount={(providerID, entry, oauthSupported) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.AddAccount, providerId: providerID, provider: providerEntrySummary(entry, oauthSupported) })} deleteCustom={setDeleting} /> : isModels ? <ActiveModelSettings state={modelList} changeState={setModelList} active={visible && isModels} createModel={(initialData) => setEditing({ kind: EntityKind.MODEL, initialData, key: newRequestId() })} editModel={(initial) => setEditing({ kind: EntityKind.MODEL, initial, key: newRequestId() })} priceModel={setPricing} /> : isRunnerDevices ? <><SSHSetup active={visible} /><RunnerDeviceInventory resources={result.data?.resources} error={result.error} loading={result.isPending && !result.data} fetching={result.isFetching} page={page} nextPage={result.data?.nextPageToken ?? ""} hidePagination={hidePagination} first={() => setPage("")} next={() => setPage(result.data!.nextPageToken)} inspect={setMachine} /></> : hasSpecializedPanel ? null : <>
               {result.isPending && !result.data ? <SettingsLoading label={`Loading ${selected.label.toLowerCase()}…`} /> : null}
               {isServerPreferences ? <NetworkSettings active={visible && isServerPreferences} authority={pairingAuthority} /> : null}
               {isServerPreferences && result.isFetching && result.data ? <p role="status">Refreshing server preferences…</p> : null}
@@ -399,7 +400,7 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
               {!hidePagination ? <nav className="settings-pages" aria-label="Settings pages"><button type="button" disabled={!page || result.isFetching} onClick={() => choosePage("")}>First page</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => choosePage(result.data!.nextPageToken)}>Next page</button></nav> : null}
               {isPairedDevices ? <p className="paired-device-guidance">Local Worker registration is available in Runner Devices.</p> : null}
             </>}
-          </div>
+          </div> : null}
         </div>
         </div>
         </div>

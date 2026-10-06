@@ -187,7 +187,7 @@ DeliDev is a personal desktop Agent Runner for managing multiple projects, AI ac
 **Settings Application Screen (issue #1236)**
 
 - Provide desktop settings as `Surface.Settings` in main content with the shared navigation rail and category pane/drawer. Settings has no outer modal or Escape-to-leave behavior; actual child dialogs retain their own behavior.
-- Entering or leaving Settings preserves the selected session, unsent input and New session draft. State survives uninterrupted visits, category/reflow/same-identity reconnect and active rail reselection; navigation away disposes drafts, secrets, client waits and retry presentation with scoped late-result/cache guards. Fresh ordinary entry starts at AI Subscription; New Project/Repositories entries remain targeted. Category workflow locks never block global navigation. Settings operations use the same server-owned RPC and CLI functionality as other public product capabilities.
+- Entering or leaving Settings preserves the selected session, unsent input and New session draft. Active-category state survives reflow, same-identity reconnect and active rail/category reselection; category departure or leaving Settings disposes drafts, secrets, client waits and retry presentation with scoped late-result/cache guards. Fresh ordinary entry starts at AI Subscription; New Project/Repositories entries remain targeted. Category navigation remains available during every workflow; operation-local guards do not lock the menu. Settings operations use the same server-owned RPC and CLI functionality as other public product capabilities.
 
 **Integrations: GitHub and Personal Access Tokens**
 

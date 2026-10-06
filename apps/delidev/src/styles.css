@@ -7,8 +7,9 @@ button:hover { background: var(--selected-background); }
 button:disabled { opacity: .55; cursor: default; }
 button.primary { color: var(--on-accent); background: var(--accent); border-color: var(--accent); font-weight: 600; }
 button[aria-current], button[aria-pressed=true] { background: var(--selected-background); color: var(--selected-text); border-color: var(--selected-border); }
-:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; }
+/* Form controls retain their ordinary boundaries without a focus ring. */
+:focus-visible:not(:where(input, select, textarea)) { outline: 3px solid var(--focus); outline-offset: 3px; }
+input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; outline: none; }
 textarea { resize: vertical; }
 label { display: grid; gap: 6px; font-weight: 500; margin-block: 12px; }
 label.checkbox { display: flex; align-items: center; font-size: .85rem; }
