@@ -237,3 +237,13 @@ Independent server subscription login exports capability 30, the closed Subscrip
 ## Codex login diagnostic client
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
+
+## Agent Worker wizard bindings
+
+Generate ConfigurationQuery.saveAgentWorker, typed model-selection oneof and
+System capability 33 from their canonical schemas. Source-scoped account/model
+queries use the closed service enum and server pagination; keys retain each exact
+source/cursor. Keep original uint64 model/Worker revisions and exact uncertain
+wire requests. The canonical model resource remains an internal identity used by
+existing APIs, Usage and historical snapshots. Configured compatibility and
+catalog results grant no execution readiness. Follow the desktop/catalog contracts.

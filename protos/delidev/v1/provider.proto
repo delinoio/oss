@@ -113,6 +113,7 @@ message SearchModelsRequest {
   string page_token = 5;
   // Filters before SQL pagination; false preserves the historical broad search.
   bool enabled_providers_only = 6;
+  SubscriptionServiceIdentity subscription_service = 7;
 }
 
 message SearchModelsResponse {

@@ -59,6 +59,16 @@
         1146
       ],
       "composition": "Seed only the 26 added hosted preset identities once, preserving historical six-provider seed sets, saved Off state, deletions, UUIDs, custom providers and account associations. Migration 29 retains original OAuth ownership and must contain its real private attempt table before migration 30."
+    },
+    {
+      "version": 31,
+      "issue": 964,
+      "feature": "General API OAuth credential profiles and token lifecycle",
+      "dependsOn": [
+        1146,
+        1148
+      ],
+      "composition": "Activate only after real migrations 26 through 30. Preserve original OpenRouter attempts and protected references. Store bounded private authentication profiles, token-generation references, once-only refresh claims and cleanup metadata; never persist access/refresh tokens, verifiers, device codes, browser URLs or user codes. Restore must preserve current exchange/refresh authority and unresolved cleanup."
     }
   ],
   "policy": "Reservations are not executable. Implement in order, or revise the reservation sequence on main before starting replacements; never fill a gap with a no-op migration. An unmerged version-25 database is an unknown layout and requires preservation and explicit recovery."

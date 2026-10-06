@@ -4,6 +4,8 @@
 
 - Follow the parent and repository instructions. Managed authentication is a separate explicitly leased profile under `docs/cmds-delidev-subscription-contract.md`. Require native login completion, file-backed ChatGPT authentication and the official built-in provider; reject inherited overrides, API keys and external tokens. Successful account/read alone never proves refresh. API execution/discovery retain their ephemeral profile.
 
+- Managed account/read accepts the known optional nullable workspaceRouting metadata from Codex 0.159.2 through one strict shared response profile. Validate its bounded HTTPS origin, closed routing enum and exact bundle account identity; logout requires explicit account null, no routing object and independently absent auth.json. Discard routing metadata without changing Go endpoints or authentication authority. Keep unknown/duplicate fields rejected and preserve existing recovery fences. Managed failure logs distinguish closed login-start/login-completion/login-cancel/account-read/bundle-validation/local-logout stages without native content, identities, URLs or paths.
+
 - Recheck the merged managed configuration using the actual execution workspace before both thread start and resume. Startup-directory verification alone cannot authorize workspace-specific provider or authentication overrides.
 
 - Pinned native quota/reset-credit adapters omit unit parameters where the original protocol requires it, project bounded sparse metadata and preserve the official idempotency key and closed outcomes. Exclude display/billing fields and credential reflection; native updated notifications cannot grant authentication or execution authority.

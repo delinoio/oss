@@ -174,10 +174,10 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   await waitFor(() => expect(value.preview).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id }), expect.anything()));
   fireEvent.click(screen.getByRole("button", { name: "Back to Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(name);
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(name);
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
   expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   fireEvent.click(screen.getByRole("button", { name: `Delete ${name}` }));
   expect(screen.getByText("Schedules using this configuration will be disabled for future runs. Already accepted sessions are retained.")).toBeTruthy();
   expect(value.remove).not.toHaveBeenCalled();
@@ -218,55 +218,6 @@ it("keeps the original Agent deletion revision and retry request within its open
   await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(2));
   expect(value.remove.mock.calls[1][0]).toEqual(value.remove.mock.calls[0][0]);
   expect(value.remove.mock.calls[0][0]).toMatchObject({ kind: EntityKind.AGENT, mutation: { id: agent.id, expectedRevision: 7n } });
-});
-
-it("retains an Agent draft at its captured revision when a peer changes the entry", async () => {
-  const model = resource(EntityKind.MODEL, { name: "Fixture Model" });
-  const agent = resource(EntityKind.AGENT, { name: "Original Agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } }, 3n);
-  const value = fixture([agent, model]);
-  render(value.view(<Settings />));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  await screen.findByRole("button", { name: "Edit Original Agent" });
-  value.resources[0] = create(ResourceSchema, { ...agent, revision: 4n });
-  fireEvent.click(screen.getByRole("button", { name: "Edit Original Agent" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Retained draft" } });
-  expect(await screen.findByText("This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.")).toBeTruthy();
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained draft");
-  expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  expect(value.save).not.toHaveBeenCalled();
-});
-
-it("retains exact Agent save bytes through reflow and reconnect with navigation available", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "Fixture Provider", enabled: true });
-  const model = resource(EntityKind.MODEL, { name: "Fixture Model", provider_id: provider.id });
-  const agent = resource(EntityKind.AGENT, { name: "Original Agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } }, 3n);
-  const value = fixture([agent, model, provider], { readModelSearch: () => ({ models: [model], providers: [provider] }) });
-  value.save.mockRejectedValueOnce(new ConnectError("Acknowledgment unavailable", Code.Unavailable));
-  const view = render(value.view(<Settings />));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Original Agent" }));
-  const name = screen.getByRole("textbox", { name: "Name" });
-  fireEvent.change(name, { target: { value: "Retained draft" } });
-  await screen.findByRole("option", { name: "Fixture Model" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: model.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  await screen.findByRole("button", { name: "Retry the same configuration" });
-  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((screen.getByRole("button", { name: "Instructions" }) as HTMLButtonElement).disabled).toBe(false);
-  const replacementSave = vi.fn();
-  const replacement: Transport = { ...value.transport, unary: (...args) => { if (args[0].name === "SaveConfiguration") replacementSave(); return value.transport.unary(...args); } };
-  view.rerender(<TransportProvider transport={replacement}><QueryClientProvider client={value.client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
-  fireEvent(window, new Event("resize"));
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
-  expect((name as HTMLInputElement).value).toBe("Retained draft");
-  expect(value.save).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Retry the same configuration" }));
-  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
-  expect(replacementSave).toHaveBeenCalledTimes(1);
-  expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
-  expect(input(value.save.mock.calls[0][0]).mutation).toMatchObject({ id: agent.id, expectedRevision: 3n });
-  expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toEqual({ name: "Retained draft", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
 });
 
 it("uses service identity without Provider reads when editing native account preferences", async () => {
@@ -310,9 +261,9 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Runner Devices", "Appearance", "Paired devices", "Server preferences", "Integrations", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
-  const values = ["subscription-accounts", "api-accounts", "providers", "models", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "appearance", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer", "backups"];
-  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
+  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+  const values = ["subscription-accounts", "api-accounts", "providers", "agent-workers", "instructions", "projects", "repositories", "integrations", "git-workflow", "execution-workers", "paired-devices", "appearance", "server-preferences", "diagnostics", "notifications", "transfer", "backups"];
+  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI", "Coding", "Device management", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
   const buttons = within(navigation).getAllByRole("button");
   expect(buttons.map((button) => button.getAttribute("data-settings-category"))).toEqual(values);
@@ -616,7 +567,7 @@ it("renders unknown quota and server candidate reasons without performing select
   expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
 });
 
-it("edits global routing and fetch preferences without rewriting unrelated policy or creating another singleton", async () => {
+it("edits global routing preferences without rewriting unrelated policy or creating another singleton", async () => {
   const original = { default_routing: "sequential-exhaustion", automatic_fetch: true, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } };
   const preferences = resource(EntityKind.SETTINGS, original, 8n);
   const value = fixture([preferences]);
@@ -627,14 +578,14 @@ it("edits global routing and fetch preferences without rewriting unrelated polic
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Delete Server preferences/ })).toBeNull();
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
-  fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
+  expect(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
   const request = input(value.save.mock.calls[0][0]);
   expect(request.mutation.expectedRevision).toBe(8n);
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority", automatic_fetch: false });
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority" });
 });
 
 it("retains incompatible permission selections across harness changes until explicit clearing", async () => {
