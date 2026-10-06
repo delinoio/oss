@@ -1132,6 +1132,68 @@
         "CI_GO_TEST_SHARD",
         "GITHUB_ENV"
       ]
+    },
+    "ci:runmoor:unit": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUNMOOR_DOCKER_TEST",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT"
+      ]
+    },
+    "ci:runmoor:docker": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/repository-*-contract.md"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUNMOOR_DOCKER_TEST",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT"
+      ]
     }
   }
 }

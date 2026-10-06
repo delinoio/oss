@@ -39,3 +39,5 @@
 - Load repository-local actions only after checkout. Cache authentication requires the `delinoio/oss` repository, GitHub workflow name `CI` and exact `CI.yml` workflow-ref prefix. Prepare the pinned Rust toolchain before native tasks and retain serial DevHud conformance; export prepared Go cache locations explicitly for Turbo strict environments.
 
 - DeliDev validation separates schema/binding freshness, TypeScript client and desktop jobs. Preserve the exact checks/two-Vitest-shard matrix, Turbo client build dependencies, uncached real-server fixtures and complete CI Result aggregation. A runner-owned source build may share only its executable path; retain private fixture state and QA build ownership.
+
+- The separate Runmoor PR Docker workflow also uses uncached `scripts/ci` Turbo tasks, preserving the explicit Docker opt-in, race coverage, read-only contents authority and successful-main-only dependency-cache saves. It requires no remote-cache token.

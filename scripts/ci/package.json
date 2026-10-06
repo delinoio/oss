@@ -45,6 +45,8 @@
     "ci:rust:selection-fixture": "node from-root.mjs node --test scripts/ci/rust-affected-live.test.mjs",
     "ci:go:quality": "node from-root.mjs node scripts/ci/go-quality.mjs",
     "ci:go:discovery": "node from-root.mjs node --test scripts/ci/go-affected.test.mjs",
-    "ci:delidev:fixture": "node from-root.mjs node scripts/ci/prepare-delidev-test-binary.mjs"
+    "ci:delidev:fixture": "node from-root.mjs node scripts/ci/prepare-delidev-test-binary.mjs",
+    "ci:runmoor:unit": "node from-root.mjs go test -race ./cmds/runmoor/...",
+    "ci:runmoor:docker": "node from-root.mjs go test -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor"
   }
 }

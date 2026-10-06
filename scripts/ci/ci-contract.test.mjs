@@ -605,6 +605,23 @@ test("Go PR selection uses exact comparisons while main, manual and forced valid
   assert.equal(namedStep(workflow.jobs["go-test"], "Verify native affected Go discovery").run, "node scripts/ci/run-affected.mjs @delinoio/ci ci:go:discovery");
 });
 
+test("the separate Runmoor PR workflow retains full native validation through Turbo", () => {
+  const runmoor = load(readFileSync(`${root}/.github/workflows/runmoor.yml`, "utf8"));
+  const job = runmoor.jobs.docker;
+  assert.equal(job["timeout-minutes"], 20);
+  assert.deepEqual(runmoor.permissions, { contents: "read" });
+  const commands = jobCommands(job);
+  assert.ok(commands.includes("go test -race ./cmds/runmoor/..."));
+  assert.ok(commands.includes("go test -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor"));
+  assert.equal(namedStep(job, "Local Docker integration without GitHub job assignment").env.RUNMOOR_DOCKER_TEST, "1");
+  assert.ok(job.steps.some(({ uses }) => uses === "./.github/actions/setup-ci-node"));
+  for (const [id, { task }] of jobTaskGraph(job)) assert.equal(task.cache, false, id);
+  for (const candidate of job.steps) {
+    if (candidate.run?.includes("ci:runmoor:")) assert.equal(candidate.env.FORCE_RUN, "true");
+    if (candidate.uses === "actions/cache/save@v5") assert.ok(candidate.if.includes("success() && github.ref == 'refs/heads/main'"));
+  }
+});
+
 test("DeliDev desktop phases partition all tests and preserve uncached executable reuse", () => {
   const job = workflow.jobs["delidev-frontend"];
   assert.equal(job.strategy["fail-fast"], false);
