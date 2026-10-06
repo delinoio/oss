@@ -58,9 +58,10 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     catch (error) {
       if (live(p)) {
         const failure = clientFailure(error).code;
-        // Retain exact mutation inputs only for an uncertain response. Typed
-        // revision conflicts require a fresh read and another explicit Save.
-        if ([FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled].includes(failure)) p.retry = action;
+        // Internal can follow durable admission when reading the account fails.
+        // Retain the exact action for explicit replay after uncertain responses;
+        // typed revision conflicts require a fresh read and another explicit Save.
+        if ([FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure)) p.retry = action;
         update(p, { problem });
       }
     } finally { p.busy = false; update(p, { busy: false }); }
