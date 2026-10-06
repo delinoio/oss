@@ -110,7 +110,7 @@ const phaseNames: Partial<Record<CodexDiagnosticPhase, string>> = {
 };
 const versionText = (value: string) => value.length <= 256 && /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/.test(value);
 // Reconstruct text from closed metadata, never provider/native message strings.
-function safeDiagnostic(d?: CodexDiagnostic) {
+export function safeDiagnostic(d?: CodexDiagnostic) {
  if (!d || (d.detectedVersion && !versionText(d.detectedVersion)) || !versionText(d.minimumVersion) || !phaseNames[d.phase] || !Object.values(FailureCode).includes(d.code as FailureCode)) return;
  const reasons: Partial<Record<FailureCode,string>> = { [FailureCode.NotFound]: "The Codex executable was not found.", [FailureCode.Unsupported]: "The native protocol or version is incompatible.", [FailureCode.Unavailable]: "The native operation failed or timed out.", [FailureCode.Unauthenticated]: "Native authentication was not accepted.", [FailureCode.PermissionDenied]: "Native access was denied.", [FailureCode.RecoveryRequired]: "The native operation requires recovery." };
  const timeout = d.code === FailureCode.Unavailable && d.message === `Codex ${d.detectedVersion || "not detected"} did not complete ${phaseNames[d.phase]!.toLowerCase()}. The native operation timed out.`;

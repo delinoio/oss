@@ -2521,6 +2521,79 @@
         "user_code": 2,
         "canceled": 3
       }
+    },
+    "AccountOAuthAttempt": {
+      "kind": "message",
+      "members": {
+        "id": 1,
+        "revision": 2,
+        "state": 3,
+        "expires_at": 4,
+        "provider_id": 5,
+        "problem": 6
+      }
+    },
+    "StartAccountOAuthRequest": {
+      "kind": "message",
+      "members": {
+        "provider": 1,
+        "callback_url": 2
+      }
+    },
+    "StartAccountOAuthResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "authorization_url": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
+    },
+    "CompleteAccountOAuthRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1,
+        "authorization_code": 2
+      }
+    },
+    "CancelAccountOAuthRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1
+      }
+    },
+    "GetAccountOAuthStatusRequest": {
+      "kind": "message",
+      "members": {
+        "attempt_id": 1
+      }
+    },
+    "CompleteAccountOAuthResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "account": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
+    },
+    "CancelAccountOAuthResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "account": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
+    },
+    "GetAccountOAuthStatusResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "account": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
     }
   },
   "reservations": [
@@ -5990,6 +6063,354 @@
       "declaration": "CodexDiagnosticPhase",
       "member": "CODEX_DIAGNOSTIC_PHASE_CLEANUP",
       "number": 12,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1",
+      "number": 31
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1",
+      "number": 32
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_REPOSITORY_CLONE_V1",
+      "number": 18
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListGitHubRepositoriesRequest",
+      "newDeclaration": true,
+      "member": "profile_id",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListGitHubRepositoriesRequest",
+      "newDeclaration": true,
+      "member": "expected_revision",
+      "number": 2
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListGitHubRepositoriesRequest",
+      "newDeclaration": true,
+      "member": "page",
+      "number": 3
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListGitHubRepositoriesRequest",
+      "newDeclaration": true,
+      "member": "page_size",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListGitHubRepositoriesResponse",
+      "newDeclaration": true,
+      "member": "schema_version",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListGitHubRepositoriesResponse",
+      "newDeclaration": true,
+      "member": "document_json",
+      "number": 2
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RepositoryCloneGitHubSelection",
+      "newDeclaration": true,
+      "member": "profile_id",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RepositoryCloneGitHubSelection",
+      "newDeclaration": true,
+      "member": "expected_revision",
+      "number": 2
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RepositoryCloneGitHubSelection",
+      "newDeclaration": true,
+      "member": "repository_id",
+      "number": 3
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RepositoryCloneGitHubSelection",
+      "newDeclaration": true,
+      "member": "node_id",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RepositoryCloneGitHubSelection",
+      "newDeclaration": true,
+      "member": "owner",
+      "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RepositoryCloneGitHubSelection",
+      "newDeclaration": true,
+      "member": "name",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryRequest",
+      "newDeclaration": true,
+      "member": "request_id",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryRequest",
+      "newDeclaration": true,
+      "member": "machine_id",
+      "number": 2
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryRequest",
+      "newDeclaration": true,
+      "member": "parent_path",
+      "number": 3
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryRequest",
+      "newDeclaration": true,
+      "member": "url",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryRequest",
+      "newDeclaration": true,
+      "member": "directory_name",
+      "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryRequest",
+      "newDeclaration": true,
+      "member": "local_worker_token",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryRequest",
+      "newDeclaration": true,
+      "member": "github_selection",
+      "number": 7
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryResponse",
+      "newDeclaration": true,
+      "member": "job",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryResponse",
+      "newDeclaration": true,
+      "member": "request_id",
+      "number": 2
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CloneRepositoryResponse",
+      "newDeclaration": true,
+      "member": "replayed",
+      "number": 3
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ProviderInventoryCapability",
+      "member": "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ProviderConnectionMethod",
+      "member": "PROVIDER_CONNECTION_METHOD_OAUTH_DEVICE",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_AGENT_WORKER_WIZARD_V1",
+      "number": 33
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListResourcesRequest",
+      "member": "subscription_service",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "AccountOAuthFlow",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_FLOW_UNSPECIFIED",
+      "number": 0
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "AccountOAuthFlow",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_FLOW_PKCE",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "AccountOAuthFlow",
+      "newDeclaration": true,
+      "member": "ACCOUNT_OAUTH_FLOW_DEVICE",
+      "number": 2
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SearchModelsRequest",
+      "member": "subscription_service",
+      "number": 7
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AccountOAuthGoogleOptions",
+      "newDeclaration": true,
+      "member": "quota_project_id",
+      "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartAccountOAuthRequest",
+      "member": "google",
+      "number": 3
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartAccountOAuthResponse",
+      "member": "flow",
+      "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "model",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartAccountOAuthResponse",
+      "member": "user_code",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "schema_version",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CompleteAccountOAuthRequest",
+      "member": "authorization_state",
+      "number": 3
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AgentWorkerModelSelection",
+      "member": "model_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AgentWorkerModelSelection",
+      "member": "native_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AgentWorkerModelSelection",
+      "member": "expected_model_revision",
+      "number": 3,
       "newDeclaration": true
     }
   ]

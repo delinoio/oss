@@ -8,6 +8,7 @@ import { Problem } from "./ui";
 import { NativeNotificationSettings } from "./notification-presentation";
 import { useSettingsOpening } from "./settings-lifetime";
 import { useSidebarDrawerOpen } from "./sidebar-context";
+import { ToastKind, useNotifications } from "./toast-notifications";
 import "./notification-settings.css";
 
 enum FocusTarget { FirstCheckbox, Edit }
@@ -23,6 +24,7 @@ function covered(node: HTMLElement) {
 export function NotificationSettings({ active, showCategoryIntro = true, onWorkflowReadyChange }: { active: boolean; showCategoryIntro?: boolean; onWorkflowReadyChange?: (active: boolean) => void }) {
   const client = useQueryClient();
   const opening = useSettingsOpening();
+  const notifications = useNotifications();
   const drawerOpen = useSidebarDrawerOpen();
   const ids = useId();
   const form = useRef<HTMLFormElement>(null);
@@ -42,7 +44,7 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
     focusIntent.current = focusAvailable.current && ownsFocus && form.current && !covered(form.current) ? FocusTarget.Edit : undefined;
     setDraft(undefined);
   };
-  const mutation = useRetainedMutation("notification-preferences", InboxQuery.setNotificationPreferences, () => { finishEdit(); void client.invalidateQueries({ refetchType: "active" }); });
+  const mutation = useRetainedMutation("notification-preferences", InboxQuery.setNotificationPreferences, (_result, request) => { finishEdit(); notifications.notify({ kind: ToastKind.Success, message: "Notification preferences saved.", id: request.requestId }); void client.invalidateQueries({ refetchType: "active" }); });
   const stale = Boolean(draft && current.data?.preferences && current.data.preferences.revision !== draft.revision);
   const blocked = mutation.busy || mutation.uncertain;
   const value = draft ?? current.data?.preferences;

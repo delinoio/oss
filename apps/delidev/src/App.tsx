@@ -1,3 +1,4 @@
+import type { UsageEntry } from "./usage-entry";
 import type { ServerPresentation } from "./server-presentation";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -21,6 +22,7 @@ import type { PairingAuthority } from "./pairing-grant";
 import { TrayPresentation } from "./tray-presentation";
 import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
+import { NotificationProvider } from "./toast-notifications";
 import { Sidebar } from "./sidebar";
 import type { ChooseRepositoryFolder } from "./repository-registration";
 import { SettingsEntryDestination } from "./settings";
@@ -41,6 +43,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const [selectedInbox, setSelectedInbox] = useState("");
   const [inboxActivation, setInboxActivation] = useState(0);
   const [newSessionActivation, setNewSessionActivation] = useState(0);
+  const [usageEntry, setUsageEntry] = useState<UsageEntry>();
   const [settingsEntry, setSettingsEntry] = useState<SettingsEntryDestination>();
   const [draftState, setDraftState] = useState<{ drafts: ReadonlyMap<string, string>; error?: string }>({ drafts: new Map() });
   const { drafts } = draftState;
@@ -82,6 +85,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     setSurface(destination);
     if (destination === Surface.Inbox) setSelectedInbox("");
   };
+  const openAccountUsage = (entry: UsageEntry) => { setUsageEntry(entry); navigate(Surface.Usage); };
   const navigateHeader = (destination: Surface.Inbox | Surface.Search) => {
     navigate(destination);
     pendingFocusDestination.current = destination;
@@ -102,10 +106,10 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     <Search active={surface === Surface.Search} open={open} />
     <Activity active={surface === Surface.Activity} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} /></div>
-    <Usage active={surface === Surface.Usage} open={open} />
+    <Usage active={surface === Surface.Usage} open={open} entry={usageEntry} />
     <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} />
     <PullRequests active={surface === Surface.PullRequests} openSettings={openSettings} />
-    <Settings readLocalWorker={readLocalWorker} connectionSettings={connectionSettings} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} visible={surface === Surface.Settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} />
+    <Settings openUsage={openAccountUsage} readLocalWorker={readLocalWorker} connectionSettings={connectionSettings} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} visible={surface === Surface.Settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} />
   </main>{connectionTarget && localServer ? createPortal(localServer, connectionTarget) : null}</div></SidebarOutletProvider></SessionStorageProvider></SessionForkProvider>;
 }
 
@@ -118,5 +122,5 @@ export function App({ transport, localServer, serverPresentation, connectionSett
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><PRWorkflowProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><PRWorkflowProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></PRWorkflowProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider>;
 }

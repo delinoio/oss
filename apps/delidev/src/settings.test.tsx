@@ -10,6 +10,7 @@ import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
+import { NotificationProvider } from "./toast-notifications";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
 function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
@@ -40,6 +41,32 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   return { resources, save, remove, preview, inspect, connect, disconnect, client, transport, list, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
+
+it("shows a configuration toast only for an immediate saved resource", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository" });
+  const project = resource(EntityKind.PROJECT, { name: "Project", repositories: [repository.id], primary_repository: repository.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
+  const value = fixture([project, repository]); const saved = vi.fn();
+  render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.PROJECT} initial={project} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  expect(await screen.findByText("Project saved.")).toBeTruthy();
+  expect(saved).toHaveBeenCalledTimes(1);
+});
+
+it.each(["job", "unknown", "failed", "uncertain"])("does not show configuration success for a %s outcome", async outcome => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository" });
+  const project = resource(EntityKind.PROJECT, { name: "Project", repositories: [repository.id], primary_repository: repository.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
+  const job = resource(EntityKind.JOB, { type: "save-project", state: "queued" });
+  const value = fixture([project, job, repository]); const saved = vi.fn();
+  if (outcome === "failed" || outcome === "uncertain") value.save.mockRejectedValueOnce(new ConnectError("Fixture save failure", outcome === "failed" ? Code.InvalidArgument : Code.Unavailable));
+  else value.save.mockResolvedValueOnce(outcome === "job" ? { job, resource: project } : {});
+  render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.PROJECT} initial={project} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  if (outcome === "job") await screen.findByText("Worker operation: queued");
+  else await screen.findByRole("alert");
+  expect(screen.queryByText("Project saved.")).toBeNull();
+  expect(saved).not.toHaveBeenCalled();
+});
 
 it("renders the Agent-only empty inventory after the first read succeeds", async () => {
   let resolve!: (result: { resources: Resource[] }) => void;
@@ -797,7 +824,7 @@ it("scopes shared preference and deletion terminology to API documents and prese
     expect(screen.getByRole("checkbox", { name: type === "api" ? "Notify when entry quota recovers" : "Notify when account quota recovers" })).toBeTruthy();
     view.rerender(value.view(<ConfigurationDeletion initial={account} deleted={() => {}} close={() => {}} />));
     expect(screen.getByRole("heading", { name: type === "api" ? "Delete entry?" : "Delete Original API account alias?" })).toBeTruthy();
-    expect(screen.getByText(type === "api" ? "Disconnect the entry and finish credential cleanup before deleting it." : "Disconnect the account and finish credential cleanup before deleting it.")).toBeTruthy();
+    expect(screen.getByText(type === "api" ? "Disconnect the entry and finish credential cleanup before deleting it." : "This logs out the account and removes its protected credentials before deleting its saved configuration.")).toBeTruthy();
     view.unmount();
     value.client.clear();
   }

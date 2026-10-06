@@ -9,6 +9,7 @@
     "core:event:allow-unlisten",
     "github-presentation",
     "account-oauth",
+    "provider-guidance",
     "device-appearance",
     "browser-presentation",
     "repository-folder",

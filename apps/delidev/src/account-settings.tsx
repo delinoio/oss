@@ -3,8 +3,11 @@ import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./s
 import { ProviderGuidance } from "./provider-guidance";
 import { OpenRouterOAuth, useOpenRouterOAuth, type OpenRouterOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
-import { useEffect, useMemo, useRef, useState, type ReactNode , useId } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useEffect, useMemo, useRef, useState, type ReactNode, useId } from "react";
+import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { ApiEntryRow } from "./api-entry-row";
+import type { UsageEntry } from "./usage-entry";
 import {
   AccountQuery,
   AccountTypeFilter,
@@ -13,6 +16,7 @@ import {
   ConfigurationQuery,
   EntityKind,
   ResourceQuery,
+  UsageQuery,
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
@@ -54,6 +58,7 @@ export interface AccountProviderPicker {
 }
 
 export interface AccountSettingsProps {
+  openUsage?: (entry: UsageEntry) => void;
   oauth?: OpenRouterOAuthFlow;
   section: AccountSettingsSection;
   active: boolean;
@@ -568,6 +573,7 @@ export function AccountSettings(props: AccountSettingsProps) {
 }
 
 function ApiAccountSettings({
+  openUsage,
   oauth,
   section,
   active,
@@ -598,6 +604,10 @@ function ApiAccountSettings({
   startApiWizard,
   providerHint,
 }: AccountSettingsProps) {
+  const client = useQueryClient();
+  const transport = useTransport();
+  const usageKey = createConnectQueryKey({ schema: UsageQuery.getUsageSummary, transport, cardinality: "finite" });
+  const usageFetching = useIsFetching({ queryKey: usageKey });
   const [page, setPage] = useState<{ section: AccountSettingsSection; providerId: string; token: string }>({ section, providerId: "", token: "" });
   const [wizard, setWizard] = useState(false);
   const [wizardProvider, setWizardProvider] = useState<AccountProviderSummary>();
@@ -654,7 +664,7 @@ function ApiAccountSettings({
   const readDenied = readProblem && clientFailure(readProblem).code === FailureCode.PermissionDenied;
   const successfulEmpty = accountTypeFilteringReady && rows.data?.resources.length === 0 && !readProblem;
   const finalFirstPage = !pageToken && !rows.data?.nextPageToken;
-  return <section className="account-settings api-keys-view" aria-label="AI API Keys settings">
+  return <section className="account-settings api-keys-view api-usage-list" aria-label="AI API Keys settings">
     <SettingsHeading title="AI API Keys" description="Manage AI API keys and keyless local connections. Connection and health are separate states." actions={<>
       <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); onWorkflowReadyChange?.(true); setWizard(true); }}>Add AI API key</button>
     </>} />
@@ -669,27 +679,12 @@ function ApiAccountSettings({
       {rows.error ? <button type="button" disabled={rows.isFetching} onClick={() => { void rows.refetch(); }}>Retry entries</button> : null}
       {readProblem && rows.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded entries.</p> : null}
       {rows.isFetching && !rows.data ? <SettingsLoading label="Loading entries…" /> : null}
-      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map((row) => {
-        const data = document(row);
-        const provider = providersById.get(text(data.provider_id));
-        const quotaCount = Array.isArray(data.quota) ? data.quota.length : 0;
-        return <article className="api-entry-row" key={row.id}>
-          <h2>{resourceName(row)}</h2>
-          {row.schemaVersion !== 1 ? <p className="api-entry-provider-name">{row.id}</p> : null}
-          <p className="api-entry-provider-name">{provider?.displayName ?? "Provider unavailable · " + text(data.provider_id)}</p>
-          <dl>
-            <div><dt>Connection:</dt><dd>{text(object(data.removal).request_id) ? "Credential cleanup pending" : text(object(data.connection).id) ? "Credential connected" : "Disconnected"}</dd></div>
-            <div><dt>Health:</dt><dd>{text(data.health) || "Unknown"}</dd></div>
-            <div><dt>Entry:</dt><dd>{data.enabled === true ? "Enabled" : "Disabled"}</dd></div>
-            <div><dt>Provider status:</dt><dd>{provider ? provider.enabled ? "Enabled" : "Off" : "Unavailable"}</dd></div>
-            <div><dt>Quota:</dt><dd>{data.confirmed_exhausted === true ? "Confirmed exhausted" : quotaCount ? `${quotaCount} observations` : "No quota observation"}</dd></div>
-          </dl>
-          <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} onClick={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }}>Manage connection</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => editAccount(row)}>Edit preferences</button><button className="api-entry-delete" type="button" disabled={row.schemaVersion !== 1} onClick={() => deleteAccount(row)}>Delete entry</button></div>
-        </article>;
-      })}</div> : null}
+      <div className="api-usage-list-heading"><div><h2>Your API keys</h2><p>DeliDev usage · Last 30 days</p></div><button type="button" disabled={!active || rows.isFetching || usageFetching > 0} onClick={() => { void rows.refetch(); void client.refetchQueries({ queryKey: usageKey, type: "active" }); }}><span aria-hidden="true">↻</span> Refresh usage</button></div>
+      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map(row => <ApiEntryRow key={row.id} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div> : null}
       {successfulEmpty ? finalFirstPage && !providerIdFilter ? <SettingsEmpty title="No AI API key entries"><p>Add an entry for an enabled API provider.</p><p>Keyless local providers do not require a key.</p></SettingsEmpty> : <p className="api-entry-page-empty">{finalFirstPage && providerIdFilter ? "No entries for this provider." : "No entries on this page."}</p> : null}
       {pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label="Entry pages">{pageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button> : null}{rows.data?.nextPageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button> : null}</nav> : null}
     </> : null}
+    {accountTypeFilteringReady ? <p className="api-entry-storage-note">Known usage may be incomplete. Estimates are not billed amounts.</p> : null}
     <p className="api-entry-storage-note">Credentials are stored securely on the selected server.</p>
     {selectedAccount && section === AccountSettingsSection.Api ? <SettingsTaskDialog key={selectedAccount.id} title="Manage connection" size={SettingsDialogSize.Wide} close={() => { setSelectedAccount(undefined); void rows.refetch(); }}>{<AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />}</SettingsTaskDialog> : null}
     {wizard ? <SettingsTaskDialog title="Add AI API key" size={SettingsDialogSize.Wide} retained={Boolean(oauth?.view)} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}>{<AccountCreationWizard oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />}</SettingsTaskDialog> : null}

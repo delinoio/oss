@@ -179,12 +179,15 @@ impl Supervision {
         self.shared.wake.notify_all();
     }
 
-    pub fn stop(&self) {
+    pub fn request_stop(&self) {
         self.connector.exiting.store(true, Ordering::Release);
         let mut state = self.shared.value.lock().unwrap_or_else(|e| e.into_inner());
         state.exit = true;
         self.shared.wake.notify_all();
-        drop(state);
+    }
+
+    pub fn stop(&self) {
+        self.request_stop();
         if let Some(task) = self.task.lock().unwrap_or_else(|e| e.into_inner()).take() {
             let _ = task.join();
         }
