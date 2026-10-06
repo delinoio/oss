@@ -277,7 +277,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 // Reappearance cannot give the generic copy remover new traversal authority.
 func removeSessionCopy(ctx context.Context, root, path string) error {
 	parent := filepath.Dir(path)
-	if parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") {
+	if parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") || parent == filepath.Join(root, "workspace-removal-quarantine") {
 		// Workspace cleanup already checked the original native staging,
 		// public removal, or final-root identity. A later replacement or an
 		// old name without a published proof remains protected here. The

@@ -688,15 +688,22 @@ the empty root with a no-replace rename into the separate private
 mode and empty-inventory verification. Synchronize both namespace parents before
 recording the claimed state. The old removal name is never an unlink operand;
 a directory or symlink appearing there is preserved and blocks completion.
-On Unix, retain the opened final root, remove its search permission, and repeat
-the anchored identity check immediately before `unlinkat`; this closes the
-retained-root-handle path to the private parent during the final name operation.
-Repeat that anchored check after the last mutation checkpoint as well. If a
-retained parent moves the original and the name operation removes a replacement,
-the second check retains recovery ownership before any post-unlink receipt can
-be published. Linux additionally verifies the opened directory's post-unlink
+On Linux and other POSIX platforms, retain the opened final root, remove its
+search permission, and repeat the anchored identity check immediately before
+`unlinkat`; this closes the retained-root-handle path to the private parent
+during the final name operation. Darwin cannot unlink by directory handle, so
+it transfers the verified writable root with an exclusive directory-fd rename
+into the fresh operation-private
+`workspace-removal-quarantine/<operation>-<private-UUID>` namespace, rechecks
+the native identity, removes search permission there, and unlinks only the
+quarantined name. The old private namespace remains a recovery boundary.
+Repeat the anchored check after the last mutation checkpoint as well. If a
+retained parent moves the original and the name operation selects a replacement,
+the second check retains recovery ownership before any post-unlink receipt can be
+published. Linux additionally verifies the opened directory's post-unlink
 link count so a retained-parent race in the final kernel interval remains
-recovery-required.
+recovery-required; Darwin verifies the opened identity and unlinked path after
+the quarantine unlink.
 Keep unlink preparation separate from the durable receipt recorded after native
 unlink. Publish that receipt with a bounded cancellation-independent context
 before honoring the caller's cancellation. Recovery with a missing root and no unlink receipt remains uncertain,

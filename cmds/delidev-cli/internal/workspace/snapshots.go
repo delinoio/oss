@@ -212,7 +212,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 	if err := m.initialize(); err != nil {
 		return result, err
 	}
-	for _, dir := range []string{"snapshots", "snapshot-staging", "workspace-removals", "workspace-removal-roots", "storage-removal-root-claims", "workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-staging-claims"} {
+	for _, dir := range []string{"snapshots", "snapshot-staging", "workspace-removals", "workspace-removal-roots", "workspace-removal-quarantine", "storage-removal-root-claims", "workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-staging-claims"} {
 		if err := security.PrivateDir(filepath.Join(m.Root, dir)); err != nil {
 			return result, err
 		}

@@ -9,7 +9,8 @@ import (
 	"syscall"
 )
 
-func finalRootUnlinkPath(string) (string, error) { return "", nil }
+func finalRootRecoveryPath(private, _ string) (string, error) { return private, nil }
+func finalRootUnlinkPath(string) (string, error)              { return "", nil }
 
 func verifyFinalRootAfterUnlink(root, parent *os.File, name, expectedIdentity, _ string) error {
 	if _, _, err := directoryIdentityAt(parent, name); err == nil || !errors.Is(err, os.ErrNotExist) {

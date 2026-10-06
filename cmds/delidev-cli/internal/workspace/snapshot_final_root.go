@@ -51,6 +51,10 @@ func (m *Manager) finalRemovalRoot(claim storageFinalRootClaim) string {
 	return filepath.Join(m.Root, "workspace-removal-roots", string(claim.Reference.OperationID)+"-"+string(claim.RootName))
 }
 
+func (m *Manager) finalRemovalQuarantine(claim storageFinalRootClaim) string {
+	return filepath.Join(m.Root, "workspace-removal-quarantine", string(claim.Reference.OperationID)+"-"+string(claim.RootName))
+}
+
 func (m *Manager) finalRemovalClaimPath(id domain.ID) string {
 	return filepath.Join(m.Root, "storage-removal-root-claims", string(id)+".json")
 }
@@ -161,7 +165,10 @@ func (m *Manager) finalRemovalClaimAbsent(claim storageFinalRootClaim) error {
 	if err := storageNameAbsent(filepath.Join(m.Root, "workspace-removals", string(claim.Reference.OperationID))); err != nil {
 		return err
 	}
-	return storageNameAbsent(m.finalRemovalRoot(claim))
+	if err := storageNameAbsent(m.finalRemovalRoot(claim)); err != nil {
+		return err
+	}
+	return storageNameAbsent(m.finalRemovalQuarantine(claim))
 }
 
 func (m *Manager) claimFinalRemovalRoot(ctx context.Context, r StorageRequest, original storageRemovalClaim) error {
@@ -213,9 +220,10 @@ func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r Sto
 	stage = claim.State
 	removal := filepath.Join(m.Root, "workspace-removals", string(r.OperationID))
 	private := m.finalRemovalRoot(claim)
+	quarantine := m.finalRemovalQuarantine(claim)
 	if namespace != nil {
 		for _, path := range namespace[claim.Reference.OperationID] {
-			if path != private {
+			if path != private && path != quarantine {
 				return ResultUncertain()
 			}
 		}
@@ -231,6 +239,13 @@ func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r Sto
 			return err
 		}
 		if err := security.SyncParent(private); err != nil {
+			return err
+		}
+		if _, err := os.Lstat(filepath.Dir(quarantine)); err == nil {
+			if err := security.SyncParent(quarantine); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		if err := security.SyncParent(removal); err != nil {
@@ -264,12 +279,19 @@ func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r Sto
 	if err := storageNameAbsent(removal); err != nil {
 		return err
 	}
-	parent, err := os.OpenRoot(filepath.Dir(private))
+	rootPath, err := finalRootRecoveryPath(private, quarantine)
+	if err != nil {
+		return err
+	}
+	if err := security.PrivateDir(filepath.Dir(quarantine)); err != nil {
+		return ResultUncertain()
+	}
+	parent, err := os.OpenRoot(filepath.Dir(rootPath))
 	if err != nil {
 		return ResultUncertain()
 	}
 	defer parent.Close()
-	name := filepath.Base(private)
+	name := filepath.Base(rootPath)
 	before, err := parent.Lstat(name)
 	if err != nil || before.Mode() != removalWritableDirectoryMode() {
 		return ResultUncertain()
@@ -328,7 +350,7 @@ func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r Sto
 	if err := storageNameAbsent(removal); err != nil {
 		return err
 	}
-	if err := removeVerifiedFinalRoot(private, claim.RootIdentity, func() error {
+	if err := removeVerifiedFinalRoot(rootPath, quarantine, claim.RootIdentity, func() error {
 		return m.finalRootFault(storageFinalRootBeforeUnlink)
 	}, func() error {
 		return m.finalRootFault(storageFinalRootAfterVerification)
@@ -412,33 +434,35 @@ func finalRemovalNamespacePaths(ctx context.Context, root string, jobs map[domai
 }
 
 func finalRemovalNamespaceInventory(ctx context.Context, root string, jobs map[domain.ID]bool) (map[domain.ID][]string, error) {
-	parent := filepath.Join(root, "workspace-removal-roots")
-	if err := security.CheckPrivateDir(parent); errors.Is(err, os.ErrNotExist) {
-		return map[domain.ID][]string{}, nil
-	} else if err != nil {
-		return nil, ResultUncertain()
-	}
-	file, err := os.Open(parent)
-	if err != nil {
-		return nil, ResultUncertain()
-	}
-	entries, readErr := file.ReadDir(65537)
-	closeErr := file.Close()
-	if readErr != nil && readErr != io.EOF || closeErr != nil || len(entries) > 65536 {
-		return nil, ResultUncertain()
-	}
 	namespace := map[domain.ID][]string{}
-	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		name := entry.Name()
-		if len(name) != 73 || name[36] != '-' || domain.ID(name[:36]).Validate() != nil || domain.ID(name[37:]).Validate() != nil || strings.HasPrefix(name, ".") {
+	for _, directory := range []string{"workspace-removal-roots", "workspace-removal-quarantine"} {
+		parent := filepath.Join(root, directory)
+		if err := security.CheckPrivateDir(parent); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
 			return nil, ResultUncertain()
 		}
-		if jobs[domain.ID(name[:36])] {
-			operationID := domain.ID(name[:36])
-			namespace[operationID] = append(namespace[operationID], filepath.Join(parent, name))
+		file, err := os.Open(parent)
+		if err != nil {
+			return nil, ResultUncertain()
+		}
+		entries, readErr := file.ReadDir(65537)
+		closeErr := file.Close()
+		if readErr != nil && readErr != io.EOF || closeErr != nil || len(entries) > 65536 {
+			return nil, ResultUncertain()
+		}
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			name := entry.Name()
+			if len(name) != 73 || name[36] != '-' || domain.ID(name[:36]).Validate() != nil || domain.ID(name[37:]).Validate() != nil || strings.HasPrefix(name, ".") {
+				return nil, ResultUncertain()
+			}
+			if jobs[domain.ID(name[:36])] {
+				operationID := domain.ID(name[:36])
+				namespace[operationID] = append(namespace[operationID], filepath.Join(parent, name))
+			}
 		}
 	}
 	return namespace, nil

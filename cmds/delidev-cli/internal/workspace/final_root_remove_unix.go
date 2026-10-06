@@ -18,7 +18,7 @@ import (
 // reach the private parent through .. and move that root between the final
 // identity check and unlinkat. The final check then rejects a replacement
 // installed by a writer that already retained the private parent.
-func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink, afterIdentityCheck func() error) error {
+func removeVerifiedFinalRootStandard(path, _ string, expectedIdentity string, beforeUnlink, afterIdentityCheck func() error) error {
 	parent, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
