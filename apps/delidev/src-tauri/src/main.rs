@@ -1392,6 +1392,94 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_oauth_acl_preserves_trusted_webview_boundaries() {
+        use tauri::{
+            ipc::{Origin, RuntimeAuthority},
+            utils::{
+                acl::{
+                    APP_ACL_KEY, capability::Capability, manifest::Manifest, resolved::Resolved,
+                },
+                platform::Target,
+            },
+        };
+
+        // Use the build's actual permission resolution. Handler-only tests
+        // cannot detect commands removed or denied by Tauri's generated ACL.
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/acl-manifests.json"
+        )))
+        .unwrap();
+        let app = manifests.get(APP_ACL_KEY).unwrap();
+        assert!(
+            app.permissions.contains_key("allow-account-oauth-native")
+                || app
+                    .command_permission("allow-account-oauth-native", false)
+                    .is_some()
+        );
+        assert_eq!(
+            app.permissions["account-oauth"].commands.allow,
+            ["account_oauth_native"]
+        );
+        let capabilities: BTreeMap<String, Capability> =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/capabilities.json")))
+                .unwrap();
+        let resolved = Resolved::resolve(&manifests, capabilities, Target::current()).unwrap();
+        assert!(resolved.has_app_acl);
+        assert!(
+            resolved
+                .allowed_commands
+                .contains_key("account_oauth_native")
+        );
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        for label in ["main", "server-fixture"] {
+            assert!(
+                authority
+                    .resolve_access("account_oauth_native", label, label, &Origin::Local)
+                    .is_some()
+            );
+            // A raw child in a trusted containing window inherits no access.
+            assert!(
+                authority
+                    .resolve_access(
+                        "account_oauth_native",
+                        label,
+                        "external-fixture",
+                        &Origin::Local
+                    )
+                    .is_none()
+            );
+            assert!(
+                authority
+                    .resolve_access(
+                        "account_oauth_native",
+                        label,
+                        label,
+                        &Origin::Remote {
+                            url: "https://openrouter.ai/".parse().unwrap()
+                        }
+                    )
+                    .is_none()
+            );
+        }
+        assert!(
+            authority
+                .resolve_access(
+                    "account_oauth_native",
+                    "external-fixture",
+                    "external-fixture",
+                    &Origin::Local
+                )
+                .is_none()
+        );
+    }
+
     #[test]
     fn saved_policy_replaces_only_the_exact_connection_source() {
         let original = "default-src 'none'; script-src 'self' 'sha256-fixed'; connect-src ipc: http://ipc.localhost http://127.0.0.1:46310; frame-src 'none'";

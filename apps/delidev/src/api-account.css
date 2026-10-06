@@ -8,8 +8,8 @@
 .api-keys-view :is(h1, h2, strong, code), .api-entry-workflow :is(h1, h2, h3, code) { overflow-wrap: anywhere; }
 .api-keys-view button, .api-entry-workflow button { min-height: 40px; border-color: var(--control-border); border-radius: 8px; white-space: normal; overflow-wrap: anywhere; }
 .api-keys-view input:not([type="checkbox"]), .api-entry-workflow input:not([type="checkbox"]), .api-entry-workflow select { min-height: 40px; border-radius: 8px; border-color: var(--control-border); }
-.api-keys-view :is(button, input, summary):focus-visible, .api-keys-view h2:focus-visible,
-.api-entry-workflow :is(button, input, select, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.api-keys-view :is(button, summary):focus-visible, .api-keys-view h2:focus-visible,
+.api-entry-workflow :is(button, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .api-keys-view .primary, .api-entry-workflow .primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .api-keys-view .api-entry-heading, .api-entry-workflow .api-entry-heading { display: block; margin: 0 0 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
 .api-keys-view .api-entry-heading h1, .api-entry-workflow .api-entry-heading h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; line-height: 1.25; }

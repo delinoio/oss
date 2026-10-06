@@ -82,7 +82,7 @@ it("does not authorize creation on empty continuation or later pages", async () 
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).map(([request]) => request.filter?.pageToken)).toEqual(["", "opaque-page-2", "opaque-page-2"]));
+  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "opaque-page-2", "opaque-page-2"]));
   await waitFor(() => expect(value.client.isFetching()).toBe(0));
   failedRefresh = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByRole("alert");
@@ -111,7 +111,7 @@ it.each([true, false])("retains the last successful result during and after fail
   if (empty) expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
   fail = false; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).map(([request]) => request.filter?.pageToken)).toEqual(["", "", ""]);
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "", ""]);
   expect(value.save).not.toHaveBeenCalled();
 });
 
