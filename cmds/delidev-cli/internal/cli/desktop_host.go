@@ -9,8 +9,10 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -21,6 +23,18 @@ import (
 type desktopControlAction string
 
 const desktopControlStop desktopControlAction = "stop"
+
+func runDesktopHostCommand(ctx context.Context, o options, args []string, streams IO) int {
+	// Go otherwise exits on SIGPIPE when the desktop closes stdout/stderr.
+	// Only this host command must survive that loss; ordinary CLI commands
+	// retain their standard pipe behavior. Keep the protection through the
+	// final envelope so a lost desktop cannot terminate an admitted server.
+	pipeSignal := make(chan os.Signal, 1)
+	signal.Notify(pipeSignal, syscall.SIGPIPE)
+	defer signal.Stop(pipeSignal)
+	value, err := desktopHost(ctx, o, args, streams)
+	return emitResult(streams, o, value, err)
+}
 
 // This pipe controls its original process only. EOF is deliberately not Stop:
 // a crashed desktop must leave its server available to other clients.

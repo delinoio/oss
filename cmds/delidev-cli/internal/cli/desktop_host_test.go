@@ -214,6 +214,79 @@ func TestDesktopHostLostReadyDeliveryPreservesAdmittedServer(t *testing.T) {
 	}
 }
 
+func TestDesktopHostBrokenStandardPipesPreserveAdmittedServer(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	admission, err := userservice.AdmitLaunch(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admission.Close()
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(binary, "--data-dir", root, "server", "desktop-host", "--mode", "launch", "--listen", "127.0.0.1:0")
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostic, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		default:
+			_ = cmd.Process.Kill()
+			<-done
+		}
+	})
+	// Release startup only after all desktop pipe ends are gone. This tests
+	// real fd 1/2 SIGPIPE behavior, which an injected failing writer cannot.
+	input.Close()
+	output.Close()
+	diagnostic.Close()
+	admission.Close()
+	deadline := time.Now().Add(40 * time.Second)
+	for {
+		select {
+		case <-done:
+			t.Fatal("lost desktop pipes terminated the admitted server")
+		default:
+		}
+		if _, err := os.Stat(filepath.Join(root, "server.json")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("admitted server never published endpoint")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	for _, action := range []string{"status", "stop"} {
+		if code := Run(context.Background(), []string{"--data-dir", root, "server", action}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != 0 {
+			t.Fatal("admitted server was unavailable after losing desktop pipes")
+		}
+	}
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("server did not join after explicit Stop")
+	}
+}
+
 func TestDesktopHostStopDuringAdmissionCannotStartServer(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")
 	if err := security.PrivateDir(root); err != nil {
