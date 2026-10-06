@@ -9,6 +9,7 @@ const harnesses = new Set(["codex", "claude-code", "opencode", "grok-build"]);
 const healthStates = new Set(["disconnected", "unverified", "ready", "expired", "revoked", "failed"]);
 enum AccountType { Api = "api", Subscription = "subscription" }
 const accountFields = new Set(["alias", "provider_id", "subscription_service", "type", "enabled", "exclude_automatic", "recovery_notifications", "health", "quota", "confirmed_exhausted", "connection", "removal", "validation", "catalog", "subscription"]);
+const requiredAccountFields = ["alias", "type", "enabled", "exclude_automatic", "recovery_notifications", "health", "quota", "confirmed_exhausted"] as const;
 const connectionFields = new Set(["id", "authentication", "connected_at"]);
 const apiAuthentication = new Set(["bearer", "api-key", "keyless"]);
 enum InstallationState { Unchecked = "unchecked", Detected = "detected", Missing = "missing", Denied = "permission-denied", Incompatible = "incompatible", Failed = "failed" }
@@ -110,7 +111,7 @@ function reportFrom(bytes: Uint8Array | undefined, server: string): Document | u
   } catch { return; }
 }
 function validAccount(row: Resource, value: Document): boolean {
-  if (!shape(value, accountFields) || !healthStates.has(text(value.health)) || typeof value.enabled !== "boolean") return false;
+  if (!shape(value, accountFields) || requiredAccountFields.some((field) => !Object.hasOwn(value, field)) || !boundedText(value.alias, 256) || !healthStates.has(text(value.health)) || typeof value.enabled !== "boolean" || typeof value.exclude_automatic !== "boolean" || typeof value.recovery_notifications !== "boolean" || !Array.isArray(value.quota) || typeof value.confirmed_exhausted !== "boolean") return false;
   if (row.schemaVersion === 1) {
     if (value.type !== AccountType.Api || !isEntityId(text(value.provider_id)) || Object.hasOwn(value, "subscription_service") || Object.hasOwn(value, "subscription")) return false;
   } else if (row.schemaVersion === 2) {

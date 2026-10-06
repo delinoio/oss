@@ -105,6 +105,37 @@ it.each([
 });
 
 it.each([
+  "alias", "exclude_automatic", "recovery_notifications", "quota", "confirmed_exhausted",
+])("requires the complete schema-2 account record before observing it: missing %s", async field => {
+  const f = fixture();
+  const account = accountResource(SubscriptionServiceId.ChatGPT);
+  const data = JSON.parse(new TextDecoder().decode(account.documentJson)) as Record<string, unknown>;
+  delete data[field];
+  account.documentJson = encode(data);
+  f.accountPage.resources = [account];
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("AI account: Unknown")).toBeTruthy();
+  expect(screen.queryByText(/account\(s\) inspected/)).toBeNull();
+});
+
+it.each([
+  { alias: 1 }, { enabled: "true" }, { exclude_automatic: "false" },
+  { recovery_notifications: 0 }, { quota: {} }, { confirmed_exhausted: "false" },
+])("requires valid schema-2 account field types: %j", async change => {
+  const f = fixture();
+  const account = accountResource(SubscriptionServiceId.ChatGPT);
+  account.documentJson = encode({ ...JSON.parse(new TextDecoder().decode(account.documentJson)), ...change });
+  f.accountPage.resources = [account];
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText(/not a successful execution test/);
+  expect(screen.getByText("AI account: Unknown")).toBeTruthy();
+  expect(screen.queryByText(/account\(s\) inspected/)).toBeNull();
+});
+
+it.each([
   { type: undefined }, { type: "subscription" }, { type: "future" },
   { provider_id: undefined }, { provider_id: "invalid" },
   { subscription_service: "chatgpt" }, { subscription_service: "" }, { subscription: {} },
