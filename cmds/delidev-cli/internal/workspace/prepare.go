@@ -325,7 +325,14 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				// effects are not proved by this preparation attempt.
 				return old, ResultUncertain()
 			}
-			if _, err := m.verifyWorkspaceIdentity(ctx, request, old, preparationIdentity); err != nil {
+			if slicesContainManagedClone(request.Repositories) {
+				if _, err := m.verifyWorkspaceIdentity(ctx, request, old, preparationIdentity); err != nil {
+					return old, err
+				}
+			} else if err := m.verify(old); err != nil {
+				// Historical checkout requests can retain a noncanonical source
+				// spelling. Preserve their existing replay contract; managed clones
+				// alone require the new accepted-input and native ownership proof.
 				return old, err
 			}
 			return old, nil
