@@ -28,6 +28,19 @@ func fixtureRaw(t *testing.T) []byte {
 	}
 	return raw
 }
+func changedFixture(t *testing.T, change func(map[string]any)) []byte {
+	t.Helper()
+	var next map[string]any
+	if err := json.Unmarshal(fixtureRaw(t), &next); err != nil {
+		t.Fatal(err)
+	}
+	change(next)
+	inventory, _ := json.Marshal(next["services"])
+	sum := sha256.Sum256(inventory)
+	next["catalog_version"] = "sha256:" + hex.EncodeToString(sum[:])
+	raw, _ := json.Marshal(next)
+	return raw
+}
 func quiet() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }
 func fixtureTransport(raw []byte) roundTrip {
 	return func(r *http.Request) (*http.Response, error) {
@@ -36,7 +49,10 @@ func fixtureTransport(raw []byte) roundTrip {
 }
 func TestBundledOnlineCacheAndRestart(t *testing.T) {
 	root := t.TempDir()
-	raw := fixtureRaw(t)
+	raw := changedFixture(t, func(v map[string]any) {
+		model := v["services"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
+		model["native_id"] = "gpt-fixture-reviewed"
+	})
 	manager := New(root, fixtureTransport(raw), quiet())
 	initial := manager.List("chatgpt")
 	if initial.Source != Bundled || len(initial.Models) == 0 {
@@ -49,11 +65,11 @@ func TestBundledOnlineCacheAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	online := manager.List("chatgpt")
-	if online.Source != Online || online.Version != initial.Version {
+	if online.Source != Online || online.Version == initial.Version || online.Models[0].NativeID != "gpt-fixture-reviewed" {
 		t.Fatal("online publication")
 	}
 	restarted := New(root, nil, quiet())
-	if restarted.List("chatgpt").Source != Cache || restarted.fetchedAt.IsZero() {
+	if restored := restarted.List("chatgpt"); restored.Source != Cache || restored.Version != online.Version || restored.Models[0].NativeID != "gpt-fixture-reviewed" || restarted.fetchedAt.IsZero() {
 		t.Fatal("cache not restored")
 	}
 	restarted.now = func() time.Time { return time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC) }
@@ -113,19 +129,8 @@ func TestCacheFailureDoesNotPublishAndMalformedRestartFallsBack(t *testing.T) {
 	}
 }
 func TestExactSchemaKeysAndRequiredModelMetadata(t *testing.T) {
-	var value map[string]any
-	if err := json.Unmarshal(fixtureRaw(t), &value); err != nil {
-		t.Fatal(err)
-	}
 	mutate := func(change func(map[string]any)) []byte {
-		var next map[string]any
-		_ = json.Unmarshal(fixtureRaw(t), &next)
-		change(next)
-		inventory, _ := json.Marshal(next["services"])
-		sum := sha256.Sum256(inventory)
-		next["catalog_version"] = "sha256:" + hex.EncodeToString(sum[:])
-		raw, _ := json.Marshal(next)
-		return raw
+		return changedFixture(t, change)
 	}
 	for _, change := range []func(map[string]any){
 		func(v map[string]any) { v["Services"] = v["services"]; delete(v, "services") },
