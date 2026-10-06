@@ -288,15 +288,20 @@ func TestWorkerSourceRoutesAtomicSaveAndLegacyProtection(t *testing.T) {
 	if err != nil || !replay.Msg.Replayed || replay.Msg.Resource.Id != saved.Msg.Resource.Id {
 		t.Fatalf("replay: %v %v", replay, err)
 	}
+	f.shutdown()
+	f.start()
+	replay, err = f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, request))
+	if err != nil || !replay.Msg.Replayed || replay.Msg.Resource.Id != saved.Msg.Resource.Id {
+		t.Fatalf("route receipt after restart: %v %v", replay, err)
+	}
+
 	legacy := wizardRequest([]*pb.Resource{api}, "api-model")
 	legacy.Mutation.Id = saved.Msg.Resource.Id
 	legacy.Mutation.ExpectedRevision = saved.Msg.Resource.Revision
 	_, err = f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, legacy))
 	wantAccountCode(t, err, domain.Unsupported)
-	mixed := *request
-	mixed.Mutation = &pb.Mutation{RequestId: string(domain.NewID())}
-	mixed.Model = legacy.Model
-	_, err = f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, &mixed))
+	mixed := &pb.SaveAgentWorkerRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, SchemaVersion: request.SchemaVersion, DocumentJson: request.DocumentJson, RouteModels: request.RouteModels, Model: legacy.Model}
+	_, err = f.config.SaveAgentWorker(ctx, ownerRequest(f.identity, mixed))
 	wantAccountCode(t, err, domain.InvalidArgument)
 	duplicate := agent
 	duplicate.Routes = []domain.AgentSourceRoute{agent.Routes[1], {Accounts: []domain.WeightedAccount{{ID: domain.ID(wizardAccount(f, provider, "Other API").Id), Weight: 1}}, Routing: &priority}}

@@ -443,6 +443,59 @@ func TestSourceRoutingFirstClaimRecoveryAndHistory(t *testing.T) {
 	if paid.InitialExecution.Configuration.ModelID != f.model || paid.InitialExecution.Configuration.Subscription || *paid.InitialExecution.Route.SourceIndex != 1 {
 		t.Fatalf("paid route: %+v", paid.InitialExecution)
 	}
+	// Separate sessions share the selected source's durable rotation atomically.
+	pairs := [][2]domain.ID{}
+	for range 2 {
+		session, input := f.session(t, domain.DispatchReady)
+		pairs = append(pairs, [2]domain.ID{session, input})
+	}
+	selections := make(chan domain.ID, 2)
+	var group sync.WaitGroup
+	for _, pair := range pairs {
+		group.Go(func() {
+			if _, err := f.claim(domain.NewID(), pair[0], pair[1]); err != nil {
+				t.Error(err)
+				return
+			}
+			selections <- readExecutionSession(t, s, pair[0]).InitialExecution.InitialAccountID
+		})
+	}
+	group.Wait()
+	close(selections)
+	distinct := map[domain.ID]bool{}
+	for id := range selections {
+		distinct[id] = true
+	}
+	if len(distinct) != 2 {
+		t.Fatal("concurrent source claims lost a rotation update")
+	}
+	// A failed final native admission must roll back snapshot and source state.
+	session, input := f.session(t, domain.DispatchReady)
+	var before domain.RoutingState
+	if err := s.Read(ctx, func(tx *Tx) error { _, state, err := tx.Routing(f.agent); before = state; return err }); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Mutate(ctx, domain.NewID(), "fixture.source-claim-rollback", session, func(tx *Tx) (any, error) {
+		if _, err := tx.ClaimInitialExecution(session, 1, input, 1); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("fixture native admission rejected")
+	})
+	if err == nil || readExecutionSession(t, s, session).InitialExecution != nil {
+		t.Fatal("failed claim retained a snapshot")
+	}
+	if err := s.Read(ctx, func(tx *Tx) error {
+		_, after, err := tx.Routing(f.agent)
+		left, _ := json.Marshal(before)
+		right, _ := json.Marshal(after)
+		if string(left) != string(right) {
+			t.Error("failed claim advanced routing")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	setExhausted(false)
 	recovered := claim()
 	if recovered.InitialExecution.InitialAccountID != subID {

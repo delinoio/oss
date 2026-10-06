@@ -201,7 +201,6 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
 
 export function AgentWorkerWizard(props: { initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: props.active });
-  if (!status.data && !status.error) return <p role="status">Checking server support…</p>;
   if (status.data?.capabilities.includes(SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1)) return <AgentWorkerSourceWizard {...props} />;
   if (props.initial?.schemaVersion === 3) return <><p role="alert">Update the server to edit this Worker's account sources.</p><button onClick={props.cancel}>Cancel</button></>;
   return <LegacyAgentWorkerWizard {...props} />;
