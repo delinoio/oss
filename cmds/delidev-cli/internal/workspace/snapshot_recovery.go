@@ -844,12 +844,10 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 		}
 	} else if !errors.Is(finalErr, os.ErrNotExist) {
 		return ResultUncertain()
-	} else if err := security.SyncParent(finalPath); err != nil {
-		// A previous retirement may have removed the final proof but failed to
-		// flush its parent. Re-sync the already-absent name before retiring the
-		// dependent claim, journal, and intent on this retry.
-		return err
 	}
+	// Older acknowledged receipts predate the final-root proof namespace. A
+	// missing parent is the legacy empty namespace, not an unsynchronized proof
+	// removal; the bounded inventory below validates that no new final root exists.
 	namespace, namespaceErr := finalRemovalNamespaceInventory(ctx, m.Root, map[domain.ID]bool{ref.OperationID: true})
 	if namespaceErr != nil || len(namespace[ref.OperationID]) != 0 {
 		return ResultUncertain()

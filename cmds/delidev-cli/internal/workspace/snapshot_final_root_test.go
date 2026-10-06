@@ -177,6 +177,22 @@ func TestFinalRootRemovalPersistsReceiptAfterCancellation(t *testing.T) {
 	}
 }
 
+func TestRetireStorageRemovalAllowsMissingLegacyFinalRootNamespace(t *testing.T) {
+	m, r := finalRootFixture(t, StorageCleanup)
+	storageDo(t, m, r)
+	if err := os.RemoveAll(filepath.Join(m.Root, "storage-removal-root-claims")); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RetireStorageRemoval(context.Background(), removalReference(r)); err != nil {
+		t.Fatal("legacy retirement was blocked by the absent final-root namespace", err)
+	}
+	for _, path := range []string{m.removalIntentPath(r.OperationID), m.removalClaimPath(r.OperationID), m.removalClaimJournalPath(r.OperationID)} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatal("retirement evidence survived", path, err)
+		}
+	}
+}
+
 func TestFinalRootRemovalRejectsReappearingOldName(t *testing.T) {
 	m, r := finalRootFixture(t, StorageCleanup)
 	removal := filepath.Join(m.Root, "workspace-removals", string(r.OperationID))
