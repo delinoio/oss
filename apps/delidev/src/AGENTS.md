@@ -1,5 +1,7 @@
 # DeliDev src ownership
 
+- Multiple product windows follow `docs/apps-delidev-desktop-contract.md#multiple-product-windows`: retain one process-owned launch/supervisor, exact native Local/Saved role and instance admission, independent renderer memory and original callback epochs. New Window uses one native app menu handler; only the last product window hides to tray. Saved profile removal blocks and closes all its views. Names update monotonically; Widget publication has one oldest-ready writer per profile. Never transfer drafts, replay startup/pairing, persist window inventory or grant authority from a label pattern alone.
+
 - `subscription-onboarding.tsx` and its stylesheet own the pure login-first account body under the subscription Settings contract. Supply confirmed progress from the owning controller; render performs no login, account creation or browser opening. Preserve once-only name focus, edited values, the UTF-8 name bound, existing Settings tokens and departure callbacks without business cancellation.
 
 - Workspace storage and permanent deletion use the connection-owned controller in `session-storage.tsx`. Retain original requests and jobs through navigation/uncertainty, pin exact successful previews and snapshot selections for confirmation, observe deletion independently of removed resources and preserve decimal/nullable byte measurements. Use separate negotiated capabilities and follow `docs/cmds-delidev-storage-contract.md`.
