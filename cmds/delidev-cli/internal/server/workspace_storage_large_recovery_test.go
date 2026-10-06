@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -75,7 +76,10 @@ func TestWorkspaceStorageLargeOriginalRequestRemainsRecoverable(t *testing.T) {
 	if err != nil {
 		t.Fatal("valid original request rejected", err)
 	}
-	claimed := f.claim(accepted.Msg.Job)
+	claimed := watchWorkAssignment(t, f.worker, f.workerIdentity, f.machine, f.instance)
+	if claimed.Id != accepted.Msg.Job.Id {
+		t.Fatal("primary lane assigned another original job")
+	}
 	var original domain.Job
 	if domain.Decode(claimed.DocumentJson, &original) != nil || len(claimed.DocumentJson) <= 512<<10 || len(claimed.DocumentJson) > 1<<20 {
 		t.Fatal("fixture did not exercise the valid large original job", len(claimed.DocumentJson))
@@ -95,11 +99,44 @@ func TestWorkspaceStorageLargeOriginalRequestRemainsRecoverable(t *testing.T) {
 	if len(recovery.Msg.Job.DocumentJson) <= 1<<20 || workspace.DecodeStorageJob(recovery.Msg.Job.DocumentJson, &j) != nil || workspace.DecodeStorageRequest(j.Input, &r) != nil || domain.Decode(original.Input, &prior) != nil || !reflect.DeepEqual(r.Recovery.Original, prior) {
 		t.Fatal("recovery changed or truncated original evidence")
 	}
+	acceptedInput := append([]byte(nil), j.Input...)
 	replay, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, req))
 	if err != nil || !replay.Msg.Replayed || replay.Msg.Job.Id != recovery.Msg.Job.Id {
 		t.Fatal("large recovery original request did not replay", err)
 	}
-	assigned := f.claim(recovery.Msg.Job)
+	assigned := watchWorkAssignment(t, f.worker, f.workerIdentity, f.machine, f.instance)
+	if assigned.Id != recovery.Msg.Job.Id || workspace.DecodeStorageJob(assigned.DocumentJson, &j) != nil || !bytes.Equal(j.Input, acceptedInput) {
+		t.Fatal("primary lane changed original recovery input")
+	}
+	assertWorkerClaimExceptionBounds(t, assigned, domain.MaxStorageRecoveryInputBytes, workspace.MaxStorageRecoveryJobBytes)
+	for _, malformed := range []func(*workspace.StorageRequest){
+		func(input *workspace.StorageRequest) { input.Action = workspace.StoragePreview },
+		func(input *workspace.StorageRequest) { input.Recovery = nil },
+		func(input *workspace.StorageRequest) { input.Recovery.Claims = nil },
+		func(input *workspace.StorageRequest) { input.Recovery.Original.Action = workspace.StorageRecover },
+	} {
+		var input workspace.StorageRequest
+		if err := workspace.DecodeStorageRequest(acceptedInput, &input); err != nil {
+			t.Fatal(err)
+		}
+		malformed(&input)
+		j.Input, err = json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		document, err := json.Marshal(j)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record := store.Record{ID: domain.ID(assigned.Id), Kind: domain.JobKind, Revision: assigned.Revision}
+		if _, _, err := decodeWorkerClaim(workerClaimJSON(t, record, padClaimDocument(t, document, workspace.MaxStorageRecoveryJobBytes))); err == nil {
+			t.Fatal("malformed enlarged recovery claim was accepted")
+		}
+	}
+	reconnected := watchWorkAssignment(t, f.worker, f.workerIdentity, f.machine, f.instance)
+	if reconnected.Id != assigned.Id || reconnected.Revision != assigned.Revision || !bytes.Equal(reconnected.DocumentJson, assigned.DocumentJson) {
+		t.Fatal("reconnect changed the original recovery claim")
+	}
 	cancel, err := f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: assigned.Id, ExpectedRevision: assigned.Revision}}))
 	if err != nil || cancel.Msg.Job.Id != assigned.Id {
 		t.Fatal("large recovery claim could not be observed/canceled", err)
