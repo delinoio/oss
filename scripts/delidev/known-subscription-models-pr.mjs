@@ -18,7 +18,9 @@ export function assertBotBranch({ commits, files, total, pullRequests }) {
 }
 export function findClosedCandidateReview(pullRequests, candidateVersion, readCatalog) {
   return pullRequests.find(pr => {
-    if (pr.user?.login !== bot || pr.head?.repo?.full_name !== repository || pr.base?.ref !== "main" || !pr.head.sha) return false;
+    // A merged review is already part of main's accepted history. Only an
+    // unmerged manual closure is a rejection that should suppress reopening.
+    if (pr.merged_at || pr.user?.login !== bot || pr.head?.repo?.full_name !== repository || pr.base?.ref !== "main" || !pr.head.sha) return false;
     return readCatalog(pr.head.sha).catalog_version === candidateVersion;
   });
 }
