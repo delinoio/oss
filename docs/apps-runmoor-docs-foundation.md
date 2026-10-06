@@ -26,6 +26,7 @@
 - Development uses the consolidated `public-docs` server at `127.0.0.1:46302`; it owns the Runmoor section alongside the other project sections.
 - Public content is curated from the Runmoor project and command contracts. User-owned configuration and guest runner paths are public interfaces; repository-internal architecture and operational details remain in `docs/`.
 - Tart recovery guidance explains that ambiguous ownership keeps the VM, Runmoor state/data and capacity reservation intact even during force-stop. It directs users to restore a paired backup that contains the VM identity proof or to reimport the source under a new Runmoor identity while preserving uncertain resources; it never suggests repairing markers manually or deleting a same-named VM.
+- The Docker guide and CLI README describe volume deletion revalidation as unreleased until a containing release is verified. Explain preservation of conflicting volumes and incomplete cleanup, retry after failed inspection, non-force removal and the remaining replacement window between inspection and deletion. Keep label keys, internal records and API implementation details in the command contract; public guidance must not claim atomic race protection.
 - The CLI release README remains in `cmds/runmoor/README.md` with a link to the consolidated Runmoor subpath.
 
 ## Storage
