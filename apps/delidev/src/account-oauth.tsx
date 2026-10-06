@@ -254,7 +254,6 @@ export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow:
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;
   const connected = view.stage === Stage.Connected && view.account;
   const waiting = view.stage === Stage.Awaiting;
-<<<<<<< HEAD
   const configuring = view.stage === Stage.Configure;
   const huggingFace = profileOf(view.provider) === AccountOAuthProfile.HuggingFace;
   const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : connected ? huggingFace ? copy("account-oauth.providerConnected_5a9a4f", { v0: view.provider.displayName }) : copy("account-oauth.extra.2d889940c25c") : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
