@@ -8,6 +8,10 @@ export const jobPaths = JSON.parse(readFileSync(new URL("./job-paths.json", impo
 export const nativeMatrices = JSON.parse(readFileSync(new URL("./native-matrices.json", import.meta.url), "utf8"));
 export const Event = Object.freeze({ PullRequest: "pull_request", Push: "push", Manual: "workflow_dispatch" });
 const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/plan.mjs", "scripts/ci/result.mjs", "scripts/ci/run-affected.mjs", "scripts/ci/native-matrices.json", "scripts/ci/package.json", "scripts/ci/turbo.json", "scripts/ci/from-root.mjs", "scripts/ci/cache-context.mjs", "scripts/ci/protocol-fresh.mjs", "scripts/ci/rust-affected*.mjs", "scripts/ci/cargo-mono-prebuilt*.mjs", "scripts/ci/run-rust.mjs"];
+const rustfmtConfiguration = new Set([".rustfmt.toml", "rustfmt.toml"]);
+// Git reports POSIX paths. Filename ownership also covers hidden directories,
+// which node:path's recursive globs do not match.
+const isRustfmtConfiguration = (path) => rustfmtConfiguration.has(path.slice(path.lastIndexOf("/") + 1));
 export function matchesPath(path, pattern) {
   // Node's matcher excludes leading dots at every wildcard boundary and has no
   // dot option. Prefix each segment on both sides without removing filename
@@ -44,12 +48,16 @@ export function matricesForEvent(event) {
 
 export function planJobs(event, paths, previousRules = jobPaths) {
   if (!Object.values(Event).includes(event)) throw new Error(`Unsupported CI event: ${event}`);
-  const force = event === Event.Manual || paths.some((path) => matches(path, configuration));
+  // Broad source/configuration-directory rules also match rustfmt overrides.
+  // Only rust-fmt owns these files, even inside a native package or action.
+  const nonFormattingPaths = paths.filter((path) => !isRustfmtConfiguration(path));
+  const force = event === Event.Manual || nonFormattingPaths.some((path) => matches(path, configuration));
   const rulesChanged = paths.includes("scripts/ci/job-paths.json");
   const jobs = {};
   const forced = {};
   for (const [id, rule] of Object.entries(jobPaths)) {
-    const relevant = paths.filter((path) => matches(path, rule.paths));
+    const relevant = (id === "rust-fmt" ? paths : nonFormattingPaths).filter((path) =>
+      (id === "rust-fmt" && isRustfmtConfiguration(path)) || matches(path, rule.paths));
     const ruleChanged = rulesChanged && ruleSignature(rule) !== ruleSignature(previousRules[id]);
     const eligible = (!rule.native || event !== Event.PullRequest) && (id !== "devhud-ios-simulator" || event === Event.Manual);
     jobs[id] = eligible && (force || ruleChanged || relevant.length > 0);

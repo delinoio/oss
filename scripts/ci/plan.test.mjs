@@ -11,6 +11,21 @@ const native = Object.entries(jobPaths).filter(([, rule]) => rule.native).map(([
 const devhudNative = ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"];
 const selected = (event, paths) => Object.entries(planJobs(event, paths).jobs).filter(([, run]) => run).map(([id]) => id);
 
+test("rustfmt configuration selects only formatting on PRs and main pushes", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const directory of ["", "crates/binpm/", "crates/binpm/src/", "crates/binpm/src/.hidden/", "apps/devhud/src-tauri/", "apps/delidev/src-tauri/src/", "packages/react-forge/", ".cargo/", ".github/actions/example/"]) {
+      for (const filename of [".rustfmt.toml", "rustfmt.toml"]) {
+        const path = directory + filename;
+        assert.deepEqual(selected(event, [path]), ["rust-fmt"], `${event}: ${path}`);
+      }
+    }
+    assert.deepEqual(selected(event, [".rustfmt.toml", "docs/project-with-watch.md"]), ["rust-fmt"]);
+    const source = "crates/binpm/src/main.rs";
+    assert.deepEqual(selected(event, [source, "crates/binpm/.rustfmt.toml"]), selected(event, [source]));
+    assert.deepEqual(selected(event, ["docs/project-with-watch.md"]), []);
+  }
+});
+
 test("shared path matching includes every hidden segment and preserves glob boundaries", () => {
   for (const [pattern, path, expected] of [
     ["apps/devhud/**", "apps/devhud/.env.example", true],
