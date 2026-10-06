@@ -419,7 +419,9 @@ fn display_key(platform: record::Platform, key: &record::ProjectKey) -> String {
         record::Platform::Linux | record::Platform::Macos => NativePath::UnixBytes(key.0.clone()),
         record::Platform::Windows => NativePath::WindowsUtf16(
             key.0
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
                 .collect(),
         ),
@@ -2101,7 +2103,9 @@ fn external_native_from_key(bytes: Vec<u8>) -> NativePath {
 fn external_native_from_key(bytes: Vec<u8>) -> NativePath {
     NativePath::WindowsUtf16(
         bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
             .collect(),
     )
@@ -5151,7 +5155,8 @@ mod tests {
             time::{Duration, Instant},
         };
         // Linux ptrace waitpid(-1) can consume another test's child status.
-        // Keep the fixture process outside concurrent in-process trace sessions.
+        // Keep the fixture process outside concurrent in-process trace
+        // sessions.
         let _trace_lock = crate::linux::TRACE_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -5530,19 +5535,22 @@ mod tests {
         assert_eq!(fs::read(&input).unwrap(), b"fixture");
         let input_file = fs::File::open(&input).unwrap();
         let mut buffer = [0_u8; 7];
-        // SAFETY: the file descriptor and writable buffer remain valid during the call.
+        // SAFETY: the file descriptor and writable buffer remain valid during
+        // the call.
         assert_eq!(
             unsafe { read_nocancel(input_file.as_raw_fd(), buffer.as_mut_ptr().cast(), 7) },
             7
         );
         assert_eq!(&buffer, b"fixture");
         let output = fs::File::create(input.parent().unwrap().join("nocancel.txt")).unwrap();
-        // SAFETY: the owned descriptor and source bytes remain valid during the call.
+        // SAFETY: the owned descriptor and source bytes remain valid during the
+        // call.
         assert_eq!(
             unsafe { write_nocancel(output.as_raw_fd(), b"x".as_ptr().cast(), 1) },
             1
         );
-        // SAFETY: into_raw_fd transfers ownership and close$NOCANCEL consumes it once.
+        // SAFETY: into_raw_fd transfers ownership and close$NOCANCEL consumes
+        // it once.
         assert_eq!(unsafe { close_nocancel(output.into_raw_fd()) }, 0);
     }
 
@@ -5626,7 +5634,8 @@ int main(int argc, char **argv) {
                             .unwrap_or_default()
                             .parse::<i32>()
                         {
-                            // SAFETY: the fixture records only its own worker PIDs.
+                            // SAFETY: the fixture records only its own worker
+                            // PIDs.
                             unsafe {
                                 libc::kill(pid, libc::SIGKILL);
                             }
@@ -5813,7 +5822,8 @@ int main(int argc, char **argv) {
                     if entry.file_name().to_string_lossy().starts_with("pid-") {
                         observed_children += 1;
                         let pid: i32 = fs::read_to_string(entry.path()).unwrap().parse().unwrap();
-                        // SAFETY: zero only probes the recorded synthetic child.
+                        // SAFETY: zero only probes the recorded synthetic
+                        // child.
                         assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "{case}: child survived");
                         assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
                         fs::remove_file(entry.path()).unwrap();

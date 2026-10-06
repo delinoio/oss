@@ -68,6 +68,10 @@ pub fn artifact() -> Result<PathBuf> {
         .ok()
         .and_then(|p| p.parent().map(Path::to_owned))
         .ok_or_else(injection_error)?;
+    artifact_in_directory(&directory)
+}
+
+fn artifact_in_directory(directory: &Path) -> Result<PathBuf> {
     let packaged = directory.join(if cfg!(target_os = "macos") {
         "libpnport_preload.dylib"
     } else {
@@ -787,6 +791,58 @@ mod tests {
 
     use super::*;
 
+    fn test_profile_directory(executable: &Path) -> Option<&Path> {
+        let directory = executable.parent()?;
+        if directory.file_name()? == "deps" {
+            return directory.parent();
+        }
+        // Cargo nightly-2026-09-28 places unit executables in
+        // <profile>/build/pnport/<unit-hash>/out instead of <profile>/deps.
+        // Only test fixtures resolve this build layout. Installed binaries
+        // still require their validated companion beside the executable.
+        if directory.file_name()? != "out" {
+            return None;
+        }
+        let package = directory.parent()?.parent()?;
+        let build = package.parent()?;
+        if package.file_name()? != "pnport" || build.file_name()? != "build" {
+            return None;
+        }
+        build.parent()
+    }
+
+    fn test_artifact() -> Result<PathBuf> {
+        platform()?;
+        let executable = std::env::current_exe().map_err(|_| injection_error())?;
+        let directory = test_profile_directory(&executable).ok_or_else(injection_error)?;
+        artifact_in_directory(directory)
+    }
+
+    #[test]
+    fn unit_fixture_resolves_only_known_cargo_build_layouts() {
+        assert_eq!(
+            test_profile_directory(Path::new("/target/debug/deps/pnport-unit")),
+            Some(Path::new("/target/debug"))
+        );
+        assert_eq!(
+            test_profile_directory(Path::new(
+                "/custom/target/aarch64-apple-darwin/release/build/pnport/unit-hash/out/\
+                 pnport-unit"
+            )),
+            Some(Path::new("/custom/target/aarch64-apple-darwin/release"))
+        );
+        assert_eq!(
+            test_profile_directory(Path::new("/installed/bin/pnport")),
+            None
+        );
+        assert_eq!(
+            test_profile_directory(Path::new(
+                "/target/debug/build/other/unit-hash/out/pnport-unit"
+            )),
+            None
+        );
+    }
+
     #[derive(Clone, Copy)]
     enum Scenario {
         CacheContention,
@@ -936,7 +992,7 @@ mod tests {
             drop(lock);
             Ok(())
         });
-        let result = run(&mut view, &artifact().unwrap(), &executable, &[]);
+        let result = run(&mut view, &test_artifact().unwrap(), &executable, &[]);
         record_outcome(Scenario::CacheContention, &result);
         supervisor_finished.store(true, Ordering::SeqCst);
         release.join().unwrap().unwrap();
@@ -1012,7 +1068,7 @@ __attribute__((constructor)) static void start(void) {
         let (_root, mut view, executable) = fixture();
         fs::create_dir(view.session.join("pending")).unwrap();
         fs::write(view.session.join("pending/pnport-unacknowledged"), b"").unwrap();
-        let result = run(&mut view, &artifact().unwrap(), &executable, &[]);
+        let result = run(&mut view, &test_artifact().unwrap(), &executable, &[]);
         record_outcome(Scenario::UnacknowledgedDescendant, &result);
         assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
     }
@@ -1042,7 +1098,7 @@ __attribute__((constructor)) static void start(void) {
         let finished = root.path().join("root-finished");
         let result = run(
             &mut view,
-            &artifact().unwrap(),
+            &test_artifact().unwrap(),
             &executable,
             &[finished.clone().into_os_string()],
         );
@@ -1186,7 +1242,7 @@ int main(int argc, char **argv) {
         });
         let result = run(
             &mut view,
-            &artifact().unwrap(),
+            &test_artifact().unwrap(),
             &executable,
             &[
                 root_started.into_os_string(),

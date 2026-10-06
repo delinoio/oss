@@ -40,7 +40,8 @@ fn handle_exec(
     if operation::safe_path(prog).is_none() {
         // The legacy exec resolver reads prog directly. Let the native call
         // diagnose an invalid or unterminated pathname without that read.
-        // SAFETY: enter_path copies the caller pointer without dereferencing it.
+        // SAFETY: enter_path copies the caller pointer without dereferencing
+        // it.
         let operation = unsafe { operation::enter_path(Kind::ExecReplace, prog) };
         // SAFETY: the original native call validates its unchanged arguments.
         let result = unsafe { execve::original()(prog, argv, envp) };
@@ -49,8 +50,8 @@ fn handle_exec(
     }
     let client =
         global_client().expect("exec unexpectedly called before client initialized in ctor");
-    // SAFETY: prog, argv, and envp are valid pointers to C strings/arrays forwarded
-    // from the interposed exec function
+    // SAFETY: prog, argv, and envp are valid pointers to C strings/arrays
+    // forwarded from the interposed exec function
     let result = unsafe {
         client.handle_exec(
             config,
@@ -159,7 +160,7 @@ unsafe extern "C" fn execle(path: *const c_char, arg0: *const c_char, valist: ..
     // interposed execle function
     unsafe {
         with_argv(valist, arg0, |args, mut remaining| {
-            let envp = remaining.arg::<*const *const c_char>();
+            let envp = remaining.next_arg::<*const *const c_char>();
             handle_exec(
                 fspy_nostd_alloc::pooled_bump(),
                 ExecResolveConfig::search_path_disabled(),
@@ -178,8 +179,8 @@ unsafe extern "C" fn execv(path: *const c_char, argv: *const *const c_char) -> c
         reason = "suppresses unused warning on *::original"
     )]
     let _unused = execv::original;
-    // SAFETY: path, argv are valid pointers forwarded from the interposed function;
-    // environ() returns the process environment
+    // SAFETY: path, argv are valid pointers forwarded from the interposed
+    // function; environ() returns the process environment
     unsafe {
         handle_exec(
             fspy_nostd_alloc::pooled_bump(),
@@ -284,12 +285,13 @@ mod linux_only {
         }
         let arena = fspy_nostd_alloc::pooled_bump();
 
-        // SAFETY: dirfd and pathname are valid arguments from the interposed execveat
-        // call.
+        // SAFETY: dirfd and pathname are valid arguments from the interposed
+        // execveat call.
         let path = unsafe { PathAt::borrow_raw(dirfd, pathname) };
         let abs_path = match path.to_absolute_path(&arena) {
             Ok(None) => {
-                // SAFETY: forwarding the original arguments to the real execveat syscall
+                // SAFETY: forwarding the original arguments to the real
+                // execveat syscall
                 return unsafe { execveat::original()(dirfd, pathname, argv, envp, flags) };
             }
             Ok(Some(path)) => path,

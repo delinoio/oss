@@ -75,7 +75,9 @@ pub fn expected(value: &[u8], format: VerifyFormat, algorithm: Algorithm) -> Res
                 return Err(invalid());
             }
             value
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| {
                     let upper = (pair[0] as char).to_digit(16).ok_or_else(invalid)?;
                     let lower = (pair[1] as char).to_digit(16).ok_or_else(invalid)?;
@@ -468,8 +470,9 @@ pub fn verify(
         "verification completed"
     );
     if failed {
-        // Results can be redirected or suppressed. Keep a static failure summary
-        // on stderr without disclosing filenames or expected/actual digests.
+        // Results can be redirected or suppressed. Keep a static failure
+        // summary on stderr without disclosing filenames or
+        // expected/actual digests.
         crate::transform_error::report(Error::runtime(Code::VerificationFailed), "hash-verify");
     }
     Ok(u8::from(failed))

@@ -13,10 +13,11 @@ use delidev_desktop::{
     presentation::{TrayDestination, TraySummary, menu_alias},
 };
 use tauri::{
-    AppHandle, Cef, Emitter, Manager, WebviewWindow,
+    AppHandle, Emitter, Manager, WebviewWindow,
     menu::{Menu, MenuItem, Submenu},
     tray::TrayIconBuilder,
 };
+use tauri_runtime_cef::CefRuntime;
 
 use super::{SavedWindows, saved_binding, show, trusted_main, trusted_url};
 
@@ -84,7 +85,10 @@ pub struct TrayHost {
     stop: Arc<AtomicBool>,
     task: Mutex<Option<JoinHandle<()>>>,
 }
-fn authorized(window: &WebviewWindow<Cef>, windows: &SavedWindows) -> Result<(), NativeFailure> {
+fn authorized(
+    window: &WebviewWindow<CefRuntime>,
+    windows: &SavedWindows,
+) -> Result<(), NativeFailure> {
     if window.label() == "main" {
         trusted_main(window)
     } else {
@@ -93,8 +97,8 @@ fn authorized(window: &WebviewWindow<Cef>, windows: &SavedWindows) -> Result<(),
 }
 #[tauri::command]
 pub async fn begin_tray(
-    window: WebviewWindow<Cef>,
-    app: AppHandle<Cef>,
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
 ) -> Result<String, NativeFailure> {
@@ -119,8 +123,8 @@ pub async fn begin_tray(
 }
 #[tauri::command]
 pub async fn publish_tray(
-    window: WebviewWindow<Cef>,
-    app: AppHandle<Cef>,
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
     scope: String,
@@ -173,7 +177,7 @@ pub async fn publish_tray(
     Ok(())
 }
 
-pub fn remove_widget(app: &AppHandle<Cef>, id: &str) {
+pub fn remove_widget(app: &AppHandle<CefRuntime>, id: &str) {
     let host = app.state::<Arc<TrayHost>>();
     if let Ok(_guard) = host.state.lock() {
         let _ = super::widget_host::remove(id);
@@ -181,7 +185,7 @@ pub fn remove_widget(app: &AppHandle<Cef>, id: &str) {
 }
 #[tauri::command]
 pub async fn read_tray_action(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
 ) -> Result<Option<TrayAction>, NativeFailure> {
@@ -203,7 +207,7 @@ pub async fn read_tray_action(
 }
 #[tauri::command]
 pub async fn acknowledge_tray_action(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
     id: String,
@@ -214,7 +218,7 @@ pub async fn acknowledge_tray_action(
     Ok(())
 }
 
-pub fn schedule(app: &AppHandle<Cef>) {
+pub fn schedule(app: &AppHandle<CefRuntime>) {
     let target = app.clone();
     if app
         .run_on_main_thread(move || {
@@ -233,7 +237,7 @@ pub fn schedule(app: &AppHandle<Cef>) {
         );
     }
 }
-pub fn remove(app: &AppHandle<Cef>, label: &str) {
+pub fn remove(app: &AppHandle<CefRuntime>, label: &str) {
     let host = app.state::<Arc<TrayHost>>();
     if let Ok(mut state) = host.state.lock() {
         state.windows.remove(label);
@@ -242,8 +246,8 @@ pub fn remove(app: &AppHandle<Cef>, label: &str) {
     schedule(app);
 }
 fn append(
-    app: &AppHandle<Cef>,
-    menu: &Submenu<Cef>,
+    app: &AppHandle<CefRuntime>,
+    menu: &Submenu<CefRuntime>,
     text: &str,
     activation: Option<Activation>,
     state: &mut State,
@@ -255,7 +259,7 @@ fn append(
     }
     menu.append(&item)
 }
-fn render(app: &AppHandle<Cef>) -> tauri::Result<()> {
+fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return Ok(());
     };
@@ -488,7 +492,7 @@ fn render(app: &AppHandle<Cef>) -> tauri::Result<()> {
     )?)?;
     tray.set_menu(Some(menu))
 }
-fn activate(app: &AppHandle<Cef>, id: &str) {
+fn activate(app: &AppHandle<CefRuntime>, id: &str) {
     if id == "tray-quit" {
         app.exit(0);
         return;
@@ -509,7 +513,7 @@ fn activate(app: &AppHandle<Cef>, id: &str) {
     navigate(app, action, None, None);
 }
 pub fn activate_inbox(
-    app: &AppHandle<Cef>,
+    app: &AppHandle<CefRuntime>,
     label: String,
     instance: Option<String>,
     scope: String,
@@ -530,7 +534,7 @@ pub fn activate_inbox(
     );
 }
 fn navigate(
-    app: &AppHandle<Cef>,
+    app: &AppHandle<CefRuntime>,
     action: Activation,
     inbox_id: Option<String>,
     notification_scope: Option<String>,
@@ -543,7 +547,7 @@ fn navigate(
     });
 }
 fn navigate_off_loop(
-    app: &AppHandle<Cef>,
+    app: &AppHandle<CefRuntime>,
     action: Activation,
     inbox_id: Option<String>,
     notification_scope: Option<String>,
@@ -594,7 +598,7 @@ fn navigate_off_loop(
     }
 }
 impl TrayHost {
-    pub fn install(self: &Arc<Self>, app: &AppHandle<Cef>) -> tauri::Result<()> {
+    pub fn install(self: &Arc<Self>, app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
         let menu = Menu::new(app)?;
         menu.append(&MenuItem::with_id(
             app,

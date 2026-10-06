@@ -179,9 +179,9 @@ pub fn stored_selector_metadata(input: &str) -> Result<RuntimeSelectorMetadata> 
     match RuntimeSelector::parse(input) {
         Ok(selector) => Ok(selector.metadata()),
         Err(error) => {
-            // Existing settings and override files may contain linked runtime names that
-            // are now rejected because they differ from reserved channel
-            // selectors only by case.
+            // Existing settings and override files may contain linked runtime
+            // names that are now rejected because they differ from
+            // reserved channel selectors only by case.
             if is_case_variant_of_reserved_channel_selector(input.trim()) {
                 return Ok(RuntimeSelectorMetadata {
                     kind: RuntimeSelectorKind::LinkedRuntime,

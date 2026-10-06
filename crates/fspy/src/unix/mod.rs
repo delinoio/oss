@@ -107,8 +107,8 @@ impl SpyImpl {
 
         let mut tokio_command = command.into_tokio_command();
 
-        // SAFETY: the pre_exec closure only calls pre_exec.run() which is safe to call
-        // in a fork context
+        // SAFETY: the pre_exec closure only calls pre_exec.run() which is safe
+        // to call in a fork context
         unsafe {
             tokio_command.pre_exec(move || {
                 if let Some(pre_exec) = pre_exec.as_ref() {
@@ -119,9 +119,9 @@ impl SpyImpl {
         }
 
         // tokio_command.spawn blocks while executing the `pre_exec` closure.
-        // Run it inside spawn_blocking to avoid blocking the tokio runtime, especially
-        // the supervisor loop, which needs to accept incoming connections while
-        // `pre_exec` is connecting to it.
+        // Run it inside spawn_blocking to avoid blocking the tokio runtime,
+        // especially the supervisor loop, which needs to accept
+        // incoming connections while `pre_exec` is connecting to it.
         let mut child = spawn_blocking(move || tokio_command.spawn())
             .await
             .map_err(|err| SpawnError::OsSpawn(err.into()))?
@@ -159,8 +159,8 @@ impl SpyImpl {
                 let arenas = arenas.collect::<Vec<_>>();
 
                 // Close the ipc channel after the child has exited.
-                // We are not interested in path accesses from descendants after the main child
-                // has exited.
+                // We are not interested in path accesses from descendants after
+                // the main child has exited.
                 #[cfg(not(target_env = "musl"))]
                 #[cfg(not(target_env = "musl"))]
                 let path_accesses = ChannelAccesses::try_from(ipc_receiver).map(|ipc_accesses| {

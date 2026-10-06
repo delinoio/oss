@@ -273,7 +273,8 @@ struct LastErrorGuard(u32);
 
 impl LastErrorGuard {
     fn new() -> Self {
-        // SAFETY: GetLastError reads the calling thread's native last-error value.
+        // SAFETY: GetLastError reads the calling thread's native last-error
+        // value.
         Self(unsafe { GetLastError() })
     }
 }
@@ -283,7 +284,8 @@ impl Drop for LastErrorGuard {
         // The transport and diagnostics below may call Win32 APIs that change
         // last-error. Restore the value observed after the real native call so
         // wrappers such as FindNextFileW retain their caller-visible result.
-        // SAFETY: SetLastError writes the calling thread's native last-error value.
+        // SAFETY: SetLastError writes the calling thread's native last-error
+        // value.
         unsafe { SetLastError(self.0) };
     }
 }

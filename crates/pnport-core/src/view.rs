@@ -260,9 +260,9 @@ impl View {
             // Only the locator root owns a virtual dependency namespace.
             // Native resolvers ascend from source subdirectories to that root;
             // inventing node_modules in every descendant makes recursive tool
-            // discovery enter synthetic trees and makes output cleanup read-only.
-            // Continue walking into later locator roots, retaining peer context
-            // and normal conflict checks.
+            // discovery enter synthetic trees and makes output cleanup
+            // read-only. Continue walking into later locator roots,
+            // retaining peer context and normal conflict checks.
             if part.as_os_str() != "node_modules"
                 || self.graph.is_location_ancestor(&prefix.join(part))
                 || self

@@ -104,7 +104,8 @@ impl Backend for Native {
                 "Windows could not replace clipboard text; check desktop-session access.",
             ));
         }
-        memory.0 = ptr::null_mut(); // The OS owns the eager allocation after a successful set.
+        memory.0 = ptr::null_mut(); // The OS owns the eager allocation after a
+                                    // successful set.
         Ok(())
     }
 

@@ -195,8 +195,9 @@ pub(crate) fn chart_parts(n: &Node) -> Result<(Vec<u8>, Vec<u8>)> {
     )
     .map_err(failure)?;
     // pptx 0.1.0's category writer repeats B-column formulas for every series.
-    // Repair the references to match generate_category_xlsx until upstream fixes
-    // that writer; caches alone cannot prove an editable chart is correct.
+    // Repair the references to match generate_category_xlsx until upstream
+    // fixes that writer; caches alone cannot prove an editable chart is
+    // correct.
     let native = xml(chart.as_bytes())?;
     let mut edits = Vec::new();
     for (index, series) in native
@@ -531,8 +532,9 @@ pub(crate) fn emit_node(
                     Anchor::Bottom => 2,
                     Anchor::Right => 3,
                 };
-                // DrawingML ellipse exposes eight connection sites; the cardinal
-                // sites are the even indices, unlike rectangle's four sites.
+                // DrawingML ellipse exposes eight connection sites; the
+                // cardinal sites are the even indices, unlike
+                // rectangle's four sites.
                 if doc
                     .find(&e.target)
                     .is_some_and(|n| n.kind == NodeKind::Shape && n.shape == Shape::Ellipse)

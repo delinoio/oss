@@ -1,13 +1,28 @@
 {
   "bundle": {
-    "externalBin": ["binaries/devhud-native-messaging-host"],
+    "externalBin": [
+      "binaries/devhud-native-messaging-host"
+    ],
     "windows": {
       "wix": {
-        "fragmentPaths": ["./windows/native-messaging-lifecycle.wxs"],
-        "componentRefs": ["DevHudNativeMessagingLifecycle"]
+        "fragmentPaths": [
+          "./windows/native-messaging-lifecycle.wxs"
+        ],
+        "componentRefs": [
+          "DevHudNativeMessagingLifecycle"
+        ]
       },
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "xdg-desktop-portal",
+          "xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde",
+          "zenity"
+        ]
       }
     }
   }

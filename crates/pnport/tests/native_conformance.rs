@@ -254,8 +254,9 @@ fn dependency_descriptor_mutations_remain_readonly_with_a_symlinked_cache_ancest
         let alias = fixture.root.path().join("cache-storage-alias");
         fs::create_dir(&real).unwrap();
         std::os::unix::fs::symlink(&real, &alias).unwrap();
-        // Reproduce Darwin's /var versus /private/var spelling without depending
-        // on TMPDIR. The cache leaf is private storage, not a symlink itself.
+        // Reproduce Darwin's /var versus /private/var spelling without
+        // depending on TMPDIR. The cache leaf is private storage, not a
+        // symlink itself.
         fixture.run_with_cache(
             fixture.binary.as_os_str(),
             "mutations",

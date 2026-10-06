@@ -1636,8 +1636,9 @@ fn main() {
             status.path_accesses.is_err(),
             "late close loss must invalidate the execution"
         );
-        // An intact operation receiver alone cannot authorize a complete record:
-        // the preload's shared completeness flag must reject the missing close.
+        // An intact operation receiver alone cannot authorize a complete
+        // record: the preload's shared completeness flag must reject
+        // the missing close.
         let collected = receiver.finish().unwrap();
         assert!(!collected
             .pairs

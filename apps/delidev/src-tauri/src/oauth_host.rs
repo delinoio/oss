@@ -5,7 +5,8 @@ use delidev_desktop::{
     Connector, NativeFailure,
     oauth::{OAuthAction, OAuthHost, OAuthResult, OAuthScope},
 };
-use tauri::{Cef, WebviewWindow};
+use tauri::WebviewWindow;
+use tauri_runtime_cef::CefRuntime;
 
 use super::{SavedWindows, saved_binding, trusted_main};
 
@@ -16,7 +17,7 @@ use super::{SavedWindows, saved_binding, trusted_main};
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn account_oauth_native(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     host: tauri::State<'_, Arc<OAuthHost>>,

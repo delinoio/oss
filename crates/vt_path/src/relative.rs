@@ -100,8 +100,9 @@ impl RelativePath {
         let stripped_path = Path::new(self.as_str())
             .strip_prefix(base.as_ref().as_path())
             .ok()?;
-        // SAFETY: The stripped result of a portable RelativePath is still portable:
-        // it remains valid UTF-8 and contains no backslash separators.
+        // SAFETY: The stripped result of a portable RelativePath is still
+        // portable: it remains valid UTF-8 and contains no backslash
+        // separators.
         Some(unsafe { Self::assume_portable(stripped_path.to_str().unwrap()) })
     }
 }
@@ -236,8 +237,9 @@ impl RelativePathBuf {
 
     #[must_use]
     pub fn as_relative_path(&self) -> &RelativePath {
-        // SAFETY: RelativePathBuf's constructors (new, SchemaRead) validate portability
-        // invariants, so the inner string is guaranteed to be a valid portable path.
+        // SAFETY: RelativePathBuf's constructors (new, SchemaRead) validate
+        // portability invariants, so the inner string is guaranteed to
+        // be a valid portable path.
         unsafe { RelativePath::assume_portable(&self.0) }
     }
 }

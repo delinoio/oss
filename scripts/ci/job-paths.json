@@ -140,7 +140,11 @@
       "pnpm-workspace.yaml",
       "rust-toolchain",
       "rust-toolchain.toml",
-      "turbo.json"
+      "turbo.json",
+      "prebuilt-dependencies.lock.json",
+      "scripts/prebuilt-dependencies*.mjs",
+      "scripts/archive*.mjs",
+      "scripts/tauri-cli.mjs"
     ]
   },
   "rust-test": {
@@ -164,7 +168,11 @@
       "pnpm-workspace.yaml",
       "rust-toolchain",
       "rust-toolchain.toml",
-      "turbo.json"
+      "turbo.json",
+      "prebuilt-dependencies.lock.json",
+      "scripts/prebuilt-dependencies*.mjs",
+      "scripts/archive*.mjs",
+      "scripts/tauri-cli.mjs"
     ]
   },
   "node-public-docs-test": {
@@ -262,7 +270,12 @@
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
       "servers/devhud-api/internal/rpc/diagnostics.go",
-      "turbo.json"
+      "turbo.json",
+      "prebuilt-dependencies.lock.json",
+      "scripts/prebuilt-dependencies*.mjs",
+      "scripts/archive*.mjs",
+      "scripts/tauri-cli.mjs",
+      "scripts/appimage-tools.mjs"
     ],
     "workspace": "devhud",
     "workspacePaths": [
@@ -348,7 +361,12 @@
       "scripts/release/linux/**",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
-      "turbo.json"
+      "turbo.json",
+      "prebuilt-dependencies.lock.json",
+      "scripts/prebuilt-dependencies*.mjs",
+      "scripts/archive*.mjs",
+      "scripts/tauri-cli.mjs",
+      "scripts/appimage-tools.mjs"
     ],
     "native": true
   },
@@ -368,7 +386,11 @@
       "rust-toolchain",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
-      "turbo.json"
+      "turbo.json",
+      "prebuilt-dependencies.lock.json",
+      "scripts/prebuilt-dependencies*.mjs",
+      "scripts/archive*.mjs",
+      "scripts/tauri-cli.mjs"
     ]
   },
   "devhud-ios-simulator": {
@@ -390,7 +412,11 @@
       "scripts/install-git-hooks.sh",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
-      "turbo.json"
+      "turbo.json",
+      "prebuilt-dependencies.lock.json",
+      "scripts/prebuilt-dependencies*.mjs",
+      "scripts/archive*.mjs",
+      "scripts/tauri-cli.mjs"
     ],
     "native": true
   },
@@ -413,7 +439,11 @@
       "scripts/install-git-hooks.sh",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
-      "turbo.json"
+      "turbo.json",
+      "prebuilt-dependencies.lock.json",
+      "scripts/prebuilt-dependencies*.mjs",
+      "scripts/archive*.mjs",
+      "scripts/tauri-cli.mjs"
     ],
     "native": true
   },

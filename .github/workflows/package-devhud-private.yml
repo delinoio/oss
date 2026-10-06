@@ -152,10 +152,10 @@ jobs:
           - { id: windows-x64-nsis, runner: windows-2022, bundle: nsis, artifact: devhud-windows-x64-windows-nsis.exe }
           - { id: windows-arm64-msi, runner: windows-11-arm, bundle: msi, artifact: devhud-windows-arm64-windows-msi.msi }
           - { id: windows-arm64-nsis, runner: windows-11-arm, bundle: nsis, artifact: devhud-windows-arm64-windows-nsis.exe }
-          - { id: ubuntu-x64-appimage, runner: ubuntu-22.04, bundle: appimage, artifact: devhud-ubuntu-x64-linux-appimage.AppImage }
-          - { id: ubuntu-x64-deb, runner: ubuntu-22.04, bundle: deb, artifact: devhud-ubuntu-x64-linux-deb.deb }
-          - { id: ubuntu-arm64-appimage, runner: ubuntu-22.04-arm, bundle: appimage, artifact: devhud-ubuntu-arm64-linux-appimage.AppImage }
-          - { id: ubuntu-arm64-deb, runner: ubuntu-22.04-arm, bundle: deb, artifact: devhud-ubuntu-arm64-linux-deb.deb }
+          - { id: ubuntu-x64-appimage, runner: ubuntu-24.04, bundle: appimage, artifact: devhud-ubuntu-x64-linux-appimage.AppImage }
+          - { id: ubuntu-x64-deb, runner: ubuntu-24.04, bundle: deb, artifact: devhud-ubuntu-x64-linux-deb.deb }
+          - { id: ubuntu-arm64-appimage, runner: ubuntu-24.04-arm, bundle: appimage, artifact: devhud-ubuntu-arm64-linux-appimage.AppImage }
+          - { id: ubuntu-arm64-deb, runner: ubuntu-24.04-arm, bundle: deb, artifact: devhud-ubuntu-arm64-linux-deb.deb }
     runs-on: ${{ matrix.runner }}
     env:
       CI: "true"
@@ -183,12 +183,16 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Install Ubuntu packaging prerequisites
         if: ${{ startsWith(matrix.id, 'ubuntu-') }}
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-x11 gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf squashfs-tools xauth xdg-utils xvfb
+        run: sudo apt-get update && sudo apt-get install -y python3-dbus python3-gi --no-install-recommends dbus-x11 gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf squashfs-tools xauth xdg-utils xvfb
       - name: Install locked dependencies and validate pins
         run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: ./.github/actions/setup-clibox
         with:
           install: 'false'
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
       - name: Materialize macOS signing and notarization credentials
         if: ${{ startsWith(matrix.id, 'macos-') }}
         shell: bash
@@ -331,7 +335,7 @@ jobs:
             test "$sandbox" = "-rwsr-xr-x 0/0"
             package=$(dpkg-deb -f "$source" Package)
             sudo dpkg -i "$source"
-            dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact /usr/bin/devhud
+            dbus-run-session -- xvfb-run -a /usr/bin/python3 apps/devhud/scripts/with-linux-smoke-tray.py pnpm --filter devhud smoke:platform -- --artifact /usr/bin/devhud
             host=$(find /usr -type f -name devhud-native-messaging-host -print -quit)
             test -n "$host"
             user_manifest="$RUNNER_TEMP/native-home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
@@ -356,7 +360,7 @@ jobs:
             host=$(realpath "$appdir/bin/devhud-native-messaging-host")
             install -Dm755 "$source" "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
             appimage=$(realpath "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage")
-            APPIMAGE="$appimage" APPDIR="$appdir" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$executable"
+            APPIMAGE="$appimage" APPDIR="$appdir" dbus-run-session -- xvfb-run -a /usr/bin/python3 apps/devhud/scripts/with-linux-smoke-tray.py pnpm --filter devhud smoke:platform -- --artifact "$executable"
             "${{ steps.syft.outputs.cmd }}" scan "dir:$appdir" --output "spdx-json=private-artifacts/sbom/${{ matrix.artifact }}.spdx.json"
             user_manifest="$RUNNER_TEMP/native-home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
             run_native_messaging_lifecycle "$host" "$user_manifest"
@@ -390,6 +394,10 @@ jobs:
       - name: Install macOS Rust targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
       - run: pnpm --filter devhud mobile:generate -- --platform ios
       - name: Initialize Intel iOS simulators
         if: ${{ matrix.target == 'x86_64' }}
@@ -484,7 +492,11 @@ jobs:
         if: ${{ matrix.platform == 'android' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxtst-dev ninja-build
+      - name: Prepare immutable host Tauri CLI
+        id: prebuilt
+        uses: ./.github/actions/setup-prebuilt
+
       - run: pnpm --filter devhud mobile:generate -- --platform ${{ matrix.platform }}
       - name: Build and verify signed Android App Bundle
         if: ${{ matrix.platform == 'android' }}

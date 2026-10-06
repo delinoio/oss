@@ -58,7 +58,7 @@ fn endpoint(raw: &str, ipv6: bool) -> Option<(String, u16)> {
             return None;
         }
         let mut bytes = [0; 16];
-        for (i, chunk) in address.as_bytes().chunks_exact(8).enumerate() {
+        for (i, chunk) in address.as_bytes().as_chunks::<8>().0.iter().enumerate() {
             let n = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
             bytes[i * 4..i * 4 + 4].copy_from_slice(&n.to_ne_bytes());
         }
@@ -256,8 +256,8 @@ impl Backend for Native {
                 "Process identity changed; no signal was sent.",
             ));
         }
-        // A pidfd keeps signaling tied to this process even if its numeric PID is
-        // reused.
+        // A pidfd keeps signaling tied to this process even if its numeric PID
+        // is reused.
         let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 };
         let handle = if fd >= 0 {
             Some(unsafe { OwnedFd::from_raw_fd(fd) })
@@ -269,8 +269,9 @@ impl Backend for Native {
             if !matches!(e.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL)) {
                 return Err(Failure::io(&e));
             }
-            // Older kernels have no pidfd. Retain the same immediate birth/socket
-            // revalidation contract before kill(2); never chase replacement owners.
+            // Older kernels have no pidfd. Retain the same immediate
+            // birth/socket revalidation contract before kill(2);
+            // never chase replacement owners.
             None
         };
         let mut check = Report::default();

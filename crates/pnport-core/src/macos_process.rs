@@ -256,7 +256,8 @@ pub fn inventory() -> io::Result<Vec<Identity>> {
             continue;
         }
         // Unrelated processes can legitimately reject inspection. Inventory is
-        // discovery only; previously admitted births use strict refresh instead.
+        // discovery only; previously admitted births use strict refresh
+        // instead.
         return Ok(pids[..count as usize]
             .iter()
             .filter_map(|pid| Identity::capture(*pid).ok())

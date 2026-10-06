@@ -22,8 +22,8 @@ unsafe extern "C" fn scandir(
     // SAFETY: dirname is the caller's path passed unchanged to libc.
     let operation = unsafe { operation::enter_path(Kind::Directory, dirname) };
     super::observe_path(dirname, AccessMode::READ_DIR);
-    // SAFETY: calling the original libc scandir() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc scandir() with the same arguments
+    // forwarded from the interposed function
     let result = unsafe { scandir::original()(dirname, namelist, select, compar) };
     #[cfg(target_os = "macos")]
     operation::finish(operation, i64::from(result));
@@ -68,8 +68,8 @@ mod macos_only {
         // SAFETY: fd is a valid file descriptor provided by the caller of
         // __getdirentries64
         unsafe { handle_open(BorrowedFd::borrow_raw(fd), AccessMode::READ_DIR) };
-        // SAFETY: calling the original libc __getdirentries64() with the same arguments
-        // forwarded from the interposed function
+        // SAFETY: calling the original libc __getdirentries64() with the same
+        // arguments forwarded from the interposed function
         let result = unsafe { __getdirentries64::original()(fd, buf, buf_len, basep) };
         operation::finish(operation, result as i64);
         result
@@ -117,8 +117,8 @@ unsafe extern "C" fn opendir(dir_name: *const c_char) -> *mut DIR {
     // SAFETY: dir_name is the caller's path passed unchanged to libc.
     let operation = unsafe { operation::enter_path(Kind::Directory, dir_name) };
     super::observe_path(dir_name, AccessMode::READ_DIR);
-    // SAFETY: calling the original libc opendir() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc opendir() with the same arguments
+    // forwarded from the interposed function
     let result = unsafe { opendir::original()(dir_name) };
     #[cfg(target_os = "macos")]
     operation::finish(operation, if result.is_null() { -1 } else { 0 });

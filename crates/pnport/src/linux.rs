@@ -992,8 +992,8 @@ fn read_pointer_vector(pid: i32, address: u64) -> Result<ChildRead<Vec<u64>>> {
         if bytes.len() < mem::size_of::<u64>() || bytes.len() % mem::size_of::<u64>() != 0 {
             return Ok(ChildRead::Fault);
         }
-        for chunk in bytes.chunks_exact(mem::size_of::<u64>()) {
-            let pointer = u64::from_ne_bytes(chunk.try_into().map_err(|_| injection_failed())?);
+        for chunk in bytes.as_chunks::<{ mem::size_of::<u64>() }>().0 {
+            let pointer = u64::from_ne_bytes(*chunk);
             if pointer == 0 {
                 return Ok(ChildRead::Value(values));
             }
@@ -1554,7 +1554,8 @@ impl Trace<'_> {
         };
         if returned > 0 {
             // Kernel records have a u16 length. Read one at a time so a large
-            // caller buffer cannot cause an equally large supervisor allocation.
+            // caller buffer cannot cause an equally large supervisor
+            // allocation.
             let mut offset = 0usize;
             while offset < returned as usize {
                 let header = read_remote(pid, output + offset as u64, 19)?;
@@ -2694,8 +2695,9 @@ impl Trace<'_> {
                     return Ok(true);
                 }
                 if is_open {
-                    // The kernel follows /proc/self/fd to the materialized file.
-                    // Retain the logical ownership on the newly opened descriptor.
+                    // The kernel follows /proc/self/fd to the materialized
+                    // file. Retain the logical ownership on
+                    // the newly opened descriptor.
                     self.pending.insert(pid, Pending::Open(descriptor));
                     return Ok(true);
                 }
@@ -3039,7 +3041,8 @@ impl Trace<'_> {
                         return resume(pid, true, 0);
                     };
                     // Restore the real open description to its observed EOF;
-                    // suppressing lseek would replay cache entries after rewind.
+                    // suppressing lseek would replay cache entries after
+                    // rewind.
                     set_argument(&mut regs, 1, native_end as u64);
                     set_argument(&mut regs, 2, libc::SEEK_SET as u64);
                     set_registers(pid, &regs)?;
@@ -4024,7 +4027,8 @@ impl Trace<'_> {
 pub fn run_traced(view: &mut View, prepared: &Prepared, node_options: &OsStr) -> Result<i32> {
     probe()?;
     // Adopt descendants after their direct parent exits so the supervisor
-    // can reap detached children instead of leaving zombies with container PID 1.
+    // can reap detached children instead of leaving zombies with container PID
+    // 1.
     if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
         return Err(unsupported("Linux child subreaper support is unavailable."));
     }

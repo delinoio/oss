@@ -97,7 +97,8 @@ impl Loader {
 
 fn commonjs_path(value: &[u8], cwd: Option<&Path>) -> Option<PathBuf> {
     // Token decoding removes only ASCII option syntax from the original OsStr.
-    // CommonJS paths are native filenames, not URLs: '#', '?' and '%' stay literal.
+    // CommonJS paths are native filenames, not URLs: '#', '?' and '%' stay
+    // literal.
     let path = Path::new(unsafe { OsStr::from_encoded_bytes_unchecked(value) });
     let relative = value.starts_with(b"./")
         || value.starts_with(b"../")

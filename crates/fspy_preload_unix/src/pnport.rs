@@ -456,7 +456,8 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
     // F_TRANSFEREXTENTS takes the destination descriptor as an integer
     // variadic argument, unlike the pointer-valued fcntl commands below.
     // Decode it once so the secondary backing is admitted before native fcntl.
-    let transfer_descriptor = (command == libc::F_TRANSFEREXTENTS).then(|| args.arg::<c_int>());
+    let transfer_descriptor =
+        (command == libc::F_TRANSFEREXTENTS).then(|| args.next_arg::<c_int>());
     if let Some(transfer_fd) = transfer_descriptor.filter(|descriptor| *descriptor < 0) {
         // A negative destination cannot mutate either operand. Native fcntl
         // owns its validation order: EINVAL for a valid primary descriptor,
@@ -504,7 +505,7 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         | libc::F_THAW_FS
         | libc::F_GLOBAL_NOCACHE
         | libc::F_NODIRECT => {
-            let argument = args.arg::<c_int>();
+            let argument = args.next_arg::<c_int>();
             original(fd, command, argument)
         }
         libc::F_TRANSFEREXTENTS => original(fd, command, transfer_descriptor.unwrap_or_default()),
@@ -520,7 +521,7 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         | libc::F_PUNCHHOLE
         | libc::F_TRIM_ACTIVE_FILE
         | libc::F_SPECULATIVE_READ => {
-            let argument = args.arg::<*mut c_void>();
+            let argument = args.next_arg::<*mut c_void>();
             original(fd, command, argument)
         }
         libc::F_GETFD | libc::F_GETFL | libc::F_FULLFSYNC | libc::F_BARRIERFSYNC => {
@@ -528,7 +529,7 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         }
         // Keep the native ABI for future integer-valued Darwin commands until
         // libc exposes a typed constant for them.
-        _ => original(fd, command, args.arg::<c_int>()),
+        _ => original(fd, command, args.next_arg::<c_int>()),
     };
     // Reentry and early dyld calls still need the command's native variadic
     // ABI. Only bypass bookkeeping after forwarding; keep an admitted token
@@ -1101,7 +1102,7 @@ const fn conflicting_open_flags(flags: c_int) -> bool {
 
 unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -1143,7 +1144,7 @@ const _: () = {
 #[unsafe(export_name = "open")]
 unsafe extern "C" fn linux_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -1156,7 +1157,7 @@ unsafe extern "C" fn pnport_openat(
     mut args: ...
 ) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -1203,7 +1204,7 @@ unsafe extern "C" fn linux_openat(
     mut args: ...
 ) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -2000,7 +2001,8 @@ unsafe fn clone_paths(
         clone_native_path(&source_translation) && clone_native_path(&destination_translation);
     if flags & CLONE_RESOLVE_BENEATH != 0 && !native {
         // Absolute backing rewrites cannot retain descriptor-relative beneath
-        // constraints. Fail without creation until bounded managed support exists.
+        // constraints. Fail without creation until bounded managed support
+        // exists.
         return Err(ENOTSUP);
     }
     Ok(ClonePaths {
@@ -2129,11 +2131,8 @@ hook!(setpgid, pnport_setpgid, (pid:pid_t,group:pid_t) -> c_int, {
     let identity = pnport_core::macos_process::Identity::capture(target);
     match &identity {
         Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return original(pid,group),
-        Ok(identity) if target != libc::getpid() => {
-            if pnport_core::macos_process::Identity::capture(libc::getpid()).is_ok_and(|current| current.birth != identity.parent_birth) {
-                return original(pid,group);
-            }
-        }
+        Ok(identity) if target != libc::getpid()
+            && pnport_core::macos_process::Identity::capture(libc::getpid()).is_ok_and(|current| current.birth != identity.parent_birth) => return original(pid,group),
         _ => (),
     }
     if let Err(error) = admit_group_change(libc::getpid(), ProcessGroupOperation::Group) { errno(error); return -1; }
@@ -2360,7 +2359,8 @@ unsafe fn spawn_admitted(
     );
     // Register the parent's current image before the kernel creates a child,
     // including POSIX_SPAWN_SETSID/SETPGROUP and environment replacement. Its
-    // original-parent version proves ownership even before child initialization.
+    // original-parent version proves ownership even before child
+    // initialization.
     if let Err(error) = admit_group_change(getpid(), ProcessGroupOperation::SpawnGroup) {
         return error;
     }

@@ -468,7 +468,7 @@ func TestValidateCrashReportAcceptsTruthfulBrowserBuilds(t *testing.T) {
 		t.Fatalf("browser build with unknown architecture was rejected: %v", err)
 	}
 
-	request.ClientBuild.TauriRevision = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
+	request.ClientBuild.TauriRevision = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975"
 	if err := validateCrashReport(request); err == nil {
 		t.Fatal("browser build with a fabricated Tauri revision was accepted")
 	}
@@ -573,8 +573,8 @@ func validCrashReportRequest() *devhudv1.SubmitCrashReportRequest {
 			AppVersion: "1.0.0", BuildId: "2026.08.17.1",
 			Platform:     devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_MACOS,
 			Architecture: devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_ARM64,
-			OsVersion:    "15.6", TauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
-			CefRevision: "150.0.10+g8042e43+chromium-150.0.7871.101",
+			OsVersion:    "15.6", TauriRevision: "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975",
+			CefRevision: "151.3.24+g2384915+chromium-151.0.7922.174",
 		},
 		OccurredAt:           timestamppb.New(time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)),
 		Component:            devhudv1.DiagnosticComponent_DIAGNOSTIC_COMPONENT_APP,

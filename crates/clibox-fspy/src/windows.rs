@@ -209,7 +209,9 @@ fn native_path(bytes: &[u8]) -> io::Result<NativePath> {
         return Err(invalid("windows_path_length"));
     }
     let units = bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect::<Vec<_>>();
     if units.contains(&0) {

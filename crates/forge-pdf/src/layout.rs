@@ -396,7 +396,8 @@ impl Flow<'_> {
                     if full_height > self.capacity() {
                         return overflow();
                     }
-                    // Initial headers stay together with a body line where possible.
+                    // Initial headers stay together with a body line where
+                    // possible.
                     if row_index == 0 {
                         let body_line = shaped
                             .get(header_count)

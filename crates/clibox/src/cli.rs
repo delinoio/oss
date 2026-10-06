@@ -56,8 +56,9 @@ pub enum Command {
 /// guidance.
 pub fn parser_message(kind: clap::error::ErrorKind, raw: &[std::ffi::OsString]) -> String {
     use clap::error::ErrorKind;
-    // Inspect only the fixed command positions. Never echo option values, unknown
-    // tokens, or delegated argv, even when they happen to name another command.
+    // Inspect only the fixed command positions. Never echo option values,
+    // unknown tokens, or delegated argv, even when they happen to name
+    // another command.
     let group = raw.get(1).and_then(|value| value.to_str());
     let operation = raw.get(2).and_then(|value| value.to_str());
     let migration = match (group, operation) {

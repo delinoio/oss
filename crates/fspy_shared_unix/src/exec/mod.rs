@@ -71,9 +71,9 @@ fn getenv(name: &CStr) -> Option<&'static CStr> {
     if value.is_null() {
         None
     } else {
-        // SAFETY: `value` is non-null (checked above) and points to a null-terminated
-        // string owned by the environment, as guaranteed by the C `getenv`
-        // contract.
+        // SAFETY: `value` is non-null (checked above) and points to a
+        // null-terminated string owned by the environment, as
+        // guaranteed by the C `getenv` contract.
         Some(unsafe { CStr::from_ptr(value) })
     }
 }

@@ -525,8 +525,9 @@ fn enter_fd_with_result(kind: Kind, fd: c_int, start_result: i64) -> Option<Toke
     with_resolution(|| {
         preserve_errno(|| {
             let mut bytes = [0_u8; MAX_PATH];
-            // SAFETY: F_GETPATH writes a NUL-terminated pathname into this buffer
-            // on success and does not call an interposed file operation.
+            // SAFETY: F_GETPATH writes a NUL-terminated pathname into this
+            // buffer on success and does not call an interposed
+            // file operation.
             let status = unsafe { libc::fcntl(fd, libc::F_GETPATH, bytes.as_mut_ptr()) };
             let path = if status == 0 {
                 bytes
@@ -537,9 +538,10 @@ fn enter_fd_with_result(kind: Kind, fd: c_int, start_result: i64) -> Option<Toke
                 None
             };
             // F_GETPATH is unavailable for pipes, sockets, and invalid file
-            // descriptors. They are outside this file-operation boundary; sending
-            // a pathless event for every child stdout write would exhaust the
-            // bounded record without adding file evidence.
+            // descriptors. They are outside this file-operation boundary;
+            // sending a pathless event for every child stdout write
+            // would exhaust the bounded record without adding file
+            // evidence.
             path.and_then(|path| {
                 // Inspect the same live descriptor before its native operation.
                 // A later rename or replacement of F_GETPATH must not replace

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { load as loadYaml } from "js-yaml";
 
-import { assertOverlayCopies, configureIosWidgetProject } from "./generate-mobile.mjs";
+import { assertOverlayCopies, configureIosWidgetProject, restoreMobileCargoDependencies } from "./generate-mobile.mjs";
 
 test("materialized mobile projects require every expected overlay", () => {
   const root = mkdtempSync(join(tmpdir(), "devhud-mobile-overlays-"));
@@ -62,4 +62,21 @@ test("generated iOS widget targets require application-owned versions", () => {
   try {
     assert.throws(() => configureIosWidgetProject(project), /marketing version/u);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test("mobile generation restores only its Tauri alias with a preceding explicit runtime", () => {
+  const header = `[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]`;
+  const runtime = 'tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "pinned" }';
+  const alias = 'tauri = { git = "https://github.com/tauri-apps/tauri", features = ["generated"] }';
+  const desktop = '[dependencies]\ntauri = { features = ["tray-icon", "unstable"] }\n';
+  for (const lines of [[runtime, alias], [alias, runtime]]) {
+    const cargo = `${desktop}\n${header}\n${lines.join("\n")}\n`;
+    const restored = restoreMobileCargoDependencies(cargo);
+    assert.ok(restored.startsWith(desktop));
+    assert.ok(restored.includes(runtime));
+    assert.ok(restored.includes(alias.replace('["generated"]', '[]')));
+    assert.equal(restoreMobileCargoDependencies(restored), restored);
+  }
+  assert.throws(() => restoreMobileCargoDependencies(`${header}\n${alias}\n`), /Wry runtime dependency is missing/u);
 });

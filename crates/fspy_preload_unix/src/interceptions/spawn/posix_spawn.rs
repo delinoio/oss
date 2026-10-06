@@ -44,8 +44,8 @@ unsafe fn handle_posix_spawn(
         reason = "the closure captures raw pointers that are valid for the duration of the \
                   thread::scope call, so sending them to the scoped thread is safe"
     )]
-    // SAFETY: the raw pointers captured inside T are valid for the duration of the
-    // thread::scope call, so sending them to the scoped thread is safe
+    // SAFETY: the raw pointers captured inside T are valid for the duration of
+    // the thread::scope call, so sending them to the scoped thread is safe
     unsafe impl<T> Send for AssertSend<T> {}
 
     let client = global_client()
@@ -54,8 +54,9 @@ unsafe fn handle_posix_spawn(
     #[cfg(target_os = "macos")]
     if operation::safe_path(file).is_none() {
         // The legacy exec resolver reads file directly. Preserve the native
-        // spawn error while the result side channel records an unavailable path.
-        // SAFETY: enter_path copies the caller pointer without dereferencing it.
+        // spawn error while the result side channel records an unavailable
+        // path. SAFETY: enter_path copies the caller pointer without
+        // dereferencing it.
         let operation = unsafe { operation::enter_path(Kind::Exec, file) };
         // SAFETY: the original native call validates its unchanged arguments.
         let result = unsafe { original(pid, file, file_actions, attrp, argv, envp) };
@@ -80,8 +81,8 @@ unsafe fn handle_posix_spawn(
         return ret;
     }
 
-    // SAFETY: file, argv, and envp are valid pointers forwarded from the interposed
-    // posix_spawn(p) function
+    // SAFETY: file, argv, and envp are valid pointers forwarded from the
+    // interposed posix_spawn(p) function
     let result = unsafe {
         client.handle_exec::<c_int>(
             config,

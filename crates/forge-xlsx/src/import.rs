@@ -580,7 +580,8 @@ pub fn replace(imported: &Imported, edits: &[(Uuid, EditValue)]) -> Result<Vec<u
                     old.attribute("s").map(str::to_owned)
                 };
                 let attr = style.map(|s| format!(" s=\"{s}\"")).unwrap_or_default();
-                // Inline strings avoid touching an imported shared-string table.
+                // Inline strings avoid touching an imported shared-string
+                // table.
                 match &cell.value {
                     Value::Text(text) => format!(
                         "<c xmlns=\"{S}\" r=\"{}\"{attr} t=\"inlineStr\"><is><t \
@@ -658,8 +659,9 @@ pub fn replace(imported: &Imported, edits: &[(Uuid, EditValue)]) -> Result<Vec<u
                     .descendants()
                     .find(|n| n.range() == target.region.range)
                     .ok_or_else(|| failure("validation region"))?;
-                // Visibility is not part of the authored model. Preserve imported flags,
-                // including the OOXML false defaults, instead of applying authoring defaults.
+                // Visibility is not part of the authored model. Preserve
+                // imported flags, including the OOXML false
+                // defaults, instead of applying authoring defaults.
                 let visible = |name| matches!(node.attribute(name), Some("1" | "true"));
                 crate::emit::validation_with_visibility(
                     rule,
@@ -721,9 +723,10 @@ pub fn replace(imported: &Imported, edits: &[(Uuid, EditValue)]) -> Result<Vec<u
                     &worksheet_path,
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
                 )?;
-                // Store the replacement chart's data in a new private worksheet.
-                // Existing worksheet cells and formulas remain byte-for-byte
-                // unchanged, including any shared data used by other charts.
+                // Store the replacement chart's data in a new private
+                // worksheet. Existing worksheet cells and
+                // formulas remain byte-for-byte unchanged,
+                // including any shared data used by other charts.
                 let mut data = String::new();
                 for row in 0..=chart.categories.len() {
                     data.push_str(&format!("<row r=\"{}\">", row + 1));
@@ -784,8 +787,9 @@ pub fn replace(imported: &Imported, edits: &[(Uuid, EditValue)]) -> Result<Vec<u
                     let bytes = replace_range(next.as_bytes(), range, &fragment);
                     next = String::from_utf8(bytes).map_err(failure)?;
                 }
-                // Keep the generated data workbook validated even though only its
-                // scalar data and native chart XML are grafted into this package.
+                // Keep the generated data workbook validated even though only
+                // its scalar data and native chart XML are
+                // grafted into this package.
                 validate_office(&workbook, OfficeKind::Workbook)?;
                 next
             }

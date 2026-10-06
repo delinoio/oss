@@ -107,7 +107,7 @@ jobs:
         if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
         uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
       - name: Cache Rust dependencies
         if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
         uses: Swatinem/rust-cache@v2

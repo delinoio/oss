@@ -195,7 +195,8 @@ impl AnimationSampler {
             } else if self.interpolation == Interpolation::Cubic {
                 // A zero quaternion requires every component polynomial to be
                 // zero. Isolate roots of one nonzero component, then check the
-                // complete quaternion there; this catches interior singularities.
+                // complete quaternion there; this catches interior
+                // singularities.
                 let ps: Vec<_> = (0..4).map(|k| self.polynomial(i, k)).collect();
                 let p = ps
                     .iter()
@@ -336,8 +337,9 @@ pub(crate) fn prepare_animation(p: &mut Prepared<'_>) -> Result<()> {
                 {
                     return Err(invalid("skin/joints"));
                 }
-                // Instancing a small shared mesh can expand into many independent
-                // bind palettes. Bound that expansion before allocating each one.
+                // Instancing a small shared mesh can expand into many
+                // independent bind palettes. Bound that
+                // expansion before allocating each one.
                 bind_bytes = bind_bytes
                     .checked_add(
                         skin.joints

@@ -38,7 +38,8 @@ mod tests {
 
     // Page-aligned on all supported targets.
     const SIZE: usize = 64 * 1024;
-    // Use one byte more than 64 KiB to test multiple pages and a partial last page.
+    // Use one byte more than 64 KiB to test multiple pages and a partial last
+    // page.
     const ZERO_INITIALIZED_SIZE: usize = SIZE + 1;
 
     #[cfg(unix)]
@@ -229,7 +230,8 @@ mod tests {
         assert_eq!(read_byte(&opened, 0), 17);
         assert_eq!(read_byte(&opened, PRODUCTION_SIZE - 1), 29);
 
-        // Touching both endpoints must not have allocated the range between them.
+        // Touching both endpoints must not have allocated the range between
+        // them.
         #[cfg(windows)]
         {
             let (logical_size, endpoint_allocation) = backing_file_sizes(&path);

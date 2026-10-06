@@ -231,7 +231,7 @@ fn parse_selector_for_resolution(
 ) -> Result<RuntimeSelector> {
     match RuntimeSelector::parse(selector_value) {
         Ok(selector) => Ok(selector),
-        Err(error)
+        Err(_error)
             if source != RuntimeSelectorSource::Explicit
                 && is_case_variant_of_reserved_channel_selector(selector_value.trim()) =>
         {
@@ -308,8 +308,8 @@ mod tests {
 
         assert_eq!(resolved.runtime_id(), "v22.0.0");
 
-        // The parent of data_root is this fixture; its parent is the shared temp
-        // directory.
+        // The parent of data_root is this fixture; its parent is the shared
+        // temp directory.
         fs::remove_dir_all(paths.data_root.parent().unwrap()).unwrap();
     }
 }

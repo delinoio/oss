@@ -75,8 +75,9 @@ pub async fn present(notice: &Notice) -> Result<Presented, PresentationResult> {
                       args: windows::core::Ref<
                     windows::UI::Notifications::ToastDismissedEventArgs,
                 >| {
-                    // Banner timeout can leave the toast in Action Center; retain its
-                    // activation handler until actual dismissal or our bounded expiry.
+                    // Banner timeout can leave the toast in Action Center;
+                    // retain its activation handler until
+                    // actual dismissal or our bounded expiry.
                     if args.as_ref().and_then(|v| v.Reason().ok())
                         == Some(ToastDismissalReason::UserCanceled)
                     {

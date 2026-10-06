@@ -39,8 +39,8 @@ impl ToAbsolutePath for HANDLE {
         self,
         f: F,
     ) -> winsafe::SysResult<R> {
-        // SAFETY: get_path_name performs FFI call with this HANDLE to retrieve the file
-        // path
+        // SAFETY: get_path_name performs FFI call with this HANDLE to retrieve
+        // the file path
         let resolved = unsafe { get_path_name(self) }?;
         f(Some(U16Str::from_slice(&resolved)))
     }
@@ -54,12 +54,13 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
         if self.is_null() {
             return f(None);
         }
-        // SAFETY: dereferencing POBJECT_ATTRIBUTES to read ObjectName field from
-        // Windows API struct
+        // SAFETY: dereferencing POBJECT_ATTRIBUTES to read ObjectName field
+        // from Windows API struct
         let fname_str = unsafe { (*self).ObjectName.as_ref() }.map_or_else(
             || U16Str::from_slice(&[]),
             |object_name| {
-                // SAFETY: reading UNICODE_STRING fields from a valid OBJECT_ATTRIBUTES
+                // SAFETY: reading UNICODE_STRING fields from a valid
+                // OBJECT_ATTRIBUTES
                 unsafe { get_u16_str(object_name) }
             },
         );
@@ -70,7 +71,8 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
         if is_absolute {
             f(Some(fname_str))
         } else {
-            // SAFETY: dereferencing POBJECT_ATTRIBUTES to read RootDirectory handle
+            // SAFETY: dereferencing POBJECT_ATTRIBUTES to read RootDirectory
+            // handle
             let mut root_dir = unsafe { get_path_name((*self).RootDirectory) }?;
             // If filename is empty, just use root_dir directly
             if fname_str.is_empty() {
@@ -79,7 +81,8 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
             }
             let root_dir_cstr = {
                 root_dir.push(0);
-                // SAFETY: we just pushed a null terminator, so the buffer is null-terminated
+                // SAFETY: we just pushed a null terminator, so the buffer is
+                // null-terminated
                 unsafe { U16CStr::from_ptr_str(root_dir.as_ptr()) }
             };
             let fname_cstring = U16CString::from_ustr_truncate(fname_str);

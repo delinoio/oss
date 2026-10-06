@@ -138,11 +138,7 @@ fn read_value_on_path(root: &Value, path: &str) -> Option<Value> {
                             break;
                         }
                         if next == '\\' {
-                            if let Some(escaped) = chars.next() {
-                                key.push(escaped);
-                            } else {
-                                return None;
-                            }
+                            key.push(chars.next()?);
                         } else {
                             key.push(next);
                         }

@@ -12,8 +12,9 @@ impl Backend for Native {
             let data = NSData::with_bytes(text.as_bytes());
             let board = NSPasteboard::generalPasteboard();
             runtime::check_cancelled()?;
-            // Prepare all data before clearing. No cancellation boundary splits the
-            // clear/set pair, which would otherwise leave an unintentionally empty board.
+            // Prepare all data before clearing. No cancellation boundary splits
+            // the clear/set pair, which would otherwise leave an
+            // unintentionally empty board.
             board.clearContents();
             if board.setData_forType(Some(&data), unsafe { NSPasteboardTypeString }) {
                 Ok(())

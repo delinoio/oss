@@ -369,7 +369,8 @@ async fn headers_complete_without_waiting_for_body_and_head_is_literal() {
                 .await
                 .unwrap();
             let mut buffer = [0; 1];
-            // Dropping the response/client closes the connection without body reads.
+            // Dropping the response/client closes the connection without body
+            // reads.
             assert_eq!(
                 timeout(Duration::from_secs(2), stream.read(&mut buffer))
                     .await

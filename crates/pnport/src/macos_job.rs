@@ -103,7 +103,8 @@ impl Job {
         let foreground = unsafe { libc::tcgetpgrp(fd) };
         if foreground < 0 {
             // A hung-up tty cannot be restored; its normal SIGHUP remains the
-            // shutdown authority. Other failures must not silently lose control.
+            // shutdown authority. Other failures must not silently lose
+            // control.
             return if io::Error::last_os_error().raw_os_error() == Some(libc::ENOTTY) {
                 Ok(())
             } else {
@@ -199,7 +200,8 @@ impl Job {
             }
         }
         let mut event = unsafe { mem::zeroed::<libc::siginfo_t>() };
-        // Deliberately omit WEXITED: Child owns root reaping and its exit status.
+        // Deliberately omit WEXITED: Child owns root reaping and its exit
+        // status.
         let result = unsafe {
             libc::waitid(
                 libc::P_PID,

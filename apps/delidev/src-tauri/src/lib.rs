@@ -256,8 +256,9 @@ impl Connector {
     }
 
     // This read-only boundary never pairs, starts or replaces a Worker. The Go
-    // inspector validates private files; product RPCs recheck current revocation.
-    // Only the fixed CLI-owned local Worker scope can prove this computer.
+    // inspector validates private files; product RPCs recheck current
+    // revocation. Only the fixed CLI-owned local Worker scope can prove
+    // this computer.
     pub fn local_worker_proof(&self) -> Result<LocalWorkerProof> {
         let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
         let result = self.local_worker_proof_inner();
@@ -329,7 +330,8 @@ impl Connector {
     }
 
     // Cached launch credentials are never current-readiness authority. This
-    // read cannot start/pair and rechecks durable Stop plus the original identity.
+    // read cannot start/pair and rechecks durable Stop plus the original
+    // identity.
     fn observe_launch(&self, original: &Connection) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         let status = self.run(&self.server_arguments("desktop-status"))?;
@@ -393,8 +395,9 @@ impl Connector {
 
     fn read_local_connection(&self, metadata: DeviceMetadata) -> Result<Connection> {
         let client_root = self.root.join("desktop-client");
-        // Go enforces platform-specific privacy and strict credential validation
-        // before this fixed file is read. No owner material crosses the bridge.
+        // Go enforces platform-specific privacy and strict credential
+        // validation before this fixed file is read. No owner material
+        // crosses the bridge.
         let inspected = self.run(&[
             "device".into(),
             "inspect".into(),

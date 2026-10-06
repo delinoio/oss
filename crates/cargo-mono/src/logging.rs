@@ -29,11 +29,7 @@ fn resolve_log_color_enabled(cargo_mono_log_color: Option<&str>, no_color: Optio
         Some(LogColorMode::Auto) | None => {}
     }
 
-    if no_color.is_some() {
-        return false;
-    }
-
-    true
+    no_color.is_none()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

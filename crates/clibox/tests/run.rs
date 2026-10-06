@@ -2059,7 +2059,8 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
                 Ok((mut stream, _)) => {
                     if !closed_response {
                         // Close once after complete headers without a response
-                        // to prove temporary transport failures remain retryable.
+                        // to prove temporary transport failures remain
+                        // retryable.
                         closed_response = read_request_headers(&mut stream)
                             .expect("readiness fixture closed-connection control failed");
                         continue;

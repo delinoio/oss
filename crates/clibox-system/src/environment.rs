@@ -226,9 +226,10 @@ fn windows_plan(mut plan: Plan) -> Result<Plan> {
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
     {
-        // Expand only the simple environment-reference form used by cross-env before
-        // std escapes the batch argv. Never concatenate a cmd.exe expression or use
-        // raw_arg; expansion results themselves must remain literal argument data.
+        // Expand only the simple environment-reference form used by cross-env
+        // before std escapes the batch argv. Never concatenate a
+        // cmd.exe expression or use raw_arg; expansion results
+        // themselves must remain literal argument data.
         let refs = Regex::new(r"%([A-Za-z0-9_]+)%").unwrap();
         for arg in &mut plan.args {
             *arg = refs

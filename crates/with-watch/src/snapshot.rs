@@ -598,8 +598,9 @@ fn path_watch_anchor(path: &Path) -> Option<PathBuf> {
         return Some(nearest);
     }
 
-    // Watch the containing directory for file inputs so replace-style writers such
-    // as GNU `sed -i` do not orphan the watch after swapping the inode.
+    // Watch the containing directory for file inputs so replace-style writers
+    // such as GNU `sed -i` do not orphan the watch after swapping the
+    // inode.
     nearest.parent().map(Path::to_path_buf)
 }
 
