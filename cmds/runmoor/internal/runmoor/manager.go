@@ -587,7 +587,11 @@ func (m *Manager) poolProblemWithSource(id string, err error, suspend bool, sour
 		v.Problem = p
 		v.SuspensionSource = SuspensionUnknown
 		if suspend && v.Phase != Draining {
-			v.Phase = Suspended
+			// Paused is the durable scoped operator decision for manual pools.
+			// A late dependency failure may diagnose it, but cannot replace it.
+			if v.Phase != Paused {
+				v.Phase = Suspended
+			}
 			if p.Code == ErrOwnership {
 				v.SuspensionSource = source
 			}
@@ -941,7 +945,11 @@ func (m *Manager) failPreparation(id string, err error) {
 		pool := s.Pools[r.PoolID]
 		pool.PreparationFailures++
 		if pool.Phase != Draining && (pool.PreparationFailures >= 3 || p.Code == ErrAuth || p.Code == ErrRunnerVersion || p.Code == ErrOwnership) {
-			pool.Phase = Suspended
+			// Keep scoped pause/stop authority while retaining failure diagnostics
+			// and the runner's ordinary busy-aware cleanup path.
+			if pool.Phase != Paused {
+				pool.Phase = Suspended
+			}
 			pool.Problem = p
 			pool.SuspensionSource = SuspensionUnknown
 		}

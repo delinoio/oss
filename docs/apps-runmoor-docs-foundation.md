@@ -27,6 +27,7 @@
 - Public content is curated from the Runmoor project and command contracts. User-owned configuration and guest runner paths are public interfaces; repository-internal architecture and operational details remain in `docs/`.
 - Tart recovery guidance explains that ambiguous ownership keeps the VM, Runmoor state/data and capacity reservation intact even during force-stop. It directs users to restore a paired backup that contains the VM identity proof or to reimport the source under a new Runmoor identity while preserving uncertain resources; it never suggests repairing markers manually or deleting a same-named VM.
 - The CLI release README remains in `cmds/runmoor/README.md` with a link to the consolidated Runmoor subpath.
+- The commands guide and CLI README label the scoped pause recovery fix as unreleased. Explain that late dependency failures and corrected reload cannot clear an explicit pause or scoped stop; the operator uses Resume after correcting the cause. Keep internal phase ownership in the command contract.
 
 ## Storage
 - Markdown sources live in `apps/public-docs/docs/runmoor`.
