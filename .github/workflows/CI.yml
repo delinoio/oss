@@ -1746,6 +1746,7 @@ jobs:
       - name: Test Go bindings
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:bindings
         env:
+          DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
           FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
@@ -2302,6 +2303,7 @@ jobs:
       - name: Validate package tasks
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:ach:check
         env:
+          DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
           FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
