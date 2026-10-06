@@ -23,6 +23,7 @@ use super::{
 };
 
 const NEW_WINDOW: &str = "delidev-new-window";
+const CLOSE_WINDOW: &str = "delidev-close-window";
 
 #[derive(Default)]
 pub struct WindowActions {
@@ -141,15 +142,18 @@ pub fn create(
                 .is_err()
             {
                 let _ = window.destroy();
-                cleanup(app, &entry);
+                cleanup(&windows, &entry);
                 return Err(NativeFailure::Stopped);
             }
             // Labels are never reused in this process. A late Destroyed event
             // still checks the exact original instance before releasing state.
-            let app = app.clone();
+            // Retain only registry state. AppHandle would form a cycle with
+            // the manager's window listeners and keep CEF request contexts
+            // alive during shutdown after a window was destroyed.
+            let owned_windows = Arc::clone(windows.inner());
             window.on_window_event(move |event| {
                 if matches!(event, tauri::WindowEvent::Destroyed) {
-                    cleanup(&app, &entry);
+                    cleanup(&owned_windows, &entry);
                 }
             });
             super::tray_host::schedule(window.app_handle());
@@ -161,14 +165,13 @@ pub fn create(
             Ok(window)
         }
         Err(_) => {
-            cleanup(app, &entry);
+            cleanup(&windows, &entry);
             Err(NativeFailure::SidecarFailed)
         }
     }
 }
 
-fn cleanup(app: &AppHandle<CefRuntime>, entry: &Entry) {
-    let windows = app.state::<Arc<ProductWindows>>();
+fn cleanup(windows: &ProductWindows, entry: &Entry) {
     if let Ok(mut values) = windows.bindings.lock()
         && values
             .get(&entry.label)
@@ -304,23 +307,43 @@ pub fn restore_recent(app: &AppHandle<CefRuntime>) {
 pub fn install_menu(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     let menu = Menu::default(app)?;
     let item = MenuItem::with_id(app, NEW_WINDOW, "New Window", true, Some("CmdOrCtrl+N"))?;
-    let file = menu
-        .items()?
-        .into_iter()
-        .filter_map(|item| item.as_submenu().cloned())
-        .find(|item| item.text().is_ok_and(|v| v == "File"));
-    if let Some(file) = file {
-        file.insert(&item, 0)?;
+    let close = MenuItem::with_id(app, CLOSE_WINDOW, "Close Window", true, Some("CmdOrCtrl+W"))?;
+    let file = menu.items()?.into_iter().enumerate().find(|(_, item)| {
+        item.as_submenu()
+            .is_some_and(|sub| sub.text().is_ok_and(|v| v == "File"))
+    });
+    let position = if let Some((position, _)) = file {
+        menu.remove_at(position)?;
+        position
     } else {
-        menu.insert(&Submenu::with_items(app, "File", true, &[&item])?, 0)?;
-    }
+        0
+    };
+    // Custom Close dispatch preserves the approved two-row macOS File menu.
+    // AppKit's predefined performClose selector can add a Close All row.
+    let file = Submenu::with_items(app, "File", true, &[&item, &close])?;
+    #[cfg(not(target_os = "macos"))]
+    file.append(&tauri::menu::PredefinedMenuItem::quit(app, None)?)?;
+    menu.insert(&file, position)?;
     app.set_menu(menu)?;
     // One app-level handler: per-window handlers would all receive the same
     // global menu event and multiply a single key press into many windows.
-    app.on_menu_event(|app, event| {
-        if event.id.as_ref() == NEW_WINDOW {
-            enqueue_new(app);
+    app.on_menu_event(|app, event| match event.id.as_ref() {
+        NEW_WINDOW => enqueue_new(app),
+        CLOSE_WINDOW => {
+            let entry = app
+                .state::<Arc<ProductWindows>>()
+                .registry
+                .lock()
+                .ok()
+                .and_then(|registry| registry.recent(None));
+            if let Some(entry) = entry
+                && let Some(window) = app.get_webview_window(&entry.label)
+                && window.close().is_err()
+            {
+                tracing::warn!(operation = "window_close", code = "window-unavailable");
+            }
         }
+        _ => {}
     });
     Ok(())
 }

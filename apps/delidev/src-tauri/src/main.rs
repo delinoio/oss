@@ -1648,9 +1648,6 @@ fn run() -> Result<(), NativeFailure> {
                 registry.focus(window.label());
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
-                window
-                    .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
-                    .close_window(window.label());
                 let tray = window
                     .state::<Arc<TrayHost>>()
                     .available
@@ -1676,6 +1673,9 @@ fn run() -> Result<(), NativeFailure> {
                         let _ = registry.begin_close(window.label(), false);
                     }
                 }
+                window
+                    .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
+                    .close_window(window.label());
                 if let Err(code) = window
                     .state::<Arc<browser_host::BrowserHost>>()
                     .close_window(window.label())
