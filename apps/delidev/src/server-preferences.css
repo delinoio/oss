@@ -9,8 +9,7 @@
 .settings-server-preferences button { min-height: 40px; max-width: 100%; border-radius: 8px; border-color: var(--control-border); white-space: normal; overflow-wrap: anywhere; }
 .settings-server-preferences input:not([type=checkbox]), .settings-server-preferences select { min-height: 40px; min-width: 0; border-color: var(--control-border); }
 .settings-server-preferences input[type=checkbox] { accent-color: var(--accent); outline: 1px solid var(--control-border); outline-offset: 1px; }
-.settings-server-preferences input[type=checkbox]:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-.settings-server-preferences :focus-visible { outline-color: var(--focus); }
+.settings-server-preferences :focus-visible:not(:where(input, select, textarea)) { outline-color: var(--focus); }
 .settings-server-preferences p { color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
 .settings-server-preferences h2, .settings-server-preferences .server-preferences-editor > h3 { font-size: 18px; font-weight: 600; }
 .server-preferences-panel { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 10px; }
