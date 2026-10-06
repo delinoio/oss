@@ -79,11 +79,13 @@ Every CI step whose Turbo graph reaches `ci:proto:breaking` supplies
 all commits in a push are checked even when `origin/main` already points to the
 pushed revision. Manual main runs use `HEAD^`; PR and manual non-main runs use
 `origin/main`. This includes both DeliDev protocol steps and async-commit-hook
-validation. These jobs fetch full history, and the breaking leaf retains its
-existing environment pass-through. A revision without prior DevHud schemas
-still establishes the v1 baseline. Workflow graph assertions and a temporary
-Git fixture cover the event rules, compatible additions, deleted fields and
-multi-commit pushes without downloading unrelated LFS assets.
+validation, including the manually dispatched async-commit-hook release
+workflow. The release workflow uses `HEAD^`; all of these jobs fetch full
+history, and the breaking leaf retains its existing environment pass-through.
+A revision without prior DevHud schemas still establishes the v1 baseline.
+Workflow graph assertions and a temporary Git fixture cover the event rules,
+compatible additions, deleted fields and multi-commit pushes without
+downloading unrelated LFS assets.
 
 ### Pinned repository utilities
 

@@ -10,8 +10,10 @@ import { jobCommands, jobTaskGraph } from "./task-graph.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const workflowSource = readFileSync(`${root}/.github/workflows/CI.yml`, "utf8");
+const releaseWorkflowSource = readFileSync(`${root}/.github/workflows/release-async-commit-hook.yml`, "utf8");
 const apiDockerfileSource = readFileSync(`${root}/servers/devhud-api/Dockerfile`, "utf8");
 const workflow = load(workflowSource);
+const releaseWorkflow = load(releaseWorkflowSource);
 const packages = Object.fromEntries([
   "package.json",
   "apps/devhud/package.json",
@@ -113,29 +115,39 @@ test("every step reaching shared protocol breaking checks carries the event base
   }
   const expression = "${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}";
   const consumers = [];
-  for (const [id, job] of Object.entries(workflow.jobs)) {
-    for (const candidate of job.steps) {
-      if (!jobTaskGraph({ steps: [candidate] }).has("@delinoio/ci#ci:proto:breaking")) continue;
-      const label = `${id}: ${candidate.name}`;
-      consumers.push(label);
-      const env = { ...workflow.env, ...job.env, ...candidate.env };
-      assert.equal(env.DEVHUD_PROTO_BASELINE, expression, label);
-      assert.equal(job.steps.find(({ uses }) => uses?.startsWith("actions/checkout@"))?.with?.["fetch-depth"], 0, label);
-      // This closed expression uses equality, AND and OR with the same string
-      // truthiness in JavaScript and Actions; evaluate the actual workflow value.
-      for (const [event, ref, expected] of [
-        ["push", "refs/heads/main", "pre-push-revision"],
-        ["pull_request", "refs/pull/1450/merge", "origin/main"],
-        ["workflow_dispatch", "refs/heads/main", "HEAD^"],
-        ["workflow_dispatch", "refs/heads/feature", "origin/main"],
-      ]) {
-        assert.equal(runInNewContext(env.DEVHUD_PROTO_BASELINE.slice(3, -2), {
-          github: { event_name: event, ref, event: { before: "pre-push-revision" } },
-        }), expected, `${label}: ${event} ${ref}`);
+  const workflows = [
+    { name: "CI.yml", definition: workflow, baseline: expression, evaluateEvents: true },
+    { name: "release-async-commit-hook.yml", definition: releaseWorkflow, baseline: "HEAD^", evaluateEvents: false },
+  ];
+  for (const { name, definition, baseline, evaluateEvents } of workflows) {
+    for (const [id, job] of Object.entries(definition.jobs)) {
+      for (const candidate of job.steps) {
+        const reachesBreaking = jobTaskGraph({ steps: [candidate] }).has("@delinoio/ci#ci:proto:breaking") || candidate.run?.includes("pnpm proto:check");
+        if (!reachesBreaking) continue;
+        const label = `${name} ${id}: ${candidate.name}`;
+        consumers.push(label);
+        const env = { ...definition.env, ...job.env, ...candidate.env };
+        assert.equal(env.DEVHUD_PROTO_BASELINE, baseline, label);
+        assert.equal(job.steps.find(({ uses }) => uses?.startsWith("actions/checkout@"))?.with?.["fetch-depth"], 0, label);
+        if (evaluateEvents) {
+          // This closed expression uses equality, AND and OR with the same string
+          // truthiness in JavaScript and Actions; evaluate the actual workflow value.
+          for (const [event, ref, expected] of [
+            ["push", "refs/heads/main", "pre-push-revision"],
+            ["pull_request", "refs/pull/1450/merge", "origin/main"],
+            ["workflow_dispatch", "refs/heads/main", "HEAD^"],
+            ["workflow_dispatch", "refs/heads/feature", "origin/main"],
+          ]) {
+            assert.equal(runInNewContext(env.DEVHUD_PROTO_BASELINE.slice(3, -2), {
+              github: { event_name: event, ref, event: { before: "pre-push-revision" } },
+            }), expected, `${label}: ${event} ${ref}`);
+          }
+        }
       }
     }
   }
-  assert.ok(consumers.length >= 3, "Inventory must include protocol, bindings and async-commit-hook steps");
+  assert.ok(consumers.some((label) => label.startsWith("release-async-commit-hook.yml validate:")), "Inventory must include the async-commit-hook release protocol step");
+  assert.ok(consumers.length >= 4, "Inventory must include protocol, bindings and async-commit-hook steps");
   const config = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8"));
   assert.ok(config.tasks["ci:proto:breaking"].passThroughEnv.includes("DEVHUD_PROTO_BASELINE"));
 });
