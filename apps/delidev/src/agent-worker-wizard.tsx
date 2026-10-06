@@ -68,6 +68,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const initialized = useRef(!initial);
   const heading = useRef<HTMLHeadingElement>(null);
   const form = useRef<HTMLFormElement>(null);
+  const suggestionList = useRef<HTMLUListElement>(null);
   const listID = useId();
   const notifications = useNotifications();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
@@ -147,6 +148,9 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   }, [active, mutation.error, mutation.uncertain, step, data.accounts, knownAccounts, source, model, currentModel.data, currentModel.error]);
   const pick = (row?: Resource) => { setModelPage(""); if (row && row.id === model?.id) void currentModel.refetch(); setModel(row); if (row) setInput(text(document(row).native_id)); setPopup(false); setHighlight(-1); setProblem(""); };
   const suggestions = modelPageValid ? models.data!.models : [];
+  useLayoutEffect(() => {
+    if (active && popup && highlight >= 0) (suggestionList.current?.children.item(highlight) as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
+  }, [active, popup, highlight, models.data]);
   const refreshAccount = selectedRows.find(row => Boolean(document(row).connection) && document(row).enabled !== false && !document(row).removal);
   const providerEntries = providers.data?.entries.filter(entry => entry.enabled && entry.providerId) ?? [];
   const advance = () => { if (validate(step)) { setStep(step + 1); setFocusField(""); setProblem(""); } };
@@ -199,7 +203,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
           else if (event.key === "Escape" && popup) { event.preventDefault(); event.stopPropagation(); setPopup(false); }
           else if (event.key === "Enter" && popup) { event.preventDefault(); pick(suggestions[highlight]); }
         }} />
-          {popup ? <ul id={listID} role="listbox" aria-label="Model suggestions">{suggestions.map((row, index) => <li id={`${listID}-${index}`} key={row.id} role="option" aria-selected={highlight >= 0 ? highlight === index : model?.id === row.id} onMouseDown={event => event.preventDefault()} onClick={() => pick(row)}><strong>{resourceName(row)}</strong><small>{text(document(row).native_id)}{document(row).hidden === true ? " · Hidden" : ""}</small></li>)}{input.trim() ? <li id={`${listID}-${suggestions.length}`} role="option" aria-selected={highlight === suggestions.length} onMouseDown={event => event.preventDefault()} onClick={() => pick()}>Use exact ID “{input.trim()}”</li> : null}</ul> : null}
+          {popup ? <ul ref={suggestionList} id={listID} role="listbox" aria-label="Model suggestions">{suggestions.map((row, index) => <li id={`${listID}-${index}`} key={row.id} role="option" aria-selected={highlight >= 0 ? highlight === index : model?.id === row.id} onMouseDown={event => event.preventDefault()} onClick={() => pick(row)}><strong>{resourceName(row)}</strong><small>{text(document(row).native_id)}{document(row).hidden === true ? " · Hidden" : ""}</small></li>)}{input.trim() ? <li id={`${listID}-${suggestions.length}`} role="option" aria-selected={highlight === suggestions.length} onMouseDown={event => event.preventDefault()} onClick={() => pick()}>Use exact ID “{input.trim()}”</li> : null}</ul> : null}
         </div>
         {models.isLoading ? <p role="status">Loading model catalog…</p> : models.isFetching ? <p role="status">Refreshing saved catalog…</p> : null}<Problem error={models.error} />
         {models.data && !modelPageValid ? <p role="alert">This catalog page includes unsupported or mismatched source data. Reload the saved catalog or enter an exact model ID.</p> : null}
