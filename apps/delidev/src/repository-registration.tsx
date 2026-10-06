@@ -79,6 +79,12 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const [unknown, setUnknown] = useState(false), [saveJob, setSaveJob] = useState<Resource | "unknown">();
   const [connectFolder, setConnectFolder] = useState(false), [cloneLocally, setCloneLocally] = useState(false);
   const nameEdited = useRef(false);
+  // Clone registration is one server-owned atomic operation. Its existing
+  // request carries only clone inputs, so do not let it replace a draft that
+  // already contains editable repository settings. A future protocol field
+  // can remove this guard after its allocation and atomic server handling are
+  // established.
+  const draftEdited = useRef(false);
   const [options, setOptions] = useState(false), [childPending, setChildPending] = useState(false);
   const [cloneDraft, setCloneDraft] = useState<RepositoryCloneDraft>({ url: "", parent: "" });
   const [cloneJob, setCloneJob] = useState<Resource | "unknown">();
@@ -171,6 +177,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   }, [inspection, opening]);
   const change = (next: Document) => {
     if (encode(next).byteLength > 1 << 20) { setProblem("This configuration is too large. Reduce its options."); return; }
+    draftEdited.current = true;
     if (next.name !== data.name) nameEdited.current = true;
     setData(next); setProblem("");
   };
@@ -225,6 +232,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   // status read leaves both paths disabled until the user retries the read.
   const legacyReady = Boolean(!cloneLocally && remoteUnsupported && checkoutConfirmed && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256);
   const ready = Boolean(!cloneLocally && ((remoteSupported && parsedClone && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256 && (!primaryCheckout || checkoutConfirmed)) || legacyReady));
+  const cloneModeBlocked = options || draftEdited.current;
   return <section className="repository-registration" aria-label="Add repository">
     <button type="button" disabled={blocked} onClick={cancelTask}>Back to repositories</button>
     <h2 hidden={inTask}>Add repository</h2>
@@ -250,7 +258,8 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {summary && !manual ? <button type="button" disabled={blocked} onClick={() => setManual(true)}>Enter a path…</button> : null}
       {manual || (!summary && path) ? <fieldset disabled={blocked}><legend>Repository folder</legend><label>Computer<select value={computer} onChange={event => setComputer(event.target.value as Computer)}><option value={Computer.Local}>This computer</option><option value={Computer.Remote}>Another computer</option></select></label>{computer === Computer.Remote ? <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine} active={active} showStatus change={(id, value, resource) => { setMachine(id); setMachineName(resource ? resourceName(resource) : text(value?.name)); }} /> : null}<TextField label="Absolute checkout path" value={path} max={4096} change={setPath} /><button type="button" disabled={!path || (computer === Computer.Remote && !machine)} onClick={() => void start(false)}>Inspect folder</button></fieldset> : null}
       </> : null}
-      <button type="button" disabled={blocked} aria-expanded={cloneLocally} onClick={() => { if (!cloneLocally) { nameEdited.current = false; setData(current => ({ ...current, name: cloneDirectory })); } setCloneLocally(value => !value); }}>Clone to this computer (optional)</button>
+      <button type="button" disabled={blocked || (!cloneLocally && cloneModeBlocked)} aria-expanded={cloneLocally} onClick={() => { if (!cloneLocally) { nameEdited.current = false; setData(current => ({ ...current, name: cloneDirectory })); } setCloneLocally(value => !value); }}>Clone to this computer (optional)</button>
+      {!cloneLocally && cloneModeBlocked ? <p role="status">Clone mode is available before editing the repository name or optional settings. Add this draft first to preserve those settings.</p> : null}
       {cloneLocally ? <><RepositoryCloneFields draft={cloneDraft} change={changeCloneDraft} busy={blocked} showURL={false} browse={() => void browseCloneParent()} supported={cloneSupported} /><button type="button" disabled={blocked || !cloneReady} onClick={() => void startClone()}>Clone &amp; add repository</button></> : null}
       {inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <><InspectionCompletion state={state} output={output} completed={completeInspection} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setInspection(undefined)}>Return to selected folder</button> : null}</>}</TrackedJob> : null}
       {busy || inspect.busy ? <p role="status">{busy ? "Selecting folder and verifying this computer…" : "Inspecting repository…"}</p> : null}

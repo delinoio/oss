@@ -120,6 +120,17 @@ it("preserves the remote source and reference options when replacing a Local fol
   expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson))).toMatchObject({ name: "oss", github_owner: "explicit", starting: { type: "local-branch", name: "custom" } });
 });
 
+it("does not offer atomic Clone after the repository draft is edited", async () => {
+  const f = fixture(metadata, true); f.mount(); await f.chooseAndReview();
+  const clone = screen.getByRole("button", { name: "Clone to this computer (optional)" }) as HTMLButtonElement;
+  expect(clone.disabled).toBe(false);
+  fireEvent.change(screen.getByRole("textbox", { name: "Repository name" }), { target: { value: "Edited name" } });
+  expect(clone.disabled).toBe(true);
+  expect(screen.getByText(/Clone mode is available before editing/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
+  expect((screen.getByRole("button", { name: "Clone to this computer (optional)" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
 it.each([false, true])("retains the confirmed primary checkout when additional checkout removal is %s", async removeAdditional => {
   const f = fixture();
   const other = row(EntityKind.MACHINE, { name: "Other runner", last_seen: new Date().toISOString() });
