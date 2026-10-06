@@ -10,7 +10,7 @@ import { useRetainedMutation } from "./mutation";
 import { useSettingsOpening } from "./settings-lifetime";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { LocalWorkerAction, LocalWorkerState, type ControlLocalWorker } from "./local-worker-controls";
-import { Modal, Problem } from "./ui";
+import { Problem } from "./ui";
 import "./repository-registration.css";
 import { RepositoryCloneFields, repositoryCloneURL, repositoryCloneDirectory, repositoryCloneParent, type RepositoryCloneDraft } from "./repository-clone-fields";
 
@@ -106,7 +106,10 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const lastSeen = Date.parse(text(workerData.last_seen));
   const offline = Boolean(serverMachine.data?.resource && Number.isFinite(lastSeen) && Date.now() - lastSeen > 45_000);
   const blocked = busy || clone.busy || clone.uncertain || Boolean(cloneJob) || inspect.busy || inspect.uncertain || Boolean(inspection) || unknown || save.busy || save.uncertain || Boolean(saveJob) || childPending;
-  useEffect(() => { alive.current = true; initialAction.current?.focus(); return () => { alive.current = false; }; }, []);
+  const taskVisible = useSettingsTaskVisible(), cancelTask = useCloseSettingsTask(cancel), inTask = useInSettingsTask();
+  useRetainSettingsTask(Boolean(saveJob || cloneJob || inspection) || unknown || childPending);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { if (taskVisible) initialAction.current?.focus(); }, [taskVisible]);
   const live = () => alive.current && !opening?.disposed;
   const native = <T,>(operation: () => Promise<T>) => opening ? opening.native(operation) : operation();
   const inspectSource = async (selected: Source) => {
@@ -209,9 +212,10 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     const checkout = object(raw);
     return checkout.machine_id === primaryCheckout.machine_id && checkout.path === primaryCheckout.path;
   }));
-  return <Modal title="Add repository" close={cancel} visible={active} className="repository-add-dialog" initialFocus={initialAction} trapFocus><section className="repository-registration" aria-label="Add repository">
-    <p className="repository-add-description">Choose an existing folder or clone a repository.</p>
-    {cloneJob ? <><h3>Repository clone accepted</h3>{cloneJob === "unknown" ? <p role="alert">The clone was acknowledged without a readable job. Inspect its original request before another clone.</p> : <TrackedJob initial={cloneJob} active={active}>{(state, output) => <><SaveCompletion state={state} saved={saved} />{text(object(output.inspection).root) && state !== JobState.Succeeded ? <p role="alert">Checkout preserved at {text(object(output.inspection).root)}. Registration did not complete. Add this existing folder after resolving the reported problem.</p> : null}{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setCloneJob(undefined)}>Return to clone draft</button> : null}</>}</TrackedJob>}<div className="actions repository-add-footer"><button type="button" onClick={cancel}>Cancel</button></div></> : saveJob ? <><h3>Repository save accepted</h3>{saveJob === "unknown" ? <p role="alert">The save was acknowledged without a readable job. Inspect its receipt before another save.</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>Return to current draft</button> : null}</>}</TrackedJob>}<div className="actions repository-add-footer"><button type="button" onClick={cancel}>Cancel</button></div></> : <>
+  return <section className="repository-registration" aria-label="Add repository">
+    <button type="button" disabled={blocked} onClick={cancelTask}>Back to repositories</button>
+    <h2 hidden={inTask}>Add repository</h2>
+    {cloneJob ? <><h3>Repository clone accepted</h3>{cloneJob === "unknown" ? <p role="alert">The clone was acknowledged without a readable job. Inspect its original request before another clone.</p> : <TrackedJob initial={cloneJob} active={active}>{(state, output) => <><SaveCompletion state={state} saved={saved} />{text(object(output.inspection).root) && state !== JobState.Succeeded ? <p role="alert">Checkout preserved at {text(object(output.inspection).root)}. Registration did not complete. Add this existing folder after resolving the reported problem.</p> : null}{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setCloneJob(undefined)}>Return to clone draft</button> : null}</>}</TrackedJob>}</> : saveJob ? <><h3>Repository save accepted</h3>{saveJob === "unknown" ? <p role="alert">The save was acknowledged without a readable job. Inspect its receipt before another save.</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>Return to current draft</button> : null}</>}</TrackedJob>}</> : <>
       {summary ? <section className="repository-summary" aria-label="Repository detected">
         <div className="repository-summary-heading"><div><h3>{text(data.name)}</h3><p>Repository detected</p></div><button type="button" disabled={blocked} onClick={() => void start(true)}>Change folder</button></div>
         <p className="repository-path">{text(summary.output.root)}</p>
@@ -229,7 +233,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error || clone.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
-      <div className="actions repository-add-footer"><button type="button" onClick={cancel}>Cancel</button>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : !summary ? <button type="button" className="primary" disabled={blocked || !cloneReady} onClick={() => void startClone()}>Clone &amp; add repository</button> : null}{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</div>
+      <SettingsTaskActions>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : !summary ? <button type="button" className="primary" disabled={blocked || !cloneReady} onClick={() => void startClone()}>Clone &amp; add repository</button> : null}{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
     </>}
-  </section></Modal>;
+  </section>;
 }

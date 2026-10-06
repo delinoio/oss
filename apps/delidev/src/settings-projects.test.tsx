@@ -113,7 +113,7 @@ it.each(["save", "delete"])("explicitly retries the exact project %s request wit
   if (action === "delete") { expect(screen.getByText(/Retained sessions and history remain/)).toBeTruthy(); expect(screen.getByText(/Schedules using this configuration will be disabled/)).toBeTruthy(); }
   const submit = action === "save" ? "Save Project" : "Confirm configuration deletion";
   // Submit directly to isolate retry identity from HTML required-field validation.
-  if (action === "save") fireEvent.submit(screen.getByRole("button", { name: submit }).closest("form")!); else fireEvent.click(screen.getByRole("button", { name: submit }));
+  if (action === "save") fireEvent.submit((screen.getByRole("button", { name: submit }) as HTMLButtonElement).form!); else fireEvent.click(screen.getByRole("button", { name: submit }));
   const retry = await screen.findByRole("button", { name: action === "save" ? "Retry the same configuration" : "Retry the same deletion" });
   expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).disabled).toBe(false); expect((screen.getByRole("button", { name: submit }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry); await waitFor(() => expect(operation).toHaveBeenCalledTimes(2)); expect(operation.mock.calls[1][0]).toEqual(operation.mock.calls[0][0]); expect(operation.mock.calls[0][0]).toMatchObject({ mutation: { id: row.id, expectedRevision: 7n } });
@@ -122,7 +122,7 @@ it.each(["navigation", "Escape then navigation"])("discards a project draft and 
   const value = fixture(); value.save.mockRejectedValue(new ConnectError("ack lost", Code.Unavailable));
   function Harness() { const [visible, show] = useState(false); return <><button onClick={() => show(true)}>Open settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); show(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>; }
   render(value.view(<Harness />)); const opener = screen.getByRole("button", { name: "Open settings fixture" }); opener.focus(); fireEvent.click(opener);
-  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned project" } }); fireEvent.submit(screen.getByRole("button", { name: "Save Project" }).closest("form")!); await screen.findByRole("button", { name: "Retry the same configuration" });
+  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned project" } }); fireEvent.submit((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).form!); await screen.findByRole("button", { name: "Retry the same configuration" });
   if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBeTruthy(); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   expect(document.activeElement).not.toBe(opener); fireEvent.click(opener); expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy(); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
