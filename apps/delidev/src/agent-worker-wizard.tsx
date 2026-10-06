@@ -172,14 +172,14 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   }} onInvalidCapture={revealAgentInvalidControl}>
     <h2>{initial ? "Edit Agent Worker" : "New Agent Worker"}</h2>
     <ol className="worker-steps" aria-label="Worker configuration steps">{steps.map(value => <li key={value} aria-current={step === value ? "step" : undefined} data-completed={value < step}><span>{value}</span><span>{stepNames[value]}</span></li>)}</ol>
-    <h3 id={`${listID}-step`} ref={heading} tabIndex={-1}>{stepNames[step]}</h3>
+    <h3 ref={heading} tabIndex={-1}>{stepNames[step]}</h3>
     <Problem error={status.error} />
     {status.isLoading ? <p role="status">Checking server support…</p> : status.data && !supported ? <p role="alert">Update the server to configure Agent Workers with this wizard.</p> : null}
     {initial && data.reconfiguration_required === true ? <p role="status">This Worker needs explicit account and model reconfiguration. Historical executions keep their original attribution.</p> : null}
     <fieldset disabled={blocked || !supported}>
       <section hidden={step !== Step.Harness}>
         <p id={`${listID}-harness-help`}>Choose the tool that runs this Worker.</p>
-        <div className="worker-harness-grid" role="radiogroup" aria-labelledby={`${listID}-step`} aria-describedby={`${listID}-harness-help`}>
+        <div className="worker-harness-grid" role="radiogroup" aria-label="Harness" aria-describedby={`${listID}-harness-help`}>
           {harnesses.map((harness, index) => {
             const selected = data.harness === harness;
             const entry = selected || !harnesses.includes(data.harness as Harness) && index === 0;
@@ -203,6 +203,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
             </button>;
           })}
         </div>
+        <p className="worker-harness-guidance">Select accounts and a model for this source.</p>
       </section>
       <section hidden={step !== Step.Accounts} aria-label="Choose accounts">
         <p>{harnessNames[data.harness as Harness]} <button type="button" onClick={() => { setStep(Step.Harness); setFocusField(""); }}>Change harness</button></p>
