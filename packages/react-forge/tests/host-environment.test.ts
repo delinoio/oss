@@ -32,6 +32,11 @@ test("React Forge host validation preserves Cargo target selection through stric
   write("packages/react-forge/package.json", JSON.stringify({ name: "@delino/react-forge", private: true, scripts: { "ci:host": "node probe.mjs" } }));
   write("Cargo.toml", '[package]\nname = "host-fixture"\nversion = "0.0.0"\nedition = "2021"\n[workspace]\nmembers = ["."]\n');
   write("src/lib.rs", "");
+  // Cargo expands Windows short temporary paths when it derives the default
+  // target directory. Compare that path by native filesystem identity while
+  // keeping the configured CARGO_TARGET_DIR assertion byte-for-byte exact.
+  mkdirSync(join(cwd, "target"), { recursive: true });
+  const defaultTarget = realpathSync.native(join(cwd, "target"));
   write("packages/react-forge/probe.mjs", `
     import assert from "node:assert/strict";
     import { spawnSync } from "node:child_process";
@@ -58,7 +63,7 @@ test("React Forge host validation preserves Cargo target selection through stric
       assert.equal(result.status, 0, result.stdout + result.stderr);
       const probe = JSON.parse(readFileSync(output, "utf8"));
       assert.equal(probe.cargoTargetDir, configured ? selected : null);
-      assert.equal(probe.targetDirectory, configured ? selected : join(cwd, "target"));
+      assert.equal(probe.targetDirectory, configured ? selected : defaultTarget);
       assert.equal(probe.unlisted, null, "unlisted variables must remain filtered");
     });
   }
