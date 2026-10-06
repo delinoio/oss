@@ -77,5 +77,6 @@ test("daily workflow validates before a narrowly scoped write token and protects
   assert.ok(workflow.indexOf("--validate") < workflow.indexOf("actions/create-github-app-token"));
   assert.equal((publisher.match(/const branch =/g) ?? []).length, 1); assert.ok(branch.startsWith("kdy1/"));
   assert.match(publisher, /--force-with-lease=refs\/heads/); assert.match(publisher, /--body-file/);
+  assert.match(publisher, /current.catalog_version === candidate.catalog_version && pulls.length/);
   assert.doesNotMatch(publisher, /pr.*merge.*--auto|--admin|--no-verify/);
 });

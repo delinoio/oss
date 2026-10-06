@@ -67,7 +67,7 @@ function retirement(markdown, model, today) {
 }
 export function extractChatGPT(raw, docs, today) {
   const input = JSON.parse(raw);
-  if (!Array.isArray(input.models) || !input.models.length) fail("Codex catalog structure");
+  if (!Array.isArray(input.models) || !input.models.length || input.models.some(row => !["list", "hide"].includes(row.visibility) || !Array.isArray(row.available_in_plans))) fail("Codex catalog structure");
   section(docs, "## Deprecated Codex models");
   const result = input.models.filter(model => model.visibility === "list" && Array.isArray(model.available_in_plans) && model.available_in_plans.length).sort((a, b) => a.priority - b.priority).flatMap(row => {
     if (typeof row.slug !== "string" || typeof row.display_name !== "string" || !Number.isInteger(row.priority)) fail("Codex model shape");

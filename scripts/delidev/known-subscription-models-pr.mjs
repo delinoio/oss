@@ -60,6 +60,11 @@ export async function publish() {
   if (old) {
     const comparison = api(`repos/${repository}/compare/${main}...${old}?per_page=100`);
     assertBotBranch({ commits: comparison.commits, files: comparison.files, total: comparison.total_commits, pullRequests: pulls });
+    const currentFile = api(`repos/${repository}/contents/${catalogPath}?ref=${old}`);
+    if (currentFile.encoding !== "base64" || currentFile.size > 1 << 20) throw new Error("Existing candidate unavailable");
+    const current = validateCatalog(JSON.parse(Buffer.from(currentFile.content, "base64").toString("utf8")));
+    // A pending review must not receive daily date-only commits either.
+    if (current.catalog_version === candidate.catalog_version && pulls.length) return { changed: false, pull_request: pulls[0].html_url };
   } else assertBotBranch({ commits: [], files: [], total: 0, pullRequests: pulls });
   const identity = api(`users/${encodeURIComponent(bot)}`);
   if (identity.login !== bot || identity.type !== "Bot" || !Number.isSafeInteger(identity.id)) throw new Error("Bot identity unavailable");
