@@ -10,6 +10,9 @@ import { consumers, rustFixture } from "./rust-affected-fixture.mjs";
 const binary = process.env.CARGO_MONO_TEST_BINARY;
 test("published CLI selects every manifest dependency kind and runs only those targets", { skip: !binary }, t => {
   const f = rustFixture(t);
+  const previousLog = process.env.RUST_LOG;
+  process.env.RUST_LOG = "cargo_mono=info";
+  t.after(() => { if (previousLog === undefined) delete process.env.RUST_LOG; else process.env.RUST_LOG = previousLog; });
   assert.equal(execFileSync(binary, ["--version"], { encoding: "utf8" }).trim(), "cargo mono 0.6.9");
   f.write("core-lib/src/lib.rs", "pub fn value() -> u32 { 2 }\n"); f.commit();
   const result = selectRustPackages({ cwd: f.cwd, binary, event: Event.Push, range: f.range(), plan: f.plan });

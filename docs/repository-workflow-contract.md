@@ -111,7 +111,7 @@ head in a temporary detached worktree. Metadata selection skips LFS smudging
 only in that temporary reference, never in compilation checkouts. Cleanup removes
 the worktree even after command or JSON failures. Detection includes transitive
 manifest path dependents and retains cargo-mono's default AGENTS exclusion.
-Rename detection is disabled. The CLI's files and merge-base must match the
+Rename detection is disabled. The released CLI writes tracing logs to stdout even in JSON mode; only its child environment sets `RUST_LOG=off`, while the adapter retains structured planning logs. The CLI's files and merge-base must match the
 planner's exact NUL-separated comparison; unsupported newline/quoted/trimmed
 paths and non-linear push ranges select the full validation workspace instead.
 Manual runs, forced checks, root Cargo inputs, toolchains, external Rust-job

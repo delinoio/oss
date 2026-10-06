@@ -12,7 +12,7 @@ test("independent edits select one package across a multi-commit push", t => {
   const f = rustFixture(t);
   f.write("unrelated/src/lib.rs", "pub fn value() -> u32 { 2 }\n"); f.commit();
   f.write("unrelated/fixture.txt", "second commit"); f.commit();
-  const result = select(f);
+  const result = select(f, { run: (...args) => { assert.equal(args[3].RUST_LOG, "off"); return f.run(...args); } });
   assert.deepEqual(result.packages, ["unrelated"]); assert.equal(result.mode, "affected");
   assert.equal(f.git("worktree", "list", "--porcelain").split("worktree ").length, 2);
 });

@@ -77,7 +77,10 @@ export function selectRustPackages({ event, range, plan, cwd = process.cwd(), bi
     added = true;
     const count = Number(process.env.GIT_CONFIG_COUNT ?? "0");
     if (!Number.isSafeInteger(count) || count < 0) throw new Error("Invalid inherited Git configuration count");
-    const environment = { ...process.env, GIT_CONFIG_COUNT: String(count + 2), [`GIT_CONFIG_KEY_${count}`]: "diff.renames", [`GIT_CONFIG_VALUE_${count}`]: "false", [`GIT_CONFIG_KEY_${count + 1}`]: "core.quotepath", [`GIT_CONFIG_VALUE_${count + 1}`]: "false" };
+    // The 0.6.9 release writes tracing logs to stdout, including JSON mode.
+    // Suppress only this child's tracing output; this adapter retains structured
+    // planning logs. Remove the override after a pinned CLI uses stderr for logs.
+    const environment = { ...process.env, RUST_LOG: "off", GIT_CONFIG_COUNT: String(count + 2), [`GIT_CONFIG_KEY_${count}`]: "diff.renames", [`GIT_CONFIG_VALUE_${count}`]: "false", [`GIT_CONFIG_KEY_${count + 1}`]: "core.quotepath", [`GIT_CONFIG_VALUE_${count + 1}`]: "false" };
     const names = inventory(run(binary, ["--output", "json", "list"], workspace, environment), workspace);
     if (!reason && range.paths.some(path => rustJobs.some(id => jobs[id] && jobPaths[id].paths.some(pattern => matchesGlob(path, pattern))) && ![...names.values()].some(directory => directory === "." || path.startsWith(directory + "/")))) reason = "external-input";
     let packages;
