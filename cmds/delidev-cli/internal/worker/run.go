@@ -32,6 +32,7 @@ type Config struct {
 	network            *workerNetworkRuntime
 	observations       *managedObservationRegistry
 	inspectionMetadata bool
+	repositoryClone    bool
 	updatesEnabled     bool
 	terminals          *terminalManager
 	Root               string
@@ -246,6 +247,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
 		metadataExpected := false
+		cloneExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
@@ -260,6 +262,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if config.network != nil && (!networkExpected || !proxyExpected) {
 				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
 			}
+			cloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			installation := codexTitleInstallation(attached.Msg.Machine)
 			executable, version := "", ""
@@ -320,6 +323,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				profile += "\x00verified"
 			} else {
 				profile += "\x00unsupported"
+			}
+			if cloneExpected {
+				profile += "\x00repository-clone-v1"
 			}
 			if metadataExpected {
 				profile += "\x00inspection-metadata-v1"
@@ -386,6 +392,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if metadataExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			}
+			if cloneExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
+			}
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
 			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}, config)))
 			stopNegotiation()
@@ -428,6 +437,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
+			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
 			err = watchAttached(ctx, config, client, credential, instance, auxiliary, managedCapabilityExpected && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
@@ -1100,6 +1110,8 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 			return nil, err
 		}
 		return json.Marshal(result)
+	case domain.CloneRepositoryJob:
+		return executeRepositoryClone(ctx, config, owner, job)
 	case domain.InspectRepositoryJob:
 		var input domain.RepositoryInspectionInput
 		if err := domain.Decode(job.Input, &input); err != nil {

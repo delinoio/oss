@@ -42,7 +42,7 @@ try {
     await page.getByLabel("Absolute checkout path", { exact: true }).fill(path);
     await page.getByRole("button", { name: "Inspect folder", exact: true }).click();
     await page.getByRole("region", { name: "Repository detected" }).waitFor({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Add repository", exact: true }).click();
+    await page.getByRole("dialog", { name: "Add repository", exact: true }).getByRole("button", { name: "Add repository", exact: true }).click();
     await until(async () => (await list(environment, run.api.EntityKind.REPOSITORY)).length === 1);
     await page.getByRole("button", { name: "Edit browser-git-fixture", exact: true }).waitFor({ timeout: 30_000 });
   }));

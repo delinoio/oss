@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, IntegrationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, SettingsEntryDestination } from "./settings";
 import { encode, document, type Document } from "./documents";
 import { LocalWorkerState } from "./local-worker-controls";
@@ -15,8 +15,8 @@ import { validRepositoryInspection, selectedInspectionRemote } from "./repositor
 const metadata = { root: "/canonical/oss", name: "oss", remotes: ["origin", "upstream"], default_refs: { origin: "main" }, github_repositories: { origin: { owner: "delinoio", name: "oss" }, upstream: { owner: "another", name: "repo" } } };
 function row(kind: EntityKind, value: Document): Resource { return create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode(value) }); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
-function fixture(output: Document = metadata) {
-  const machine = row(EntityKind.MACHINE, { name: "Runner", last_seen: new Date().toISOString() });
+function fixture(output: Document = metadata, cloneCapabilities = false) {
+  const machine = row(EntityKind.MACHINE, { name: "Runner", worker_capabilities: cloneCapabilities ? ["repository-clone-v1"] : [], last_seen: new Date().toISOString() });
   const resources = new Map<string, Resource>([[machine.id, machine]]);
   const jobs: Resource[] = [];
   const inspected = vi.fn(async (request: { machineId: string; path: string; preferredRemote: string; requestId: string }) => {
@@ -29,8 +29,14 @@ function fixture(output: Document = metadata) {
   const proof = vi.fn(async () => ({ machineId: machine.id, token: "A".repeat(43) }));
   const control = vi.fn(async () => ({ machine_id: machine.id, state: LocalWorkerState.Running, controller_active: true }));
   const getResource = vi.fn((request: { id: string }) => ({ resource: resources.get(request.id) }));
+  const clone = vi.fn(async (request: { requestId: string; machineId: string; parentPath: string; url: string; directoryName: string; localWorkerToken: string; githubSelection?: { profileId: string; owner: string; name: string } }) => {
+    const job = row(EntityKind.JOB, { type: "clone-repository", state: "queued", machine_id: request.machineId }); resources.set(job.id, job); jobs.push(job); return { job, requestId: request.requestId };
+  });
+  const repositories = vi.fn(async (request: { profileId: string; expectedRevision: bigint; page: number }) => ({ schemaVersion: 1, documentJson: encode({ profile_id: request.profileId, profile_revision: String(request.expectedRevision), generation_id: (document(resources.get(request.profileId)).connection as Document).generation_id, observed_at: new Date().toISOString(), page: request.page, page_size: 50, next_page: request.page === 1 ? 2 : 0, repositories: request.page === 1 ? [{ repository: { provider: "github.com", id: "123", node_id: "R_123", owner: "delinoio", name: "oss", private: true, default_branch: "main" }, archived: true, https_url: "https://github.com/delinoio/oss.git", ssh_url: "git@github.com:delinoio/oss.git" }] : [] }) }));
   const transport = createRouterTransport(router => {
-    router.service(WorkerService, { inspectRepository: inspected });
+    router.service(WorkerService, { inspectRepository: inspected, cloneRepository: clone });
+    router.service(SystemService, { getStatus: () => ({ capabilities: cloneCapabilities ? [SystemCapability.REPOSITORY_CLONE_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] : [] }) });
+    router.service(IntegrationService, { listGitHubRepositories: repositories });
     router.service(ConfigurationService, { saveConfiguration: save });
     router.service(ResourceService, { listResources: request => ({ resources: [...resources.values()].filter(resource => resource.kind === request.filter?.kind) }), getResource });
   });
@@ -42,7 +48,7 @@ function fixture(output: Document = metadata) {
   const mount = () => render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><Workspace /></QueryClientProvider></TransportProvider></StrictMode>);
   const add = async () => { fireEvent.click(await screen.findByRole("button", { name: "Add repository" })); };
   const chooseAndReview = async () => { await add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByRole("region", { name: "Repository detected" }); };
-  return { machine, resources, jobs, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource };
+  return { machine, resources, jobs, clone, repositories, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource };
 }
 
 it("registers the canonical checkout using folder selection and Add repository only", async () => {
@@ -53,7 +59,7 @@ it("registers the canonical checkout using folder selection and Add repository o
   expect(screen.queryByRole("button", { name: "Add inspected checkout" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expect(screen.getByRole("button", { name: "Optional settings" }).getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
   expect(saved).toMatchObject({ name: "oss", checkouts: [{ machine_id: f.machine.id, path: "/canonical/oss" }], base: {}, starting: {}, auto_fetch: true, github_owner: "delinoio", github_name: "oss" });
@@ -76,7 +82,7 @@ it("preserves cancellation and resets repository-bound options on a successful r
   f.inspected.mockImplementationOnce(async request => { const job = row(EntityKind.JOB, { state: "succeeded", machine_id: request.machineId, output: { ...metadata, root: "/canonical/B", name: "B" } }); f.resources.set(job.id, job); return { job }; });
   fireEvent.click(screen.getByRole("button", { name: "Change folder" }));
   await screen.findByText("/canonical/B");
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson))).toMatchObject({ name: "B", github_owner: "delinoio", starting: {} });
 });
@@ -104,7 +110,7 @@ it.each([false, true])("retains the confirmed primary checkout when additional c
   expect((secondary.getByRole("button", { name: "Remove checkout" }) as HTMLButtonElement).disabled).toBe(false);
   if (removeAdditional) fireEvent.click(secondary.getByRole("button", { name: "Remove checkout" }));
   expect(within(screen.getByRole("region", { name: "Repository detected" })).getByText("/canonical/oss")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
   expect(saved).toMatchObject({ name: "oss", github_owner: "delinoio", github_name: "oss" });
@@ -138,7 +144,7 @@ it.each([
 ])("allows missing defaults and legacy metadata for $name", async output => {
   const f = fixture(output); f.mount(); await f.chooseAndReview();
   expect(screen.getByText("Unavailable locally")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const value = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
   expect(value.base).toEqual({}); expect(value.starting).toEqual({}); expect(value.github_owner).toBe("");
@@ -165,7 +171,7 @@ it.each(["picker", "proof", "inspection", "save"])("discards a late %s result af
   f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   if (phase !== "picker") await waitFor(() => expect(f.proof).toHaveBeenCalledTimes(1));
   if (phase === "inspection") await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
-  if (phase === "save") { await screen.findByRole("region", { name: "Repository detected" }); fireEvent.click(screen.getByRole("button", { name: "Add repository" })); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1)); }
+  if (phase === "save") { await screen.findByRole("region", { name: "Repository detected" }); fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" })); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1)); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Reopen settings" }));
   expect(await screen.findByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
@@ -187,7 +193,7 @@ it("retries uncertain inspection and save with the original exact requests", asy
   f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same inspection" }));
   await screen.findByRole("region", { name: "Repository detected" }); expect(f.inspected.mock.calls[0][0]).toEqual(f.inspected.mock.calls[1][0]);
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   const retry = await screen.findByRole("button", { name: "Retry the same repository save" });
   expect((screen.getByRole("button", { name: "Change folder" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2)); expect(f.save.mock.calls[0][0]).toEqual(f.save.mock.calls[1][0]);
@@ -261,7 +267,7 @@ it("observes an accepted save after close without restoring or replaying the wiz
   const accepted = row(EntityKind.REPOSITORY, { name: "Accepted while closed", checkouts: [{ machine_id: f.machine.id, path: "/canonical/oss" }] });
   f.save.mockImplementationOnce(async () => { f.resources.set(accepted.id, accepted); return pending.promise as Promise<{ job: Resource }>; });
   f.mount(); await f.chooseAndReview();
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Reopen settings" }));
@@ -271,4 +277,103 @@ it("observes an accepted save after close without restoring or replaying the wiz
   await screen.findByRole("heading", { name: "Accepted while closed" });
   expect(screen.queryByRole("region", { name: "Repository detected" })).toBeNull();
   expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+
+it.each(["Cancel", "Close Add repository", "Escape"])("dismisses with %s, restores the opener and discards the draft", async action => {
+  const f = fixture(); f.mount();
+  const opener = await screen.findByRole("button", { name: "Add repository" });
+  opener.focus(); await f.add();
+  const dialog = screen.getByRole("dialog", { name: "Add repository" });
+  expect(window.document.activeElement).toBe(within(dialog).getByRole("button", { name: "Choose folder" }));
+  expect(screen.getByText("No saved entries.")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Enter a path…" }));
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Absolute checkout path" }), { target: { value: "/discard" } });
+  if (action === "Escape") fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
+  else fireEvent.click(within(dialog).getByRole("button", { name: action }));
+  expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull();
+  expect(window.document.activeElement).toBe(opener);
+  await f.add();
+  expect(screen.queryByRole("textbox", { name: "Absolute checkout path" })).toBeNull();
+  expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
+});
+
+it("discards a pending inspection when the child dialog closes inside Settings", async () => {
+  const f = fixture(); const pending = deferred<any>();
+  f.inspected.mockReturnValueOnce(pending.promise); f.mount(); await f.add();
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await f.add();
+  pending.resolve({ job: row(EntityKind.JOB, { machine_id: f.machine.id, state: "succeeded", output: metadata }) });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(screen.queryByRole("region", { name: "Repository detected" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Retry the same/ })).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+function cloneInputs() {
+  fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "https://github.com/delinoio/oss.git" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } });
+}
+function connectedProfile(f: ReturnType<typeof fixture>, pending = false) {
+  const profile = row(EntityKind.INTEGRATION, { name: "Explicit profile", provider: "github.com", token_kind: "fine-grained", resource_owner: "delinoio", connection: { generation_id: newRequestId() }, ...(pending ? { pending: { operation: "replace-token" } } : {}) });
+  f.resources.set(profile.id, profile); return profile;
+}
+it("clones with fresh local proof and no frontend registration after acceptance", async () => {
+  const f = fixture(metadata, true); f.mount(); await f.add(); cloneInputs();
+  const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button); await screen.findByText("Repository clone accepted");
+  expect(f.proof).toHaveBeenCalledTimes(1); expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
+  expect(f.clone.mock.calls[0][0]).toMatchObject({ machineId: f.machine.id, localWorkerToken: "A".repeat(43), url: "https://github.com/delinoio/oss.git", parentPath: "/parent", directoryName: "oss" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Add repository" }));
+  f.resources.set(f.jobs[0].id, { ...f.jobs[0], revision: 2n, documentJson: encode({ type: "clone-repository", machine_id: f.machine.id, state: "succeeded" }) });
+  await f.client.invalidateQueries(); expect(f.save).not.toHaveBeenCalled(); expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull();
+});
+it("retains the exact clone request through an uncertain response", async () => {
+  const f = fixture(metadata, true); f.clone.mockRejectedValueOnce(new ConnectError("Response lost", Code.Unavailable)); f.mount(); await f.add(); cloneInputs();
+  const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false)); fireEvent.click(button);
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same clone request" })); await screen.findByText("Repository clone accepted");
+  expect(f.clone.mock.calls[1][0]).toEqual(f.clone.mock.calls[0][0]); expect(f.proof).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
+});
+it("rejects an older Worker before sending clone and retains local folder registration", async () => {
+  const f = fixture(metadata, true); f.resources.set(f.machine.id, { ...f.machine, documentJson: encode({ name: "Older Worker", worker_capabilities: [] }) }); f.mount(); await f.add(); cloneInputs();
+  const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false)); fireEvent.click(button);
+  await screen.findByText(/Update and reconnect this computer's Worker/); expect(f.clone).not.toHaveBeenCalled(); expect(screen.getByRole("button", { name: "Choose folder" }).hasAttribute("disabled")).toBe(false);
+});
+it("shows only usable PAT profiles and requires explicit profile and repository selection", async () => {
+  const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add();
+  fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" })); expect(f.repositories).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
+  const repo = await screen.findByRole("button", { name: "delinoio/oss Private · Archived" }); fireEvent.click(repo);
+  expect((screen.getByRole("textbox", { name: "Git URL" }) as HTMLInputElement).value).toBe("https://github.com/delinoio/oss.git");
+  fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "git@github.com:delinoio/oss.git" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
+  await screen.findByText("Repository clone accepted"); expect(f.clone.mock.calls[0][0].githubSelection).toMatchObject({ profileId: profile.id, owner: "delinoio", name: "oss" });
+});
+it("drops the selected profile association when the Git URL changes repositories", async () => {
+  const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); fireEvent.click(await screen.findByRole("button", { name: "delinoio/oss Private · Archived" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "https://github.com/another/repo.git" } }); fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
+  await screen.findByText("Repository clone accepted"); expect(f.clone.mock.calls[0][0].githubSelection).toBeUndefined();
+});
+it("keeps repository pagination explicit including empty later pages and local filtering", async () => {
+  const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter this page" }), { target: { value: "not-on-this-page" } }); await screen.findByText("No matches on this page."); expect(f.repositories).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Next" })); await screen.findByText("No repositories are accessible on this page."); expect(f.repositories.mock.calls[1][0].page).toBe(2);
+  fireEvent.click(screen.getByRole("button", { name: "First" })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh repositories" })); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(3));
+});
+it("hides the GitHub choice for a pending profile change", async () => {
+  const f = fixture(metadata, true); connectedProfile(f, true); f.mount(); await f.add(); await waitFor(() => expect(screen.queryByText("Checking connected GitHub profiles…")).toBeNull()); expect(screen.queryByRole("button", { name: "Choose from GitHub" })).toBeNull();
+});
+it("discards a late GitHub page on close without selecting or cloning", async () => {
+  const f = fixture(metadata, true); const profile = connectedProfile(f), response = deferred<Awaited<ReturnType<typeof f.repositories>>>();
+  f.repositories.mockImplementationOnce(() => response.promise); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" })); fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Close Add repository" })); response.resolve({ schemaVersion: 1, documentJson: encode({}) }); await Promise.resolve(); expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull(); expect(f.clone).not.toHaveBeenCalled();
+});
+it("shows the published checkout when clone registration fails", async () => {
+  const f = fixture(metadata, true); f.clone.mockImplementationOnce(async request => { const job = row(EntityKind.JOB, { type: "clone-repository", machine_id: request.machineId, state: "failed", output: { inspection: { root: "/parent/oss" } }, problem: { message: "Profile changed." } }); f.resources.set(job.id, job); return { job, requestId: request.requestId }; }); f.mount(); await f.add(); cloneInputs();
+  const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false)); fireEvent.click(button); await screen.findByText(/Checkout preserved at \/parent\/oss/); expect(f.save).not.toHaveBeenCalled();
 });

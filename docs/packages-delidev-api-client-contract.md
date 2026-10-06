@@ -238,6 +238,19 @@ Independent server subscription login exports capability 30, the closed Subscrip
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
 
+## Repository addition
+
+Generated `IntegrationQuery.listGitHubRepositories` and
+`WorkerQuery.cloneRepository` retain the main-established declarations and
+independent System 31/32 / Worker 18 capabilities. Listing is an explicit
+revision-bound profile/page read; preserve exact remote IDs, current generation,
+constructed URLs and page-local filtering. The client never receives a saved PAT.
+Clone sends fresh transient local Worker proof and optional selected GitHub
+metadata; its original durable job completes registration server-side. Keep proof
+outside read keys, drafts and persistence. Retain identical uncertain mutation
+bytes only in the disposable dialog registry; close/departure drops that registry
+and guards all late callbacks without canceling accepted business work.
+
 ## Agent Worker wizard bindings
 
 Generate ConfigurationQuery.saveAgentWorker, typed model-selection oneof and

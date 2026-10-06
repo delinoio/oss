@@ -2,9 +2,9 @@
 import { SettingsTaskActions } from "./settings-task";
 import { useRetainSettingsTask, useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Code, ConnectError } from "@connectrpc/connect";
-import { useQuery } from "@connectrpc/connect-query";
-import { ConfigurationQuery, EntityKind, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
+import { useQuery, useTransport } from "@connectrpc/connect-query";
+import { ConfigurationQuery, EntityKind, ResourceQuery, ResourceService, SystemCapability, SystemQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { RepositoryFields, ResourceChoice, TextField, newConfiguration } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { JobState, TrackedJob } from "./jobs";
@@ -13,6 +13,10 @@ import { useSettingsOpening } from "./settings-lifetime";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { LocalWorkerAction, LocalWorkerState, type ControlLocalWorker } from "./local-worker-controls";
 import { Problem } from "./ui";
+import "./repository-registration.css";
+import { RepositoryCloneFields, repositoryCloneURL, repositoryCloneDirectory, repositoryCloneParent, type RepositoryCloneDraft } from "./repository-clone-fields";
+
+import { RepositoryGitHubPicker, type GitHubCloneSelection } from "./repository-github-picker";
 
 export type ChooseRepositoryFolder = () => Promise<string | null>;
 enum Computer { Local = "local", Remote = "remote" }
@@ -78,6 +82,17 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const [summary, setSummary] = useState<{ output: Document; source: Source }>();
   const [unknown, setUnknown] = useState(false), [saveJob, setSaveJob] = useState<Resource | "unknown">();
   const [options, setOptions] = useState(false), [childPending, setChildPending] = useState(false);
+  const [cloneDraft, setCloneDraft] = useState<RepositoryCloneDraft>({ url: "", parent: "" });
+  const [cloneJob, setCloneJob] = useState<Resource | "unknown">();
+  const [githubSelection, setGitHubSelection] = useState<GitHubCloneSelection>();
+  const transport = useTransport();
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
+  const cloneSupported = status.data?.capabilities.includes(SystemCapability.REPOSITORY_CLONE_V1) === true && Boolean(readLocalWorker);
+  const pickerSupported = status.data?.capabilities.includes(SystemCapability.GITHUB_REPOSITORY_PICKER_V1) === true;
+  const clone = useRetainedMutation("repository-add:clone", WorkerQuery.cloneRepository, (result, request) => {
+    if (result.job && result.job.kind === EntityKind.JOB && text(document(result.job).machine_id) === request.machineId && text(document(result.job).type) === "clone-repository") setCloneJob(result.job);
+    else setCloneJob("unknown");
+  }, (result, request) => Boolean(result.requestId === request.requestId && result.job && uuid.test(result.job.id) && result.job.kind === EntityKind.JOB && text(document(result.job).machine_id) === request.machineId && text(document(result.job).type) === "clone-repository"));
   const pendingSource = useRef<Source | undefined>(undefined);
   const inspect = useRetainedMutation("repository-add:inspect", WorkerQuery.inspectRepository, (result, request) => {
     const selected = pendingSource.current;
@@ -92,9 +107,9 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const workerData = document(serverMachine.data?.resource);
   const lastSeen = Date.parse(text(workerData.last_seen));
   const offline = Boolean(serverMachine.data?.resource && Number.isFinite(lastSeen) && Date.now() - lastSeen > 45_000);
-  const blocked = busy || inspect.busy || inspect.uncertain || Boolean(inspection) || unknown || save.busy || save.uncertain || Boolean(saveJob) || childPending;
+  const blocked = busy || clone.busy || clone.uncertain || Boolean(cloneJob) || inspect.busy || inspect.uncertain || Boolean(inspection) || unknown || save.busy || save.uncertain || Boolean(saveJob) || childPending;
   const taskVisible = useSettingsTaskVisible(), cancelTask = useCloseSettingsTask(cancel), inTask = useInSettingsTask();
-  useRetainSettingsTask(Boolean(saveJob || inspection) || unknown || childPending);
+  useRetainSettingsTask(Boolean(saveJob || inspection || cloneJob) || clone.uncertain || unknown || childPending);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { if (taskVisible) initialAction.current?.focus(); }, [taskVisible]);
   const live = () => alive.current && !opening?.disposed;
@@ -105,7 +120,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     setSource(selected);
     await inspect.send({ requestId: newRequestId(), machineId: selected.machine, path: selected.path, preferredRemote: "" });
   };
-  const verifyLocal = async (): Promise<string> => {
+  const verifyLocal = async () => {
     if (!readLocalWorker) throw new ConnectError("This computer's Worker verification is unavailable. Check Runner Devices and retry.", Code.Unavailable);
     const proof = await native(readLocalWorker);
     if (!live()) throw new ConnectError("Settings closed.", Code.Canceled);
@@ -120,7 +135,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       if (status.state === LocalWorkerState.Uncertain) throw new ConnectError("This computer's Worker exit is unconfirmed. Inspect its private log and original session recovery before retrying.", Code.FailedPrecondition);
       if ([LocalWorkerState.NotStarted, LocalWorkerState.Exited, LocalWorkerState.Stopping].includes(status.state)) throw new ConnectError(status.state === LocalWorkerState.Exited ? "This computer's Worker exited. Open Runner Devices to start it, then retry." : "This computer's Worker is stopped. Open Runner Devices to start it, then retry.", Code.FailedPrecondition);
     }
-    return id;
+    return proof;
   };
   const start = async (picker: boolean) => {
     if (gate.current || blocked || !live()) return;
@@ -139,7 +154,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       setSource(undefined);
       if (picker) setComputer(Computer.Local);
       const local = picker || computer === Computer.Local;
-      const selectedMachine = local ? await verifyLocal() : machine;
+      const selectedMachine = local ? (await verifyLocal()).machineId : machine;
       if (!live()) return;
       if (!uuid.test(selectedMachine)) throw new ConnectError("Select the computer that owns this checkout.", Code.InvalidArgument);
       await inspectSource({ path: selectedPath, machine: selectedMachine, name: local ? "This computer" : machineName || "Selected remote computer", local });
@@ -159,6 +174,37 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     if (summary && next.preferred_remote !== data.preferred_remote) next = { ...next, ...inferredGitHub(summary.output, text(next.preferred_remote)) };
     setData(next); setProblem("");
   };
+  const browseCloneParent = async () => {
+    if (gate.current || blocked || !live()) return;
+    gate.current = true; setBusy(true);
+    try {
+      const selected = await native(chooseFolder ?? (() => Promise.reject(new ConnectError("Folder selection is unavailable. Enter a path to continue.", Code.Unavailable))));
+      if (!live() || selected === null) return;
+      setCloneDraft(current => ({ ...current, parent: selected })); setProblem("");
+    } catch (error) { if (live()) setProblem(folderSelectionProblem(error)); }
+    finally { gate.current = false; if (live()) setBusy(false); }
+  };
+  const changeCloneDraft = (next: RepositoryCloneDraft) => {
+    if (blocked) return;
+    const identity = repositoryCloneURL(next.url);
+    if (githubSelection && (identity?.githubOwner.toLowerCase() !== githubSelection.owner.toLowerCase() || identity?.githubName.toLowerCase() !== githubSelection.name.toLowerCase())) setGitHubSelection(undefined);
+    setCloneDraft(next); setProblem("");
+  };
+  const parsedClone = repositoryCloneURL(cloneDraft.url), cloneDirectory = cloneDraft.directory ?? parsedClone?.directory ?? "";
+  const cloneReady = Boolean(cloneSupported && parsedClone && repositoryCloneParent(cloneDraft.parent) && repositoryCloneDirectory(cloneDirectory));
+  const startClone = async () => {
+    if (!cloneReady || blocked || gate.current || !live()) return;
+    gate.current = true; setBusy(true); setProblem("");
+    try {
+      const proof = await verifyLocal();
+      if (!live()) return;
+      const response = await createClient(ResourceService, transport).getResource({ kind: EntityKind.MACHINE, id: proof.machineId });
+      if (!live()) return;
+      if (!items(document(response.resource).worker_capabilities).includes("repository-clone-v1")) throw new ConnectError("Update and reconnect this computer's Worker to clone repositories. Existing folder registration remains available.", Code.Unimplemented);
+      await clone.send({ requestId: newRequestId(), machineId: proof.machineId, localWorkerToken: proof.token, parentPath: cloneDraft.parent, url: cloneDraft.url, directoryName: cloneDirectory, githubSelection });
+    } catch (error) { if (live()) setProblem(error instanceof ConnectError ? error.rawMessage : "This computer's Worker could not be verified. Check Runner Devices and retry."); }
+    finally { gate.current = false; if (live()) setBusy(false); }
+  };
   const remote = summary ? selectedInspectionRemote(summary.output, text(data.preferred_remote)) : "";
   const github = summary ? object(object(summary.output.github_repositories)[remote]) : {};
   const primaryCheckout = summary ? { machine_id: summary.source.machine, path: text(summary.output.root) } : undefined;
@@ -171,24 +217,25 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   return <section className="repository-registration" aria-label="Add repository">
     <button type="button" disabled={blocked} onClick={cancelTask}>Back to repositories</button>
     <h2 hidden={inTask}>Add repository</h2>
-    {saveJob ? <><h3>Repository save accepted</h3>{saveJob === "unknown" ? <p role="alert">The save was acknowledged without a readable job. Inspect its receipt before another save.</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>Return to current draft</button> : null}</>}</TrackedJob>}</> : <>
+    {cloneJob ? <><h3>Repository clone accepted</h3>{cloneJob === "unknown" ? <p role="alert">The clone was acknowledged without a readable job. Inspect its original request before another clone.</p> : <TrackedJob initial={cloneJob} active={active}>{(state, output) => <><SaveCompletion state={state} saved={saved} />{text(object(output.inspection).root) && state !== JobState.Succeeded ? <p role="alert">Checkout preserved at {text(object(output.inspection).root)}. Registration did not complete. Add this existing folder after resolving the reported problem.</p> : null}{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setCloneJob(undefined)}>Return to clone draft</button> : null}</>}</TrackedJob>}<SettingsTaskActions><button type="button" onClick={cancelTask}>Cancel</button></SettingsTaskActions></> : saveJob ? <><h3>Repository save accepted</h3>{saveJob === "unknown" ? <p role="alert">The save was acknowledged without a readable job. Inspect its receipt before another save.</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>Return to current draft</button> : null}</>}</TrackedJob>}<SettingsTaskActions><button type="button" onClick={cancelTask}>Cancel</button></SettingsTaskActions></> : <>
       {summary ? <section className="repository-summary" aria-label="Repository detected">
         <div className="repository-summary-heading"><div><h3>{text(data.name)}</h3><p>Repository detected</p></div><button type="button" disabled={blocked} onClick={() => void start(true)}>Change folder</button></div>
         <p className="repository-path">{text(summary.output.root)}</p>
         <dl><div><dt>Computer</dt><dd>{summary.source.name}</dd></div><div><dt>Git remote</dt><dd>{remote || "Unavailable"}</dd></div><div><dt>Default branch</dt><dd>{text(object(summary.output.default_refs)[remote]) || "Unavailable locally"}</dd></div><div><dt>GitHub</dt><dd>{text(github.owner) && text(github.name) ? `${text(github.owner)}/${text(github.name)}` : "Unavailable"}</dd></div></dl>
         <p>GitHub detection is metadata only. Select a profile in Optional settings to configure access.</p>
-      </section> : <section className="repository-folder-card"><h3>Choose your repository folder</h3><p>Select an existing Git repository on this computer.</p><button ref={initialAction} type="button" className="primary" disabled={blocked || !chooseFolder} onClick={() => void start(true)}>Choose folder</button><button type="button" disabled={blocked} aria-expanded={manual} onClick={() => setManual(value => !value)}>Enter a path…</button><p>This computer</p></section>}
+      </section> : <section className="repository-folder-card"><h3>Local folder</h3><p>Add an existing Git repository on this computer.</p><div className="repository-folder-actions"><button ref={initialAction} type="button" disabled={blocked || !chooseFolder} onClick={() => void start(true)}>Choose folder</button><button type="button" disabled={blocked} aria-expanded={manual} onClick={() => setManual(value => !value)}>Enter a path…</button></div></section>}
       {summary && !manual ? <button type="button" disabled={blocked} onClick={() => setManual(true)}>Enter a path…</button> : null}
       {manual || (!summary && path) ? <fieldset disabled={blocked}><legend>Repository folder</legend><label>Computer<select value={computer} onChange={event => setComputer(event.target.value as Computer)}><option value={Computer.Local}>This computer</option><option value={Computer.Remote}>Another computer</option></select></label>{computer === Computer.Remote ? <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine} active={active} showStatus change={(id, value, resource) => { setMachine(id); setMachineName(resource ? resourceName(resource) : text(value?.name)); }} /> : null}<TextField label="Absolute checkout path" value={path} max={4096} change={setPath} /><button type="button" disabled={!path || (computer === Computer.Remote && !machine)} onClick={() => void start(false)}>Inspect folder</button></fieldset> : null}
+      {!summary && !inspection ? <RepositoryCloneFields draft={cloneDraft} change={changeCloneDraft} busy={blocked} github={<RepositoryGitHubPicker active={active} supported={pickerSupported} disabled={blocked} choose={(selection, url) => { setGitHubSelection(selection); setCloneDraft(current => ({ ...current, url, directory: undefined })); setProblem(""); }} />} browse={() => void browseCloneParent()} supported={cloneSupported} /> : null}
       {inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <><InspectionCompletion state={state} output={output} completed={completeInspection} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setInspection(undefined)}>Return to selected folder</button> : null}</>}</TrackedJob> : null}
       {busy || inspect.busy ? <p role="status">{busy ? "Selecting folder and verifying this computer…" : "Inspecting repository…"}</p> : null}
       {offline ? <p role="status">The selected Worker is registered; its server heartbeat is offline. Keep this folder and check Runner Devices before retrying.</p> : null}
       {serverMachine.error ? <Problem error={serverMachine.error} /> : null}
       {unknown ? <p role="alert">Inspection was acknowledged without a readable result. Observe the original operation before another request.</p> : null}
       {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
-      {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error} />
+      {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error || clone.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
-      <SettingsTaskActions>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
+      <SettingsTaskActions className="repository-add-footer"><button type="button" onClick={cancelTask}>Cancel</button>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : !summary ? <button type="button" className="primary" disabled={blocked || !cloneReady} onClick={() => void startClone()}>Clone &amp; add repository</button> : null}{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
     </>}
   </section>;
 }
