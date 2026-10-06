@@ -79,11 +79,24 @@ test("environment checker invalidates a warm cache when its development graph ch
   git("config", "core.hooksPath", join(cwd, "empty-hooks"));
   git("add", "--all");
   git("commit", "-m", "fixture");
-  symlinkSync(
-    join(repositoryRoot, "node_modules"),
-    join(cwd, "node_modules"),
-    process.platform === "win32" ? "junction" : "dir",
-  );
+  const linkNodeModules = () => {
+    const link = join(cwd, "node_modules");
+    rmSync(link, { recursive: true, force: true });
+    symlinkSync(
+      join(repositoryRoot, "node_modules"),
+      link,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  };
+  linkNodeModules();
+  const restoreFixture = () => {
+    // Remove every generated file before restoring the tracked snapshot. The
+    // checker hashes broad inputs, so leaving ignored Turbo state in place can
+    // make a restored graph appear different on one platform.
+    git("checkout", "--", ".");
+    git("clean", "-fdx");
+    linkNodeModules();
+  };
 
   const canary = "environment-cache-fixture-sensitive-value";
   const run = (...args) => {
@@ -139,9 +152,7 @@ test("environment checker invalidates a warm cache when its development graph ch
           assert.match(output(result), /AssertionError/u);
         }
       } finally {
-        // Restore through the fixture index so Windows checkout normalization
-        // and file attributes match the committed baseline exactly.
-        git("checkout", "--", path);
+        restoreFixture();
       }
       assert.equal(hash(), baselineHash);
     });
@@ -179,8 +190,7 @@ test("environment checker invalidates a warm cache when its development graph ch
       assert.match(result.stdout, /cache miss/u);
       assert.match(output(result), /AssertionError/u);
     } finally {
-      if (sources.has(path)) git("checkout", "--", path);
-      else rmSync(join(cwd, path), { force: true });
+      restoreFixture();
     }
   });
   await t.test("workspace inventory invalidates the checker", () => {
@@ -195,7 +205,7 @@ test("environment checker invalidates a warm cache when its development graph ch
       assert.match(result.stdout, /cache miss/u);
       assert.match(output(result), /AssertionError/u);
     } finally {
-      git("checkout", "--", path);
+      restoreFixture();
     }
   });
   assert.equal(hash(), baselineHash);
