@@ -139,7 +139,9 @@ test("environment checker invalidates a warm cache when its development graph ch
           assert.match(output(result), /AssertionError/u);
         }
       } finally {
-        write(path, sources.get(path));
+        // Restore through the fixture index so Windows checkout normalization
+        // and file attributes match the committed baseline exactly.
+        git("checkout", "--", path);
       }
       assert.equal(hash(), baselineHash);
     });
@@ -177,7 +179,7 @@ test("environment checker invalidates a warm cache when its development graph ch
       assert.match(result.stdout, /cache miss/u);
       assert.match(output(result), /AssertionError/u);
     } finally {
-      if (sources.has(path)) write(path, sources.get(path));
+      if (sources.has(path)) git("checkout", "--", path);
       else rmSync(join(cwd, path), { force: true });
     }
   });
@@ -193,7 +195,7 @@ test("environment checker invalidates a warm cache when its development graph ch
       assert.match(result.stdout, /cache miss/u);
       assert.match(output(result), /AssertionError/u);
     } finally {
-      write(path, sources.get(path));
+      git("checkout", "--", path);
     }
   });
   assert.equal(hash(), baselineHash);
