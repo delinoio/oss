@@ -18,7 +18,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{NativeFailure, canonical_id};
 
-#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum OAuthAction {
     Begin,
