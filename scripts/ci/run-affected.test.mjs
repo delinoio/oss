@@ -29,7 +29,7 @@ test("the runner invokes installed Turbo through Node without package-manager sh
   const head = "b".repeat(40);
   for (const forced of ["false", "true"]) {
     const result = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, script, workspace, ...tasks], {
-      cwd, encoding: "utf8", env: { ...process.env, FORCE_RUN: forced, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head },
+      cwd, encoding: "utf8", env: { ...process.env, CI: "", TURBO_REMOTE_CACHE_AUTH: "false", FORCE_RUN: forced, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head },
     });
     assert.equal(result.status, 7, result.stdout + result.stderr);
     const call = JSON.parse(result.stdout.trim().split(/\r?\n/u).at(-1));
@@ -65,7 +65,7 @@ test("committed Turbo honors the exact comparison, empty scopes, external forcin
   const head = commit();
   symlinkSync(join(root, "node_modules"), join(cwd, "node_modules"), process.platform === "win32" ? "junction" : "dir");
   const run = (workspace, task, forced = "false", extra = {}) => spawnSync(process.execPath, [script, workspace, task], {
-    cwd, encoding: "utf8", env: { ...process.env, FORCE_RUN: forced, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head, TURBO_TELEMETRY_DISABLED: "1", ...extra },
+    cwd, encoding: "utf8", env: { ...process.env, TURBO_REMOTE_CACHE_AUTH: "false", FORCE_RUN: forced, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head, TURBO_TELEMETRY_DISABLED: "1", ...extra },
   });
   let result = run("second", "test");
   assert.equal(result.status, 0, result.stdout + result.stderr);

@@ -1,0 +1,167 @@
+{
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "ci:format": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:vet": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:build": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:unit": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:migrations": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:integration": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:api": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:sweeper": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:oci": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    },
+    "ci:oci:integration": {
+      "cache": false,
+      "dependsOn": [
+        "devhud-admin#build:embedded"
+      ],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "DEVHUD_TEST_DATABASE_URL",
+        "OCI_TARGET",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "CI_SYFT_COMMAND"
+      ]
+    }
+  }
+}

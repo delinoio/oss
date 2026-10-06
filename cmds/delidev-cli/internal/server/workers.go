@@ -395,7 +395,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			if job.State == domain.JobQueued && job.Type == domain.WorkspaceStorageJob {
 				var storageInput workspace.StorageRequest
-				if domain.Decode(job.Input, &storageInput) != nil {
+				if workspace.DecodeStorageRequest(job.Input, &storageInput) != nil {
 					return rpc.Error(workspace.ResultUncertain(), correlation)
 				}
 				pending := false
@@ -459,7 +459,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					}
 					if j.Type == domain.WorkspaceStorageJob {
 						var storageInput workspace.StorageRequest
-						if domain.Decode(j.Input, &storageInput) != nil {
+						if workspace.DecodeStorageRequest(j.Input, &storageInput) != nil {
 							return nil, workspace.ResultUncertain()
 						}
 						if storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover {
@@ -491,11 +491,10 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					}
 					return rpc.Error(err, correlation)
 				}
-				if err := domain.Decode(result.Data, &record); err != nil {
-					return rpc.Error(err, correlation)
-				}
-				job, err = store.Decode[domain.Job](record)
+				claimID := record.ID
+				record, job, err = decodeWorkerClaim(result.Data)
 				if err != nil {
+					s.logger.WarnContext(ctx, "worker claim receipt rejected", "machine_id", machine, "job_id", claimID, "code", domain.SafeError(err).Code)
 					return rpc.Error(err, correlation)
 				}
 			}

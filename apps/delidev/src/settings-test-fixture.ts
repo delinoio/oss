@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { configure, getConfig } from "@testing-library/react";
+import { fixtureBinary } from "../../../scripts/ci/fixture-binary.mjs";
 import { SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
 
 export const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
@@ -36,8 +37,9 @@ beforeAll(async () => {
   // return to the default only if fixture reads become synchronously coordinated.
   configure({ asyncUtilTimeout: 5000, reactStrictMode: originalUiConfig.reactStrictMode });
   directory = await mkdtemp(join(tmpdir(), "delidev-settings-"));
-  binary = join(directory, processInfo.platform === "win32" ? "delidev.exe" : "delidev");
-  await promisify(execFile)("go", ["build", "-o", binary, "./cmds/delidev-cli"], { cwd: resolve(processInfo.cwd(), "../.."), timeout: 120000 });
+  const localBinary = join(directory, processInfo.platform === "win32" ? "delidev.exe" : "delidev");
+  binary = await fixtureBinary(localBinary);
+  if (binary === localBinary) await promisify(execFile)("go", ["build", "-o", binary, "./cmds/delidev-cli"], { cwd: resolve(processInfo.cwd(), "../.."), timeout: 120000 });
   scope = join(directory, "server");
   process = spawn(binary, ["--data-dir", scope, "server", "run", "--listen", "127.0.0.1:0"], { stdio: "ignore" });
   const until = Date.now() + 15000;

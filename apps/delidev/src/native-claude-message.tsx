@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeClaudeCitations, validClaudeCitationHistory, claudeCitationHistoryBytes } from "./native-claude-citations";
 import { object, type Document } from "./documents";
 import { claudeToolReference, type ClaudeToolReference } from "./native-claude-tool";
@@ -6,7 +7,7 @@ enum BlockKind { Tool = "tool_use", Text = "text", Thinking = "thinking", Redact
 enum BlockState { Streaming = "streaming", Completed = "completed", Stopped = "stopped", Interrupted = "interrupted" }
 enum MessageState { Streaming = "streaming", Complete = "complete" }
 const stopReasons = new Set(["end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal", "model_context_window_exceeded"]);
-const blockLabels = { [BlockState.Streaming]: "Streaming", [BlockState.Completed]: "Content complete", [BlockState.Stopped]: "Stream closed", [BlockState.Interrupted]: "Interrupted · partial response" };
+const blockLabels = { get [BlockState.Streaming]() { return copy("native-claude-message.streaming_a951c5"); }, get [BlockState.Completed]() { return copy("native-claude-message.contentComplete_829c09"); }, get [BlockState.Stopped]() { return copy("native-claude-message.streamClosed_5eab18"); }, get [BlockState.Interrupted]() { return copy("native-claude-message.interruptedPartialResponse_637011"); } };
 type Block = { citations?: Document; tool?: ClaudeToolReference; index: number; kind: BlockKind; text: string; state: BlockState };
 
 function keys(value: Record<string, unknown>, expected: string[]) {
@@ -41,14 +42,15 @@ function message(value: unknown, state: string): { blocks: Block[]; reason: stri
 // Native text stays inert and ordered. Redacted reasoning has no reconstructed
 // content; a provider message closing cannot imply successful session outcome.
 export function NativeClaudeMessage({ content, state }: { content: unknown; state: string }) {
+  useLocale();
   const retained = message(content, state);
-  if (!retained) return <section aria-label="Claude message unavailable"><p>The retained Claude message is unavailable or inconsistent.</p></section>;
-  return <section aria-label="Claude message content">
+  if (!retained) return <section aria-label={copy("native-claude-message.claudeMessageUnavailable_9efc2c")}><p>{copy("native-claude-message.theRetainedClaudeMessageIsUnavailable_453226")}</p></section>;
+  return <section aria-label={copy("native-claude-message.claudeMessageContent_fa712d")}>
     <ol>{retained.blocks.map((block) => <li key={block.index}>
-      {block.kind === BlockKind.Tool ? <p>Tool proposal: {block.tool!.name}. <small>{blockLabels[block.state]}</small></p> : block.kind === BlockKind.Thinking ? <details><summary>Reasoning · {blockLabels[block.state]}</summary><pre>{block.text}</pre></details> : block.kind === BlockKind.Redacted ? <p>Reasoning was redacted by the harness. <small>{blockLabels[block.state]}</small></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
+      {block.kind === BlockKind.Tool ? <p><LocalizedText id="native-claude-message.toolProposal_e8bdb5" components={{ s0: <>{block.tool!.name}</>, s1: <small>{blockLabels[block.state]}</small> }} /></p> : block.kind === BlockKind.Thinking ? <details><summary><LocalizedText id="native-claude-message.reasoning_4d3137" components={{ s0: <>{blockLabels[block.state]}</> }} /></summary><pre>{block.text}</pre></details> : block.kind === BlockKind.Redacted ? <p><LocalizedText id="native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3" components={{ s0: <small>{blockLabels[block.state]}</small> }} /></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
       {block.citations ? <NativeClaudeCitations value={block.citations} /> : null}
     </li>)}</ol>
-    {retained.reason !== null ? <p>Native stop reason: {retained.reason}</p> : null}
-    {retained.sequence !== null ? <details><summary>Native stop sequence</summary><pre>{retained.sequence}</pre></details> : null}
+    {retained.reason !== null ? <p><LocalizedText id="native-claude-message.nativeStopReason_e2e029" components={{ s0: <>{retained.reason}</> }} /></p> : null}
+    {retained.sequence !== null ? <details><summary>{copy("native-claude-message.nativeStopSequence_96951d")}</summary><pre>{retained.sequence}</pre></details> : null}
   </section>;
 }

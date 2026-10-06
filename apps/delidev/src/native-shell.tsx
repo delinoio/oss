@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
 enum ShellStatus { Pending = "pending", Running = "running", Completed = "completed", Failed = "failed" }
@@ -71,32 +72,34 @@ function retained(tool: Record<string, unknown>, state: string): ShellSnapshot[]
   return snapshots;
 }
 
-const labels: Record<ShellStatus, string> = { pending: "Pending", running: "Running", completed: "Completed", failed: "Failed" };
+const labels: Record<ShellStatus, string> = { get pending() { return copy("native-shell.pending_331551"); }, get running() { return copy("native-shell.running_f4ccae"); }, get completed() { return copy("native-shell.completed_22a970"); }, get failed() { return copy("native-shell.failed_031a8f"); } };
 function Arguments({ input }: { input: ShellInput }) {
+  useLocale();
   return <dl>
-    {input.command !== undefined ? <><dt>Command</dt><dd><pre>{input.command}</pre></dd></> : null}
-    {input.workdir !== undefined ? <><dt>Requested directory</dt><dd><pre>{input.workdir}</pre></dd></> : null}
-    {input.timeout !== undefined ? <><dt>Requested timeout (ms)</dt><dd>{input.timeout}</dd></> : null}
+    {input.command !== undefined ? <><dt>{copy("native-shell.command_713166")}</dt><dd><pre>{input.command}</pre></dd></> : null}
+    {input.workdir !== undefined ? <><dt>{copy("native-shell.requestedDirectory_3fa8da")}</dt><dd><pre>{input.workdir}</pre></dd></> : null}
+    {input.timeout !== undefined ? <><dt>{copy("native-shell.requestedTimeoutMs_50df7a")}</dt><dd>{input.timeout}</dd></> : null}
   </dl>;
 }
 
 // Native previews may be replaced or clipped. Render them as observations,
 // never concatenate them into invented output or infer success from completion.
 export function NativeShell({ tool, state }: { tool: Record<string, unknown>; state: string }) {
+  useLocale();
   const snapshots = retained(tool, state), latest = snapshots?.at(-1);
-  if (!snapshots || !latest) return <details><summary>Shell · Unavailable</summary><p>The retained Shell operation is unavailable or inconsistent.</p></details>;
+  if (!snapshots || !latest) return <details><summary>{copy("native-shell.shellUnavailable_e21cae")}</summary><p>{copy("native-shell.theRetainedShellOperationIsUnavailable_289f4b")}</p></details>;
   return <details>
-    <summary>Shell · {labels[latest.status]}</summary>
+    <summary><LocalizedText id="native-shell.shell_c1d0ae" components={{ s0: <>{labels[latest.status]}</> }} /></summary>
     <Arguments input={latest.input} />
     {latest.title !== undefined ? <p>{latest.title}</p> : null}
-    {latest.exit !== undefined ? <p>Native exit code: {latest.exit === null ? "Unavailable" : latest.exit}</p> : null}
-    {latest.output !== undefined ? <section aria-label="Shell result"><pre>{latest.output}</pre></section> : null}
-    {latest.error !== undefined ? <section aria-label="Shell error"><pre>{latest.error}</pre></section> : null}
-    {latest.preview !== undefined ? <details><summary>Latest native output preview</summary><pre>{latest.preview}</pre></details> : null}
-    {latest.truncated !== undefined ? <p>{latest.truncated ? "The native Shell result is truncated." : "The native Shell result is not truncated."}</p> : null}
-    {latest.outputPath !== undefined ? <p>Native saved output path:<br /><code>{latest.outputPath}</code></p> : null}
-    {latest.interrupted !== undefined ? <p>Native interruption: {latest.interrupted ? "Observed" : "Not observed"}</p> : null}
-    <details><summary>Original proposal and observations</summary><ol>{snapshots.map((item, index) => <li key={index}><details>
+    {latest.exit !== undefined ? <p><LocalizedText id="native-shell.nativeExitCode_991101" components={{ s0: <>{latest.exit === null ? copy("native-shell.unavailable_ca1844") : latest.exit}</> }} /></p> : null}
+    {latest.output !== undefined ? <section aria-label={copy("native-shell.shellResult_8e738a")}><pre>{latest.output}</pre></section> : null}
+    {latest.error !== undefined ? <section aria-label={copy("native-shell.shellError_662943")}><pre>{latest.error}</pre></section> : null}
+    {latest.preview !== undefined ? <details><summary>{copy("native-shell.latestNativeOutputPreview_b55362")}</summary><pre>{latest.preview}</pre></details> : null}
+    {latest.truncated !== undefined ? <p>{latest.truncated ? copy("native-shell.theNativeShellResultIsTruncated_e8b1dd") : copy("native-shell.theNativeShellResultIsNot_9537c3")}</p> : null}
+    {latest.outputPath !== undefined ? <p><LocalizedText id="native-shell.nativeSavedOutputPath_6ce1ca" components={{ s0: <br />, s1: <code>{latest.outputPath}</code> }} /></p> : null}
+    {latest.interrupted !== undefined ? <p><LocalizedText id="native-shell.nativeInterruption_edde92" components={{ s0: <>{latest.interrupted ? copy("native-shell.observed_64fa8a") : copy("native-shell.notObserved_1d3efc")}</> }} /></p> : null}
+    <details><summary>{copy("native-shell.originalProposalAndObservations_8d63b6")}</summary><ol>{snapshots.map((item, index) => <li key={index}><details>
       <summary>{labels[item.status]}</summary><Arguments input={item.input} />
       {item.raw !== undefined ? <pre>{item.raw}</pre> : null}
       {item.preview !== undefined ? <pre>{item.preview}</pre> : null}

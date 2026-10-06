@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "device-language"
+description = "Read or select the device-local System, English, or Korean language; no server state, paths, or filesystem capability."
+commands.allow = ["read_language", "update_language"]

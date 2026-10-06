@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { ownedMessage, useProductMessage, copy, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
 import { useRetainSettingsTask, useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -27,10 +28,10 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 function folderSelectionProblem(error: unknown): string {
   if (error instanceof ConnectError) return error.rawMessage;
   switch (error) {
-    case "busy": return "Another window is choosing a folder. Wait for it to finish, then try Choose folder again.";
-    case "invalid-evidence": return "The selected folder cannot be used. Choose another folder or enter a valid absolute checkout path.";
-    case "permission-denied": return "Folder selection was denied. Check this window's authorization and folder access, then try Choose folder again.";
-    default: return "Folder selection failed. Try Choose folder again or enter an absolute checkout path.";
+    case "busy": return copy("repository-registration.extra.725492fb2d32");
+    case "invalid-evidence": return copy("repository-registration.extra.79de1a72a2e7");
+    case "permission-denied": return copy("repository-registration.extra.0cb2cb5d6d57");
+    default: return copy("repository-registration.extra.3a5c3abe26a1");
   }
 }
 
@@ -60,10 +61,12 @@ export function validRepositoryInspection(output: Document): boolean {
 }
 
 function InspectionCompletion({ state, output, completed }: { state: string; output: Document; completed: (output: Document) => void }) {
+  useLocale();
   useEffect(() => { if (state === JobState.Succeeded) completed(output); }, [state, output, completed]);
   return null;
 }
 function SaveCompletion({ state, saved }: { state: string; saved: () => void }) {
+  useLocale();
   useEffect(() => { if (state === JobState.Succeeded) saved(); }, [state, saved]);
   return null;
 }
@@ -71,12 +74,13 @@ function SaveCompletion({ state, saved }: { state: string; saved: () => void }) 
 export function RepositoryRegistration({ active, readLocalWorker, controlLocalWorker, chooseFolder, saved, cancel }: {
   active: boolean; readLocalWorker?: ReadLocalWorkerProof; controlLocalWorker?: ControlLocalWorker; chooseFolder?: ChooseRepositoryFolder; saved: () => void; cancel: () => void;
 }) {
+  useLocale();
   const opening = useSettingsOpening();
   const alive = useRef(false), gate = useRef(false), initialAction = useRef<HTMLButtonElement>(null);
   const [data, setData] = useState<Document>(() => newConfiguration(EntityKind.REPOSITORY));
   const [manual, setManual] = useState(false), [computer, setComputer] = useState(Computer.Local);
   const [path, setPath] = useState(""), [machine, setMachine] = useState(""), [machineName, setMachineName] = useState("");
-  const [busy, setBusy] = useState(false), [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState(false), [problem, setProblem] = useProductMessage("");
   const [source, setSource] = useState<Source>();
   const [inspection, setInspection] = useState<{ job: Resource; source: Source }>();
   const [summary, setSummary] = useState<{ output: Document; source: Source }>();
@@ -157,20 +161,20 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       const selectedMachine = local ? (await verifyLocal()).machineId : machine;
       if (!live()) return;
       if (!uuid.test(selectedMachine)) throw new ConnectError("Select the computer that owns this checkout.", Code.InvalidArgument);
-      await inspectSource({ path: selectedPath, machine: selectedMachine, name: local ? "This computer" : machineName || "Selected remote computer", local });
+      await inspectSource({ path: selectedPath, machine: selectedMachine, name: local ? copy("repository-registration.extra.26f9f95a152f") : machineName || copy("repository-registration.extra.6501182438e2"), local });
     } catch (error) {
-      if (live()) setProblem(stage === SelectionStage.Picker ? folderSelectionProblem(error) : error instanceof ConnectError ? error.rawMessage : error === "permission-denied" ? "Access to this computer's Worker was denied. Check device authorization and private-state permissions, then retry." : "This computer's Worker could not be verified. Check its registration and connection in Runner Devices, then retry. The selected folder is retained.");
+      if (live()) setProblem(stage === SelectionStage.Picker ? folderSelectionProblem(error) : error instanceof ConnectError ? error.rawMessage : error === "permission-denied" ? ownedMessage("repository-registration.extra.2d1caf8c0851") : ownedMessage("repository-registration.extra.4bbf580a7dcf"));
     } finally { gate.current = false; if (live()) setBusy(false); }
   };
   const completeInspection = useCallback((output: Document) => {
     if (!inspection || !alive.current || opening?.disposed) return;
-    if (!validRepositoryInspection(output)) { setUnknown(true); setProblem("The inspection summary is unreadable. Inspect the original operation before continuing."); return; }
+    if (!validRepositoryInspection(output)) { setUnknown(true); setProblem(ownedMessage("repository-registration.extra.e8a01a7b61e7")); return; }
     setData({ ...newConfiguration(EntityKind.REPOSITORY), name: text(output.name), checkouts: [{ machine_id: inspection.source.machine, path: text(output.root) }], ...inferredGitHub(output, "") });
     setSummary({ output, source: inspection.source });
     setOptions(false); setManual(false); setInspection(undefined);
   }, [inspection, opening]);
   const change = (next: Document) => {
-    if (encode(next).byteLength > 1 << 20) { setProblem("This configuration is too large. Reduce its options."); return; }
+    if (encode(next).byteLength > 1 << 20) { setProblem(ownedMessage("repository-registration.extra.eede23d37ef3")); return; }
     if (summary && next.preferred_remote !== data.preferred_remote) next = { ...next, ...inferredGitHub(summary.output, text(next.preferred_remote)) };
     setData(next); setProblem("");
   };

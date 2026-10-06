@@ -70,6 +70,7 @@
 .settings-content[aria-label] .appearance-settings { max-width: 720px; container: appearance / inline-size; }
 .appearance-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .settings-content[aria-label] .appearance-choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); margin: 0; }
+.appearance-choice-label { grid-column: 1 / -1; min-width: 0; }
 .appearance-miniature { grid-column: 1 / -1; display: grid; grid-template-columns: 20% minmax(0, 1fr); gap: 8px; height: 64px; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
 .appearance-miniature::before { content: ""; background: var(--surface-inset); border-right: 1px solid var(--border); }
 .appearance-miniature::after { content: ""; border-block: 6px solid var(--border); background: var(--surface-muted); }
@@ -90,4 +91,9 @@
   .settings-content[aria-label] .subscription-provider-card button { grid-column: 2; grid-row: auto; justify-self: start; }
 }
 
+/* Language is a device preference and follows the existing Appearance body. */
+.settings-content .language-settings { max-width: 720px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.settings-content .language-settings label { font-size: 16px; line-height: 24px; font-weight: 600; }
+.settings-content .language-settings select { width: min(320px, 100%); min-height: 40px; }
+@container settings-body (max-width: 639px) { .settings-content .language-settings select { width: 100%; } }
 .settings-content[aria-label] .settings-breadcrumb { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 18px; }

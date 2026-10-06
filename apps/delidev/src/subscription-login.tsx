@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { useLocale, ownedMessage, resolveMessage, type OwnedMessage, copy } from "./localization";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -9,7 +9,7 @@ import { document, encode, object, text } from "./documents";
 import { serviceAccount, subscriptionAliasDocument } from "./subscription-resource";
 import { SubscriptionOnboarding, SubscriptionOnboardingStage as Stage, subscriptionNameValid } from "./subscription-onboarding";
 
-interface View { service: SubscriptionServiceId; stage: Stage; name: string; suggested: boolean; busy: boolean; problem?: string; diagnostic?: CodexDiagnostic; browserReady: boolean }
+interface View { service: SubscriptionServiceId; stage: Stage; name: string; suggested: boolean; busy: boolean; problem?: string | OwnedMessage; diagnostic?: CodexDiagnostic; browserReady: boolean }
 interface Pending {
   service: SubscriptionServiceId; opening: string; generation: string; account?: Resource; operation: string; url: string;
   bound: boolean; callbackDispatched: boolean; disposed: boolean; polling: boolean; busy: boolean; named: boolean; terminal: boolean;
@@ -31,6 +31,7 @@ const stages: Partial<Record<SubscriptionLoginState, Stage>> = {
 };
 
 export function useSubscriptionLogin(active: boolean, changed: () => void) {
+  useLocale();
   const transport = useTransport(), opening = useSettingsOpening(), native = useOAuthNativeControl();
   const clients = useMemo(() => ({ configuration: createClient(ConfigurationService, transport), resource: createClient(ResourceService, transport), subscription: createClient(SubscriptionService, transport) }), [transport]);
   const [view, setView] = useState<View>();
@@ -51,16 +52,17 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     if (live(p)) p.account = result.resource;
     return result.resource;
   };
-  const run = async (p: Pending, action: () => Promise<void>, problem: string) => {
+  const run = async (p: Pending, action: () => Promise<void>, problem: string | OwnedMessage) => {
     if (!live(p) || p.busy) return;
     p.busy = true; p.retry = undefined; update(p, { busy: true, problem: undefined });
     try { await action(); }
     catch (error) {
       if (live(p)) {
         const failure = clientFailure(error).code;
-        // Retain exact mutation inputs only for an uncertain response. Typed
-        // revision conflicts require a fresh read and another explicit Save.
-        if ([FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled].includes(failure)) p.retry = action;
+        // Internal can follow durable admission when reading the account fails.
+        // Retain the exact action for explicit replay after uncertain responses;
+        // typed revision conflicts require a fresh read and another explicit Save.
+        if ([FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure)) p.retry = action;
         update(p, { problem });
       }
     } finally { p.busy = false; update(p, { busy: false }); }
@@ -71,7 +73,7 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     pending.current = p;
     setView({ service, stage: service === SubscriptionServiceId.ChatGPT ? Stage.Preparing : Stage.Unsupported, name: subscriptionServiceNames[service], suggested: false, busy: false, browserReady: false });
     if (service !== SubscriptionServiceId.ChatGPT) return;
-    if (!native) { update(p, { stage: Stage.Unsupported, problem: "Browser sign-in requires the desktop app." }); return; }
+    if (!native) { update(p, { stage: Stage.Unsupported, problem: ownedMessage("subscription-login.extra.22765583eb23") }); return; }
     const create = { mutation: { requestId: newRequestId() }, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson: encode({ alias: subscriptionServiceNames[service], subscription_service: service, type: "subscription", enabled: true, exclude_automatic: false, recovery_notifications: false, health: "disconnected", quota: [], confirmed_exhausted: false }) };
     let login: Parameters<typeof clients.subscription.requestSubscription>[0] | undefined;
     const start = async () => {
@@ -88,7 +90,7 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
       if (result.operationId !== login.mutation?.requestId || !serviceAccount(result.account, p.account.id, service, p.account.revision)) throw new Error("Invalid login ownership");
       p.account = result.account; p.operation = result.operationId;
     };
-    void run(p, start, "The original sign-in request could not be confirmed. Keep this screen open and retry the original request.");
+    void run(p, start, ownedMessage("subscription-login.extra.07d42279a62f"));
   };
 
   // Sensitive progress stays in this opening, outside the shared query cache.
@@ -133,14 +135,14 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
             if (!live(p)) return;
             if (!isEntityId(result.generation)) throw new Error("Invalid native generation");
             p.generation = result.generation; update(p, { stage: Stage.Waiting, browserReady: true, problem: undefined });
-          } catch { update(p, { stage: Stage.Waiting, browserReady: true, problem: "The browser could not be opened. Use Open browser again to open the original sign-in page." }); }
+          } catch { update(p, { stage: Stage.Waiting, browserReady: true, problem: ownedMessage("subscription-login.extra.c7ce5cc2ddce") }); }
         }
         if (p.generation && !p.callbackDispatched) {
           let result;
           try { result = await native!(p.opening, OAuthNativeAction.Take, p.generation, p.operation, ""); }
           catch {
             p.callbackDispatched = true;
-            update(p, { problem: "The original callback status is uncertain. Waiting for server confirmation; callback delivery will not be retried." });
+            update(p, { problem: ownedMessage("subscription-login.extra.53784001245e") });
             return;
           }
           if (!live(p)) { result.code?.fill(0); return; }
@@ -153,11 +155,11 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
             const query = new Uint8Array(result.code);
             try {
               await clients.subscription.forwardSubscriptionCallback({ accountId: p.account!.id, operationId: p.operation, callbackQuery: query });
-            } catch { update(p, { problem: "The original callback result is uncertain. Waiting for the server to confirm sign-in; the callback will not be sent again." }); }
+            } catch { update(p, { problem: ownedMessage("subscription-login.extra.c8dad9da5412") }); }
             finally { query.fill(0); result.code.fill(0); }
           }
         }
-      } catch { update(p, { problem: "The original sign-in status could not be verified. Waiting for another status check." }); }
+      } catch { update(p, { problem: ownedMessage("subscription-login.extra.0e515dfbf962") }); }
       finally { p.polling = false; }
     };
     void poll(); const timer = setInterval(() => void poll(), 1000); return () => clearInterval(timer);
@@ -174,7 +176,7 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
       }
       const result = await native(p.opening, OAuthNativeAction.Reopen, p.generation, p.operation, "");
       if (result.generation !== p.generation) throw new Error("Invalid native browser binding");
-    }, "The browser could not be opened. You can try Open browser again.");
+    }, ownedMessage("subscription-login.extra.34521ed193ad"));
   };
   const cancel = () => {
     const p = pending.current; if (!p || !live(p) || !p.operation) return;
@@ -189,7 +191,7 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
       const result = await clients.subscription.cancelSubscription(request);
       if (!serviceAccount(result.account, current.id, p.service, current.revision)) throw new Error("Invalid cancellation");
       if (live(p)) p.account = result.account;
-    }, "The original cancellation could not be confirmed. Sign-in status will continue to be checked.");
+    }, ownedMessage("subscription-login.extra.13e06932e780"));
   };
   const save = () => {
     const p = pending.current; if (!p || !live(p) || !p.named || !view || !subscriptionNameValid(view.name)) return;
@@ -202,9 +204,9 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
       if (!live(p)) return;
       if (result.requestId !== request.mutation?.requestId || !serviceAccount(result.resource, current.id, p.service, current.revision) || document(result.resource).alias !== alias) throw new Error("Invalid saved name");
       leave();
-    }, "The account name could not be saved. Your edit is kept; check the current account and save again.");
+    }, ownedMessage("subscription-login.extra.21ebd4c8705a"));
   };
   const p = pending.current;
-  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={view.problem} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? "The original request could not be confirmed."); }}>Retry original request</button> : null}</> : null;
+  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={resolveMessage(view.problem)} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? ownedMessage("subscription-login.extra.557b693dbfb7")); }}>{copy("subscription-login.retryOriginalRequest_008780")}</button> : null}</> : null;
   return { begin, body, workflow: Boolean(view), retained: Boolean(p?.busy || p?.retry || p?.operation || p?.account), available: Boolean(native), leave };
 }

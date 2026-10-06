@@ -117,7 +117,7 @@ it("requires removal confirmation, retains the original uncertain request, and c
   const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
   fireEvent.click(await screen.findByRole("button", { name: "Remove Saved server" }));
   expect(value.remove).not.toHaveBeenCalled();
-  expect(screen.getByText(/discards its unsent drafts/)).toBeTruthy();
+  expect(screen.getByText(/closes all windows for this saved connection and discards their unsent drafts/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Confirm connection removal" }));
   await screen.findByText(/operation has not been confirmed/);
   view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);

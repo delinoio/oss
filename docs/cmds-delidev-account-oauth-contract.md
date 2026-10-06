@@ -56,6 +56,69 @@ approved 760px width, 20px padding, 12px radius, theme, wrapped actions, keyboar
 focus, status announcements, narrow-window and 200% zoom behavior. Switch to an
 API key only after cancellation is confirmed; success never auto-validates.
 
+## Common lifecycle and Hugging Face
+
+The common implementation activates migration 31 after real 26–30. The private
+`account_oauth_credentials` table retains exact account, immutable connection,
+provider/preset, client-profile digest, expiry, token-generation reference,
+refresh claim and cleanup references. No account foreign key can erase an orphan
+claim. Vault entries alone contain bounded access/refresh token envelopes. Restore
+retains the current table; unresolved claims or cleanup block restore. Refresh
+commits a claim before HTTP, serializes concurrent requests by connection, swaps
+the protected reference atomically, then removes prior generations. Lost HTTP or
+Vault acknowledgement leaves recovery/denied authority and cannot resend refresh.
+Inspection and execution resolve the same current credential; doctor reads only.
+
+The Hugging Face adapter uses the exact managed `https://router.huggingface.co/v1`
+profile, public-client PKCE, `inference-api` scope and the registered localhost
+`/oauth/hugging-face/callback` path with a canonical ephemeral port. Native and Go
+both bind the original state. A state-bound empty code records an access-denied
+receipt without HTTP. Duplicate completion replays the original receipt; explicit
+code-free recovery reads only original protected local material. Start alone
+returns authorization URLs. The common card uses the selected provider's title,
+progress and recovery text and retains unverified success.
+
+`cmds/delidev-cli/internal/providers/oauth_clients.json` is compiled public release
+registration metadata shared by Go and native. A profile requires its DeliDev
+client ID, `registered` status and ordinary API `accepted` status. Native profile
+inventory and server capability 6 must agree before a new browser option appears;
+older native hosts retain OpenRouter behavior. Current new registrations remain
+pending/unverified. Implemented fixture paths do not establish activation or real
+account/native acceptance. Gemini and Baseten adapters remain subsequent work.
+
+CLI Start accepts `--callback-url`; Hugging Face requires the registered callback.
+OpenRouter alone retains no-callback headless mode. `--callback-stdin` accepts a
+bounded protobuf JSON envelope containing only base64 `authorizationCode` and
+`authorizationState`. Mutation identity comes from original CLI flags, never the
+callback. `--code-stdin` and explicit original `--recover` remain supported.
+
+## Google Gemini project-bound PKCE
+
+The Gemini adapter binds the exact managed OpenAI-compatible endpoint at
+`https://generativelanguage.googleapis.com/v1beta/openai`, the DeliDev desktop
+public client and registered IPv4 loopback `/oauth/google-gemini/callback` path.
+Use Google PKCE with `https://www.googleapis.com/auth/cloud-platform` scope,
+`access_type=offline` and `prompt=consent`. Code exchange and refresh use only
+`https://oauth2.googleapis.com/token`. The native opener validates every fixed
+field and the original state, and permits only bounded Google authuser/prompt
+callback metadata in addition to code/state/scope or access_denied.
+
+Before any listener, Start or browser opening, the common card requires a Google
+Cloud project ID. Validate 6–30 lowercase letters, digits or hyphens, starting
+with a letter and ending with a letter/digit. Start receipts include immutable
+project options without changing historical OpenRouter inputs. Keep the project
+in private connection metadata. Inspection and native execution use the same
+protected access token with `Authorization: Bearer` and `x-goog-user-project`;
+never send an OAuth token as `x-goog-api-key`. Independently validate the exact
+managed provider and official Google destination before attaching the project.
+Downstream project headers cannot replace this connection binding. API keys and
+foreign/regional providers cannot inherit the project.
+
+The compiled Google registration remains pending/unverified. Google OAuth for
+the general API is documented, but the DeliDev client and actual compatible
+inference path still require service acceptance before capability advertisement.
+Fixture checks, desktop builds and public registration are distinct evidence.
+
 ## OpenRouter account OAuth PKCE (issue #1146)
 
 ## Status and ownership
@@ -126,8 +189,8 @@ Advertise capability 5 only together with the implemented product lifecycle.
 
 ### Native and desktop
 
-- Add a closed OpenRouter opener/callback infrastructure capability for trusted main and saved-server webviews. Preserve trusted-origin/window/server-generation checks and existing GitHub restrictions; no generic opener, new renderer navigation/CSP origin, embedded account browser profile or credential storage in Rust.
 - Register `account_oauth_native` in the native build-time app command manifest and grant its dedicated `account-oauth` permission only through the existing `main` and `server-*` webview capabilities. Handler registration alone is insufficient: Tauri filters and authorizes commands through the generated ACL. Native host tests must resolve the actual generated manifests/capabilities and verify both trusted-webview admission and raw-child/remote-document denial. Runtime window, server and epoch checks remain independent. Record native preparation/browser outcomes with closed action, phase, outcome and failure metadata only; successful callback polling stays quiet.
+- Add a closed OpenRouter opener/callback infrastructure capability for registered trusted local and saved-server product webviews. Preserve trusted-origin/window/server-generation checks and existing GitHub restrictions; no generic opener, new renderer navigation/CSP origin, embedded account browser profile or credential storage in Rust.
 - Own one native attempt per trusted window. Start a temporary listener on IPv4/IPv6 loopback only before obtaining the authorization URL. Use documented `http://localhost:<ephemeral-port>/...`, an unpredictable per-attempt path, exact Host/method/path, single-use callback with a <=16KiB request-target budget and <=16KiB header budget, the same exact code-byte validation, and no wildcard bind. This infrastructure port is unrelated to the fixed frontend dev port.
 - Bind callback forwarding to the initiating window, selected server identity, attempt and current local generation. Code travels through a dedicated one-shot trusted completion bridge, never broadcast native events, query keys, app-owned history/storage, logs or echoed callback HTML. Return a constant non-secret callback page with no-store/no-referrer policy and remove the code from the final displayed callback URL; do not promise erasure of the external browser's own history. PKCE verifier/returned key never enter the renderer. Remote selected servers receive code through authenticated encrypted Connect; callback localhost means the desktop, while keyless provider localhost still means the server.
 - The bridge captures a native window epoch before awaiting sidecar identity and checks it again after its blocking operation. Window closure invalidates admitted, queued Begin calls as well as existing listeners. A visit supplies one opaque local opening identity before Begin; scoped disposal records a tombstone even if the Begin response was lost. Original Begin replay returns its existing listener metadata without opening a browser. Tombstones/closed-window identities are bounded at 4096 per native process; exhausted capacity fails explicitly rather than evicting a revocation. A replacement opening cannot be disposed by a late predecessor.
@@ -188,3 +251,59 @@ Callback polling rechecks captured Go-verified local connection authority agains
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
 
 If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
+
+Durable completion and recovery recheck the original adapter as well as provider
+identity and revision. Version-1 attempts belong only to OpenRouter; version-2
+attempts retain their original preset. Before a protected token is read for local
+recovery or used to publish a connection, its private metadata must match the
+original account/connection/provider, client digest, quota project, staging token
+ID and idle refresh state. A changed app registration cannot adopt an earlier
+protected result. Explicit cancellation remains available for its original cleanup.
+## Baseten Device OAuth
+
+Baseten uses the server-owned Device adapter only for its exact enabled managed
+OpenAI Chat/Bearer preset at `https://inference.baseten.co/v1`. The fixed management
+endpoints are `https://api.baseten.co/v1/users/auth/device/authorize` and
+`https://api.baseten.co/v1/users/auth/device/token`. These endpoints follow the
+[official Baseten CLI source](https://github.com/basetenlabs/baseten-cli/blob/326725fdd72e6cf1862722602b29eb18a5aa8769/internal/cmd/command_context.go).
+DeliDev does not use the CLI's client ID. Its compiled public client, registered
+approval URI, and ordinary inference compatibility must all be accepted before
+capability 6 or connection method 4 is advertised. The pending release leaves the
+approval URI empty; fixture paths are synthetic and do not establish its real path.
+
+Start commits its original attempt and private Device dispatch UUID before its
+once-only authorize request. Device codes remain owned byte buffers in the Go job.
+Only a successful Start or exact live Start replay returns the bounded temporary
+user code and the exact registered HTTPS approval URI. Status never returns either
+code or URL and cannot send requests, recover a token, or create an account.
+The optional complete verification URL is ignored; DeliDev opens the registered
+plain approval URI and displays the user code separately.
+
+The Go job belongs to the original actor, account, provider revision, server
+lifetime, and dispatch UUID. It checks that authority before every poll, waits the
+provider's interval, and increases that interval by five seconds on `slow_down`.
+Only explicit HTTP 400 `authorization_pending` and `slow_down` permit another
+poll. Lost, malformed, redirected, unknown, or ambiguous results stop in recovery.
+Denied or expired authorization terminates without a connection. The shorter of
+the provider expiry and the existing ten-minute attempt lifetime bounds the job.
+Cancel, provider mutation, actor revocation, or shutdown closes dispatch authority;
+late tokens cannot publish a connection. Restart interrupts the original pending
+attempt and never reconstructs a Device code or restarts polling.
+
+A successfully received token enters the common protected completion path through
+a private Go context that public Complete cannot construct. The original attempt
+stays at revision 1 until this sole completion claim. After that claim, Device
+Status's existing `request_id` field identifies the original server completion
+receipt. Explicit code-free recovery uses that receipt and expected revision 1;
+it can finish only its already protected local result and never polls again.
+Cancellation responses still identify their own mutation receipts. Account,
+connection, token refresh, deletion and cleanup retain the common immutable rules.
+
+Native BeginBaseten owns the original window/server/opening epoch and a generation
+without binding any socket or creating a callback listener. BindOpen accepts only
+the compiled registered plain approval URI and original attempt; exact binding
+replay does not open another browser. Reopen is deliberate. Take is unavailable.
+The common account card shows a selectable readonly user code only while waiting,
+clears it after settlement/disposal, and observes the Go job with Status. Codes,
+authorization URLs and tokens never enter React Query caches. Success remains
+unverified and validation/model discovery require a separate user action.

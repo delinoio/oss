@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object, text, type Document } from "./documents";
 import { bounded, positive } from "./github-query-model";
 
@@ -17,8 +18,9 @@ export function validPRSource(raw: unknown, base: Document): boolean {
 }
 
 export function PRSource({ value }: { value: unknown }) {
-  if (value == null) return <p>Source repository: not recorded in this observation. Refresh to check.</p>;
+  useLocale();
+  if (value == null) return <p>{copy("github-pr-source.sourceRepositoryNotRecordedInThis_fe8030")}</p>;
   const source = object(value), repo = object(source.repository);
-  if (source.state === HeadRepositoryState.Unavailable) return <p>Source repository: unavailable on GitHub. Its branch cannot currently be prepared for a fix.</p>;
-  return <div><p>Source repository: <code>{text(repo.owner)}/{text(repo.name)}</code>{repo.private ? " · Private" : " · Public"}</p><details><summary>Source repository identity</summary><p>Repository ID: <code>{text(repo.id)}</code> · Node ID: <code>{text(repo.node_id)}</code></p></details></div>;
+  if (source.state === HeadRepositoryState.Unavailable) return <p>{copy("github-pr-source.sourceRepositoryUnavailableOnGithubIts_9fb632")}</p>;
+  return <div><p><LocalizedText id="github-pr-source.sourceRepository_62ff85" components={{ s0: <code>{text(repo.owner)}/{text(repo.name)}</code>, s1: <>{repo.private ? copy("github-pr-source.private_c9faf8") : copy("github-pr-source.public_3469de")}</> }} /></p><details><summary>{copy("github-pr-source.sourceRepositoryIdentity_996ce5")}</summary><p><LocalizedText id="github-pr-source.repositoryIdNodeId_31fb4b" components={{ s0: <code>{text(repo.id)}</code>, s1: <code>{text(repo.node_id)}</code> }} /></p></details></div>;
 }

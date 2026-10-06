@@ -23,7 +23,7 @@ function fixture() {
   const resources = [create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Sibling project" }) })];
   const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Provider", enabled: true }) });
   const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Model", native_id: "fixture-native", provider_id: provider.id }) });
-  const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Fixture account", type: "api", provider_id: provider.id, enabled: true, health: "disconnected" }) });
+  const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Fixture account", type: "api", provider_id: provider.id, enabled: true, health: "unverified", connection: { id: newRequestId(), authentication: "keyless" } }) });
   resources.push(provider, model, account);
   const save = vi.fn((request: { kind: EntityKind; documentJson: Uint8Array }) => {
     const resource = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson });
@@ -215,8 +215,9 @@ it.each([undefined, Code.Unavailable, Code.Canceled])("disposes an Agent opening
   const siblingQuery = value.client.getQueryCache().getAll()[0];
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Agent Worker" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
-  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" })); next();
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
+  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
   await screen.findByRole("option", { name: "Fixture Provider" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
   fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ })); next();

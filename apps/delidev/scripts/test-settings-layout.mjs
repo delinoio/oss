@@ -2,7 +2,7 @@
 // Explicit browser validation; Playwright is supplied by the validation host,
 // without adding a product/workspace dependency. All data is synthetic.
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -49,8 +49,22 @@ const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
+let language = "en";
+const messages = new Map();
+for (const file of await readdir(join(app, "src/locales/en"))) {
+  if (!file.endsWith(".json")) continue;
+  const en = JSON.parse(await readFile(join(app, "src/locales/en", file))), ko = JSON.parse(await readFile(join(app, "src/locales/ko", file)));
+  for (const [key, value] of Object.entries(en)) if (!messages.has(value)) messages.set(value, ko[key]);
+}
+const l = value => {
+  if (language !== "ko") return value;
+  if (messages.has(value)) return messages.get(value);
+  if (value.startsWith("New ")) return messages.get("New {{v0}}").replace("{{v0}}", messages.get(value.slice(4)) ?? value.slice(4));
+  return value;
+};
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [1280,800], [960,640], [640,480]];
-let checked = 0, formsChecked = 0, harnessChecks = 0, keyboardChecks = 0;
+let checked = 0, formsChecked = 0, harnessChecks = 0, keyboardChecks = 0, hiddenChoicesChecked = 0;
 try {
   const build = await createRsbuild({ cwd: app, rsbuildConfig: { plugins: [pluginReact()], source: { entry: { index: join(app, "src/settings-layout.fixture.tsx") } }, html: { template: join(app, "index.html") }, output: { distPath: { root: directory }, assetPrefix: "/", sourceMap: false, cleanDistPath: true } } });
   await build.build();
@@ -69,18 +83,18 @@ try {
   page.on("pageerror", error => console.error("fixture_page_error", error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const select = async category => {
-    if (await page.getByRole("button", { name: "Open settings categories", exact: true }).isVisible()) await page.getByRole("button", { name: "Open settings categories", exact: true }).click();
-    await page.getByRole("button", { name: category, exact: true }).click();
-    await page.locator(".settings-content h1:visible").filter({ hasText: category }).waitFor();
+    if (await page.locator(".sidebar-context-trigger").isVisible()) await page.locator(".sidebar-context-trigger").click();
+    await page.getByRole("button", { name: l(category), exact: true }).click();
+    await page.locator(".settings-content h1:visible").filter({ hasText: l(category) }).waitFor();
     // Allow asynchronous synthetic reads to settle; no external RPC/account work.
-    await page.waitForFunction(() => ![...document.querySelectorAll(".settings-content [role=status]")].some(node => node.getClientRects().length && /^(Loading |Reading server diagnostics)/.test(node.textContent ?? "")));
-    if (category === "Notifications") await page.getByRole("button", { name: "Edit notification preferences", exact: true }).waitFor();
+    await page.waitForFunction(() => ![...document.querySelectorAll(".settings-content [role=status]")].some(node => node.getClientRects().length && /(Loading |Reading server diagnostics|불러오는 중|읽는 중)/.test(node.textContent ?? "")));
+    if (category === "Notifications") await page.getByRole("button", { name: l("Edit notification preferences"), exact: true }).waitFor();
   };
   const checkWizard = async () => {
     const form = page.locator(".worker-wizard");
     assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), "Wizard form cap");
     assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Wizard content overflow");
-    const group = form.getByRole("radiogroup", { name: "Harness", exact: true });
+    const group = form.getByRole("radiogroup", { name: l("Harness"), exact: true });
     if (await group.isVisible()) {
       // The picker is visible while its independent server-support read settles.
       // Exercise keyboard input only after the fixture grants that capability.
@@ -104,38 +118,100 @@ try {
       await page.keyboard.press("Home");
       assert(await codex.evaluate(node => node === document.activeElement && node.tabIndex === 0));
       assert.equal(await codex.evaluate(node => getComputedStyle(node).outlineWidth), "3px");
+      assert(await group.isVisible(), "Arrow and Home navigation cannot advance the wizard");
+      assert.equal(await form.getByRole("button", { name: "Next", exact: true }).count(), 0);
+      assert(await group.evaluate(node => node.getAttribute("aria-describedby").split(" ").some(id => document.getElementById(id)?.textContent === "Choose a harness to continue to Accounts.")), "Harness guidance describes immediate advancement");
+      await form.evaluate(node => node.requestSubmit());
+      assert(await group.isVisible(), "Form submission cannot confirm a harness");
       await claude.focus(); await claude.press("Space");
       assert.equal(await claude.getAttribute("aria-checked"), "true");
+      const accountsHeading = form.getByRole("heading", { name: "Accounts", exact: true });
+      assert(await accountsHeading.evaluate(node => node === document.activeElement), "Space confirmation focuses Accounts");
+      await form.getByRole("button", { name: "Back", exact: true }).click();
       await codex.focus(); await codex.press("Enter");
       assert.equal(await codex.getAttribute("aria-checked"), "true");
-      assert(await group.isVisible(), "Native button activation cannot advance the wizard");
+      assert(await accountsHeading.evaluate(node => node === document.activeElement), "Enter confirmation focuses Accounts without skipping a step");
+      await form.getByRole("button", { name: "Back", exact: true }).click();
+      await codex.click();
+      assert(await accountsHeading.evaluate(node => node === document.activeElement), "Current-card click confirmation focuses Accounts");
+      await form.getByRole("button", { name: "Back", exact: true }).click();
       assert.equal(await cards.evaluateAll(nodes => nodes.filter(node => node.tabIndex === 0).length), 1);
       await codex.hover();
       const selection = await codex.evaluate(node => {
         const style = getComputedStyle(node);
-        return { background: style.backgroundColor, border: style.borderTopColor, selected: getComputedStyle(document.querySelector(".settings-category-button[aria-pressed=true]")).backgroundColor, accent: getComputedStyle(node.closest("form").querySelector("button.primary")).backgroundColor };
+        return { background: style.backgroundColor, border: style.borderTopColor, selected: getComputedStyle(document.querySelector(".settings-category-button[aria-pressed=true]")).backgroundColor, accent: getComputedStyle(node.querySelector(".worker-harness-indicator")).backgroundColor };
       });
       assert.equal(selection.background, selection.selected, "Selected card retains its semantic fill on hover");
       assert.equal(selection.border, selection.accent, "Selected card retains its accent border on hover");
       if (screenshotDirectory) {
         await mkdir(screenshotDirectory, { recursive: true });
-        await codex.click();
         await form.scrollIntoViewIfNeeded();
         const viewport = page.viewportSize(), theme = await page.locator("html").getAttribute("data-theme");
         await page.screenshot({ path: join(screenshotDirectory, `harness-${theme}-${viewport.width}x${viewport.height}.png`) });
       }
       harnessChecks++;
     }
-    const next = form.getByRole("button", { name: /^(Next|Save Agent Worker)$/ });
-    await next.scrollIntoViewIfNeeded();
-    const footer = await next.boundingBox();
+    const next = form.getByRole("button", { name: new RegExp(`^(${l("Next")}|${l("Save Agent Worker")})$`) });
+    const action = await next.count() ? next : form.getByRole("button", { name: l("Cancel"), exact: true });
+    await action.scrollIntoViewIfNeeded();
+    const footer = await action.boundingBox();
     assert(footer && footer.y >= 0 && footer.y + footer.height <= page.viewportSize().height + 0.5, "Wizard footer remains visible in document flow");
   };
-  for (const theme of ["light", "dark", "system"]) for (const populated of [false, true]) for (const viewport of viewports) {
+  const checkHiddenAccountChoices = async () => {
+    await select("Agent Workers");
+    await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
+    await page.getByRole("radio", { name: "Codex", exact: true }).click();
+    await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
+    const form = page.locator(".worker-wizard");
+    await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    assert.equal(await form.locator(".worker-account-row").count(), 0, "Hidden accounts have no DOM/focusable rows");
+    assert.equal(await form.getByRole("checkbox").count(), 0, "Hidden accounts have no accessible checkbox");
+    assert(await form.getByText("0 accounts selected", { exact: true }).isVisible());
+    assert(await form.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.", { exact: true }).isVisible());
+    await form.getByRole("button", { name: "Refresh accounts", exact: true }).click();
+    await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    await checkWizard();
+    await form.getByRole("button", { name: "Cancel", exact: true }).click();
+    hiddenChoicesChecked++;
+  };
+  if (githubOnly) {
+    let onboardingChecks = 0;
+    for (const [width, height] of [[1440, 900], [960, 640], [640, 480]]) {
+      await page.setViewportSize({ width, height }); await page.emulateMedia({ colorScheme: "light" });
+      await page.goto(`${origin}/?theme=light&github-onboarding=true`);
+      await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Git Profiles");
+      await page.getByRole("button", { name: "New GitHub profile", exact: true }).click();
+      const token = page.getByLabel("GitHub personal access token", { exact: true }); await token.waitFor();
+      assert(await token.evaluate(node => node === document.activeElement), "Password initial focus");
+      assert(await page.locator(".integration-draft-guidance").evaluate(node => node.open), "Initial token-form disclosure");
+      const check = async stage => {
+        assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `Onboarding ${stage} ${width} overflow`);
+        assert(await page.locator(".integration-onboarding form").evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().width <= 720.5)), `Onboarding ${stage} form cap`);
+        if (screenshotDirectory) await page.screenshot({ path: join(screenshotDirectory, `github-${stage}-${width}x${height}.png`) });
+        onboardingChecks++;
+      };
+      await check("token");
+      await token.pressSequentially("fixture-pat"); await page.keyboard.press("Tab");
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Verify token");
+      await page.keyboard.press("Enter");
+      const name = page.getByLabel("Profile name", { exact: true }); await name.waitFor();
+      assert(await name.evaluate(node => node === document.activeElement && node.value === "fixture-user"), "Verified name focus and prefill");
+      assert.equal(await page.getByLabel("Resource owner", { exact: true }).inputValue(), "", "Never infer resource owner");
+      assert(await page.getByRole("button", { name: "Save and connect", exact: true }).isDisabled(), "Explicit fine-grained owner required");
+      await check("confirm");
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      assert.equal(await token.inputValue(), "", "Back clears token");
+      assert(await token.evaluate(node => node === document.activeElement), "Back restores password focus");
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      assert(await page.getByRole("button", { name: "New GitHub profile", exact: true }).evaluate(node => node === document.activeElement), "Cancel restores opener focus");
+    }
+    console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: 0, childFormChecks: 0, harnessChecks: 0, hiddenAccountChoiceChecks: 0, languages: 1, themes: 1, inventories: 1, viewports: 3, effectiveZoomChecks: 0, primarySurfaceChecks: 0, keyboardChecks: 0, onboardingChecks, nativeAcceptance: "not-performed", githubAccountAcceptance: "not-performed" }));
+  } else {
+  for (language of ["en", "ko"]) for (const theme of ["light", "dark", "system"]) for (const populated of [false, true]) for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport[0], height: viewport[1] });
     await page.emulateMedia({ colorScheme: theme === "system" ? "dark" : theme });
-    await page.goto(`${origin}/?theme=${theme}&populated=${populated}`);
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.goto(`${origin}/?theme=${theme}&populated=${populated}&language=${language}`);
+    await page.getByRole("button", { name: l("Settings"), exact: true }).click();
     assert.deepEqual(await page.locator(".settings-nav-group h2").allTextContents(), ["AI", "Coding", "Device management", "System"]);
     for (const category of categories) {
       await select(category);
@@ -148,18 +224,19 @@ try {
         const forms = [...root.querySelectorAll("form")].filter(node => node.getClientRects().length);
         return { titles: h1s.length, titleSize: getComputedStyle(h1s[0]).fontSize, padding: style.paddingLeft, anchor: box.left - root.getBoundingClientRect().left, width: box.width, overflow: root.scrollWidth > root.clientWidth, controls: controls.every(node => node.getBoundingClientRect().height >= 39.5), multiline: textareas.every(node => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(node).whiteSpace)), empty: empty.every(node => node.getBoundingClientRect().height >= 159.5), forms: forms.every(node => node.getBoundingClientRect().width <= 720.5) };
       });
-      const context = `${theme}/${populated}/${viewport}/${category}: ${JSON.stringify(layout)}`;
+      const context = `${language}/${theme}/${populated}/${viewport}/${category}: ${JSON.stringify(layout)}`;
       assert.equal(layout.titles, 1, context); assert.equal(layout.titleSize, "26px", context);
       assert.equal(layout.padding, viewport[0] >= 1100 ? "32px" : viewport[0] >= 760 ? "24px" : "16px", context);
       assert.equal(layout.anchor, Number.parseInt(layout.padding), context);
       assert(layout.width <= 1040.5 && !layout.overflow && layout.controls && layout.multiline && layout.empty && layout.forms, context);
+      if (category === "Appearance") assert(await page.locator(".appearance-choice-label").evaluateAll(labels => labels.every(node => node.getBoundingClientRect().width >= node.parentElement.clientWidth - 32 && node.scrollWidth <= node.clientWidth)), `${context} theme labels retain available width`);
       checked++;
     }
     if (populated) {
       await select("Agent Workers");
       await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
       await checkWizard();
-      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("radio", { name: "Codex", exact: true }).click();
       await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
       await page.getByRole("checkbox", { name: /^Personal API/ }).check();
       await page.getByRole("checkbox", { name: /^Team API/ }).check();
@@ -181,10 +258,15 @@ try {
       assert(await page.getByRole("checkbox", { name: /^Team API/ }).isChecked());
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       formsChecked += 4;
+      if (language === "en") {
+        await page.goto(`${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=en`);
+        await page.getByRole("button", { name: "Settings", exact: true }).click();
+        await checkHiddenAccountChoices();
+      }
     }
     if (!populated) {
       for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", null], ["Git", "New Git workflow"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
-        await select(category); if (action) await page.getByRole("button", { name: action, exact: true }).click();
+        await select(category); if (action) await page.getByRole("button", { name: l(action), exact: true }).click();
         if (category === "Server preferences") {
           const form = page.getByRole("form", { name: "Server preferences form", exact: true }); await form.waitFor();
           assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
@@ -242,13 +324,45 @@ try {
   }
   // 200% effective-layout coverage uses half-size CSS viewports. Actual browser
   // chrome zoom and packaged CEF keyboard/platform acceptance remain separate.
-  await page.goto(`${origin}/?theme=dark`); await page.getByRole("button", { name: "Settings", exact: true }).click();
-  for (const [width,height] of viewports) {
+  for (language of ["en", "ko"]) {
+    for (const [width,height] of viewports) {
     await page.setViewportSize({ width: width / 2, height: height / 2 });
+    await page.goto(`${origin}/?theme=dark&language=${language}`); await page.getByRole("button", { name: l("Settings"), exact: true }).click();
     for (const category of categories) { await select(category); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
-    await select("Agent Workers"); await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
-    await checkWizard(); await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await select("Agent Workers"); await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
+    await checkWizard(); await page.getByRole("button", { name: l("Cancel"), exact: true }).click();
+    }
+    if (language === "en") for (const [width,height] of viewports) {
+      await page.setViewportSize({ width: width / 2, height: height / 2 });
+      await page.goto(`${origin}/?theme=dark&populated=true&hiddenWorkerChoices=true&language=en`);
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await checkHiddenAccountChoices();
+    }
   }
+  // Inspect all primary empty-state surfaces in both languages. Their retained
+  // business queries use only the synthetic transport above.
+  for (language of ["en", "ko"]) {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${origin}/?theme=light&language=${language}`);
+    for (const surface of ["Sessions", "New session", "Pull requests", "Usage", "Schedules", "Activity", "Inbox", "Search"]) {
+      if (surface === "Inbox" || surface === "Search") await page.getByRole("button", { name: l("Sessions"), exact: true }).click();
+      await page.getByRole("button", { name: l(surface), exact: true }).click();
+      assert.equal(await page.locator("main").evaluate(node => node.scrollWidth <= node.clientWidth), true, `${language}/${surface} overflow`);
+      assert.equal(await page.locator("html").getAttribute("lang"), language);
+    }
+  }
+  // The approved appearance geometry and a real fixture save transition.
+  await page.goto(`${origin}/?theme=light&language=en`); language = "en";
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Appearance");
+  const languageSelect = page.locator(".language-settings select");
+  await languageSelect.selectOption("ko"); language = "ko";
+  await page.locator(".language-settings [role=status]").filter({ hasText: "언어를 저장했습니다." }).waitFor();
+  const languageBounds = await languageSelect.boundingBox();
+  assert(languageBounds.width <= 320 && languageBounds.height >= 40);
+  assert.equal(await page.locator(".language-settings select").inputValue(), "ko");
+  assert.equal(await page.locator(".language-settings").getByText("기본값은 시스템 언어입니다. 변경하면 모든 DeliDev 창에 바로 적용됩니다.").count(), 1);
+  if (process.env.DELIDEV_LAYOUT_SCREENSHOT) await page.screenshot({ path: process.env.DELIDEV_LAYOUT_SCREENSHOT });
   for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
     await page.setViewportSize({ width: width / 2, height: height / 2 });
     await page.goto(`${origin}/?theme=${theme}`); await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -285,7 +399,8 @@ try {
     await page.getByRole("button", { name: /^Edit Example PROJECT/ }).click(); await page.getByRole("dialog").waitFor();
     await page.screenshot({ path: screenshotPath });
   }
-  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length, keyboardChecks, nativeAcceptance: "not-performed" }));
+  }
+  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length * 2, primarySurfaceChecks: 16, keyboardChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

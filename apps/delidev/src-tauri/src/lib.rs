@@ -18,9 +18,12 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
 mod browser_opener;
+pub mod language;
 pub mod oauth;
 pub mod provider_guidance;
 pub mod updater;
+pub mod widget_writer;
+pub mod window_registry;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
@@ -806,7 +809,10 @@ mod desktop_capability_tests {
     #[test]
     fn native_authority_belongs_only_to_trusted_webviews() {
         for (source, labels) in [
-            (include_str!("../capabilities/main.json"), vec!["main"]),
+            (
+                include_str!("../capabilities/main.json"),
+                vec!["main", "local-*"],
+            ),
             (include_str!("../capabilities/saved.json"), vec!["server-*"]),
         ] {
             let capability: serde_json::Value = serde_json::from_str(source).unwrap();
@@ -864,3 +870,5 @@ mod repository_folder_tests {
         );
     }
 }
+
+pub mod localization;

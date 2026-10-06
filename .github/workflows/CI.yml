@@ -18,14 +18,16 @@ concurrency:
 jobs:
   changes:
     name: Plan affected CI jobs
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
-      jobs: ${{ steps.plan.outputs.jobs }}
+      jobs: ${{ steps.rust.outputs.jobs || steps.plan.outputs.jobs }}
+      rust_packages: ${{ steps.rust.outputs.rust_packages || '[]' }}
       forced: ${{ steps.plan.outputs.forced }}
       event: ${{ steps.plan.outputs.event }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
       react_forge_matrix: ${{ steps.plan.outputs.react_forge_matrix }}
       pnport_matrix: ${{ steps.plan.outputs.pnport_matrix }}
+      delidev_frontend_matrix: ${{ steps.plan.outputs.delidev_frontend_matrix }}
       base: ${{ steps.plan.outputs.base }}
       head: ${{ steps.plan.outputs.head }}
     steps:
@@ -41,9 +43,65 @@ jobs:
         id: plan
         run: node scripts/ci/plan.mjs
 
+      - name: Install Rust for package metadata
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+          components: clippy
+      - name: Prepare verified prebuilt cargo-mono
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        id: cargo-mono
+        run: node scripts/ci/cargo-mono-prebuilt.mjs
+      - name: Setup Node.js for Turbo planning fixtures
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Install planning fixture dependencies
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify published cargo-mono selection behavior
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        env:
+          CARGO_MONO_TEST_BINARY: ${{ steps.cargo-mono.outputs.binary }}
+          FORCE_RUN: 'true'
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:selection-fixture
+      - name: Select final Rust packages and jobs
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        id: rust
+        env:
+          CI_BASE: ${{ steps.plan.outputs.base }}
+          CI_HEAD: ${{ steps.plan.outputs.head }}
+          CI_JOBS: ${{ steps.plan.outputs.jobs }}
+          CI_FORCED: ${{ steps.plan.outputs.forced }}
+          CARGO_MONO_BINARY: ${{ steps.cargo-mono.outputs.binary }}
+        run: node scripts/ci/rust-affected.mjs plan
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outcome == 'success' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-changes-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   ci-contracts:
     name: CI contracts and workflow syntax
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -55,18 +113,39 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Setup Go
+        if: ${{ runner.os == 'Linux' }}
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: ci-contracts
 
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Validate workflow syntax
-        run: pnpm ci:workflows
+        if: ${{ runner.os == 'Linux' }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:workflows
+        env:
+          FORCE_RUN: 'true'
 
       - name: Validate CI contracts and affected behavior
-        run: pnpm ci:contracts
+        if: ${{ runner.os == 'Linux' }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:contracts
+        env:
+          FORCE_RUN: 'true'
+
+      - name: Validate protocol launcher on native host
+        if: ${{ runner.os != 'Linux' }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:launcher
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -76,17 +155,29 @@ jobs:
           key: ${{ steps.ci-node.outputs.cache-key }}
 
       - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outcome == 'success' && steps.ci-go.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-ci-contracts-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   go-quality:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['go-quality'] }}
     name: Go Quality
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -97,30 +188,30 @@ jobs:
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: go-quality
 
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Generate and verify embedded administrator assets
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud-admin build:embedded
-          pnpm --filter async-commit-hook build:embedded
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Check go fmt
-        run: |
-          set -euo pipefail
+      - name: Check Go formatting and vet
+        env:
+          FORCE_RUN: 'true'
+          CI_GO_MODE: ${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-quality'] && 'affected' || 'full' }}
+          CI_GO_BASE: ${{ needs.changes.outputs.base }}
+          CI_GO_HEAD: ${{ needs.changes.outputs.head }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:go:quality
 
-          formatted_output="$(go fmt ./...)"
-          if [ -n "$formatted_output" ]; then
-            echo "::error::go fmt reformatted files. Run 'go fmt ./...' locally and commit the result."
-            printf '%s\n' "$formatted_output"
-            exit 1
-          fi
-
-      - name: Run go vet
-        run: go vet ./...
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -135,6 +226,14 @@ jobs:
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-go-quality-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   go-test:
     needs: changes
@@ -151,6 +250,10 @@ jobs:
           - { os: windows-latest, shard: server, label: "windows-latest, server" }
           - { os: windows-latest, shard: harness, label: "windows-latest, harness" }
           - { os: windows-latest, shard: worker, label: "windows-latest, worker" }
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -162,20 +265,35 @@ jobs:
         id: ci-go
         uses: ./.github/actions/setup-ci-go
         with:
-          cache-scope: ${{ matrix.os == 'windows-latest' && format('go-test-{0}', matrix.shard) || '' }}
+          cache-scope: ${{ format('go-test-{0}', matrix.shard) }}
 
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Generate and verify embedded administrator assets
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud-admin build:embedded
-          pnpm --filter async-commit-hook build:embedded
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Verify native affected Go discovery
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:go:discovery
+        env:
+          FORCE_RUN: 'true'
 
       - name: Run go test
-        run: node scripts/ci/go-test.mjs --shard ${{ matrix.shard }}
+        # The central runner uses -count=1 for execution and reuses compiled objects.
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:go:test
+        env:
+          CI_GO_TEST_SHARD: ${{ matrix.shard }}
+          FORCE_RUN: 'true'
+          CI_GO_MODE: ${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-test'] && 'affected' || 'full' }}
+          CI_GO_BASE: ${{ needs.changes.outputs.base }}
+          CI_GO_HEAD: ${{ needs.changes.outputs.head }}
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -191,6 +309,14 @@ jobs:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-go-test-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   repository-environment:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['repository-environment'] }}
@@ -203,6 +329,10 @@ jobs:
           - ubuntu-latest
           - macos-latest
           - windows-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -211,12 +341,19 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Test repository environment contract
-        run: pnpm test:dev-environment
-
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:environment ci:environment:turbo
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -225,11 +362,23 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-repository-environment-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   rust-fmt:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['rust-fmt'] }}
     name: Rust fmt
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -242,14 +391,47 @@ jobs:
           toolchain: nightly-2026-09-28
           components: rustfmt
 
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install locked workspace tools
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Run rustfmt
-        run: cargo fmt --all --check
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:fmt ci:rust:fmt-fixture
+        env:
+          FORCE_RUN: 'true'
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-rust-fmt-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   rust-clippy:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['rust-clippy'] }}
     name: Rust clippy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -264,6 +446,7 @@ jobs:
           components: clippy
 
       - name: Setup Go for DeliDev sidecar
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
         id: ci-go
         uses: ./.github/actions/setup-ci-go
 
@@ -271,19 +454,17 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build DevHUD frontend
-        run: pnpm --filter devhud build:frontend
-
-      - name: Build DeliDev native inputs
-        run: |
-          pnpm --filter @delinoio/delidev-api-client build
-          pnpm --filter delidev-desktop build:frontend
-          pnpm --filter delidev-desktop prepare:sidecar
-
       - name: Install DevHUD Linux prerequisites
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
@@ -295,7 +476,10 @@ jobs:
           cache-on-failure: false
 
       - name: Run clippy
-        run: cargo clippy --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets --all-features -- -D warnings
+        run: node scripts/ci/run-rust.mjs clippy
+        env:
+          RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -305,17 +489,29 @@ jobs:
           key: ${{ steps.ci-node.outputs.cache-key }}
 
       - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outcome == 'success' && steps.ci-go.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-rust-clippy-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   rust-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['rust-test'] }}
     name: Rust test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -328,7 +524,8 @@ jobs:
         with:
           toolchain: nightly-2026-09-28
 
-      - name: Setup Go for DeliDev sidecar
+      - name: Setup Go for Rust test prerequisites
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') || contains(fromJSON(needs.changes.outputs.rust_packages), 'pnport') }}
         id: ci-go
         uses: ./.github/actions/setup-ci-go
 
@@ -336,19 +533,17 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build DevHUD frontend
-        run: pnpm --filter devhud build:frontend
-
-      - name: Build DeliDev native inputs
-        run: |
-          pnpm --filter @delinoio/delidev-api-client build
-          pnpm --filter delidev-desktop build:frontend
-          pnpm --filter delidev-desktop prepare:sidecar
-
       - name: Install DevHUD Linux prerequisites
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
@@ -359,12 +554,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
 
-      - name: Build pnport injection companion
-        run: cargo build --locked -p pnport -p pnport-preload
-
       - name: Run cargo test
-        run: cargo test --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets
-
+        run: node scripts/ci/run-rust.mjs test
+        env:
+          RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -374,11 +568,19 @@ jobs:
           key: ${{ steps.ci-node.outputs.cache-key }}
 
       - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outcome == 'success' && steps.ci-go.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-rust-test-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   forge-test:
     needs: changes
@@ -389,6 +591,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -401,18 +607,52 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install locked workspace tools
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Test DSL, native PPTX preservation, revisions and official MCP client
-        run: cargo test -p forge-tree-doc -p forge-pptx -p delino-forge
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:forge:test
+        env:
+          FORCE_RUN: 'true'
+
       - name: Check Forge formatting and Clippy
-        run: |
-          cargo fmt --all --check
-          cargo clippy -p forge-tree-doc -p forge-pptx -p delino-forge --all-targets -- -D warnings
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:fmt ci:forge:clippy
+        env:
+          FORCE_RUN: 'true'
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-forge-test-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   forge-render:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['forge-render'] }}
     name: Forge Linux rendering
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -428,10 +668,24 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install locked workspace tools
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Render generated and edited external decks
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:forge:render
         env:
           FORGE_RENDER_ARTIFACTS: ${{ runner.temp }}/forge-render
-        run: cargo test -p delino-forge --test render -- --ignored
+          FORCE_RUN: 'true'
+
       - name: Retain render evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -440,6 +694,21 @@ jobs:
           path: ${{ runner.temp }}/forge-render
           if-no-files-found: error
           retention-days: 7
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-forge-render-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   react-forge:
     needs: changes
@@ -458,12 +727,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.react_forge_matrix) }}
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
@@ -498,7 +777,12 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/react-forge-python"
           "$RUNNER_TEMP/react-forge-python/bin/pip" install -r packages/react-forge/scripts/render-requirements.txt
       - name: Validate native engine, installed CLI, renders, and benchmark
-        run: bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"
+        run: node scripts/ci/run-affected.mjs @delino/react-forge ci:host
+        env:
+          REACT_FORGE_TARGET: ${{ matrix.target }}
+          REACT_FORGE_SKIP_SCENE_TESTS: '1'
+          FORCE_RUN: 'true'
+
       - name: Retain rendering and benchmark evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -520,6 +804,14 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-react-forge-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   linux-packages:
     needs: changes
@@ -576,6 +868,10 @@ jobs:
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-public-docs-test'] }}
     name: Node public-docs test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -586,15 +882,21 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run public-docs tests
+        run: node scripts/ci/run-affected.mjs public-docs ci:check
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-public-docs-test'] }}
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
           TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-        run: node scripts/ci/run-affected.mjs public-docs test
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -602,12 +904,24 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-node-public-docs-test-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   devhud-frontend:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-frontend'] }}
     name: DevHud frontend contracts
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -620,21 +934,31 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Test DevHud API client
-        run: pnpm --filter @delinoio/devhud-api-client test
+        run: node scripts/ci/run-affected.mjs @delinoio/devhud-api-client test
+        env:
+          FORCE_RUN: 'true'
 
       - name: Run affected frontend contracts
+        run: node scripts/ci/run-affected.mjs devhud ci:check
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['devhud-frontend'] }}
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
           TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-        run: node scripts/ci/run-affected.mjs devhud test
 
       - name: Verify immutable desktop and mobile pins
-        run: pnpm --filter devhud verify:pins
+        run: node scripts/ci/run-affected.mjs devhud verify:pins
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -642,12 +966,24 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-frontend-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   devhud-extension:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-extension'] }}
     name: DevHud Chrome extension
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -659,18 +995,19 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck, test accessibility, and build deterministic ZIPs
-        run: |
-          pnpm --filter devhud-chrome-extension lint
-          pnpm --filter devhud-chrome-extension test:unit
-          pnpm --filter devhud-chrome-extension test:components
-          pnpm --filter devhud-chrome-extension test:accessibility
-          pnpm --filter devhud-chrome-extension test:package
-          pnpm --filter devhud-chrome-extension build:test
-          cmp apps/devhud-chrome-extension/artifacts/devhud-chrome-web-store.zip apps/devhud-chrome-extension/artifacts/devhud-chrome-github-validation.zip
+        run: node scripts/ci/run-affected.mjs devhud-chrome-extension ci:check
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -679,11 +1016,23 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-extension-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   devhud-rust-conformance:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-rust-conformance'] }}
     name: DevHud Rust capture, shortcut, and IPC conformance
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -695,6 +1044,17 @@ jobs:
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
+
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install pinned Rust toolchain before native tasks
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
 
       - name: Install Linux native prerequisites
         run: |
@@ -702,16 +1062,12 @@ jobs:
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libx11-dev libxtst-dev ninja-build
 
       - name: Install clean locked workspace and build frontend
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud build:frontend
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run capture, shortcut, IPC, and updater suites
-        run: |
-          pnpm --filter devhud test:native:capture
-          pnpm --filter devhud test:native:shortcuts
-          pnpm --filter devhud test:native:ipc
-          pnpm --filter devhud test:native:updater
+        run: node scripts/ci/run-affected.mjs devhud test:native:capture test:native:shortcuts test:native:ipc test:native:updater
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -720,11 +1076,23 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-rust-conformance-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   devhud-security:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-security'] }}
     name: DevHud security and direct-adapter fixtures
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -736,13 +1104,19 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run credential, lifecycle, redaction, GitHub, R2, and agent fixtures
-        run: |
-          pnpm exec turbo run test:security test:adapters --filter devhud
-          node --test apps/devhud/scripts/diagnostics-policy.test.mjs apps/devhud/scripts/native-bridge.test.mjs apps/devhud/scripts/mobile-policy.test.mjs
+        run: node scripts/ci/run-affected.mjs devhud ci:security
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -750,6 +1124,14 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-security-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   devhud-desktop:
     needs: changes
@@ -1086,6 +1468,10 @@ jobs:
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-mobile-contracts'] }}
     name: DevHUD mobile contracts
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1097,14 +1483,19 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Verify shared frontend and mobile contracts
-        run: |
-          pnpm --filter devhud build:frontend
-          pnpm --filter devhud mobile:check
-          pnpm --filter devhud test:components
+        run: node scripts/ci/run-affected.mjs devhud ci:build:frontend mobile:check test:components
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1112,6 +1503,14 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-mobile-contracts-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   devhud-ios-simulator:
     needs: changes
@@ -1320,39 +1719,48 @@ jobs:
   delidev-protocol:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-protocol'] }}
-    name: DeliDev Protocol and Client
+    name: DeliDev Schemas and Generated Bindings
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          lfs: true
 
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: delidev-protocol
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Check schemas and generated freshness
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:check
         env:
           DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
-        run: pnpm proto:check
+          FORCE_RUN: 'true'
 
       - name: Test Go bindings
-        run: go test ./protos/gen/go/delidev/...
-
-      - name: Check DeliDev client and desktop
-        run: |
-          pnpm --filter @delinoio/delidev-api-client lint
-          pnpm --filter @delinoio/delidev-api-client test
-          pnpm --filter @delinoio/delidev-api-client build
-          pnpm --filter delidev-desktop test
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:bindings
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1368,24 +1776,55 @@ jobs:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
 
-  devhud-admin:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-admin'] }}
-    name: DevHud Admin
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-delidev-protocol-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
+  delidev-client:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-client'] }}
+    name: DeliDev TypeScript Client
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          lfs: true
+          persist-credentials: false
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
+      - name: Setup Go
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: delidev-client
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Test administrator SPA and verify generated embedded assets
-        run: pnpm --filter devhud-admin --fail-if-no-match test
+      - name: Build runner-owned Go fixture executable
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
+        env:
+          FORCE_RUN: 'true'
+      - name: Run affected client checks
+        env:
+          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-client'] }}
+        run: node scripts/ci/run-affected.mjs @delinoio/delidev-api-client ci:check
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1394,11 +1833,144 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-delidev-client-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
+  delidev-frontend:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-frontend'] }}
+    name: DeliDev Desktop (${{ matrix.phase }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.delidev_frontend_matrix) }}
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          lfs: true
+          persist-credentials: false
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Setup Go
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: ${{ format('delidev-frontend-{0}', matrix.phase) }}
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build runner-owned Go fixture executable
+        if: ${{ matrix.phase != 'checks' }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
+        env:
+          FORCE_RUN: 'true'
+      - name: Run affected desktop checks
+        env:
+          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
+        run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-delidev-frontend-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
+  devhud-admin:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-admin'] }}
+    name: DevHud Admin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Test administrator SPA and verify generated embedded assets
+        run: node scripts/ci/run-affected.mjs devhud-admin ci:check
+        env:
+          FORCE_RUN: 'true'
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-admin-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   devhud-api:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-api'] }}
     name: DevHud API Integration
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1409,25 +1981,26 @@ jobs:
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: devhud-api
 
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Generate and verify embedded administrator assets
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud-admin build:embedded
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Check API formatting, vet, builds, and unit tests
-        run: |
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:format
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:vet
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:build
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:unit
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:migrations
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:api
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:sweeper
+        run: node scripts/ci/run-affected.mjs @delinoio/devhud-api ci:format ci:vet ci:build ci:unit ci:migrations ci:api ci:sweeper
+        env:
+          FORCE_RUN: 'true'
 
       - name: Start PostgreSQL
         run: |
@@ -1458,9 +2031,10 @@ jobs:
           exit 1
 
       - name: Run PostgreSQL migration and integration tests
+        run: node scripts/ci/run-affected.mjs @delinoio/devhud-api ci:integration
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
-        run: pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:integration
+          FORCE_RUN: 'true'
 
       - name: Stop PostgreSQL
         if: ${{ always() }}
@@ -1480,6 +2054,14 @@ jobs:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-api-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   devhud-oci:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-oci'] }}
@@ -1489,6 +2071,10 @@ jobs:
       fail-fast: false
       matrix:
         target: [api, sweeper]
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1506,14 +2092,16 @@ jobs:
 
       - name: Setup Node.js
         id: ci-node
-        if: ${{ matrix.target == 'sweeper' }}
         uses: ./.github/actions/setup-ci-node
 
-      - name: Generate and verify embedded administrator assets
-        if: ${{ matrix.target == 'sweeper' }}
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud-admin build:embedded
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download Syft
         id: syft
@@ -1553,45 +2141,18 @@ jobs:
           exit 1
 
       - name: Build and inspect amd64/arm64 OCI layout
+        run: node scripts/ci/run-affected.mjs @delinoio/devhud-api ci:oci
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
           OCI_TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          artifact="$RUNNER_TEMP/devhud-$OCI_TARGET.oci.tar"
-          image="devhud-$OCI_TARGET:ci"
-          version=$(node -p "require('./packaging/devhud/release-metadata.json').version")
-          docker buildx build --platform linux/amd64,linux/arm64 --target "$OCI_TARGET" --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --output "type=oci,dest=$artifact" -f servers/devhud-api/Dockerfile .
-          tar -tf "$artifact" | grep -Fx index.json
-          for arch in amd64 arm64; do
-            skopeo inspect --override-arch "$arch" --config "oci-archive:$artifact" | jq -e '.config.User == "65532" and .config.Labels["io.delino.devhud.migrations"] == "embedded" and .config.Labels["io.delino.devhud.administrator-assets"] == "embedded"'
-          done
-          docker buildx build --platform linux/amd64 --target "$OCI_TARGET" --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --load --tag "$image" -f servers/devhud-api/Dockerfile .
-          container_database_url="postgres://devhud:devhud@host.docker.internal:5432/devhud_api_test?sslmode=disable"
-          docker_args=(--rm --user 65532:65532 --add-host host.docker.internal:host-gateway -e "DEVHUD_DATABASE_URL=$container_database_url")
-          if [ "$OCI_TARGET" = api ]; then
-            docker run "${docker_args[@]}" "$image" migrate
-          else
-            DEVHUD_DATABASE_URL="$DEVHUD_TEST_DATABASE_URL" go run ./servers/devhud-api/cmd/devhud-api migrate
-            docker run "${docker_args[@]}" \
-              -e DEVHUD_ENVIRONMENT=development \
-              -e DEVHUD_R2_ENDPOINT=http://127.0.0.1:9000 \
-              -e DEVHUD_R2_ACCESS_KEY_ID=ci-access-key \
-              -e DEVHUD_R2_SECRET_ACCESS_KEY=01234567890123456789012345678901 \
-              -e DEVHUD_R2_STAGING_BUCKET=devhud-staging \
-              -e DEVHUD_R2_PUBLIC_BUCKET=devhud-public \
-              -e DEVHUD_PUBLIC_ASSET_BASE_URL=http://127.0.0.1:9000 \
-              -e DEVHUD_CLOUDFLARE_API_TOKEN=ci-token \
-              -e DEVHUD_CLOUDFLARE_ZONE_ID=ci-zone \
-              "$image" --once
-          fi
-          "${{ steps.syft.outputs.cmd }}" scan "docker:$image" --output "spdx-json=$RUNNER_TEMP/devhud-$OCI_TARGET.spdx.json"
-          jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length > 0)' "$RUNNER_TEMP/devhud-$OCI_TARGET.spdx.json"
+          CI_SYFT_COMMAND: ${{ steps.syft.outputs.cmd }}
+          FORCE_RUN: 'true'
 
       - name: Verify embedded migrations against PostgreSQL
+        run: node scripts/ci/run-affected.mjs @delinoio/devhud-api ci:oci:integration
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
-        run: go test -tags=integration ./servers/devhud-api/internal/postgres
+          FORCE_RUN: 'true'
 
       - name: Stop PostgreSQL
         if: ${{ always() }}
@@ -1611,11 +2172,27 @@ jobs:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-oci-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   devhud-supply-chain:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-supply-chain'] }}
     name: DevHud installers, SBOM, provenance, and signature fixtures
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1627,21 +2204,43 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - name: Install locked repository tools
         run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
       - uses: ./.github/actions/setup-clibox
         with:
           install: 'false'
 
-      - name: Validate installer, SPDX, provenance, updater, and key-rotation fixtures
-        run: |
-          node --test scripts/release/finalize-devhud-deb.test.mjs
-          node --test scripts/release/generate-devhud-supply-chain.test.mjs
-          node --test scripts/release/generate-devhud-updater.test.mjs
-          node --test scripts/release/generate-checksums.test.mjs
-          node --test scripts/release/validate-devhud-private-build.test.mjs
-          node --test scripts/release/devhud-private-workflow.test.mjs
+      - name: Setup Go for native signature fixture
+        id: ci-go
+        if: ${{ runner.os == 'Windows' }}
+        uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: devhud-signature-fixture
 
+      - name: Validate installer, SPDX, provenance, updater, and key-rotation fixtures
+        if: ${{ runner.os != 'Windows' }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:supply-chain
+        env:
+          FORCE_RUN: 'true'
+
+      - name: Validate Windows signature failure and success fixtures
+        if: ${{ runner.os == 'Windows' }}
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:windows-signature
+        env:
+          FORCE_RUN: 'true'
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && runner.os == 'Windows' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1650,11 +2249,23 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-supply-chain-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   devhud-release-contracts:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-release-contracts'] }}
     name: DevHud Release Contracts
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1665,6 +2276,12 @@ jobs:
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
+
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install locked repository tools
         run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
@@ -1673,7 +2290,9 @@ jobs:
           install: 'false'
 
       - name: Validate deterministic release contracts
-        run: node --test scripts/release/*.test.mjs
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:release-fixtures
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1682,11 +2301,23 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-devhud-release-contracts-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   async-commit-hook:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['async-commit-hook'] }}
     name: Async commit hook contracts and integration
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1695,19 +2326,22 @@ jobs:
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: async-commit-hook
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: |
-          pnpm --filter async-commit-hook build:embedded
-          go test -race ./cmds/async-commit-hook/...
-          pnpm --filter async-commit-hook test
-          pnpm --filter public-docs test
-          pnpm --filter @delinoio/async-commit-hook-api-client test
-          pnpm proto:check
-          node --test scripts/release/async-commit-hook.test.mjs
-          python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"
+      - name: Validate package tasks
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:ach:check
+        env:
+          FORCE_RUN: 'true'
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1723,6 +2357,14 @@ jobs:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-async-commit-hook-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   node-clibox-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-clibox-test'] }}
@@ -1732,6 +2374,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-14, windows-latest]
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1739,6 +2385,12 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
         id: ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
@@ -1752,11 +2404,20 @@ jobs:
         with:
           install: 'false'
       - name: Test pinned repository utilities
-        run: pnpm ci:tools
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:tools
+        env:
+          FORCE_RUN: 'true'
+
       - name: Verify affected workspace runner
-        run: node --test scripts/ci/run-affected.test.mjs
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:runner
+        env:
+          FORCE_RUN: 'true'
+
       - name: Test Rust utilities, readiness, configuration processing, and OS adapters
-        run: cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:clibox:native
+        env:
+          FORCE_RUN: 'true'
+
       - name: Test launcher and native npm consumers
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-clibox-test'] }}
@@ -1770,11 +2431,23 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-node-clibox-test-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
   node-pnport-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-pnport-test'] }}
     name: pnport package and release contracts
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1782,18 +2455,32 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
         id: ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify source version, package metadata, and fail-closed publication
-        run: |
-          pnpm --filter @delino/pnport test
-          node --test scripts/release/project.test.mjs scripts/release/pnport-*.test.mjs
-          node packages/pnport/scripts/package.mjs main
+        run: node scripts/ci/run-affected.mjs @delino/pnport test ci:release ci:package
+        env:
+          FORCE_RUN: 'true'
+
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-node-pnport-test-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   pnport-native:
     needs: changes
@@ -1894,6 +2581,8 @@ jobs:
       - devhud-ios-simulator
       - devhud-android-emulator
       - delidev-protocol
+      - delidev-client
+      - delidev-frontend
       - devhud-admin
       - devhud-api
       - devhud-oci

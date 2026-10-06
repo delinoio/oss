@@ -57,6 +57,19 @@ and fences claimed exchanges for explicit original local recovery. The
 protected reference and cancellation/publication gates.
 
 
+## API OAuth token generations
+
+Real migration 31 follows real 26–30 and the main-established reservation. It
+adds private `account_oauth_credentials` metadata and the exact
+`account_oauth_credentials_layout=token-generations-v1` marker. Rows bind current
+account/connection/provider identity, accepted public profile, token references,
+expiry, refresh claim and cleanup. Access/refresh tokens remain only in Vault.
+No foreign key or deletion cascade may remove uncertain ownership. Retire metadata
+only after ordinary account cleanup confirms all protected references removed.
+Restore copies current metadata with the current attempt table; historical images
+cannot replace token generations or acquire a refresh claim. Unsettled refresh or
+cleanup blocks restore. Follow the account OAuth contract for HTTP and publication.
+
 ## Managed backup observation
 
 `SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are available only
@@ -832,7 +845,7 @@ verified native cleanup. Exact decimal byte counts retain integer precision;
 logical source, retained snapshot and removed bytes remain separate from nullable
 filesystem free measurements. Cleanup confirmation pins the exact successful
 preview job and current session revision. Snapshot removal has separate irreversible confirmation. Restoration
-and recovery disclose paused outcomes and preserve original uncertainty. 
+and recovery disclose paused outcomes and preserve original uncertainty.
 
 Permanent deletion requires its own explicit confirmation of managed native,
 workspace, backup removal. In-flight native work is stopped
@@ -876,6 +889,14 @@ Worker dispatch, cancellation, report/receipt reconciliation and permanent
 deletion use the same ownership-specific rule. This finite exception can be
 removed only after immutable original evidence is stored by reference; it grants
 no new filesystem, execution, replay or inferred cleanup authority.
+
+Primary WatchWork inspects storage inputs through the owning typed decoder both
+before and inside claim admission. Its strict claim-receipt decoder reserves
+1 KiB for Record metadata separately from the unchanged job bound, then selects
+the recovery, compaction or ordinary job decoder. Unknown fields, duplicate keys,
+trailing documents, malformed exceptions and oversized ordinary jobs remain
+rejected. Same-instance reconnect delivers the original claimed ID, revision and
+input bytes without another claim mutation or native effect.
 
 Storage observations preserve the exact accepted snapshot ID, session, machine,
 digest, byte size, creation instant and repository count. Successful original

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskStatus, SettingsTaskContext, useRetainSettingsTask, useSettingsTaskDismiss, type SettingsTaskPresentation } from "./settings-task-context";
 import "./settings-task.css";
 import { DialogSurface } from "./ui";
+import { copy, useLocale } from "./localization";
 
 export { SettingsDialogFocus, SettingsDialogSize } from "./settings-task-context";
 interface Host { outlet: HTMLDivElement | null; statusTarget: HTMLDivElement | null; setStatusTarget: (node: HTMLDivElement | null) => void; locked: boolean; modal: boolean; register: (id: string, mounted: boolean, visible?: boolean) => void }
@@ -73,6 +74,7 @@ function SettingsTaskStep({ title, size, focus, children, retained = false, onDi
   return task.stepTarget ? createPortal(<SettingsTaskContext.Provider value={context}><div data-settings-task-step hidden={task.activeStep !== id}>{children}</div></SettingsTaskContext.Provider>, task.stepTarget) : null;
 }
 function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, retained = false, onDismiss: dismissed }: DialogProps) {
+  useLocale();
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const closeRequested = useRef(false);
@@ -158,11 +160,11 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     (target ?? heading.current)?.focus({ preventScroll: true });
   }, [visible, presentation]);
   const content = <SettingsTaskContext.Provider value={context}>
-    {!visible && (!host || host.statusTarget) ? createPortal(<div className="settings-task-retained" role="status"><span>{title}: {signalStatus === SettingsTaskStatus.Pending ? "The original operation is in progress." : signalStatus === SettingsTaskStatus.Uncertain ? "The original result is unconfirmed." : "The original operation awaits confirmation."}</span><button type="button" onClick={event => { opener.current = event.currentTarget; setVisible(true); }}>View original operation</button></div>, host?.statusTarget ?? document.body) : null}
+    {!visible && (!host || host.statusTarget) ? createPortal(<div className="settings-task-retained" role="status"><span>{title}: {signalStatus === SettingsTaskStatus.Pending ? copy("settings-task.originalOperationInProgress") : signalStatus === SettingsTaskStatus.Uncertain ? copy("settings-task.originalResultUnconfirmed") : copy("settings-task.originalOperationAwaitsConfirmation")}</span><button type="button" onClick={event => { opener.current = event.currentTarget; setVisible(true); }}>{copy("settings-task.viewOriginalOperation")}</button></div>, host?.statusTarget ?? document.body) : null}
     {(!host || host.outlet) ? createPortal(<>
 
     <DialogSurface ref={dialog} onKeyDown={containTab} className="settings-task-dialog" data-size={current.size} aria-modal="true" aria-labelledby={`${id}-title`} onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss(); }}>
-      <header className="settings-task-header"><div><h2 ref={heading} tabIndex={-1} id={`${id}-title`}>{current.title}</h2><p>Saved on the selected server.</p></div><button type="button" className="settings-task-close" aria-label={`Close ${current.title}`} onClick={dismiss}>×</button></header>
+      <header className="settings-task-header"><div><h2 ref={heading} tabIndex={-1} id={`${id}-title`}>{current.title}</h2><p>{copy("settings.savedOnTheSelectedServer_93dbee")}</p></div><button type="button" className="settings-task-close" aria-label={`${copy("settings-task.close")} ${current.title}`} onClick={dismiss}>×</button></header>
       <div className="settings-task-body settings-content-column"><div hidden={Boolean(activeStep)}>{children}</div><div ref={setStepTarget} /></div>
       <div ref={setActions} className="settings-task-footer" />
     </DialogSurface></>, host?.outlet ?? document.body) : null}

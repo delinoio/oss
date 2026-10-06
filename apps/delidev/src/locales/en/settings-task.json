@@ -1,0 +1,7 @@
+{
+  "settings-task.originalOperationInProgress": "The original operation is in progress.",
+  "settings-task.originalResultUnconfirmed": "The original result is unconfirmed.",
+  "settings-task.originalOperationAwaitsConfirmation": "The original operation awaits confirmation.",
+  "settings-task.viewOriginalOperation": "View original operation",
+  "settings-task.close": "Close"
+}

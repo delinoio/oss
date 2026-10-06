@@ -29,3 +29,5 @@
 - Checks and Inbox queries require both a selected repository and worktree. Pending, empty or failed discovery must never issue an unfiltered run query or render cached unscoped rows.
 
 - Execution deep links bind the page heading, path, selected worktree and branch navigation to the run's repository/worktree IDs. Suppress unrelated identity while the run or its registry page is pending, failed or unavailable; keep evidence accessible and registry pagination on demand. Share the detail query cache without additional polling or acknowledgement.
+
+- PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.

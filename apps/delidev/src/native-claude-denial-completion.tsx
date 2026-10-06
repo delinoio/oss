@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
 const nativeID = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
@@ -12,13 +13,14 @@ function valid(progress: Document) {
 }
 
 export function NativeClaudeDenialCompletion({ progress }: { progress: Document }) {
+  useLocale();
   if (progress.claude_denial == null) return null;
-  if (!valid(progress)) return <p>The retained Claude denial cleanup is unavailable or inconsistent.</p>;
-  return <section aria-label="Claude original denial cleanup">
-    <h4>Claude stopped after denial</h4>
-    <p>The original denial was processed and its command was cancelled. Claude reported a session result without an input result identity.</p>
-    <dl><dt>Native loop</dt><dd>Idle observed</dd><dt>Owned native process cleanup</dt><dd>Confirmed</dd>
-      <dt>Worker workspace cleanup report</dt><dd>{progress.cleanup_verified === true ? "Confirmed" : "Not confirmed"}</dd></dl>
-    <p>History reconciliation is still required before further input. This cleanup does not grant Resume.</p>
+  if (!valid(progress)) return <p>{copy("native-claude-denial-completion.theRetainedClaudeDenialCleanupIs_81b06b")}</p>;
+  return <section aria-label={copy("native-claude-denial-completion.claudeOriginalDenialCleanup_b0c03b")}>
+    <h4>{copy("native-claude-denial-completion.claudeStoppedAfterDenial_2ef315")}</h4>
+    <p>{copy("native-claude-denial-completion.theOriginalDenialWasProcessedAnd_2d5a72")}</p>
+    <dl><dt>{copy("native-claude-denial-completion.nativeLoop_fec242")}</dt><dd>{copy("native-claude-denial-completion.idleObserved_34b00d")}</dd><dt>{copy("native-claude-denial-completion.ownedNativeProcessCleanup_05bea7")}</dt><dd>{copy("native-claude-denial-completion.confirmed_fe00b6")}</dd>
+      <dt>{copy("native-claude-denial-completion.workerWorkspaceCleanupReport_e52033")}</dt><dd>{progress.cleanup_verified === true ? copy("native-claude-denial-completion.confirmed_fe00b6") : copy("native-claude-denial-completion.notConfirmed_bc1c29")}</dd></dl>
+    <p>{copy("native-claude-denial-completion.historyReconciliationIsStillRequiredBefore_5f5801")}</p>
   </section>;
 }

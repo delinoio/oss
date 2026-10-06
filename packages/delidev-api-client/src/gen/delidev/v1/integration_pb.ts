@@ -12,7 +12,163 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/integration.proto.
  */
 export const file_delidev_v1_integration: GenFile = /*@__PURE__*/
-  fileDesc("ChxkZWxpZGV2L3YxL2ludGVncmF0aW9uLnByb3RvEgpkZWxpZGV2LnYxIpoBCiFSZWZyZXNoUHVsbFJlcXVlc3RQcm9ibGVtc1JlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIVCg1yZXBvc2l0b3J5X2lkGAIgASgJEg4KBm51bWJlchgDIAEoCRI6CgRraW5kGAQgASgOMiwuZGVsaWRldi52MS5QdWxsUmVxdWVzdFByb2JsZW1Db2xsZWN0aW9uS2luZCJ1CiJSZWZyZXNoUHVsbFJlcXVlc3RQcm9ibGVtc1Jlc3BvbnNlEikKC3Byb2JsZW1fc2V0GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIn4KHkxpc3RQdWxsUmVxdWVzdFByb2JsZW1zUmVxdWVzdBIcChRyZW1vdGVfcmVwb3NpdG9yeV9pZBgBIAEoCRIXCg9wdWxsX3JlcXVlc3RfaWQYAiABKAkSEQoJcGFnZV9zaXplGAMgASgNEhIKCnBhZ2VfdG9rZW4YBCABKAkijQEKH0xpc3RQdWxsUmVxdWVzdFByb2JsZW1zUmVzcG9uc2USKQoLcHJvYmxlbV9zZXQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEiYKCHByb2JsZW1zGAIgAygLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAyABKAkiYwogRGlzbWlzc1B1bGxSZXF1ZXN0UHJvYmxlbVJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhcKD2NvbnRlbnRfdmVyc2lvbhgCIAEoCSJwCiFEaXNtaXNzUHVsbFJlcXVlc3RQcm9ibGVtUmVzcG9uc2USJQoHcHJvYmxlbRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCKJAQopTGlzdFB1bGxSZXF1ZXN0UmVtZWRpYXRpb25BdHRlbXB0c1JlcXVlc3QSHAoUcmVtb3RlX3JlcG9zaXRvcnlfaWQYASABKAkSFwoPcHVsbF9yZXF1ZXN0X2lkGAIgASgJEhEKCXBhZ2Vfc2l6ZRgDIAEoDRISCgpwYWdlX3Rva2VuGAQgASgJIpgBCipMaXN0UHVsbFJlcXVlc3RSZW1lZGlhdGlvbkF0dGVtcHRzUmVzcG9uc2USKQoLcHJvYmxlbV9zZXQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEiYKCGF0dGVtcHRzGAIgAygLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAyABKAkiTQojUmVzdW1lUHVsbFJlcXVlc3RSZW1lZGlhdGlvblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uIncKJFJlc3VtZVB1bGxSZXF1ZXN0UmVtZWRpYXRpb25SZXNwb25zZRIpCgtwcm9ibGVtX3NldBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCJ5ChlHZXRHaXRIdWJUb2tlbkZvcm1SZXF1ZXN0EhIKCnByb2ZpbGVfaWQYASABKAkSGQoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAQSLQoGYWNjZXNzGAMgASgOMh0uZGVsaWRldi52MS5HaXRIdWJUb2tlbkFjY2VzcyJLChpHZXRHaXRIdWJUb2tlbkZvcm1SZXNwb25zZRIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIVCg1kb2N1bWVudF9qc29uGAIgASgMInYKHVNhdmVJbnRlZ3JhdGlvblByb2ZpbGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIWCg5zY2hlbWFfdmVyc2lvbhgCIAEoDRIVCg1kb2N1bWVudF9qc29uGAMgASgMIm0KHlNhdmVJbnRlZ3JhdGlvblByb2ZpbGVSZXNwb25zZRIlCgdwcm9maWxlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIlcKHlJlcGxhY2VJbnRlZ3JhdGlvblRva2VuUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SDQoFdG9rZW4YAiABKAwihAEKH1JlcGxhY2VJbnRlZ3JhdGlvblRva2VuUmVzcG9uc2USJQoHcHJvZmlsZRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIUCgxwcm9ibGVtX2pzb24YBCABKAwiSwohVmFsaWRhdGVJbnRlZ3JhdGlvblByb2ZpbGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiKHAQoiVmFsaWRhdGVJbnRlZ3JhdGlvblByb2ZpbGVSZXNwb25zZRIlCgdwcm9maWxlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEhQKDHByb2JsZW1fanNvbhgEIAEoDCJJCh9EZWxldGVJbnRlZ3JhdGlvblByb2ZpbGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiKWAQogRGVsZXRlSW50ZWdyYXRpb25Qcm9maWxlUmVzcG9uc2USJQoHcHJvZmlsZRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIPCgdkZWxldGVkGAQgASgIEhQKDHByb2JsZW1fanNvbhgFIAEoDCI8CiNJbnNwZWN0UmVwb3NpdG9yeUludGVncmF0aW9uUmVxdWVzdBIVCg1yZXBvc2l0b3J5X2lkGAEgASgJIlUKJEluc3BlY3RSZXBvc2l0b3J5SW50ZWdyYXRpb25SZXNwb25zZRIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIVCg1kb2N1bWVudF9qc29uGAIgASgMImYKIVF1ZXJ5UmVwb3NpdG9yeUludGVncmF0aW9uUmVxdWVzdBIVCg1yZXBvc2l0b3J5X2lkGAEgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAIgASgNEhIKCnF1ZXJ5X2pzb24YAyABKAwiUwoiUXVlcnlSZXBvc2l0b3J5SW50ZWdyYXRpb25SZXNwb25zZRIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIVCg1kb2N1bWVudF9qc29uGAIgASgMIm8KHUxpc3RHaXRIdWJSZXBvc2l0b3JpZXNSZXF1ZXN0EhIKCnByb2ZpbGVfaWQYASABKAkSGQoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAQSDAoEcGFnZRgDIAEoDRIRCglwYWdlX3NpemUYBCABKA0iTwoeTGlzdEdpdEh1YlJlcG9zaXRvcmllc1Jlc3BvbnNlEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgNEhUKDWRvY3VtZW50X2pzb24YAiABKAwq6wEKIFB1bGxSZXF1ZXN0UHJvYmxlbUNvbGxlY3Rpb25LaW5kEjQKMFBVTExfUkVRVUVTVF9QUk9CTEVNX0NPTExFQ1RJT05fS0lORF9VTlNQRUNJRklFRBAAEjEKLVBVTExfUkVRVUVTVF9QUk9CTEVNX0NPTExFQ1RJT05fS0lORF9GRUVEQkFDSxABEisKJ1BVTExfUkVRVUVTVF9QUk9CTEVNX0NPTExFQ1RJT05fS0lORF9DSRACEjEKLVBVTExfUkVRVUVTVF9QUk9CTEVNX0NPTExFQ1RJT05fS0lORF9DT05GTElDVBADKsYBChFHaXRIdWJUb2tlbkFjY2VzcxIkCiBHSVRfSFVCX1RPS0VOX0FDQ0VTU19VTlNQRUNJRklFRBAAEi4KKkdJVF9IVUJfVE9LRU5fQUNDRVNTX1NFTEVDVEVEX1JFUE9TSVRPUklFUxABEiwKKEdJVF9IVUJfVE9LRU5fQUNDRVNTX1BVQkxJQ19SRVBPU0lUT1JJRVMQAhItCilHSVRfSFVCX1RPS0VOX0FDQ0VTU19QUklWQVRFX1JFUE9TSVRPUklFUxADMskMChJJbnRlZ3JhdGlvblNlcnZpY2USbwoWU2F2ZUludGVncmF0aW9uUHJvZmlsZRIpLmRlbGlkZXYudjEuU2F2ZUludGVncmF0aW9uUHJvZmlsZVJlcXVlc3QaKi5kZWxpZGV2LnYxLlNhdmVJbnRlZ3JhdGlvblByb2ZpbGVSZXNwb25zZRJyChdSZXBsYWNlSW50ZWdyYXRpb25Ub2tlbhIqLmRlbGlkZXYudjEuUmVwbGFjZUludGVncmF0aW9uVG9rZW5SZXF1ZXN0GisuZGVsaWRldi52MS5SZXBsYWNlSW50ZWdyYXRpb25Ub2tlblJlc3BvbnNlEnsKGlZhbGlkYXRlSW50ZWdyYXRpb25Qcm9maWxlEi0uZGVsaWRldi52MS5WYWxpZGF0ZUludGVncmF0aW9uUHJvZmlsZVJlcXVlc3QaLi5kZWxpZGV2LnYxLlZhbGlkYXRlSW50ZWdyYXRpb25Qcm9maWxlUmVzcG9uc2USdQoYRGVsZXRlSW50ZWdyYXRpb25Qcm9maWxlEisuZGVsaWRldi52MS5EZWxldGVJbnRlZ3JhdGlvblByb2ZpbGVSZXF1ZXN0GiwuZGVsaWRldi52MS5EZWxldGVJbnRlZ3JhdGlvblByb2ZpbGVSZXNwb25zZRKBAQocSW5zcGVjdFJlcG9zaXRvcnlJbnRlZ3JhdGlvbhIvLmRlbGlkZXYudjEuSW5zcGVjdFJlcG9zaXRvcnlJbnRlZ3JhdGlvblJlcXVlc3QaMC5kZWxpZGV2LnYxLkluc3BlY3RSZXBvc2l0b3J5SW50ZWdyYXRpb25SZXNwb25zZRJ7ChpRdWVyeVJlcG9zaXRvcnlJbnRlZ3JhdGlvbhItLmRlbGlkZXYudjEuUXVlcnlSZXBvc2l0b3J5SW50ZWdyYXRpb25SZXF1ZXN0Gi4uZGVsaWRldi52MS5RdWVyeVJlcG9zaXRvcnlJbnRlZ3JhdGlvblJlc3BvbnNlEm8KFkxpc3RHaXRIdWJSZXBvc2l0b3JpZXMSKS5kZWxpZGV2LnYxLkxpc3RHaXRIdWJSZXBvc2l0b3JpZXNSZXF1ZXN0GiouZGVsaWRldi52MS5MaXN0R2l0SHViUmVwb3NpdG9yaWVzUmVzcG9uc2USYwoSR2V0R2l0SHViVG9rZW5Gb3JtEiUuZGVsaWRldi52MS5HZXRHaXRIdWJUb2tlbkZvcm1SZXF1ZXN0GiYuZGVsaWRldi52MS5HZXRHaXRIdWJUb2tlbkZvcm1SZXNwb25zZRJ7ChpSZWZyZXNoUHVsbFJlcXVlc3RQcm9ibGVtcxItLmRlbGlkZXYudjEuUmVmcmVzaFB1bGxSZXF1ZXN0UHJvYmxlbXNSZXF1ZXN0Gi4uZGVsaWRldi52MS5SZWZyZXNoUHVsbFJlcXVlc3RQcm9ibGVtc1Jlc3BvbnNlEnIKF0xpc3RQdWxsUmVxdWVzdFByb2JsZW1zEiouZGVsaWRldi52MS5MaXN0UHVsbFJlcXVlc3RQcm9ibGVtc1JlcXVlc3QaKy5kZWxpZGV2LnYxLkxpc3RQdWxsUmVxdWVzdFByb2JsZW1zUmVzcG9uc2USeAoZRGlzbWlzc1B1bGxSZXF1ZXN0UHJvYmxlbRIsLmRlbGlkZXYudjEuRGlzbWlzc1B1bGxSZXF1ZXN0UHJvYmxlbVJlcXVlc3QaLS5kZWxpZGV2LnYxLkRpc21pc3NQdWxsUmVxdWVzdFByb2JsZW1SZXNwb25zZRKTAQoiTGlzdFB1bGxSZXF1ZXN0UmVtZWRpYXRpb25BdHRlbXB0cxI1LmRlbGlkZXYudjEuTGlzdFB1bGxSZXF1ZXN0UmVtZWRpYXRpb25BdHRlbXB0c1JlcXVlc3QaNi5kZWxpZGV2LnYxLkxpc3RQdWxsUmVxdWVzdFJlbWVkaWF0aW9uQXR0ZW1wdHNSZXNwb25zZRKBAQocUmVzdW1lUHVsbFJlcXVlc3RSZW1lZGlhdGlvbhIvLmRlbGlkZXYudjEuUmVzdW1lUHVsbFJlcXVlc3RSZW1lZGlhdGlvblJlcXVlc3QaMC5kZWxpZGV2LnYxLlJlc3VtZVB1bGxSZXF1ZXN0UmVtZWRpYXRpb25SZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
+  fileDesc("ChxkZWxpZGV2L3YxL2ludGVncmF0aW9uLnByb3RvEgpkZWxpZGV2LnYxIj4KGUluc3BlY3RHaXRIdWJUb2tlblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRINCgV0b2tlbhgCIAEoDCKuAQoaSW5zcGVjdEdpdEh1YlRva2VuUmVzcG9uc2USEgoKcmVxdWVzdF9pZBgBIAEoCRIzCgVzdGF0ZRgCIAEoDjIkLmRlbGlkZXYudjEuR2l0SHViVG9rZW5JZGVudGl0eVN0YXRlEjEKCGlkZW50aXR5GAMgASgLMh8uZGVsaWRldi52MS5HaXRIdWJUb2tlbklkZW50aXR5EhQKDHByb2JsZW1fanNvbhgEIAEoDCJBChNHaXRIdWJUb2tlbklkZW50aXR5EgoKAmlkGAEgASgJEg8KB25vZGVfaWQYAiABKAkSDQoFbG9naW4YAyABKAkiqwEKHVByZXBhcmVHaXRIdWJUb2tlbkZvcm1SZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSLwoKdG9rZW5fa2luZBgCIAEoDjIbLmRlbGlkZXYudjEuR2l0SHViVG9rZW5LaW5kEhYKDnJlc291cmNlX293bmVyGAMgASgJEi0KBmFjY2VzcxgEIAEoDjIdLmRlbGlkZXYudjEuR2l0SHViVG9rZW5BY2Nlc3MiuQEKHlByZXBhcmVHaXRIdWJUb2tlbkZvcm1SZXNwb25zZRISCgpyZXF1ZXN0X2lkGAEgASgJEi8KCnRva2VuX2tpbmQYAiABKA4yGy5kZWxpZGV2LnYxLkdpdEh1YlRva2VuS2luZBIWCg5yZXNvdXJjZV9vd25lchgDIAEoCRItCgZhY2Nlc3MYBCABKA4yHS5kZWxpZGV2LnYxLkdpdEh1YlRva2VuQWNjZXNzEgsKA3VybBgFIAEoCSKaAQohUmVmcmVzaFB1bGxSZXF1ZXN0UHJvYmxlbXNSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFQoNcmVwb3NpdG9yeV9pZBgCIAEoCRIOCgZudW1iZXIYAyABKAkSOgoEa2luZBgEIAEoDjIsLmRlbGlkZXYudjEuUHVsbFJlcXVlc3RQcm9ibGVtQ29sbGVjdGlvbktpbmQidQoiUmVmcmVzaFB1bGxSZXF1ZXN0UHJvYmxlbXNSZXNwb25zZRIpCgtwcm9ibGVtX3NldBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCJ+Ch5MaXN0UHVsbFJlcXVlc3RQcm9ibGVtc1JlcXVlc3QSHAoUcmVtb3RlX3JlcG9zaXRvcnlfaWQYASABKAkSFwoPcHVsbF9yZXF1ZXN0X2lkGAIgASgJEhEKCXBhZ2Vfc2l6ZRgDIAEoDRISCgpwYWdlX3Rva2VuGAQgASgJIo0BCh9MaXN0UHVsbFJlcXVlc3RQcm9ibGVtc1Jlc3BvbnNlEikKC3Byb2JsZW1fc2V0GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRImCghwcm9ibGVtcxgCIAMoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USFwoPbmV4dF9wYWdlX3Rva2VuGAMgASgJImMKIERpc21pc3NQdWxsUmVxdWVzdFByb2JsZW1SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIXCg9jb250ZW50X3ZlcnNpb24YAiABKAkicAohRGlzbWlzc1B1bGxSZXF1ZXN0UHJvYmxlbVJlc3BvbnNlEiUKB3Byb2JsZW0YASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgiiQEKKUxpc3RQdWxsUmVxdWVzdFJlbWVkaWF0aW9uQXR0ZW1wdHNSZXF1ZXN0EhwKFHJlbW90ZV9yZXBvc2l0b3J5X2lkGAEgASgJEhcKD3B1bGxfcmVxdWVzdF9pZBgCIAEoCRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSKYAQoqTGlzdFB1bGxSZXF1ZXN0UmVtZWRpYXRpb25BdHRlbXB0c1Jlc3BvbnNlEikKC3Byb2JsZW1fc2V0GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRImCghhdHRlbXB0cxgCIAMoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USFwoPbmV4dF9wYWdlX3Rva2VuGAMgASgJIk0KI1Jlc3VtZVB1bGxSZXF1ZXN0UmVtZWRpYXRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiJ3CiRSZXN1bWVQdWxsUmVxdWVzdFJlbWVkaWF0aW9uUmVzcG9uc2USKQoLcHJvYmxlbV9zZXQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgieQoZR2V0R2l0SHViVG9rZW5Gb3JtUmVxdWVzdBISCgpwcm9maWxlX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEi0KBmFjY2VzcxgDIAEoDjIdLmRlbGlkZXYudjEuR2l0SHViVG9rZW5BY2Nlc3MiSwoaR2V0R2l0SHViVG9rZW5Gb3JtUmVzcG9uc2USFgoOc2NoZW1hX3ZlcnNpb24YASABKA0SFQoNZG9jdW1lbnRfanNvbhgCIAEoDCJ2Ch1TYXZlSW50ZWdyYXRpb25Qcm9maWxlUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SFgoOc2NoZW1hX3ZlcnNpb24YAiABKA0SFQoNZG9jdW1lbnRfanNvbhgDIAEoDCJtCh5TYXZlSW50ZWdyYXRpb25Qcm9maWxlUmVzcG9uc2USJQoHcHJvZmlsZRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCJXCh5SZXBsYWNlSW50ZWdyYXRpb25Ub2tlblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEg0KBXRva2VuGAIgASgMIoQBCh9SZXBsYWNlSW50ZWdyYXRpb25Ub2tlblJlc3BvbnNlEiUKB3Byb2ZpbGUYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSFAoMcHJvYmxlbV9qc29uGAQgASgMIksKIVZhbGlkYXRlSW50ZWdyYXRpb25Qcm9maWxlUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ihwEKIlZhbGlkYXRlSW50ZWdyYXRpb25Qcm9maWxlUmVzcG9uc2USJQoHcHJvZmlsZRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIUCgxwcm9ibGVtX2pzb24YBCABKAwiSQofRGVsZXRlSW50ZWdyYXRpb25Qcm9maWxlUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ilgEKIERlbGV0ZUludGVncmF0aW9uUHJvZmlsZVJlc3BvbnNlEiUKB3Byb2ZpbGUYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSDwoHZGVsZXRlZBgEIAEoCBIUCgxwcm9ibGVtX2pzb24YBSABKAwiPAojSW5zcGVjdFJlcG9zaXRvcnlJbnRlZ3JhdGlvblJlcXVlc3QSFQoNcmVwb3NpdG9yeV9pZBgBIAEoCSJVCiRJbnNwZWN0UmVwb3NpdG9yeUludGVncmF0aW9uUmVzcG9uc2USFgoOc2NoZW1hX3ZlcnNpb24YASABKA0SFQoNZG9jdW1lbnRfanNvbhgCIAEoDCJmCiFRdWVyeVJlcG9zaXRvcnlJbnRlZ3JhdGlvblJlcXVlc3QSFQoNcmVwb3NpdG9yeV9pZBgBIAEoCRIWCg5zY2hlbWFfdmVyc2lvbhgCIAEoDRISCgpxdWVyeV9qc29uGAMgASgMIlMKIlF1ZXJ5UmVwb3NpdG9yeUludGVncmF0aW9uUmVzcG9uc2USFgoOc2NoZW1hX3ZlcnNpb24YASABKA0SFQoNZG9jdW1lbnRfanNvbhgCIAEoDCJvCh1MaXN0R2l0SHViUmVwb3NpdG9yaWVzUmVxdWVzdBISCgpwcm9maWxlX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEgwKBHBhZ2UYAyABKA0SEQoJcGFnZV9zaXplGAQgASgNIk8KHkxpc3RHaXRIdWJSZXBvc2l0b3JpZXNSZXNwb25zZRIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoDRIVCg1kb2N1bWVudF9qc29uGAIgASgMKnoKD0dpdEh1YlRva2VuS2luZBIiCh5HSVRfSFVCX1RPS0VOX0tJTkRfVU5TUEVDSUZJRUQQABIjCh9HSVRfSFVCX1RPS0VOX0tJTkRfRklORV9HUkFJTkVEEAESHgoaR0lUX0hVQl9UT0tFTl9LSU5EX0NMQVNTSUMQAirjAgoYR2l0SHViVG9rZW5JZGVudGl0eVN0YXRlEiwKKEdJVF9IVUJfVE9LRU5fSURFTlRJVFlfU1RBVEVfVU5TUEVDSUZJRUQQABIpCiVHSVRfSFVCX1RPS0VOX0lERU5USVRZX1NUQVRFX1ZFUklGSUVEEAESLgoqR0lUX0hVQl9UT0tFTl9JREVOVElUWV9TVEFURV9JTlZBTElEX1RPS0VOEAISMgouR0lUX0hVQl9UT0tFTl9JREVOVElUWV9TVEFURV9BQ0NFU1NfUkVTVFJJQ1RFRBADEi0KKUdJVF9IVUJfVE9LRU5fSURFTlRJVFlfU1RBVEVfU1NPX1JFUVVJUkVEEAQSLQopR0lUX0hVQl9UT0tFTl9JREVOVElUWV9TVEFURV9SQVRFX0xJTUlURUQQBRIsCihHSVRfSFVCX1RPS0VOX0lERU5USVRZX1NUQVRFX1VOQVZBSUxBQkxFEAYq6wEKIFB1bGxSZXF1ZXN0UHJvYmxlbUNvbGxlY3Rpb25LaW5kEjQKMFBVTExfUkVRVUVTVF9QUk9CTEVNX0NPTExFQ1RJT05fS0lORF9VTlNQRUNJRklFRBAAEjEKLVBVTExfUkVRVUVTVF9QUk9CTEVNX0NPTExFQ1RJT05fS0lORF9GRUVEQkFDSxABEisKJ1BVTExfUkVRVUVTVF9QUk9CTEVNX0NPTExFQ1RJT05fS0lORF9DSRACEjEKLVBVTExfUkVRVUVTVF9QUk9CTEVNX0NPTExFQ1RJT05fS0lORF9DT05GTElDVBADKsYBChFHaXRIdWJUb2tlbkFjY2VzcxIkCiBHSVRfSFVCX1RPS0VOX0FDQ0VTU19VTlNQRUNJRklFRBAAEi4KKkdJVF9IVUJfVE9LRU5fQUNDRVNTX1NFTEVDVEVEX1JFUE9TSVRPUklFUxABEiwKKEdJVF9IVUJfVE9LRU5fQUNDRVNTX1BVQkxJQ19SRVBPU0lUT1JJRVMQAhItCilHSVRfSFVCX1RPS0VOX0FDQ0VTU19QUklWQVRFX1JFUE9TSVRPUklFUxADMp8OChJJbnRlZ3JhdGlvblNlcnZpY2USYwoSSW5zcGVjdEdpdEh1YlRva2VuEiUuZGVsaWRldi52MS5JbnNwZWN0R2l0SHViVG9rZW5SZXF1ZXN0GiYuZGVsaWRldi52MS5JbnNwZWN0R2l0SHViVG9rZW5SZXNwb25zZRJvChZQcmVwYXJlR2l0SHViVG9rZW5Gb3JtEikuZGVsaWRldi52MS5QcmVwYXJlR2l0SHViVG9rZW5Gb3JtUmVxdWVzdBoqLmRlbGlkZXYudjEuUHJlcGFyZUdpdEh1YlRva2VuRm9ybVJlc3BvbnNlEm8KFlNhdmVJbnRlZ3JhdGlvblByb2ZpbGUSKS5kZWxpZGV2LnYxLlNhdmVJbnRlZ3JhdGlvblByb2ZpbGVSZXF1ZXN0GiouZGVsaWRldi52MS5TYXZlSW50ZWdyYXRpb25Qcm9maWxlUmVzcG9uc2UScgoXUmVwbGFjZUludGVncmF0aW9uVG9rZW4SKi5kZWxpZGV2LnYxLlJlcGxhY2VJbnRlZ3JhdGlvblRva2VuUmVxdWVzdBorLmRlbGlkZXYudjEuUmVwbGFjZUludGVncmF0aW9uVG9rZW5SZXNwb25zZRJ7ChpWYWxpZGF0ZUludGVncmF0aW9uUHJvZmlsZRItLmRlbGlkZXYudjEuVmFsaWRhdGVJbnRlZ3JhdGlvblByb2ZpbGVSZXF1ZXN0Gi4uZGVsaWRldi52MS5WYWxpZGF0ZUludGVncmF0aW9uUHJvZmlsZVJlc3BvbnNlEnUKGERlbGV0ZUludGVncmF0aW9uUHJvZmlsZRIrLmRlbGlkZXYudjEuRGVsZXRlSW50ZWdyYXRpb25Qcm9maWxlUmVxdWVzdBosLmRlbGlkZXYudjEuRGVsZXRlSW50ZWdyYXRpb25Qcm9maWxlUmVzcG9uc2USgQEKHEluc3BlY3RSZXBvc2l0b3J5SW50ZWdyYXRpb24SLy5kZWxpZGV2LnYxLkluc3BlY3RSZXBvc2l0b3J5SW50ZWdyYXRpb25SZXF1ZXN0GjAuZGVsaWRldi52MS5JbnNwZWN0UmVwb3NpdG9yeUludGVncmF0aW9uUmVzcG9uc2USewoaUXVlcnlSZXBvc2l0b3J5SW50ZWdyYXRpb24SLS5kZWxpZGV2LnYxLlF1ZXJ5UmVwb3NpdG9yeUludGVncmF0aW9uUmVxdWVzdBouLmRlbGlkZXYudjEuUXVlcnlSZXBvc2l0b3J5SW50ZWdyYXRpb25SZXNwb25zZRJvChZMaXN0R2l0SHViUmVwb3NpdG9yaWVzEikuZGVsaWRldi52MS5MaXN0R2l0SHViUmVwb3NpdG9yaWVzUmVxdWVzdBoqLmRlbGlkZXYudjEuTGlzdEdpdEh1YlJlcG9zaXRvcmllc1Jlc3BvbnNlEmMKEkdldEdpdEh1YlRva2VuRm9ybRIlLmRlbGlkZXYudjEuR2V0R2l0SHViVG9rZW5Gb3JtUmVxdWVzdBomLmRlbGlkZXYudjEuR2V0R2l0SHViVG9rZW5Gb3JtUmVzcG9uc2USewoaUmVmcmVzaFB1bGxSZXF1ZXN0UHJvYmxlbXMSLS5kZWxpZGV2LnYxLlJlZnJlc2hQdWxsUmVxdWVzdFByb2JsZW1zUmVxdWVzdBouLmRlbGlkZXYudjEuUmVmcmVzaFB1bGxSZXF1ZXN0UHJvYmxlbXNSZXNwb25zZRJyChdMaXN0UHVsbFJlcXVlc3RQcm9ibGVtcxIqLmRlbGlkZXYudjEuTGlzdFB1bGxSZXF1ZXN0UHJvYmxlbXNSZXF1ZXN0GisuZGVsaWRldi52MS5MaXN0UHVsbFJlcXVlc3RQcm9ibGVtc1Jlc3BvbnNlEngKGURpc21pc3NQdWxsUmVxdWVzdFByb2JsZW0SLC5kZWxpZGV2LnYxLkRpc21pc3NQdWxsUmVxdWVzdFByb2JsZW1SZXF1ZXN0Gi0uZGVsaWRldi52MS5EaXNtaXNzUHVsbFJlcXVlc3RQcm9ibGVtUmVzcG9uc2USkwEKIkxpc3RQdWxsUmVxdWVzdFJlbWVkaWF0aW9uQXR0ZW1wdHMSNS5kZWxpZGV2LnYxLkxpc3RQdWxsUmVxdWVzdFJlbWVkaWF0aW9uQXR0ZW1wdHNSZXF1ZXN0GjYuZGVsaWRldi52MS5MaXN0UHVsbFJlcXVlc3RSZW1lZGlhdGlvbkF0dGVtcHRzUmVzcG9uc2USgQEKHFJlc3VtZVB1bGxSZXF1ZXN0UmVtZWRpYXRpb24SLy5kZWxpZGV2LnYxLlJlc3VtZVB1bGxSZXF1ZXN0UmVtZWRpYXRpb25SZXF1ZXN0GjAuZGVsaWRldi52MS5SZXN1bWVQdWxsUmVxdWVzdFJlbWVkaWF0aW9uUmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
+
+/**
+ * @generated from message delidev.v1.InspectGitHubTokenRequest
+ */
+export type InspectGitHubTokenRequest = Message<"delidev.v1.InspectGitHubTokenRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * Transient write-only input. Inspection does not store a token or profile.
+   *
+   * @generated from field: bytes token = 2;
+   */
+  token: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.InspectGitHubTokenRequest.
+ * Use `create(InspectGitHubTokenRequestSchema)` to create a new message.
+ */
+export const InspectGitHubTokenRequestSchema: GenMessage<InspectGitHubTokenRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_integration, 0);
+
+/**
+ * @generated from message delidev.v1.InspectGitHubTokenResponse
+ */
+export type InspectGitHubTokenResponse = Message<"delidev.v1.InspectGitHubTokenResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: delidev.v1.GitHubTokenIdentityState state = 2;
+   */
+  state: GitHubTokenIdentityState;
+
+  /**
+   * Present only for verified identity; never a repository access grant.
+   *
+   * @generated from field: delidev.v1.GitHubTokenIdentity identity = 3;
+   */
+  identity?: GitHubTokenIdentity | undefined;
+
+  /**
+   * @generated from field: bytes problem_json = 4;
+   */
+  problemJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.InspectGitHubTokenResponse.
+ * Use `create(InspectGitHubTokenResponseSchema)` to create a new message.
+ */
+export const InspectGitHubTokenResponseSchema: GenMessage<InspectGitHubTokenResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_integration, 1);
+
+/**
+ * @generated from message delidev.v1.GitHubTokenIdentity
+ */
+export type GitHubTokenIdentity = Message<"delidev.v1.GitHubTokenIdentity"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string node_id = 2;
+   */
+  nodeId: string;
+
+  /**
+   * @generated from field: string login = 3;
+   */
+  login: string;
+};
+
+/**
+ * Describes the message delidev.v1.GitHubTokenIdentity.
+ * Use `create(GitHubTokenIdentitySchema)` to create a new message.
+ */
+export const GitHubTokenIdentitySchema: GenMessage<GitHubTokenIdentity> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_integration, 2);
+
+/**
+ * @generated from message delidev.v1.PrepareGitHubTokenFormRequest
+ */
+export type PrepareGitHubTokenFormRequest = Message<"delidev.v1.PrepareGitHubTokenFormRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: delidev.v1.GitHubTokenKind token_kind = 2;
+   */
+  tokenKind: GitHubTokenKind;
+
+  /**
+   * @generated from field: string resource_owner = 3;
+   */
+  resourceOwner: string;
+
+  /**
+   * @generated from field: delidev.v1.GitHubTokenAccess access = 4;
+   */
+  access: GitHubTokenAccess;
+};
+
+/**
+ * Describes the message delidev.v1.PrepareGitHubTokenFormRequest.
+ * Use `create(PrepareGitHubTokenFormRequestSchema)` to create a new message.
+ */
+export const PrepareGitHubTokenFormRequestSchema: GenMessage<PrepareGitHubTokenFormRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_integration, 3);
+
+/**
+ * @generated from message delidev.v1.PrepareGitHubTokenFormResponse
+ */
+export type PrepareGitHubTokenFormResponse = Message<"delidev.v1.PrepareGitHubTokenFormResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: delidev.v1.GitHubTokenKind token_kind = 2;
+   */
+  tokenKind: GitHubTokenKind;
+
+  /**
+   * @generated from field: string resource_owner = 3;
+   */
+  resourceOwner: string;
+
+  /**
+   * @generated from field: delidev.v1.GitHubTokenAccess access = 4;
+   */
+  access: GitHubTokenAccess;
+
+  /**
+   * Canonical official form only; preparation has no credential side effects.
+   *
+   * @generated from field: string url = 5;
+   */
+  url: string;
+};
+
+/**
+ * Describes the message delidev.v1.PrepareGitHubTokenFormResponse.
+ * Use `create(PrepareGitHubTokenFormResponseSchema)` to create a new message.
+ */
+export const PrepareGitHubTokenFormResponseSchema: GenMessage<PrepareGitHubTokenFormResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_integration, 4);
 
 /**
  * @generated from message delidev.v1.RefreshPullRequestProblemsRequest
@@ -46,7 +202,7 @@ export type RefreshPullRequestProblemsRequest = Message<"delidev.v1.RefreshPullR
  * Use `create(RefreshPullRequestProblemsRequestSchema)` to create a new message.
  */
 export const RefreshPullRequestProblemsRequestSchema: GenMessage<RefreshPullRequestProblemsRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 0);
+  messageDesc(file_delidev_v1_integration, 5);
 
 /**
  * @generated from message delidev.v1.RefreshPullRequestProblemsResponse
@@ -73,7 +229,7 @@ export type RefreshPullRequestProblemsResponse = Message<"delidev.v1.RefreshPull
  * Use `create(RefreshPullRequestProblemsResponseSchema)` to create a new message.
  */
 export const RefreshPullRequestProblemsResponseSchema: GenMessage<RefreshPullRequestProblemsResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 1);
+  messageDesc(file_delidev_v1_integration, 6);
 
 /**
  * @generated from message delidev.v1.ListPullRequestProblemsRequest
@@ -107,7 +263,7 @@ export type ListPullRequestProblemsRequest = Message<"delidev.v1.ListPullRequest
  * Use `create(ListPullRequestProblemsRequestSchema)` to create a new message.
  */
 export const ListPullRequestProblemsRequestSchema: GenMessage<ListPullRequestProblemsRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 2);
+  messageDesc(file_delidev_v1_integration, 7);
 
 /**
  * @generated from message delidev.v1.ListPullRequestProblemsResponse
@@ -136,7 +292,7 @@ export type ListPullRequestProblemsResponse = Message<"delidev.v1.ListPullReques
  * Use `create(ListPullRequestProblemsResponseSchema)` to create a new message.
  */
 export const ListPullRequestProblemsResponseSchema: GenMessage<ListPullRequestProblemsResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 3);
+  messageDesc(file_delidev_v1_integration, 8);
 
 /**
  * @generated from message delidev.v1.DismissPullRequestProblemRequest
@@ -158,7 +314,7 @@ export type DismissPullRequestProblemRequest = Message<"delidev.v1.DismissPullRe
  * Use `create(DismissPullRequestProblemRequestSchema)` to create a new message.
  */
 export const DismissPullRequestProblemRequestSchema: GenMessage<DismissPullRequestProblemRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 4);
+  messageDesc(file_delidev_v1_integration, 9);
 
 /**
  * @generated from message delidev.v1.DismissPullRequestProblemResponse
@@ -185,7 +341,7 @@ export type DismissPullRequestProblemResponse = Message<"delidev.v1.DismissPullR
  * Use `create(DismissPullRequestProblemResponseSchema)` to create a new message.
  */
 export const DismissPullRequestProblemResponseSchema: GenMessage<DismissPullRequestProblemResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 5);
+  messageDesc(file_delidev_v1_integration, 10);
 
 /**
  * @generated from message delidev.v1.ListPullRequestRemediationAttemptsRequest
@@ -217,7 +373,7 @@ export type ListPullRequestRemediationAttemptsRequest = Message<"delidev.v1.List
  * Use `create(ListPullRequestRemediationAttemptsRequestSchema)` to create a new message.
  */
 export const ListPullRequestRemediationAttemptsRequestSchema: GenMessage<ListPullRequestRemediationAttemptsRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 6);
+  messageDesc(file_delidev_v1_integration, 11);
 
 /**
  * @generated from message delidev.v1.ListPullRequestRemediationAttemptsResponse
@@ -244,7 +400,7 @@ export type ListPullRequestRemediationAttemptsResponse = Message<"delidev.v1.Lis
  * Use `create(ListPullRequestRemediationAttemptsResponseSchema)` to create a new message.
  */
 export const ListPullRequestRemediationAttemptsResponseSchema: GenMessage<ListPullRequestRemediationAttemptsResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 7);
+  messageDesc(file_delidev_v1_integration, 12);
 
 /**
  * @generated from message delidev.v1.ResumePullRequestRemediationRequest
@@ -263,7 +419,7 @@ export type ResumePullRequestRemediationRequest = Message<"delidev.v1.ResumePull
  * Use `create(ResumePullRequestRemediationRequestSchema)` to create a new message.
  */
 export const ResumePullRequestRemediationRequestSchema: GenMessage<ResumePullRequestRemediationRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 8);
+  messageDesc(file_delidev_v1_integration, 13);
 
 /**
  * @generated from message delidev.v1.ResumePullRequestRemediationResponse
@@ -290,7 +446,7 @@ export type ResumePullRequestRemediationResponse = Message<"delidev.v1.ResumePul
  * Use `create(ResumePullRequestRemediationResponseSchema)` to create a new message.
  */
 export const ResumePullRequestRemediationResponseSchema: GenMessage<ResumePullRequestRemediationResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 9);
+  messageDesc(file_delidev_v1_integration, 14);
 
 /**
  * @generated from message delidev.v1.GetGitHubTokenFormRequest
@@ -317,7 +473,7 @@ export type GetGitHubTokenFormRequest = Message<"delidev.v1.GetGitHubTokenFormRe
  * Use `create(GetGitHubTokenFormRequestSchema)` to create a new message.
  */
 export const GetGitHubTokenFormRequestSchema: GenMessage<GetGitHubTokenFormRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 10);
+  messageDesc(file_delidev_v1_integration, 15);
 
 /**
  * @generated from message delidev.v1.GetGitHubTokenFormResponse
@@ -341,7 +497,7 @@ export type GetGitHubTokenFormResponse = Message<"delidev.v1.GetGitHubTokenFormR
  * Use `create(GetGitHubTokenFormResponseSchema)` to create a new message.
  */
 export const GetGitHubTokenFormResponseSchema: GenMessage<GetGitHubTokenFormResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 11);
+  messageDesc(file_delidev_v1_integration, 16);
 
 /**
  * @generated from message delidev.v1.SaveIntegrationProfileRequest
@@ -370,7 +526,7 @@ export type SaveIntegrationProfileRequest = Message<"delidev.v1.SaveIntegrationP
  * Use `create(SaveIntegrationProfileRequestSchema)` to create a new message.
  */
 export const SaveIntegrationProfileRequestSchema: GenMessage<SaveIntegrationProfileRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 12);
+  messageDesc(file_delidev_v1_integration, 17);
 
 /**
  * @generated from message delidev.v1.SaveIntegrationProfileResponse
@@ -397,7 +553,7 @@ export type SaveIntegrationProfileResponse = Message<"delidev.v1.SaveIntegration
  * Use `create(SaveIntegrationProfileResponseSchema)` to create a new message.
  */
 export const SaveIntegrationProfileResponseSchema: GenMessage<SaveIntegrationProfileResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 13);
+  messageDesc(file_delidev_v1_integration, 18);
 
 /**
  * @generated from message delidev.v1.ReplaceIntegrationTokenRequest
@@ -421,7 +577,7 @@ export type ReplaceIntegrationTokenRequest = Message<"delidev.v1.ReplaceIntegrat
  * Use `create(ReplaceIntegrationTokenRequestSchema)` to create a new message.
  */
 export const ReplaceIntegrationTokenRequestSchema: GenMessage<ReplaceIntegrationTokenRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 14);
+  messageDesc(file_delidev_v1_integration, 19);
 
 /**
  * @generated from message delidev.v1.ReplaceIntegrationTokenResponse
@@ -455,7 +611,7 @@ export type ReplaceIntegrationTokenResponse = Message<"delidev.v1.ReplaceIntegra
  * Use `create(ReplaceIntegrationTokenResponseSchema)` to create a new message.
  */
 export const ReplaceIntegrationTokenResponseSchema: GenMessage<ReplaceIntegrationTokenResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 15);
+  messageDesc(file_delidev_v1_integration, 20);
 
 /**
  * @generated from message delidev.v1.ValidateIntegrationProfileRequest
@@ -472,7 +628,7 @@ export type ValidateIntegrationProfileRequest = Message<"delidev.v1.ValidateInte
  * Use `create(ValidateIntegrationProfileRequestSchema)` to create a new message.
  */
 export const ValidateIntegrationProfileRequestSchema: GenMessage<ValidateIntegrationProfileRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 16);
+  messageDesc(file_delidev_v1_integration, 21);
 
 /**
  * @generated from message delidev.v1.ValidateIntegrationProfileResponse
@@ -504,7 +660,7 @@ export type ValidateIntegrationProfileResponse = Message<"delidev.v1.ValidateInt
  * Use `create(ValidateIntegrationProfileResponseSchema)` to create a new message.
  */
 export const ValidateIntegrationProfileResponseSchema: GenMessage<ValidateIntegrationProfileResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 17);
+  messageDesc(file_delidev_v1_integration, 22);
 
 /**
  * @generated from message delidev.v1.DeleteIntegrationProfileRequest
@@ -521,7 +677,7 @@ export type DeleteIntegrationProfileRequest = Message<"delidev.v1.DeleteIntegrat
  * Use `create(DeleteIntegrationProfileRequestSchema)` to create a new message.
  */
 export const DeleteIntegrationProfileRequestSchema: GenMessage<DeleteIntegrationProfileRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 18);
+  messageDesc(file_delidev_v1_integration, 23);
 
 /**
  * @generated from message delidev.v1.DeleteIntegrationProfileResponse
@@ -560,7 +716,7 @@ export type DeleteIntegrationProfileResponse = Message<"delidev.v1.DeleteIntegra
  * Use `create(DeleteIntegrationProfileResponseSchema)` to create a new message.
  */
 export const DeleteIntegrationProfileResponseSchema: GenMessage<DeleteIntegrationProfileResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 19);
+  messageDesc(file_delidev_v1_integration, 24);
 
 /**
  * @generated from message delidev.v1.InspectRepositoryIntegrationRequest
@@ -579,7 +735,7 @@ export type InspectRepositoryIntegrationRequest = Message<"delidev.v1.InspectRep
  * Use `create(InspectRepositoryIntegrationRequestSchema)` to create a new message.
  */
 export const InspectRepositoryIntegrationRequestSchema: GenMessage<InspectRepositoryIntegrationRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 20);
+  messageDesc(file_delidev_v1_integration, 25);
 
 /**
  * @generated from message delidev.v1.InspectRepositoryIntegrationResponse
@@ -603,7 +759,7 @@ export type InspectRepositoryIntegrationResponse = Message<"delidev.v1.InspectRe
  * Use `create(InspectRepositoryIntegrationResponseSchema)` to create a new message.
  */
 export const InspectRepositoryIntegrationResponseSchema: GenMessage<InspectRepositoryIntegrationResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 21);
+  messageDesc(file_delidev_v1_integration, 26);
 
 /**
  * @generated from message delidev.v1.QueryRepositoryIntegrationRequest
@@ -632,7 +788,7 @@ export type QueryRepositoryIntegrationRequest = Message<"delidev.v1.QueryReposit
  * Use `create(QueryRepositoryIntegrationRequestSchema)` to create a new message.
  */
 export const QueryRepositoryIntegrationRequestSchema: GenMessage<QueryRepositoryIntegrationRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 22);
+  messageDesc(file_delidev_v1_integration, 27);
 
 /**
  * @generated from message delidev.v1.QueryRepositoryIntegrationResponse
@@ -654,7 +810,7 @@ export type QueryRepositoryIntegrationResponse = Message<"delidev.v1.QueryReposi
  * Use `create(QueryRepositoryIntegrationResponseSchema)` to create a new message.
  */
 export const QueryRepositoryIntegrationResponseSchema: GenMessage<QueryRepositoryIntegrationResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 23);
+  messageDesc(file_delidev_v1_integration, 28);
 
 /**
  * @generated from message delidev.v1.ListGitHubRepositoriesRequest
@@ -686,7 +842,7 @@ export type ListGitHubRepositoriesRequest = Message<"delidev.v1.ListGitHubReposi
  * Use `create(ListGitHubRepositoriesRequestSchema)` to create a new message.
  */
 export const ListGitHubRepositoriesRequestSchema: GenMessage<ListGitHubRepositoriesRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 24);
+  messageDesc(file_delidev_v1_integration, 29);
 
 /**
  * @generated from message delidev.v1.ListGitHubRepositoriesResponse
@@ -710,7 +866,79 @@ export type ListGitHubRepositoriesResponse = Message<"delidev.v1.ListGitHubRepos
  * Use `create(ListGitHubRepositoriesResponseSchema)` to create a new message.
  */
 export const ListGitHubRepositoriesResponseSchema: GenMessage<ListGitHubRepositoriesResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_integration, 25);
+  messageDesc(file_delidev_v1_integration, 30);
+
+/**
+ * @generated from enum delidev.v1.GitHubTokenKind
+ */
+export enum GitHubTokenKind {
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_KIND_FINE_GRAINED = 1;
+   */
+  FINE_GRAINED = 1,
+
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_KIND_CLASSIC = 2;
+   */
+  CLASSIC = 2,
+}
+
+/**
+ * Describes the enum delidev.v1.GitHubTokenKind.
+ */
+export const GitHubTokenKindSchema: GenEnum<GitHubTokenKind> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_integration, 0);
+
+/**
+ * @generated from enum delidev.v1.GitHubTokenIdentityState
+ */
+export enum GitHubTokenIdentityState {
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_IDENTITY_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_IDENTITY_STATE_VERIFIED = 1;
+   */
+  VERIFIED = 1,
+
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_IDENTITY_STATE_INVALID_TOKEN = 2;
+   */
+  INVALID_TOKEN = 2,
+
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_IDENTITY_STATE_ACCESS_RESTRICTED = 3;
+   */
+  ACCESS_RESTRICTED = 3,
+
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_IDENTITY_STATE_SSO_REQUIRED = 4;
+   */
+  SSO_REQUIRED = 4,
+
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_IDENTITY_STATE_RATE_LIMITED = 5;
+   */
+  RATE_LIMITED = 5,
+
+  /**
+   * @generated from enum value: GIT_HUB_TOKEN_IDENTITY_STATE_UNAVAILABLE = 6;
+   */
+  UNAVAILABLE = 6,
+}
+
+/**
+ * Describes the enum delidev.v1.GitHubTokenIdentityState.
+ */
+export const GitHubTokenIdentityStateSchema: GenEnum<GitHubTokenIdentityState> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_integration, 1);
 
 /**
  * @generated from enum delidev.v1.PullRequestProblemCollectionKind
@@ -741,7 +969,7 @@ export enum PullRequestProblemCollectionKind {
  * Describes the enum delidev.v1.PullRequestProblemCollectionKind.
  */
 export const PullRequestProblemCollectionKindSchema: GenEnum<PullRequestProblemCollectionKind> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_integration, 0);
+  enumDesc(file_delidev_v1_integration, 2);
 
 /**
  * @generated from enum delidev.v1.GitHubTokenAccess
@@ -772,7 +1000,7 @@ export enum GitHubTokenAccess {
  * Describes the enum delidev.v1.GitHubTokenAccess.
  */
 export const GitHubTokenAccessSchema: GenEnum<GitHubTokenAccess> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_integration, 1);
+  enumDesc(file_delidev_v1_integration, 3);
 
 /**
  * Server-owned read-only integration profiles are separate from AI Accounts.
@@ -780,6 +1008,22 @@ export const GitHubTokenAccessSchema: GenEnum<GitHubTokenAccess> = /*@__PURE__*/
  * @generated from service delidev.v1.IntegrationService
  */
 export const IntegrationService: GenService<{
+  /**
+   * @generated from rpc delidev.v1.IntegrationService.InspectGitHubToken
+   */
+  inspectGitHubToken: {
+    methodKind: "unary";
+    input: typeof InspectGitHubTokenRequestSchema;
+    output: typeof InspectGitHubTokenResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.IntegrationService.PrepareGitHubTokenForm
+   */
+  prepareGitHubTokenForm: {
+    methodKind: "unary";
+    input: typeof PrepareGitHubTokenFormRequestSchema;
+    output: typeof PrepareGitHubTokenFormResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.IntegrationService.SaveIntegrationProfile
    */
