@@ -130,3 +130,15 @@ test("focuses the native Plan approval decision on display", () => {
  render(<NativeGrokInteraction data={data} resource={resource} accepted={() => {}} />);
  expect(document.activeElement).toBe(screen.getByLabelText("Decision"));
 });
+
+test("resets Grok overflow guidance when the selected interaction changes", () => {
+ const data = fixture();
+ const resource = { id, revision: 1n, schemaVersion: 1, documentJson: encode(data) } as Resource;
+ const nextResource = { ...resource, id: "01900000-0000-7000-8000-000000000002" };
+ const view = () => <NativeGrokInteraction data={data} resource={resource} accepted={() => {}} />;
+ const { rerender } = render(view());
+ fireEvent.change(screen.getByLabelText("Exact answer for question 1"), { target: { value: "x".repeat((64 << 10) + 1) } });
+ expect(screen.getByText(/Your previous draft was kept/)).toBeTruthy();
+ rerender(<NativeGrokInteraction data={data} resource={nextResource} accepted={() => {}} />);
+ expect(screen.queryByText(/Your previous draft was kept/)).toBeNull();
+});
