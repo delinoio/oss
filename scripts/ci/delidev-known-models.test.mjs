@@ -98,6 +98,7 @@ test("a manually closed review suppresses the same candidate until metadata chan
   assert.equal(findClosedCandidateReview([review], candidate.catalog_version, () => candidate), review);
   assert.equal(findClosedCandidateReview([review], "sha256:" + "b".repeat(64), () => candidate), undefined);
   assert.equal(findClosedCandidateReview([{ ...review, user: { login: "human" } }], candidate.catalog_version, () => candidate), undefined);
+  assert.equal(findClosedCandidateReview([{ ...review, merged_at: "2026-10-06T00:00:00Z" }], candidate.catalog_version, () => candidate), undefined);
 });
 test("daily workflow validates before a narrowly scoped write token and protects review ownership", async () => {
   const workflow = await readFile(".github/workflows/delidev-known-models.yml", "utf8");

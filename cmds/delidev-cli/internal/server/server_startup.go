@@ -193,7 +193,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	catalogDone := make(chan struct{})
 	go func() {
 		defer close(catalogDone)
-		if !config.disableCatalogMaintenance {
+		if !config.disableCatalogMaintenance && !config.DisableBackgroundMaintenanceForTesting {
 			service.runCatalogMaintenance(catalogCtx)
 		}
 	}()
@@ -202,7 +202,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	knownDone := make(chan struct{})
 	go func() {
 		defer close(knownDone)
-		if !config.disableKnownModelMaintenance {
+		if !config.disableKnownModelMaintenance && !config.DisableBackgroundMaintenanceForTesting {
 			service.knownSubscriptionModels().Run(knownCtx)
 		}
 	}()

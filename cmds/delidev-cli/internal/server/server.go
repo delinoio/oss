@@ -22,16 +22,21 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
-	releaseVerifier              func([]byte, string, time.Time) (updates.Verified, error)
-	releaseFactory               func() (releaseClient, error)
-	userServiceBackend           userservice.Backend
-	StartupID                    domain.ID
-	DataDir                      string
-	Listen                       string
-	TLSCertificate               string
-	TLSKey                       string
-	AllowedOrigins               []string
-	Logger                       *slog.Logger
+	releaseVerifier    func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory     func() (releaseClient, error)
+	userServiceBackend userservice.Backend
+	StartupID          domain.ID
+	DataDir            string
+	Listen             string
+	TLSCertificate     string
+	TLSKey             string
+	AllowedOrigins     []string
+	Logger             *slog.Logger
+	// DisableBackgroundMaintenanceForTesting prevents isolated external test
+	// fixtures from contacting the official catalog endpoints. Production
+	// startup leaves this false so maintenance remains enabled.
+	DisableBackgroundMaintenanceForTesting bool
+
 	accountSecrets               accountSecrets
 	disableCatalogMaintenance    bool
 	disableKnownModelMaintenance bool
