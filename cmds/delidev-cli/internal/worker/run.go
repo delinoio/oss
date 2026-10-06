@@ -1116,7 +1116,7 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 			return nil, domain.Fail(domain.PermissionDenied, "Workspace preparation targets another machine.", "Reconcile the accepted assignment before retrying.")
 		}
 		for _, repo := range input.Repositories {
-			if repo.SourceKind == workspace.RemoteCloneSource && !config.remoteWorkspaceClone {
+			if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !config.remoteWorkspaceClone {
 				return nil, domain.Fail(domain.Unsupported, "Remote workspace cloning was not negotiated.", "Update and reconnect the original Worker.")
 			}
 		}
