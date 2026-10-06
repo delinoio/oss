@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { EntityKind, IntegrationQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
@@ -34,13 +34,6 @@ export function RepositoryGitHubPicker({ active, supported, disabled, choose }: 
   const [profile, setProfile] = useState<Resource>(), [page, setPage] = useState(1), [filter, setFilter] = useState("");
   const profiles = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.INTEGRATION, pageSize: 50, pageToken: profilePage } }, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const rows = profiles.data?.resources ?? [], available = rows.filter(connectedGitHubProfile);
-  const searched = useRef(new Set<string>());
-  useEffect(() => {
-    const next = profiles.data?.nextPageToken;
-    if (active && !disabled && !open && !profiles.isFetching && !profiles.error && available.length === 0 && next && !searched.current.has(next)) {
-      searched.current.add(next); setProfilePage(next);
-    }
-  }, [active, disabled, open, profiles.isFetching, profiles.error, profiles.data, available.length]);
   const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.INTEGRATION, id: profile?.id ?? "" }, { enabled: active && open && Boolean(profile), refetchInterval: active && open && profile ? 5000 : false, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const stale = Boolean(profile && current.data?.resource && (current.data.resource.revision !== profile.revision || !connectedGitHubProfile(current.data.resource)));
   const repositories = useQuery(IntegrationQuery.listGitHubRepositories, { profileId: profile?.id ?? "", expectedRevision: profile?.revision ?? 0n, page, pageSize: 50 }, { enabled: active && open && supported && Boolean(profile) && !stale && !disabled, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
@@ -49,7 +42,7 @@ export function RepositoryGitHubPicker({ active, supported, disabled, choose }: 
   const reading = repositories.isFetching;
   const usable = Boolean(result && !repositories.error && !malformed && !current.error && !stale && !reading);
   const changeProfile = (id: string) => { setProfile(available.find(row => row.id === id)); setPage(1); setFilter(""); };
-  const refreshProfiles = () => { searched.current.clear(); setProfile(undefined); setPage(1); setFilter(""); void profiles.refetch(); };
+  const refreshProfiles = () => { setProfile(undefined); setPage(1); setFilter(""); void profiles.refetch(); };
   return <div className="repository-github-picker">
     {available.length > 0 && !profiles.error && !disabled ? <button type="button" disabled={disabled || profiles.isFetching} onClick={() => setOpen(value => !value)}>{open ? "Back to Git URL" : "Choose from GitHub"}</button> : null}
     {profiles.isPending ? <p role="status">Checking connected GitHub profiles…</p> : null}
