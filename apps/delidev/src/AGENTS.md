@@ -624,7 +624,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Fork and Sidechat admission use current workspace availability, including submission rechecks after query refresh. Stored, pending or uncertain workspaces cannot display an actionable native-fork control.
 
-- SSH setup in ssh-setup.tsx belongs to Runner Devices. Verify capability and exact host identity before explicit installation. Keep write-only credentials out of React Query and mutation receipts, clear them after a send, and inspect the original setup after ambiguity without resending native effects. Settings disposal rejects late results without canceling the detached Worker.
+- SSH setup in ssh-setup.tsx belongs to Runner Devices. Verify capability and exact host identity before explicit installation. Keep write-only credentials out of React Query and mutation receipts, clear them after a send, lock the submitted setup ID against replacement host inspections, and inspect the original setup after ambiguity without resending native effects. Settings disposal rejects late results without canceling the detached Worker.
 
 - `subscription-login.tsx` owns explicit login-first Add/Sign-in events under capability 30. Keep sensitive progress/suggestions/callbacks outside React Query caches; preserve exact retries, success-bound generation checks, once-only prefill and user edits. Alias-only JSON patching must preserve all server-owned tokens, including uint64 lease revisions. Departure disposes native callback authority without canceling accepted server work. Claude Code/Grok remain unsupported; quota and API ownership do not change.
 

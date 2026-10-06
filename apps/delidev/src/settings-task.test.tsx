@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationService, EntityKind, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
-import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskBackground, SettingsTaskDialog, SettingsTasks } from "./settings-task";
+import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskActions, SettingsTaskBackground, SettingsTaskDialog, SettingsTasks } from "./settings-task";
 import { ConfigurationEditor } from "./settings";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
@@ -117,4 +117,28 @@ it("uses one native dialog for a confirmation step and restores its original bod
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
   expect(screen.getByRole("button", { name: "Delete profile" })).toBeTruthy();
   expect(mounts).toBe(1);
+});
+
+it("focuses Keep before a destructive action, preserves idle cancellation and hides an admitted operation", async () => {
+  const canceled = vi.fn();
+  function Harness() {
+    const [open, setOpen] = useState(false), [retained, setRetained] = useState(false);
+    return <SettingsTasks><SettingsTaskBackground><button onClick={() => setOpen(true)}>Delete fixture</button></SettingsTaskBackground>
+      {open ? <SettingsTaskDialog title="Confirm fixture deletion" size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} retained={retained} close={() => setOpen(false)}>
+        <SettingsTaskActions><button onClick={() => setRetained(true)}>Confirm deletion</button><button data-settings-task-cancel disabled={retained} onClick={() => { canceled(); setOpen(false); }}>Keep fixture</button></SettingsTaskActions>
+      </SettingsTaskDialog> : null}
+    </SettingsTasks>;
+  }
+  render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Delete fixture" }));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Keep fixture" })));
+  fireEvent.click(screen.getByRole("button", { name: "Keep fixture" }));
+  expect(canceled).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Delete fixture" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm deletion" }));
+  fireEvent.click(screen.getByRole("button", { name: "Keep fixture" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(canceled).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
 });

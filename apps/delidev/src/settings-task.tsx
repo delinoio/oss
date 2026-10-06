@@ -95,13 +95,14 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     setActiveStep([...presentations.current.keys()].at(-1));
   }, []);
   const current = presentation ?? { title, size, focus };
-  const dismiss = useCallback(() => {
+  const dismissWithClose = useCallback((idleClose?: () => void) => {
     const keep = retained || signals.current.size > 0;
     dismissed?.();
     for (const action of dismissals.current.values()) action();
-    if (keep) setVisible(false); else close();
+    if (keep) setVisible(false); else (idleClose ?? close)();
   }, [retained, dismissed, close]);
-  const context = useMemo(() => ({ visible, dismiss, actions, stepTarget, activeStep, retain, onDismiss, present }), [visible, dismiss, actions, stepTarget, activeStep, retain, onDismiss, present]);
+  const dismiss = useCallback(() => dismissWithClose(), [dismissWithClose]);
+  const context = useMemo(() => ({ visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present }), [visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present]);
   useLayoutEffect(() => { register?.(id, true, visible); return () => register?.(id, false); }, [id, register, visible]);
   useLayoutEffect(() => {
     const node = dialog.current;
@@ -110,7 +111,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     const frame = requestAnimationFrame(() => {
       if (!node.open || anotherModal(node)) return;
       const target = current.focus === SettingsDialogFocus.Heading ? heading.current
-        : current.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>("[data-settings-task-cancel], button:not(.primary):not(.settings-task-close)")
+        : current.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>("[data-settings-task-cancel]") ?? node.querySelector<HTMLElement>("button:not(.primary):not(.settings-task-close)")
         : node.querySelector<HTMLElement>("input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled)");
       (target ?? heading.current)?.focus({ preventScroll: true });
     });
@@ -123,7 +124,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
         if (anotherModal(node)) return;
         const focused = document.activeElement;
         if (focused !== document.body && focused !== document.documentElement && focused !== opener.current) return;
-        const fallback = categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled), h1") ?? null : null;
+        const fallback = categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null;
         const target = available(opener.current) ? opener.current : available(fallback) ? fallback : null;
         if (target?.matches("h1")) target.tabIndex = -1;
         target?.focus({ preventScroll: true });
@@ -134,7 +135,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
   useLayoutEffect(() => {
     const node = dialog.current;
     if (!visible || !presentation || !node?.open || anotherModal(node)) return;
-    const target = presentation.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>("[data-settings-task-cancel], .settings-task-footer button:not(.primary)") : presentation.focus === SettingsDialogFocus.Input ? node.querySelector<HTMLElement>(".settings-task-body [data-settings-task-step]:not([hidden]) input:not(:disabled)") : heading.current;
+    const target = presentation.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>(".settings-task-footer [data-settings-task-cancel]") ?? node.querySelector<HTMLElement>(".settings-task-footer button:not(.primary)") : presentation.focus === SettingsDialogFocus.Input ? node.querySelector<HTMLElement>(".settings-task-body [data-settings-task-step]:not([hidden]) input:not(:disabled)") : heading.current;
     (target ?? heading.current)?.focus({ preventScroll: true });
   }, [visible, presentation]);
   const content = <SettingsTaskContext.Provider value={context}>
@@ -150,21 +151,27 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
   return content;
 }
 
-function associateForm(children: ReactNode, form?: string, dismiss?: () => void, step = false): ReactNode {
+function associateForm(children: ReactNode, form?: string, task?: React.ContextType<typeof SettingsTaskContext>): ReactNode {
   const nodes = Children.toArray(children).flatMap(child => isValidElement(child) && child.type === Fragment ? Children.toArray((child.props as { children: ReactNode }).children) : [child]);
   nodes.sort((a, b) => Number(isValidElement(a) && String((a.props as { className?: string }).className ?? "").split(" ").includes("primary")) - Number(isValidElement(b) && String((b.props as { className?: string }).className ?? "").split(" ").includes("primary")));
   return Children.map(nodes, child => {
     if (!isValidElement(child)) return child;
-    if (child.type === Fragment) return cloneElement(child as React.ReactElement<{ children: ReactNode }>, { children: associateForm((child.props as { children: ReactNode }).children, form, dismiss) });
+    if (child.type === Fragment) return cloneElement(child as React.ReactElement<{ children: ReactNode }>, { children: associateForm((child.props as { children: ReactNode }).children, form, task) });
     if (child.type !== "button") return child;
     const button = child as React.ReactElement<ButtonHTMLAttributes<HTMLButtonElement> & { "data-settings-task-cancel"?: boolean }>;
-    const cancel = button.props["data-settings-task-cancel"] && dismiss && (!step || button.props.disabled) ? dismiss : undefined;
+    // Idle cancellation preserves the controller's own cleanup/focus callback.
+    // An admitted operation instead hides without invoking that departure path.
+    const cancel = button.props["data-settings-task-cancel"] && task && (!task.stepId || button.props.disabled)
+      ? (event: React.MouseEvent<HTMLButtonElement>) => {
+        if (task.stepId || !button.props.onClick || button.props.onClick === task.dismiss) task.dismiss();
+        else task.dismissWithClose(() => button.props.onClick?.(event));
+      } : undefined;
     return cloneElement(button, { ...(cancel ? { disabled: false, onClick: cancel } : {}), form: button.props.form ?? form, type: button.props.type ?? (form ? "submit" : "button") });
   });
 }
 export function SettingsTaskActions({ children, className = "", form }: { children: ReactNode; className?: string; form?: string }) {
   const task = useContext(SettingsTaskContext);
   if (task?.activeStep !== task?.stepId) return null;
-  const content = <div className={`actions ${className}`}>{associateForm(children, form, task?.dismiss, Boolean(task?.stepId))}</div>;
+  const content = <div className={`actions ${className}`}>{associateForm(children, form, task)}</div>;
   return task?.actions ? createPortal(content, task.actions) : content;
 }
