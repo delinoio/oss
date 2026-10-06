@@ -12,6 +12,7 @@
     "api_compatibility": "unverified"
   },
   "baseten": {
+    "verification_uri": "",
     "client_id": "",
     "redirect_uri": "",
     "registration": "pending",

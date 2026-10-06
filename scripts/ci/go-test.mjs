@@ -104,7 +104,9 @@ export async function runGoTests(shard, { run = spawnSync, runTests = runTestJso
   // exceeds 20 minutes; this watchdog does not extend any product deadline.
   // Reassess the larger budget after native fixture timings permit reduction.
   const timeout = [GoTestShard.Worker, GoTestShard.Workspace].includes(shard) ? "45m" : "20m";
-  const args = ["test", "-json", ...(shard === GoTestShard.All ? [] : ["-p=1"]), `-timeout=${timeout}`, ...packages];
+  // Subprocess command changes can leave a consumer's test binary unchanged.
+  // Disable result reuse so TestMain runs; compiled objects remain cacheable.
+  const args = ["test", "-count=1", "-json", ...(shard === GoTestShard.All ? [] : ["-p=1"]), `-timeout=${timeout}`, ...packages];
   report.commands.push(["go", ...args]);
   const testStarted = performance.now();
   const result = await runTests("go", args, commandOptions, { log });

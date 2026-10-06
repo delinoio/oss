@@ -39,7 +39,7 @@ func start(t *testing.T) fixture {
 	ready := make(chan server.Endpoint, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(endpoint server.Endpoint) { ready <- endpoint })
+		done <- server.Serve(ctx, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(endpoint server.Endpoint) { ready <- endpoint })
 	}()
 	var f fixture
 	select {

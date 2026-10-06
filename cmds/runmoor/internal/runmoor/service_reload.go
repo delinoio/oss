@@ -436,7 +436,57 @@ func (r *serviceReloader) reloadInitiatorFinished(j *serviceReloadJournal) bool 
 		return false
 	}
 	start, err := r.ProcessStart(j.ReloadPID)
-	return err != nil || start != j.ReloadStart
+	return os.IsNotExist(err) || err == nil && start != "" && start != j.ReloadStart
+}
+
+// The caller holds the service-operation lock. Only an explicit Start may
+// discard completed Stop intent before manager startup; an automatic replacement
+// must still preserve Stop even after the initiating CLI has exited.
+func (r *serviceReloader) retireCompletedStopReload(ctx context.Context, path string, c Config) error {
+	j, err := readReloadJournal(r.Unit)
+	if err != nil || j == nil {
+		return err
+	}
+	if j.Platform != r.Platform || j.ConfigPath != path || j.Storage != c.Storage || j.Binary != r.Binary || j.Version != r.Version {
+		return reloadFailure()
+	}
+	target, err := r.definition(path, j)
+	if err != nil || !target || !r.reloadInitiatorFinished(j) {
+		return reloadFailure()
+	}
+	pid, _, err := r.nativePID(ctx)
+	if err != nil || pid != 0 {
+		return reloadFailure()
+	}
+	// Read without creating or migrating state, then exclude foreground managers
+	// and offline mutations while checking cleanup and retiring the exact record.
+	if _, err := ReadSnapshot(c); err != nil {
+		return reloadFailure()
+	}
+	lock, err := lockState(filepath.Join(c.Storage.State, "manager.lock"))
+	if err != nil {
+		return reloadFailure()
+	}
+	defer unlockState(lock)
+	s, err := ReadSnapshot(c)
+	if err != nil || s.Installation != j.Installation || s.Config.Storage != j.Storage || s.Requested.Storage != j.Storage || !s.Stopping || !allTerminated(s) || !hostRestoreBoundary(s) {
+		return reloadFailure()
+	}
+	// Native and file identities can change outside our locks. Recheck both
+	// immediately before retirement, and leave uncertain intent intact.
+	pid, _, err = r.nativePID(ctx)
+	if err != nil || pid != 0 || ctx.Err() != nil || !r.reloadInitiatorFinished(j) {
+		return reloadFailure()
+	}
+	target, err = r.definition(path, j)
+	if err != nil || !target {
+		return reloadFailure()
+	}
+	if err := r.retire(j); err != nil {
+		return err
+	}
+	r.Log.Info("service_start_completed_stop_recovered", "target_version", j.Version)
+	return nil
 }
 
 func (r *serviceReloader) retire(j *serviceReloadJournal) error {
@@ -472,11 +522,11 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 		}
 		pid, _, err := r.nativePID(ctx)
 		if err != nil {
-			return err
+			r.Log.Warn("service_reload_native_inspection_unavailable", "platform", r.Platform, "code", classify(err, ErrControl, "Native service inspection failed.", "Inspect the user service.").Code)
 		}
-		if pid != peer {
-			// An installed service for another configuration does not own this
-			// socket. Preserve the foreground manager's existing reload behavior.
+		if err != nil || pid != peer {
+			// Without native ownership evidence, only the authenticated socket peer
+			// may handle ordinary reload. Pending journals require native recovery.
 			_, _, err = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
 			return err
 		}

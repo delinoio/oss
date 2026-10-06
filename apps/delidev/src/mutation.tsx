@@ -1,3 +1,4 @@
+import { useLocale } from "./localization";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { create, fromBinary, toBinary, type DescMessage, type DescMethodUnary, type MessageInitShape, type MessageShape } from "@bufbuild/protobuf";
 import { useMutation } from "@connectrpc/connect-query";
@@ -44,6 +45,7 @@ export function useRetainedMutationIntents(prefix: string): RetainedMutationInte
 }
 const Context = createContext<IntentRegistry | undefined>(undefined);
 export function MutationIntents({ children }: { children: ReactNode }) {
+  useLocale();
   const [registry] = useState(() => new IntentRegistry());
   useEffect(() => { registry.alive = true; return () => { registry.alive = false; registry.entries.clear(); }; }, [registry]);
   return <Context.Provider value={registry}>{children}</Context.Provider>;

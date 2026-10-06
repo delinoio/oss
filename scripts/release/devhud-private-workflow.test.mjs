@@ -1,10 +1,105 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 
-const workflow = readFileSync(fileURLToPath(new URL("../../.github/workflows/package-devhud-private.yml", import.meta.url)), "utf8");
+const workflow = readFileSync(fileURLToPath(new URL("../../.github/workflows/package-devhud-private.yml", import.meta.url)), "utf8").replaceAll("\r\n", "\n");
 const apiDockerfile = readFileSync(fileURLToPath(new URL("../../servers/devhud-api/Dockerfile", import.meta.url)), "utf8");
+const windowsStep = yaml.load(workflow).jobs.desktop.steps.find(({ name }) => name === "Normalize and validate Windows artifact and lifecycle");
+const signatureGuard = 'if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed with exit code $LASTEXITCODE" }';
+
+test("private workflow checks Authenticode status immediately before any installer work", () => {
+  assert.equal(windowsStep.shell, "pwsh");
+  const lines = windowsStep.run.trim().split("\n");
+  const verification = lines.indexOf("signtool.exe verify /pa /all /v $source.FullName");
+  assert.ok(verification >= 0);
+  assert.equal(lines[verification + 1], signatureGuard);
+  for (const command of ["$installDir =", "Start-Process", "smoke:platform", "scan", "devhud-evidence.mjs record"]) {
+    assert.ok(windowsStep.run.indexOf(command) > windowsStep.run.indexOf(signatureGuard), command);
+  }
+  const steps = yaml.load(workflow).jobs.desktop.steps;
+  const upload = steps.findIndex(({ uses }) => uses?.startsWith("actions/upload-artifact@"));
+  assert.ok(upload > steps.findIndex(({ name }) => name === windowsStep.name));
+  assert.equal(steps[upload].if, undefined);
+  assert.equal(windowsStep["continue-on-error"], undefined);
+});
+
+test("Windows PowerShell blocks packaging after native SignTool failure and proceeds after success", { skip: process.platform !== "win32" }, async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "devhud-signature-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  const source = join(directory, "stub.go");
+  const signTool = join(bin, "signtool.exe");
+  const sentinel = join(bin, "sentinel.exe");
+  writeFileSync(source, `package main
+import ("os"; "path/filepath"; "strconv")
+func main() {
+  stage := os.Args[1]
+  status := 0
+  if filepath.Base(os.Args[0]) == "signtool.exe" {
+    if len(os.Args) != 6 || os.Args[1] != "verify" || os.Args[2] != "/pa" || os.Args[3] != "/all" || os.Args[4] != "/v" { os.Exit(90) }
+    var err error
+    status, err = strconv.Atoi(os.Getenv("DEVHUD_SIGNATURE_STATUS"))
+    if err != nil { os.Exit(91) }
+  }
+  log, err := os.OpenFile(os.Getenv("DEVHUD_SIGNATURE_TRACE"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+  if err != nil { os.Exit(92) }
+  if _, err = log.WriteString(stage + "\\n"); err != nil { os.Exit(93) }
+  if err = log.Close(); err != nil { os.Exit(94) }
+  os.Exit(status)
+}
+`);
+  execFileSync("go", ["build", "-o", signTool, source], { cwd: directory, timeout: 120_000, stdio: "pipe" });
+  copyFileSync(signTool, sentinel);
+  const installStart = windowsStep.run.indexOf("$installDir =");
+  assert.ok(installStart > 0);
+  // Execute the real validation prefix. Successful native sentinels model the
+  // later stages that used to overwrite SignTool's status. No installer runs.
+  const prefix = windowsStep.run.slice(0, installStart);
+  const stages = ["install", "sbom", "evidence", "upload"];
+  for (const bundle of ["msi", "nsis"]) {
+    const artifacts = join(directory, "target", "release", "bundle", bundle);
+    mkdirSync(artifacts, { recursive: true });
+    writeFileSync(join(artifacts, bundle === "msi" ? "fixture.msi" : "fixture.exe"), "unsigned fixture");
+    for (const status of [1, 2, 0]) {
+      await t.test(`${bundle}: native verification exits ${status}`, () => {
+        const trace = join(directory, `${bundle}-${status}.log`);
+        const script = join(directory, `${bundle}-${status}.ps1`);
+        writeFileSync(script, [
+          "$ErrorActionPreference = 'Stop'",
+          "$PSNativeCommandUseErrorActionPreference = $false",
+          '$env:PATH = "$env:DEVHUD_SIGNATURE_BIN;$env:PATH"',
+          prefix.replaceAll("${{ matrix.bundle }}", bundle),
+          ...stages.map((stage) => `& $env:DEVHUD_SIGNATURE_SENTINEL ${stage}`),
+          "if (Test-Path -LiteralPath variable:LASTEXITCODE) { exit $LASTEXITCODE }",
+        ].join("\n"));
+        const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", script], {
+          cwd: directory,
+          encoding: "utf8",
+          timeout: 30_000,
+          env: { ...process.env, DEVHUD_SIGNATURE_BIN: bin, DEVHUD_SIGNATURE_SENTINEL: sentinel, DEVHUD_SIGNATURE_STATUS: String(status), DEVHUD_SIGNATURE_TRACE: trace },
+        });
+        assert.ifError(result.error);
+        assert.equal(result.signal, null);
+        assert.ok(existsSync(trace), "SignTool stub must run");
+        const reached = readFileSync(trace, "utf8").trim().split("\n");
+        if (status === 0) {
+          assert.equal(result.status, 0, result.stderr);
+          assert.deepEqual(reached, ["verify", ...stages]);
+        } else {
+          assert.equal(result.status, 1, result.stderr);
+          assert.deepEqual(reached, ["verify"]);
+          assert.ok(result.stderr.includes(`Authenticode verification failed with exit code ${status}`));
+        }
+      });
+    }
+  }
+});
 
 test("private workflow fails immediately when Windows platform smoke fails", () => {
   assert.ok(workflow.includes('pnpm --filter devhud smoke:platform -- --artifact "$installDir\\devhud.exe"\n          if ($LASTEXITCODE -ne 0) { throw "platform smoke failed with exit code $LASTEXITCODE" }'));

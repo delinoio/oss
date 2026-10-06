@@ -1,5 +1,9 @@
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { i18n, SupportedLanguage } from "./localization";
+
+// Tests choose their language explicitly, independent of the validation host.
+beforeEach(async () => { await i18n.changeLanguage(SupportedLanguage.English); document.documentElement.lang = "en"; });
 
 // Vitest exposes jsdom globals through Node's global object. Node 26 also
 // exposes a placeholder `localStorage` global, so the normal jsdom storage

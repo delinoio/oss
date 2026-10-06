@@ -1,0 +1,16 @@
+{
+  "local-server.checkingLocalServer_c92e51": "로컬 서버를 확인하는 중…",
+  "local-server.localServerReady_18acea": "로컬 서버 준비됨",
+  "local-server.automaticRestartIsStopped_f8e4c7": "자동 재시작이 중지되었습니다",
+  "local-server.localServerUnavailableAttemptRetryDelay_9f679d": "로컬 서버 사용 불가 · 시도 {{v0}} · 최대 {{v1}}초 재시도 지연",
+  "local-server.localServerNeedsAttentionCheckIts_b02a69": "로컬 서버에 확인 필요 · 버전, 구성 및 비공개 상태 확인",
+  "local-server.localServer_caf011": "로컬 서버",
+  "local-server.starting_bbe5fc": "시작하는 중…",
+  "local-server.startLocalServer_4d64e3": "로컬 서버 시작",
+  "local-server.stopAcceptedWaitingForShutdownSession_631795": "중지 수락됨. 종료를 기다리는 중이며 세션 정리는 아직 확인되지 않았습니다.",
+  "local-server.stoppingTheServerDisconnectsAllClients_c28c49": "서버를 중지하면 모든 클라이언트와 워커의 연결을 끊습니다. 저장된 세션은 유지되며 직접 시작할 때까지 자동 재시작도 중지됩니다.",
+  "local-server.confirmServerStop_61a825": "서버 중지 확인",
+  "local-server.keepServerRunning_60fe0a": "서버 실행 유지",
+  "local-server.stopLocalServer_c1eeb5": "로컬 서버 중지",
+  "local-server.retryTheSameServerStop_b047eb": "같은 서버 중지 다시 시도"
+}

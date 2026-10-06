@@ -1,5 +1,33 @@
 # DeliDev desktop client
 
+## Known subscription model autocomplete
+
+The Agent Worker wizard keeps the existing Model heading, Choose a model heading,
+Model form label, 720px column, 40px controls, theme and footer structure. Its helper
+is `Search known and saved models, or enter an exact model ID.` System capability
+`KNOWN_SUBSCRIPTION_MODELS_V1 = 35` independently enables the known-model read. An
+older server retains saved/direct selection and shows server-update guidance.
+
+Focus opens a keyboard-operated listbox with names, exact IDs and Known/Saved
+labels. Name/ID search filters the bounded complete known list; saved resources
+use the existing source-scoped server search and pagination. A saved same-service
+native ID takes precedence in the displayed candidate set. Known selection keeps
+only the native ID until the existing atomic Worker save; saved selection retains
+its exact ID/revision. Queries never register models. Escape dismisses the list;
+arrow/Enter selection, accessible active descendants and narrow-width wrapping
+remain intact. Source/harness changes clear incompatible selections.
+
+Show `Known models · Catalog updated {date}` with built-in/cached source when
+applicable, and `Availability depends on your plan and installed harness.` Remove
+the unsupported subscription-discovery warning. `Reload models` rereads known
+and saved server state; it does not force an external download. Show saved-list
+page controls only when a continuation or current page exists. Loading/failure
+keeps typed input and the last successful same-source candidates; no-match states
+retain exact-ID entry. Invalid service echoes cannot become candidates. Existing
+API discovery and saved-model stale-revision guards remain unchanged. Recommendation
+removal cannot delete saved configurations or execution history. These browser
+interactions do not establish installed native/account/platform acceptance.
+
 PR validation is owned by the desktop Turbo task graph: cache type checks, pure UI assertions and frontend output; execute Go-server integration, QA, widget and native packaging fixtures every time. Serialize pure UI, client Go integration, desktop Go integration and QA, and keep jsdom `maxWorkers: 4`. Local `pnpm test` retains the complete validation sequence. Follow `docs/repository-workflow-contract.md` for cache authentication and evidence limits.
 
 ## In-app toast notifications
@@ -189,6 +217,16 @@ Native code retains at most eight original child handles and private stdin pipes
 Normal Quit immediately fences fresh starts and supervision. A tracked blocking worker joins short commands and the browser's final bounded removal discovery before sending exactly `{"version":1,"action":"stop"}` plus a newline to each retained child. Go validates the bounded closed frame, suppresses only the original startup generation and enters the existing server shutdown path. EOF, malformed input and loss of the desktop process do not stop a running server. A synchronous inherited stdin reader need not wake on Close; helper process exit releases that process-local reader, and native waiting independently joins the entire process.
 
 The sidecar shutdown deadline is 35 seconds from the native request, separate from startup and existing server/native cleanup deadlines. At expiry, native code kills only the retained original child and waits for its actual exit. Reuse never grants authority over a server endpoint or a discovered PID; an old child cannot stop a replacement. Repeated Quit shares one off-UI-thread operation, and native exit remains gated by both sidecar completion and existing raw-browser close proofs. Title-bar close-to-tray preserves the app and sidecar. Normal setup/return failures also join owned children; panic/crash/forced desktop termination preserves their independent running lifetime.
+
+The same tracked Quit operation joins window actions, OAuth cleanup, notifications
+and the tray timer outside the native UI loop. Widget admission closes immediately;
+its ordered persistence worker drains accepted operations and publishes final stale
+state before its join completes. A stalled write keeps Quit pending while native
+events and tray rendering remain available. No tray/window lock spans storage,
+and the Exit callback performs native close requests and records the Exit event
+without performing task joins or snapshot persistence. Widget final-write failures
+retain a closed uncertainty diagnostic, distinct from observed runtime return and
+sidecar/native cleanup evidence. Follow the [widget contract](apps-delidev-widget-contract.md).
 
 Structured logs distinguish request, restart suppression, joined server cleanup, force request and confirmed/unconfirmed process exit. Forced process exit does not prove native/session cleanup; original data, protected ownership and recovery state remain authoritative. Failure to force or observe exit retains original handles and reports uncertainty without a PID fallback. Actual macOS/Windows/Linux Quit and packaged CEF shutdown remain separate acceptance from controlled process fixtures and compilation. Record validation in PRs/issues and CI logs/artifacts, never repository evidence documents.
 
@@ -485,7 +523,8 @@ Every body shares one left anchor, `width: 100%` and `max-width: 1040px`, white/
 
 Successful empty regions have at least 160px height, a 32px decorative vector at the left and left-aligned title/help at the right, growing with text. Backup-table empties and singleton notices stay compact semantic rows. Loading uses exactly two static decorative skeleton rows where a list is expected. Successful-empty predicates remain with each controller; initial errors/loading, unsupported/denied states, retained refresh failures and scoped later/continuation empty pages stay distinct. No duplicate empty-state create action is added; pagination hides only on a successful final empty first page.
 
-Forms share the category anchor and a 720px maximum, using two columns only at available form widths >=640px. Remove enclosing/nested form cards in favor of flat semantic groups and thin rules. Keep complete documents, every field/help/default/unknown value, mounted independent disclosures, invalid-field reveal/focus and Save/Cancel/original retry in ordinary flow. Subscription services use flat ChatGPT/Claude/Grok rows with negotiated service-only account creation and explicit unsupported lifecycle guidance. Managed Codex authentication follows the independent subscription-settings contract; authentication refresh never implies quota refresh. Appearance alone retains autosave, with native System/Light/Dark radios, decorative CSS miniatures and choices stacked below 640px available width. Git Profiles keeps its single New GitHub profile action in the category header even when empty; profile storage/identity/access distinctions remain visible.
+Forms share the category anchor and a 720px maximum, using two columns only at available form widths >=640px. Remove enclosing/nested form cards in favor of flat semantic groups and thin rules. Keep complete documents, every field/help/default/unknown value, mounted independent disclosures, invalid-field reveal/focus and Save/Cancel/original retry in ordinary flow. Subscription services use flat ChatGPT/Claude/Grok rows with negotiated service-only account creation and explicit unsupported lifecycle guidance. Managed Codex authentication follows the independent subscription-settings contract; authentication refresh never implies quota refresh. Appearance theme and device language retain autosave, with native System/Light/Dark radios, decorative CSS miniatures and choices stacked below 640px available width. Integrations keeps its single New GitHub profile action in the category header even when empty; profile storage/identity/access distinctions remain visible.
+Forms share the category anchor and a 720px maximum, using two columns only at available form widths >=640px. Remove enclosing/nested form cards in favor of flat semantic groups and thin rules. Keep complete documents, every field/help/default/unknown value, mounted independent disclosures, invalid-field reveal/focus and Save/Cancel/original retry in ordinary flow. Subscription services use flat ChatGPT/Claude/Grok rows with negotiated service-only account creation and explicit unsupported lifecycle guidance. Managed Codex authentication follows the independent subscription-settings contract; authentication refresh never implies quota refresh. Appearance theme and device language retain autosave, with native System/Light/Dark radios, decorative CSS miniatures and choices stacked below 640px available width. Git Profiles keeps its single New GitHub profile action in the category header even when empty; profile storage/identity/access distinctions remain visible.
 
 Notifications renders saved Enabled/Disabled values as noninteractive label/value rows. Explicit Edit focuses the first checkbox; Save/Cancel return once to the enabled Edit action within the same active visit. A delayed refetch may postpone return, but deliberate focus transfer, another dialog/drawer, inactivity, window loss or departure discards that intent. Native status and server/client preferences remain independent, with visible Inbox/no-implicit-approval guidance and the full supplementary About notification delivery disclosure. Appearance/device controller and persistent Connection controls remain outside visit disposal. Backups retains semantic inventory, independently observed accepted jobs and manual history tabs, with short Refresh/Dismiss tracking text and full identity-specific accessible names. Diagnostics keeps its original 1100px/1200px viewport breakpoints, exact canonical BigInt values and independent caveats.
 
@@ -669,6 +708,11 @@ Rows and Manage display Token storage and Identity validation separately, includ
 
 Settings-specific colors and system fonts are scoped to this Settings screen and remain CSP-compatible: white content, pale-gray navigation, 8px control radii, flat empty regions, 40px minimum controls, decorative outline icons and non-color selected-state semantics. Do not add a route, native window, dependency, external asset, inline-style exception, public API, persisted schema, storage, authorization, credential, polling or migration change. Component tests do not establish native geometry or keyboard containment; record native desktop smoke evidence separately, including platform and viewport, and report unsupported/unavailable platforms without claiming acceptance.
 
+
+
+### Device language
+
+English/Korean presentation follows [the localization contract](apps-delidev-localization-contract.md). The independent device Language controller and protected preference stay above connection and Settings visit ownership. Preserve stable category/enum/RPC values, drafts, focus, exact operation identities and original technical evidence. Native/widget catalogs generate typed resources during preparation, tests and packaging; widget language publication never advances server observation timestamps. App body language follows the saved device choice; OS-owned standard UI and widget gallery/selection guidance follow native localization. Fixture/build/package results remain distinct from actual platform and provisioned WidgetKit acceptance.
 
 #### Device appearance (issue #1238)
 
@@ -1143,6 +1187,10 @@ The shared inbox/session interaction surface renders the separate original OpenC
 The original `question` tool has its own collapsed native lifecycle disclosure, separate from the interaction request. Inbox reading changes only read state. The separate OpenCode response forms preserve matrix order, native single/multiple/custom behavior, exact empty-string choices and explicitly unanswered rows; questions expose separate explicit rejection, and permissions expose native “Allow once”, session allowance and rejection with optional correction feedback. Explain session-only scope and that plain sibling rejections may stop the native run even when a direct correction is supplied. Automatic policy closures show their own allowed/rejected status without implying another response; malformed or contradictory closure evidence remains unavailable. Keep Codex controls absent. Block closed/submitted/inconsistent requests, ambiguous duplicate labels, malformed text and oversized complete responses. Retain exact uncertain response request identities through revision/closure refreshes without native retransmission. Protected response profiles remain unavailable; never suggest ordinary input as an answer. Missing/mixed/contradictory ownership or payloads remain Unavailable without partial display; observed closed requests retain their historical content.
 
 Original Stop closures explain that the unanswered request was canceled after verified process cleanup, without an answer or rejection. Validate the exact proposal, distinct request/input UUIDs, native part/final assistant, lowercase history digest, terminal/idle/pending/cleanup facts and original interruption or HTTP-acknowledged cancellation. Validate bounded unique retry notifications and their separate canceled-backoff flag without inferring a native error. Reject mixed policy/Stop proofs and claimed, transmitted or accepted responses disguised as cancellation before rendering original content or controls. These retained views do not enable unfinished public OpenCode execution dispatch.
+
+### Native AppImage update correlation
+
+The [signed update contract](cmds-delidev-updates-contract.md) owns desktop installation. Linux compares the decoded kernel mount-point and source fields with the original APPDIR and APPIMAGE in one bounded mountinfo record. Decode space, tab, newline, backslash and source `#` octal escapes once, rejecting malformed or unsupported escapes. Preserve exact mounted-executable correlation, absolute paths, regular-file and symlink safeguards. Parser/build evidence remains separate from a running supported Linux package.
 
 ## Security
 Only trusted app content receives native capabilities. Renderer/server calls require exact allowed origins and the explicitly selected connection. Account credentials and GitHub PATs must never enter read responses. Never expose a shell, arbitrary executable/file reader, network proxy, or secret-bearing diagnostic object to the renderer.

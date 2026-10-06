@@ -23,6 +23,8 @@ use crate::{NativeFailure, canonical_id};
 pub enum OAuthAction {
     Begin,
     BeginHuggingFace,
+    BeginGoogleGemini,
+    BeginBaseten,
     Profiles,
     BindOpen,
     SubscriptionOpen,
@@ -51,6 +53,8 @@ pub enum OAuthProfile {
     #[default]
     Openrouter,
     HuggingFace,
+    GoogleGemini,
+    Baseten,
 }
 
 fn registered_client(profile: OAuthProfile) -> Option<String> {
@@ -61,17 +65,56 @@ fn registered_client(profile: OAuthProfile) -> Option<String> {
         "../../../../cmds/delidev-cli/internal/providers/oauth_clients.json"
     ))
     .ok()?;
-    let registration = registrations.get("hugging-face")?;
+    let (key, redirect) = match profile {
+        OAuthProfile::HuggingFace => (
+            "hugging-face",
+            "http://localhost/oauth/hugging-face/callback",
+        ),
+        OAuthProfile::GoogleGemini => ("gemini", "http://127.0.0.1/oauth/google-gemini/callback"),
+        OAuthProfile::Baseten => ("baseten", ""),
+        OAuthProfile::Openrouter => return Some(String::new()),
+    };
+    let registration = registrations.get(key)?;
     let id = registration.get("client_id")?.as_str()?;
     (registration.get("registration")?.as_str()? == "registered"
         && registration.get("api_compatibility")?.as_str()? == "accepted"
-        && registration.get("redirect_uri")?.as_str()?
-            == "http://localhost/oauth/hugging-face/callback"
+        && registration.get("redirect_uri")?.as_str()? == redirect
+        && (profile != OAuthProfile::Baseten || registered_verification_uri().is_some())
         && !id.is_empty()
+        && !id.chars().any(char::is_control)
         && id.len() <= 256)
         .then(|| id.to_owned())
 }
 
+fn valid_device_authorization(raw: &str) -> bool {
+    let Ok(u) = url::Url::parse(raw) else {
+        return false;
+    };
+    u.scheme() == "https"
+        && u.host_str() == Some("app.baseten.co")
+        && u.port().is_none()
+        && u.username().is_empty()
+        && u.password().is_none()
+        && u.path() != "/"
+        && u.query().is_none()
+        && u.fragment().is_none()
+        && u.as_str() == raw
+        && !raw.contains("..")
+}
+fn registered_verification_uri() -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../cmds/delidev-cli/internal/providers/oauth_clients.json"
+    ))
+    .ok()?;
+    let raw = v.get("baseten")?.get("verification_uri")?.as_str()?;
+    valid_device_authorization(raw).then(|| raw.to_owned())
+}
+fn validate_device_authorization(raw: &str, registered: &str) -> Result<(), NativeFailure> {
+    if raw != registered || !valid_device_authorization(raw) {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(())
+}
 impl Drop for OAuthResult {
     fn drop(&mut self) {
         if let Some(state) = &mut self.state {
@@ -93,6 +136,7 @@ pub struct OAuthScope {
 struct Shared {
     expected_state: Option<Zeroizing<String>>,
     api_state: Mutex<Option<Zeroizing<String>>>,
+    api_profile: Option<OAuthProfile>,
     bound: AtomicBool,
     consumed: AtomicBool,
     stop: AtomicBool,
@@ -326,10 +370,15 @@ impl OAuthHost {
         }
         if action == OAuthAction::Profiles {
             return Ok(OAuthResult {
-                profiles: [OAuthProfile::Openrouter, OAuthProfile::HuggingFace]
-                    .into_iter()
-                    .filter(|p| registered_client(*p).is_some())
-                    .collect(),
+                profiles: [
+                    OAuthProfile::Openrouter,
+                    OAuthProfile::HuggingFace,
+                    OAuthProfile::GoogleGemini,
+                    OAuthProfile::Baseten,
+                ]
+                .into_iter()
+                .filter(|p| registered_client(*p).is_some())
+                .collect(),
                 generation: String::new(),
                 callback_url: String::new(),
                 code: None,
@@ -337,11 +386,21 @@ impl OAuthHost {
                 denied: false,
             });
         }
-        if matches!(action, OAuthAction::Begin | OAuthAction::BeginHuggingFace) {
+        if matches!(
+            action,
+            OAuthAction::Begin
+                | OAuthAction::BeginHuggingFace
+                | OAuthAction::BeginGoogleGemini
+                | OAuthAction::BeginBaseten
+        ) {
             let profile = if action == OAuthAction::Begin {
                 OAuthProfile::Openrouter
-            } else {
+            } else if action == OAuthAction::BeginHuggingFace {
                 OAuthProfile::HuggingFace
+            } else if action == OAuthAction::BeginGoogleGemini {
+                OAuthProfile::GoogleGemini
+            } else {
+                OAuthProfile::Baseten
             };
             if registered_client(profile).is_none() {
                 return Err(NativeFailure::InvalidEvidence);
@@ -437,13 +496,19 @@ impl OAuthHost {
                 }
                 if original.profile == OAuthProfile::Openrouter {
                     validate_authorization(authorization, &original.callback)?;
+                } else if original.profile == OAuthProfile::Baseten {
+                    validate_device_authorization(
+                        authorization,
+                        &registered_verification_uri().ok_or(NativeFailure::InvalidEvidence)?,
+                    )?;
                 } else {
                     let client = registered_client(original.profile)
                         .ok_or(NativeFailure::InvalidEvidence)?;
-                    let state = validate_hugging_face_authorization(
+                    let state = validate_public_authorization(
                         authorization,
                         &original.callback,
                         &client,
+                        original.profile,
                     )?;
                     *original
                         .shared
@@ -466,6 +531,9 @@ impl OAuthHost {
                 }
             }
             OAuthAction::Take => {
+                if original.profile == OAuthProfile::Baseten {
+                    return Err(NativeFailure::InvalidEvidence);
+                }
                 if original.attempt != attempt_id || !authorization.is_empty() {
                     return Err(NativeFailure::InvalidEvidence);
                 }
@@ -475,7 +543,7 @@ impl OAuthHost {
                     .lock()
                     .map_err(|_| NativeFailure::Busy)?
                     .take();
-                if original.profile == OAuthProfile::HuggingFace {
+                if original.profile != OAuthProfile::Openrouter {
                     let mut result = OAuthResult {
                         generation: generation.into(),
                         callback_url: String::new(),
@@ -550,6 +618,27 @@ impl Drop for OAuthHost {
 }
 
 fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, NativeFailure> {
+    if profile == OAuthProfile::Baseten {
+        return Ok(Attempt {
+            profile,
+            scope,
+            generation: uuid::Uuid::now_v7().to_string(),
+            callback: String::new(),
+            attempt: String::new(),
+            authorization: Zeroizing::new(String::new()),
+            until: Instant::now() + Duration::from_secs(600),
+            shared: Arc::new(Shared {
+                expected_state: None,
+                api_state: Mutex::new(None),
+                api_profile: Some(profile),
+                bound: AtomicBool::new(false),
+                consumed: AtomicBool::new(false),
+                stop: AtomicBool::new(false),
+                code: Mutex::new(None),
+            }),
+            thread: None,
+        });
+    }
     // Both families use the same ephemeral port. Never bind a wildcard or
     // silently omit one family: localhost resolver choice cannot change scope.
     let mut sockets = None;
@@ -572,7 +661,9 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
         .map_err(|_| NativeFailure::SidecarFailed)?;
     // Each UUID-v7 has fresh cryptographic random bits. Their concatenation
     // supplies an unpredictable 32-byte path without a persistent identifier.
-    let path = if profile == OAuthProfile::HuggingFace {
+    let path = if profile == OAuthProfile::GoogleGemini {
+        "/oauth/google-gemini/callback".into()
+    } else if profile == OAuthProfile::HuggingFace {
         "/oauth/hugging-face/callback".into()
     } else {
         format!(
@@ -581,11 +672,17 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
             uuid::Uuid::now_v7().simple()
         )
     };
-    let callback = format!("http://localhost:{port}{path}");
+    let host_name = if profile == OAuthProfile::GoogleGemini {
+        "127.0.0.1"
+    } else {
+        "localhost"
+    };
+    let callback = format!("http://{host_name}:{port}{path}");
     let generation = uuid::Uuid::now_v7().to_string();
     let shared = Arc::new(Shared {
         expected_state: None,
         api_state: Mutex::new(None),
+        api_profile: (profile != OAuthProfile::Openrouter).then_some(profile),
         bound: AtomicBool::new(false),
         consumed: AtomicBool::new(false),
         stop: AtomicBool::new(false),
@@ -596,7 +693,7 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
     let handle = thread::Builder::new()
         .name("delidev-oauth-callback".into())
         .spawn(move || {
-            let host = format!("localhost:{port}");
+            let host = format!("{host_name}:{port}");
             while !control.stop.load(Ordering::Acquire) && Instant::now() < until {
                 for listener in [&v4, &v6] {
                     if let Ok((mut stream, peer)) = listener.accept() {
@@ -661,14 +758,14 @@ fn parse_request_mode(
     path: &str,
     state: Option<&str>,
 ) -> Option<Option<Zeroizing<Vec<u8>>>> {
-    parse_request_profile(raw, host, path, state, false)
+    parse_request_profile(raw, host, path, state, None)
 }
 fn parse_request_profile(
     raw: &[u8],
     host: &str,
     path: &str,
     state: Option<&str>,
-    api: bool,
+    api: Option<OAuthProfile>,
 ) -> Option<Option<Zeroizing<Vec<u8>>>> {
     let text = std::str::from_utf8(raw).ok()?;
     let (first, headers) = text.split_once("\r\n")?;
@@ -722,15 +819,27 @@ fn parse_request_profile(
         let mut fields = BTreeMap::new();
         for part in query.split('&') {
             let (key, value) = part.split_once('=')?;
-            if !(matches!(key, "code" | "state" | "scope") || api && key == "error")
+            if !(matches!(key, "code" | "state" | "scope")
+                || api.is_some() && key == "error"
+                || api == Some(OAuthProfile::GoogleGemini) && matches!(key, "authuser" | "prompt"))
                 || fields.insert(key, decode_code(value)?).is_some()
             {
                 return None;
             }
         }
+        if api == Some(OAuthProfile::GoogleGemini)
+            && (fields
+                .get("authuser")
+                .is_some_and(|v| v.len() > 2 || !v.iter().all(u8::is_ascii_digit))
+                || fields
+                    .get("prompt")
+                    .is_some_and(|v| !matches!(v.as_slice(), b"consent" | b"none")))
+        {
+            return None;
+        }
         let supplied = fields.get("state")?;
         if (!fields.contains_key("code")
-            && !(api
+            && !(api.is_some()
                 && fields
                     .get("error")
                     .is_some_and(|v| v.as_slice() == b"access_denied")))
@@ -785,7 +894,7 @@ fn handle_request(stream: &mut TcpStream, host: &str, path: &str, shared: &Share
         host,
         path,
         state.or_else(|| shared.expected_state.as_deref().map(String::as_str)),
-        state.is_some(),
+        shared.api_profile,
     );
     let common = "Cache-Control: no-store\r\nReferrer-Policy: \
                   no-referrer\r\nContent-Security-Policy: default-src 'none'; frame-ancestors \
@@ -862,18 +971,39 @@ pub fn validate_authorization(raw: &str, callback: &str) -> Result<(), NativeFai
     }
     Ok(())
 }
+#[cfg(test)]
 fn validate_hugging_face_authorization(
     raw: &str,
     callback: &str,
     client: &str,
 ) -> Result<Zeroizing<String>, NativeFailure> {
+    validate_public_authorization(raw, callback, client, OAuthProfile::HuggingFace)
+}
+fn validate_public_authorization(
+    raw: &str,
+    callback: &str,
+    client: &str,
+    profile: OAuthProfile,
+) -> Result<Zeroizing<String>, NativeFailure> {
     if raw.len() > 4096 || raw.chars().any(char::is_control) {
         return Err(NativeFailure::InvalidInput);
     }
+    let (host, path, scope, count) = match profile {
+        OAuthProfile::HuggingFace => ("huggingface.co", "/oauth/authorize", "inference-api", 7),
+        OAuthProfile::GoogleGemini => (
+            "accounts.google.com",
+            "/o/oauth2/v2/auth",
+            "https://www.googleapis.com/auth/cloud-platform",
+            9,
+        ),
+        OAuthProfile::Openrouter | OAuthProfile::Baseten => {
+            return Err(NativeFailure::InvalidInput);
+        }
+    };
     let url = url::Url::parse(raw).map_err(|_| NativeFailure::InvalidInput)?;
     if url.scheme() != "https"
-        || url.host_str() != Some("huggingface.co")
-        || url.path() != "/oauth/authorize"
+        || url.host_str() != Some(host)
+        || url.path() != path
         || url.port().is_some()
         || !url.username().is_empty()
         || url.password().is_some()
@@ -892,11 +1022,13 @@ fn validate_hugging_face_authorization(
         }
     }
     let get = |name: &str| fields.get(name).map(|v| v.as_str());
-    if fields.len() != 7
+    if fields.len() != count
+        || profile == OAuthProfile::GoogleGemini
+            && (get("access_type") != Some("offline") || get("prompt") != Some("consent"))
         || get("client_id") != Some(client)
         || get("redirect_uri") != Some(callback)
         || get("response_type") != Some("code")
-        || get("scope") != Some("inference-api")
+        || get("scope") != Some(scope)
         || get("code_challenge_method") != Some("S256")
         || get("code_challenge").is_none_or(|v| {
             v.len() != 43
@@ -957,6 +1089,102 @@ mod tests {
         stream.read_to_string(&mut response).unwrap();
         response
     }
+    #[test]
+    fn device_owner_has_no_listener_and_requires_the_registered_approval_uri() {
+        assert!(registered_client(OAuthProfile::Baseten).is_none());
+        let attempt = begin_profile(scope(), OAuthProfile::Baseten).unwrap();
+        assert!(attempt.callback.is_empty());
+        assert!(attempt.thread.is_none());
+        assert!(attempt.shared.api_state.lock().unwrap().is_none());
+        let registered = "https://app.baseten.co/delidev-fixture-approval";
+        assert!(validate_device_authorization(registered, registered).is_ok());
+        for raw in [
+            "https://evil.example/approve",
+            "https://app.baseten.co/delidev-fixture-approval?device_code=private",
+            "https://app.baseten.co:443/delidev-fixture-approval",
+            "https://app.baseten.co/other",
+        ] {
+            assert!(validate_device_authorization(raw, registered).is_err());
+        }
+        let host = OAuthHost::default();
+        assert!(
+            host.control(scope(), OAuthAction::BeginBaseten, "", "", "")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn google_profile_binds_loopback_scope_and_closed_callback_fields() {
+        assert!(registered_client(OAuthProfile::GoogleGemini).is_none());
+        let attempt = begin_profile(scope(), OAuthProfile::GoogleGemini).unwrap();
+        assert!(attempt.callback.starts_with("http://127.0.0.1:"));
+        let state = "s".repeat(43);
+        let mut auth = url::Url::parse("https://accounts.google.com/o/oauth2/v2/auth").unwrap();
+        auth.query_pairs_mut()
+            .append_pair("client_id", "fixture.apps.googleusercontent.com")
+            .append_pair("redirect_uri", &attempt.callback)
+            .append_pair("response_type", "code")
+            .append_pair("scope", "https://www.googleapis.com/auth/cloud-platform")
+            .append_pair("code_challenge", &"c".repeat(43))
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("state", &state)
+            .append_pair("access_type", "offline")
+            .append_pair("prompt", "consent");
+        assert!(
+            validate_public_authorization(
+                auth.as_str(),
+                &attempt.callback,
+                "fixture.apps.googleusercontent.com",
+                OAuthProfile::GoogleGemini
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_public_authorization(
+                auth.as_str(),
+                &attempt.callback,
+                "foreign.apps.googleusercontent.com",
+                OAuthProfile::GoogleGemini
+            )
+            .is_err()
+        );
+        let host = "127.0.0.1:55451";
+        let raw = format!(
+            "GET /oauth/google-gemini/callback?code=opaque&state={state}&scope=scope&authuser=0&\
+             prompt=consent HTTP/1.1\r\nHost: {host}\r\n\r\n"
+        );
+        assert!(
+            parse_request_profile(
+                raw.as_bytes(),
+                host,
+                "/oauth/google-gemini/callback",
+                Some(&state),
+                Some(OAuthProfile::GoogleGemini)
+            )
+            .is_some()
+        );
+        assert!(
+            parse_request_profile(
+                raw.as_bytes(),
+                host,
+                "/oauth/google-gemini/callback",
+                Some(&state),
+                Some(OAuthProfile::HuggingFace)
+            )
+            .is_none()
+        );
+        assert!(
+            parse_request_profile(
+                raw.replace("authuser=0", "authuser=email").as_bytes(),
+                host,
+                "/oauth/google-gemini/callback",
+                Some(&state),
+                Some(OAuthProfile::GoogleGemini)
+            )
+            .is_none()
+        );
+    }
+
     #[test]
     fn hugging_face_profile_requires_registration_and_original_state() {
         assert!(registered_client(OAuthProfile::HuggingFace).is_none());
@@ -1393,6 +1621,7 @@ fn begin_subscription(
     let shared = Arc::new(Shared {
         expected_state: Some(state),
         api_state: Mutex::new(None),
+        api_profile: None,
         bound: AtomicBool::new(true),
         consumed: AtomicBool::new(false),
         stop: AtomicBool::new(false),

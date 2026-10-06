@@ -1,3 +1,4 @@
+import { copy } from "./localization";
 import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 
 export type Document = Record<string, unknown>;
@@ -17,5 +18,5 @@ export function encode(value: unknown): Uint8Array { return new TextEncoder().en
 
 export enum Workspace { Worktree = "worktree", Local = "local", GeneralChat = "general-chat" }
 export enum Mode { Execute = "execute", Plan = "plan" }
-export const workspaceNames: Record<Workspace, string> = { [Workspace.Worktree]: "Worktree", [Workspace.Local]: "Local computer", [Workspace.GeneralChat]: "General Chat" };
-export function resourceName(resource?: Resource): string { const data = document(resource); return text(data.name) || text(data.alias) || "Unnamed"; }
+export const workspaceNames: Record<Workspace, string> = { get [Workspace.Worktree]() { return copy("documents.worktree_c893ba"); }, get [Workspace.Local]() { return copy("documents.localComputer_09d55f"); }, get [Workspace.GeneralChat]() { return copy("documents.generalChat_f634bc"); } };
+export function resourceName(resource?: Resource): string { const data = document(resource); return text(data.name) || text(data.alias) || copy("documents.extra.e504e6152194"); }

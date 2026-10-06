@@ -32,6 +32,24 @@ function environment() {
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
+function chromeFetch(statusResponse, requests) {
+  return async (input, options = {}) => {
+    const url = String(input);
+    requests.push({ url, options });
+    if (url === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "chrome-token" });
+    if (url.endsWith(":fetchStatus")) return jsonResponse(statusResponse);
+    if (url.endsWith(":publish") || url.endsWith(":cancelSubmission")) return jsonResponse({});
+    throw new Error(`unexpected request: ${url}`);
+  };
+}
+
+const chromePublicationCases = [
+  { state: "PUBLISHED", crxVersion: "0.1.0", deployPercentage: 100, expected: StoreStatus.Public },
+  ...["PUBLISHED_TO_TESTERS", "ITEM_STATE_UNSPECIFIED", "FIXTURE_UNKNOWN", undefined].map((state) => ({ state, crxVersion: "0.1.0", deployPercentage: 100, expected: StoreStatus.Pending })),
+  { state: "PUBLISHED", crxVersion: "0.1.0", deployPercentage: 99, expected: StoreStatus.Pending },
+  { state: "PUBLISHED", crxVersion: "0.0.9", deployPercentage: 100, expected: StoreStatus.Unsubmitted },
+];
+
 function chromeUploadResponse(overrides = {}) {
   return { uploadState: "SUCCEEDED", itemId: environment().DEVHUD_CHROME_EXTENSION_ID, crxVersion: loadReleaseMetadata().version, ...overrides };
 }
@@ -85,7 +103,7 @@ test("store states distinguish unsubmitted, pending, approved-held, public, and 
   assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_NOT_SENT_FOR_REVIEW"), StoreStatus.Withdrawn);
 });
 
-test("Chrome requires the exact version at 100 percent before public", () => {
+test("Chrome requires explicit public state and the exact version at 100 percent", () => {
   assert.equal(classifyChrome({ submitted: undefined, published: undefined, version: "0.1.0" }), StoreStatus.Unsubmitted);
   const pending = classifyChrome({ submitted: { state: "PENDING_REVIEW", distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] }, published: {}, version: "0.1.0" });
   assert.equal(pending, StoreStatus.Pending);
@@ -93,11 +111,85 @@ test("Chrome requires the exact version at 100 percent before public", () => {
   assert.equal(approved, StoreStatus.ApprovedHeld);
   const wrongHeldVersion = classifyChrome({ submitted: { state: "STAGED", distributionChannels: [{ crxVersion: "0.0.9", deployPercentage: 100 }] }, published: {}, version: "0.1.0" });
   assert.equal(wrongHeldVersion, StoreStatus.Unsubmitted);
-  const partial = classifyChrome({ submitted: {}, published: { distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 50 }] }, version: "0.1.0" });
-  assert.equal(partial, StoreStatus.Pending);
-  const complete = classifyChrome({ submitted: {}, published: { distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] }, version: "0.1.0" });
-  assert.equal(complete, StoreStatus.Public);
+  for (const { state, crxVersion, deployPercentage, expected } of chromePublicationCases) {
+    const published = { state, distributionChannels: [{ crxVersion, deployPercentage }] };
+    assert.equal(classifyChrome({ published, version: "0.1.0" }), expected, JSON.stringify(published));
+  }
   assert.equal(classifyChrome({ submitted: { state: "CANCELLED" }, published: {}, version: "0.1.0" }), StoreStatus.Withdrawn);
+});
+
+test("Chrome status and publication use explicit public evidence without repeating mutations", async () => {
+  for (const { state, crxVersion, deployPercentage, expected } of chromePublicationCases) {
+    for (const command of ["status", "publish"]) {
+      const requests = [];
+      const value = { takenDown: false, publishedItemRevisionStatus: { state, distributionChannels: [{ crxVersion, deployPercentage }] } };
+      const result = run(command, StoreProvider.ChromeWebStore, {}, environment(), chromeFetch(value, requests));
+      if (command === "publish" && expected === StoreStatus.Unsubmitted) {
+        await assert.rejects(result, /cannot be published from state unsubmitted/u);
+      } else {
+        assert.equal((await result).status, expected, `${command}: ${JSON.stringify(value)}`);
+      }
+      assert.equal(requests.length, 2);
+      assert.ok(requests[1].url.endsWith(":fetchStatus"));
+      assert.equal(requests[1].options.method, undefined);
+    }
+  }
+});
+
+test("unconfirmed exact Chrome publication takes precedence over a staged submission", async () => {
+  const exactChannel = [{ crxVersion: "0.1.0", deployPercentage: 100 }];
+  for (const state of ["PUBLISHED_TO_TESTERS", "FIXTURE_UNKNOWN", undefined]) {
+    const published = { state, distributionChannels: exactChannel };
+    const submitted = { state: "STAGED", distributionChannels: exactChannel };
+    assert.equal(classifyChrome({ published, submitted, version: "0.1.0" }), StoreStatus.Pending);
+    for (const command of ["status", "publish"]) {
+      const requests = [];
+      const value = { publishedItemRevisionStatus: published, submittedItemRevisionStatus: submitted };
+      assert.equal((await run(command, StoreProvider.ChromeWebStore, {}, environment(), chromeFetch(value, requests))).status, StoreStatus.Pending);
+      assert.equal(requests.length, 2);
+      assert.ok(requests[1].url.endsWith(":fetchStatus"));
+      assert.equal(requests[1].options.method, undefined);
+    }
+  }
+});
+
+test("Chrome takedown fails closed with a stable error before publication or withdrawal", async () => {
+  const exactChannel = [{ crxVersion: "0.1.0", deployPercentage: 100 }];
+  const revisions = [
+    ...["PUBLISHED", "PUBLISHED_TO_TESTERS", "FIXTURE_UNKNOWN", undefined].map((state) => ({ publishedItemRevisionStatus: { state, distributionChannels: exactChannel } })),
+    { submittedItemRevisionStatus: { state: "STAGED", distributionChannels: exactChannel } },
+    {},
+  ];
+  for (const revision of revisions) {
+    assert.throws(() => classifyChrome({ takenDown: true, published: revision.publishedItemRevisionStatus, submitted: revision.submittedItemRevisionStatus, version: "0.1.0" }), {
+      message: "Chrome Web Store item is taken down; automatic release actions are blocked",
+    });
+    for (const command of ["status", "publish", "withdraw"]) {
+      const requests = [];
+      await assert.rejects(run(command, StoreProvider.ChromeWebStore, {}, environment(), chromeFetch({ ...revision, takenDown: true, name: "private-provider-item" }, requests)), {
+        message: "Chrome Web Store item is taken down; automatic release actions are blocked",
+      });
+      assert.equal(requests.length, 2);
+      assert.ok(requests[1].url.endsWith(":fetchStatus"));
+      assert.equal(requests[1].options.method, undefined);
+    }
+  }
+});
+
+test("Chrome withdrawal retains the exact published revision guard for ambiguous states", async () => {
+  const exactChannel = [{ crxVersion: "0.1.0", deployPercentage: 100 }];
+  for (const state of ["PUBLISHED", "PUBLISHED_TO_TESTERS", "FIXTURE_UNKNOWN", undefined]) {
+    for (const submittedState of ["STAGED", "CANCELLED", undefined]) {
+      const requests = [];
+      const value = {
+        publishedItemRevisionStatus: { state, distributionChannels: exactChannel },
+        submittedItemRevisionStatus: { state: submittedState, distributionChannels: exactChannel },
+      };
+      await assert.rejects(run("withdraw", StoreProvider.ChromeWebStore, {}, environment(), chromeFetch(value, requests)), /cannot be withdrawn automatically/u);
+      assert.equal(requests.length, 2);
+      assert.ok(requests[1].url.endsWith(":fetchStatus"));
+    }
+  }
 });
 
 test("Chrome submission stops before publication for every upload state except succeeded", async (t) => {
@@ -409,7 +501,7 @@ test("store publication skips exact versions that are already public", async () 
     const url = String(input);
     chromeRequests.push({ url, options });
     if (url === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "chrome-token" });
-    if (url.endsWith(":fetchStatus")) return jsonResponse({ publishedItemRevisionStatus: { distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] } });
+    if (url.endsWith(":fetchStatus")) return jsonResponse({ publishedItemRevisionStatus: { state: "PUBLISHED", distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] } });
     throw new Error(`unexpected request: ${url}`);
   };
   const chrome = await run("publish", StoreProvider.ChromeWebStore, {}, environment(), chromeFetch);

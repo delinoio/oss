@@ -9,6 +9,13 @@ Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows Con
 
 Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Schema allocations reach main before activation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
 
+Known subscription model suggestions share the catalog, protocol, desktop and
+network contracts. The server owns bounded public repository-main downloads and
+a private offline cache; daily review PR automation is repository-owned. Main-first
+allocations landed in PR #1370 before capability 35 activation. Known metadata
+never grants subscription entitlement/native readiness or removes historical
+saved identities. Subsequent person-merged catalog changes require no release.
+
 ChatGPT account deletion follows the [Settings task retention boundary](apps-delidev-subscription-settings-contract.md#task-dialogs): X/Escape retains original logout/deletion requests and the accepted cleanup view in the active category. Explicit Back/Return and category/Settings disposal remain separate from dismissal; hidden completion cannot reopen, navigate or take focus.
 
 ## Project ID
@@ -25,6 +32,12 @@ New schedule creation adds frequency presets and a creation-only three-section l
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.
 
 ## Domain Contract Documents
+- [Desktop English/Korean localization](apps-delidev-localization-contract.md)
+Issue #1410 keeps [widget persistence](apps-delidev-widget-contract.md) on an ordered,
+joined worker and all Quit task joins off the native UI loop. The desktop retains
+one Quit operation and final-stale ordering independently of sidecar ownership;
+controlled writer fixtures remain separate from packaged native/platform acceptance.
+
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
@@ -80,10 +93,10 @@ sessions and shared account profiles are preserved. The [storage contract](cmds-
 owns the lifecycle, snapshot-copy deletion integration and remaining database-restore/Sidechat limits.
 
 ## Cross-Domain Invariants
-- Product windows share one process-owned local launch/supervisor and independently retain renderer memory. Native Local/Saved role and instance admission replaces fixed main-window ownership; saved profiles retain separate authority, all-window removal barriers and one Widget publisher per profile. New Window, last-window close-to-tray and original callback fences follow the [desktop contract](apps-delidev-desktop-contract.md#multiple-product-windows).
-
+- Device-owned English/Korean presentation follows [the localization contract](apps-delidev-localization-contract.md). Language changes preserve all connection/workflow identities and native authority, and widget preference publication is independent of server observation freshness. CLI, user/native content and stable machine values retain their original bytes.
 - macOS desktop builds with `debug_assertions` use an explicit development CEF Mock cookie key without signing credentials. System/development CEF paths share metadata, an exclusive native-host lease and durable cleanup of both copies; Go account/PAT/OAuth credentials remain OS-protected. Every other build retains System cookie storage. Follow the [desktop](apps-delidev-desktop-contract.md) and [browser](cmds-delidev-browser-contract.md) contracts; development observations grant no production Keychain or shutdown acceptance.
-
+- Product windows share one process-owned local launch/supervisor and independently retain renderer memory. Native Local/Saved role and instance admission replaces fixed main-window ownership; saved profiles retain separate authority, all-window removal barriers and one Widget publisher per profile. New Window, last-window close-to-tray and original callback fences follow the [desktop contract](apps-delidev-desktop-contract.md#multiple-product-windows).
+- macOS desktop builds with `debug_assertions` use an explicit development CEF Mock cookie key without signing credentials. System/development CEF paths share metadata, an exclusive native-host lease and durable cleanup of both copies; Go account/PAT/OAuth credentials remain OS-protected. Every other build retains System cookie storage. Follow the [desktop](apps-delidev-desktop-contract.md) and [browser](cmds-delidev-browser-contract.md) contracts; development observations grant no production Keychain or shutdown acceptance.
 - Desktop Settings has four ordered groups: AI, Coding, Device management and System. Repositories, Git Profiles and Git remain independent Coding menus; Runner Devices and Paired devices belong to Device management. Git presents global fetch/remediation policy while Server preferences retains routing/network settings. Both policy editors use the existing complete SETTINGS singleton and Connect configuration authority; grouping grants no new capability or migration. Existing category IDs and lifetimes remain stable, with `git-workflow` as the additional presentation category.
 - Current single-source Agent Worker creation/editing uses Harness → same-source Accounts → Model → Configure under System capability 33, reserved on main by PR #1351. Harness click or Enter/Space confirmation immediately opens Accounts; arrows/Home/End retain selection-only navigation, and Harness has no Next button. Models Settings is removed; Usage owns model details and Token pricing. The [desktop wizard](apps-delidev-desktop-contract.md#agent-worker-wizard) and [catalog](cmds-delidev-catalog-contract.md#agent-worker-model-selection) contracts preserve atomic model/Worker saving, legacy APIs and historical attribution without a migration or native/account readiness grant.
 - The source-route extension remains reserved and pending implementation. PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and `SaveAgentWorkerRequest.route_models = 5` on main. One Harness will retain ordered source groups, each with same-source accounts and its own typed model selection. The repeated model entries must match group order and cannot coexist with the legacy singular `model`; all models and the Worker save atomically. Only the first execution of a new session may advance, after every account in each preceding group has confirmed quota exhaustion. Unknown quota, disconnection, authentication failure or incompatibility cannot authorize fallback. Observed recovery restores earlier-source priority for subsequent new sessions; existing sessions retain their account/model and immutable historical attribution. Follow the [desktop owner](apps-delidev-desktop-contract.md#reserved-source-route-extension), [catalog](cmds-delidev-catalog-contract.md#planned-agent-worker-source-routes), [protocol](protos-delidev-v1-contract.md#agent-worker-source-route-reservations) and [structure](cmds-delidev-structure-contract.md#agent-worker-source-route-reservations) contracts. Capability 35 keeps its independent known-subscription-model ownership. Preserve the capability-33 singular flow, legacy APIs and independent execution eligibility. Reservations grant no routing, catalog retrieval, discovery, authentication, account entitlement or execution support, change no active schema or generated output and add no migration.
@@ -195,7 +208,19 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 
 
 - Signed updates use independent System 28/Worker 17 admission, original device/generation receipts, joined idle replacement and retained old binaries. Desktop install requires original trusted-window confirmation and preserves live server/harness lifetimes. System 29 SSH setup pins exact host identity and the server-compatible signed Worker release, with protected credentials and original remote operation inspection. An unset production public-root declaration blocks real signing/downloads; fixture/build evidence remains separate from production account/platform acceptance. See the [updates](cmds-delidev-updates-contract.md) and [SSH setup](cmds-delidev-ssh-setup-contract.md) contracts.
+  Linux desktop installation decodes bounded kernel mountinfo path escapes once before exact APPDIR/APPIMAGE correlation, while retaining mounted-executable, absolute-path, regular-file and symlink safeguards under the updates and desktop contracts.
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
 AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming, while Claude Code/Grok remain unsupported. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in PR #1332; this optional JSON amendment adds no migration.
+
+- Managed ordinary API browser OAuth extends the same account lifecycle to
+  Hugging Face PKCE, Gemini PKCE with an immutable quota project, and Baseten
+  server-owned Device approval. Capability 6 and private token-generation migration
+  31 use reservations established on main and preserve OpenRouter capability 5
+  and real migrations 26–30. Go owns protected credentials and serialized once-only
+  refresh; native owns original window/server/attempt authority. A pending compiled
+  public-client registration or unverified ordinary API compatibility keeps the
+  provider unavailable. Device jobs are joined before Vault/server-scope shutdown,
+  and neither Status nor restart can reconstruct polling authority. See the
+  [account OAuth contract](cmds-delidev-account-oauth-contract.md).

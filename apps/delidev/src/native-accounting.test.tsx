@@ -16,7 +16,7 @@ it("keeps exact native counts, zero, unavailable and partial estimates distinct"
   const claude = screen.getByRole("region", { name: "Claude main-loop inputs" });
   expect(within(claude).getByText(BigInt("9007199254740993").toLocaleString())).toBeTruthy();
   const opencode = screen.getByRole("region", { name: "OpenCode steps" });
-  expect(within(opencode).getByText("22 · 1 unavailable units")).toBeTruthy();
+  expect(within(opencode).getByText("22 · 1 unavailable unit")).toBeTruthy();
   expect(within(opencode).getByText(/USD 0.000055.*1 partial/)).toBeTruthy();
   expect(within(opencode).getByText(/Assistant summaries and inherited fork history are excluded/)).toBeTruthy();
 });

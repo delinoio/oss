@@ -1,3 +1,4 @@
+import { i18n } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -128,6 +129,13 @@ it("retains exact fork retry and accepted job while navigation changes, publishi
  const rendered = render(view(true));
  fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
  expect((screen.getByRole("textbox", { name: "Fork name" }) as HTMLInputElement).value).toBe("Original fork");
+ const input = screen.getByRole("textbox", { name: "Fork name" }); input.focus();
+ fireEvent.change(input, { target: { value: "Original confirmation draft" } });
+ await act(() => i18n.changeLanguage("ko"));
+ expect(screen.getByRole("textbox", { name: "포크 이름" })).toBe(input);
+ expect(window.document.activeElement).toBe(input); expect(input).toHaveProperty("value", "Original confirmation draft");
+ expect(fork).not.toHaveBeenCalled(); expect(observe).not.toHaveBeenCalled();
+ await act(() => i18n.changeLanguage("en"));
  fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
  await screen.findByRole("button", { name: "Retry the same fork request" });
  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));

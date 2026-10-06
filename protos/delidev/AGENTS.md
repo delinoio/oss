@@ -1,6 +1,6 @@
 - Agent Worker source routes reserve System capability 36 and SaveAgentWorkerRequest.route_models field 5 under issue #964. Establish both on main before activation; reuse AgentWorkerModelSelection and the save acknowledgement. Preserve the legacy single-model request and capability 35. Reservations add no migration or routing capability.
 
-- Known subscription model suggestions under issue #964 reserve System capability 35 and the new catalog-source enum/model/list declarations. Establish these allocations on main before dependent implementation. Reservations grant no known-model retrieval, native discovery, account entitlement or execution capability and add no migration. Follow the catalog, protocol and structure contracts.
+- Known subscription model suggestions follow `docs/cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. PR #1370 established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
 
 # DeliDev delidev ownership
 
@@ -32,6 +32,8 @@
 - Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.
 
 - Issues #1093, #1202 and #1203 share the native-compaction reservations and planned boundary in `docs/cmds-delidev-compaction-contract.md`. Establish the reservation change on main before activating it. Keep one `CompactSession` owner/client operation, separate action/job identity and profile-specific native proof; reserved capabilities cannot advertise an unimplemented endpoint or native profile.
+
+- Issue #1203 reserves `CompactSessionRequest.expected_execution_id = 2` and `CompactSessionResponse.session = 4` with #1093/#1202 as shared consumers. Preserve PR #1221's existing request/response wire assignments in the immutable baseline. Establish these additions on main before active schemas or generated bindings; dependent implementation must bind the exact source execution into admission/actor-bound receipts and join current session/original job under one authorized read. Existing response `request_id` remains the original action ID. Reservations grant no additional capability or migration.
 
 - Allocation provenance uses exactly one original `pr` or owning `issue` when an implementation PR does not yet exist; record other issue consumers in `sharedIssues`. Preserve immutable numbers and identities when the implementation PR is later created.
 

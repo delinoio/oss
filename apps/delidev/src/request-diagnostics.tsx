@@ -1,3 +1,4 @@
+import { ownedMessage, useProductMessage, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -51,34 +52,36 @@ export function validateDiagnosticPage(response: ListRequestDiagnosticsResponse,
 }
 
 function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
+  useLocale();
   const native = value.source === Source.NATIVE_INPUT;
   const state = State[value.state].toLowerCase().replaceAll("_", " ");
-  return <article className="result" aria-label={`${native ? "Native input" : "HTTP request"} ${value.id}`}>
-    <h3>{native ? "Native input" : Operation[value.operation].toLowerCase()} · {state}</h3>
+  return <article className="result" aria-label={copy("request-diagnostics.message_42d375", { v0: native ? copy("request-diagnostics.nativeInput_f0007b") : copy("request-diagnostics.httpRequest_f1ee11"), v1: value.id })}>
+    <h3>{native ? copy("request-diagnostics.nativeInput_f0007b") : Operation[value.operation].toLowerCase()} · {state}</h3>
     <dl>
-      <dt>Request</dt><dd>{value.id}</dd><dt>Revision</dt><dd>{value.revision.toString()}</dd><dt>Execution</dt><dd>{value.executionId}</dd>
-      <dt>Account at request time</dt><dd>{value.accountId}</dd><dt>Connection</dt><dd>{value.connectionId}</dd>
-      <dt>{value.subscriptionService ? "Subscription service" : "Provider"}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : value.providerId}</dd><dt>Model</dt><dd>{value.modelId}</dd><dt>Purpose</dt><dd>{value.purpose}</dd>
-      <dt>Observed</dt><dd>{value.observedAt}</dd><dt>Finished</dt><dd>{value.finishedAt ?? "Unavailable"}</dd>
-      <dt>HTTP latency</dt><dd>{value.durationMs === undefined ? "Unavailable" : `${value.durationMs.toString()} ms`}</dd>
-      <dt>HTTP attempt</dt><dd>{value.httpAttempted === undefined ? "Unavailable" : value.httpAttempted ? "Send claimed; provider acceptance is unconfirmed" : "No HTTP attempt"}</dd>
-      <dt>HTTP status</dt><dd>{value.httpStatus ?? "Unavailable"}</dd><dt>Error</dt><dd>{value.errorCode || "None observed"}</dd>
-      <dt>{native ? "Selected effort" : "Requested effort"}</dt><dd>{value.requestedEffort ?? "Unavailable"}</dd>
-      <dt>{native ? "Native effective effort" : "Provider observed effort"}</dt><dd>{value.effectiveEffort ?? "Unavailable"}</dd>
-      <dt>{native ? "Selected service tier" : "Requested service tier"}</dt><dd>{value.requestedServiceTier ?? "Unavailable"}</dd>
-      <dt>{native ? "Native effective service tier" : "Provider observed service tier"}</dt><dd>{value.effectiveServiceTier ?? "Unavailable"}</dd>
+      <dt>{copy("request-diagnostics.request_59f03d")}</dt><dd>{value.id}</dd><dt>{copy("request-diagnostics.revision_2e516d")}</dt><dd>{value.revision.toString()}</dd><dt>{copy("request-diagnostics.execution_a45cd4")}</dt><dd>{value.executionId}</dd>
+      <dt>{copy("request-diagnostics.accountAtRequestTime_3521b7")}</dt><dd>{value.accountId}</dd><dt>{copy("request-diagnostics.connection_639a40")}</dt><dd>{value.connectionId}</dd>
+      <dt>{value.subscriptionService ? copy("request-diagnostics.subscriptionService_0e16df") : copy("request-diagnostics.provider_472590")}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : value.providerId}</dd><dt>{copy("request-diagnostics.model_5e2c61")}</dt><dd>{value.modelId}</dd><dt>{copy("request-diagnostics.purpose_d4e883")}</dt><dd>{value.purpose}</dd>
+      <dt>{copy("request-diagnostics.observed_64fa8a")}</dt><dd>{value.observedAt}</dd><dt>{copy("request-diagnostics.finished_7804f7")}</dt><dd>{value.finishedAt ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
+      <dt>{copy("request-diagnostics.httpLatency_4cebf1")}</dt><dd>{value.durationMs === undefined ? copy("request-diagnostics.unavailable_ca1844") : copy("request-diagnostics.ms_d659ce", { v0: value.durationMs.toString() })}</dd>
+      <dt>{copy("request-diagnostics.httpAttempt_4a264f")}</dt><dd>{value.httpAttempted === undefined ? copy("request-diagnostics.unavailable_ca1844") : value.httpAttempted ? copy("request-diagnostics.sendClaimedProviderAcceptanceIsUnconfirmed_0370a9") : copy("request-diagnostics.noHttpAttempt_56754e")}</dd>
+      <dt>{copy("request-diagnostics.httpStatus_0f7cf9")}</dt><dd>{value.httpStatus ?? copy("request-diagnostics.unavailable_ca1844")}</dd><dt>{copy("request-diagnostics.error_54a0e8")}</dt><dd>{value.errorCode || copy("request-diagnostics.extra.7b563836dc50")}</dd>
+      <dt>{native ? copy("request-diagnostics.selectedEffort_2a276e") : copy("request-diagnostics.requestedEffort_59fdfe")}</dt><dd>{value.requestedEffort ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
+      <dt>{native ? copy("request-diagnostics.nativeEffectiveEffort_1e90c0") : copy("request-diagnostics.providerObservedEffort_b13db8")}</dt><dd>{value.effectiveEffort ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
+      <dt>{native ? copy("request-diagnostics.selectedServiceTier_2c8ca9") : copy("request-diagnostics.requestedServiceTier_14f88a")}</dt><dd>{value.requestedServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
+      <dt>{native ? copy("request-diagnostics.nativeEffectiveServiceTier_d412ae") : copy("request-diagnostics.providerObservedServiceTier_01a40b")}</dt><dd>{value.effectiveServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
     </dl>
-    <details><summary>Original identities</summary><dl>{[
-      ["Publication request", value.publicationRequestId], ["Correlation", value.correlationId], ["Native request", value.nativeRequestId],
-      ["Provider request", value.providerRequestId], ["Native response", value.nativeResponseId], ["Native thread", value.nativeThreadId], ["Native turn", value.nativeTurnId],
-    ].map(([label, id]) => <div key={label}><dt>{label}</dt><dd>{id || "Unavailable"}</dd></div>)}</dl></details>
+    <details><summary>{copy("request-diagnostics.originalIdentities_580b0d")}</summary><dl>{[
+      [copy("request-diagnostics.extra.406c0cd17230"), value.publicationRequestId], [copy("request-diagnostics.extra.5f1a25573a30"), value.correlationId], [copy("request-diagnostics.extra.ba2dea0965ff"), value.nativeRequestId],
+      [copy("request-diagnostics.extra.45d8583658f2"), value.providerRequestId], [copy("request-diagnostics.extra.6e5cd62e3845"), value.nativeResponseId], [copy("request-diagnostics.extra.230d0da59fbf"), value.nativeThreadId], [copy("request-diagnostics.extra.a12de5a8959e"), value.nativeTurnId],
+    ].map(([label, id], index) => <div key={index}><dt>{label}</dt><dd>{id || copy("request-diagnostics.extra.ca1844969742")}</dd></div>)}</dl></details>
   </article>;
 }
 
 export function RequestDiagnostics({ sessionId, close }: { sessionId: string; close: () => void }) {
+  useLocale();
   const input = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(""), [execution, setExecution] = useState(""), [page, setPage] = useState("");
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const status = useQuery(SystemQuery.getStatus, {}, { retry: false });
   const supported = status.data?.capabilities.includes(SystemCapability.REQUEST_DIAGNOSTICS_V1) ?? false;
   const result = useQuery(SessionQuery.listRequestDiagnostics, { sessionId, executionId: execution, pageSize: 50, pageToken: page }, {
@@ -86,21 +89,21 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
     select: (response) => validateDiagnosticPage(response, sessionId, execution),
   });
   useEffect(() => { input.current?.focus(); }, []);
-  return <aside className="session-files" aria-label="Model request diagnostics" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
-    <header><h2>Model request diagnostics</h2><button onClick={close}>Close diagnostics</button></header>
-    <p>Native inputs and individual HTTP attempts are separate observations. Requests are matched only by original identities. Missing observations remain unavailable.</p>
-    <p>HTTP latency covers the observed request through its response delivery. Native input outcomes do not confirm process cleanup. A retained send claim may not have reached the provider; replaying a publication receipt creates no HTTP attempt.</p>
-    <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem("Enter an exact execution UUID v7, or leave this empty for all executions."); return; } setProblem(""); setExecution(draft); setPage(""); }}>
-      <label>Execution ID (optional)<input ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button disabled={!supported}>Apply execution filter</button>
+  return <aside className="session-files" aria-label={copy("request-diagnostics.modelRequestDiagnostics_0c266b")} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
+    <header><h2>{copy("request-diagnostics.modelRequestDiagnostics_0c266b")}</h2><button onClick={close}>{copy("request-diagnostics.closeDiagnostics_143427")}</button></header>
+    <p>{copy("request-diagnostics.nativeInputsAndIndividualHttpAttempts_6d3cf6")}</p>
+    <p>{copy("request-diagnostics.httpLatencyCoversTheObservedRequest_bc4448")}</p>
+    <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a")); return; } setProblem(""); setExecution(draft); setPage(""); }}>
+      <label>{copy("request-diagnostics.executionIdOptional_43c4ca")}<input ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button disabled={!supported}>{copy("request-diagnostics.applyExecutionFilter_591b7d")}</button>
     </form>
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={status.error || result.error} />
-    {status.isPending ? <p role="status">Checking diagnostic support…</p> : status.data && !supported ? <p>Request diagnostics are unavailable on this server.</p> : null}
-    {status.error ? <button onClick={() => void status.refetch()}>Retry server capabilities</button> : null}
-    {supported ? <button disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh diagnostics</button> : null}
-    {supported && result.isPending ? <p role="status">Loading request observations…</p> : null}
-    {result.error && result.data ? <p role="alert">Refresh failed. The displayed observations may be stale.</p> : null}
+    {status.isPending ? <p role="status">{copy("request-diagnostics.checkingDiagnosticSupport_65aa48")}</p> : status.data && !supported ? <p>{copy("request-diagnostics.requestDiagnosticsAreUnavailableOnThis_cb5bc2")}</p> : null}
+    {status.error ? <button onClick={() => void status.refetch()}>{copy("request-diagnostics.retryServerCapabilities_18a515")}</button> : null}
+    {supported ? <button disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("request-diagnostics.refreshDiagnostics_7bce98")}</button> : null}
+    {supported && result.isPending ? <p role="status">{copy("request-diagnostics.loadingRequestObservations_ac40d6")}</p> : null}
+    {result.error && result.data ? <p role="alert">{copy("request-diagnostics.refreshFailedTheDisplayedObservationsMay_c02e74")}</p> : null}
     {result.data?.records.map((value) => <DiagnosticRow key={value.id} value={value} />)}
-    {result.data?.records.length === 0 ? <p>No retained request observations for this selection. Historical or unobserved native requests cannot be reconstructed.</p> : null}
-    <nav aria-label="Diagnostic pages"><button disabled={!page || result.isFetching} onClick={() => setPage("")}>First page</button><button disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next page</button></nav>
+    {result.data?.records.length === 0 ? <p>{copy("request-diagnostics.noRetainedRequestObservationsForThis_ddf6c6")}</p> : null}
+    <nav aria-label={copy("request-diagnostics.diagnosticPages_45198d")}><button disabled={!page || result.isFetching} onClick={() => setPage("")}>{copy("request-diagnostics.firstPage_0bdbb7")}</button><button disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>{copy("request-diagnostics.nextPage_c08ac7")}</button></nav>
   </aside>;
 }
