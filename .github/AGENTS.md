@@ -1,3 +1,5 @@
+- Known subscription model suggestions follow `docs/cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. PR #1370 established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
+
 # Workflow contracts
 
 - The five legacy CLI release workflows use `scripts/release/legacy-cli-release.mjs` before Homebrew credentials or writes. Follow the repository workflow contract: reuse only a complete public inventory with exact retained bytes and source-bound signatures; never sign, delete, replace, upload or edit on that path. Reject conflicting/incomplete public inventories. Fresh and owned partial drafts upload only missing assets and require complete signed readback before publication. Keep unsigned dry runs, exact tag/source checks and downstream job ordering.

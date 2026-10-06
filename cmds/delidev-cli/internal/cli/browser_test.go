@@ -45,7 +45,7 @@ func TestBrowserCLIUsesAuthenticatedRPCAndKeepsBrowsingContentLocal(t *testing.T
 	ready := make(chan server.Endpoint, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(e server.Endpoint) { ready <- e })
+		done <- server.Serve(ctx, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(e server.Endpoint) { ready <- e })
 	}()
 	serverFinished := false
 	t.Cleanup(func() {
