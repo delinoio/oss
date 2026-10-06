@@ -57,6 +57,16 @@ it("retains original request after malformed acknowledgment even after unmount",
  const f=fixture();let complete!:(v:any)=>void;f.send.mockImplementationOnce(()=>new Promise(resolve=>{complete=resolve}));const v=render(f.view());await f.start();await waitFor(()=>expect(f.send).toHaveBeenCalledOnce());v.rerender(f.view(false));complete({requestId:f.send.mock.calls[0][0].requestId});
  await new Promise(resolve=>setTimeout(resolve,0));v.rerender(f.view());fireEvent.click(await screen.findByRole("button",{name:"Retry original fix request"}));await screen.findByText(/Fix accepted in session/);expect(f.send.mock.calls[1][0]).toEqual(f.send.mock.calls[0][0]);
 });
+it("validates a retry against the original selection after a row is replaced", async () => {
+ const f = fixture(); f.send.mockRejectedValueOnce(new ConnectError("Lost original acknowledgment", Code.Unavailable));
+ const view = render(f.view()); await f.start(); await screen.findByRole("button", { name: "Retry original fix request" });
+ view.rerender(f.view(false));
+ f.selection.repositoryId = newRequestId(); f.selection.number = "99";
+ view.rerender(f.view());
+ fireEvent.click(await screen.findByRole("button", { name: "Retry original fix request" }));
+ await screen.findByText(/Fix accepted in session/);
+ expect(f.send.mock.calls[1][0]).toEqual(f.send.mock.calls[0][0]);
+});
 it("keeps work unavailable without the typed supported capability",async()=>{
  const f=fixture();f.capabilities.mockResolvedValueOnce({profiles:[]});render(f.view());fireEvent.click(screen.getByRole("button",{name:"Fix now"}));fireEvent.change(screen.getByLabelText("Fix project"),{target:{value:f.project}});await screen.findByText(/no supported manual PR fix profile/);expect((screen.getByRole("button",{name:"Start fix"}) as HTMLButtonElement).disabled).toBe(true);expect(f.send).not.toHaveBeenCalled();
 });

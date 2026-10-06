@@ -1,7 +1,7 @@
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, IntegrationQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, IntegrationQuery, PullRequestFixQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
 import { ItemKind, ItemState, QueryOperation, type GitHubQuery } from "./github-query-model";
 import { StandalonePullRequestResults, type PullRequestNavigation } from "./github-items";
@@ -42,6 +42,11 @@ function PendingAllowance({ intent, repositoryId, pullRequestId }: { intent: Ret
   return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.attemptAllowanceRepositoryPr_510835" components={{ s0: <>{repositoryId}</>, s1: <>{pullRequestId}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalAllowanceResumption_991985")}</button> : null}</article>;
 }
 
+function PendingFix({ intent, remoteRepositoryId, pullRequestId }: { intent: RetainedMutationIntent; remoteRepositoryId: string; pullRequestId: string }) {
+  const mutation = useRetainedMutation(intent.key, PullRequestFixQuery.requestPullRequestFix);
+  return <article className="pending-pr-action"><strong>Manual PR fix · remote repository {remoteRepositoryId} · PR ID {pullRequestId}</strong><p>{intent.busy ? "Submitting" : "Acknowledgment uncertain"}</p><Problem error={mutation.error} />{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>Retry original fix request</button> : null}</article>;
+}
+
 function PendingPRActions() {
   useLocale();
   const intents = useRetainedMutationIntents("pr-");
@@ -57,6 +62,10 @@ function PendingPRActions() {
     if (intent.key.startsWith("pr-remediation-resume:")) {
       const [, repositoryId, pullRequestId] = intent.key.split(":");
       return repositoryId && pullRequestId ? [<PendingAllowance key={intent.key} intent={intent} repositoryId={repositoryId} pullRequestId={pullRequestId} />] : [];
+    }
+    if (intent.key.startsWith("pr-fix:")) {
+      const [, remoteRepositoryId, pullRequestId] = intent.key.split(":");
+      return remoteRepositoryId && pullRequestId ? [<PendingFix key={intent.key} intent={intent} remoteRepositoryId={remoteRepositoryId} pullRequestId={pullRequestId} />] : [];
     }
     return [];
   });

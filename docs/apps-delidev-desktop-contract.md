@@ -1430,6 +1430,17 @@ identity, bounded unique Worker/harness inventories and no inference-probe claim
 Account/Agent reads validate their expected resource scope and preserve the
 first-page bound. Missing results from a partial page remain unknown; malformed,
 foreign and failed observations cannot leave a previous successful badge visible.
+The account check accepts schema-1 API accounts with an explicit API type and
+Provider identity, and schema-2 subscription accounts with an explicit subscription
+type, a closed ChatGPT/Claude/Grok service and no Provider identity. Reject mixed
+identity fields, retired records, future schemas, duplicate IDs and unsupported
+account or connection fields for the whole page. Validate saved health, enablement
+and connection identity, authentication and timestamp before counting an enabled
+connected account with ready health. Valid disabled, disconnected or non-ready
+accounts mean Needs setup on a complete page; an incomplete page with no observed
+ready account remains Unknown. A ready account on the first page remains an
+explicitly partial saved-health observation. Quota, entitlement, native support and
+execution eligibility remain independent; this read starts no lifecycle operation.
 Inactive welcome/settings presentation starts no checklist read. All results remain
 in the connection's existing nonpersistent query scope.
 
@@ -1722,7 +1733,7 @@ Local desktop registration now has explicit owner-verified revoked-client recove
 Local connection and registration permission guidance distinguishes device authorization, ownership and owner-only filesystem access, including macOS/Linux private modes. Permission failures never establish revocation or authorize automatic repair; existing data remains preserved under the desktop contract.
 
 
-Manual PR Fix now uses generated `PullRequestFixQuery`, gated by the typed Codex Git capability when its explicit form opens. The user selects a current project, whose critical selector receives focus once when the form opens; asynchronous inventory/capability updates do not steal later keyboard focus. Each request retains exact decimal set/problem revisions and original content version. The connection-scoped mutation registry shares one stable PR key across rows/views and preserves the exact original wire request through uncertainty, navigation and malformed acknowledgments, including late responses after unmount. Only validated original attempt/session/set acknowledgments release that request; retries replay the original receipt. Paused/archived/recovering sessions are not resumed implicitly. Accepted work remains visibly unhandled until independently verified push proof is published. Handled rows display the original attempt ID, execution ID, verified pushed commit and server transaction handling time, and offer no Dismiss or new Fix action. The handling time remains separate from the original problem observation timestamp. Capability reads are disposed with the closed form; project choices use the ordinary configuration inventory. See the integration contract for supported profiles and separate real-native acceptance limits.
+Manual PR Fix now uses generated `PullRequestFixQuery`, gated by the typed Codex Git capability when its explicit form opens. The user selects a current project, whose critical selector receives focus once when the form opens; asynchronous inventory/capability updates do not steal later keyboard focus. Each request retains exact decimal set/problem revisions and original content version. The connection-scoped mutation registry shares one stable PR key across rows/views and preserves the exact original wire request through uncertainty, navigation and malformed acknowledgments, including late responses after unmount. Pending PR actions exposes every retained manual Fix before GitHub Load, even when the current row or repository is unavailable or a GitHub reload fails. The registry retains the original request-bound acknowledgement validator with only the small original identity, rather than a GitHub observation. Explicit retry uses the original UUID, revisions, repository/PR identities and content versions without a current PAT, row or capability read. Only validated original attempt/session/set acknowledgments release that request; retries replay the original receipt. A rejected replay preserves an already uncertain Fix because it cannot establish whether the original request was admitted. Paused/archived/recovering sessions are not resumed implicitly. Accepted work remains visibly unhandled until independently verified push proof is published. Handled rows display the original attempt ID, execution ID, verified pushed commit and server transaction handling time, and offer no Dismiss or new Fix action. The handling time remains separate from the original problem observation timestamp. Capability reads are disposed with the closed form; project choices use the ordinary configuration inventory. See the integration contract for supported profiles and separate real-native acceptance limits.
 
 ### Original Grok tools, questions and Plan controls
 

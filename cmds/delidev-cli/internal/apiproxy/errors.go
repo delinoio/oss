@@ -89,8 +89,8 @@ func errorBody(protocol domain.APIProtocol, code domain.Code, correlation string
 	raw, _ := json.Marshal(value)
 	return raw
 }
-func writeError(w http.ResponseWriter, status int, protocol domain.APIProtocol, code domain.Code, correlation string) {
+func writeError(w http.ResponseWriter, status int, protocol domain.APIProtocol, code domain.Code, correlation string, guard secretGuard) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = w.Write(errorBody(protocol, code, correlation))
+	_, _ = w.Write(guardedErrorBody(protocol, code, correlation, "", guard))
 }
