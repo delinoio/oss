@@ -750,3 +750,10 @@ no provider support. The common/Hugging Face implementation returns PKCE flow
 only on a live Start, advertises capability 6 only for accepted exact profiles,
 and keeps authorization URL/code/state outside cached query variables. Device
 user codes remain Start-only; later provider implementations retain their gates.
+- For server-owned Baseten Device approval, Start returns flow DEVICE and the
+  temporary user code only with the original live Start reply. Status is a read.
+  After the sole Go completion claim, its existing response request_id identifies
+  that original completion receipt; code-free local recovery retains the original
+  expected attempt revision 1. Cancellation keeps its own mutation receipt.
+  Public Complete cannot supply a Device callback or initiate polling. These
+  semantics reuse the main-reserved fields and grant no unregistered capability.

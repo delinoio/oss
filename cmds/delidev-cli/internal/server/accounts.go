@@ -63,10 +63,22 @@ func (s *Service) closeAccountSecrets() error {
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	s.oauthClosing = true
+	for id := range s.accountChecks {
+		s.cancelAccountChecks(id)
+	}
 	for id := range s.oauthLive {
 		s.clearOAuthLive(id)
 	}
+	unlock()
+	// Start-owned Device jobs outlive their initiating RPC. Join them outside
+	// accountGate before closing the Vault or releasing the server scope.
+	s.oauthDeviceJobs.Wait()
+	unlock, err = s.lockAccounts(context.Background())
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if s.ownedVault == nil {
 		return nil
 	}

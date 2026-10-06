@@ -212,3 +212,14 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
 AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming, while Claude Code/Grok remain unsupported. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in PR #1332; this optional JSON amendment adds no migration.
+
+- Managed ordinary API browser OAuth extends the same account lifecycle to
+  Hugging Face PKCE, Gemini PKCE with an immutable quota project, and Baseten
+  server-owned Device approval. Capability 6 and private token-generation migration
+  31 use reservations established on main and preserve OpenRouter capability 5
+  and real migrations 26–30. Go owns protected credentials and serialized once-only
+  refresh; native owns original window/server/attempt authority. A pending compiled
+  public-client registration or unverified ordinary API compatibility keeps the
+  provider unavailable. Device jobs are joined before Vault/server-scope shutdown,
+  and neither Status nor restart can reconstruct polling authority. See the
+  [account OAuth contract](cmds-delidev-account-oauth-contract.md).

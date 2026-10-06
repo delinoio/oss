@@ -85,6 +85,9 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 			}
 			if profile, e := s.oauthProfile(p); e == nil {
 				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_PKCE
+				if profile.preset == domain.PresetBaseten {
+					wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_DEVICE
+				}
 				if profile.preset != domain.PresetOpenRouter {
 					found := false
 					for _, capability := range message.Capabilities {

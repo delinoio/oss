@@ -12,23 +12,24 @@ import { SettingsLifetime } from "./settings-lifetime";
 import type { AccountProviderSummary } from "./account-settings";
 import { encode } from "./documents";
 
-function fixture(args: { huggingFace?: boolean; gemini?: boolean; wrongFlow?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
-  const name = args.huggingFace ? "Hugging Face Inference Providers" : args.gemini ? "Google Gemini" : "OpenRouter";
+function fixture(args: { huggingFace?: boolean; gemini?: boolean; baseten?: boolean; wrongFlow?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
+  const name = args.huggingFace ? "Hugging Face Inference Providers" : args.gemini ? "Google Gemini" : args.baseten ? "Baseten" : "OpenRouter";
   const providerId = newRequestId(), attemptId = newRequestId(), nativeGeneration = newRequestId();
-  const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name, preset_id: args.huggingFace ? "hugging-face" : args.gemini ? "gemini" : "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
+  const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name, preset_id: args.huggingFace ? "hugging-face" : args.gemini ? "gemini" : args.baseten ? "baseten" : "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
   const selected: AccountProviderSummary = { providerId, provider, displayName: name, enabled: true, oauthAvailable: true, keyGuidance: "", documentationUrl: "" };
   const attempt = (state = State.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION, revision = 1n) => create(AccountOAuthAttemptSchema, { id: attemptId, providerId, revision, state, expiresAt: new Date(Date.now() + 600000).toISOString() });
-  let retained = attempt(), callback = false;
+  let retained = attempt(), callback = false, deviceReceipt = "";
   const rawState = Array.from(new TextEncoder().encode("s".repeat(43)));
   const rawCode = Array.from(new TextEncoder().encode("renderer-oauth-code-sentinel"));
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 2n, documentJson: encode({ alias: "OpenRouter", provider_id: providerId, type: "api", health: "unverified", enabled: true, recovery_notifications: true }) });
-  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; if(args.interruptedStart) {retained=attempt(State.ACCOUNT_OAUTH_STATE_INTERRUPTED,2n);retained.problem=create(ErrorDetailSchema,{code:"conflict"});return {attempt:retained,requestId:request.provider?.requestId};} return { attempt: retained, requestId: request.provider?.requestId, flow: args.wrongFlow ? AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_UNSPECIFIED : AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
+  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; if(args.interruptedStart) {retained=attempt(State.ACCOUNT_OAUTH_STATE_INTERRUPTED,2n);retained.problem=create(ErrorDetailSchema,{code:"conflict"});return {attempt:retained,requestId:request.provider?.requestId};} return { attempt: retained, requestId: request.provider?.requestId, flow: args.wrongFlow ? AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_UNSPECIFIED : args.baseten ? AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_DEVICE : AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE, userCode: args.baseten ? "ABCD-EFGH" : undefined, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
   const complete = vi.fn(async (request: CompleteAccountOAuthRequest) => { if (args.complete) await args.complete(request); retained = attempt(State.ACCOUNT_OAUTH_STATE_CONNECTED, 5n); return { attempt: retained, account, requestId: request.mutation?.requestId }; });
   const cancel = vi.fn(async (request) => { retained = attempt(State.ACCOUNT_OAUTH_STATE_CANCELED, 2n); return { attempt: retained, requestId: request.mutation?.requestId }; });
-  const status = vi.fn(async () => ({ attempt: retained, account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED ? account : undefined }));
+  const status = vi.fn(async () => ({ attempt: retained, requestId:args.baseten ? deviceReceipt : "", account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED ? account : undefined }));
   const transport = createRouterTransport(router => router.service(AccountService, { startAccountOAuth: start, completeAccountOAuth: complete, cancelAccountOAuth: cancel, getAccountOAuthStatus: status }));
   const native = vi.fn<OAuthNativeControl>(args.native ?? (async (_opening, action, generation): Promise<OAuthNativeResult> => {
-    if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: args.oldNative ? [] : [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace, AccountOAuthProfile.GoogleGemini] };
+    if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: args.oldNative ? [] : [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace, AccountOAuthProfile.GoogleGemini, AccountOAuthProfile.Baseten] };
+    if (action === OAuthNativeAction.BeginBaseten) return { generation:nativeGeneration };
     if (action === OAuthNativeAction.Begin || action === OAuthNativeAction.BeginHuggingFace || action === OAuthNativeAction.BeginGoogleGemini) return { generation: nativeGeneration, callback_url: `http://localhost:55451/oauth/openrouter/${"a".repeat(64)}` };
     if (action === OAuthNativeAction.Take && callback) { callback = false; return { generation, code: rawCode, state: args.huggingFace || args.gemini ? rawState : undefined }; }
     return { generation };
@@ -40,7 +41,7 @@ function fixture(args: { huggingFace?: boolean; gemini?: boolean; wrongFlow?: bo
     return <><button onClick={() => flow.start(selected)}>Connect selected OpenRouter</button><OpenRouterOAuth flow={flow} back={back} manual={manual} edit={edit} manage={manage} done={done} /></>;
   }
   const view = render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><SettingsLifetime>{() => <Harness />}</SettingsLifetime></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>);
-  return { start, complete, cancel, status, native, client, view, rawCode, rawState, manual, back, edit, account, trigger: () => { callback = true; }, change: (state: State, revision: bigint) => { retained = attempt(state, revision); } };
+  return { start, complete, cancel, status, native, client, view, rawCode, rawState, manual, back, edit, account, recoverDevice: () => { deviceReceipt = newRequestId(); retained=attempt(State.ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED,3n); retained.problem=create(ErrorDetailSchema,{code:"recovery_required"}); }, trigger: () => { callback = true; }, change: (state: State, revision: bigint) => { retained = attempt(state, revision); } };
 }
 
 it("starts and opens exactly once on deliberate action under Strict Mode, with no mount authentication", async () => {
@@ -212,6 +213,59 @@ it("asks for the Google quota project before any browser or server Start", async
  f.trigger(); await screen.findByText("Google Gemini connected", {}, { timeout: 2500 });
 });
 
+it("observes server-owned Device approval without taking a callback and clears the temporary code", async () => {
+ const f = fixture({ baseten:true });
+ await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Profiles)).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
+ expect(await screen.findByText("ABCD-EFGH")).toBeTruthy();
+ expect(screen.getByLabelText("Temporary authorization code")).toBeTruthy();
+ await waitFor(() => expect(f.status).toHaveBeenCalled(),{timeout:2000});
+ expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Take)).toBe(false);
+ expect(f.complete).not.toHaveBeenCalled();
+ expect(f.start.mock.calls[0][0].callbackUrl).toBe("");
+ f.change(State.ACCOUNT_OAUTH_STATE_CONNECTED,5n);
+ await screen.findByText("Baseten connected",{},{timeout:2000});
+ expect(screen.queryByText("ABCD-EFGH")).toBeNull();
+ expect(f.client.getMutationCache().getAll()).toHaveLength(0);
+ expect(JSON.stringify(f.client.getQueryCache().getAll())).not.toContain("ABCD-EFGH");
+});
+
+it("Device cancellation keeps its own receipt and waits before API-key fallback", async () => {
+ const f=fixture({baseten:true});
+ await waitFor(() => expect(f.native.mock.calls.some(call => call[1]===OAuthNativeAction.Profiles)).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
+ await screen.findByText("ABCD-EFGH");
+ fireEvent.click(screen.getByRole("button",{name:"Use an API key instead"}));
+ await waitFor(() => expect(f.manual).toHaveBeenCalledTimes(1));
+ expect(f.complete).not.toHaveBeenCalled();
+ expect(f.cancel).toHaveBeenCalledTimes(1);
+});
+it("recovers the original protected Device receipt without a callback or poll dispatch", async () => {
+ const f=fixture({baseten:true});
+ await waitFor(() => expect(f.native.mock.calls.some(call => call[1]===OAuthNativeAction.Profiles)).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
+ await screen.findByText("ABCD-EFGH");f.recoverDevice();
+ fireEvent.click(await screen.findByRole("button",{name:"Recover saved result"},{timeout:2000}));
+ await screen.findByText("Baseten connected");
+ expect(f.complete).toHaveBeenCalledTimes(1);
+ expect(f.complete.mock.calls[0][0].authorizationCode).toHaveLength(0);
+ expect(f.complete.mock.calls[0][0].mutation?.expectedRevision).toBe(1n);
+ expect(f.native.mock.calls.some(call => call[1]===OAuthNativeAction.Take)).toBe(false);
+});
+
+it("retains the Device approval code when native browser opening fails", async () => {
+ const generation=newRequestId();
+ const f=fixture({baseten:true,native:async (_opening,action) => {
+  if(action===OAuthNativeAction.Profiles) return {generation:"",profiles:[AccountOAuthProfile.Baseten]};
+  if(action===OAuthNativeAction.BindOpen) throw new Error("synthetic opener failure");
+  return {generation};
+ }});
+ await waitFor(() => expect(f.native.mock.calls.some(call=>call[1]===OAuthNativeAction.Profiles)).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
+ expect((await screen.findByRole("alert")).textContent).toContain("browser could not be opened");
+ expect(screen.getByText("ABCD-EFGH")).toBeTruthy();
+  expect(f.complete).not.toHaveBeenCalled();
+});
 it("retains an admitted attempt for cancellation when its new-provider flow is unsupported", async () => {
  const f=fixture({huggingFace:true,wrongFlow:true});
  await waitFor(() => expect(f.native.mock.calls.some(call=>call[1]===OAuthNativeAction.Profiles)).toBe(true));
