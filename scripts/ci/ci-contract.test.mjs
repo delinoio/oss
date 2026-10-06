@@ -4,7 +4,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { load } from "js-yaml";
-import { jobPaths, nativeMatrices } from "./plan.mjs";
+import { Event, jobPaths, nativeMatrices, planJobs } from "./plan.mjs";
 import { jobCommands, jobTaskGraph } from "./task-graph.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -160,6 +160,26 @@ test("Node jobs use one frozen install and the planner's exact comparison throug
   assert.match(namedStep(frontend, "Verify immutable desktop and mobile pins").run, /verify:pins/u);
   const testScript = packages["apps/devhud/package.json"].scripts.test;
   for (const fixture of ["verify-frontend-output.mjs", "run-tauri.test.mjs", "run-mobile.test.mjs", "verify-pins-policy.test.mjs", "mobile:check"]) assert.ok(testScript.includes(fixture), fixture);
+});
+
+test("DevHud client test-only changes require semantic type checking and runtime tests", () => {
+  const frontend = workflow.jobs["devhud-frontend"];
+  const graph = jobTaskGraph(frontend);
+  assert.equal(graph.get("@delinoio/devhud-api-client#typecheck")?.command, "tsc -p tsconfig.json --noEmit");
+  const client = frontend.steps.find(({ run }) => run?.startsWith("node scripts/ci/run-affected.mjs @delinoio/devhud-api-client "));
+  assert.equal(client?.run, "node scripts/ci/run-affected.mjs @delinoio/devhud-api-client typecheck test");
+  assert.equal(client.env.FORCE_RUN, "true");
+  assert.equal(client.if, undefined);
+  assert.equal(graph.get("@delinoio/devhud-api-client#test")?.command, "vitest run");
+  assert.equal(graph.get("@delinoio/devhud-api-client#build")?.command, "tsc -p tsconfig.build.json");
+
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const plan = planJobs(event, ["packages/devhud-api-client/tests/validation.test.ts"]);
+    assert.equal(plan.jobs["devhud-frontend"], true, event);
+    for (const id of delidevJobs) assert.equal(plan.jobs[id], false, `${event}: ${id}`);
+    const unrelated = planJobs(event, ["packages/react-forge/src/session.ts"]);
+    assert.equal(unrelated.jobs["devhud-frontend"], false, event);
+  }
 });
 
 test("caches restore on PRs and save only after successful main validation", () => {
