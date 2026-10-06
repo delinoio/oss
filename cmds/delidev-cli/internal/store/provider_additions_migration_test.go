@@ -12,7 +12,7 @@ import (
 )
 
 // A real 29 predecessor retains its implemented 26/27/28/29 tables. Only the
-// successor's marker and explicit new default rows are removed for this fixture.
+// successors' private schema, markers and new default rows are removed.
 func predecessor29(t *testing.T, s *Store, retain domain.ID) {
 	t.Helper()
 	for _, preset := range additionalPresetIDs() {
@@ -20,7 +20,7 @@ func predecessor29(t *testing.T, s *Store, retain domain.ID) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.Exec("DELETE FROM metadata WHERE key='provider_presets_layout'; PRAGMA user_version=29"); err != nil {
+	if _, err := s.db.Exec("DROP TABLE account_oauth_credentials; DELETE FROM metadata WHERE key IN ('provider_presets_layout','account_oauth_credentials_layout'); PRAGMA user_version=29"); err != nil {
 		t.Fatal(err)
 	}
 }
