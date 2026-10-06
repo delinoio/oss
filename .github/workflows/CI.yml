@@ -943,8 +943,8 @@ jobs:
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Test DevHud API client
-        run: node scripts/ci/run-affected.mjs @delinoio/devhud-api-client test
+      - name: Type check and test DevHud API client
+        run: node scripts/ci/run-affected.mjs @delinoio/devhud-api-client typecheck test
         env:
           FORCE_RUN: 'true'
 
