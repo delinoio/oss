@@ -1,6 +1,8 @@
 import { statusLabel } from "./product-status";
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
+// SPDX-License-Identifier: Apache-2.0
+import { useRetainSettingsTask } from "./settings-task-context";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, SubscriptionObservationAction, SubscriptionQuery, SystemCapability, SystemQuery, EntityKind, isEntityId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -36,6 +38,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const busy = observe.busy || observe.uncertain || reconcile.busy || reconcile.uncertain || preferences.busy || preferences.uncertain;
   useEffect(() => { busyChanged(busy); return () => busyChanged(false); }, [busy, busyChanged]);
   const originalActive = ["queued", "sending", "uncertain"].includes(text(observation.phase));
+  useRetainSettingsTask(originalActive);
   const ready = active && quotaSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && data.health === "ready" && isEntityId(connection) && isEntityId(generation) && isEntityId(ownerMachine) && state.recovery_required !== true && !text(object(state.pending).id) && !data.removal && !busy;
   const count = text(inventory.available_count);
   const countValid = /^(?:0|[1-9][0-9]{0,18})$/.test(count) && BigInt(count) <= 9223372036854775807n;

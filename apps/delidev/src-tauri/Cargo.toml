@@ -17,6 +17,7 @@ custom-protocol = ["tauri?/custom-protocol"]
 [dependencies]
 tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", optional = true }
 sha2.workspace = true
+libc.workspace = true
 cef = { version = "=151.8.1", optional = true }
 rfd = { version = "=0.16.0", default-features = false, features = ["xdg-portal", "tokio"], optional = true }
 base64 = "0.22.1"

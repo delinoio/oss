@@ -2092,6 +2092,7 @@ dependencies = [
  "cef",
  "dirs",
  "futures-lite",
+ "libc",
  "mac-usernotifications",
  "objc2",
  "objc2-app-kit",

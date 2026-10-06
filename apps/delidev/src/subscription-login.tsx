@@ -207,5 +207,5 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
   };
   const p = pending.current;
   const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={resolveMessage(view.problem)} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? ownedMessage("subscription-login.extra.557b693dbfb7")); }}>{copy("subscription-login.retryOriginalRequest_008780")}</button> : null}</> : null;
-  return { begin, body, workflow: Boolean(view), available: Boolean(native), leave };
+  return { begin, body, workflow: Boolean(view), retained: Boolean(p?.busy || p?.retry || p?.operation || p?.account), available: Boolean(native), leave };
 }

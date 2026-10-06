@@ -1,4 +1,7 @@
-import { ownedMessage, useProductMessage, copy, useLocale  } from "./localization";
+// SPDX-License-Identifier: Apache-2.0
+import { ownedMessage, useProductMessage, copy, useLocale } from "./localization";
+import { SettingsTaskActions } from "./settings-task";
+import { useRetainSettingsTask, useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
@@ -94,7 +97,10 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const lastSeen = Date.parse(text(workerData.last_seen));
   const offline = Boolean(serverMachine.data?.resource && Number.isFinite(lastSeen) && Date.now() - lastSeen > 45_000);
   const blocked = busy || inspect.busy || inspect.uncertain || Boolean(inspection) || unknown || save.busy || save.uncertain || Boolean(saveJob) || childPending;
-  useEffect(() => { alive.current = true; initialAction.current?.focus(); return () => { alive.current = false; }; }, []);
+  const taskVisible = useSettingsTaskVisible(), cancelTask = useCloseSettingsTask(cancel), inTask = useInSettingsTask();
+  useRetainSettingsTask(Boolean(saveJob || inspection) || unknown || childPending);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { if (taskVisible) initialAction.current?.focus(); }, [taskVisible]);
   const live = () => alive.current && !opening?.disposed;
   const native = <T,>(operation: () => Promise<T>) => opening ? opening.native(operation) : operation();
   const inspectSource = async (selected: Source) => {
@@ -167,8 +173,8 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     return checkout.machine_id === primaryCheckout.machine_id && checkout.path === primaryCheckout.path;
   }));
   return <section className="repository-registration" aria-label={copy("repository-registration.addRepository_2eda4d")}>
-    <button type="button" disabled={blocked} onClick={cancel}>{copy("repository-registration.backToRepositories_92a79b")}</button>
-    <h2>{copy("repository-registration.addRepository_2eda4d")}</h2>
+    <button type="button" disabled={blocked} onClick={cancelTask}>{copy("repository-registration.backToRepositories_92a79b")}</button>
+    <h2 hidden={inTask}>{copy("repository-registration.addRepository_2eda4d")}</h2>
     {saveJob ? <><h3>{copy("repository-registration.repositorySaveAccepted_495665")}</h3>{saveJob === "unknown" ? <p role="alert">{copy("repository-registration.theSaveWasAcknowledgedWithoutA_186074")}</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>{copy("repository-registration.returnToCurrentDraft_0d5f4c")}</button> : null}</>}</TrackedJob>}</> : <>
       {summary ? <section className="repository-summary" aria-label={copy("repository-registration.repositoryDetected_998040")}>
         <div className="repository-summary-heading"><div><h3>{text(data.name)}</h3><p>{copy("repository-registration.repositoryDetected_998040")}</p></div><button type="button" disabled={blocked} onClick={() => void start(true)}>{copy("repository-registration.changeFolder_0eb4a7")}</button></div>
@@ -186,7 +192,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>{copy("repository-registration.optionalSettings_e88b5c")}</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>{copy("repository-registration.retryTheSameInspection_8ce3eb")}</button> : null}
-      <div className="actions">{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>{copy("repository-registration.addRepository_2eda4d")}</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>{copy("repository-registration.retryTheSameRepositorySave_b78084")}</button> : null}</div>
+      <SettingsTaskActions>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>{copy("repository-registration.addRepository_2eda4d")}</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>{copy("repository-registration.retryTheSameRepositorySave_b78084")}</button> : null}</SettingsTaskActions>
     </>}
   </section>;
 }

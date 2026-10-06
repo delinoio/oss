@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { LocalizedText, copy, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
+import { useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask, useSettingsTaskDismiss, useSettingsTaskVisible } from "./settings-task-context";
+import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
 import { ProviderGuidance } from "./provider-guidance";
 import { OpenRouterOAuth, useOpenRouterOAuth, type OpenRouterOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, useId } from "react";
 import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { ApiEntryRow } from "./api-entry-row";
@@ -158,6 +160,7 @@ function AccountCreationWizard({
   saved: (resource: Resource) => void;
 }) {
   useLocale();
+  const taskFormId = useId(), taskVisible = useSettingsTaskVisible(), inTask = useInSettingsTask(), closeTask = useCloseSettingsTask(close);
   const localOAuth = useOpenRouterOAuth();
   const oauth = suppliedOAuth ?? localOAuth;
   const [step, setStep] = useState(initialProvider ? WizardStep.Account : WizardStep.Provider);
@@ -198,12 +201,13 @@ function AccountCreationWizard({
   const selectedProvider = selectedHint?.providerId === providerId ? selectedHint :
     providers.find((provider) => provider.providerId === providerId) ?? eligibleProviders.find((provider) => provider.providerId === providerId);
   useEffect(() => {
+    if (!taskVisible) return;
     if (!active) { setFocusTarget(WizardFocus.None); return; }
     if ((focusTarget === WizardFocus.Account && step === WizardStep.Account) ||
       (focusTarget === WizardFocus.Picker && step === WizardStep.Provider)) heading.current?.focus();
     if (focusTarget === WizardFocus.Provider && step === WizardStep.Provider) providerButtons.current.get(providerId)?.focus();
     setFocusTarget(WizardFocus.None);
-  }, [active, focusTarget, providerId, step]);
+  }, [active, focusTarget, providerId, step, taskVisible]);
   const selectedProviderDocument = document(selectedProvider?.provider);
   const selectedAuthentication = text(selectedProviderDocument.authentication);
   const selectedProviderContract = selectedProvider ? providerContract(selectedProvider) : undefined;
@@ -263,6 +267,14 @@ function AccountCreationWizard({
     }
     if (!activeRef.current || connectGeneration.current !== generation.current) return;
     setConnected(result.account);
+  });
+
+  useRetainSettingsTask(Boolean(createdAccount || unknownResponse || oauth.view) || providerChecking);
+  useSettingsTaskDismiss(() => {
+    setApiKey(""); setConnectionKey("");
+    // The submitted Add-and-connect intent owns its one-shot credential handoff.
+    // Clear only editable inputs while that original intent can still complete.
+    if (!create.busy && !create.uncertain && autoConnect === undefined && !providerChecking) clearHandoff();
   });
 
   useEffect(() => {
@@ -361,6 +373,7 @@ function AccountCreationWizard({
   }, [accountTypeFilteringReady, autoConnect, connect.send, createdAccount, keyless, selectedAuthentication, selectedProvider, selectedProviderDocument.endpoint, selectedProviderDocument.protocol]);
 
   const navigateBack = () => {
+    if (unknownResponse) { closeTask(); return; }
     if (create.busy || create.uncertain || connect.busy || connect.uncertain) return;
     clearHandoff();
     close();
@@ -490,13 +503,13 @@ function AccountCreationWizard({
       {connect.uncertain ? <p role="status">{copy("account-settings.resultNotConfirmedTheOriginalConnection_0f9cdc")}</p> : null}
       {connect.error && !connect.uncertain ? <p role="status">{keyless ? copy("account-settings.entryCreatedConnectionFailedRetryThe_174e75") : copy("account-settings.entryCreatedConnectionFailedReEnter_fc83a6")}</p> : null}
       {!hasCredentials && selectedProvider && selectedProvider.enabled ? keyless ? <p>{copy("account-settings.connectToThisLocalEndpointOn_70be8a")}</p> : <label>{copy("account-settings.apiKey_16f0ee")}<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} disabled={providerChecking} value={connectionKey} onChange={(event) => setConnectionKey(event.target.value)} /></label> : !hasCredentials && selectedProvider ? <p role="status">{copy("account-settings.theSelectedProviderIsOffEnable_eaed28")}</p> : !hasCredentials ? <p role="status">{copy("account-settings.theSelectedProviderIsUnavailableRefresh_3c01cf")}</p> : null}
-      {!hasCredentials ? <div className="actions"><button className="primary" type="button" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !selectedProvider?.enabled || (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) || connect.busy || connect.uncertain} onClick={connectExisting}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : keyless ? copy("account-settings.connectLocalEndpoint_f37d68") : copy("account-settings.connectApiKey_0f97e9")}</button>{connect.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || connect.busy} onClick={retryConnection}>{copy("account-settings.retryTheSameConnection_bc857b")}</button> : null}</div> : null}
+      {!hasCredentials ? <SettingsTaskActions className=""><button className="primary" type="button" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !selectedProvider?.enabled || (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) || connect.busy || connect.uncertain} onClick={connectExisting}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : keyless ? copy("account-settings.connectLocalEndpoint_f37d68") : copy("account-settings.connectApiKey_0f97e9")}</button>{connect.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || connect.busy} onClick={retryConnection}>{copy("account-settings.retryTheSameConnection_bc857b")}</button> : null}</SettingsTaskActions> : null}
       {providerMismatch ? <p role="alert">{keyless ? copy("account-settings.thisProviderChangedOrIsNo_15d334") : copy("account-settings.thisProviderChangedOrIsNo_0b47f9")}</p> : null}
       {providerChecking ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
       <Problem error={providerRead.error} />
       {unknownResponse ? <p role="alert">{copy("account-settings.theServerAcknowledgedARequestWithout_eb87fb")}</p> : null}
       <Problem error={connect.error} />
-      <div className="actions"><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>{copy("account-settings.manageConnection_ad2892")}</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={close}>{copy("account-settings.done_11a676")}</button></div>
+      <SettingsTaskActions className=""><button type="button" disabled={unknownResponse || providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>{copy("account-settings.manageConnection_ad2892")}</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={unknownResponse ? closeTask : close}>{copy("account-settings.done_11a676")}</button></SettingsTaskActions>
     </section>;
   }
 
@@ -504,7 +517,7 @@ function AccountCreationWizard({
 
   return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</button>
-    <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><h2 id="api-account-wizard-title">{copy("account-settings.addAiApiKey_2c04a8")}</h2>
+    <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><h2 hidden={inTask} id="api-account-wizard-title">{copy("account-settings.addAiApiKey_2c04a8")}</h2>
     {step === WizardStep.Provider ? <>
       <h2 ref={heading} tabIndex={-1}>{copy("account-settings.chooseAnApiProvider_929afa")}</h2>
       <p>{copy("account-settings.selectAProviderToConnectYour_585388")}</p>
@@ -529,7 +542,7 @@ function AccountCreationWizard({
       <h2 ref={heading} tabIndex={-1}>{copy("account-settings.connectYourEntry_17c199")}</h2>
       <div className="api-entry-provider"><div><strong>{selectedProvider?.displayName ?? copy("account-settings.unavailable_ca1844")}</strong><span>{keyless ? copy("account-settings.localEndpoint_c04191") : copy("account-settings.apiKey_16f0ee")}</span></div><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain || unknownResponse} onClick={returnToProviders}>{copy("account-settings.change_c0bf75")}</button></div>
       {!accountTypeFilteringReady ? <p role="status">{copy("account-settings.thisServerNoLongerReportsThe_81fc29")}</p> : null}
-      <form onSubmit={(event) => { event.preventDefault(); createAccount(); }}>
+      <form id={`${taskFormId}-1`} onSubmit={(event) => { event.preventDefault(); createAccount(); }}>
         <fieldset disabled={!accountTypeFilteringReady || providerChecking || create.busy || create.uncertain}>
           <label>{copy("account-settings.entryName_978463")}<input autoComplete="off" maxLength={256} value={alias} aria-invalid={(attempted || alias.length > 0) && !aliasValid} onChange={(event) => setAlias(event.target.value)} /></label>
           {(attempted || alias.length > 0) && !aliasValid ? <p role="alert">{copy("account-settings.enterANonEmptyEntryName_24d18d")}</p> : null}
@@ -553,7 +566,7 @@ function AccountCreationWizard({
         {providerMismatch ? <p role="alert">{keyless ? copy("account-settings.thisProviderChangedOrIsNo_72e318") : copy("account-settings.thisProviderChangedOrIsNo_c94fdd")}</p> : null}
         {providerChecking ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
         <Problem error={providerRead.error} />
-        <div className="actions"><button className="primary" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : copy("account-settings.addAndConnect_4ffa9b")}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>{copy("account-settings.retryTheSameEntryCreation_8f455b")}</button> : null}</div>
+        <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : copy("account-settings.addAndConnect_4ffa9b")}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>{copy("account-settings.retryTheSameEntryCreation_8f455b")}</button> : null}</SettingsTaskActions>
       </form>
     </>}
   </section>;
@@ -620,7 +633,7 @@ function ApiAccountSettings({
     filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken },
     providerId: providerIdFilter,
     accountType,
-  }, { enabled: active && accountTypeFilteringReady && !wizard && !selectedAccount });
+  }, { enabled: active && accountTypeFilteringReady });
   const providersById = useMemo(() => {
     const values = new Map<string, { displayName: string; enabled: boolean }>();
     for (const provider of providerSummaries) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled });
@@ -651,10 +664,6 @@ function ApiAccountSettings({
     openApiProviders();
   };
 
-  if (selectedAccount && section === AccountSettingsSection.Api) return <><SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></>;
-
-  if (wizard) return <AccountCreationWizard oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
-
   const inventoryProblem = accountTypeFilteringProblem || providerSearchError;
   const readProblem = inventoryProblem || rows.error;
   const readDenied = readProblem && clientFailure(readProblem).code === FailureCode.PermissionDenied;
@@ -682,5 +691,7 @@ function ApiAccountSettings({
     </> : null}
     {accountTypeFilteringReady ? <p className="api-entry-storage-note">{copy("account-settings.knownUsageMayBeIncompleteEstimates_30eea0")}</p> : null}
     <p className="api-entry-storage-note">{copy("account-settings.credentialsAreStoredSecurelyOnThe_be612b")}</p>
+    {selectedAccount && section === AccountSettingsSection.Api ? <SettingsTaskDialog key={selectedAccount.id} title={copy("account-settings.manageConnection_ad2892")} size={SettingsDialogSize.Wide} close={() => { setSelectedAccount(undefined); void rows.refetch(); }}><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
+    {wizard ? <SettingsTaskDialog title={copy("account-settings.addAiApiKey_2c04a8")} size={SettingsDialogSize.Wide} retained={Boolean(oauth?.view)} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}><AccountCreationWizard oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} /></SettingsTaskDialog> : null}
   </section>;
 }

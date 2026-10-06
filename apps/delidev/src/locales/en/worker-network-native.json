@@ -9,6 +9,7 @@
   "worker-network-native.separatelyAuthenticatedDigest_be070a": "Separately authenticated digest",
   "worker-network-native.iVerifiedThisDigestIndependentlyAnd_638722": "I verified this digest independently and intend to import into this Worker's original protected recipient.",
   "worker-network-native.importConfirmedEncryptedConfiguration_30d15e": "Import confirmed encrypted configuration",
+  "worker-network-native.retryOriginalEncryptedImport_46c8e9": "Retry original encrypted import",
   "worker-network-native.extra.0590779bd8e2": "Paste the encrypted Base64 bundle and separately authenticated digest, then confirm the original recipient import.",
   "worker-network-native.extra.9b693b5af315": "Original public recipient inspected. Its protected key stays on this computer.",
   "worker-network-native.extra.af95af8c4781": "The original same-computer Worker operation could not be verified. Inspect its registration and current route. An import may have committed; retain the original encrypted input and digest for explicit reconciliation.",

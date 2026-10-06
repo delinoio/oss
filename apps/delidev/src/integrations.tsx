@@ -1,7 +1,9 @@
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
+import { useRetainSettingsTask, useSettingsTaskDismiss, useCloseSettingsTask } from "./settings-task-context";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useId } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, FailureCode, IntegrationQuery, ResourceQuery, clientFailure, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -59,6 +61,7 @@ function problemDocument(raw: Uint8Array): Document | undefined {
 }
 function IntegrationEditor({ initial, active, close }: { initial?: Resource; active: boolean; close: () => void }) {
   useLocale();
+  const formId = useId(), closeTask = useCloseSettingsTask(close);
   const [name, setName] = useState(() => text(document(initial).name));
   const [kind, setKind] = useState(() => text(document(initial).token_kind) || TokenKind.FineGrained);
   const [owner, setOwner] = useState(() => text(document(initial).resource_owner));
@@ -71,15 +74,16 @@ function IntegrationEditor({ initial, active, close }: { initial?: Resource; act
   // background reads retain its draft and must not steal focus on return.
   const entered = useRef(false);
   useEffect(() => { if (active && !entered.current) { entered.current = true; nameInput.current?.focus(); } }, [active]);
-  return <form className="integration-editor" onSubmit={(event) => { event.preventDefault(); if (blocked || stale || current.error) return; void save.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ name, provider: copy("integrations.extra.3aeb00246038"), token_kind: kind, ...(owner ? { resource_owner: owner } : {}) }) }); }}>
+  return <form id={formId} className="integration-editor" onSubmit={(event) => { event.preventDefault(); if (blocked || stale || current.error) return; void save.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ name, provider: copy("integrations.extra.3aeb00246038"), token_kind: kind, ...(owner ? { resource_owner: owner } : {}) }) }); }}>
     <h3>{initial ? copy("integrations.renameGithubProfile_1f9dd2") : copy("integrations.newGithubProfile_e9e486")}</h3>
     <fieldset disabled={blocked}><label>{copy("integrations.profileName_d36632")}<input ref={nameInput} required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} /></label><label>{copy("integrations.tokenType_ced916")}<select disabled={Boolean(initial)} value={kind} onChange={(event) => setKind(event.target.value)}><option value={TokenKind.FineGrained}>{copy("integrations.fineGrainedPatPreferred_70fe9c")}</option><option value={TokenKind.Classic}>{copy("integrations.classicPat_41e9c0")}</option></select></label><label>{copy("integrations.resourceOwner_f8abf0")}<input disabled={Boolean(initial)} required={kind === TokenKind.FineGrained} maxLength={100} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" value={owner} onChange={(event) => setOwner(event.target.value)} /></label><p>{copy("integrations.useASeparateFineGrainedProfile_11aa24")}</p><p>{copy("integrations.tokenTypeAndOwnerCannotBe_4aad40")}</p></fieldset>
     {stale ? <p role="alert">{copy("integrations.thisProfileChangedReopenItsCurrent_50a08c")}</p> : null}<Problem error={current.error || save.error} />
-    <div className="actions"><button className="primary" disabled={blocked || stale || Boolean(current.error)}>{copy("integrations.saveProfile_0c8209")}</button>{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>{copy("integrations.retryTheSameProfileSave_c79c48")}</button> : null}<button type="button" disabled={blocked} onClick={close}>{copy("integrations.cancelEdit_6fa271")}</button></div>
+    <SettingsTaskActions form={formId}><button className="primary" disabled={blocked || stale || Boolean(current.error)}>{copy("integrations.saveProfile_0c8209")}</button>{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>{copy("integrations.retryTheSameProfileSave_c79c48")}</button> : null}<button type="button" data-settings-task-cancel onClick={closeTask}>{copy("integrations.cancelEdit_6fa271")}</button></SettingsTaskActions>
   </form>;
 }
 function IntegrationConnection({ initial, active, close }: { initial: Resource; active: boolean; close: () => void }) {
   useLocale();
+  const tokenFormId = useId(), closeTask = useCloseSettingsTask(close);
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.INTEGRATION, id: initial.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const current = [initial, result.data?.resource, acknowledged].filter((row): row is Resource => Boolean(row)).reduce((a, b) => a.revision >= b.revision ? a : b);
@@ -96,6 +100,8 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
   const changed = (row?: Resource) => { if (row) setAcknowledged(row); void result.refetch(); };
   const validate = useRetainedMutation(`integration-validate:${initial.id}`, IntegrationQuery.validateIntegrationProfile, (reply) => { changed(reply.profile); setProblem(problemDocument(reply.problemJson)); });
   const remove = useRetainedMutation(`integration-delete:${initial.id}`, IntegrationQuery.deleteIntegrationProfile, (reply) => { setConfirm(false); setProblem(problemDocument(reply.problemJson)); if (reply.deleted) close(); else changed(reply.profile); });
+  useRetainSettingsTask(replace.isPending || Boolean(retryIdentity) || Boolean(data.pending));
+  useSettingsTaskDismiss(() => setToken(""));
   const blocked = replace.isPending || validate.busy || validate.uncertain || remove.busy || remove.uncertain;
   const original = pendingIdentity(initial.id, pending);
   const deleting = pending.operation === "delete-profile";
@@ -120,7 +126,7 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
     }
   };
   return <section className="integration-manage">
-    <header><div><h3>{resourceName(current)}</h3><p>{profileDescription(data)}</p></div><button disabled={replace.isPending} onClick={close}>{copy("integrations.backToGithubProfiles_48e4d1")}</button></header>
+    <header><div><h3>{resourceName(current)}</h3><p>{profileDescription(data)}</p></div><button disabled={replace.isPending} onClick={closeTask}>{copy("integrations.backToGithubProfiles_48e4d1")}</button></header>
     <ProfileFacts profile={current} />
     {text(identity.login) ? <p><LocalizedText id="integrations.authenticatedAsGithubId_5a4d87" components={{ s0: <>{text(identity.login)}</>, s1: <>{text(identity.id)}</> }} /></p> : null}
     <section className="integration-section" aria-label={copy("integrations.connectAToken_d30079")}><h4>{copy("integrations.connectAToken_d30079")}</h4>
@@ -128,12 +134,11 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
         <summary>{copy("integrations.createATokenOnGithub_519994")}</summary>
         {active ? <GitHubTokenForm key={`${current.id}:${current.revision}`} profile={current} active={active} disabled={blocked || Boolean(retryIdentity || data.pending || result.error)} showHeading={false} /> : null}
       </details>
-      <form onSubmit={(event) => { event.preventDefault(); void sendToken(); }}><fieldset disabled={blocked || deleting || Boolean(result.error)}>
+      <form id={tokenFormId} onSubmit={(event) => { event.preventDefault(); void sendToken(); }}><fieldset disabled={blocked || deleting || Boolean(result.error)}>
         <label>{copy("integrations.githubPersonalAccessToken_235203")}<input type="password" autoComplete="off" spellCheck={false} maxLength={512} placeholder={copy("integrations.enterAPersonalAccessToken_b4175a")} value={token} onChange={(event) => setToken(event.target.value)} /></label>
         <p className="integration-secondary">{tokenStorageNote()}</p>
         {retryIdentity || pending.operation === "replace-token" ? <p>{copy("integrations.reenterTheSameTokenToRetry_d082cd")}</p> : null}
-        <button className="primary" disabled={!/^[!-~]{1,512}$/.test(token) || (pending.operation === "replace-token" && !original)}>{retryIdentity || pending.operation === "replace-token" ? copy("integrations.retryOriginalTokenReplacement_cdf40d") : copy("integrations.saveAndValidateToken_d79171")}</button>
-      </fieldset></form>
+      </fieldset><SettingsTaskActions form={tokenFormId}><button className="primary" disabled={blocked || deleting || Boolean(result.error) || !/^[!-~]{1,512}$/.test(token) || (pending.operation === "replace-token" && !original)}>{retryIdentity || pending.operation === "replace-token" ? copy("integrations.retryOriginalTokenReplacement_cdf40d") : copy("integrations.saveAndValidateToken_d79171")}</button></SettingsTaskActions></form>
       {retryIdentity ? <p><LocalizedText id="integrations.pendingRequest_2efde7" components={{ s0: <>{retryIdentity.requestId}</> }} /></p> : null}
     </section>
     <section className="integration-section" aria-label={copy("integrations.validateIdentity_1ba57b")}><h4>{copy("integrations.identityValidation_657b2c")}</h4>
@@ -143,7 +148,7 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
     <section className="integration-section integration-delete" aria-label={copy("integrations.deleteProfile_47311a")}><h4>{copy("integrations.deleteProfile_47311a")}</h4>
       <p>{copy("integrations.deletionRequiresConfirmationRepositoryAssociationsWill_c1a76b")}</p>
       <button className="integration-danger" disabled={blocked || Boolean(result.error) || (deleting && !original)} onClick={() => deleting && original ? void remove.send({ mutation: original }) : setConfirm(true)}>{deleting ? copy("integrations.retryOriginalProfileDeletion_861363") : copy("integrations.deleteProfile_47311a")}</button>
-      {confirm ? <div className="notice"><p>{copy("integrations.deleteThisProfileAndItsServer_d6827d")}</p><div className="actions"><button className="integration-danger" disabled={blocked} onClick={() => void remove.send({ mutation: mutation() })}>{copy("integrations.confirmProfileDeletion_079ac8")}</button><button disabled={blocked} onClick={() => setConfirm(false)}>{copy("integrations.keepProfile_8e76f0")}</button></div></div> : null}
+      {confirm ? <SettingsTaskDialog title={copy("integrations.deleteProfile_47311a")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setConfirm(false)}><div className="notice"><p>{copy("integrations.deleteThisProfileAndItsServer_d6827d")}</p><SettingsTaskActions className=""><button className="integration-danger" disabled={blocked} onClick={() => void remove.send({ mutation: mutation() })}>{copy("integrations.confirmProfileDeletion_079ac8")}</button><button data-settings-task-cancel disabled={blocked} onClick={() => setConfirm(false)}>{copy("integrations.keepProfile_8e76f0")}</button></SettingsTaskActions></div></SettingsTaskDialog> : null}
     </section>
     {text(object(validation.problem).message) ? <ServiceProblem code={text(object(validation.problem).code) || text(object(validation.problem).problem_code)}><p role="alert">{text(object(validation.problem).message)} {text(object(validation.problem).guidance)}</p></ServiceProblem> : null}{problem ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
     <Problem error={result.error || tokenError} />{[validate, remove].map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="integrations.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("integrations.validation_98c41d") : copy("integrations.deletion_7770ba")}</> }} /></button> : null}</div>)}
@@ -166,7 +171,7 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
   const createProfile = <button className="primary" onClick={() => setEditing({ key: newRequestId() })}><LocalizedText id="integrations.newGithubProfile_faeff2" components={{ s0: <span aria-hidden="true">+ </span> }} /></button>;
   return <section className="github-integrations" aria-label={copy("integrations.githubIntegrations_edb779")}>
     {showCategoryIntro ? <SettingsHeading title={copy("integrations.integrations_090512")} description={copy("integrations.manageGithubProfilesForRepositoryAccess_42adb1")} actions={!editing && !selected ? <><button aria-label={copy("integrations.refreshGithubProfiles_c84a3b")} onClick={() => void result.refetch()}>{copy("integrations.refresh_0e9161")}</button>{createProfile}</> : undefined} /> : null}
-    {editing ? <IntegrationEditor key={editing.key} initial={editing.initial} active={active} close={done} /> : selected ? <IntegrationConnection key={selected.id} initial={selected} active={active} close={done} /> : <>
+    <>
       <section className="integration-panel" aria-label={copy("integrations.githubProfiles_e47e4e")} aria-busy={result.isFetching}>
         <header className="integration-panel-header"><div className="integration-provider"><span className="integration-provider-mark"><IntegrationIcon kind={IntegrationIconKind.GitHub} /></span><div><h3>{copy("integrations.github_f911e4")}</h3><p>{copy("integrations.githubComPersonalAccessTokens_03ef1a")}</p></div></div>
           {!showCategoryIntro ? <div className="actions"><button aria-label={copy("integrations.refreshGithubProfiles_c84a3b")} onClick={() => void result.refetch()}>{copy("integrations.refresh_0e9161")}</button>{createProfile}</div> : null}
@@ -188,6 +193,8 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
       </section>
       <p className="integration-storage-note"><IntegrationIcon kind={IntegrationIconKind.Shield} /><span>{tokenStorageNote()}</span></p>
       {!successfulEmpty ? <nav className="settings-pages" aria-label={copy("integrations.githubProfilePages_677951")}><button disabled={!page || result.isFetching} onClick={() => setPage("")}>{copy("integrations.firstPage_0bdbb7")}</button><button disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>{copy("integrations.nextPage_c08ac7")}</button></nav> : null}
-    </>}
+    </>
+    {editing ? <SettingsTaskDialog key={editing.key} title={editing.initial ? copy("integrations.renameGithubProfile_1f9dd2") : copy("integrations.newGithubProfile_e9e486")} size={SettingsDialogSize.Form} close={done}><IntegrationEditor initial={editing.initial} active={active} close={done} /></SettingsTaskDialog> : null}
+    {selected ? <SettingsTaskDialog key={selected.id} title={copy("integrations.manage_e9e199", { v0: resourceName(selected) })} size={SettingsDialogSize.Wide} close={done}><IntegrationConnection initial={selected} active={active} close={done} /></SettingsTaskDialog> : null}
   </section>;
 }

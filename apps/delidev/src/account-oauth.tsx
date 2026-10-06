@@ -1,4 +1,7 @@
 import { ownedMessage, resolveMessage, type OwnedMessage, copy, useLocale } from "./localization";
+// SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskActions } from "./settings-task";
+import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask } from "./settings-task-context";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -203,8 +206,10 @@ export type OpenRouterOAuthFlow = ReturnType<typeof useOpenRouterOAuth>;
 
 export function OpenRouterOAuth({ flow, back, manual, edit, manage, done }: { flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; edit: (account: Resource) => void; manage: (account: Resource) => void; done: () => void }) {
   useLocale();
+  const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
-  useEffect(() => { heading.current?.focus(); }, [view?.provider.providerId]);
+  useRetainSettingsTask(Boolean(view));
+  useEffect(() => { if (visible) heading.current?.focus(); }, [view?.provider.providerId, visible]);
   if (!view) return null;
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;
   const connected = view.stage === Stage.Connected && view.account;
@@ -217,10 +222,10 @@ export function OpenRouterOAuth({ flow, back, manual, edit, manage, done }: { fl
     <p>{copy("account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0")}</p>
     <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div>
     {view.problem ? <p role="alert">{resolveMessage(view.problem)}</p> : null}
-    {connected ? <div className="actions"><button onClick={() => leave(false, () => edit(connected))}>{copy("account-oauth.editAccount_ab6a16")}</button><button onClick={() => leave(false, () => manage(connected))}>{copy("account-oauth.manageAccount_ddb585")}</button><button onClick={() => leave(false, done)}>{copy("account-oauth.done_11a676")}</button></div> : <>
-      <div className="actions"><button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></div>
+    {connected ? <SettingsTaskActions><button onClick={() => leave(false, () => edit(connected))}>{copy("account-oauth.editAccount_ab6a16")}</button><button onClick={() => leave(false, () => manage(connected))}>{copy("account-oauth.manageAccount_ddb585")}</button><button onClick={() => leave(false, done)}>{copy("account-oauth.done_11a676")}</button></SettingsTaskActions> : <>
+      <SettingsTaskActions><button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button><button data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></SettingsTaskActions>
       <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>{copy("account-oauth.useAnApiKeyInstead_b728ab")}</button>
-      {view.problem ? <div className="actions"><button onClick={flow.observe} disabled={!view.attempt}>{copy("account-oauth.inspectOriginalAttempt_887b78")}</button>{!view.attempt ? <button onClick={flow.retryStart}>{copy("account-oauth.retryOriginalStart_eefc3a")}</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>{copy("account-oauth.recoverSavedResult_3cb5e6")}</button> : null}</div> : null}
+      {view.problem ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>{copy("account-oauth.inspectOriginalAttempt_887b78")}</button>{!view.attempt ? <button onClick={flow.retryStart}>{copy("account-oauth.retryOriginalStart_eefc3a")}</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>{copy("account-oauth.recoverSavedResult_3cb5e6")}</button> : null}</SettingsTaskActions> : null}
     </>}
     <footer><p>{copy("account-oauth.yourCredentialWillBeStoredSecurely_26be74")}</p><p>{copy("account-oauth.youCanValidateYourAccountAfter_70f97e")}</p></footer>
   </section>;

@@ -1,5 +1,7 @@
 {
   "subscription-accounts.manageSubscription_5ac1d0": "Manage subscription {{v0}}",
+  "subscription-accounts.connectSubscription": "Connect a subscription",
+  "subscription-accounts.manageSubscriptionTitle": "Manage subscription",
   "subscription-accounts.connected_229655": "Connected",
   "subscription-accounts.disconnected_04dfac": "Disconnected",
   "subscription-accounts.nativeLoginForThisServiceIs_09b215": "Native login for this service is unavailable in this server profile.",

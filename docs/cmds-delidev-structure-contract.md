@@ -1,5 +1,32 @@
 # DeliDev source ownership and compatibility
 
+## Agent Worker source-route reservations
+
+Issue #964 reserves System capability `AGENT_WORKER_SOURCE_ROUTES_V1 = 36`
+and `SaveAgentWorkerRequest.route_models = 5`, reusing the existing typed model
+selection. Capability 35 remains owned by known subscription models. Establish
+this closure on main before dependent implementation. Reservations do not change
+active schemas, generated bindings, resource documents, SQLite migrations or
+runtime support. The planned feature uses ordered same-source account groups
+with source-specific models under one Harness, confirmed-quota-only fallback at
+first execution, and automatic preference for observed recovered quota. Existing
+sessions retain their selected account/model and immutable attribution.
+
+
+
+## Known subscription model reservations
+
+Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
+and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
+advisory subscription catalog. The closed catalog-source enum reserves
+UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
+reserves native ID/display name/order/minimum harness version/retirement date
+fields 1–5. The request reserves subscription service field 1; the response
+reserves subscription service/models/catalog version/updated at/source fields 1–5.
+Establish these allocations on main before dependent implementation. Reservations
+grant no catalog retrieval, authentication, account entitlement, native discovery
+or execution capability. No database migration is introduced.
+
 ## Scope
 
 The 2026-09-30 structural change preserves the main implementation while preparing

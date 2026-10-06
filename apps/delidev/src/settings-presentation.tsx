@@ -1,13 +1,16 @@
-import { copy, useLocale  } from "./localization";
-import type { ReactNode } from "react";
+// SPDX-License-Identifier: Apache-2.0
+import { copy, useLocale } from "./localization";
+import { useContext, type ReactNode } from "react";
+import { SettingsTaskContext } from "./settings-task-context";
 import "./settings-presentation.css";
 
 // These helpers own markup only. Reads, eligibility, pagination, mutations and
 // visit lifetime remain with each category's existing controller.
 export function SettingsHeading({ title, description, scope = copy("settings-presentation.extra.93dbee418838"), actions }: { title: string; description?: string; scope?: string; actions?: ReactNode }) {
   useLocale();
+  const task = useContext(SettingsTaskContext);
   return <header className="settings-category-heading">
-    <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{title}</h1>{description ? <p>{description}</p> : null}{scope ? <p className="settings-scope">{scope}</p> : null}</div>
+    <div className="settings-category-title"><h1 hidden={Boolean(task)} aria-live="polite" aria-atomic="true">{title}</h1>{description ? <p>{description}</p> : null}{scope ? <p className="settings-scope">{scope}</p> : null}</div>
     {actions ? <div className="settings-toolbar">{actions}</div> : null}
   </header>;
 }

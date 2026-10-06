@@ -1,5 +1,7 @@
 import { formatDecimal, productError, ProductError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
-import { useState } from "react";
+import { useRetainSettingsTask, useCloseSettingsTask } from "./settings-task-context";
+import { SettingsTaskActions } from "./settings-task";
+import { useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { subscriptionServiceLabel, InputPricingMode, UsageQuery, newRequestId, type PricingVersion, type Resource, type TokenPricing } from "@delinoio/delidev-api-client";
 import { resourceName } from "./documents";
@@ -36,13 +38,14 @@ function priceInput(draft: Draft) {
 }
 function PricingEditor({ model, initial, modelRevision, current, readError, saved, cancel }: { model: Resource; initial?: PricingVersion; modelRevision: bigint; current?: { pricing?: PricingVersion; modelRevision: bigint }; readError?: unknown; saved: (value?: PricingVersion) => void; cancel: () => void }) {
   useLocale();
+  const taskFormId = useId();
   const [draft, setDraft] = useState(() => draftPrice(initial?.basis));
   const [problem, setProblem] = useProductMessage("");
   const mutation = useRetainedMutation(`pricing:${model.id}`, UsageQuery.setModelPricing, (value) => saved(value.pricing));
   const stale = current && (current.modelRevision !== modelRevision || current.pricing?.id !== initial?.id);
   const blocked = mutation.busy || mutation.uncertain;
   const change = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  return <form onSubmit={(event) => {
+  return <form id={`${taskFormId}-1`} onSubmit={(event) => {
     event.preventDefault(); if (blocked || stale || readError || !current) return;
     try { const basis = priceInput(draft); setProblem(""); void mutation.send({ mutation: { id: model.id, expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, expectedModelRevision: modelRevision, basis }); }
     catch (error) { setProblem(productError(error, "pricing.extra.6d92cc676144")); }
@@ -59,15 +62,16 @@ function PricingEditor({ model, initial, modelRevision, current, readError, save
     {draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? <p>{copy("pricing.inputCacheEstimatesRequireConsistentNative_33a2eb")}</p> : null}
     {stale ? <p role="alert">{copy("pricing.theModelOrPriceChangedElsewhere_c5c5d8")}</p> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={readError || mutation.error} />
-    <div className="actions"><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>{copy("pricing.savePricingVersion_5baab6")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("pricing.retryTheSamePrice_de1e7a")}</button> : null}<button type="button" disabled={blocked} onClick={cancel}>{copy("pricing.cancelPricingEdit_dc5004")}</button></div>
+    <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>{copy("pricing.savePricingVersion_5baab6")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("pricing.retryTheSamePrice_de1e7a")}</button> : null}<button type="button" data-settings-task-cancel disabled={blocked} onClick={cancel}>{copy("pricing.cancelPricingEdit_dc5004")}</button></SettingsTaskActions>
   </form>;
 }
 export function ModelPricing({ model, active, close }: { model: Resource; active: boolean; close: () => void }) {
-  useLocale();
+  const closeTask = useCloseSettingsTask(close);
   const current = useQuery(UsageQuery.getModelPricing, { modelId: model.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [editing, setEditing] = useState<{ initial?: PricingVersion; modelRevision: bigint }>();
   const [accepted, setAccepted] = useState<PricingVersion>();
   const [missingResult, setMissingResult] = useState(false);
+  useRetainSettingsTask(missingResult);
   const data = current.data;
   return <section><header><h3><LocalizedText id="pricing.tokenPricing_537ed0" components={{ s0: <>{resourceName(model)}</> }} /></h3><button disabled={current.isFetching} onClick={() => void current.refetch()}>{copy("pricing.refreshPricing_880e13")}</button></header>
     <p>{copy("pricing.enterASourceBackedEstimateBasis_fa3472")}</p>

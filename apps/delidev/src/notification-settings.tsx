@@ -1,5 +1,6 @@
 import { ownedMessage } from "./localization";
 import { copy, useLocale } from "./localization";
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize } from "./settings-task";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,6 +17,7 @@ enum FocusTarget { FirstCheckbox, Edit }
 
 function covered(node: HTMLElement) {
   return Boolean(node.closest("[hidden], [inert]")) || Array.from(document.querySelectorAll('dialog[open]:not([role="region"]), [role="dialog"]:not(dialog)')).some((dialog) => {
+    if (dialog.contains(node)) return false;
     const style = getComputedStyle(dialog);
     return !dialog.closest("[hidden], [inert]") && style.display !== "none" && style.visibility !== "hidden";
   });
@@ -82,9 +84,7 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
     onWorkflowReadyChange?.(Boolean(draft || mutation.busy || mutation.uncertain));
     return () => onWorkflowReadyChange?.(false);
   }, [draft, mutation.busy, mutation.uncertain, onWorkflowReadyChange]);
-  return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>{copy("notification-settings.notifications_788011")}</h1><p>{copy("notification-settings.chooseWhichUpdatesThisClientReceives_16bc3a")}</p><p className="notification-scope">{copy("notification-settings.forThisClientOnTheSelected_c0d140")}</p></div> : null}
-    <NativeNotificationSettings active={active} />
-    <form ref={form} className="notification-preferences" onSubmit={(event) => { event.preventDefault(); if (!draft || blocked || stale || current.error || current.isFetching) return; void mutation.send({ requestId: newRequestId(), preferences: draft }); }}>
+  const preferences = <form id={`${ids}-form`} ref={form} className="notification-preferences" onSubmit={(event) => { event.preventDefault(); if (!draft || blocked || stale || current.error || current.isFetching) return; void mutation.send({ requestId: newRequestId(), preferences: draft }); }}>
       <div className="notification-section-heading"><h2 id={`${ids}-preferences`}>{copy("notification-settings.notifyThisClientAbout_db8955")}</h2>{value && !draft ? <button ref={edit} type="button" disabled={blocked || Boolean(current.error) || current.isFetching} onClick={() => { focusIntent.current = FocusTarget.FirstCheckbox; setDraft({ ...value }); }}>{copy("notification-settings.editNotificationPreferences_b2aceb")}</button> : null}</div>
       <Problem error={current.error} /><Problem error={mutation.error} />
       {current.error && current.data?.preferences ? <p role="status">{copy("notification-settings.notificationPreferencesCouldNotBeRefreshed_4e5bdf")}</p> : null}
@@ -94,10 +94,13 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
       </fieldset>}
       {mutation.busy ? <p role="status">{copy("notification-settings.savingNotificationPreferences_e709d9")}</p> : null}
       {stale ? <p role="alert">{copy("notification-settings.thesePreferencesChangedElsewhereYourDraft_eb11d4")}</p> : null}
-      <div className="actions">{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>{copy("notification-settings.saveNotificationPreferences_c2c2b6")}</button><button type="button" disabled={blocked} onClick={finishEdit}>{copy("notification-settings.cancelNotificationEdit_d3de52")}</button></> : null}
+      <SettingsTaskActions form={`${ids}-form`}>{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>{copy("notification-settings.saveNotificationPreferences_c2c2b6")}</button><button type="button" data-settings-task-cancel disabled={blocked} onClick={finishEdit}>{copy("notification-settings.cancelNotificationEdit_d3de52")}</button></> : null}
         {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("notification-settings.retryTheSameNotificationPreferences_944448")}</button> : null}
-      </div>
-    </form>
+      </SettingsTaskActions>
+    </form>;
+  return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>{copy("notification-settings.notifications_788011")}</h1><p>{copy("notification-settings.chooseWhichUpdatesThisClientReceives_16bc3a")}</p><p className="notification-scope">{copy("notification-settings.forThisClientOnTheSelected_c0d140")}</p></div> : null}
+    <NativeNotificationSettings active={active} />
+    {draft ? <><section aria-label={copy("notification-settings.notifications_788011")}><h2>{copy("notification-settings.notifyThisClientAbout_db8955")}</h2><div className="notification-row"><div><p>{copy("notification-settings.questionsAndApprovalRequests_e6c1b4")}</p><p>{copy("notification-settings.whenASessionNeedsYourAnswer_b52af9")}</p></div><span className="notification-value">{current.data?.preferences?.interactions ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div><div className="notification-row"><div><p>{copy("notification-settings.executionCompletionFailureAndInterruption_275b47")}</p><p>{copy("notification-settings.whenAnExecutionSucceedsFailsOr_fae45f")}</p></div><span className="notification-value">{current.data?.preferences?.terminals ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div></section><SettingsTaskDialog title={copy("notification-settings.editNotificationPreferences_b2aceb")} size={SettingsDialogSize.Form} retained={blocked} close={finishEdit}>{preferences}</SettingsTaskDialog></> : preferences}
     <aside className="notification-inbox-guidance"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16l2 12v4H2v-4L4 4Zm-2 12h6l2 3h4l2-3h6" /></svg><div><p>{copy("notification-settings.inboxRequestsStayAvailableEvenWhen_09c08f")}</p><p>{copy("notification-settings.openingANotificationNeverMarksAn_4f219c")}</p></div></aside>
     <details className="notification-delivery"><summary>{copy("notification-settings.aboutNotificationDelivery_e8b4e9")}</summary><p>{copy("notification-settings.aSubmittedNotificationDoesNotProve_0edca6")}</p><p>{copy("notification-settings.readingAnInboxItemNeverAnswers_3d1331")}</p></details>
   </section>;

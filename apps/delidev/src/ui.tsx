@@ -1,5 +1,5 @@
 import { LocalizedText, copy, useLocale, type MessageKey } from "./localization";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type ComponentPropsWithRef } from "react";
 import { clientFailure, FailureCode, type ClientFailure } from "@delinoio/delidev-api-client";
 
 export function Problem({ error }: { error: unknown }) {
@@ -19,6 +19,10 @@ export function ServiceProblem({ code, children }: { code?: string; children: Re
   const key = normalized && Object.hasOwn(failureGuidance, normalized) ? failureGuidance[normalized as FailureCode] : "ui.failure.internal";
   return <div className="problem" role="alert"><p>{copy(key)}</p><details><summary>{copy("ui.technicalDetails")}</summary>{children}</details></div>;
 }
+// Shared native surface; presentation owners control opening and focus lifetime.
+export function DialogSurface(props: ComponentPropsWithRef<"dialog">) {
+  return <dialog {...props} onCancel={event => { event.preventDefault(); props.onCancel?.(event); }}>{props.children}</dialog>;
+}
 export function Modal({ title, close, children, visible = true }: { title: string; close: () => void; children: ReactNode; visible?: boolean }) {
   useLocale();
   const id = useId();
@@ -30,10 +34,10 @@ export function Modal({ title, close, children, visible = true }: { title: strin
     dialog.showModal();
     return () => { dialog.close(); if (opener?.isConnected) opener.focus(); };
   }, [visible]);
-  return <dialog ref={ref} aria-labelledby={id} onCancel={(event) => { event.preventDefault(); close(); }}>
+  return <DialogSurface ref={ref} aria-labelledby={id} onCancel={(event) => { event.preventDefault(); close(); }}>
     <header><h2 id={id}>{title}</h2><button onClick={close} aria-label={copy("ui.close_0fbe2a", { v0: title })}>{copy("ui.close_7d9eb7")}</button></header>
     {children}
-  </dialog>;
+  </DialogSurface>;
 }
 export function More({ available, busy, load }: { available: boolean; busy: boolean; load: () => void }) {
   useLocale();

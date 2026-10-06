@@ -1,5 +1,8 @@
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useRef } from "react";
+// SPDX-License-Identifier: Apache-2.0
+import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
+import { SettingsTaskActions } from "./settings-task";
+import { useEffect, useRef, useId } from "react";
 import { CodexDiagnosticPhase, FailureCode, isEntityId, type CodexDiagnostic } from "@delinoio/delidev-api-client";
 import "./subscription-onboarding.css";
 
@@ -40,16 +43,17 @@ export function subscriptionNameValid(name: string): boolean {
 // from an explicit Add event and supplies the original operation's progress.
 export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
   useLocale();
+  const taskFormId = useId(), visible = useSettingsTaskVisible(), leave = useCloseSettingsTask(props.leave), inTask = useInSettingsTask();
   const { stage, serviceName, active, busy } = props;
   const naming = stage === SubscriptionOnboardingStage.Naming;
   const nameInput = useRef<HTMLInputElement>(null);
   const focused = useRef(false);
   useEffect(() => {
-    if (active && naming && !busy && !focused.current && nameInput.current) {
+    if (visible && active && naming && !busy && !focused.current && nameInput.current) {
       focused.current = true;
       nameInput.current.focus({ preventScroll: true });
     }
-  }, [active, naming, busy]);
+  }, [active, naming, busy, visible]);
   const failed = serviceName === "ChatGPT" && [SubscriptionOnboardingStage.Unsupported, SubscriptionOnboardingStage.Failed, SubscriptionOnboardingStage.Recovery, SubscriptionOnboardingStage.Expired].includes(stage);
   const diagnostic = safeDiagnostic(props.diagnostic);
   const status = failed ? copy("subscription-onboarding.extra.626536114f6c") : {
@@ -63,8 +67,8 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
     [SubscriptionOnboardingStage.Failed]: copy("subscription-onboarding.extra.a8a3202b6aa5"),
   }[stage];
   return <section className="subscription-account-create subscription-onboarding" aria-label={copy("subscription-onboarding.addAccount_8403fa", { v0: serviceName })}>
-    <button type="button" className="subscription-onboarding-back" disabled={!active} onClick={props.leave}>{copy("subscription-onboarding.backToAiSubscription_224262")}</button>
-    <h2><LocalizedText id="subscription-onboarding.addAccount_2c24d0" components={{ s0: <>{serviceName}</> }} /></h2>
+    <button type="button" className="subscription-onboarding-back" disabled={!active} onClick={leave}>{copy("subscription-onboarding.backToAiSubscription_224262")}</button>
+    <h2 hidden={inTask}><LocalizedText id="subscription-onboarding.addAccount_2c24d0" components={{ s0: <>{serviceName}</> }} /></h2>
     <ol className="subscription-onboarding-steps" aria-label={copy("subscription-onboarding.accountSetupProgress_269e63")}>
       <li aria-current={!naming ? "step" : undefined}><LocalizedText id="subscription-onboarding.signIn_b011b4" components={{ s0: <>{naming ? <span aria-hidden="true">✓ </span> : null}</> }} /></li>
       <li aria-hidden="true">→</li>
@@ -86,17 +90,17 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
       {stage === SubscriptionOnboardingStage.Recovery ? <p>{copy("subscription-onboarding.theOriginalSignInResultRequires_136770")}</p> : null}
       <p>{copy("subscription-onboarding.checkConnectionDiagnosticsBeforeStartingAnother_3836fd")}</p>
     </div> : null}
-    {naming ? <form onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
+    {naming ? <form id={`${taskFormId}-1`} onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
       <label htmlFor="subscription-onboarding-name">{copy("subscription-onboarding.accountName_a704d8")}</label>
       <input id="subscription-onboarding-name" ref={nameInput} autoComplete="off" required value={props.name} disabled={!active || busy} onChange={(event) => props.changeName(event.target.value)} aria-describedby="subscription-onboarding-name-help" />
       <p id="subscription-onboarding-name-help">{props.suggested ? copy("subscription-onboarding.suggestedFromYourSignedInAccount_5ddc0f") : copy("subscription-onboarding.chooseANameForYourSigned_6ec79b")}</p>
-      <div className="actions"><button className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>{copy("subscription-onboarding.saveAccountName_7c6744")}</button><button type="button" disabled={!active} onClick={props.leave}>{copy("subscription-onboarding.later_73b6e4")}</button></div>
+      <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>{copy("subscription-onboarding.saveAccountName_7c6744")}</button><button type="button" disabled={!active} onClick={leave}>{copy("subscription-onboarding.later_73b6e4")}</button></SettingsTaskActions>
     </form> : <>
       {stage === SubscriptionOnboardingStage.Waiting && !props.problem ? <p>{copy("subscription-onboarding.yourBrowserHasOpenedForSign_7b9723")}</p> : null}
-      <div className="actions">
+      <SettingsTaskActions className="">
         {props.canReopen ? <button type="button" className="primary" disabled={!active || busy} onClick={props.reopen}>{copy("subscription-onboarding.openBrowserAgain_63833e")}</button> : null}
         {props.canCancel ? <button type="button" disabled={!active || busy} onClick={props.cancel}>{copy("subscription-onboarding.cancelLogin_8304c3")}</button> : null}
-      </div>
+      </SettingsTaskActions>
     </>}
     {props.problem && !failed ? <p role="alert">{props.problem}</p> : null}
     {(stage !== SubscriptionOnboardingStage.Unsupported || failed) ? <p className="subscription-onboarding-footer">{naming ? copy("subscription-onboarding.yourSignedInAccountIsKept_1d2f83") : copy("subscription-onboarding.leavingThisScreenKeepsTheAccount_e209d9")}</p> : null}

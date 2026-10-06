@@ -1,5 +1,8 @@
-import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
-import { useRef, useState } from "react";
+// SPDX-License-Identifier: Apache-2.0
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale } from "./localization";
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
+import { useSettingsTaskDismiss } from "./settings-task-context";
+import { useRef, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, NetworkQuery, ResourceQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text } from "./documents";
@@ -15,7 +18,7 @@ import { NativeRouteState, ProxyMode, ciphertextBase64, workerRecipient, workerR
 export function NetworkSettings({ active, machine = "", authority }: { active: boolean; machine?: string; authority?: PairingAuthority }) {
   useLocale();
   const [open, setOpen] = useState(false);
-  return <section aria-label={machine ? copy("network-settings.runnerDeviceNetwork_1f2f36") : copy("network-settings.serverNetwork_1122d2")}><button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? copy("network-settings.hideNetworkSettings_b1aa7f") : copy("network-settings.networkSettings_600f22")}</button>{open ? <NetworkWorkspace active={active} machine={machine} authority={authority} /> : null}</section>;
+  return <section aria-label={machine ? copy("network-settings.runnerDeviceNetwork_1f2f36") : copy("network-settings.serverNetwork_1122d2")}><button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? copy("network-settings.hideNetworkSettings_b1aa7f") : copy("network-settings.networkSettings_600f22")}</button>{open ? <SettingsTaskDialog title={machine ? copy("network-settings.runnerDeviceNetwork_1f2f36") : copy("network-settings.serverNetwork_1122d2")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={() => setOpen(false)}><NetworkWorkspace active={active} machine={machine} authority={authority} /></SettingsTaskDialog> : null}</section>;
 }
 function NetworkWorkspace({ active, machine, authority }: { active: boolean; machine: string; authority?: PairingAuthority }) {
   useLocale();
@@ -53,9 +56,9 @@ function NetworkWorkspace({ active, machine, authority }: { active: boolean; mac
       </form>
       <button type="button" disabled={pending} onClick={() => setDraft("new")}>{copy("network-settings.newNetworkProfile_100d40")}</button>
       {rows.map(row => <article className="result" key={row.id}><h4>{resourceName(row)}</h4><p><LocalizedText id="network-settings.revision_5209bc" components={{ s0: <>{text(document(row).mode)}</>, s1: <>{row.revision.toString()}</>, s2: <>{text(document(row).credential_generation) ? copy("network-settings.protectedCredentialConfigured_cf2bda") : ""}</> }} /></p><button disabled={pending} onClick={() => setDraft(row)}>{copy("network-settings.editProfile_15c4aa")}</button><button disabled={pending || text(currentData.profile_id) === row.id} onClick={() => setDeleting(row)}>{copy("network-settings.deleteProfile_47311a")}</button></article>)}
-      {deleting ? <section aria-label={copy("network-settings.confirmNetworkProfileDeletion_ef7d43")}><p><LocalizedText id="network-settings.deleteAtRevisionProfilesSelectedBy_d3d3f3" components={{ s0: <>{resourceName(deleting)}</>, s1: <>{deleting.revision.toString()}</> }} /></p><button disabled={pending} onClick={() => void remove.send({ mutation: { requestId: newRequestId(), id: deleting.id, expectedRevision: deleting.revision } })}>{copy("network-settings.confirmProfileDeletion_079ac8")}</button><button disabled={pending} onClick={() => setDeleting(undefined)}>{copy("network-settings.keepProfile_8e76f0")}</button></section> : null}
+      {deleting ? <SettingsTaskDialog title={copy("network-settings.deleteProfile_47311a")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setDeleting(undefined)}><section aria-label={copy("network-settings.confirmNetworkProfileDeletion_ef7d43")}><p><LocalizedText id="network-settings.deleteAtRevisionProfilesSelectedBy_d3d3f3" components={{ s0: <>{resourceName(deleting)}</>, s1: <>{deleting.revision.toString()}</> }} /></p><SettingsTaskActions><button disabled={pending} onClick={() => void remove.send({ mutation: { requestId: newRequestId(), id: deleting.id, expectedRevision: deleting.revision } })}>{copy("network-settings.confirmProfileDeletion_079ac8")}</button><button data-settings-task-cancel disabled={pending} onClick={() => setDeleting(undefined)}>{copy("network-settings.keepProfile_8e76f0")}</button></SettingsTaskActions></section></SettingsTaskDialog> : null}
       <nav aria-label={copy("network-settings.networkProfilePages_752e3c")}><button disabled={!page || profiles.isFetching} onClick={() => { setPage(""); setSelected(""); }}>{copy("network-settings.firstPage_0bdbb7")}</button><button disabled={!profiles.data?.nextPageToken || profiles.isFetching} onClick={() => { setPage(profiles.data!.nextPageToken); setSelected(""); }}>{copy("network-settings.nextPage_c08ac7")}</button></nav>
-      {draft ? <ProfileEditor key={draft === "new" ? "new" : draft.id} initial={draft === "new" ? undefined : draft} saved={() => { setDraft(undefined); changed(); }} close={() => setDraft(undefined)} /> : null}
+      {draft ? <SettingsTaskDialog key={draft === "new" ? "new" : draft.id} title={draft === "new" ? copy("network-settings.newNetworkProfile_100d40") : copy("network-settings.editNetworkProfile_14453e")} size={SettingsDialogSize.Form} close={() => setDraft(undefined)}><ProfileEditor initial={draft === "new" ? undefined : draft} saved={() => { setDraft(undefined); changed(); }} close={() => setDraft(undefined)} /></SettingsTaskDialog> : null}
       <button disabled={profiles.isFetching || route.isFetching || observation.isFetching} onClick={changed}>{copy("network-settings.refreshRouting_8a54e5")}</button>
       {select.uncertain ? <button disabled={select.busy} onClick={select.retry}>{copy("network-settings.retryOriginalRouteSelection_3cdea3")}</button> : null}{remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>{copy("network-settings.retryOriginalProfileDeletion_861363")}</button> : null}
       {authority && bootstrap ? <EncryptedWorkerExport active={active} authority={authority} machine={machine} profiles={rows} /> : null}
@@ -65,6 +68,7 @@ function NetworkWorkspace({ active, machine, authority }: { active: boolean; mac
 }
 function ProfileEditor({ initial, saved, close }: { initial?: Resource; saved: () => void; close: () => void }) {
   useLocale();
+  const formId = useId();
   const data = document(initial);
   const [name, setName] = useState(text(data.name)), [mode, setMode] = useState((data.mode ?? ProxyMode.Direct) as ProxyMode);
   const [host, setHost] = useState(text(data.host)), [port, setPort] = useState(String(data.port ?? ""));
@@ -72,7 +76,8 @@ function ProfileEditor({ initial, saved, close }: { initial?: Resource; saved: (
   const [username, setUsername] = useState(""), [password, setPassword] = useState(""), [clear, setClear] = useState(false);
   const save = useRetainedMutation(`network-save:${initial?.id ?? "new"}`, NetworkQuery.saveNetworkProfile, () => { setUsername(""); setPassword(""); saved(); });
   const pending = save.busy || save.uncertain;
-  return <form aria-label={copy("network-settings.networkProfileEditor_838f1e")} onSubmit={event => { event.preventDefault(); if (pending) return; const definition = { name, mode, ...(mode === ProxyMode.Direct ? {} : { host, port: Number(port), bypass: bypasses.map(row => ({ host: row.host, ...(row.port ? { port: Number(row.port) } : {}) })) }) }; void save.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(definition), ...(mode !== ProxyMode.Direct && (username || password) ? { credentialJson: encode({ username, password }) } : {}), clearCredential: mode !== ProxyMode.Direct && clear }); }}>
+  useSettingsTaskDismiss(() => { setUsername(""); setPassword(""); });
+  return <form id={formId} aria-label={copy("network-settings.networkProfileEditor_838f1e")} onSubmit={event => { event.preventDefault(); if (pending) return; const definition = { name, mode, ...(mode === ProxyMode.Direct ? {} : { host, port: Number(port), bypass: bypasses.map(row => ({ host: row.host, ...(row.port ? { port: Number(row.port) } : {}) })) }) }; void save.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(definition), ...(mode !== ProxyMode.Direct && (username || password) ? { credentialJson: encode({ username, password }) } : {}), clearCredential: mode !== ProxyMode.Direct && clear }); }}>
     <h4>{initial ? copy("network-settings.editNetworkProfile_14453e") : copy("network-settings.newNetworkProfile_100d40")}</h4><fieldset disabled={pending}>
       <label>{copy("network-settings.profileName_d36632")}<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} /></label>
       <label>{copy("network-settings.connectionMode_72c094")}<select value={mode} onChange={event => setMode(event.target.value as ProxyMode)}>{Object.values(ProxyMode).map(value => <option key={value} value={value}>{value}</option>)}</select></label>
@@ -82,7 +87,7 @@ function ProfileEditor({ initial, saved, close }: { initial?: Resource; saved: (
         <p>{copy("network-settings.blankCredentialsPreserveAnExistingCredential_1227b5")}</p>
         <label>{copy("network-settings.proxyUsername_4d4135")}<input autoComplete="off" maxLength={255} value={username} disabled={clear} onChange={event => setUsername(event.target.value)} /></label><label>{copy("network-settings.proxyPassword_3978a1")}<input type="password" autoComplete="new-password" maxLength={255} value={password} disabled={clear} onChange={event => setPassword(event.target.value)} /></label><label><input type="checkbox" checked={clear} onChange={event => { setClear(event.target.checked); if (event.target.checked) { setUsername(""); setPassword(""); } }} />{copy("network-settings.clearProtectedCredentialAssociation_dc20a8")}</label>
       </> : null}
-      <button type="submit">{copy("network-settings.saveProfile_0c8209")}</button><button type="button" onClick={close}>{copy("network-settings.cancelProfileEdit_389c37")}</button>
+      <SettingsTaskActions form={formId}><button type="button" data-settings-task-cancel disabled={pending} onClick={close}>{copy("network-settings.cancelProfileEdit_389c37")}</button><button type="submit" className="primary" disabled={pending}>{copy("network-settings.saveProfile_0c8209")}</button></SettingsTaskActions>
     </fieldset><Problem error={save.error} />{save.uncertain ? <><p role="status">{copy("network-settings.theSaveOutcomeIsUnknownKeep_27ff5b")}</p><button disabled={save.busy} onClick={save.retry}>{copy("network-settings.retryOriginalProfileSave_5f117b")}</button></> : null}
   </form>;
 }

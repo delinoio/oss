@@ -1,4 +1,5 @@
 import { LocalizedText, copy, displayLocale, formatNumber, formatTimestamp, useLocale } from "./localization";
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
 import { SettingsHeading } from "./settings-presentation";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -74,6 +75,7 @@ export function Backups({ active }: { active: boolean }) {
     }
   }, [selected]);
   const [created, setCreated] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<InspectBackupResponse>();
   const [creationPage, setCreationPage] = useState("");
   const creations = useQuery(SystemQuery.listBackupCreations, { pageSize: 20, pageToken: creationPage }, { enabled: active, retry: false, refetchInterval: active ? 2000 : false });
@@ -89,7 +91,7 @@ export function Backups({ active }: { active: boolean }) {
   const checked = inspection.data?.backup?.id === selected && !inspection.error && !inspection.isFetching ? inspection.data : undefined;
   const confirm = active && checked !== undefined && confirmation === checked;
   useEffect(() => {
-    if (!active || inspection.isFetching || (confirmation !== undefined && confirmation !== inspection.data)) setConfirmation(undefined);
+    if (!active || inspection.isFetching || (confirmation !== undefined && confirmation !== inspection.data)) { setConfirmation(undefined); if (inspection.isFetching) setDeleteOpen(false); }
   }, [active, inspection.data, inspection.isFetching, confirmation]);
   return <section className="backups-settings" aria-label={copy("backups.managedDatabaseBackups_322e74")}>
     <SettingsHeading title={copy("backups.backups_3334fe")} description={copy("backups.manageDatabaseBackupsAndFollowBackup_8b4b4f")} actions={<>
@@ -127,7 +129,7 @@ export function Backups({ active }: { active: boolean }) {
         {!hidePager(page, inventory.data?.backups.length, inventory.data?.nextPageToken, inventory.error) ? <nav className="backups-actions" aria-label={copy("backups.backupPages_ca0a4a")}><button disabled={!active || !page || inventory.isFetching} onClick={() => setPage("")}>{copy("backups.firstBackupPage_b83ba3")}</button><button disabled={!active || !inventory.data?.nextPageToken || inventory.isFetching || Boolean(inventory.error)} onClick={() => setPage(inventory.data!.nextPageToken)}>{copy("backups.nextBackupPage_7b7dfe")}</button></nav> : null}
       </footer>
     </section>
-    {selected ? <section className="backups-panel backups-inspection" aria-label={copy("backups.backupIntegrityInspection_6b0728")}>
+    {selected ? <SettingsTaskDialog key={selected} title={copy("backups.backupIntegrityInspection_6b0728")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} retained={remove.busy || remove.uncertain} onDismiss={() => { setConfirmation(undefined); setDeleteOpen(false); }} close={() => { setSelected(""); setConfirmation(undefined); setDeleteOpen(false); }}><section className="backups-panel backups-inspection" aria-label={copy("backups.backupIntegrityInspection_6b0728")}>
       <h2 ref={inspectionHeading} tabIndex={-1}><LocalizedText id="backups.inspection_39c73e" components={{ s0: <>{selected}</> }} /></h2>
       <Problem error={inspection.error} />
       {inspection.isFetching ? <p role="status">{copy("backups.checkingTheSelectedBackup_ca89e6")}</p> : null}
@@ -135,12 +137,14 @@ export function Backups({ active }: { active: boolean }) {
         <p role="status">{copy("backups.databaseIntegrityAndOriginalServerIdentity_26b0d4")}</p>
         <dl><div><dt>{copy("backups.backupId_8c6f39")}</dt><dd><code>{checked.backup!.id}</code></dd></div><div><dt>{copy("backups.modifiedUtc_d81af6")}</dt><dd><time dateTime={checked.backup!.modifiedAt}>{formatTimestamp(checked.backup!.modifiedAt)}</time></dd></div><div><dt>{copy("backups.size_1af851")}</dt><dd><LocalizedText id="backups.bytes_e17732" components={{ s0: <>{formatNumber(checked.backup!.sizeBytes)}</> }} /></dd></div><div><dt>{copy("backups.schema_07b091")}</dt><dd>{checked.schemaVersion}</dd></div><div><dt>{copy("backups.sha256_bbd07c")}</dt><dd><code>{checked.sha256}</code></dd></div></dl>
         <p>{copy("backups.thisObservationDoesNotRestoreData_2a506c")}</p>
-        <fieldset className="backups-deletion"><legend>{copy("backups.permanentBackupDeletion_7640fe")}</legend><p>{copy("backups.theSelectedImageWillBeDeleted_214572")}</p><label><input type="checkbox" checked={confirm} disabled={remove.busy || remove.uncertain} onChange={event => setConfirmation(event.target.checked ? checked : undefined)} /><LocalizedText id="backups.iConfirmPermanentDeletionOfBackup_6eefd3" components={{ s0: <>{selected}</> }} /></label><button className="backups-destructive" disabled={!active || !confirm || remove.busy || remove.uncertain || trackedDeletions.length >= maxTrackedJobs} onClick={() => { void remove.send({ requestId: newRequestId(), backup: checked.backup!, sha256: checked.sha256 }); }}>{copy("backups.permanentlyDeleteSelectedBackup_6bc00c")}</button></fieldset>
+        <button type="button" className="backups-destructive" onClick={() => setDeleteOpen(true)}>{copy("backups.deleteSelectedBackup_4ad7f5")}</button>
+        {deleteOpen ? <SettingsTaskDialog title={copy("backups.permanentBackupDeletion_7640fe")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => { setDeleteOpen(false); setConfirmation(undefined); }}><fieldset className="backups-deletion"><legend>{copy("backups.permanentBackupDeletion_7640fe")}</legend><p>{copy("backups.theSelectedImageWillBeDeleted_214572")}</p><label><input type="checkbox" checked={confirm} disabled={remove.busy || remove.uncertain} onChange={event => setConfirmation(event.target.checked ? checked : undefined)} /><LocalizedText id="backups.iConfirmPermanentDeletionOfBackup_6eefd3" components={{ s0: <>{selected}</> }} /></label><Problem error={remove.error} /><SettingsTaskActions><button className="backups-destructive" disabled={!active || !confirm || remove.busy || remove.uncertain || trackedDeletions.length >= maxTrackedJobs} onClick={() => { void remove.send({ requestId: newRequestId(), backup: checked.backup!, sha256: checked.sha256 }); }}>{copy("backups.permanentlyDeleteSelectedBackup_6bc00c")}</button><button type="button" data-settings-task-cancel onClick={() => { setDeleteOpen(false); setConfirmation(undefined); }}>{copy("backups.keepBackup_1210fc")}</button>{remove.uncertain ? <button disabled={!active || remove.busy} onClick={remove.retry}>{copy("backups.retryTheSameBackupDeletion_0f7462")}</button> : null}</SettingsTaskActions></fieldset></SettingsTaskDialog> : null}
       </> : null}
-      <div className="backups-actions"><button disabled={!active || inspection.isFetching} onClick={() => { setConfirmation(undefined); void inspection.refetch(); }}>{copy("backups.recheckSelectedBackup_2db613")}</button><button onClick={() => { returnInspectionFocus.current = true; setSelected(""); setConfirmation(undefined); }}>{copy("backups.closeBackupInspection_acadd7")}</button></div>
-    </section> : null}
-    <Problem error={remove.error} />
-    {remove.uncertain ? <button disabled={!active || remove.busy} onClick={remove.retry}>{copy("backups.retryTheSameBackupDeletion_0f7462")}</button> : null}
+      <SettingsTaskActions className="backups-actions"><button disabled={!active || inspection.isFetching} onClick={() => { setConfirmation(undefined); void inspection.refetch(); }}>{copy("backups.recheckSelectedBackup_2db613")}</button><button data-settings-task-cancel disabled={remove.busy || remove.uncertain} onClick={() => { returnInspectionFocus.current = true; setSelected(""); setConfirmation(undefined); }}>{copy("backups.closeBackupInspection_acadd7")}</button></SettingsTaskActions>
+      <Problem error={remove.error} />{remove.uncertain ? <button disabled={!active || remove.busy} onClick={remove.retry}>{copy("backups.retryTheSameBackupDeletion_0f7462")}</button> : null}
+    </section></SettingsTaskDialog> : null}
+    {!selected ? <Problem error={remove.error} /> : null}
+    {!selected && remove.uncertain ? <button disabled={!active || remove.busy} onClick={remove.retry}>{copy("backups.retryTheSameBackupDeletion_0f7462")}</button> : null}
     {trackedCreations.length || trackedDeletions.length ? <section className="backups-panel backups-accepted" aria-label={copy("backups.acceptedBackupOperations_aab6f8")}><h2>{copy("backups.acceptedOperations_bc91ab")}</h2><p>{copy("backups.theseJobsAreObservedDirectlyIndependently_2dfe12")}</p>
       {trackedCreations.map(job => <BackupJob key={job.id} kind={BackupJobKind.Creation} accepted={job} active={active} completed={refresh} dismiss={() => setTrackedCreations(current => current.filter(item => item.id !== job.id))} />)}
       {trackedDeletions.map(job => <BackupJob key={job.id} kind={BackupJobKind.Deletion} accepted={job} active={active} completed={refresh} dismiss={() => setTrackedDeletions(current => current.filter(item => item.id !== job.id))} />)}
