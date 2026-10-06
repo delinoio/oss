@@ -83,8 +83,11 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 			if p.Authentication == domain.KeylessAuth {
 				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_KEYLESS
 			}
-			if p.PresetID != nil && *p.PresetID == domain.PresetOpenRouter && p.EnabledValue() && p.Endpoint == "https://openrouter.ai/api/v1" && p.Protocol == domain.OpenAIChat && p.Authentication == domain.BearerAuth {
+			if profile, e := s.oauthProfile(p); e == nil {
 				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_PKCE
+				if profile.preset != domain.PresetOpenRouter {
+					message.Capabilities = append(message.Capabilities, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1)
+				}
 			}
 			wire.Provider = rpc.Resource(*entry.Provider)
 		} else if entry.PresetID != nil {
