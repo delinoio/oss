@@ -49,6 +49,7 @@ const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 let language = "en";
 const messages = new Map();
 for (const file of await readdir(join(app, "src/locales/en"))) {
@@ -173,6 +174,39 @@ try {
     await form.getByRole("button", { name: "Cancel", exact: true }).click();
     hiddenChoicesChecked++;
   };
+  if (githubOnly) {
+    let onboardingChecks = 0;
+    for (const [width, height] of [[1440, 900], [960, 640], [640, 480]]) {
+      await page.setViewportSize({ width, height }); await page.emulateMedia({ colorScheme: "light" });
+      await page.goto(`${origin}/?theme=light&github-onboarding=true`);
+      await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Git Profiles");
+      await page.getByRole("button", { name: "New GitHub profile", exact: true }).click();
+      const token = page.getByLabel("GitHub personal access token", { exact: true }); await token.waitFor();
+      assert(await token.evaluate(node => node === document.activeElement), "Password initial focus");
+      assert(await page.locator(".integration-draft-guidance").evaluate(node => node.open), "Initial token-form disclosure");
+      const check = async stage => {
+        assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `Onboarding ${stage} ${width} overflow`);
+        assert(await page.locator(".integration-onboarding form").evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().width <= 720.5)), `Onboarding ${stage} form cap`);
+        if (screenshotDirectory) await page.screenshot({ path: join(screenshotDirectory, `github-${stage}-${width}x${height}.png`) });
+        onboardingChecks++;
+      };
+      await check("token");
+      await token.pressSequentially("fixture-pat"); await page.keyboard.press("Tab");
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Verify token");
+      await page.keyboard.press("Enter");
+      const name = page.getByLabel("Profile name", { exact: true }); await name.waitFor();
+      assert(await name.evaluate(node => node === document.activeElement && node.value === "fixture-user"), "Verified name focus and prefill");
+      assert.equal(await page.getByLabel("Resource owner", { exact: true }).inputValue(), "", "Never infer resource owner");
+      assert(await page.getByRole("button", { name: "Save and connect", exact: true }).isDisabled(), "Explicit fine-grained owner required");
+      await check("confirm");
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      assert.equal(await token.inputValue(), "", "Back clears token");
+      assert(await token.evaluate(node => node === document.activeElement), "Back restores password focus");
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      assert(await page.getByRole("button", { name: "New GitHub profile", exact: true }).evaluate(node => node === document.activeElement), "Cancel restores opener focus");
+    }
+    console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: 0, childFormChecks: 0, harnessChecks: 0, hiddenAccountChoiceChecks: 0, languages: 1, themes: 1, inventories: 1, viewports: 3, effectiveZoomChecks: 0, primarySurfaceChecks: 0, keyboardChecks: 0, onboardingChecks, nativeAcceptance: "not-performed", githubAccountAcceptance: "not-performed" }));
+  } else {
   for (language of ["en", "ko"]) for (const theme of ["light", "dark", "system"]) for (const populated of [false, true]) for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport[0], height: viewport[1] });
     await page.emulateMedia({ colorScheme: theme === "system" ? "dark" : theme });
@@ -364,6 +398,7 @@ try {
     await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Projects");
     await page.getByRole("button", { name: /^Edit Example PROJECT/ }).click(); await page.getByRole("dialog").waitFor();
     await page.screenshot({ path: screenshotPath });
+  }
   }
   console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length * 2, primarySurfaceChecks: 16, keyboardChecks, nativeAcceptance: "not-performed" }));
 } finally {
