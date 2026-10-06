@@ -573,17 +573,7 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
     let Ok(mounts) = fs::read_to_string("/proc/self/mountinfo") else {
         return Phase::Failed;
     };
-    if mounts.len() > 1 << 20
-        || !mounts.lines().any(|line| {
-            let fields: Vec<_> = line.split_whitespace().collect();
-            fields.get(4).is_some_and(|v| Path::new(v) == dir)
-                && line.split(" - ").nth(1).is_some_and(|v| {
-                    v.split_whitespace()
-                        .nth(1)
-                        .is_some_and(|v| Path::new(v) == image)
-                })
-        })
-    {
+    if !appimage_mount_matches(&mounts, &dir, &image, &exe) {
         return Phase::Failed;
     }
     let Some(parent) = image.parent() else {
@@ -624,11 +614,202 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
     Phase::Installed
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn decode_mountinfo_path(field: &str) -> Option<PathBuf> {
+    let mut decoded = Vec::with_capacity(field.len());
+    let mut bytes = field.bytes();
+    while let Some(byte) = bytes.next() {
+        // Linux seq_path_root/seq_escape encode these characters as octal;
+        // mount sources also escape '#'. Decode once so a literal "\\040"
+        // remains distinct from a space. Reject every other escape.
+        let byte = if byte == b'\\' {
+            match [bytes.next()?, bytes.next()?, bytes.next()?] {
+                [b'0', b'4', b'0'] => b' ',
+                [b'0', b'1', b'1'] => b'\t',
+                [b'0', b'1', b'2'] => b'\n',
+                [b'1', b'3', b'4'] => b'\\',
+                [b'0', b'4', b'3'] => b'#',
+                _ => return None,
+            }
+        } else if byte == 0 {
+            return None;
+        } else {
+            byte
+        };
+        decoded.push(byte);
+    }
+    Some(PathBuf::from(String::from_utf8(decoded).ok()?))
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn appimage_mount_matches(mounts: &str, dir: &Path, image: &Path, exe: &Path) -> bool {
+    if mounts.len() > 1 << 20 || !image.is_absolute() || !dir.is_absolute() || !exe.starts_with(dir)
+    {
+        return false;
+    }
+    mounts.lines().any(|line| {
+        let Some((mount, source)) = line.split_once(" - ") else {
+            return false;
+        };
+        mount
+            .split_ascii_whitespace()
+            .nth(4)
+            .and_then(decode_mountinfo_path)
+            .is_some_and(|path| path == dir)
+            && source
+                .split_ascii_whitespace()
+                .nth(1)
+                .and_then(decode_mountinfo_path)
+                .is_some_and(|path| path == image)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
+
+    #[test]
+    fn mountinfo_decodes_kernel_path_escapes_once() {
+        for (encoded, decoded) in [
+            ("/home/user/DeliDev.AppImage", "/home/user/DeliDev.AppImage"),
+            (
+                r"/home/user/My\040Apps/DeliDev.AppImage",
+                "/home/user/My Apps/DeliDev.AppImage",
+            ),
+            (
+                r"/tmp/tab\011line\012slash\134hash\043",
+                "/tmp/tab\tline\nslash\\hash#",
+            ),
+            (r"/tmp/literal\134040", r"/tmp/literal\040"),
+            (
+                "/home/Caf\u{e9}/DeliDev.AppImage",
+                "/home/Caf\u{e9}/DeliDev.AppImage",
+            ),
+        ] {
+            assert_eq!(decode_mountinfo_path(encoded), Some(PathBuf::from(decoded)));
+        }
+    }
+
+    #[test]
+    fn mountinfo_rejects_malformed_or_non_kernel_escapes() {
+        for field in [
+            "/tmp/trailing\\",
+            r"/tmp/\0",
+            r"/tmp/\04",
+            r"/tmp/\08x",
+            r"/tmp/\400",
+            r"/tmp/\777",
+            r"/tmp/\000",
+            r"/tmp/\141",
+            r"/tmp/\x20",
+            "/tmp/nul\0",
+        ] {
+            assert!(decode_mountinfo_path(field).is_none());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn appimage_mount_matches_decoded_mount_and_source_in_the_same_record() {
+        for (mount, source, dir, image) in [
+            (
+                "/tmp/.mount_DeliDev",
+                "/home/user/DeliDev.AppImage",
+                "/tmp/.mount_DeliDev",
+                "/home/user/DeliDev.AppImage",
+            ),
+            (
+                "/tmp/.mount_DeliDev",
+                r"/home/user/My\040Apps/DeliDev.AppImage",
+                "/tmp/.mount_DeliDev",
+                "/home/user/My Apps/DeliDev.AppImage",
+            ),
+            (
+                r"/tmp/mount\040with\011tab\012line\134slash",
+                r"/home/user/tab\011line\012slash\134hash\043.AppImage",
+                "/tmp/mount with\ttab\nline\\slash",
+                "/home/user/tab\tline\nslash\\hash#.AppImage",
+            ),
+            (
+                r"/tmp/literal\134040",
+                r"/home/user/literal\134040.AppImage",
+                r"/tmp/literal\040",
+                r"/home/user/literal\040.AppImage",
+            ),
+        ] {
+            let mounts =
+                format!("36 35 0:42 / {mount} ro shared:7 unknown:1 - fuse.AppImage {source} ro\n");
+            let dir = Path::new(dir);
+            let image = Path::new(image);
+            let exe = dir.join("usr/bin/delidev-desktop");
+            assert!(appimage_mount_matches(&mounts, dir, image, &exe));
+            assert!(!appimage_mount_matches(
+                &mounts,
+                Path::new("/tmp/other"),
+                image,
+                &exe
+            ));
+            assert!(!appimage_mount_matches(
+                &mounts,
+                dir,
+                Path::new("/home/user/other.AppImage"),
+                &exe
+            ));
+            assert!(!appimage_mount_matches(
+                &mounts,
+                dir,
+                image,
+                Path::new("/tmp/other/usr/bin/delidev-desktop")
+            ));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn appimage_mount_rejects_invalid_inventory_and_unrelated_authority() {
+        let dir = Path::new("/tmp/.mount_DeliDev");
+        let image = Path::new("/home/user/My Apps/DeliDev.AppImage");
+        let exe = dir.join("usr/bin/delidev-desktop");
+        for mounts in [
+            "",
+            "36 35 0:42 / /tmp/.mount_DeliDev ro fuse.AppImage \
+             /home/user/My\\040Apps/DeliDev.AppImage ro",
+            "36 35 0:42 / /tmp/.mount_DeliDev ro - fuse.AppImage",
+            "36 35 0:42 / /tmp/.mount_DeliDev\\04 ro - fuse.AppImage \
+             /home/user/My\\040Apps/DeliDev.AppImage ro",
+            "36 35 0:42 / /tmp/.mount_DeliDev ro - fuse.AppImage \
+             /home/user/My\\04Apps/DeliDev.AppImage ro",
+            "36 35 0:42 / /tmp/.mount_DeliDev ro - fuse.AppImage /home/user/other.AppImage ro\n37 \
+             35 0:43 / /tmp/other ro - fuse.AppImage /home/user/My\\040Apps/DeliDev.AppImage ro",
+        ] {
+            assert!(!appimage_mount_matches(mounts, dir, image, &exe));
+        }
+        let mounts = "36 35 0:42 / /tmp/.mount_DeliDev ro - fuse.AppImage \
+                      /home/user/My\\040Apps/DeliDev.AppImage ro\n";
+        assert!(!appimage_mount_matches(
+            mounts,
+            dir,
+            image,
+            Path::new("/tmp/.mount_DeliDev-other/delidev-desktop")
+        ));
+        assert!(!appimage_mount_matches(
+            mounts,
+            Path::new("tmp/.mount_DeliDev"),
+            image,
+            &exe
+        ));
+        assert!(!appimage_mount_matches(
+            mounts,
+            dir,
+            Path::new("DeliDev.AppImage"),
+            &exe
+        ));
+        let oversized = format!("{mounts}{}", " ".repeat(1 << 20));
+        assert!(!appimage_mount_matches(&oversized, dir, image, &exe));
+    }
+
     #[test]
     fn descriptor_cannot_select_paths_or_another_authority() {
         let root = Path::new("/private/product");

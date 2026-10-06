@@ -26,6 +26,11 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 
 ## Domain Contract Documents
 - [Desktop English/Korean localization](apps-delidev-localization-contract.md)
+Issue #1410 keeps [widget persistence](apps-delidev-widget-contract.md) on an ordered,
+joined worker and all Quit task joins off the native UI loop. The desktop retains
+one Quit operation and final-stale ordering independently of sidecar ownership;
+controlled writer fixtures remain separate from packaged native/platform acceptance.
+
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
@@ -196,6 +201,7 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 
 
 - Signed updates use independent System 28/Worker 17 admission, original device/generation receipts, joined idle replacement and retained old binaries. Desktop install requires original trusted-window confirmation and preserves live server/harness lifetimes. System 29 SSH setup pins exact host identity and the server-compatible signed Worker release, with protected credentials and original remote operation inspection. An unset production public-root declaration blocks real signing/downloads; fixture/build evidence remains separate from production account/platform acceptance. See the [updates](cmds-delidev-updates-contract.md) and [SSH setup](cmds-delidev-ssh-setup-contract.md) contracts.
+  Linux desktop installation decodes bounded kernel mountinfo path escapes once before exact APPDIR/APPIMAGE correlation, while retaining mounted-executable, absolute-path, regular-file and symlink safeguards under the updates and desktop contracts.
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 

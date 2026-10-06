@@ -6,6 +6,8 @@ Issue #1090 adds the initial read-only macOS WidgetKit extension under
 `apps/delidev/macos-widget`, the desktop's `widget_host` presentation adapter,
 and native preparation/verification scripts. Other OS widgets, production
 signing/publication and continuous background-refresh guarantees are excluded.
+Issue #1410 moves persistence and shutdown joins off the native UI loop without
+changing widget refresh scheduling or the protected Swift storage format.
 
 ## Runtime and Language
 
@@ -39,8 +41,28 @@ choose a profile, directory or file. Local product windows are excluded. Within 
 window for a saved profile publishes that profile's Widget snapshot. Closing it
 hands publication to the next ready window without creating another record,
 changing profile identity or manufacturing a refresh timestamp. Tray publication
-remains independent for every window; its existing serialized publication lock
-also prevents an old writer from overwriting a newer writer's snapshot.
+remains independent for every window. A process-owned FIFO persistence worker
+orders snapshots and removals independently of tray rendering. The tray lock
+orders admission only; no tray, binding, registry or queue lock spans persistence.
+Before each queued snapshot reaches storage, recheck its original window instance,
+presentation scope/revision and current oldest-ready owner, and read the latest
+committed native name. Retain earlier admitted revisions within the same scope
+in FIFO order, so a later unavailable refresh preserves their last successful
+observation. Replaced scopes and revoked writer ownership discard queued
+predecessor snapshots. An already
+executing write finishes before any successor can write, so it cannot overwrite
+a newer writer's persisted snapshot.
+
+The queue holds at most 64 pending projections. Admission never waits for storage
+or queue capacity; a rejected refresh retains the accepted in-memory tray state
+and lets the persisted observation expire. Native rendering skips contended state
+instead of waiting. Quit closes publication admission immediately on the native
+UI loop. Its existing tracked shutdown worker joins the tray timer and drains
+admitted widget operations, then the persistence worker publishes one final stale
+snapshot and exits. Native exit remains pending until that join completes, even
+when storage stalls. Repeated Quit shares the same operation, and no snapshot
+can become fresh after its final stale publication. A failed final write reports
+storage uncertainty; it does not fabricate durable stale state or retry blindly.
 
 Snapshot publication keeps exact integer token strings, known zero, missing
 observations and explicitly incomplete coverage. Optional historical token-price
@@ -108,8 +130,8 @@ identity and cannot select arbitrary paths or silently switch servers.
 
 ## Logging
 
-Rust emits structured `widget_snapshot` publication outcomes and the stable
-`storage-unavailable` failure only. Swift returns a closed ABI result, never an
+Rust emits structured `widget_snapshot` admission, write, final-stale and join
+phases with closed native failure codes. Swift returns a closed ABI result, never an
 OS error description. Exclude group paths, aliases, token/cost totals, quota
 amounts, secret values and raw snapshot bytes from operational logs.
 
@@ -131,6 +153,11 @@ large counters, zero/unknown, separate currencies, incomplete usage, stale/faile
 refresh and app closure, quota expiry, two-server isolation/removal, masking,
 corruption and owner-private file/link handling. Run root `cargo test` after Rust
 changes, native host compilation, `pnpm ci:contracts` and `pnpm ci:workflows`.
+Rust fixtures inject blocked and failed writers, prove that tray/window state
+remains available during persistence, and cover pending Quit, final-stale order,
+queue saturation, replacement scope/instance and oldest-ready writer handoff.
+These controlled fixtures do not establish packaged native event-loop or platform
+Quit acceptance; record those results separately in PRs/issues and CI artifacts.
 Bundle verification must check identifiers, minimum OS, matching architectures,
 both embedded extensions and their exact entitlements/signatures.
 

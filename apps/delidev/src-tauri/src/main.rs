@@ -1802,6 +1802,8 @@ fn run() -> Result<(), NativeFailure> {
     let quit_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let quit_task = Arc::new(Mutex::new(None));
     let joining_quit = Arc::clone(&quit_task);
+    let exiting_window_actions = Arc::clone(&window_actions);
+    let returning_oauth = Arc::clone(&oauth);
     app.run(move |_app, event| {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
             _app.state::<Arc<window_host::WindowActions>>().stop();
@@ -1814,13 +1816,20 @@ fn run() -> Result<(), NativeFailure> {
                 // Fence fresh starts synchronously. Browser discovery keeps its
                 // separate observer until its final bounded read pass joins.
                 exiting_supervision.request_stop();
+                exiting.request_stop();
                 let host = Arc::clone(&exiting_supervision);
                 let sidecar = Arc::clone(&connector);
                 let browser = Arc::clone(&exiting_browser);
+                let tray = Arc::clone(&exiting);
+                let notifications = Arc::clone(&exiting_notifications);
+                let oauth = Arc::clone(&oauth);
+                let windows = Arc::clone(&exiting_window_actions);
                 let complete = Arc::clone(&quit_done);
                 let app = _app.clone();
                 *quit_task.lock().unwrap_or_else(|e| e.into_inner()) =
                     Some(std::thread::spawn(move || {
+                        oauth.stop();
+                        windows.join();
                         host.stop();
                         browser.stop();
                         if let Err(code) = sidecar.shutdown_owned() {
@@ -1830,6 +1839,10 @@ fn run() -> Result<(), NativeFailure> {
                                 ?code
                             );
                         }
+                        notifications.stop();
+                        tracing::info!(operation = "desktop_exit", state = "notifications-joined");
+                        tray.stop();
+                        tracing::info!(operation = "desktop_exit", state = "tray-joined");
                         complete.store(true, std::sync::atomic::Ordering::Release);
                         app.exit(exit_code);
                     }));
@@ -1844,18 +1857,11 @@ fn run() -> Result<(), NativeFailure> {
             window_host::restore_recent(_app);
         }
         if matches!(event, tauri::RunEvent::Exit) {
-            oauth.stop();
             // This event precedes CEF shutdown. Keep host task joins and the
             // return from app.run separate so an exit event cannot imply that
             // the native runtime has actually finished.
-            exiting_browser.stop();
             exiting_browser.close_all();
             tracing::info!(operation = "desktop_exit", state = "runtime-exit-event");
-            exiting_supervision.stop();
-            exiting_notifications.stop();
-            tracing::info!(operation = "desktop_exit", state = "notifications-joined");
-            exiting.stop();
-            tracing::info!(operation = "desktop_exit", state = "tray-joined");
         }
     });
     tracing::info!(operation = "desktop_exit", state = "runtime-returned");
@@ -1869,6 +1875,8 @@ fn run() -> Result<(), NativeFailure> {
         let _ = task.join();
     }
     supervision.stop();
+    returning_oauth.stop();
+    browser.stop();
     notifications.stop();
     tray.stop();
     browser.finish_removals()?;

@@ -24,6 +24,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Generic resource pagination must fit both binary and JSON Connect encodings and resume after the last returned record when the byte budget truncates a count-bounded page.
 
+- Public ResourceService event streams emit only supported nonzero EntityKind values. Keep routing and other unmapped store kinds private, advance the durable cursor across skipped rows and preserve bounded paging, ordering, backpressure and retained-history validation. Cursor gaps do not imply missing public events or authorize client routing.
+
 - Keyless account cleanup/deletion must remain usable without an OS credential store. Skip vault access only with validated immutable keyless API provider ownership; preserve relay cancellation, cleanup generations, receipt replay and credential-bearing staged-intent reconciliation.
 
 - Repository GitHub access follows the integration contract: derive the exact configured owner/repository/profile/generation, bound and join reads outside locks, and recheck authorization and repository revision before response. Keep all eight endpoint states independent; absent head evidence cannot invent Checks/statuses, and availability cannot imply successful CI, satisfied rules, reviewer identity or future authorization. No fallback token, response URL authority, access persistence or inspection receipt.
@@ -193,6 +195,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Compaction acceptance and execution credential publication require present workspace storage. Pending, uncertain or stored workspaces cannot grant native compaction authority.
 
 - Storage recovery retains full immutable original preparation/manifest and claim evidence within its dedicated 3 MiB input/4 MiB job bound. Read, cancellation, report validation, explicit recovery-chain settlement and original-report reconciliation use the same typed decoder; ordinary storage jobs remain bounded at 1 MiB.
+
+- Primary WatchWork storage inspections use the owning storage request decoder before and inside claim admission. Claim receipts reserve only 1 KiB for strict Record metadata and enforce the existing typed recovery/compaction job bounds independently. Ordinary job documents retain 1 MiB. Same-instance reconnect delivers the unchanged original claim without another claim mutation or native effect.
 
 - Snapshot observations and recovery outcomes preserve every field of the accepted snapshot metadata. Only successful original deletion may transition Deleted; failed recovery projects inspection without rewriting immutable size, creation time, digest or ownership.
 
