@@ -69,39 +69,27 @@ and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
 ## Repository addition reservations
 
-The main-first allocation boundary reserves System `REPOSITORY_CLONE_V1 = 31`,
-`GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18` and the
-five listing/clone messages under issue #964. The active generated declarations
-and advertisements use those original allocations. Reservations alone grant
-no support or Git authority. No SQLite migration is added.
+### Remote-first repository reservations
 
-`IntegrationService.ListGitHubRepositories` is an owner/paired-client read with
-explicit profile ID, nonzero exact revision and bounded page/size. Its schema-v1
-JSON response binds profile/revision/current credential generation, observation
-time, page options, validated repository metadata and independently constructed
-HTTPS/SSH URLs. Profile changes cancel and join the read before protected
-credential retirement; revision/generation and owner restrictions are rechecked
-before returning. The PAT authorizes Metadata reads only, never Worker Git.
+The approved remote-first extension under issue #964 reserves System
+`REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19`.
+Establish both allocations on main before active declarations, generated bindings
+or advertisements. URL-only registration will be an owner/client configuration
+operation without Worker admission; managed Worktree preparation will clone the
+immutable remote source on its selected Worker. Optional checkouts remain the
+source only for explicit Local execution. System 31/32 and Worker 18 retain their
+separate immediate-clone/listing contracts. Reservations grant no configuration,
+Git, filesystem or execution capability and add no SQLite migration.
 
-`WorkerService.CloneRepository` is an owner/paired-client mutation with original
-request ID, machine ID, fresh same-computer Worker token, URL, existing parent
-path, portable directory name and optional exact GitHub profile/repository
-selection. The proof token is transient; only its digest binds the actor-bound
-receipt. New admission authenticates that secondary proof in the acceptance
-transaction. An identical receipt replay checks the original product actor and
-input even after Worker retirement; it cannot admit another Clone. The durable
-`clone-repository` assignment contains non-secret original
-Worker/device and selection/generation metadata. Claim revalidates original
-local authority, negotiated Worker capability and current profile selection.
-Accepted routing and once-only Worker journal ownership remain immutable.
-
-The response contains the original job, request ID and replay flag. Its terminal
-report validates the published canonical checkout and commits registration in
-the same transaction; no renderer follow-up save is required. Clone outcome JSON
-retains published checkout metadata even when registration fails, with a closed
-sanitized failure and no server credentials. Uncertain requests may observe the
-original job or retry identical request bytes only; restart/replacement cannot
-repeat Clone. Existing-folder registration remains available to older peers.
+Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
+`GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
+`ListGitHubRepositoriesRequest`/`Response`, `RepositoryCloneGitHubSelection`,
+`CloneRepositoryRequest`/`Response` fields in the allocation ledger. These
+reservations must reach main before active declarations, generated bindings or
+capability advertisements. Listing will be an explicit revision-bound
+owner/client profile read. Clone will be a durable originating-Worker operation
+using existing job receipts; its proof token is transient and PAT bytes never
+enter its assignment. Reservations alone grant no support or Git authority.
 
 ## Metadata-only request diagnostics
 
