@@ -251,3 +251,11 @@ Callback polling rechecks captured Go-verified local connection authority agains
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
 
 If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
+
+Durable completion and recovery recheck the original adapter as well as provider
+identity and revision. Version-1 attempts belong only to OpenRouter; version-2
+attempts retain their original preset. Before a protected token is read for local
+recovery or used to publish a connection, its private metadata must match the
+original account/connection/provider, client digest, quota project, staging token
+ID and idle refresh state. A changed app registration cannot adopt an earlier
+protected result. Explicit cancellation remains available for its original cleanup.
