@@ -2,7 +2,7 @@
 import { type SyntheticEvent } from "react";
 import { EntityKind, isEntityId, type Resource } from "@delinoio/delidev-api-client";
 import { Routing, ServerPreferenceSection } from "./configuration-fields";
-import { document, object, text } from "./documents";
+import { document, object } from "./documents";
 import { ConflictStrategy, RemediationSessionStrategy } from "./remediation-policy";
 import "./server-preferences.css";
 
@@ -31,51 +31,20 @@ export function latestServerPreferences(baseline?: Resource, ...observations: (R
   return replacement || observations.reduce((latest, row) => row && (!latest || row.revision > latest.revision) ? row : latest, baseline);
 }
 
-export function ServerPreferencesUnavailable({ rows }: { rows: Resource[] }) {
-  return <section className="server-preferences-unavailable" aria-label="Server preferences unavailable">
+export function ServerPreferencesUnavailable({ rows, section = ServerPreferenceSection.All }: { rows: Resource[]; section?: ServerPreferenceSection }) {
+  const label = serverPreferenceLabel(section);
+  return <section className="server-preferences-unavailable" aria-label={`${label} unavailable`}>
     <p role="status">{rows.length === 1 && rows[0].schemaVersion !== 1
-      ? "Unsupported server preferences schema. Policy values are unavailable."
+      ? `Unsupported ${label.toLowerCase()} schema. Policy values are unavailable.`
       : rows.length === 1 && !readableServerPreferences(rows[0])
-      ? "Server preferences are unreadable or contain unsupported policy values. Policy values are unavailable."
-      : "The server preferences read is incomplete or does not identify one settings document. Refresh settings before editing."}</p>
+      ? `${label} contains unreadable or unsupported policy values. Policy values are unavailable.`
+      : `The ${label.toLowerCase()} read is incomplete or does not identify one settings document. Refresh settings before editing.`}</p>
     {rows.map(row => <small className="server-preferences-id" key={row.id}>{row.id}</small>)}
   </section>;
 }
 
 export function serverPreferenceLabel(section: ServerPreferenceSection): string {
   return section === ServerPreferenceSection.GitWorkflow ? "Git workflow" : "Server preferences";
-}
-
-export function ServerPreferencesEmpty({ section = ServerPreferenceSection.All }: { section?: ServerPreferenceSection }) {
-  const label = serverPreferenceLabel(section);
-  return <section className="server-preferences-panel" aria-label={`No saved ${label.toLowerCase()}`}>
-    <h2>No saved {label.toLowerCase()}</h2>
-    <p>Review the defaults, then save one preference set for this server.</p>
-    {section !== ServerPreferenceSection.GitWorkflow ? <section className="server-preference-section"><h3>Account routing</h3><p>Choose the default policy for Agent Workers that inherit server routing.</p></section> : null}
-    {section !== ServerPreferenceSection.AccountRouting ? <>
-    <section className="server-preference-section"><h3>Worktree fetch</h3><p>Allow fetching before Worktree preparation. Repository preferences also apply.</p></section>
-    <section className="server-preference-section"><h3>Pull request remediation</h3><p>Configure bounded automatic fixes for linked pull requests. All automatic policies default off.</p></section>
-    </> : null}
-    <p className="server-preferences-footnote">Choose New {label} to review and save.</p>
-  </section>;
-}
-
-export function ServerPreferencesSummary({ row, section = ServerPreferenceSection.All }: { row: Resource; section?: ServerPreferenceSection }) {
-  const data = document(row), policy = object(data.remediation);
-  const label = serverPreferenceLabel(section).toLowerCase();
-  return <article className="server-preferences-panel" aria-label={`Saved ${label}`}>
-    <h2>Saved {label}</h2><small className="server-preferences-id">{row.id}</small>
-    {readableServerPreferences(row) ? <>
-      {section !== ServerPreferenceSection.GitWorkflow ? <section className="server-preference-section"><h3>Account routing</h3><dl><dt>Default account routing</dt><dd>{text(data.default_routing)}</dd></dl></section> : null}
-      {section !== ServerPreferenceSection.AccountRouting ? <>
-      <section className="server-preference-section"><h3>Worktree fetch</h3><dl><dt>Automatic fetch before Worktree preparation</dt><dd>{data.automatic_fetch ? "Allowed" : "Disabled"}</dd></dl><p>Repository preferences also apply.</p></section>
-      <section className="server-preference-section"><h3>Pull request remediation</h3>
-        <p>Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.</p>
-        <dl>{[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{policy[key] ? "On" : "Off"}</dd></div>)}</dl>
-      </section>
-      </> : null}
-    </> : <p role="status">{row.schemaVersion !== 1 ? "Unsupported server preferences schema. Policy values are unavailable." : "Server preferences are unreadable or contain unsupported policy values. Policy values are unavailable."}</p>}
-  </article>;
 }
 
 export function revealServerPreferenceInvalidControl(event: SyntheticEvent<HTMLFormElement>) {
