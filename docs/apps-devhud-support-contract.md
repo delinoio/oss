@@ -1,5 +1,7 @@
 # DevHud Support and Severity Contract
 
+PR validation executes package-owned Turbo leaves through `ci:check`, preserving the complete frontend assertions, repeated clean-build checks and native boundaries. Cache-only Vercel OIDC access follows `docs/repository-workflow-contract.md`; it grants no deployment, signing or release authority. Turbo run summaries complement `CI Result` and native evidence.
+
 ## Support triage
 
 Support uses the authenticated administrator surface only: `AdminService` metadata-only users, usage counters, upload metadata, and audit events. Record the request correlation ID, exact account/upload identifier, expected state, safe reason, and next action. Never copy settings bodies, credentials, signed/public URLs, DOM, screenshots, Deck results, local paths, prompts, agent output, or issue bodies into tickets or logs.

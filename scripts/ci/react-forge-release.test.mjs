@@ -25,7 +25,8 @@ test("React Forge release is exact-tag or credential-free manual dry run", () =>
 
 test("release runs the same host validation before complete candidate assembly", () => {
   const sharedCommand = 'bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"';
-  assert.ok(ci.jobs["react-forge"].steps.some((step) => step.run === sharedCommand));
+  assert.ok(ci.jobs["react-forge"].steps.some((step) => step.run === "node scripts/ci/run-affected.mjs @delino/react-forge ci:host"));
+  assert.match(source("packages/react-forge/scripts/ci-host.mjs"), /validate-host\.sh/u);
   assert.ok(release.jobs.build.steps.some((step) => step.run === sharedCommand));
   const validation = source("packages/react-forge/scripts/validate-host.sh");
   for (const command of ["install-smoke.mjs", "test:render", "benchmark", "typecheck:examples", "examples/travel-ir.tsx"]) assert.match(validation, new RegExp(command.replaceAll(".", "\\."), "u"));

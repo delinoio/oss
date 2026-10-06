@@ -32,7 +32,17 @@ Status and doctor JSON use `schema_version: 1`. Status includes image revisions,
 
 `pause` stops acquisition/new capacity and preserves running jobs. `drain` additionally waits for jobs/local cleanup. `stop` drains before exiting and waits for open image setup and pending image removal, including with `--force`. Finish setup by shutting down its VM or sealing the revision, and retry pending removal as needed. New image work requires restarting the manager after stop; `stop --pool NAME` drains that pool while the manager keeps serving other pools. Only explicit `--force` terminates owned work. `resume` revalidates the pool. Pool control commands without `--pool` apply to all pools. A validated reload automatically resumes a suspended pool only when a setting related to its reported failure changed; a verified managed image can also recover image, version or repeated startup failures. Otherwise, correct the cause and use `resume`.
 
-Reload validates the requested configuration first. Managed image changes prepare before activation; preparation failures retain the previous verified environment. Existing jobs retain their original configuration and timeout. Removed/changed pools drain their previous generation; a new generation with the same GitHub scale-set identity waits until the old one retires. A failed reload leaves the last valid configuration active.
+Reload validates the requested configuration first. Managed image changes prepare before activation; preparation failures retain the previous verified environment. Existing jobs retain their original configuration and timeout. Removed/changed pools drain their previous generation; a new generation with the same GitHub scale-set identity waits until the old one retires. A failed configuration validation does not replace the last accepted configuration.
+
+> **Unreleased service reload:** After you install a newer Runmoor CLI,
+> `runmoor reload` also checks the running launchd/systemd user service. If its
+> manager is older, reload updates the service to that installed CLI and restarts
+> only the manager. Active jobs retain their execution environment and timeout.
+> Equal or newer managers reload settings without a version change. Foreground
+> managers keep their existing reload behavior. Reload does not download releases,
+> downgrade a manager or start a stopped service. Releases through 0.2.7 reload
+> configuration only.
+
 
 Real demand receives capacity before warm runners. Round-robin allocation shares remaining resources across pools. Minimum idle is best effort; running work is never preempted. CPU/memory reservations include DinD and image setup. Low disk blocks new work without evicting active jobs or sealed images.
 
@@ -48,7 +58,7 @@ All commands accept `--config PATH` and `--no-color`. Commands and flags are cas
 | `runner update` | Optional `--pool NAME`; request an immediate managed runner check |
 | `run` | Foreground manager; interruption requests a drain |
 | `status`, `doctor` | `--json` for stable versioned structured output |
-| `reload` | Validate and atomically accept the whole candidate |
+| `reload` | Validate and atomically accept the whole candidate; unreleased versions also advance an older owned service to the installed CLI |
 | `pause`, `resume`, `drain` | Optional `--pool NAME`; drain waits for cleanup |
 | `stop` | Optional `--pool NAME` and `--force`; whole-manager stop exits |
 | `version` | Print version and source revision |

@@ -104,22 +104,33 @@ try {
       await page.keyboard.press("Home");
       assert(await codex.evaluate(node => node === document.activeElement && node.tabIndex === 0));
       assert.equal(await codex.evaluate(node => getComputedStyle(node).outlineWidth), "3px");
+      assert(await group.isVisible(), "Arrow and Home navigation cannot advance the wizard");
+      assert.equal(await form.getByRole("button", { name: "Next", exact: true }).count(), 0);
+      assert(await group.evaluate(node => node.getAttribute("aria-describedby").split(" ").some(id => document.getElementById(id)?.textContent === "Choose a harness to continue to Accounts.")), "Harness guidance describes immediate advancement");
+      await form.evaluate(node => node.requestSubmit());
+      assert(await group.isVisible(), "Form submission cannot confirm a harness");
       await claude.focus(); await claude.press("Space");
       assert.equal(await claude.getAttribute("aria-checked"), "true");
+      const accountsHeading = form.getByRole("heading", { name: "Accounts", exact: true });
+      assert(await accountsHeading.evaluate(node => node === document.activeElement), "Space confirmation focuses Accounts");
+      await form.getByRole("button", { name: "Back", exact: true }).click();
       await codex.focus(); await codex.press("Enter");
       assert.equal(await codex.getAttribute("aria-checked"), "true");
-      assert(await group.isVisible(), "Native button activation cannot advance the wizard");
+      assert(await accountsHeading.evaluate(node => node === document.activeElement), "Enter confirmation focuses Accounts without skipping a step");
+      await form.getByRole("button", { name: "Back", exact: true }).click();
+      await codex.click();
+      assert(await accountsHeading.evaluate(node => node === document.activeElement), "Current-card click confirmation focuses Accounts");
+      await form.getByRole("button", { name: "Back", exact: true }).click();
       assert.equal(await cards.evaluateAll(nodes => nodes.filter(node => node.tabIndex === 0).length), 1);
       await codex.hover();
       const selection = await codex.evaluate(node => {
         const style = getComputedStyle(node);
-        return { background: style.backgroundColor, border: style.borderTopColor, selected: getComputedStyle(document.querySelector(".settings-category-button[aria-pressed=true]")).backgroundColor, accent: getComputedStyle(node.closest("form").querySelector("button.primary")).backgroundColor };
+        return { background: style.backgroundColor, border: style.borderTopColor, selected: getComputedStyle(document.querySelector(".settings-category-button[aria-pressed=true]")).backgroundColor, accent: getComputedStyle(node.querySelector(".worker-harness-indicator")).backgroundColor };
       });
       assert.equal(selection.background, selection.selected, "Selected card retains its semantic fill on hover");
       assert.equal(selection.border, selection.accent, "Selected card retains its accent border on hover");
       if (screenshotDirectory) {
         await mkdir(screenshotDirectory, { recursive: true });
-        await codex.click();
         await form.scrollIntoViewIfNeeded();
         const viewport = page.viewportSize(), theme = await page.locator("html").getAttribute("data-theme");
         await page.screenshot({ path: join(screenshotDirectory, `harness-${theme}-${viewport.width}x${viewport.height}.png`) });
@@ -127,8 +138,9 @@ try {
       harnessChecks++;
     }
     const next = form.getByRole("button", { name: /^(Next|Save Agent Worker)$/ });
-    await next.scrollIntoViewIfNeeded();
-    const footer = await next.boundingBox();
+    const action = await next.count() ? next : form.getByRole("button", { name: "Cancel", exact: true });
+    await action.scrollIntoViewIfNeeded();
+    const footer = await action.boundingBox();
     assert(footer && footer.y >= 0 && footer.y + footer.height <= page.viewportSize().height + 0.5, "Wizard footer remains visible in document flow");
   };
   const checkHiddenAccountChoices = async () => {
@@ -176,7 +188,7 @@ try {
       await select("Agent Workers");
       await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
       await checkWizard();
-      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("radio", { name: "Codex", exact: true }).click();
       await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
       await page.getByRole("checkbox", { name: /^Personal API/ }).check();
       await page.getByRole("checkbox", { name: /^Team API/ }).check();

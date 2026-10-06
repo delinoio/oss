@@ -123,12 +123,18 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   }, (result, request) => result.requestId === request.mutation?.requestId && result.account?.id === request.mutation?.id);
   const blocked = nativePending || mutation.busy || mutation.uncertain || discovery.busy || discovery.uncertain;
   const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
-  const change = (value: Document) => { if (encode(value).byteLength > 1 << 20) { setProblem("This configuration is too large."); return; } setData(value); setProblem(""); };
+  const change = (value: Document) => { if (encode(value).byteLength > 1 << 20) { setProblem("This configuration is too large."); return false; } setData(value); setProblem(""); return true; };
   const clearModel = () => { setModel(undefined); setInput(""); setModelPage(""); setPopup(false); setHighlight(-1); };
   const chooseHarness = (harness: Harness) => {
-    if (blocked || !active || !supported || harness === data.harness) return;
+    if (blocked || !active || !supported || step !== Step.Harness) return false;
+    if (harness === data.harness) return true;
+    if (!change({ ...data, harness, accounts: [], model_id: "" })) return false;
     initialized.current = true; setSource(undefined); clearModel();
-    change({ ...data, harness, accounts: [], model_id: "" });
+    return true;
+  };
+  const confirmHarness = (harness: Harness) => {
+    if (!chooseHarness(harness)) return;
+    setStep(Step.Accounts); setFocusField(""); setProblem("");
   };
   const chooseSource = (value: string) => {
     initialized.current = true;
@@ -171,7 +177,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const providerEntries = providers.data?.entries.filter(entry => entry.enabled && entry.providerId) ?? [];
   const advance = () => { if (validate(step)) { setStep(step + 1); setFocusField(""); setProblem(""); } };
   return <form ref={form} className="agent-configuration worker-wizard" noValidate onSubmit={event => {
-    event.preventDefault(); if (blocked || !active || !supported) return;
+    event.preventDefault(); if (blocked || !active || !supported || step === Step.Harness) return;
     if (step !== Step.Configure) { advance(); return; }
     if (!validate(Step.Configure) || stale || Boolean(initial && (current.error || !current.data?.resource))) return;
     if (!form.current?.checkValidity()) { const invalid = form.current?.querySelector<HTMLInputElement>("input:invalid, select:invalid, textarea:invalid"); if (invalid) { const details = invalid.closest("details"); if (details) details.open = true; invalid.focus(); } return; }
@@ -188,11 +194,11 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     <fieldset disabled={blocked || !supported}>
       <section hidden={step !== Step.Harness}>
         <p id={`${listID}-harness-help`}>Choose the tool that runs this Worker.</p>
-        <div className="worker-harness-grid" role="radiogroup" aria-label="Harness" aria-describedby={`${listID}-harness-help`}>
+        <div className="worker-harness-grid" role="radiogroup" aria-label="Harness" aria-describedby={`${listID}-harness-help ${listID}-harness-guidance`}>
           {harnesses.map((harness, index) => {
             const selected = data.harness === harness;
             const entry = selected || !harnesses.includes(data.harness as Harness) && index === 0;
-            return <button key={harness} type="button" role="radio" className="worker-harness-card" aria-checked={selected} aria-label={harnessNames[harness]} aria-describedby={`${listID}-${harness}-origin`} tabIndex={entry ? 0 : -1} data-wizard-field={entry ? "harness" : undefined} data-harness={harness} disabled={blocked || !active || !supported} onClick={() => chooseHarness(harness)} onKeyDown={event => {
+            return <button key={harness} type="button" role="radio" className="worker-harness-card" aria-checked={selected} aria-label={harnessNames[harness]} aria-describedby={`${listID}-${harness}-origin`} tabIndex={entry ? 0 : -1} data-wizard-field={entry ? "harness" : undefined} data-harness={harness} disabled={blocked || !active || !supported} onClick={() => confirmHarness(harness)} onKeyDown={event => {
               if (blocked || !active || !supported) return;
               let next: number;
               switch (event.key) {
@@ -202,7 +208,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
                 case "End": next = harnesses.length - 1; break;
                 default: return;
               }
-              event.preventDefault(); chooseHarness(harnesses[next]!);
+              event.preventDefault(); if (!chooseHarness(harnesses[next]!)) return;
               event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[data-harness="${harnesses[next]}"]`)?.focus();
             }}>
               <span className={`worker-harness-mark worker-harness-mark-${harness}`} aria-hidden="true" />
@@ -212,7 +218,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
             </button>;
           })}
         </div>
-        <p className="worker-harness-guidance">Select accounts and a model for this source.</p>
+        <p id={`${listID}-harness-guidance`} className="worker-harness-guidance">Choose a harness to continue to Accounts.</p>
       </section>
       <section hidden={step !== Step.Accounts} aria-label="Choose accounts">
         <p>{harnessNames[data.harness as Harness]} <button type="button" onClick={() => { setStep(Step.Harness); setFocusField(""); }}>Change harness</button></p>
@@ -266,7 +272,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     {stale ? <p role="alert">This Worker changed elsewhere. Your draft is retained. Cancel and reopen the current Worker before saving.</p> : null}
     {model && currentModel.data?.resource && currentModel.data.resource.revision !== model.revision ? <p role="status">The selected model changed. Return to Model and explicitly reselect it.</p> : null}
     {model && currentModel.isLoading ? <p role="status">Checking the selected model revision…</p> : null}
-    <div className="worker-footer"><button type="button" disabled={blocked} onClick={cancel}>Cancel</button><div>{step > Step.Harness ? <button type="button" disabled={blocked} onClick={() => { setStep(step - 1); setFocusField(""); setProblem(""); }}>Back</button> : null}<button type="submit" className="primary" disabled={blocked || !active || !supported || step === Step.Configure && (stale || currentModel.isLoading || Boolean(initial && (current.error || !current.data?.resource)))}>{mutation.busy ? "Saving…" : step === Step.Configure ? "Save Agent Worker" : "Next"}</button></div></div>
+    <div className="worker-footer"><button type="button" disabled={blocked} onClick={cancel}>Cancel</button>{step > Step.Harness ? <div><button type="button" disabled={blocked} onClick={() => { setStep(step - 1); setFocusField(""); setProblem(""); }}>Back</button><button type="submit" className="primary" disabled={blocked || !active || !supported || step === Step.Configure && (stale || currentModel.isLoading || Boolean(initial && (current.error || !current.data?.resource)))}>{mutation.busy ? "Saving…" : step === Step.Configure ? "Save Agent Worker" : "Next"}</button></div> : null}</div>
     {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same Worker save</button> : null}
   </form>;
 }

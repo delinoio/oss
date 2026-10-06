@@ -4,15 +4,56 @@
   ],
   "tasks": {
     "test": {
+      "cache": false
+    },
+    "test:unit": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/delidev/proto-layout.json"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ]
+    },
+    "test:integration": {
       "cache": false,
+      "dependsOn": [
+        "test:unit"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
       "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "RUNNER_TEMP",
         "DELIDEV_TEST_BINARY"
       ]
     },
-    "test:unit": {
+    "ci:check": {
       "cache": false,
-      "passThroughEnv": [
-        "DELIDEV_TEST_BINARY"
+      "dependsOn": [
+        "typecheck",
+        "test:unit",
+        "test:integration",
+        "build"
       ]
     }
   }

@@ -845,7 +845,7 @@ verified native cleanup. Exact decimal byte counts retain integer precision;
 logical source, retained snapshot and removed bytes remain separate from nullable
 filesystem free measurements. Cleanup confirmation pins the exact successful
 preview job and current session revision. Snapshot removal has separate irreversible confirmation. Restoration
-and recovery disclose paused outcomes and preserve original uncertainty. 
+and recovery disclose paused outcomes and preserve original uncertainty.
 
 Permanent deletion requires its own explicit confirmation of managed native,
 workspace, backup removal. In-flight native work is stopped

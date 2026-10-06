@@ -37,6 +37,12 @@ it("edits singleton server preferences inline while preserving the separate Git 
   expect((await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources).toHaveLength(0);
   fireEvent.change(routing, { target: { value: "priority" } });
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  // The dirty status clears while the mutation is still in flight. Wait for
+  // the explicit saving state to settle before reading the Go-owned resource.
+  await waitFor(() => {
+    expect(screen.queryByText("Saving changes…")).toBeNull();
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+  }, serverRoundTripWait);
   await waitForSettings({ ...defaults, default_routing: "priority" });
   const first = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(first).toHaveLength(1);
@@ -75,6 +81,10 @@ it("edits singleton server preferences inline while preserving the separate Git 
   fireEvent.change(finalRouting, { target: { value: "fixed" } });
   await waitFor(() => expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(false), serverRoundTripWait);
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => {
+    expect(screen.queryByText("Saving changes…")).toBeNull();
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+  }, serverRoundTripWait);
   await waitForSettings({ ...document(git[0]), default_routing: "fixed" });
   const final = (await resources.listResources({ filter: { kind: EntityKind.SETTINGS } })).resources;
   expect(final).toHaveLength(1); expect(final[0].id).toBe(first[0].id);
