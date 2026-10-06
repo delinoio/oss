@@ -274,6 +274,11 @@ test("DeliDev updater generator changes select both consumers and force desktop 
         const needs = results(event, [path]);
         needs[id].result = result;
         assert.throws(() => validateResults(needs), new RegExp(id, "u"));
+      }
+    }
+  }
+});
+
 test("Linux publication entry point, helpers and configuration select portable fixtures", () => {
   const helpers = readdirSync(new URL("../release/linux-packages/", import.meta.url), { recursive: true });
   for (const event of [Event.PullRequest, Event.Push]) {
@@ -305,6 +310,9 @@ test("unrelated release helpers retain their narrower owners", () => {
       assert.deepEqual(selected(event, [path]), ["devhud-release-contracts"]);
     }
     assert.deepEqual(selected(event, ["scripts/release/generate-delidev-updater.test.mjs"]), ["devhud-release-contracts"]);
+  }
+});
+
 test("a readback regression fails the portable fixture command and CI aggregate", (t) => {
   const cwd = mkdtempSync(join(tmpdir(), "linux-publication-ci-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
