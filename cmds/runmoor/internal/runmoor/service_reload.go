@@ -377,6 +377,14 @@ func (r *serviceReloader) retire(j *serviceReloadJournal) error {
 	if err != nil || !bytes.Equal(actual, body) {
 		return reloadFailure()
 	}
+	// The replacement manager can start after the target rename but before the
+	// initiator records publicationPublished. Reconcile that durable intent
+	// before retiring the journal so a verified target is not rejected forever.
+	if j.Publication == publicationPublishPending {
+		if err := r.publish(j.ConfigPath, j); err != nil {
+			return err
+		}
+	}
 	if err := r.retirePublication(j); err != nil {
 		return err
 	}
@@ -683,6 +691,12 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 	}
 	if err := r.stopping(c, j); err != nil {
 		return err
+	}
+	// A prepared journal has not yet established a launchd handoff. If the job
+	// is already unloaded, publishing the plist would mutate a stopped service
+	// without native admission and leave the retry permanently staged.
+	if j.Stage == reloadPrepared && !loaded {
+		return reloadFailure()
 	}
 	if loaded && (pid == j.PID || j.Stage == reloadPrepared) {
 		if err := r.originalProcess(ctx, c, j); err != nil {

@@ -4,9 +4,11 @@ package runmoor
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -306,6 +308,90 @@ func TestServiceReloadPublicationRecoversDirectorySyncFailures(t *testing.T) {
 			requireFixtureFile(t, f.r.Unit, j.Target)
 			requireFixtureFile(t, reloadClaimPath(j), j.Original)
 		})
+	}
+}
+
+func TestServiceReloadRetiresPublishPendingJournalAfterTargetRename(t *testing.T) {
+	f := newReloadFixture(t, "linux")
+	calls := 0
+	f.r.SyncDefinitionDir = func(path string) error {
+		calls++
+		if calls == 2 {
+			return errors.New("fixture directory sync failure")
+		}
+		return syncPrivateDir(path)
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("sync failure claimed success")
+	}
+	j := fixtureReloadJournal(t, f)
+	if j.Publication != publicationPublishPending || !matchesReloadFile(f.r.Unit, j.TargetFileID, j.Target) {
+		t.Fatal("target publication intent was not retained after the rename")
+	}
+
+	// Simulate the replacement manager starting from the already published
+	// target. Its startup path must be able to retire the initiator's pending
+	// publication instead of rejecting a valid interrupted outcome.
+	f.r.SyncDefinitionDir = nil
+	f.pid, f.peer = os.Getpid(), os.Getpid()
+	targetArgs, err := reloadArguments(f.r.Platform, j.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.args[f.pid] = targetArgs
+	_, preserveStop, recovery, err := f.r.startup(context.Background(), f.path, f.c)
+	if err != nil || !preserveStop || recovery == nil {
+		t.Fatalf("target startup did not retain recovery: preserve=%t recovery=%v err=%v", preserveStop, recovery != nil, err)
+	}
+	if err := f.r.retire(recovery); err != nil {
+		t.Fatalf("publish-pending journal was not reconciled: %v", err)
+	}
+	if journal, err := readReloadJournal(f.r.Unit); err != nil || journal != nil {
+		t.Fatalf("reconciled journal was not retired: %v", err)
+	}
+	if !matchesReloadFile(reloadClaimPath(j), j.OriginalFileID, j.Original) {
+		t.Fatal("verified displaced definition was not retained")
+	}
+}
+
+func TestServiceReloadLaunchdPreparedStageRequiresLoadedJob(t *testing.T) {
+	f := newReloadFixture(t, "darwin")
+	original, info, err := readPrivateServiceDefinition(f.r.Unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := serviceDefinition(f.r.Platform, f.r.Binary, f.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := &serviceReloadJournal{
+		Schema: 1, Token: newID(), Installation: f.m.Store.View().Installation,
+		Storage: f.c.Storage, Platform: f.r.Platform, Unit: f.r.Unit,
+		ConfigPath: f.path, Binary: f.r.Binary, Version: f.r.Version,
+		PreviousVersion: f.version, Original: original, Target: []byte(target),
+		OriginalFileID: hostFileIdentity(info), PID: f.pid,
+		ProcessStart: "fixture:" + strconv.Itoa(f.pid), Stage: reloadPrepared,
+		Publication: publicationPrepared,
+	}
+	if err := writePrivateExclusive(reloadTargetPath(j), j.Target); err != nil {
+		t.Fatal(err)
+	}
+	_, targetInfo, err := readPrivateServiceDefinition(reloadTargetPath(j))
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.TargetFileID = hostFileIdentity(targetInfo)
+	before, err := os.ReadFile(f.r.Unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.loaded, f.pid = false, 0
+	if err := f.r.replaceLaunchd(context.Background(), f.path, f.c, j); err == nil {
+		t.Fatal("unloaded prepared launchd job unexpectedly authorized publication")
+	}
+	after, err := os.ReadFile(f.r.Unit)
+	if err != nil || !bytes.Equal(after, before) {
+		t.Fatal("unloaded prepared launchd job changed the canonical definition")
 	}
 }
 
