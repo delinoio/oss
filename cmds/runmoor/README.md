@@ -282,6 +282,19 @@ DinD requires cgroup v2 and a privileged daemon container. Its CPU/memory must f
 
 Docker and privileged DinD share a kernel; they are not secure isolation for arbitrary hostile workloads. Run trusted developer/team workflows and control external fork execution through GitHub policy. Job containers, daemon, networks and volumes are destroyed after completion/cancellation. Base images remain reusable; use GitHub Actions cache instead of persistent local job/build-cache volumes.
 
+### Docker volume cleanup (unreleased)
+
+The unreleased cleanup correction checks each volume's current ownership
+immediately before removal. A conflicting volume is preserved and reported as
+`OWNERSHIP_AMBIGUOUS`; cleanup remains incomplete. If inspection fails, restore
+Docker access so cleanup can retry. Removal stays non-force, including during
+`stop --force`, and a volume confirmed absent needs no removal.
+
+Docker cannot make this ownership check and removal one atomic operation. Avoid
+replacing execution volumes while cleanup runs: a replacement after inspection
+can still be affected. Check the containing release before relying on this
+correction. See the [Docker guide](https://oss.delino.io/runmoor/docker#docker-volume-cleanup-unreleased).
+
 ### DinD CPU admission (unreleased)
 
 Releases through 0.2.7 reserve both runner and daemon CPU. The unreleased change

@@ -125,6 +125,8 @@
 
 ### runmoor-docs Rules
 
+- Describe Docker volume cleanup revalidation as unreleased until a containing release is verified. Preserve conflict and inspection-failure recovery guidance, non-force removal and the remaining replacement window between inspection and deletion. Do not expose internal ownership records or claim atomic race protection.
+
 - Describe service-version reload as unreleased until a containing release is verified. It advances an older owned service to an already installed CLI, preserves active jobs, never downloads releases or downgrades, and leaves foreground reload and stopped services unchanged. Explain incomplete-operation recovery without exposing the private journal or native handoff implementation. After Stop completes during an interrupted reload, describe one explicit Start after the reload command and cleanup finish, with pause preservation and inspection of uncertain ownership.
 
 - DinD CPU admission changes must distinguish releases through 0.2.7, which reserve runner plus daemon CPU, from the unreleased runner-only CPU policy. Explain that daemon memory remains reserved, daemon CPU remains a container limit, and existing reservations remain until the prior resources terminate. Do not assign a release version before publication is verified.
