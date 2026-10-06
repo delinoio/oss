@@ -69,3 +69,22 @@ func TestGeminiProjectIsImmutableAndConnectionScoped(t *testing.T) {
 	}
 	assertOAuthPrivate(t, f, "google-access-sentinel", "google-refresh-sentinel", "google-code-sentinel", u.Query().Get("state"))
 }
+
+func TestOAuthInventoryAdvertisesOneSharedCapability(t *testing.T) {
+	f := newHuggingFaceFixture(t)
+	f.s.oauthRegistrations[domain.PresetGemini] = providers.OAuthRegistration{ClientID: "delidev-fixture.apps.googleusercontent.com", RedirectURI: "http://127.0.0.1/oauth/google-gemini/callback", Registration: providers.OAuthRegistered, Compatibility: providers.OAuthAPIAccepted}
+	f.s.oauthRegistrations[domain.PresetHuggingFace] = providers.OAuthRegistration{ClientID: "delidev-fixture-public-client", RedirectURI: "http://localhost/oauth/hugging-face/callback", Registration: providers.OAuthRegistered, Compatibility: providers.OAuthAPIAccepted}
+	r, e := f.s.ListProviderInventory(f.ctx, connect.NewRequest(&pb.ListProviderInventoryRequest{}))
+	if e != nil {
+		t.Fatal(e)
+	}
+	var count int
+	for _, capability := range r.Msg.Capabilities {
+		if capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1 {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatal("shared OAuth capability duplicated")
+	}
+}
