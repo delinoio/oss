@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { StoreBuildStatus, StoreProvider, StoreStatus, classifyApple, classifyChrome, classifyGoogle, run } from "./devhud-store-release.mjs";
+import { loadReleaseMetadata } from "./devhud-release.mjs";
 
 const source = readFileSync(fileURLToPath(new URL("devhud-store-release.mjs", import.meta.url)), "utf8");
 const { privateKey: applePrivateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
@@ -28,6 +31,29 @@ function environment() {
 }
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+function chromeUploadResponse(overrides = {}) {
+  return { uploadState: "SUCCEEDED", itemId: environment().DEVHUD_CHROME_EXTENSION_ID, crxVersion: loadReleaseMetadata().version, ...overrides };
+}
+
+function chromeSubmissionFixture(t, upload) {
+  const directory = mkdtempSync(join(tmpdir(), "devhud-chrome-submit-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const artifact = join(directory, "extension.zip");
+  writeFileSync(artifact, "");
+  const env = environment();
+  const name = `publishers/${env.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID}/items/${env.DEVHUD_CHROME_EXTENSION_ID}`;
+  const requests = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    requests.push({ url, options });
+    if (url === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "chrome-token" });
+    if (url === `https://chromewebstore.googleapis.com/upload/v2/${name}:upload`) return jsonResponse(upload);
+    if (url === `https://chromewebstore.googleapis.com/v2/${name}:publish`) return jsonResponse({});
+    throw new Error("unexpected Chrome submission request");
+  };
+  return { requests, submit: () => run("submit", StoreProvider.ChromeWebStore, { artifact }, env, fetchImpl) };
+}
 
 function appleVersionResponse(state, buildVersion = "1") {
   return {
@@ -69,6 +95,58 @@ test("Chrome requires the exact version at 100 percent before public", () => {
   const complete = classifyChrome({ submitted: {}, published: { distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] }, version: "0.1.0" });
   assert.equal(complete, StoreStatus.Public);
   assert.equal(classifyChrome({ submitted: { state: "CANCELLED" }, published: {}, version: "0.1.0" }), StoreStatus.Withdrawn);
+});
+
+test("Chrome submission stops before publication for every upload state except succeeded", async (t) => {
+  for (const uploadState of ["FAILED", "IN_PROGRESS", "UPLOAD_STATE_UNSPECIFIED", "NOT_FOUND", "unknown-private-response", "", null, undefined]) {
+    await t.test(`upload state ${String(uploadState)}`, async (t) => {
+      const fixture = chromeSubmissionFixture(t, chromeUploadResponse({ uploadState, privateDetail: "private-response-detail" }));
+      await assert.rejects(fixture.submit(), { message: "Chrome Web Store upload is not ready for review submission" });
+      assert.deepEqual(fixture.requests.map(({ url, options }) => [url.endsWith(":upload") ? "upload" : "oauth", options.method]), [["oauth", "POST"], ["upload", "POST"]]);
+      assert.equal(fixture.requests.filter(({ url }) => url.endsWith(":publish")).length, 0);
+    });
+  }
+  const fixture = chromeSubmissionFixture(t, null);
+  await assert.rejects(fixture.submit(), { message: "Chrome Web Store upload is not ready for review submission" });
+  assert.equal(fixture.requests.length, 2);
+  assert.equal(fixture.requests.filter(({ url }) => url.endsWith(":publish")).length, 0);
+});
+
+test("Chrome submission rejects succeeded uploads for a wrong or missing item or version", async (t) => {
+  for (const [field, values, message] of [
+    ["itemId", ["wrong-private-item", undefined, null, "", 1], "Chrome Web Store upload does not match the selected item"],
+    ["crxVersion", ["wrong-private-version", undefined, null, "", 1], "Chrome Web Store upload does not match the release version"],
+  ]) {
+    for (const value of values) {
+      await t.test(`${field} ${String(value)}`, async (t) => {
+        const fixture = chromeSubmissionFixture(t, chromeUploadResponse({ [field]: value, privateDetail: "private-response-detail" }));
+        await assert.rejects(fixture.submit(), { message });
+        assert.equal(fixture.requests.length, 2);
+        assert.equal(fixture.requests.filter(({ url }) => url.endsWith(":publish")).length, 0);
+      });
+    }
+  }
+});
+
+test("Chrome submits one staged review only after an exact successful upload", async (t) => {
+  const fixture = chromeSubmissionFixture(t, chromeUploadResponse({ privateDetail: "private-response-detail" }));
+  assert.deepEqual(await fixture.submit(), { provider: StoreProvider.ChromeWebStore, status: StoreStatus.Pending });
+  assert.equal(fixture.requests.length, 3);
+  const upload = fixture.requests[1];
+  assert.ok(upload.url.endsWith(":upload"));
+  assert.equal(upload.options.method, "POST");
+  assert.equal(upload.options.headers["content-type"], "application/zip");
+  assert.equal(upload.options.body.length, 0);
+  const publications = fixture.requests.filter(({ url }) => url.endsWith(":publish"));
+  assert.equal(publications.length, 1);
+  assert.equal(publications[0], fixture.requests[2]);
+  assert.equal(publications[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(publications[0].options.body), {
+    publishType: "STAGED_PUBLISH",
+    deployInfos: [{ deployPercentage: 100 }],
+    skipReview: false,
+    blockOnWarnings: true,
+  });
 });
 
 test("App Store review uses manual release and the dedicated build linkage endpoint", () => {

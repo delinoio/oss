@@ -7,7 +7,7 @@
   "ui.requestFailed": "DeliDev가 이 요청을 완료하지 못했습니다.",
   "ui.technicalDetails": "기술 상세",
   "ui.failure.invalid_argument": "다시 제출하기 전에 입력 값을 확인하세요.",
-  "ui.failure.not_found": "이 항목을 사용할 수 없습니다. 동작 전에 현재 목록을 새로 고치세요.",
+  "ui.failure.not_found": "동작 전에 현재 목록을 새로 고치세요.",
   "ui.failure.conflict": "항목이 변경되었습니다. 최신 상태를 확인하고 기존 요청을 유지하세요.",
   "ui.failure.unauthenticated": "선택한 서버의 인증을 확인하세요.",
   "ui.failure.permission_denied": "이 연결은 동작 권한이 없습니다. 접근 권한을 확인하세요.",

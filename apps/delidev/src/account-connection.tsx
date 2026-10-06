@@ -10,6 +10,7 @@ import { AccountQuery, EntityKind, ProviderQuery, ResourceQuery, newRequestId, t
 import { document, object, resourceName, text, type Document } from "./documents";
 import { Authentication } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
+import { accountRemovalMutation } from "./account-removal";
 import { ServiceProblem, Problem  } from "./ui";
 import "./api-account.css";
 
@@ -51,11 +52,11 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
   useEffect(() => { if (!active || !disconnected) setKey(""); }, [active, disconnected]);
   useSettingsTaskDismiss(() => setKey(""));
   const mutation = () => ({ id: initial.id, expectedRevision: current.revision, requestId: newRequestId() });
-  const removal = object(data.removal);
+  const removal = current.id === initial.id ? accountRemovalMutation(current) : undefined;
   useRetainSettingsTask(Boolean(data.removal));
   const retryRemoval = () => {
-    if (!text(removal.request_id) || !Number.isSafeInteger(removal.expected_revision)) return;
-    void disconnect.send({ mutation: { id: initial.id, requestId: text(removal.request_id), expectedRevision: BigInt(removal.expected_revision as number) } });
+    if (blocked || !removal) return;
+    void disconnect.send({ mutation: removal });
   };
   return <section className={isApi ? "api-entry-workflow" : undefined}>{isApi ? <><button className="api-entry-back" onClick={closeTask}>{copy("account-connection.backToAiApiKeys_2d6214")}</button><header className="api-entry-heading"><h2 hidden={inTask}>{copy("account-connection.manageConnection_ad2892")}</h2><p>{resourceName(current)}</p><p className="api-entry-scope">{copy("account-connection.savedOnTheSelectedServer_93dbee")}</p></header></> : <header><h3>{resourceName(current)}</h3><button onClick={closeTask}>{copy("account-connection.backToAccounts_68d8e7")}</button></header>}<p><LocalizedText id="account-connection.health_842f5a" components={{ s0: <>{statusLabel(text(data.health))}</>, s1: <>{data.connection ? copy("account-connection.credentialConnected_eed6f1") : copy("account-connection.disconnected_04dfac")}</> }} /></p><p><LocalizedText id="account-connection.provider_0a5bc7" components={{ s0: <>{resourceName(provider.data?.resource)}</>, s1: <>{text(metadata.authentication)}</>, s2: <>{provider.data?.resource ? providerEnabled ? copy("account-connection.enabled_92c1cd") : copy("account-connection.off_ca7981") : copy("account-connection.unavailable_ca1844")}</> }} /></p>
     {data.type === "subscription" ? <p>{copy("account-connection.subscriptionLoginIsNotImplementedYet_68e05f")}</p> : disconnected ? <><form id={formId} onSubmit={(event) => {
@@ -67,7 +68,7 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
     {data.type !== "subscription" && data.connection ? <SettingsTaskActions className=""><button disabled={blocked} onClick={() => void validate.send({ mutation: mutation() })}>{isApi ? copy("account-connection.validateConnection_8ee4a4") : copy("account-connection.validateAccount_b78224")}</button><button disabled={blocked || !providerEnabled || metadata.discovery !== true} onClick={() => void discover.send({ mutation: mutation() })}>{copy("account-connection.refreshModels_049030")}</button><button disabled={blocked} onClick={() => setConfirm(true)}>{isApi ? copy("account-connection.disconnect_acfc5b") : copy("account-connection.disconnectAccount_e2413f")}</button></SettingsTaskActions> : null}
     {confirm && data.type !== "subscription" ? <SettingsTaskDialog title={isApi ? copy("account-connection.disconnect_acfc5b") : copy("account-connection.disconnectAccount_e2413f")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setConfirm(false)}><div className="notice"><p>{isApi ? copy("account-connection.disconnectingCancelsThisEntrySActive_a31581") : copy("account-connection.disconnectingCancelsThisAccountSActive_c12e4f")}</p><SettingsTaskActions><button disabled={blocked} onClick={() => void disconnect.send({ mutation: mutation() })}>{copy("account-connection.confirmDisconnection_d61f53")}</button><button data-settings-task-cancel disabled={blocked} onClick={() => setConfirm(false)}>{isApi ? copy("account-connection.keepEntryConnected_269a70") : copy("account-connection.keepAccountConnected_00ae06")}</button></SettingsTaskActions></div></SettingsTaskDialog> : null}
     {data.type === "subscription" && data.removal ? <p role="status">{copy("account-connection.credentialCleanupPendingSubscriptionCredentialCleanup_bcd643")}</p> : null}
-    {data.type !== "subscription" && data.removal ? <p>{copy("account-connection.disconnectedCredentialCleanupIsPending_66cdef")}<button disabled={blocked || !Number.isSafeInteger(removal.expected_revision)} onClick={retryRemoval}>{copy("account-connection.retryOriginalCredentialCleanup_bb5e5d")}</button></p> : null}
+    {data.type !== "subscription" && data.removal ? <p>{copy("account-connection.disconnectedCredentialCleanupIsPending_66cdef")}<button disabled={blocked || !removal} onClick={retryRemoval}>{copy("account-connection.retryOriginalCredentialCleanup_bb5e5d")}</button></p> : null}
     {cleanup ? <ServiceProblem code={text(cleanup.code) || text(cleanup.problem_code)}><p role="alert">{text(cleanup.message)} {text(cleanup.guidance)}</p></ServiceProblem> : null}
     <Observation label={copy("account-connection.validation_68e1ca")} value={data.validation} /><Observation label={copy("account-connection.modelDiscovery_3c49ba")} value={data.catalog} />
     <Problem error={result.error || provider.error} />{data.type !== "subscription" ? operations.map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="account-connection.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("account-connection.connection_b38d9d") : index === 1 ? copy("account-connection.disconnection_4bd886") : index === 2 ? copy("account-connection.validation_98c41d") : copy("account-connection.modelRefresh_795dab")}</> }} /></button> : null}</div>) : null}

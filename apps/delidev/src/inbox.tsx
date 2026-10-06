@@ -94,6 +94,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
   const detailPane = useRef<HTMLElement>(null);
   const keyboardSelection = useRef(false);
   const readGeneration = useRef(0);
+  const pendingReadGeneration = useRef<number | undefined>(undefined);
   const lastNotificationActivation = useRef(0);
   const [selectedId, setSelectedId] = useState("");
   const [readTrigger, setReadTrigger] = useState(0);
@@ -139,14 +140,16 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
   useEffect(() => {
     if (!active || !selectedId) return;
     const timer = window.setInterval(() => {
-      if (active && selectedId && documentVisibilityVisible()) setReadTrigger((value) => value + 1);
+      // Background refresh must let the current exact read finish, including
+      // reads longer than the polling interval. Explicit activations still replace it.
+      if (documentVisibilityVisible() && pendingReadGeneration.current === undefined) setReadTrigger((value) => value + 1);
     }, 5000);
     return () => window.clearInterval(timer);
   }, [active, selectedId]);
 
   useEffect(() => {
     if (!active || !selectedId) return;
-    const refreshOnReturn = () => { if (documentVisibilityVisible()) setReadTrigger((value) => value + 1); };
+    const refreshOnReturn = () => { if (documentVisibilityVisible() && pendingReadGeneration.current === undefined) setReadTrigger((value) => value + 1); };
     window.addEventListener("focus", refreshOnReturn);
     window.document.addEventListener("visibilitychange", refreshOnReturn);
     return () => { window.removeEventListener("focus", refreshOnReturn); window.document.removeEventListener("visibilitychange", refreshOnReturn); };
@@ -168,6 +171,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
       return;
     }
     const generation = ++readGeneration.current;
+    pendingReadGeneration.current = generation;
     let canceled = false;
     const priorView = detailRead?.id === selectedId ? detailRead.view : undefined;
     setDetailRead({ id: selectedId, state: DetailReadState.Loading, view: priorView });
@@ -193,8 +197,13 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
       setDetailRead({ id: selectedId, state: DetailReadState.Ready, view });
     }).catch((error: unknown) => {
       if (!canceled && generation === readGeneration.current) setDetailRead({ id: selectedId, state: DetailReadState.Stale, view: priorView, error });
+    }).finally(() => {
+      if (pendingReadGeneration.current === generation) pendingReadGeneration.current = undefined;
     });
-    return () => { canceled = true; };
+    return () => {
+      canceled = true;
+      if (pendingReadGeneration.current === generation) pendingReadGeneration.current = undefined;
+    };
   }, [active, selectedId, readTrigger, queryClient, selected.refetch, transport]);
 
   useEffect(() => {

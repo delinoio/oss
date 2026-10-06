@@ -12,6 +12,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
 import { useSettingsOpening } from "./settings-lifetime";
+import { SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
 import { serviceAccount } from "./subscription-resource";
 import { safeDiagnostic } from "./subscription-onboarding";
 import { Failure, Problem } from "./ui";
@@ -72,6 +73,11 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
   const [confirmed, setConfirmed] = useState(initial);
   const [view, setView] = useState<View>({ stage: Stage.Confirmation });
   const pending = useRef<Attempt | undefined>(undefined);
+  const waiting = [Stage.Checking, Stage.Logout, Stage.Deleting].includes(view.stage);
+  // Direct clients bypass mutation retention. Keep submitted/observed work and
+  // its cleanup outcome mounted until explicit Back/Return or category disposal.
+  const retained = waiting || view.stage === Stage.Deleted || Boolean(pending.current?.logout || pending.current?.operation || pending.current?.deletion);
+  useRetainSettingsTask(retained, waiting ? SettingsTaskStatus.Pending : pending.current?.retry !== undefined ? SettingsTaskStatus.Uncertain : SettingsTaskStatus.AwaitingConfirmation);
   const mounted = useRef(false), activeRef = useRef(active);
   activeRef.current = active;
   const live = (p: Attempt) => mounted.current && activeRef.current && !opening?.disposed && !p.disposed && pending.current === p;
@@ -234,7 +240,6 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
   };
   const leave = () => { if (pending.current) pending.current.disposed = true; close(); };
   if (view.stage === Stage.Deleted) return <AccountDeletionResult initial={confirmed} active={active} deleted={deleted} />;
-  const waiting = [Stage.Checking, Stage.Logout, Stage.Deleting].includes(view.stage);
   return <section className="subscription-account-create account-deletion">
     <h3>{waiting ? copy("account-deletion.deleting_983c74", { v0: resourceName(confirmed) }) : copy("account-deletion.delete_a19801", { v0: resourceName(confirmed) })}</h3>
     {view.stage === Stage.Confirmation ? <>

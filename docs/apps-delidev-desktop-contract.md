@@ -349,7 +349,7 @@ geometry/keyboard behavior or real macOS/Windows/Linux notification delivery.
 ### Inbox workspace
 Inbox is one persistent list/detail workspace for retained requests and terminal results. The list starts with no selection and fetches server-filtered pages of 20 using the generated source and read-state enums. Changing either filter resets pagination; expired cursors return to the first page. Rows show the retained Inbox record time and current read state. Selecting a row performs a fresh exact `GetInboxEntry`; opening from a native notification uses the same path and preserves the item's read state. Reading and notification activation never mark an entry read. Read-state changes are explicit revision-bound mutations.
 
-The selected detail refreshes while Inbox is active and the window is visible, and revalidates on focus/visibility return. This selected-item read is separate from the existing metadata-only notification candidate poll, which remains on its ten-second process-wide schedule. A detail item outside the current list page remains viewable after its exact source is joined again. Missing, mixed, stale or unauthorized source state is unavailable or read-only; it cannot enable a response. Session pause/archive/recovery and active-execution ownership checks remain required in addition to the Inbox read.
+The selected detail refreshes every five seconds while Inbox is active and the window is visible, and revalidates on focus/visibility return. Coalesce timer and return events while the current exact selected-entry read is pending, so a read longer than the interval can finish without cancellation or generation replacement. A selection change, explicit refresh or notification activation still starts a fresh generation and fences older results. Retain the last validated view as read-only while refreshing; a missing, foreign or unauthorized result removes its controls. Hidden Inbox pauses periodic refresh. This selected-item read is separate from the existing metadata-only notification candidate poll, which remains on its ten-second process-wide schedule. A detail item outside the current list page remains viewable after its exact source is joined again. Missing, mixed, stale or unauthorized source state is unavailable or read-only; it cannot enable a response. Session pause/archive/recovery and active-execution ownership checks remain required in addition to the Inbox read.
 
 Question/approval forms share their typed controls with the session view, but Inbox drafts remain React-memory-only and scoped to the effective connection identity. Each draft retains the original interaction ID, interaction revision and request identity. Preserve a draft after source/request changes for inspection and block applying it to a new request. Bound the serialized collection to 4 MiB and 1,000 nonempty requests per connection; a limit error keeps the previous draft intact. An uncertain submission retains its exact mutation identity and may be retried only after a fresh current-source read. The persistent Inbox controller preserves drafts while the user visits other app surfaces. This UI work does not establish native notification delivery on a supported operating system.
 
@@ -502,6 +502,8 @@ X, Escape and local Cancel dismiss presentation; backdrop clicks do not dismiss 
 
 Internal workflow and confirmation steps share one native modal surface, keeping their parent controllers mounted rather than stacking dialogs. The dialog has no separate Settings lifetime. Category departure and Settings exit retain the disposal rules below, including original native/account ownership and detached work. The native modal makes the background inert and contains Tab/Shift+Tab. Creation focuses its first input, long details focus their title and destructive confirmations focus the least destructive Cancel/Keep action. Restore focus only to a connected visible opener; otherwise use that category's primary action/title. Do not overwrite a deliberate focus transfer or restore a departed category. Closing a compact category drawer precedes opening its task. Follow the [W3C modal Dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
 
+Direct ChatGPT account deletion registers task retention independently of the mutation registry. Pending checks, submitted/observed logout and deletion, paused original recovery and the accepted cleanup view retain the same controller through X/Escape. Reopening preserves original request UUIDs, revisions and cleanup account identity without sending a request. Explicit Back/Return keeps its existing departure behavior, and hidden completion cannot reopen, navigate or focus. The [subscription Settings contract](apps-delidev-subscription-settings-contract.md#task-dialogs) owns the sequence and account safeguards.
+
 Validation covers open/close/save/failure/denial, unchanged list position, discarded drafts/secrets, pending close, exact uncertain retry, duplicate blocking, hidden late results and departure, X/Escape/Tab/Shift+Tab/return focus, drawer handoff, Strict Mode and same-server reconnect. The frontend jsdom suite uses at most four workers to preserve timer responsiveness during concurrent native builds; test and product deadlines remain independent and unchanged. Raise concurrency only after verifying those suites under peak shared-host load. Browser fixtures cover light/dark at 1440×900, 1280×820, 960×640, 640×480 and effective 200% layouts. Keep those checks separate from actual packaged CEF keyboard/zoom and account/platform acceptance. Prepare required generated clients and hydrated LFS assets, run `pnpm test` in `apps/delidev`, and remove generated `dist` directories after validation. No RPC, schema, migration or dependency changes are required.
 
 ### Settings screen and visit lifetime (issue #1236)
@@ -527,6 +529,47 @@ models retain their original IDs, discovery provenance, display settings and
 historical attribution. Source-scoped server catalog queries supply autocomplete.
 
 ### Agent Worker wizard
+
+The current single-source wizard uses System `AGENT_WORKER_WIZARD_V1 = 33`
+and the singular `SaveAgentWorkerRequest.model`. The source-route extension below
+is reserved and pending implementation; capability 33 does not enable it.
+
+#### Reserved source-route extension
+
+PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5` on main before dependent implementation.
+Follow the [catalog](cmds-delidev-catalog-contract.md#planned-agent-worker-source-routes),
+[protocol](protos-delidev-v1-contract.md#agent-worker-source-route-reservations) and
+[structure](cmds-delidev-structure-contract.md#agent-worker-source-route-reservations)
+contracts. System capability 35 retains its independent known-subscription-model
+ownership. These reservations grant no routing, catalog retrieval, native discovery,
+authentication, account entitlement or execution support. They add no migration
+and do not change active schemas, generated bindings or runtime advertisements.
+
+The planned extension retains one Harness and ordered source groups. Each group
+contains at least one account from one subscription service or API provider and
+one typed model selection for that source. Accounts and models remain aligned
+within their own group. The Model stage will select one model per group; Configure
+will review all groups in their saved order. The repeated `route_models` field
+reuses `AgentWorkerModelSelection`, with exactly one entry per source group in the
+same order, and cannot coexist with the legacy singular `model`. Go will validate
+every group's source membership and atomically reuse/create all selected models
+and save the Worker under the original revision and UUID-v7 receipt. A failed save
+must roll back the complete model/Worker mutation. Exact uncertain requests and
+the existing visit, reconnect and late-response guards remain authoritative.
+
+Source fallback will apply only at the first execution of a new session. Every
+account in each preceding group must have confirmed quota exhaustion before a
+later group can be selected. Unknown quota, disconnection, authentication failure
+or incompatibility cannot authorize fallback. Observed quota recovery restores
+the earlier group's priority for subsequent new sessions. Existing sessions keep
+their selected account/model and immutable historical attribution. Configuration
+and quota observations remain separate from execution eligibility and native
+support. The capability-33 singular flow, legacy APIs and historical records
+remain compatible. This reservation correction selects no new visual design and
+implements no controls or routing.
+
+#### Current capability-33 flow
 
 Creation and editing use the same four steps: Harness, Accounts, Model, Configure.
 Fill existing values on edit. Stage navigation never saves. Choose a supported
@@ -775,7 +818,7 @@ The independent issue #1146 OAuth capability and managed OpenRouter connection m
 
 The `api-accounts` category presents **AI API Keys** in the category navigation and page title, with the description “Manage AI API keys and keyless local connections. Connection and health are separate states.” API-authored list, wizard, preference, loading, stale/error and accessible copy uses **entry**: Add AI API key, Back to AI API Keys, Manage AI API Keys, Entry name, Choose an API provider and Connect your entry. Issue #1145 supersedes the prior Continue to details control and numbered step marker with direct provider actions. Its empty state is “No AI API key entries. Add an entry for an enabled API provider. Keyless local providers do not require a key.” The masked secret remains API key; keyed and keyless actions are Connect API key and Connect local endpoint, followed by separate Validate connection, Disconnect and Manage connection actions. Keyless failures never ask for a key. Shared editor, field, connection and deletion components apply entry terminology only to Account documents with `type: "api"`; preserve subscription/mixed account terminology, aliases, server diagnostics and all stored/RPC/CLI identities. This presentation ships in the ordinary desktop frontend build with no migration, flag, new logging or backend/native change. Record verification in issue #1135, its pull requests and CI runs.
 
-Connection starts unverified. Validation and model discovery show their independent server observations; only explicit actions invoke them. Disconnection describes cancellation and credential removal, and presents accepted state separately from pending credential/Worker cleanup. A retained removal marker retries its original request ID and expected revision, never the newer account revision. Unsupported or unsafe revision encoding disables that retry instead of guessing.
+Connection starts unverified. Validation and model discovery show their independent server observations; only explicit actions invoke them. Disconnection describes cancellation and credential removal, and presents accepted state separately from pending credential/Worker cleanup. A retained removal marker retries its original request ID and expected revision, never the newer account revision. The API account controller reconstructs that request from the bounded strict UTF-8 account document's original JSON tokens, including after a fresh mount. Accept only a canonical UUID-v7 request ID and a positive unquoted decimal integer through the maximum uint64 value; convert the revision token directly to bigint. Reject malformed, quoted, fractional, exponent, overflowing or duplicate fields, unknown marker members and markers conflicting with a live connection or account type. Invalid markers disable retry without creating another mutation identity. Retain pending cleanup until the server confirms protected deletion and clears its marker.
 
 ### Server preferences and Git
 Server preferences edits singleton server default account routing; Git edits the global automatic-fetch gate and complete PR remediation policy. The presentation-only ServerPreferenceSection enum provides All, AccountRouting and GitWorkflow. Both scoped screens use the same SETTINGS resource and shared configuration RPC, seed the full defaults on creation and preserve every hidden field when saving. Network settings remains in Server preferences with its independent Network RPC authority. New settings seed the documented Go defaults, verified against `settings defaults` in real integration tests. Once the singleton exists, the UI exposes only revision-bound editing, preserves all unrelated notification values and retained remediation selections and does not offer duplicate creation or generic deletion. Existing execution snapshots retain their original routing; Agent configurations with an explicit policy still override inheritance. Worktree fetch requires both global and repository preferences, and Local checkouts stay unchanged. Native notification delivery and remediation behavior remain separate required features.
@@ -919,9 +962,9 @@ Status polling is read-only and separately reports not started, starting, contro
 ### Projects, repositories and configuration actions
 Project forms retain ordered repositories and an explicitly selected primary repository. Removing the primary clears that choice without selecting a replacement. Agent/account restrictions preserve the difference between unrestricted selection and an explicitly configured empty list, which permits none.
 
-Repository forms request read-only inspection from the explicitly selected Worker, show its canonical root and recorded remote defaults, and add only that inspected checkout. Base and starting references remain separate explicit local-branch/remote-branch/commit choices; omitted choices use the Worker's inspected default or return an ambiguity error. Fetch remains an explicit Worktree preparation preference. The renderer never normalizes another machine's paths or runs Git. Active/uncertain inspection prevents replacing or submitting its containing edit within the visit; global navigation can still dispose Settings under the common visit policy without canceling accepted effects.
+In the implemented checkout flow, repository forms request read-only inspection from the explicitly selected Worker, show its canonical root and recorded remote defaults, and add only that inspected checkout. Base and starting references remain separate explicit local-branch/remote-branch/commit choices; omitted choices use the Worker's inspected default or return an ambiguity error. Fetch remains an explicit Worktree preparation preference. The renderer never normalizes another machine's paths or runs Git. Active/uncertain inspection prevents replacing or submitting its containing edit within the visit; global navigation can still dispose Settings under the common visit policy without canceling accepted effects.
 
-Issue #1142 scopes new registration to a folder-first Add repository flow. Initially show a folder-selection card, Choose folder, Enter a path… and passive This computer context without metadata fields or a Next action. The optional desktop-host `rfd = 0.16.0` dependency implements one asynchronous folder-only dialog per native process; its command accepts no renderer-selected path/content/Git authority, bounds the returned path to 4096 bytes, and authorizes registered trusted local (`main`/`local-*`) or independently bound `server-*` webviews before opening and after completion. Cancellation returns no selection and leaves the draft unchanged. Picker busy, invalid-path/evidence, authorization and other selection failures have wait/reselect/access guidance before Worker verification; no failure before accepting a selection may claim that a newly selected folder was retained. A failed replacement picker preserves the existing confirmation and options.
+Issue #1142 defines the implemented checkout registration as a folder-first Add repository flow. Initially show a folder-selection card, Choose folder, Enter a path… and passive This computer context without metadata fields or a Next action. The optional desktop-host `rfd = 0.16.0` dependency implements one asynchronous folder-only dialog per native process; its command accepts no renderer-selected path/content/Git authority, bounds the returned path to 4096 bytes, and authorizes registered trusted local (`main`/`local-*`) or independently bound `server-*` webviews before opening and after completion. Cancellation returns no selection and leaves the draft unchanged. Picker busy, invalid-path/evidence, authorization and other selection failures have wait/reselect/access guidance before Worker verification; no failure before accepting a selection may claim that a newly selected folder was retained. A failed replacement picker preserves the existing confirmation and options.
 
 The main/saved fresh same-computer Worker proof adapter passes through App to the Settings visit. Recheck the original connection/server binding and consume only its machine ID; no credential is retained in registration drafts, query keys or logs. Known stopped/exited status, stale registered server heartbeat, access denial and unavailable verification have independent guidance. No hostname/catalog-first selection, registration or startup occurs. Manual entry can explicitly select another computer from the bounded existing selector, preserving its native path bytes for that Worker's inspection.
 
@@ -931,7 +974,34 @@ Successful primary selection clears repository-bound overrides and reinspects wi
 
 The creation column is limited to 760px, retaining Settings white/gray/blue tokens, current category naming, 40px targets, disclosure state and progress/error announcements. Summary rows/actions stack on narrow layouts; existing Settings scrolling, shared compact category drawer and destination focus apply at 960×640 and 200% zoom. Native picker/webview authorization and keyboard/geometry evidence must be recorded independently for macOS, Windows and Linux; component/compile evidence alone does not establish those runtime outcomes. No new feature flag is required; optional result enrichment uses protocol capability negotiation.
 
-Saving repository configuration acknowledges a durable asynchronous job. The UI retains and polls that exact job, shows queued/claimed/uncertain/failed/canceled/succeeded independently, and reports configuration publication only after success. Failed/canceled saves permit an explicit return to the retained draft; uncertainty cannot submit another save. Read refresh never resubmits a Worker operation. Confirmed configuration deletion uses the captured revision, preserves retained sessions and explains affected future schedules/account cleanup; uncertain retries retain their original identity. ChatGPT account deletion additionally composes the confirmed original server logout and cleanup before configuration removal, using a fresh bigint revision after cleanup while preserving confirmed preferences. Its category-owned controller stops follow-up deletion on departure and keeps independent device/browser cleanup visible; see the [subscription Settings contract](apps-delidev-subscription-settings-contract.md). Agent routing previews show the server's candidates, eligibility, selected account, nullable quota evidence and fallback without consuming routing state or granting execution readiness.
+In the implemented checkout flow, saving repository configuration acknowledges a durable asynchronous job. The UI retains and polls that exact job, shows queued/claimed/uncertain/failed/canceled/succeeded independently, and reports configuration publication only after success. Failed/canceled saves permit an explicit return to the retained draft; uncertainty cannot submit another save. Read refresh never resubmits a Worker operation. Confirmed configuration deletion uses the captured revision, preserves retained sessions and explains affected future schedules/account cleanup; uncertain retries retain their original identity. ChatGPT account deletion additionally composes the confirmed original server logout and cleanup before configuration removal, using a fresh bigint revision after cleanup while preserving confirmed preferences. Its category-owned controller stops follow-up deletion on departure and keeps independent device/browser cleanup visible; see the [subscription Settings contract](apps-delidev-subscription-settings-contract.md). Agent routing previews show the server's candidates, eligibility, selected account, nullable quota evidence and fallback without consuming routing state or granting execution readiness.
+
+#### Reserved remote-first repository registration
+
+The approved remote-first extension follows the [protocol reservations](protos-delidev-v1-contract.md#remote-first-repository-reservations)
+for System 37 (`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`).
+Both allocations must be established on main before dependent implementation.
+They are reservations only: they grant no URL registration, managed clone or
+execution capability and add no migration. The folder-first and inspected-checkout
+requirements above describe the implemented checkout flow.
+
+Future URL-only registration will be an owner/client configuration operation
+without Worker admission or same-computer proof. The configured remote URL will
+be the repository source. Managed Worktree preparation will clone that immutable
+source on the selected Worker under its separate remote-clone authority, as
+defined by the [workspace owner](cmds-delidev-workspace-contract.md#reserved-remote-first-workspace-source).
+An optional checkout connection will authorize only explicit Local execution
+with its original machine authority; it cannot replace the remote Worktree source.
+
+Configured remote-source metadata is distinct from raw URLs obtained during
+Worker inspection. Existing inspection privacy still excludes raw inspected URLs
+and credentials from renderer/server metadata and logs. Server GitHub PATs remain
+isolated from Worker Git authentication, and original Local checkouts retain their
+existing deletion protection. System 31/32 and Worker 18 retain their separate
+immediate-clone/listing contracts. The [structure contract](cmds-delidev-structure-contract.md#repository-addition-prerequisites)
+requires the complete repository/session/schedule/Worker, native ownership,
+recovery, snapshot, Fork, Sidechat and deletion composition before feature completion.
+This reservation boundary defines no URL schemes, validation rules or visual controls.
 
 ### Worker discovery and schedules
 Execution-Worker settings show platform, last observation, exact selected/resolved harness paths, version and native-protocol outcomes. Refreshing without path edits retains current selections; explicit editing replaces all four paths, with empty paths meaning Worker PATH. Original revisions and uncertain requests are retained. A checkbox separately authorizes native protocol validation without login/inference. Track the accepted discovery job before reporting completion; never install a harness or turn detection into execution readiness.
@@ -1280,6 +1350,8 @@ Repository settings now accept explicit GitHub owner/name and provide an opt-in 
 Repository settings include an explicit GitHub item browser with PR/issue selection, state filters, bounded page size, plain title/body search, paging and detail/back/refresh actions. It uses generated Connect Query, validates exact scope/query/provenance before display, distinguishes incomplete/capped search and unknown mergeability, and discards inactive data. PR detail offers separate immutable diff, latest head Checks and combined commit-status reads, with bounded eight-query Back history. Validate exclusive response families, exact heads/IDs/counts and original known/unknown classifications; empty statuses cannot become success. Render patch/digest/base/head and independent state tables inertly. Frontend digest validation is structural; Go checks the original bytes. No head observation implies required CI, evaluated-commit, reviewer or automation eligibility. Bodies remain inert text; validated GitHub addresses offer explicit closed native opening. Remediation surfaces remain required separately.
 
 The session's explicit PR associations panel uses generated SessionQuery link/unlink and session-scoped ResourceQuery pages. Keep the conversation mounted, include archived sessions, restrict new selections to the current project's named repositories and show original titles/identities as historical inert data. Decode the complete page before rendering actions, preserve exact decimal IDs and revision values, and bind link acknowledgments to their original request/repository/number. Uncertain mutations retain exact bytes across panel/session navigation. Closing discards association queries while ordinary configuration selectors keep their existing connection-scoped cache policy. Link/unlink never resumes a session, executes a fix, resolves a problem or writes to GitHub. See the integration contract for persisted metadata and receipt boundaries.
+
+Show pending unlink recovery separately from current association rows, using the connection-owned mutation registry filtered to the displayed Session and original association. The original association ID remains visible when a committed unlink loses its acknowledgment and the refreshed page is empty. Reopening the panel or returning to that Session retains explicit Retry original PR unlink without automatic replay. Both the original send and retry validate the receipt's association ID and request UUID before clearing the request, even after the sending view unmounts. Retry preserves the original UUID, full-precision association revision and wire bytes; no current row, new unlink or association recreation is required.
 
 GitHub profile management includes revision-bound official token forms through generated Connect Query, explicit fine-grained repository-selection guidance and classic broad-scope disclosure. Form requests are click-driven and late results cannot open a browser after the view closes. Validated PR/issue details offer explicit Open on GitHub. The trusted main/pinned-server native capability delegates only closed GitHub destinations through sidecar stdin to Go OS presentation; it grants no external renderer navigation, credentials or arbitrary opener. See the integration contract.
 
@@ -1672,7 +1744,15 @@ fork in the initial root-only native profile. A mounted
 connection controller retains its name/workspace draft, exact uncertain request
 and accepted job through conversation navigation; Escape hides the modal without
 losing that operation. The name input receives focus. A changed source revision
-requires discarding the fresh draft and inspecting the new boundary. Default
+requires discarding the fresh draft and inspecting the new boundary. Fork
+preflight belongs to one draft generation and captures its exact source identity,
+revision, turn and form values before asynchronous validation. Discard or source
+replacement invalidates that preflight; recheck its generation after profile
+refresh and Local Worker proof, before submitting. A late result cannot admit the
+discarded source or populate a replacement draft. Permit only one preflight per
+generation. Hiding the modal preserves preflight and any admitted job, including
+the original uncertain request and explicit retry. Connection disposal invalidates
+unfinished preflight. Default
 workspace copying is independent; offer explicit Local sharing only for a Local
 source with fresh same-machine Worker proof. Managed Worktree sources retain only
 the independent workspace choice, preserving the child after parent deletion. Poll `GetSessionFork` only by the accepted job ID, stop automatic

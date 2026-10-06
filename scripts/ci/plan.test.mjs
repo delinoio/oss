@@ -113,9 +113,34 @@ test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", 
 
 test("shared release implementations select the fixture job that exercises them", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of ["scripts/release/project.mjs", "scripts/release/runmoor.mjs", "scripts/release/runmoor-homebrew.mjs", "packaging/homebrew/templates/runmoor.rb.tmpl", "scripts/release/update-homebrew.sh"]) {
+    for (const path of ["scripts/release/project.mjs", "scripts/release/legacy-cli-release.mjs", "scripts/release/runmoor.mjs", "scripts/release/runmoor-homebrew.mjs", "packaging/homebrew/templates/runmoor.rb.tmpl", "scripts/release/update-homebrew.sh"]) {
       assert.equal(planJobs(event, [path]).jobs["devhud-release-contracts"], true, `${event}: ${path}`);
     }
+  }
+});
+
+test("DeliDev updater generator changes select both consumers and force desktop checks", () => {
+  const path = "scripts/release/generate-delidev-updater.mjs";
+  for (const event of [Event.PullRequest, Event.Push]) {
+    assert.deepEqual(selected(event, [path]), ["devhud-release-contracts", "delidev-frontend"]);
+    assert.equal(planJobs(event, [path]).forced["delidev-frontend"], true);
+    assert.equal(validateResults(results(event, [path])), true);
+    for (const id of ["devhud-release-contracts", "delidev-frontend"]) {
+      for (const result of ["failure", "cancelled", "skipped", undefined]) {
+        const needs = results(event, [path]);
+        needs[id].result = result;
+        assert.throws(() => validateResults(needs), new RegExp(id, "u"));
+      }
+    }
+  }
+});
+
+test("unrelated release helpers retain their narrower owners", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["scripts/release/runmoor.mjs", "scripts/release/runmoor-homebrew.mjs"]) {
+      assert.deepEqual(selected(event, [path]), ["devhud-release-contracts"]);
+    }
+    assert.deepEqual(selected(event, ["scripts/release/generate-delidev-updater.test.mjs"]), ["devhud-release-contracts"]);
   }
 });
 
@@ -214,6 +239,35 @@ test("async-commit-hook failures, missing results and unauthorized skips fail th
   const needs = results(Event.PullRequest, paths);
   delete needs["async-commit-hook"];
   assert.throws(() => validateResults(needs), /inventory/u);
+});
+
+test("DevHud generated inputs select shared freshness without selecting DeliDev jobs", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of [
+      "packages/devhud-api-client/src/gen/devhud/v1/common_pb.ts",
+      "packages/devhud-api-client/src/gen/devhud/v1/account-AccountService_connectquery.ts",
+      "protos/devhud/v1/account.proto", "protos/gen/go/devhud/v1/account.pb.go",
+    ]) {
+      const plan = planJobs(event, [path]);
+      assert.equal(plan.jobs["async-commit-hook"], true, `${event}: ${path}`);
+      for (const id of ["delidev-protocol", "delidev-client", "delidev-frontend"]) {
+        assert.equal(plan.jobs[id], false, `${event}: ${path}: ${id}`);
+      }
+      for (const id of ["devhud-frontend", "devhud-admin", "devhud-api"]) {
+        assert.equal(plan.jobs[id], true, `${event}: ${path}: ${id}`);
+      }
+      assert.equal(validateResults(results(event, [path])), true);
+      for (const result of ["failure", "cancelled", "skipped", undefined]) {
+        const needs = results(event, [path]);
+        needs["async-commit-hook"].result = result;
+        assert.throws(() => validateResults(needs), /async-commit-hook/u);
+      }
+      const needs = results(event, [path]);
+      delete needs["async-commit-hook"];
+      assert.throws(() => validateResults(needs), /inventory/u);
+    }
+    assert.equal(planJobs(event, ["packages/devhud-api-client/src/client.ts"]).jobs["async-commit-hook"], false);
+  }
 });
 
 test("workspace, shared, runtime, and external contract inputs select their owners", () => {

@@ -1,5 +1,5 @@
 import { LocalizedText, copy, useLocale } from "./localization";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ForkPurpose, ForkWorkspace, ResourceQuery, SessionQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -45,6 +45,10 @@ export function SessionForkProvider({ children, openSession, readLocalWorker }: 
   const [workspace, setWorkspace] = useState(ForkWorkspace.UNSPECIFIED);
   const [job, setJob] = useState<Resource>();
   const [invalid, setInvalid] = useState(false);
+  const generation = useRef(0);
+  const preflight = useRef<number | undefined>(undefined);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => () => { generation.current += 1; preflight.current = undefined; }, []);
   const local = useLocalWorkerProof(readLocalWorker);
   const client = useQueryClient();
   const mutation = useRetainedMutation("session-fork", SessionQuery.forkSession, (response, request) => {
@@ -59,30 +63,41 @@ export function SessionForkProvider({ children, openSession, readLocalWorker }: 
   const profile = useOpenCodeForkProfile(source, visible && Boolean(source) && sourceHarness(source!) === "opencode" && !job);
   const stale = Boolean(source && current.data?.resource && current.data.resource.revision !== source.revision);
   const blocked = mutation.busy || mutation.uncertain || local.busy || invalid;
+  const invalidatePreflight = () => { generation.current += 1; preflight.current = undefined; setChecking(false); };
   const show = (resource: Resource, requestedPurpose = ForkPurpose.UNSPECIFIED) => {
-    if (!source || (!blocked && !job && (source.id !== resource.id || purpose !== requestedPurpose))) { setSource(resource); setPurpose(requestedPurpose); setName(`${resourceName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(0, 256)); setWorkspace(ForkWorkspace.UNSPECIFIED); }
+    if (!source || (!blocked && !job && (source.id !== resource.id || purpose !== requestedPurpose))) { invalidatePreflight(); setSource(resource); setPurpose(requestedPurpose); setName(`${resourceName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(0, 256)); setWorkspace(ForkWorkspace.UNSPECIFIED); }
     setVisible(true);
   };
   const submit = async () => {
-    if (!source || blocked || job || stale || !name.trim() || !settled(source) || current.data?.resource && !settled(current.data.resource)) return;
-    if (sourceHarness(source) === "opencode") {
-      const fresh = await profile.refetch();
-      if (fresh.isError || fresh.data !== true) return;
-    }
+    if (!source || preflight.current !== undefined || blocked || job || stale || !name.trim() || !settled(source) || current.data?.resource && !settled(current.data.resource)) return;
+    const originalGeneration = generation.current;
+    preflight.current = originalGeneration;
+    setChecking(true);
+    // Bind all asynchronous checks to this draft and immutable source boundary.
+    // Discard/replacement invalidates preflight; hiding retains the operation.
+    const active = () => generation.current === originalGeneration && preflight.current === originalGeneration;
     const request = { mutation: { id: source.id, expectedRevision: source.revision, requestId: newRequestId() }, expectedTurnId: text(object(document(source).execution).native_turn_id), name, workspace, ...(sidechat ? { purpose: ForkPurpose.SIDECHAT } : {}) };
-    const proof = workspace === ForkWorkspace.LOCAL ? await local.load(text(document(source).machine_id)) : undefined;
-    if (workspace === ForkWorkspace.LOCAL && !proof) return;
-    void mutation.send({ ...request, localWorkerToken: proof?.token });
+    try {
+      if (sourceHarness(source) === "opencode") {
+        const fresh = await profile.refetch();
+        if (!active() || fresh.isError || fresh.data !== true) return;
+      }
+      const proof = workspace === ForkWorkspace.LOCAL ? await local.load(text(document(source).machine_id)) : undefined;
+      if (!active() || workspace === ForkWorkspace.LOCAL && !proof) return;
+      void mutation.send({ ...request, localWorkerToken: proof?.token });
+    } finally {
+      if (active()) { preflight.current = undefined; setChecking(false); }
+    }
   };
   const resultJob = fork.data?.job ?? job;
   const state = text(document(resultJob).state);
   const problem = object(document(resultJob).problem);
   const child = state === JobState.Succeeded && fork.data?.session?.kind === EntityKind.SESSION && text(object(document(fork.data.session).fork).source_session_id) === source?.id ? fork.data.session : undefined;
-  const reset = () => { setSource(undefined); setJob(undefined); setVisible(false); setInvalid(false); void client.invalidateQueries({ refetchType: "active" }); };
+  const reset = () => { invalidatePreflight(); setSource(undefined); setJob(undefined); setVisible(false); setInvalid(false); void client.invalidateQueries({ refetchType: "active" }); };
   return <Context.Provider value={show}>{children}{source && visible ? <Modal title={sidechat ? copy("session-fork.openSidechat_20501a") : copy("session-fork.forkSession_51bc41")} close={() => setVisible(false)}>
     {sidechat ? <p>{copy("session-fork.discussTheCompletedTurnWithThe_ebd3a0")}</p> : <p><LocalizedText id="session-fork.createAnIndependentConversationFromAt_76ffeb" components={{ s0: <>{resourceName(source)}</>, s1: <>{sourceHarness(source) === "opencode" ? copy("session-fork.theChildKeepsASeparateCopy_a3e97a") : copy("session-fork.sourceMessagesStayInTheirOriginal_f0fe74")}</> }} /></p>}
     <p><LocalizedText id="session-fork.sourceTurn_0471be" components={{ s0: <>{source.id}</>, s1: <>{text(object(document(source).execution).native_turn_id)}</> }} /></p>
-    {!job ? <form onSubmit={(event) => { event.preventDefault(); void submit(); }}><label>{copy("session-fork.forkName_d9ad67")}<input autoFocus required maxLength={256} value={name} disabled={blocked} onChange={(event) => setName(event.target.value)} /></label>{!sidechat ? <label>{copy("session-fork.workspace_87bb59")}<select value={workspace} disabled={blocked} onChange={(event) => setWorkspace(Number(event.target.value) as ForkWorkspace)}><option value={ForkWorkspace.UNSPECIFIED}>{copy("session-fork.independentWorkspace_c606c9")}</option>{document(source).workspace === "local" ? <option value={ForkWorkspace.LOCAL} disabled={!local.available}>{copy("session-fork.shareThisComputerSLocalCheckouts_3fca80")}</option> : null}</select></label> : null}{sidechat ? <p>{copy("session-fork.sidechatStartsPausedWithNativeRead_cafd5f")}</p> : <p>{sourceHarness(source) === "opencode" ? copy("session-fork.opencodeForksSupportCompletedPlainText_35db18") : copy("session-fork.independentProjectWorkspacesCopyEveryRepository_17283a")}</p>}{stale ? <p role="alert">{copy("session-fork.theSourceChangedCloseAndDiscard_45f91e")}</p> : null}<Problem error={current.error} />{local.problem ? <p role="alert">{local.problem}</p> : null}<button disabled={blocked || stale || !name.trim() || !settled(current.data?.resource ?? source) || sourceHarness(source) === "opencode" && (profile.isFetching || profile.isError || profile.data !== true)}>{sidechat ? copy("session-fork.createSidechat_664521") : copy("session-fork.createFork_d217b7")}</button>{!blocked ? <button type="button" onClick={reset}>{copy("session-fork.discardForkDraft_8920d0")}</button> : null}</form> : <section aria-label={copy("session-fork.forkOperation_93dfa0")}><p role="status"><LocalizedText id="session-fork.forkOperation_fab50f" components={{ s0: <>{state || copy("session-fork.extra.a00fb0c50741")}</> }} /></p><small>{job.id}</small>{!child ? <p>{copy("session-fork.theChildAppearsAfterNativeHistory_0f8ca6")}</p> : <button onClick={() => { reset(); openSession(child.id); }}>{copy("session-fork.openForkedSession_0a254e")}</button>}{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<Problem error={fork.error} /><button disabled={fork.isFetching} onClick={() => void fork.refetch()}>{copy("session-fork.refreshForkOperation_dff1fe")}</button>{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={reset}>{copy("session-fork.finishForkOperation_c7f817")}</button> : null}</section>}
+    {!job ? <form onSubmit={(event) => { event.preventDefault(); void submit(); }}><label>{copy("session-fork.forkName_d9ad67")}<input autoFocus required maxLength={256} value={name} disabled={blocked} onChange={(event) => setName(event.target.value)} /></label>{!sidechat ? <label>{copy("session-fork.workspace_87bb59")}<select value={workspace} disabled={blocked} onChange={(event) => setWorkspace(Number(event.target.value) as ForkWorkspace)}><option value={ForkWorkspace.UNSPECIFIED}>{copy("session-fork.independentWorkspace_c606c9")}</option>{document(source).workspace === "local" ? <option value={ForkWorkspace.LOCAL} disabled={!local.available}>{copy("session-fork.shareThisComputerSLocalCheckouts_3fca80")}</option> : null}</select></label> : null}{sidechat ? <p>{copy("session-fork.sidechatStartsPausedWithNativeRead_cafd5f")}</p> : <p>{sourceHarness(source) === "opencode" ? copy("session-fork.opencodeForksSupportCompletedPlainText_35db18") : copy("session-fork.independentProjectWorkspacesCopyEveryRepository_17283a")}</p>}{stale ? <p role="alert">{copy("session-fork.theSourceChangedCloseAndDiscard_45f91e")}</p> : null}<Problem error={current.error} />{local.problem ? <p role="alert">{local.problem}</p> : null}<button disabled={blocked || checking || stale || !name.trim() || !settled(current.data?.resource ?? source) || sourceHarness(source) === "opencode" && (profile.isFetching || profile.isError || profile.data !== true)}>{sidechat ? copy("session-fork.createSidechat_664521") : copy("session-fork.createFork_d217b7")}</button>{!blocked ? <button type="button" onClick={reset}>{copy("session-fork.discardForkDraft_8920d0")}</button> : null}</form> : <section aria-label={copy("session-fork.forkOperation_93dfa0")}><p role="status"><LocalizedText id="session-fork.forkOperation_fab50f" components={{ s0: <>{state || copy("session-fork.extra.a00fb0c50741")}</> }} /></p><small>{job.id}</small>{!child ? <p>{copy("session-fork.theChildAppearsAfterNativeHistory_0f8ca6")}</p> : <button onClick={() => { reset(); openSession(child.id); }}>{copy("session-fork.openForkedSession_0a254e")}</button>}{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<Problem error={fork.error} /><button disabled={fork.isFetching} onClick={() => void fork.refetch()}>{copy("session-fork.refreshForkOperation_dff1fe")}</button>{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={reset}>{copy("session-fork.finishForkOperation_c7f817")}</button> : null}</section>}
     <Problem error={mutation.error} />{mutation.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("session-fork.retryTheSameForkRequest_782e42")}</button> : null}{invalid ? <p role="alert">{copy("session-fork.theForkAcknowledgmentIsIncompleteRetain_a0f92f")}</p> : null}
   </Modal> : null}{source && !visible ? <button className="notice" onClick={() => setVisible(true)}>{copy("session-fork.returnToRetainedForkOperation_1beee5")}</button> : null}</Context.Provider>;
 }

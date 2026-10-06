@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
@@ -116,6 +119,75 @@ test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {
     assert.match(operations, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"), path);
   }
 });
+
+test("CEF maintainer summary heredoc parses as a Node module", () => {
+  const steps = yaml.load(workflow).jobs.compare.steps;
+  const summaryStep = steps.find(({ name }) => name === "Write maintainer summary");
+  const heredoc = summaryStep.run.match(/^node --input-type=module <<'NODE' >> "\$GITHUB_STEP_SUMMARY"\n([\s\S]*?)\nNODE$/mu);
+  assert.ok(heredoc, "extract the actual workflow summary heredoc");
+  const result = spawnSync(process.execPath, ["--input-type=module", "--check"], {
+    input: heredoc[1], encoding: "utf8", timeout: 10_000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+
+  const uploadStep = steps.find(({ name }) => name === "Upload bounded metadata report");
+  assert.ok(steps.indexOf(uploadStep) > steps.indexOf(summaryStep));
+  assert.equal(summaryStep.if, undefined);
+  assert.equal(summaryStep["continue-on-error"], undefined);
+  assert.equal(uploadStep.if, undefined);
+  assert.match(uploadStep.uses, /^actions\/upload-artifact@/u);
+  assert.equal(uploadStep.with.path, "devhud-cef-security-review.json");
+  assert.equal(uploadStep.with["if-no-files-found"], "error");
+  assert.equal(uploadStep.with["retention-days"], 35);
+});
+
+for (const { name, signals, total, comparison, truncated } of [
+  { name: "zero signals", signals: [], total: 0, comparison: { status: "identical", aheadBy: 0, behindBy: 0, totalCommits: 0 }, truncated: false },
+  { name: "truncated signals", signals: Array.from({ length: 50 }, () => fixture.securitySignals[0]), total: 75, comparison: fixture.comparison, truncated: true },
+]) {
+  test(`CEF maintainer summary writes safe metadata for ${name}`, (t) => {
+    const directory = mkdtempSync(join(tmpdir(), "devhud-cef-summary-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const rawContent = "fixture-only-raw-content-not-for-summary";
+    const report = {
+      ...fixture,
+      comparison,
+      securitySignals: signals.map((signal) => ({ ...signal, message: rawContent })),
+      securitySignalTotal: total,
+      securitySignalsTruncated: truncated,
+      commitMessage: rawContent,
+      credentials: rawContent,
+      nativeContent: rawContent,
+    };
+    const reportPath = join(directory, "devhud-cef-security-review.json");
+    const reportBytes = `${JSON.stringify(report)}\n`;
+    writeFileSync(reportPath, reportBytes, { mode: 0o600 });
+    const summaryPath = join(directory, "summary.md");
+    const summaryStep = yaml.load(workflow).jobs.compare.steps.find(({ name }) => name === "Write maintainer summary");
+    const result = spawnSync("bash", ["-c", summaryStep.run], {
+      cwd: directory,
+      env: { PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH}`, GITHUB_STEP_SUMMARY: summaryPath },
+      encoding: "utf8", timeout: 10_000,
+    });
+    assert.equal(result.status, 0, result.stderr || result.error?.message);
+    const summary = readFileSync(summaryPath, "utf8");
+    for (const line of [
+      "## DevHud CEF security review",
+      `- Committed Tauri revision: \`${fixture.committedRevision}\``,
+      `- Upstream \`feat/cef\`: \`${fixture.upstreamRevision}\``,
+      `- Comparison: ${comparison.status}, ahead ${comparison.aheadBy}, behind ${comparison.behindBy}`,
+      `- Security-related commit signals: ${signals.length}`,
+      `- Security-related signals retained: ${signals.length} of ${total}${truncated ? " (truncated)" : ""}`,
+      "- Mutation/publication performed: false/false",
+    ]) assert.ok(summary.split("\n").includes(line), line);
+    assert.equal(summary.includes("(truncated)"), truncated);
+    assert.ok(!summary.includes(rawContent));
+    assert.ok(!summary.includes(fixture.securitySignals[0].sha));
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+    assert.equal(readFileSync(reportPath, "utf8"), reportBytes);
+  });
+}
 
 test("operations contract preserves high-risk CEF, rollback, retention, and redaction boundaries", () => {
   for (const phrase of [

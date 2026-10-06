@@ -87,7 +87,7 @@ export function ApiProviderSettings({
   createCustom: (data?: Document) => void;
   editCustom: (resource: Resource) => void;
   manageAccounts: (providerID: string, entry: ProviderInventoryEntry) => void;
-  addAccount: (providerID: string, entry: ProviderInventoryEntry, oauthSupported: boolean) => void;
+  addAccount: (providerID: string, entry: ProviderInventoryEntry, capabilities: readonly ProviderInventoryCapability[]) => void;
   deleteCustom: (resource: Resource) => void;
 }) {
   useLocale();
@@ -119,7 +119,7 @@ export function ApiProviderSettings({
       <div className="actions">
         <button type="button" disabled={!entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
           if (!entry.providerId) return;
-          if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId, entry, Boolean(result.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1) && result.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER)));
+          if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId, entry, result.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER) ? result.data.capabilities : []);
           else manageAccounts(entry.providerId, entry);
         }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? copy("provider-model-settings.manageAiApiKeys_a84e42") : copy("provider-model-settings.addAiApiKey_2c04a8")}</button>
         {entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled && entry.providerId ? <span>{copy("provider-model-settings.turnOnThisProviderToAdd_6ce913")}</span> : null}

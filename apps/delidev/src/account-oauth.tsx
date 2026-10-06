@@ -5,13 +5,14 @@ import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask, useRet
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
-import { AccountService, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
+import { AccountService, AccountOAuthFlow as WireOAuthFlow, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
 import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
 
-export enum OAuthNativeAction { Begin = "begin", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
-export interface OAuthNativeResult { generation: string; callback_url?: string; code?: number[] }
+export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", Profiles = "profiles", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
+export enum AccountOAuthProfile { OpenRouter = "openrouter", HuggingFace = "hugging-face" }
+export interface OAuthNativeResult { generation: string; callback_url?: string; code?: number[]; state?: number[]; profiles?: AccountOAuthProfile[]; denied?: boolean }
 export type OAuthNativeControl = (opening: string, action: OAuthNativeAction, generation: string, attempt: string, authorization: string) => Promise<OAuthNativeResult>;
 const NativeContext = createContext<OAuthNativeControl | undefined>(undefined);
 export const useOAuthNativeControl = () => useContext(NativeContext);
@@ -49,11 +50,22 @@ function checkedAccount(value: Resource | undefined, pending: Pending): Resource
   return value;
 }
 
-export function useOpenRouterOAuth() {
+export function useAccountOAuth() {
   const native = useContext(NativeContext), opening = useSettingsOpening(), transport = useTransport();
   const service = useMemo(() => createClient(AccountService, transport), [transport]);
   const pending = useRef<Pending | undefined>(undefined), alive = useRef(true);
   const [view, setView] = useState<View>();
+  const [profiles, setProfiles] = useState<readonly AccountOAuthProfile[]>([]);
+  useEffect(() => {
+    if (!native || opening?.disposed) return;
+    let active = true;
+    // This is an inventory read. It creates no listener and opens no browser.
+    void native(newRequestId(), OAuthNativeAction.Profiles, "", "", "").then(result => {
+      if (active && !opening?.disposed) setProfiles((result.profiles ?? []).filter(profile => profile === AccountOAuthProfile.OpenRouter || profile === AccountOAuthProfile.HuggingFace));
+    }).catch(() => { if (active) setProfiles([]); });
+    return () => { active = false; };
+  }, [native, opening]);
+  const supports = (provider: AccountProviderSummary) => Boolean(native && provider.oauthAvailable && (profileOf(provider) === AccountOAuthProfile.OpenRouter || profiles.includes(profileOf(provider)!)));
   const current = (value: Pending) => alive.current && pending.current === value && !value.disposed && !opening?.disposed;
   const disposeNative = (value: Pending) => {
     value.disposed = true;
@@ -74,26 +86,26 @@ export function useOpenRouterOAuth() {
     value.attempt = attempt;
     if (attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_CONNECTED) { value.problem = undefined; value.openFailed = false; }
     if (current(value)) setView({ provider: value.provider, stage: stage(attempt.state), attempt, account,
-      problem: attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? ownedMessage("account-oauth.extra.02b9057706ae") : ownedMessage("account-oauth.extra.50181bfbea4a") : value.problem, openFailed: value.openFailed });
+      problem: attempt.problem?.code === "permission_denied" ? ownedMessage("account-oauth.extra.50181bfbea4a") : attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? ownedMessage("account-oauth.extra.02b9057706ae") : ownedMessage("account-oauth.extra.50181bfbea4a") : value.problem, openFailed: value.openFailed });
   };
-  const finish = async (value: Pending, code: Uint8Array) => {
-    if (!current(value) || !value.attempt || value.completion) { code.fill(0); return; }
+  const finish = async (value: Pending, code: Uint8Array, state: Uint8Array) => {
+    if (!current(value) || !value.attempt || value.completion) { code.fill(0); state.fill(0); return; }
     value.completion = { $typeName: "delidev.v1.Mutation", id: value.attempt.id, expectedRevision: value.attempt.revision, requestId: newRequestId() };
     value.busy = true; setView({ provider: value.provider, stage: Stage.Exchanging, attempt: value.attempt });
     try {
       // Direct write-only RPC: code bytes never enter a mutation/query cache.
-      const result = await service.completeAccountOAuth({ mutation: value.completion, authorizationCode: code });
+      const result = await service.completeAccountOAuth({ mutation: value.completion, authorizationCode: code, authorizationState: state });
       if (result.requestId !== value.completion.requestId) throw new Error("completion receipt");
       if (current(value)) accept(value, result);
     } catch { failure(value, ownedMessage("account-oauth.extra.c91835a315d9")); }
-    finally { code.fill(0); value.busy = false; }
+    finally { code.fill(0); state.fill(0); value.busy = false; }
   };
   const startOriginal = async (value: Pending) => {
     if (!native || !current(value) || value.busy) return;
     value.busy = true;
     try {
       if (!value.generation) {
-        const result = await native(value.nativeOpening, OAuthNativeAction.Begin, "", "", "");
+        const result = await native(value.nativeOpening, profileOf(value.provider) === AccountOAuthProfile.HuggingFace ? OAuthNativeAction.BeginHuggingFace : OAuthNativeAction.Begin, "", "", "");
         if (!current(value)) { disposeNative(value); return; }
         if (!validId(result.generation) || !result.callback_url) throw new Error("callback");
         value.generation = result.generation; value.callback = result.callback_url;
@@ -103,6 +115,7 @@ export function useOpenRouterOAuth() {
       if (!current(value)) return;
       if (result.requestId !== value.startId) throw new Error("start receipt");
       value.attempt = checkedAttempt(result.attempt, value);
+      if (profileOf(value.provider) !== AccountOAuthProfile.OpenRouter && result.flow !== WireOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE) throw new Error("OAuth flow");
       setView({ provider: value.provider, stage: stage(value.attempt.state), attempt: value.attempt });
       if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && result.authorizationUrl && !value.bound) {
         try { await native(value.nativeOpening, OAuthNativeAction.BindOpen, value.generation, value.attempt.id, result.authorizationUrl); value.bound = true; value.openFailed = false; value.problem = undefined; }
@@ -120,7 +133,7 @@ export function useOpenRouterOAuth() {
     finally { value.busy = false; }
   };
   const start = (provider: AccountProviderSummary) => {
-    if (!native || pending.current || opening?.disposed || !provider.oauthAvailable || !provider.enabled) return;
+    if (!native || pending.current || opening?.disposed || !supports(provider) || !provider.enabled) return;
     const value: Pending = { provider, nativeOpening: newRequestId(), generation: "", callback: "", startId: newRequestId(), bound: false, serverStartDispatched: false, polling: false, busy: false, disposed: false };
     pending.current = value; setView({ provider, stage: Stage.Starting }); void startOriginal(value);
   };
@@ -138,16 +151,21 @@ export function useOpenRouterOAuth() {
       try {
         if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && value.bound && !value.completion && !value.busy) {
           const result = await native(value.nativeOpening, OAuthNativeAction.Take, value.generation, value.attempt.id, "");
-          if (result.code) {
-            let code: Uint8Array | undefined;
+          if (result.code || result.denied) {
+            let code: Uint8Array | undefined, state: Uint8Array | undefined;
             try {
               if (result.generation !== value.generation) throw new Error("callback generation");
-              if (!Array.isArray(result.code) || result.code.length < 1 || result.code.length > 8192 || result.code.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255)) throw new Error("code");
-              code = Uint8Array.from(result.code);
+              if (result.denied && result.code?.length) throw new Error("ambiguous callback");
+              const bytes = result.code ?? [];
+              if (!Array.isArray(bytes) || (!result.denied && bytes.length < 1) || bytes.length > 8192 || bytes.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255)) throw new Error("code");
+              code = Uint8Array.from(bytes);
+              const stateBytes = result.state ?? [];
+              if (!Array.isArray(stateBytes) || stateBytes.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255) || (profileOf(value.provider) !== AccountOAuthProfile.OpenRouter && (stateBytes.length !== 43 || stateBytes.some(byte => !/[A-Za-z0-9_-]/.test(String.fromCharCode(byte)))))) throw new Error("state");
+              state = Uint8Array.from(stateBytes);
               const text = new TextDecoder("utf-8", { fatal: true }).decode(code);
               if (/[\u0000-\u001f\u007f-\u009f]/u.test(text)) throw new Error("code");
-              if (current(value)) await finish(value, code);
-            } finally { result.code.fill(0); code?.fill(0); }
+              if (current(value)) await finish(value, code, state);
+            } finally { result.code?.fill(0); result.state?.fill(0); code?.fill(0); state?.fill(0); }
           }
         }
         if (current(value) && !value.busy) await observe(value);
@@ -200,11 +218,23 @@ export function useOpenRouterOAuth() {
     catch { failure(value, ownedMessage("account-oauth.extra.01b9ed071310")); }
     finally { value.busy = false; }
   };
-  return { view, available: Boolean(native), start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
+  return { view, available: Boolean(native), supports, start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
 }
-export type OpenRouterOAuthFlow = ReturnType<typeof useOpenRouterOAuth>;
+export const useOpenRouterOAuth = useAccountOAuth;
+export type AccountOAuthFlow = ReturnType<typeof useAccountOAuth>;
+export type OpenRouterOAuthFlow = AccountOAuthFlow;
+function profileOf(provider: AccountProviderSummary): AccountOAuthProfile | undefined {
+  const preset = provider.presetId ?? document(provider.provider).preset_id;
+  return preset === AccountOAuthProfile.OpenRouter ? AccountOAuthProfile.OpenRouter : preset === AccountOAuthProfile.HuggingFace ? AccountOAuthProfile.HuggingFace : undefined;
+}
+function providerServiceName(provider: AccountProviderSummary): string {
+  return profileOf(provider) === AccountOAuthProfile.HuggingFace ? "Hugging Face" : provider.displayName;
+}
+function recoveryMessage(provider: AccountProviderSummary): string {
+  return profileOf(provider) === AccountOAuthProfile.OpenRouter ? "The original result requires recovery. Inspect the OpenRouter keys dashboard; local cancellation cannot revoke a provider key. Recover only the original saved local result." : `The original ${provider.displayName} result requires recovery. Local cancellation cannot revoke provider access. Recover only the original saved local result, or cancel and reconnect.`;
+}
 
-export function OpenRouterOAuth({ flow, back, manual, edit, manage, done }: { flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; edit: (account: Resource) => void; manage: (account: Resource) => void; done: () => void }) {
+export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; edit: (account: Resource) => void; manage: (account: Resource) => void; done: () => void }) {
   useLocale();
   const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
@@ -214,12 +244,13 @@ export function OpenRouterOAuth({ flow, back, manual, edit, manage, done }: { fl
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;
   const connected = view.stage === Stage.Connected && view.account;
   const waiting = view.stage === Stage.Awaiting;
-  const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : connected ? copy("account-oauth.extra.2d889940c25c") : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
+  const huggingFace = profileOf(view.provider) === AccountOAuthProfile.HuggingFace;
+  const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : connected ? huggingFace ? `${view.provider.displayName} connected` : copy("account-oauth.extra.2d889940c25c") : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());
   return <section className="api-keys-view account-oauth-card" aria-labelledby="account-oauth-title">
-    <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>{copy("account-oauth.connectOpenrouter_6c38bc")}</h2>
+    <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>{huggingFace ? "Connect Hugging Face Inference Providers" : copy("account-oauth.connectOpenrouter_6c38bc")}</h2>
     <p className="account-oauth-subheading">{copy("account-oauth.completeSignInInYourBrowser_64e524")}</p>
-    <p>{copy("account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0")}</p>
+    <p>{huggingFace ? `Approve access on ${providerServiceName(view.provider)}. DeliDev will finish connecting automatically.` : copy("account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0")}</p>
     <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div>
     {view.problem ? <p role="alert">{resolveMessage(view.problem)}</p> : null}
     {connected ? <SettingsTaskActions><button onClick={() => leave(false, () => edit(connected))}>{copy("account-oauth.editAccount_ab6a16")}</button><button onClick={() => leave(false, () => manage(connected))}>{copy("account-oauth.manageAccount_ddb585")}</button><button onClick={() => leave(false, done)}>{copy("account-oauth.done_11a676")}</button></SettingsTaskActions> : <>
@@ -230,3 +261,5 @@ export function OpenRouterOAuth({ flow, back, manual, edit, manage, done }: { fl
     <footer><p>{copy("account-oauth.yourCredentialWillBeStoredSecurely_26be74")}</p><p>{copy("account-oauth.youCanValidateYourAccountAfter_70f97e")}</p></footer>
   </section>;
 }
+
+export const OpenRouterOAuth = AccountOAuth;
