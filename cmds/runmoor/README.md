@@ -448,6 +448,13 @@ problem and retry with the same installed CLI/configuration. Preserve state and
 managed data; never roll back to an incompatible binary. See the
 [service reload guide](https://oss.delino.io/runmoor/operations#reload-an-installed-service-after-upgrading-the-cli).
 
+If Stop completed after an interrupted service reload, wait for the reload
+command to finish, then use `runmoor service start` with the same installed CLI
+and configuration. One Start resumes a verified inactive target after cleanup
+completes. Uncertain ownership or unfinished cleanup blocks recovery; preserve
+the service definition, recovery files, state and managed data for inspection.
+This recovery is part of the unreleased service reload workflow.
+
 Jobs retain timeout accounting across restart/sleep. Active work requests OS sleep inhibition; warm idle capacity does not keep the machine awake indefinitely. Failure is a warning and does not change system power settings. Forced sleep, lid closure, shutdown and power loss can still interrupt work.
 
 ## Managed runner updates
