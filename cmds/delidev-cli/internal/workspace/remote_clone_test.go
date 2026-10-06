@@ -328,6 +328,7 @@ func TestManagedCloneForkFromLocalPreservesOriginalFolder(t *testing.T) {
 	input.Type, input.OriginMachineID = domain.Local, input.MachineID
 	input.Repositories[0].SourceKind, input.Repositories[0].RemoteURL = LocalCheckoutSource, "https://github.com/fixture/repo.git"
 	input.Repositories[0].Starting = domain.Reference{}
+	gitTest(t, path, "remote", "add", "origin", input.Repositories[0].RemoteURL)
 	parent, err := m.Prepare(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)

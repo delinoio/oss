@@ -200,6 +200,28 @@ func TestLocalUsesCurrentCheckoutWithoutFetchOrStartingSelection(t *testing.T) {
 		t.Fatal("remote Local permitted")
 	}
 }
+
+func TestLocalPreparationRevalidatesConfiguredRemote(t *testing.T) {
+	root := repository(t)
+	url := "https://github.com/fixture/repo.git"
+	gitTest(t, root, "remote", "add", "origin", url)
+	m := manager(t)
+	request, _ := requestFor(root)
+	request.Type, request.OriginMachineID = domain.Local, request.MachineID
+	request.Repositories[0].SourceKind, request.Repositories[0].RemoteURL = LocalCheckoutSource, url
+	request.Repositories[0].Starting = domain.Reference{}
+	request.Repositories[0].AutoFetch = false
+	if _, err := m.Prepare(context.Background(), request); err != nil {
+		t.Fatal("initial Local preparation rejected matching source", err)
+	}
+	gitTest(t, root, "remote", "set-url", "origin", "https://github.com/fixture/other.git")
+	request.SessionID = domain.NewID()
+	_, err := m.Prepare(context.Background(), request)
+	if problem := domain.SafeError(err); problem.Code != domain.InvalidArgument {
+		t.Fatalf("stale checkout source was accepted: %+v", problem)
+	}
+}
+
 func TestRemoteFetchUsesUpdatedCommitAndNeverStaleFallback(t *testing.T) {
 	upstream := repository(t)
 	clone := filepath.Join(t.TempDir(), "clone")

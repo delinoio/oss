@@ -419,6 +419,18 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			if err != nil {
 				return failed(err)
 			}
+			if request.Type == domain.Local && spec.RemoteURL != "" {
+				expected, err := domain.RepositoryCloneSourceIdentity(spec.RemoteURL)
+				if err != nil {
+					return failed(err)
+				}
+				// Save-time inspection can become stale before this preparation
+				// reopens the checkout. Revalidate the current source remote before
+				// recording Local HEAD or identity evidence.
+				if err := git.ValidateRemoteIdentity(ctx, inspection, spec.PreferredRemote, expected); err != nil {
+					return failed(err)
+				}
+			}
 			prepared := PreparedRepository{ID: spec.ID, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Source: inspection.Root, Base: spec.Base, Starting: spec.Starting, Owned: request.Type == domain.Worktree}
 			if spec.ForkRegistrationSource != "" {
 				// Both authorities must still identify one common Git directory before
