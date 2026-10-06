@@ -98,6 +98,7 @@ type Manager struct {
 	storageBeforeRemovalClaim     func()
 	storageBeforeRemovalUnlink    func(string)
 	storageAfterRemovalClaim      func(string)
+	storageFinalRootFault         func(storageFinalRootStage) error
 	storageAfterSnapshot          func()
 	sidechatBeforeMetadataPublish func()
 	sidechatAfterMetadataPublish  func()

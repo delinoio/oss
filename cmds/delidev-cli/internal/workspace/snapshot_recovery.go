@@ -426,12 +426,22 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			}
 			partial = false
 		}
+		if _, finalErr := os.Lstat(m.finalRemovalClaimPath(r.OperationID)); finalErr == nil {
+			claim, _, _, claimErr := m.readRemovalClaimState(r, raw)
+			if claimErr != nil {
+				return ResultUncertain()
+			}
+			_, finalErr = m.readFinalRemovalClaim(r, claim)
+			return finalErr
+		} else if !errors.Is(finalErr, os.ErrNotExist) {
+			return ResultUncertain()
+		}
 		exists, err := storageExists(path)
 		if err != nil {
 			return err
 		}
 		if !exists {
-			return nil
+			return ResultUncertain()
 		}
 	}
 	entryLimit := MaxSnapshotEntries
@@ -662,10 +672,8 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
 				return result, err
 			}
-			if removed {
-				if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
-					return result, ResultUncertain()
-				}
+			if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
+				return result, ResultUncertain()
 			}
 			if err := security.SyncParent(root); err != nil {
 				return result, ResultUncertain()
@@ -738,10 +746,8 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
 				return result, err
 			}
-			if removed {
-				if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
-					return result, ResultUncertain()
-				}
+			if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
+				return result, ResultUncertain()
 			}
 			if err := security.SyncParent(removal); err != nil {
 				return result, ResultUncertain()
@@ -791,6 +797,9 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := m.finalRemovalAbsent(ref.OperationID); err != nil {
+		return err
+	}
 	path, claimPath, journalPath := m.removalIntentPath(ref.OperationID), m.removalClaimPath(ref.OperationID), m.removalClaimJournalPath(ref.OperationID)
 	for _, artifact := range []string{path, claimPath, journalPath} {
 		if err := security.PrivateDir(filepath.Dir(artifact)); err != nil {
@@ -805,6 +814,29 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 			return ResultUncertain()
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
+		return ResultUncertain()
+	}
+	finalPath := m.finalRemovalClaimPath(ref.OperationID)
+	if _, finalErr := os.Lstat(finalPath); finalErr == nil {
+		if !intentExists {
+			return ResultUncertain()
+		}
+		r := StorageRequest{OperationID: ref.OperationID, SnapshotID: ref.SnapshotID, Action: ref.Action, Preparation: PrepareRequest{SessionID: ref.SessionID}}
+		claim, _, _, err := m.readRemovalClaimState(r, raw)
+		if err != nil {
+			return err
+		}
+		final, err := m.readFinalRemovalClaim(r, claim)
+		if err != nil || final.State != storageFinalRootRemoved || m.finalRemovalAbsent(ref.OperationID) != nil {
+			return ResultUncertain()
+		}
+		if err := os.Remove(finalPath); err != nil {
+			return err
+		}
+		if err := security.SyncParent(finalPath); err != nil {
+			return err
+		}
+	} else if !errors.Is(finalErr, os.ErrNotExist) {
 		return ResultUncertain()
 	}
 	claim, err := security.ReadPrivate(claimPath, maxStorageRemovalClaim)

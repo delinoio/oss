@@ -245,9 +245,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 				continue
 			}
-			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") {
-				// Workspace cleanup already checked the original native staging
-				// identity. A later replacement must remain protected here.
+			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") || filepath.Dir(path) == filepath.Join(root, "workspace-removal-roots") {
+				// Workspace cleanup already checked the original native staging or
+				// final-root identity. A later replacement remains protected here.
 				if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
 					return domain.SessionDeletionPending()
 				}

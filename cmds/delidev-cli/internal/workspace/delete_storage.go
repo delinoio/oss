@@ -26,7 +26,7 @@ func SessionStorageCopyPaths(root string, w domain.SessionDeletionWork) []string
 		if copy.Type != domain.WorkspaceStorageJob {
 			continue
 		}
-		for _, directory := range []string{"snapshot-staging", "workspace-removals"} {
+		for _, directory := range []string{"snapshot-staging", "workspace-removals", "workspace-removal-roots"} {
 			paths = append(paths, filepath.Join(root, directory, string(copy.JobID)))
 		}
 		// Retain publication authority until its snapshot namespace is removed,
@@ -35,7 +35,7 @@ func SessionStorageCopyPaths(root string, w domain.SessionDeletionWork) []string
 			seen[copy.SnapshotID] = true
 			paths = append(paths, filepath.Join(root, "snapshots", string(copy.SnapshotID)))
 		}
-		for _, directory := range []string{"storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+		for _, directory := range []string{"storage-removal-intents", "storage-removal-root-claims", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
 			paths = append(paths, filepath.Join(root, directory, string(copy.JobID)+".json"))
 		}
 		paths = append(paths, filepath.Join(root, "storage-removal-claims", string(copy.JobID)+".pending"))
@@ -134,7 +134,7 @@ func SessionStorageRemnantPaths(ctx context.Context, root string, w domain.Sessi
 			jobs[copy.JobID] = true
 		}
 	}
-	for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+	for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-root-claims", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
 		path := filepath.Join(root, directory)
 		if err := security.CheckPrivateDir(path); errors.Is(err, os.ErrNotExist) {
 			continue
@@ -189,5 +189,9 @@ func SessionStorageRemnantPaths(ctx context.Context, root string, w domain.Sessi
 			paths = append(paths, file)
 		}
 	}
-	return paths, nil
+	finalRoots, err := finalRemovalNamespacePaths(ctx, root, jobs)
+	if err != nil {
+		return nil, domain.SessionDeletionPending()
+	}
+	return append(paths, finalRoots...), nil
 }
