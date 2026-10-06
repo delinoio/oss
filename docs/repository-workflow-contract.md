@@ -90,6 +90,17 @@ The shared checksum generator keeps sorted recursive paths, GNU filename escapin
 
 `.github/workflows/CI.yml` is a read-only validation workflow. It uses `contents: read` and `pull-requests: read`, does not consume repository secrets, and must not push tags, create or upload releases, submit stores, push OCI images, deploy documentation or infrastructure, promote updater state, or call any mutating release-controller operation. Release workflows and packaging inputs are tested as source and deterministic fixtures only.
 
+The `ci-contracts` matrix runs workflow syntax and the full Node contract suite on
+Linux, plus the uncached `ci:proto:launcher` fixtures on native macOS and Windows.
+Linux runs the launcher fixtures within the full suite. Protocol lint, format and
+freshness launch `node_modules/@bufbuild/buf/bin/buf` through `process.execPath`
+with explicit argv, root cwd and `shell: false`. They do not require a standalone
+Buf executable or Windows package-manager shim. The fixtures remove Buf from
+PATH, use checkout paths with spaces, check literal shell metacharacters and
+failure statuses, and run minimal offline generation with tracked/untracked
+freshness rejection. Full generation retains the compatibility step after Buf;
+the launcher fixture does not establish broader Windows plugin acceptance.
+
 The central `changes` job runs on Ubuntu 24.04 and resolves one Rust package
 selection for the generic `rust-test` and `rust-clippy` jobs. It prepares the
 first-party `cargo-mono@v0.6.9` Linux x64 release only when the initial path plan
@@ -144,6 +155,16 @@ The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development
 Those same jobs build the DevHud frontend only when `devhud` is selected, and the DeliDev typed client, frontend and target-specific Go sidecar only when `delidev-desktop` is selected. The generic test job builds pnport and its injection companion only when `pnport` is selected. Go setup is also retained for selected pnport static-child fixtures, so that test does not silently skip its compiler prerequisite. The Go setup uses the repository's pinned `go.mod` version, and generated frontend and sidecar output remains ignored. This preserves Tauri's declared external-binary input without adding a placeholder artifact to source control.
 
 CI never builds a signed private candidate and never publishes.
+
+The read-only `devhud-supply-chain` job uses Ubuntu 22.04 for the existing
+installer, SBOM, provenance and updater fixtures and Windows for
+`ci:windows-signature`, an uncached Turbo task. Windows prepares the pinned Go
+toolchain to build a temporary native SignTool stub, then executes the private
+workflow's PowerShell validation prefix. MSI and NSIS fixtures require nonzero
+verification status to stop before installation, SBOM, evidence or upload
+sentinels; zero status reaches every sentinel. Both rows remain required by
+`CI Result`, without release credentials or publication authority. These fixtures
+do not establish actual certificate verification or signed-package acceptance.
 
 Changes to the shared checksum generator select the DevHud supply-chain fixture job that exercises it, including on pull requests where desktop packaging is skipped.
 
@@ -206,6 +227,8 @@ credential-free native dry runs, production signing restrictions and event-based
 packaging skips remain unchanged.
 
 The `node-public-docs-test` job owns the consolidated root and subpath publication checks. Its path rule includes `packages/docs-site-switcher/**` and `docs/apps-react-forge-docs-foundation.md`; the latter contract alone forces the job. Its public-docs test boundary runs the shared selector interaction suite before building the assembled site, so changes to the shared navigation cannot bypass documentation CI.
+
+Public-docs owns package-local external installer inputs for cached `build`, `build:frontend`, and `ci:routes` tasks. Each hashes `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}`; build overrides use `$TURBO_EXTENDS$` to retain root inputs and leave generated outputs intact. Forced job selection does not bypass cache reads. `scripts/ci/public-docs-cache.test.mjs`, included in `pnpm ci:contracts`, checks all eight independent source mutations, complete cold/warm build and route validation, unchanged output restoration, and stale-asset failure with a frozen producer. It uses disposable source/output and local-only cache storage; hosted cache acceptance and production deployment remain separate.
 
 The `node-pnport-test` job owns pnport launcher, packaging, installer and fail-closed release fixtures on affected PRs and main pushes. The four-host `pnport-native` job runs native execution, TypeScript, installed npm/Yarn PnP consumer, archive and direct-installer checks on macOS/glibc Linux x64/arm64 for 0.1.0 on affected main pushes and manual CI; PRs skip that native matrix. Both CI and release derive their matrices from the package-owned target registry. Release Project does not wait for this CI matrix. The separate pnport tag workflow independently requires its four-host gate before publication. Windows x64/arm64 is deferred to 0.2.0 with the same complete acceptance requirements.
 

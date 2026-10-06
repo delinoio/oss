@@ -13,4 +13,5 @@
 - Rustfmt configuration changes select only `rust-fmt`, including nested overrides matched by broad package rules. Hash both supported filenames at every depth in `ci:rust:fmt`; run the real formatter cache fixture uncached in the formatting job.
 
 - CI task setup must resolve Go cache paths before strict environment filtering and install the pinned Rust toolchain before shared-target native validation. Retain the ordered DevHud capture, shortcut, IPC and updater dependency chain.
+- Protocol lint, format and freshness invoke the pinned installed Buf JavaScript bin through the current Node executable with literal argv and no shell. Keep the launcher fixtures uncached on Linux, macOS and Windows; preserve compatibility generation and tracked/untracked freshness rejection.
 - Changes to the shared legacy CLI publisher select `devhud-release-contracts`, which owns its top-level release fixtures. Keep this input edge in `job-paths.json` and the planner tests when changing release-helper ownership.

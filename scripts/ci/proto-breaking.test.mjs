@@ -39,9 +39,13 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   git("commit", "-m", "schema baseline with unavailable LFS asset");
   const baseline = git("rev-parse", "HEAD");
   symlinkSync(join(root, "node_modules"), join(cwd, "node_modules"), process.platform === "win32" ? "junction" : "dir");
-  const run = (ref) => spawnSync("bash", [script], {
-    cwd, env: { ...env, DEVHUD_PROTO_BASELINE: ref }, encoding: "utf8", timeout: 30_000,
-  });
+  const run = (ref) => {
+    const result = spawnSync("bash", [script], {
+      cwd, env: { ...env, DEVHUD_PROTO_BASELINE: ref }, encoding: "utf8", timeout: 120_000,
+    });
+    assert.ifError(result.error);
+    return result;
+  };
   let result = run(baseline);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(existsSync(join(cwd, ".git/lfs/objects/aa/aa", oid)), false);

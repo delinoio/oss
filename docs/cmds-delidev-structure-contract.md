@@ -80,6 +80,16 @@ Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
 
+Issue #1203's shared compaction RPC closure reserves
+`CompactSessionRequest.expected_execution_id = 2` and
+`CompactSessionResponse.session = 4`, with #1093/#1202 as shared consumers.
+Record PR #1221's already-active request/response assignments in the immutable
+baseline without renumbering them. Establish the additive reservations on main
+before implementing exact predecessor admission and joined current-session/job
+responses. The existing response request ID remains the original action ID.
+Reservations do not add active schema fields, generated bindings, capabilities
+or migrations and do not establish complete native acceptance.
+
 Wholly new messages and closed enums use explicit `newDeclaration: true` member
 reservations under one original owner, including the zero UNSPECIFIED member of
 each enum. Later additions retain their own original issue/PR owner; they do not

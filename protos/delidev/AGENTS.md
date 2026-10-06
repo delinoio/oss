@@ -33,6 +33,8 @@
 
 - Issues #1093, #1202 and #1203 share the native-compaction reservations and planned boundary in `docs/cmds-delidev-compaction-contract.md`. Establish the reservation change on main before activating it. Keep one `CompactSession` owner/client operation, separate action/job identity and profile-specific native proof; reserved capabilities cannot advertise an unimplemented endpoint or native profile.
 
+- Issue #1203 reserves `CompactSessionRequest.expected_execution_id = 2` and `CompactSessionResponse.session = 4` with #1093/#1202 as shared consumers. Preserve PR #1221's existing request/response wire assignments in the immutable baseline. Establish these additions on main before active schemas or generated bindings; dependent implementation must bind the exact source execution into admission/actor-bound receipts and join current session/original job under one authorized read. Existing response `request_id` remains the original action ID. Reservations grant no additional capability or migration.
+
 - Allocation provenance uses exactly one original `pr` or owning `issue` when an implementation PR does not yet exist; record other issue consumers in `sharedIssues`. Preserve immutable numbers and identities when the implementation PR is later created.
 
 - Issue #1206 reserves `SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16` and `WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7` without activating either. Follow `docs/cmds-delidev-native-models-contract.md`; establish reservations on main before dependent implementation, preserve native observations separately from explicit manual registration, and keep subscription discovery typed unsupported until #1095's exclusive managed-account boundary is available.

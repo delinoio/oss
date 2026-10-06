@@ -550,7 +550,10 @@ func reconcileScope(dir string, started bool) error {
 		return err
 	}
 	if boot != scope.Boot {
-		return nil
+		// Reboot proves the original descendants are gone. Persist that proof so
+		// released-controller pruning can retire this scope on the next owner scan.
+		scope.Complete = true
+		return saveScope(dir, scope)
 	}
 	return recoverScope(scope, dir)
 }
