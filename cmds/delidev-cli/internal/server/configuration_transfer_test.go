@@ -476,6 +476,27 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 				if report.State != domain.JobQueued {
 					t.Fatal(report)
 				}
+				var children []store.Record
+				if err := s.Store.Read(context.Background(), func(tx *store.Tx) error {
+					var err error
+					children, err = tx.Jobs("", report.JobID, "", "", 10)
+					return err
+				}); err != nil {
+					t.Fatal(err)
+				}
+				for _, child := range children {
+					job, err := store.Decode[domain.Job](child)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var input domain.RepositoryInspectionInput
+					if err := domain.Decode(job.Input, &input); err != nil {
+						t.Fatal(err)
+					}
+					if input.ExpectedRemoteIdentity != "" {
+						t.Fatal("legacy Worker received the post-capability source identity")
+					}
+				}
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
 			}
 		})

@@ -169,7 +169,9 @@ func RepositoryCloneSourceIdentity(value string) (string, error) {
 	if strings.EqualFold(parsed.Host, "github.com") {
 		// GitHub documents HTTPS, ssh://git@github.com and SCP-style SSH as
 		// equivalent access forms for one owner/repository namespace.
-		repositoryPath = strings.TrimPrefix(repositoryPath, "/")
+		// GitHub repository names are case-insensitive. Normalize only this
+		// established provider namespace; generic hosts retain their exact path.
+		repositoryPath = strings.ToLower(strings.TrimPrefix(repositoryPath, "/"))
 	} else {
 		identity = append(identity, string(parsed.Transport), parsed.SSHUser, repositoryPath)
 	}

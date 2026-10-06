@@ -73,6 +73,7 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 	}
 	for _, values := range [][2]string{
 		{"ssh://git@git.example.com/team/repo.git", "git@git.example.com:/team/repo.git"},
+		{"https://github.com/owner/repo.git", "git@github.com:Owner/Repo.git"},
 	} {
 		left, err := RepositoryCloneSourceIdentity(values[0])
 		if err != nil {
