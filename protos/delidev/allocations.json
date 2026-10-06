@@ -2521,6 +2521,79 @@
         "user_code": 2,
         "canceled": 3
       }
+    },
+    "AccountOAuthAttempt": {
+      "kind": "message",
+      "members": {
+        "id": 1,
+        "revision": 2,
+        "state": 3,
+        "expires_at": 4,
+        "provider_id": 5,
+        "problem": 6
+      }
+    },
+    "StartAccountOAuthRequest": {
+      "kind": "message",
+      "members": {
+        "provider": 1,
+        "callback_url": 2
+      }
+    },
+    "StartAccountOAuthResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "authorization_url": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
+    },
+    "CompleteAccountOAuthRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1,
+        "authorization_code": 2
+      }
+    },
+    "CancelAccountOAuthRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1
+      }
+    },
+    "GetAccountOAuthStatusRequest": {
+      "kind": "message",
+      "members": {
+        "attempt_id": 1
+      }
+    },
+    "CompleteAccountOAuthResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "account": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
+    },
+    "CancelAccountOAuthResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "account": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
+    },
+    "GetAccountOAuthStatusResponse": {
+      "kind": "message",
+      "members": {
+        "attempt": 1,
+        "account": 2,
+        "request_id": 3,
+        "replayed": 4
+      }
     }
   },
   "reservations": [
