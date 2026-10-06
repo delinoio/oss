@@ -13,8 +13,8 @@ const selected = (event, paths) => Object.entries(planJobs(event, paths).jobs).f
 
 test("Go runner changes exercise all native Go shards without selecting unrelated jobs", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of ["scripts/ci/go-test.mjs", "scripts/ci/go-test.test.mjs"]) {
-      assert.deepEqual(selected(event, [path]), ["go-test"]);
+    for (const path of ["scripts/ci/go-test.mjs", "scripts/ci/go-test.test.mjs", "scripts/ci/go-affected.mjs", "scripts/ci/go-quality.mjs"]) {
+      assert.deepEqual(selected(event, [path]), ["go-quality", "go-test"]);
     }
   }
 });
@@ -228,9 +228,9 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-admin", "devhud-api", "rust-test"]],
     ["apps/devhud/src-tauri/src/updater.rs", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance", "devhud-frontend"]],
     ["protos/devhud/v1/account.proto", ["devhud-api", "devhud-frontend"]],
-    ["packages/delidev-api-client/src/synchronization.ts", ["delidev-protocol"]],
-    ["apps/delidev/src/App.tsx", ["delidev-protocol"]],
-    ["cmds/delidev-cli/internal/server/resources.go", ["delidev-protocol"]],
+    ["packages/delidev-api-client/src/synchronization.ts", ["delidev-client", "delidev-frontend"]],
+    ["apps/delidev/src/App.tsx", ["delidev-frontend"]],
+    ["cmds/delidev-cli/internal/server/resources.go", ["delidev-client", "delidev-frontend"]],
     [".nvmrc", ["node-public-docs-test", "devhud-frontend", "devhud-api", "repository-environment"]],
     ["pnpm-lock.yaml", ["node-public-docs-test", "devhud-admin", "devhud-api", "devhud-frontend"]],
     [".cargo/config.toml", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance"]],
@@ -258,8 +258,7 @@ test("workspace, shared, runtime, and external contract inputs select their owne
 test("DeliDev protocol validation selects DeliDev and shared inputs independently of DevHud", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of [
-      "apps/delidev/src/App.tsx", "cmds/delidev-cli/internal/server/resources.go",
-      "packages/delidev-api-client/src/synchronization.ts", "protos/delidev/v1/delidev.proto",
+      "protos/delidev/v1/delidev.proto", "packages/delidev-api-client/src/gen/delidev/v1/delidev_pb.ts",
       "protos/gen/go/delidev/v1/common.pb.go", "scripts/delidev/proto-compat.mjs",
       "buf.yaml", "buf.gen.yaml", "go.mod", "go.sum", ".npmrc", ".nvmrc",
       "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json",
@@ -268,6 +267,8 @@ test("DeliDev protocol validation selects DeliDev and shared inputs independentl
     for (const path of [
       "apps/devhud/src/App.tsx", "packages/devhud-api-client/src/client.ts",
       "protos/devhud/v1/account.proto", "protos/gen/go/devhud/v1/account.pb.go",
+      "apps/delidev/src/App.tsx", "cmds/delidev-cli/internal/server/resources.go",
+      "packages/delidev-api-client/src/synchronization.ts",
     ]) assert.equal(planJobs(event, [path]).jobs["delidev-protocol"], false, `${event}: ${path}`);
   }
   const manual = planJobs(Event.Manual, []).jobs;
@@ -276,7 +277,7 @@ test("DeliDev protocol validation selects DeliDev and shared inputs independentl
 });
 
 test("DeliDev protocol failures, missing results and unauthorized skips fail the aggregate", () => {
-  const paths = ["packages/delidev-api-client/src/synchronization.ts"];
+  const paths = ["protos/delidev/v1/delidev.proto"];
   for (const event of [Event.PullRequest, Event.Push, Event.Manual]) {
     assert.equal(validateResults(results(event, paths)), true);
     for (const result of ["failure", "cancelled", "skipped", undefined]) {
@@ -368,7 +369,7 @@ function results(event, paths) {
   const { jobs } = planJobs(event, paths);
   const matrices = matricesForEvent(event);
   return {
-    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix) } },
+    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) } },
     "ci-contracts": { result: "success" },
     ...Object.fromEntries(Object.entries(jobs).map(([id, run]) => [id, { result: run ? "success" : "skipped" }])),
   };
@@ -474,5 +475,34 @@ test("unrelated packages and protocols do not select DevHud jobs", () => {
   }
   for (const path of ["packages/devhud-api-client/src/index.ts", "protos/devhud/v1/settings.proto", "protos/gen/go/devhud/v1/settings.pb.go", "servers/devhud-api/internal/rpc/settings.go"]) {
     assert.ok(Object.entries(planJobs(Event.Push, [path]).jobs).some(([id, run]) => id.startsWith("devhud-") && run), path);
+  }
+});
+
+
+test("DeliDev separates schema, client and complete desktop validation by dependency", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const screen = planJobs(event, ["apps/delidev/src/App.tsx"]);
+    assert.equal(screen.jobs["delidev-frontend"], true);
+    assert.equal(screen.jobs["delidev-client"], false);
+    assert.equal(screen.jobs["delidev-protocol"], false);
+    for (const input of ["packages/delidev-api-client/src/synchronization.ts", "cmds/delidev-cli/internal/server/resources.go", "protos/gen/go/delidev/v1/account.pb.go"]) {
+      const plan = planJobs(event, [input]);
+      for (const id of ["delidev-client", "delidev-frontend"]) assert.equal(plan.jobs[id], true, `${input}: ${id}`);
+    }
+    const schema = planJobs(event, ["protos/delidev/v1/account.proto"]);
+    for (const id of ["delidev-protocol", "delidev-client", "delidev-frontend"]) assert.equal(schema.jobs[id], true);
+    const allocation = planJobs(event, ["protos/delidev/allocations.json"]);
+    assert.equal(allocation.jobs["delidev-client"], false);
+    assert.equal(allocation.jobs["delidev-frontend"], false);
+    for (const id of ["delidev-client", "delidev-frontend"]) {
+      for (const state of ["failure", "cancelled", "skipped", undefined]) {
+        const needs = results(event, ["protos/delidev/v1/account.proto"]);
+        needs[id].result = state;
+        assert.throws(() => validateResults(needs), new RegExp(id, "u"));
+      }
+    }
+    const needs = results(event, ["apps/delidev/src/App.tsx"]);
+    needs.changes.outputs.delidev_frontend_matrix = JSON.stringify({ include: [{ phase: "tests-1" }] });
+    assert.throws(() => validateResults(needs), /delidev_frontend_matrix/u);
   }
 });

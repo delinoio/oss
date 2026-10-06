@@ -9,7 +9,7 @@ export function validateResults(needs) {
   const expected = JSON.parse(needs.changes.outputs.jobs);
   const event = needs.changes.outputs.event;
   const matrices = matricesForEvent(event);
-  for (const [output, matrix] of [["desktop_matrix", matrices.desktopMatrix], ["react_forge_matrix", matrices.reactForgeMatrix]]) {
+  for (const [output, matrix] of [["desktop_matrix", matrices.desktopMatrix], ["react_forge_matrix", matrices.reactForgeMatrix], ["delidev_frontend_matrix", matrices.delidevFrontendMatrix]]) {
     const actual = JSON.parse(needs.changes.outputs[output]);
     if (JSON.stringify(actual) !== JSON.stringify(matrix)) throw new Error(`${output} differs from the ${event} policy`);
   }

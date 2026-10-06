@@ -26,6 +26,7 @@ jobs:
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
       react_forge_matrix: ${{ steps.plan.outputs.react_forge_matrix }}
       pnport_matrix: ${{ steps.plan.outputs.pnport_matrix }}
+      delidev_frontend_matrix: ${{ steps.plan.outputs.delidev_frontend_matrix }}
       base: ${{ steps.plan.outputs.base }}
       head: ${{ steps.plan.outputs.head }}
     steps:
@@ -58,6 +59,8 @@ jobs:
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: ci-contracts
 
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -97,6 +100,8 @@ jobs:
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: go-quality
 
       - name: Setup Node.js
         id: ci-node
@@ -108,19 +113,12 @@ jobs:
           pnpm --filter devhud-admin build:embedded
           pnpm --filter async-commit-hook build:embedded
 
-      - name: Check go fmt
-        run: |
-          set -euo pipefail
-
-          formatted_output="$(go fmt ./...)"
-          if [ -n "$formatted_output" ]; then
-            echo "::error::go fmt reformatted files. Run 'go fmt ./...' locally and commit the result."
-            printf '%s\n' "$formatted_output"
-            exit 1
-          fi
-
-      - name: Run go vet
-        run: go vet ./...
+      - name: Check Go formatting and vet
+        env:
+          CI_GO_MODE: ${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-quality'] && 'affected' || 'full' }}
+          CI_GO_BASE: ${{ needs.changes.outputs.base }}
+          CI_GO_HEAD: ${{ needs.changes.outputs.head }}
+        run: node scripts/ci/go-quality.mjs
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -162,7 +160,7 @@ jobs:
         id: ci-go
         uses: ./.github/actions/setup-ci-go
         with:
-          cache-scope: ${{ matrix.os == 'windows-latest' && format('go-test-{0}', matrix.shard) || '' }}
+          cache-scope: ${{ format('go-test-{0}', matrix.shard) }}
 
       - name: Setup Node.js
         id: ci-node
@@ -174,7 +172,14 @@ jobs:
           pnpm --filter devhud-admin build:embedded
           pnpm --filter async-commit-hook build:embedded
 
+      - name: Verify native affected Go discovery
+        run: node --test scripts/ci/go-affected.test.mjs
+
       - name: Run go test
+        env:
+          CI_GO_MODE: ${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-test'] && 'affected' || 'full' }}
+          CI_GO_BASE: ${{ needs.changes.outputs.base }}
+          CI_GO_HEAD: ${{ needs.changes.outputs.head }}
         run: node scripts/ci/go-test.mjs --shard ${{ matrix.shard }}
 
       - name: Save pnpm cache after successful main validation
@@ -1320,7 +1325,7 @@ jobs:
   delidev-protocol:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-protocol'] }}
-    name: DeliDev Protocol and Client
+    name: DeliDev Schemas and Generated Bindings
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -1335,6 +1340,8 @@ jobs:
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: delidev-protocol
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -1347,12 +1354,97 @@ jobs:
       - name: Test Go bindings
         run: go test ./protos/gen/go/delidev/...
 
-      - name: Check DeliDev client and desktop
-        run: |
-          pnpm --filter @delinoio/delidev-api-client lint
-          pnpm --filter @delinoio/delidev-api-client test
-          pnpm --filter @delinoio/delidev-api-client build
-          pnpm --filter delidev-desktop test
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
+
+  delidev-client:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-client'] }}
+    name: DeliDev TypeScript Client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          lfs: true
+          persist-credentials: false
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Setup Go
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: delidev-client
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build runner-owned Go fixture executable
+        run: node scripts/ci/prepare-delidev-test-binary.mjs
+      - name: Run affected client checks
+        env:
+          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-client'] }}
+        run: node scripts/ci/run-affected.mjs @delinoio/delidev-api-client lint test build
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
+
+  delidev-frontend:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-frontend'] }}
+    name: DeliDev Desktop (${{ matrix.phase }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.delidev_frontend_matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          lfs: true
+          persist-credentials: false
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Setup Go
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: ${{ format('delidev-frontend-{0}', matrix.phase) }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build runner-owned Go fixture executable
+        if: ${{ matrix.phase != 'checks' }}
+        run: node scripts/ci/prepare-delidev-test-binary.mjs
+      - name: Run affected desktop checks
+        env:
+          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
+        run: node scripts/ci/run-affected.mjs delidev-desktop test:ci:${{ matrix.phase }}
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1409,6 +1501,8 @@ jobs:
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: devhud-api
 
       - name: Setup Node.js
         id: ci-node
@@ -1695,6 +1789,8 @@ jobs:
       - name: Setup Go
         id: ci-go
         uses: ./.github/actions/setup-ci-go
+        with:
+          cache-scope: async-commit-hook
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
@@ -1894,6 +1990,8 @@ jobs:
       - devhud-ios-simulator
       - devhud-android-emulator
       - delidev-protocol
+      - delidev-client
+      - delidev-frontend
       - devhud-admin
       - devhud-api
       - devhud-oci
