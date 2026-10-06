@@ -158,6 +158,25 @@ it("clears a selected comment after recovery acknowledges its deletion", async (
  expect((screen.getByRole("button", { name: "Request changes" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
+it("clears selection when the original deletion acknowledgement arrives after its row unmounts", async () => {
+ const f = fixture();
+ let acknowledge: ((response: { id: string; requestId: string }) => void) | undefined;
+ f.remove.mockImplementationOnce(async () => { f.eraseComment(); return new Promise((resolve) => { acknowledge = resolve; }); });
+ render(<f.View />);
+ fireEvent.click(await screen.findByRole("checkbox", { name: "Select comment on file.txt" }));
+ fireEvent.click(screen.getByRole("button", { name: "Delete comment" }));
+ await screen.findByText("Waiting for comment deletion acknowledgement…");
+ const original = f.remove.mock.calls[0][0];
+ fireEvent.click(screen.getByRole("button", { name: "Refresh reviews" }));
+ await screen.findByText("No local reviews on this page.");
+ expect(screen.getByText("Selected comments: 1")).toBeTruthy();
+ acknowledge!({ id: original.mutation!.id, requestId: original.mutation!.requestId });
+ await waitFor(() => expect(screen.getByText("Selected comments: 0")).toBeTruthy());
+ expect(screen.queryByRole("region", { name: "Pending comment deletions" })).toBeNull();
+ expect((screen.getByRole("button", { name: "Request changes" }) as HTMLButtonElement).disabled).toBe(true);
+ expect(f.remove).toHaveBeenCalledTimes(1);
+});
+
 it("shows pending deletion without its row and verifies acknowledgement on explicit retry", async () => {
  const f = fixture();
  let acknowledge!: (response: { id: string; requestId: string }) => void;

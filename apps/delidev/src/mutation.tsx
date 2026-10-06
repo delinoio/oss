@@ -13,7 +13,20 @@ class IntentRegistry {
   revision = 0;
   entries = new Map<string, Intent>();
   listeners = new Set<() => void>();
+  acceptedListeners = new Map<string, Set<() => void>>();
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  observeAccepted(key: string, listener: () => void) {
+    const listeners = this.acceptedListeners.get(key) ?? new Set<() => void>();
+    listeners.add(listener);
+    this.acceptedListeners.set(key, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.acceptedListeners.delete(key);
+    };
+  }
+  notifyAccepted(key: string) {
+    for (const listener of [...(this.acceptedListeners.get(key) ?? [])]) listener();
+  }
   put(key: string, value: Intent) {
     this.entries.set(key, value);
     this.revision += 1;
@@ -42,6 +55,25 @@ export function MutationIntents({ children }: { children: ReactNode }) {
   const [registry] = useState(() => new IntentRegistry());
   useEffect(() => { registry.alive = true; return () => { registry.alive = false; registry.entries.clear(); }; }, [registry]);
   return <Context.Provider value={registry}>{children}</Context.Provider>;
+}
+
+// Acceptance belongs to the retained request, not to the component that
+// happened to initiate it. A Session-level recovery view can therefore
+// acknowledge a deletion after its comment row has left the page.
+export function useRetainedMutationAccepted(key: string, accepted: () => void) {
+  const registry = useContext(Context);
+  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  const opening = useSettingsOpening();
+  const callback = useRef(accepted);
+  callback.current = accepted;
+  const mounted = useRef(true);
+  const [localError, setLocalError] = useState<{ key: string; error: unknown }>();
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => registry.observeAccepted(key, () => {
+    if (!registry.alive || opening?.disposed || !mounted.current) return;
+    try { callback.current(); } catch (error) { setLocalError({ key, error }); }
+  }), [key, opening, registry]);
+  return localError?.key === key ? localError.error : undefined;
 }
 
 // Exact pending requests outlive session navigation. Only switching the whole
@@ -95,6 +127,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       }
     }
     registry.put(key, empty);
+    registry.notifyAccepted(key);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
     if (!mounted.current) return;

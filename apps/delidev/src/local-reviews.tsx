@@ -3,7 +3,7 @@ import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/conne
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Mode, encode } from "./documents";
-import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
+import { useRetainedMutation, useRetainedMutationAccepted, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
 import { workspaceReadOptions } from "./session-files";
 import { type Diff } from "./session-diff-model";
 import { AnchorKind, ReviewContextError, ReviewSide, freshness, readComment, readSubmission, readReviewContext, selectedContext, type Comment, type Selection } from "./local-review-model";
@@ -11,13 +11,14 @@ import { Problem } from "./ui";
 
 type Selected = { resource: Resource; comment: Comment };
 
-function useCommentDeletion(key: string, accepted: () => void) {
+function useCommentDeletion(key: string, accepted?: () => void) {
   return useRetainedMutation(key, SessionQuery.deleteLocalReviewComment, accepted, (result, request) =>
     Boolean(request.mutation?.id && request.mutation.requestId && result.id === request.mutation.id && result.requestId === request.mutation.requestId), true);
 }
 
 function PendingCommentDeletion({ intent, commentId, accepted }: { intent: RetainedMutationIntent; commentId: string; accepted: () => void }) {
-  const mutation = useCommentDeletion(intent.key, accepted);
+  const mutation = useCommentDeletion(intent.key);
+  useRetainedMutationAccepted(intent.key, accepted);
   return <article aria-label={`Pending deletion of review comment ${commentId}`}>
     <p>Comment deletion · {commentId}</p><p role="status">{intent.busy ? "Waiting for comment deletion acknowledgement…" : "Comment deletion acknowledgement is uncertain."}</p>
     <Problem error={mutation.error} />{intent.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry original comment deletion</button> : null}
