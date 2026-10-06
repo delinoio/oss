@@ -15,7 +15,7 @@ import { validRepositoryInspection, selectedInspectionRemote } from "./repositor
 const metadata = { root: "/canonical/oss", name: "oss", remotes: ["origin", "upstream"], default_refs: { origin: "main" }, github_repositories: { origin: { owner: "delinoio", name: "oss" }, upstream: { owner: "another", name: "repo" } } };
 function row(kind: EntityKind, value: Document): Resource { return create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode(value) }); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
-function fixture(output: Document = metadata, cloneCapabilities = false, remoteCapabilities = true) {
+function fixture(output: Document = metadata, cloneCapabilities = false, remoteCapabilities = true, pagedProfiles = false) {
   const machine = row(EntityKind.MACHINE, { name: "Runner", worker_capabilities: cloneCapabilities ? ["repository-clone-v1"] : [], last_seen: new Date().toISOString() });
   const resources = new Map<string, Resource>([[machine.id, machine]]);
   const jobs: Resource[] = [];
@@ -33,12 +33,17 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
     const job = row(EntityKind.JOB, { type: "clone-repository", state: "queued", machine_id: request.machineId }); resources.set(job.id, job); jobs.push(job); return { job, requestId: request.requestId };
   });
   const repositories = vi.fn(async (request: { profileId: string; expectedRevision: bigint; page: number }) => ({ schemaVersion: 1, documentJson: encode({ profile_id: request.profileId, profile_revision: String(request.expectedRevision), generation_id: (document(resources.get(request.profileId)).connection as Document).generation_id, observed_at: new Date().toISOString(), page: request.page, page_size: 50, next_page: request.page === 1 ? 2 : 0, repositories: request.page === 1 ? [{ repository: { provider: "github.com", id: "123", node_id: "R_123", owner: "delinoio", name: "oss", private: true, default_branch: "main" }, archived: true, https_url: "https://github.com/delinoio/oss.git", ssh_url: "git@github.com:delinoio/oss.git" }] : [] }) }));
+  const listResources = vi.fn((request: { filter?: { kind?: EntityKind; pageToken?: string } }) => {
+    const matching = [...resources.values()].filter(resource => resource.kind === request.filter?.kind);
+    if (pagedProfiles && request.filter?.kind === EntityKind.INTEGRATION) return request.filter.pageToken ? { resources: matching, nextPageToken: "" } : { resources: [], nextPageToken: "profile-next" };
+    return { resources: matching };
+  });
   const transport = createRouterTransport(router => {
     router.service(WorkerService, { inspectRepository: inspected, cloneRepository: clone });
     router.service(SystemService, { getStatus: () => ({ capabilities: [...(remoteCapabilities ? [SystemCapability.REMOTE_REPOSITORIES_V1] : []), ...(cloneCapabilities ? [SystemCapability.REPOSITORY_CLONE_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] : [])] }) });
     router.service(IntegrationService, { listGitHubRepositories: repositories });
     router.service(ConfigurationService, { saveConfiguration: save });
-    router.service(ResourceService, { listResources: request => ({ resources: [...resources.values()].filter(resource => resource.kind === request.filter?.kind) }), getResource });
+    router.service(ResourceService, { listResources, getResource });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   function Workspace() {
@@ -51,7 +56,7 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
     if (local) fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
   };
   const chooseAndReview = async () => { await add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByRole("region", { name: "Repository detected" }); await waitFor(() => expect((within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(false)); };
-  return { machine, resources, jobs, clone, repositories, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource };
+  return { machine, resources, jobs, clone, repositories, listResources, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource };
 }
 
 it("registers the canonical checkout using folder selection and Add repository only", async () => {
@@ -357,6 +362,17 @@ it("shows only usable PAT profiles and requires explicit profile and repository 
   if (screen.getByRole("button", { name: "Clone to this computer (optional)" }).getAttribute("aria-expanded") === "false") fireEvent.click(screen.getByRole("button", { name: "Clone to this computer (optional)" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
   await screen.findByText("Repository clone accepted"); expect(f.clone.mock.calls[0][0].githubSelection).toMatchObject({ profileId: profile.id, owner: "delinoio", name: "oss" });
+});
+it("keeps profile pagination explicit instead of scanning every page", async () => {
+  const f = fixture(metadata, true, true, true); connectedProfile(f); f.mount(); await f.add();
+  await screen.findByRole("button", { name: "Next profile page" });
+  const initialProfileCalls = f.listResources.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.INTEGRATION);
+  expect(initialProfileCalls.length).toBeGreaterThan(0);
+  expect(initialProfileCalls.every(([request]) => !request.filter?.pageToken)).toBe(true);
+  expect(screen.queryByRole("button", { name: "Choose from GitHub" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Next profile page" }));
+  await screen.findByRole("button", { name: "Choose from GitHub" });
+  expect(f.listResources.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.INTEGRATION && request.filter.pageToken === "profile-next").length).toBeGreaterThan(0);
 });
 it("drops the selected profile association when the Git URL changes repositories", async () => {
   const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
