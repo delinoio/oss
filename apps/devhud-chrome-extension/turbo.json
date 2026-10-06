@@ -35,7 +35,9 @@
     },
     "test:package": {
       "cache": false,
-      "dependsOn": [],
+      "dependsOn": [
+        "build:test"
+      ],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -61,6 +63,7 @@
         "$TURBO_ROOT$/apps/devhud/src-tauri/icons/icon.png"
       ],
       "outputs": [
+        "dist/**",
         "build/**",
         "artifacts/**"
       ],
@@ -71,7 +74,7 @@
     "ci:zip": {
       "cache": true,
       "dependsOn": [
-        "build:test"
+        "test:package"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
