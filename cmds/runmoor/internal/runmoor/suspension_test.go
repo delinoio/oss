@@ -85,6 +85,12 @@ func TestLateFailureReloadPreservesOperatorPause(t *testing.T) {
 						t.Fatalf("late failure lost its pool diagnostic: %+v", p)
 					}
 				}
+				wantFailures := s.Pools[oldID].PreparationFailures
+				var wantProblem *Problem
+				if p := s.Pools[oldID].Problem; p != nil {
+					copy := *p
+					wantProblem = &copy
+				}
 				if failure.preparation {
 					r := s.Runners[runnerID]
 					if r.Phase != Cleaning || r.Terminated || r.Resources != (Resources{1, 128}) {
@@ -120,6 +126,18 @@ func TestLateFailureReloadPreservesOperatorPause(t *testing.T) {
 				}
 				if replacement == nil || replacement.Phase != control.phase {
 					t.Fatalf("corrected reload changed operator pause: %+v", replacement)
+				}
+				if replacement.Phase == Ready {
+					if replacement.PreparationFailures != 0 || replacement.Problem != nil {
+						t.Fatalf("corrected reload retained a recovered diagnostic: %+v", replacement)
+					}
+				} else {
+					if replacement.PreparationFailures != wantFailures {
+						t.Fatalf("corrected reload changed preparation-failure count: got %d want %d", replacement.PreparationFailures, wantFailures)
+					}
+					if (replacement.Problem == nil) != (wantProblem == nil) || replacement.Problem != nil && *replacement.Problem != *wantProblem {
+						t.Fatalf("corrected reload changed the retained pool diagnostic: got %+v want %+v", replacement.Problem, wantProblem)
+					}
 				}
 				if err := m.Resume(context.Background(), name); err != nil {
 					t.Fatal(err)

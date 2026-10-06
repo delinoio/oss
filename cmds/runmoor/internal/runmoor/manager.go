@@ -172,15 +172,11 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 			switch old.Phase {
 			case Paused:
 				next.Phase = Paused
+				copyPoolFailureState(next, old)
 			case Suspended:
 				if s.Paused || s.Stopping || !(validatedReload && suspensionCorrected(old, p, conn, s.Config, c) || managedRecoveryMatches(s, &old)) {
 					next.Phase = Suspended
-					next.PreparationFailures = old.PreparationFailures
-					next.SuspensionSource = old.SuspensionSource
-					if old.Problem != nil {
-						copy := *old.Problem
-						next.Problem = &copy
-					}
+					copyPoolFailureState(next, old)
 				}
 			}
 			if recovery := s.ManagedRecovery[p.Name]; recovery != nil && recovery.PoolID == old.ID {
@@ -199,6 +195,15 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 		s.Stopping = false
 	}
 	return nil
+}
+
+func copyPoolFailureState(next *PoolState, old PoolState) {
+	next.PreparationFailures = old.PreparationFailures
+	next.SuspensionSource = old.SuspensionSource
+	if old.Problem != nil {
+		copy := *old.Problem
+		next.Problem = &copy
+	}
 }
 
 func refreshRetirementAuthority(s *Snapshot, c Config) {
