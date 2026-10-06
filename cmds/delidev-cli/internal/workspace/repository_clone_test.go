@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -169,5 +170,69 @@ func TestRepositoryCloneDoesNotAdoptReplacedCheckout(t *testing.T) {
 	staging := filepath.Join(parent, ".delidev-clone-"+string(request.JobID))
 	if _, err := os.Stat(filepath.Join(staging, "checkout", "tracked.txt")); err != nil {
 		t.Fatal("unproven replacement files were removed", err)
+	}
+}
+
+func TestRepositoryCloneConcurrentDestinationPublishesOnlyOne(t *testing.T) {
+	g, private, first, _ := cloneFixture(t)
+	second := first
+	second.JobID = domain.NewID()
+	other := g
+	other.OwnerID = second.JobID
+	outcomes := make(chan error, 2)
+	go func() { _, err := g.Clone(context.Background(), private, first); outcomes <- err }()
+	go func() { _, err := other.Clone(context.Background(), private, second); outcomes <- err }()
+	success, conflict := 0, 0
+	for range 2 {
+		err := <-outcomes
+		if err == nil {
+			success++
+		} else if domain.SafeError(err).Code == domain.Conflict {
+			conflict++
+		} else {
+			t.Fatal(err)
+		}
+	}
+	if success != 1 || conflict != 1 {
+		t.Fatal("concurrent clone publication did not conflict")
+	}
+	parent, _ := filepath.EvalSymlinks(first.ParentPath)
+	if _, err := os.Stat(filepath.Join(parent, "repo", "tracked.txt")); err != nil {
+		t.Fatal("winning checkout lost", err)
+	}
+	for _, job := range []domain.ID{first.JobID, second.JobID} {
+		if _, err := os.Stat(filepath.Join(parent, ".delidev-clone-"+string(job))); !os.IsNotExist(err) {
+			t.Fatal("owned staging retained after definite result", err)
+		}
+	}
+}
+func TestRepositoryCloneAuthenticationFailureIsRedacted(t *testing.T) {
+	g, private, request, _ := cloneFixture(t)
+	if err := os.WriteFile(g.Executable, []byte("#!/bin/sh\nprintf 'fatal: Authentication failed for private-native-content\\n' >&2\nexit 128\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	g.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	_, err := g.Clone(context.Background(), private, request)
+	problem := domain.SafeError(err)
+	if problem.Code != domain.PermissionDenied || problem.Cause != "clone_authentication" || strings.Contains(problem.Error(), "private-native-content") || strings.Contains(logs.String(), "private-native-content") {
+		t.Fatal("unclassified or disclosed authentication error")
+	}
+}
+func TestRepositoryCloneTimeoutJoinsBeforeOwnedCleanup(t *testing.T) {
+	g, private, request, _ := cloneFixture(t)
+	if err := os.WriteFile(g.Executable, []byte("#!/bin/sh\nexec sleep 20\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := g.Clone(ctx, private, request)
+	problem := domain.SafeError(err)
+	if problem.Code != domain.Unavailable || problem.Cause != "clone_timeout" {
+		t.Fatal(problem)
+	}
+	parent, _ := filepath.EvalSymlinks(request.ParentPath)
+	if _, err := os.Stat(filepath.Join(parent, ".delidev-clone-"+string(request.JobID))); !os.IsNotExist(err) {
+		t.Fatal("joined failure staging survived", err)
 	}
 }

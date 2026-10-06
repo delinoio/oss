@@ -73,6 +73,7 @@ type Service struct {
 	github                        githubIdentity
 	githubAccess                  githubRepositoryAccess
 	githubQueries                 githubRepositoryQueries
+	githubRepositories            githubRepositoryInventory
 	terminalOutputMu              sync.Mutex
 	terminalOutputs               map[domain.ID]*terminalOutputRing
 	terminalOutputOrder           list.List

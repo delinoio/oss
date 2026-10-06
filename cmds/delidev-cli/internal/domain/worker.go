@@ -74,6 +74,7 @@ type JobType string
 const (
 	CreateBackupJob         JobType = "create-backup"
 	DeleteBackupJob         JobType = "delete-backup"
+	CloneRepositoryJob      JobType = "clone-repository"
 	InspectRepositoryJob    JobType = "inspect-repository"
 	SaveRepositoryJob       JobType = "save-repository"
 	ImportConfigurationJob  JobType = "import-configuration"
@@ -94,6 +95,7 @@ type WorkerCapability string
 
 const (
 	CodexReadOnlySidechatWorkerV1  WorkerCapability = "codex-read-only-sidechat-v1"
+	RepositoryCloneV1              WorkerCapability = "repository-clone-v1"
 	SignedWorkerUpdatesV1          WorkerCapability = "signed-worker-updates-v1"
 	RepositoryInspectionMetadataV1 WorkerCapability = "repository-inspection-metadata-v1"
 	SessionTerminalsV1             WorkerCapability = "session-terminals-v1"
@@ -148,7 +150,7 @@ const (
 )
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{NativeModelsJob, CreateBackupJob, DeleteBackupJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
+	if !slices.Contains([]JobType{NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {

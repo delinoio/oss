@@ -173,6 +173,7 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	}
 	// Empty hooks/templates and explicit transport policy prevent repository hook
 	// or external helper execution. Submodules and optional LFS smudging stay off.
+	g.cloneDiagnostics = true
 	g.Timeout = RepositoryCloneTimeout
 	g.environment = append(gitEnvironment(), "GIT_LFS_SKIP_SMUDGE=1")
 	g.HooksDir = filepath.Join(staging, "hooks")
@@ -268,9 +269,9 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 }
 
 func removeCloneStaging(ctx context.Context, claimPath string, expected cloneClaim) error {
-	raw, err := security.ReadPrivate(claimPath, 16384)
+	raw, err := security.ReadPrivate(claimPath, 2<<20)
 	var current cloneClaim
-	if err != nil || domain.Decode(raw, &current) != nil {
+	if err != nil || domain.DecodeWithLimit(raw, &current, 2<<20) != nil {
 		return cloneRecoveryRequired()
 	}
 	a, _ := json.Marshal(current)
@@ -362,4 +363,20 @@ func removeCloneEntries(ctx context.Context, root *os.Root, remaining *int) erro
 		}
 	}
 	return nil
+}
+
+// Keep only a bounded private prefix for closed failure classification. Discard
+// the remainder without failing the process stream; nothing is persisted/logged.
+type cloneDiagnosticWriter struct{ output *limitedOutput }
+
+func (w cloneDiagnosticWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	remaining := w.output.limit - w.output.Len()
+	if remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		_, _ = w.output.Buffer.Write(p)
+	}
+	return n, nil
 }

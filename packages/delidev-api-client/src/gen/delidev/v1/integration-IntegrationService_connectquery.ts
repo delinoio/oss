@@ -35,6 +35,11 @@ export const inspectRepositoryIntegration = IntegrationService.method.inspectRep
 export const queryRepositoryIntegration = IntegrationService.method.queryRepositoryIntegration;
 
 /**
+ * @generated from rpc delidev.v1.IntegrationService.ListGitHubRepositories
+ */
+export const listGitHubRepositories = IntegrationService.method.listGitHubRepositories;
+
+/**
  * @generated from rpc delidev.v1.IntegrationService.GetGitHubTokenForm
  */
 export const getGitHubTokenForm = IntegrationService.method.getGitHubTokenForm;

@@ -1,5 +1,7 @@
 # DeliDev delidev-api-client ownership
 
+- Repository listing/Clone use generated IntegrationQuery/WorkerQuery under the protocol/client contracts, with independent System 31/32 / Worker 18 negotiation. Preserve explicit profile revision/generation/page, transient fresh local proof and identical uncertain request bytes. No PAT read model, client-side Git, persistent draft or frontend registration follow-up is permitted.
+
 - Buf generates service-specific files; `scripts/delidev/proto-compat.mjs` generates historical TypeScript import facades. Keep both package-root exports and legacy `./gen/*` paths working. Regenerate facades through `pnpm proto:generate`, never by hand.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.

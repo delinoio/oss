@@ -1,5 +1,7 @@
 # DeliDev worker ownership
 
+- Repository Clone requires separately negotiated Worker capability 18 and the original once-only job journal before owned staging/Git side effects. Report one bounded dedicated outcome that can preserve a published checkout plus closed failure; never rerun a started/finished clone on restart or replacement. PATs never reach jobs, Git environments or logs, and published checkout lifetime is user-owned Local. Follow the workspace and protocol contracts.
+
 - Sidechat pins the Codex native read-only profile for source inspection, Fork and every Execute/Plan/Steer/compaction continuation. Reference original workspace roots without owning their removal. A publication/deletion race may release an assignment only after authenticated exact retiring-envelope comparison; retain native uncertainty and let the joined deletion lane prove cleanup. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 

@@ -13,6 +13,7 @@ service IntegrationService {
   rpc DeleteIntegrationProfile(DeleteIntegrationProfileRequest) returns (DeleteIntegrationProfileResponse);
   rpc InspectRepositoryIntegration(InspectRepositoryIntegrationRequest) returns (InspectRepositoryIntegrationResponse);
   rpc QueryRepositoryIntegration(QueryRepositoryIntegrationRequest) returns (QueryRepositoryIntegrationResponse);
+  rpc ListGitHubRepositories(ListGitHubRepositoriesRequest) returns (ListGitHubRepositoriesResponse);
   rpc GetGitHubTokenForm(GetGitHubTokenFormRequest) returns (GetGitHubTokenFormResponse);
   rpc RefreshPullRequestProblems(RefreshPullRequestProblemsRequest) returns (RefreshPullRequestProblemsResponse);
   rpc ListPullRequestProblems(ListPullRequestProblemsRequest) returns (ListPullRequestProblemsResponse);
@@ -182,5 +183,18 @@ message QueryRepositoryIntegrationRequest {
 
 message QueryRepositoryIntegrationResponse {
   uint32 schema_version = 1;
+  bytes document_json = 2;
+}
+
+message ListGitHubRepositoriesRequest {
+  string profile_id = 1;
+  uint64 expected_revision = 2;
+  uint32 page = 3;
+  uint32 page_size = 4;
+}
+
+message ListGitHubRepositoriesResponse {
+  uint32 schema_version = 1;
+  // Validated identities and constructed GitHub.com URLs; no credentials.
   bytes document_json = 2;
 }

@@ -1,16 +1,37 @@
 # DeliDev v1 Connect contract
 
-## Repository addition reservations
+## Repository addition
 
-Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
-`GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
-`ListGitHubRepositoriesRequest`/`Response`, `RepositoryCloneGitHubSelection`,
-`CloneRepositoryRequest`/`Response` fields in the allocation ledger. These
-reservations must reach main before active declarations, generated bindings or
-capability advertisements. Listing will be an explicit revision-bound
-owner/client profile read. Clone will be a durable originating-Worker operation
-using existing job receipts; its proof token is transient and PAT bytes never
-enter its assignment. Reservations alone grant no support or Git authority.
+The main-first allocation boundary reserves System `REPOSITORY_CLONE_V1 = 31`,
+`GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18` and the
+five listing/clone messages under issue #964. The active generated declarations
+and advertisements use those original allocations. Reservations alone grant
+no support or Git authority. No SQLite migration is added.
+
+`IntegrationService.ListGitHubRepositories` is an owner/paired-client read with
+explicit profile ID, nonzero exact revision and bounded page/size. Its schema-v1
+JSON response binds profile/revision/current credential generation, observation
+time, page options, validated repository metadata and independently constructed
+HTTPS/SSH URLs. Profile changes cancel and join the read before protected
+credential retirement; revision/generation and owner restrictions are rechecked
+before returning. The PAT authorizes Metadata reads only, never Worker Git.
+
+`WorkerService.CloneRepository` is an owner/paired-client mutation with original
+request ID, machine ID, fresh same-computer Worker token, URL, existing parent
+path, portable directory name and optional exact GitHub profile/repository
+selection. The proof token is transient; only its digest binds the actor-bound
+receipt. The durable `clone-repository` assignment contains non-secret original
+Worker/device and selection/generation metadata. Claim revalidates original
+local authority, negotiated Worker capability and current profile selection.
+Accepted routing and once-only Worker journal ownership remain immutable.
+
+The response contains the original job, request ID and replay flag. Its terminal
+report validates the published canonical checkout and commits registration in
+the same transaction; no renderer follow-up save is required. Clone outcome JSON
+retains published checkout metadata even when registration fails, with a closed
+sanitized failure and no server credentials. Uncertain requests may observe the
+original job or retry identical request bytes only; restart/replacement cannot
+repeat Clone. Existing-folder registration remains available to older peers.
 
 ## Metadata-only request diagnostics
 
