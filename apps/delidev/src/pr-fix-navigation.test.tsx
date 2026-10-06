@@ -68,7 +68,7 @@ it("retries the original Fix after App navigation before another GitHub Load", a
   await f.pending().findByRole("button", { name: "Retry original fix request" });
   f.leave(); f.back();
   expect(screen.queryByText("Original feedback")).toBeNull();
-  expect(f.pending().getByText("Manual PR fix · repository 37 · PR 53")).toBeTruthy();
+  expect(f.pending().getByText("Manual PR fix · remote repository 37 · PR ID 53")).toBeTruthy();
   const queries = f.query.mock.calls.length, history = f.history.mock.calls.length, capabilities = f.capabilities.mock.calls.length;
   expect(queries).toBe(2);
   expect(f.fix).toHaveBeenCalledOnce();

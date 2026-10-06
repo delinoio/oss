@@ -27,12 +27,12 @@ export function PRFixAction({ row, set, value, selection, disabled, refreshed }:
  const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useState("");
  const fix = useRetainedMutation(`pr-fix:${selection.remoteRepositoryId}:${selection.pullRequestId}`, PullRequestFixQuery.requestPullRequestFix, (response) => {
   setNotice(`Fix accepted in session ${response.session!.id}. Evidence changes to handled only after a verified push.`); setOpen(false); refreshed();
- }, fixAcknowledgement(selection));
+ });
  const chain = readRemediationChain(document(set).remediation);
  const owner = text(chain?.active_attempt_id);
  const blocked = disabled || fix.busy || fix.uncertain || Boolean(owner);
  return <div>{owner ? <p>Fix attempt <code>{owner}</code> owns this PR. Inspect its retained history before another fix.</p> : null}<button disabled={blocked} aria-expanded={open} onClick={() => setOpen(!open)}>Fix now</button>
-  {open ? <PRFixForm blocked={blocked} project={project} setProject={setProject} cancel={() => setOpen(false)} send={() => { setNotice(""); void fix.send({ requestId: newRequestId(), schemaVersion: 1, documentJson: encode({ set_id: set.id, set_revision: set.revision.toString(), project_id: project, repository_id: selection.repositoryId, problems: [{ id: row.id, revision: row.revision.toString(), content_version: text(value.content_version) }] }) }); }} /> : null}
+  {open ? <PRFixForm blocked={blocked} project={project} setProject={setProject} cancel={() => setOpen(false)} send={() => { setNotice(""); void fix.send({ requestId: newRequestId(), schemaVersion: 1, documentJson: encode({ set_id: set.id, set_revision: set.revision.toString(), project_id: project, repository_id: selection.repositoryId, problems: [{ id: row.id, revision: row.revision.toString(), content_version: text(value.content_version) }] }) }, fixAcknowledgement(selection)); }} /> : null}
   <Problem error={fix.error} />{fix.uncertain ? <button disabled={fix.busy} onClick={fix.retry}>Retry original fix request</button> : null}{notice ? <p role="status">{notice}</p> : null}
  </div>;
 }
