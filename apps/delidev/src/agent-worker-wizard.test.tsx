@@ -136,6 +136,9 @@ it.each(["failed", "empty"])("accepts direct IDs with a %s catalog and retains e
   else value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
   await start(value); await accounts(value);
   await screen.findByText(state === "failed" ? /Catalog lookup failed/ : /No saved models match/);
+  const input = screen.getByRole("combobox", { name: "Model" });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(input.hasAttribute("aria-activedescendant")).toBe(false);
   fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "exact" } }); next();
   expect(screen.getByRole("heading", { name: "Configure", level: 3 })).toBeTruthy();
 });
@@ -189,6 +192,9 @@ it("retains a stale edit and returns empty-name validation to its input", async 
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Name"));
   expect(value.save).not.toHaveBeenCalled();
+  (screen.getByLabelText("Permission mode") as HTMLSelectElement).focus();
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Name"));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retained draft" } });
   expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Name"));
   value.get.mockImplementation(request => ({ resource: request.id === value.agent.id ? create(ResourceSchema, { ...value.agent, revision: 2n }) : value.records.find(row => row.id === request.id) }));

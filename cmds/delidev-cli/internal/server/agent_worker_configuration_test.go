@@ -116,11 +116,17 @@ func TestAgentWorkerWizardSourceAndMinimumAccounts(t *testing.T) {
 	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Wizard API", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
 	api := wizardAccount(f, provider, "API")
 	sub := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Subscription", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
+	otherProvider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Other Wizard API", Endpoint: "http://127.0.0.1:12346/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	otherAPI := wizardAccount(f, otherProvider, "Other API")
+	otherSubscription := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Other subscription", SubscriptionService: domain.SubscriptionClaude, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
 	for _, tc := range []struct {
 		accounts []*pb.Resource
 		code     domain.Code
 	}{
 		{nil, domain.MissingInput}, {[]*pb.Resource{api, sub}, domain.InvalidArgument},
+		{[]*pb.Resource{api, otherAPI}, domain.InvalidArgument},
+		{[]*pb.Resource{sub, otherSubscription}, domain.InvalidArgument},
+		{[]*pb.Resource{otherSubscription}, domain.Unsupported},
 	} {
 		_, err := f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, wizardRequest(tc.accounts, "native")))
 		wantAccountCode(t, err, tc.code)
@@ -141,6 +147,12 @@ func TestAgentWorkerWizardSourceAndMinimumAccounts(t *testing.T) {
 	if _, err := f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, wizardRequest([]*pb.Resource{sub}, "subscription-native"))); err != nil {
 		t.Fatal(err)
 	}
+	otherModel := f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Other source model", NativeID: "other-source-model", ProviderID: domain.ID(otherProvider.Id), Harnesses: []domain.Harness{domain.Codex}, Manual: true, MetadataSource: domain.Unknown})
+	wrongModel := wizardRequest([]*pb.Resource{api}, "")
+	wrongModel.Model.Selection = &pb.AgentWorkerModelSelection_ModelId{ModelId: otherModel.Id}
+	wrongModel.Model.ExpectedModelRevision = otherModel.Revision
+	_, err = f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, wrongModel))
+	wantAccountCode(t, err, domain.InvalidArgument)
 }
 
 func TestWizardSourceFiltersPrecedePaginationAndBindCursors(t *testing.T) {

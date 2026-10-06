@@ -37,4 +37,4 @@
   .worker-wizard nav button { font-size: 12px; }
 }
 
-.worker-wizard .worker-account-row > input { width: 16px; min-height: 16px; height: 16px; }
+.worker-wizard input[type="checkbox"] { width: 16px; min-height: 16px; height: 16px; }

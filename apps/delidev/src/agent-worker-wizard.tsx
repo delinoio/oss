@@ -62,6 +62,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const [nativePending, setNativePending] = useState(false);
   const [problem, setProblem] = useState("");
   const [focusField, setFocusField] = useState("");
+  const [focusAttempt, setFocusAttempt] = useState(0);
   const initialized = useRef(!initial);
   const heading = useRef<HTMLHeadingElement>(null);
   const form = useRef<HTMLFormElement>(null);
@@ -96,7 +97,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
       if (disclosure) disclosure.open = true;
       control?.focus();
     } else heading.current?.focus();
-  }, [step, focusField, active]);
+  }, [step, focusField, focusAttempt, active]);
   const mutation = useRetainedMutation(`agent-worker-wizard:${initial?.id ?? "new"}`, ConfigurationQuery.saveAgentWorker, (result, request) => {
     notifications.notify({ kind: ToastKind.Success, message: "Agent Worker saved.", id: request.mutation?.requestId }); saved();
   }, (result, request) => result.requestId === request.mutation?.requestId && result.resource?.kind === EntityKind.AGENT && supportsResourceSchema(result.resource) && (!initial || result.resource.id === initial.id));
@@ -116,7 +117,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   };
   const sourceLabel = source?.kind === SourceKind.Subscription ? subscriptionServiceNames[source.id as SubscriptionServiceId] : selectedProvider.data?.resource ? resourceName(selectedProvider.data.resource) : source?.id ?? "";
   const selectedRows = ids.flatMap(id => knownAccounts[id] ? [knownAccounts[id]!] : []);
-  const fail = (target: Step, message: string, field = "") => { setStep(target); setProblem(message); setFocusField(field); };
+  const fail = (target: Step, message: string, field = "") => { setStep(target); setProblem(message); setFocusField(field); setFocusAttempt(value => value + 1); };
   const validate = (through: Step): boolean => {
     if (!Object.values(Harness).includes(data.harness as Harness)) { fail(Step.Harness, "Choose a supported harness.", "harness"); return false; }
     if (through >= Step.Accounts) {
@@ -178,7 +179,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
         <p>{harnessNames[data.harness as Harness]} · {sourceLabel} · {ids.length} accounts</p>
         <h4>Choose a model</h4><p>Search the saved catalog or enter an exact model ID.</p>
         <div className="worker-model-combobox"><label htmlFor={`${listID}-input`}>Model</label><input id={`${listID}-input`} data-wizard-field="model" role="combobox" aria-autocomplete="list" aria-expanded={popup} aria-controls={listID} aria-activedescendant={popup && highlight >= 0 ? `${listID}-${highlight}` : undefined} value={input} maxLength={256} autoComplete="off" onFocus={() => setPopup(true)} onBlur={() => setPopup(false)} onChange={event => { setInput(event.target.value); setModel(undefined); setModelPage(""); setPopup(true); setHighlight(-1); setProblem(""); }} onKeyDown={event => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setPopup(true); setHighlight(value => event.key === "ArrowDown" ? Math.min(value + 1, suggestions.length) : Math.max(0, value - 1)); }
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setPopup(true); const count = suggestions.length + (input.trim() ? 1 : 0); setHighlight(value => count === 0 ? -1 : event.key === "ArrowDown" ? Math.min(value + 1, count - 1) : value <= 0 ? count - 1 : value - 1); }
           else if (event.key === "Escape" && popup) { event.preventDefault(); event.stopPropagation(); setPopup(false); }
           else if (event.key === "Enter" && popup) { event.preventDefault(); pick(suggestions[highlight]); }
         }} />
