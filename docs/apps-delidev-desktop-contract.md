@@ -545,7 +545,25 @@ Keep exact uncertain request bytes, current-revision conflicts, visit disposal,
 late-response fencing and same-identity reconnect/Strict Mode behavior.
 
 Use the shared 1040px left column, 720px wizard body, flat rows/dividers, semantic
-themes, 40px controls and 8px corners. Input/select focus preserves ordinary
+themes, 40px controls and 8px corners. The Harness step replaces its select with
+four equal selectable cards in Codex, Claude Code, OpenCode, Grok Build order.
+Show their decorative 48px local brand marks, 16px names and 12px origin labels
+OpenAI, Anthropic, Open source and xAI. Use 16px grid gaps, 24px card padding,
+176px minimum card height and 8px corners. Two columns fit at available form
+widths of at least 640px; below that width use one column. The selected card uses
+the semantic selected background, accent border and a checked circular indicator;
+unselected cards use the ordinary surface, border and empty circular indicator.
+Keep the existing Harness heading/helper and footer guidance. Cards use a
+button-based single-selection radiogroup with one selected Tab entry, wrapping
+Arrow Up/Down/Left/Right selection, Home/End and native Space/Enter activation.
+With an unsupported saved harness, select no card and use the first card as the
+Tab entry and validation focus target. Preserve the new Codex default and saved
+edit selection. Card selection never advances or saves; Next owns advancement.
+Reselecting the current harness preserves account/model choices, while an actual
+change retains the existing explicit reset. Buttons retain visible keyboard focus
+and disabled server-support/mutation guards. Local SVG masks use semantic ink in
+both themes without network access, inline styles or additional dependencies.
+Input/select focus preserves ordinary
 boundaries; buttons/disclosures retain visible focus. The combobox supports
 Arrow Up/Down, Enter and Escape with active-descendant semantics. Stage changes
 focus their heading; invalid configuration returns to its stage and input. Narrow
