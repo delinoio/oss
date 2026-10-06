@@ -103,6 +103,27 @@ func TestFinalRootRemovalPreservesReplacementAfterValidation(t *testing.T) {
 	}
 }
 
+func TestFinalRootClaimPublicationDoesNotReplaceConcurrentClaim(t *testing.T) {
+	m, r := finalRootFixture(t, StorageCleanup)
+	claimPath := m.finalRemovalClaimPath(r.OperationID)
+	m.storageFinalRootFault = func(stage storageFinalRootStage) error {
+		if stage != storageFinalRootClaimChecked {
+			return nil
+		}
+		if err := os.WriteFile(claimPath, []byte(`{"foreign":true}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return nil
+	}
+	result, err := m.Storage(context.Background(), r)
+	if domain.SafeError(err).Code != domain.RecoveryRequired || result.CleanupVerified {
+		t.Fatal("concurrent claim replacement settled", result, err)
+	}
+	if raw, err := os.ReadFile(claimPath); err != nil || string(raw) != `{"foreign":true}` {
+		t.Fatalf("foreign final-root claim was replaced: %q, %v", raw, err)
+	}
+}
+
 func TestFinalRootRemovalRecoveryRequiresOriginalTransition(t *testing.T) {
 	stages := []storageFinalRootStage{storageFinalRootPrepared, storageFinalRootRenamed, storageFinalRootClaimed, storageFinalRootVerified, storageFinalRootNativeGone, storageFinalRootUnlinked, storageFinalRootSynced}
 	for _, action := range []StorageAction{StorageCleanup, StorageDelete} {

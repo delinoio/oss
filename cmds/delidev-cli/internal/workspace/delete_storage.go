@@ -196,6 +196,20 @@ func SessionStorageRemnantPaths(ctx context.Context, root string, w domain.Sessi
 	for _, finalRoots := range namespace {
 		paths = append(paths, finalRoots...)
 	}
+	// The initial deletion inventory includes canonical claim paths, but a proof
+	// can be recreated after that inventory. Recheck each exact final-root proof
+	// at the completion boundary so a late proof cannot be mistaken for absence.
+	for jobID := range jobs {
+		claim := filepath.Join(root, "storage-removal-root-claims", string(jobID)+".json")
+		if _, err := os.Lstat(claim); err == nil {
+			if err := security.RegularPrivate(claim); err != nil {
+				return nil, domain.SessionDeletionPending()
+			}
+			paths = append(paths, claim)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, domain.SessionDeletionPending()
+		}
+	}
 	return paths, nil
 }
 

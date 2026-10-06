@@ -363,6 +363,27 @@ func TestSessionDeletionReinventorySeesNewFinalRoot(t *testing.T) {
 	}
 }
 
+func TestSessionDeletionReinventorySeesReappearingFinalRootClaim(t *testing.T) {
+	config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	jobID := domain.NewID()
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: jobID, Type: domain.WorkspaceStorageJob})
+	parent := filepath.Join(config.Root, "storage-removal-root-claims")
+	if err := security.PrivateDir(parent); err != nil {
+		t.Fatal(err)
+	}
+	if paths, err := workspace.SessionStorageRemnantPaths(context.Background(), config.Root, work); err != nil || len(paths) != 0 {
+		t.Fatal("initial final-root claim inventory was not empty", paths, err)
+	}
+	path := filepath.Join(parent, string(jobID)+".json")
+	if err := os.WriteFile(path, []byte(`{"reappeared":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionStorageRemnantPaths(context.Background(), config.Root, work)
+	if err != nil || len(paths) != 1 || paths[0] != path {
+		t.Fatal("final-root reinventory missed the canonical claim", paths, err)
+	}
+}
+
 func TestSessionDeletionPreservesForeignRemovalAfterRealCleanup(t *testing.T) {
 	config, work, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
 	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {

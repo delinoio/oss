@@ -21,6 +21,7 @@ const finalRootReceiptTimeout = 30 * time.Second
 
 const (
 	storageFinalRootBeforeClaim       storageFinalRootStage = "before-claim"
+	storageFinalRootClaimChecked      storageFinalRootStage = "claim-checked"
 	storageFinalRootPrepared          storageFinalRootStage = "prepared"
 	storageFinalRootRenamed           storageFinalRootStage = "renamed"
 	storageFinalRootClaimed           storageFinalRootStage = "claimed"
@@ -72,12 +73,59 @@ func (m *Manager) writeFinalRemovalClaim(ctx context.Context, claim storageFinal
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Every state after the initial publication must advance the exact claim that
+	// the caller read. A replacement cannot become the input to an atomic update.
+	// The no-replace initial publication below prevents a foreign first claim from
+	// being overwritten before this version-bound check exists.
+	rawCurrent, err := security.ReadPrivate(m.finalRemovalClaimPath(claim.Reference.OperationID), 4096)
+	var current storageFinalRootClaim
+	if err != nil || domain.Decode(rawCurrent, &current) != nil || current != claim {
+		return ResultUncertain()
+	}
 	claim.State = state
 	raw, err := json.Marshal(claim)
 	if err != nil {
 		return ResultUncertain()
 	}
 	return security.WriteAtomicOwned(m.finalRemovalClaimPath(claim.Reference.OperationID), raw)
+}
+
+// publishFinalRemovalClaim publishes the first transition without replacement.
+// A same-user writer that wins the target name must remain visible as foreign
+// evidence; replacing it would erase the recovery boundary before validation.
+func (m *Manager) publishFinalRemovalClaim(ctx context.Context, claim storageFinalRootClaim, state storageFinalRootStage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	claim.State = state
+	raw, err := json.Marshal(claim)
+	if err != nil {
+		return ResultUncertain()
+	}
+	path := m.finalRemovalClaimPath(claim.Reference.OperationID)
+	f, err := os.CreateTemp(filepath.Dir(path), ".pending-"+filepath.Base(path)+"-")
+	if err != nil {
+		return err
+	}
+	temporary := f.Name()
+	defer os.Remove(temporary)
+	if err := f.Chmod(0600); err == nil {
+		_, err = f.Write(raw)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := storageRenameNoReplace(temporary, path); err != nil {
+		return err
+	}
+	return security.SyncParent(path)
 }
 
 func (m *Manager) finalRootFault(stage storageFinalRootStage) error {
@@ -127,8 +175,11 @@ func (m *Manager) claimFinalRemovalRoot(ctx context.Context, r StorageRequest, o
 	if err != nil || len(paths) != 0 {
 		return ResultUncertain()
 	}
+	if err := m.finalRootFault(storageFinalRootClaimChecked); err != nil {
+		return err
+	}
 	claim := storageFinalRootClaim{RootName: domain.NewID(), Version: 1, Reference: removalReference(r), RootIdentity: original.RootIdentity, IntentDigest: original.IntentDigest}
-	if err := m.writeFinalRemovalClaim(ctx, claim, storageFinalRootPrepared); err != nil {
+	if err := m.publishFinalRemovalClaim(ctx, claim, storageFinalRootPrepared); err != nil {
 		return err
 	}
 	if err := m.finalRootFault(storageFinalRootPrepared); err != nil {
@@ -259,6 +310,7 @@ func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r Sto
 	if err := m.writeFinalRemovalClaim(ctx, claim, stage); err != nil {
 		return err
 	}
+	claim.State = stage
 	current, statErr := parent.Lstat(name)
 	opened, openedErr := root.Lstat(".")
 	if statErr != nil || openedErr != nil || !os.SameFile(before, current) || !os.SameFile(current, opened) || current.Mode() != removalWritableDirectoryMode() || opened.Mode() != removalWritableDirectoryMode() {
