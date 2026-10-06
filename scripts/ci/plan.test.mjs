@@ -29,6 +29,40 @@ test("root Rust toolchain changes select Forge validation and rendering", () => 
   }
 });
 
+test("root Turbo inputs select native checks without global forcing or PR packaging", () => {
+  const ids = ["rust-fmt", "forge-test", "forge-render"];
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["turbo.json", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]) {
+      const plan = planJobs(event, [path]);
+      for (const id of ids) {
+        assert.equal(plan.jobs[id], true, `${event}: ${path}: ${id}`);
+        assert.equal(plan.forced[id], false, `${event}: ${path}: ${id}`);
+      }
+      if (event === Event.PullRequest) {
+        for (const id of native) assert.equal(plan.jobs[id], false, `${path}: ${id}`);
+      }
+    }
+    for (const path of ["docs/project-with-watch.md", "unrelated/turbo.json", "unrelated/package.json", "unrelated/pnpm-lock.yaml", "unrelated/pnpm-workspace.yaml"]) {
+      for (const id of ids) assert.equal(planJobs(event, [path]).jobs[id], false, `${event}: ${path}: ${id}`);
+    }
+  }
+});
+
+test("root Turbo input native checks must succeed in CI Result", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["turbo.json", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]) {
+      assert.equal(validateResults(results(event, [path])), true);
+      for (const id of ["rust-fmt", "forge-test", "forge-render"]) {
+        for (const result of ["failure", "cancelled", "skipped", undefined]) {
+          const needs = results(event, [path]);
+          needs[id].result = result;
+          assert.throws(() => validateResults(needs), new RegExp(id, "u"), `${event}: ${path}: ${id}: ${result}`);
+        }
+      }
+    }
+  }
+});
+
 test("PR never allocates native package jobs, including changes to CI itself", () => {
   for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "Cargo.lock", ".gitattributes", ".github/workflows/CI.yml", "scripts/ci/plan.mjs", ".github/actions/setup-ci-node/action.yml"]) {
     const jobs = selected(Event.PullRequest, [path]);

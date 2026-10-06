@@ -122,8 +122,12 @@
       "Cargo.lock",
       "Cargo.toml",
       "crates/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
       "rust-toolchain",
-      "rust-toolchain.toml"
+      "rust-toolchain.toml",
+      "turbo.json"
     ]
   },
   "rust-clippy": {
@@ -642,6 +646,10 @@
       ".cargo/**",
       "Cargo.toml",
       "Cargo.lock",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
       "rust-toolchain",
       "rust-toolchain.toml",
       "crates/forge-tree-doc/**",
@@ -657,6 +665,10 @@
       ".cargo/**",
       "Cargo.toml",
       "Cargo.lock",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
       "rust-toolchain",
       "rust-toolchain.toml",
       "crates/forge-tree-doc/**",
