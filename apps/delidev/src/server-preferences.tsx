@@ -19,29 +19,31 @@ export function readableServerPreferences(row: Resource): boolean {
 }
 
 export function serverPreferenceLabel(section: ServerPreferenceSection): string {
-  return section === ServerPreferenceSection.GitWorkflow ? copy("settings.gitWorkflow") : copy("settings.serverPreferences_eba66b");
+  return section === ServerPreferenceSection.GitWorkflow ? copy("server-preferences.gitWorkflow") : copy("settings.serverPreferences_eba66b");
 }
 
 export function ServerPreferencesEmpty({ section = ServerPreferenceSection.All }: { section?: ServerPreferenceSection }) {
   useLocale();
   const label = serverPreferenceLabel(section);
-  return <section className="server-preferences-panel" aria-label={copy("server-preferences.noSavedServerPreferences_6b56a2")}>
-    <h2>{copy("server-preferences.noSavedServerPreferences_6b56a2")}</h2>
+  const shortLabel = label.toLowerCase();
+  return <section className="server-preferences-panel" aria-label={copy("server-preferences.noSavedPreferences", { v0: shortLabel })}>
+    <h2>{copy("server-preferences.noSavedPreferences", { v0: shortLabel })}</h2>
     <p>{copy("server-preferences.reviewTheDefaultsThenSaveOne_2fb225")}</p>
-    {section !== ServerPreferenceSection.GitWorkflow ? <section className="server-preference-section"><h3>{copy("server-preferences.accountRouting_0c3707")}</h3><p>{copy("server-preferences.chooseTheDefaultPolicyForAgent_fbb9a2")}</p></section> : null}
+    {section !== ServerPreferenceSection.GitWorkflow ? <section className="server-preference-section"><h3>{copy("server-preferences.defaultAccountRouting_bb44ea")}.</h3><p>{copy("server-preferences.chooseTheDefaultPolicyForAgent_fbb9a2")}</p></section> : null}
     {section !== ServerPreferenceSection.AccountRouting ? <>
     <section className="server-preference-section"><h3>{copy("server-preferences.worktreeFetch_0d4c18")}</h3><p>{copy("server-preferences.allowFetchingBeforeWorktreePreparationRepository_e71fc1")}</p></section>
     <section className="server-preference-section"><h3>{copy("server-preferences.pullRequestRemediation_4cded4")}</h3><p>{copy("server-preferences.configureBoundedAutomaticFixesForLinked_c08378")}</p></section>
     </> : null}
-    <p className="server-preferences-footnote">{copy("server-preferences.chooseNewServerPreferencesToReview_3a11af")}</p>
+    <p className="server-preferences-footnote">{copy("server-preferences.chooseNewPreferencesToReview", { v0: label })}</p>
   </section>;
 }
 
 export function ServerPreferencesSummary({ row, section = ServerPreferenceSection.All }: { row: Resource; section?: ServerPreferenceSection }) {
   useLocale();
   const data = document(row), policy = object(data.remediation);
-  return <article className="server-preferences-panel" aria-label={copy("server-preferences.savedServerPreferences_8341c8")}>
-    <h2>{copy("server-preferences.savedServerPreferences_8341c8")}</h2><small className="server-preferences-id">{row.id}</small>
+  const shortLabel = serverPreferenceLabel(section).toLowerCase();
+  return <article className="server-preferences-panel" aria-label={copy("server-preferences.savedPreferences", { v0: shortLabel })}>
+    <h2>{copy("server-preferences.savedPreferences", { v0: shortLabel })}</h2><small className="server-preferences-id">{row.id}</small>
     {readableServerPreferences(row) ? <>
       {section !== ServerPreferenceSection.GitWorkflow ? <section className="server-preference-section"><h3>{copy("server-preferences.accountRouting_0c3707")}</h3><dl><dt>{copy("server-preferences.defaultAccountRouting_bb44ea")}</dt><dd>{text(data.default_routing)}</dd></dl></section> : null}
       {section !== ServerPreferenceSection.AccountRouting ? <>

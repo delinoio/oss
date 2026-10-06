@@ -1,4 +1,8 @@
 {
+  "server-preferences.gitWorkflow": "Git workflow",
+  "server-preferences.noSavedPreferences": "No saved {{v0}}",
+  "server-preferences.savedPreferences": "Saved {{v0}}",
+  "server-preferences.chooseNewPreferencesToReview": "Choose New {{v0}} to review and save.",
   "server-preferences.noSavedServerPreferences_6b56a2": "No saved server preferences",
   "server-preferences.reviewTheDefaultsThenSaveOne_2fb225": "Review the defaults, then save one preference set for this server.",
   "server-preferences.accountRouting_0c3707": "Account routing",

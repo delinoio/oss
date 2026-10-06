@@ -6,7 +6,7 @@
   "native-model-settings.observationScope_329506": "관측 범위",
   "native-model-settings.runnerDevice_37efe3": "실행 장치",
   "native-model-settings.connectedAccount_3903f0": "연결된 계정",
-  "native-model-settings.connectedSelectedAccount": "연결된 계정",
+  "native-model-settings.connectedSelectedAccount": "연결된 선택 계정",
   "native-model-settings.selectAccount": "계정 선택",
   "native-model-settings.includeHiddenModels_64799e": " 숨겨진 모델 포함",
   "native-model-settings.observeModels_cf8865": "모델 관측",

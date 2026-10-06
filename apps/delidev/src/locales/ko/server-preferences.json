@@ -1,4 +1,8 @@
 {
+  "server-preferences.gitWorkflow": "Git 워크플로",
+  "server-preferences.noSavedPreferences": "저장된 {{v0}} 없음",
+  "server-preferences.savedPreferences": "저장된 {{v0}}",
+  "server-preferences.chooseNewPreferencesToReview": "새 {{v0}}을(를) 선택하여 검토하고 저장하세요.",
   "server-preferences.noSavedServerPreferences_6b56a2": "저장된 서버 환경 설정 없음",
   "server-preferences.reviewTheDefaultsThenSaveOne_2fb225": "기본값을 검토한 후 이 서버의 환경설정 한 세트를 저장하세요.",
   "server-preferences.accountRouting_0c3707": "계정 라우팅",

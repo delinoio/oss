@@ -61,9 +61,8 @@ export function AgentConfiguration({ data, core, permissions, reasoning, account
     <section className="agent-core" aria-labelledby={coreId}><header><h4 id={coreId}>{copy("agent-configuration.coreSettings_3f8268")}</h4><p>{copy("agent-configuration.requiredFieldsAreMarked_a99eff")}</p></header>{core}<div className="agent-permissions">{permissions}</div></section>
     <section className="agent-optional" aria-labelledby={optionalId}><header><h4 id={optionalId}>{copy("agent-configuration.optionalSettings_e88b5c")}</h4><p>{copy("agent-configuration.leaveTheseUnchangedToKeepThe_73a428")}</p></header>
       <Disclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, copy("agent-configuration.extra.2bab94029bed"))} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</Disclosure>
-      <Disclosure section={AgentSection.Accounts} summary={copy("agent-configuration.sentence.ad26a61b1351", { v0: links.length, v1: retainedSummary(data.routing, copy("agent-configuration.extra.42b998374988")) })} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? copy("agent-configuration.extra.8116757327fb") : undefined}>{accounts}</Disclosure>
-      <Disclosure section={AgentSection.Instructions} summary={copy("agent-configuration.sentence.74d105c1160d", { v0: items(data.templates).length })}>{instructions}</Disclosure>
       {accounts !== undefined ? <Disclosure section={AgentSection.Accounts} summary={copy("agent-configuration.sentence.ad26a61b1351", { v0: links.length, v1: retainedSummary(data.routing, copy("agent-configuration.extra.42b998374988")) })} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? copy("agent-configuration.extra.8116757327fb") : undefined}>{accounts}</Disclosure> : null}
+      <Disclosure section={AgentSection.Instructions} summary={copy("agent-configuration.sentence.74d105c1160d", { v0: items(data.templates).length })}>{instructions}</Disclosure>
       <Disclosure section={AgentSection.Native} summary={nativeSummary(data)} invalidValue={invalidConcurrency}>{native}</Disclosure>
     </section>
   </>;
