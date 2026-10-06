@@ -1,5 +1,7 @@
 # DeliDev src ownership
 
+- `qa/` owns only the separate browser QA entry and scoped adapters under `docs/apps-delidev-qa-contract.md`. Reuse App/Connect Query and connection memory, pass only paired client authority, and never spoof Tauri or CEF. Native-only controls remain unavailable before side effects; QA theme storage cannot touch native appearance.
+
 - `subscription-onboarding.tsx` and its stylesheet own the pure login-first account body under the subscription Settings contract. Supply confirmed progress from the owning controller; render performs no login, account creation or browser opening. Preserve once-only name focus, edited values, the UTF-8 name bound, existing Settings tokens and departure callbacks without business cancellation.
 
 - Workspace storage and permanent deletion use the connection-owned controller in `session-storage.tsx`. Retain original requests and jobs through navigation/uncertainty, pin exact successful previews and snapshot selections for confirmation, observe deletion independently of removed resources and preserve decimal/nullable byte measurements. Use separate negotiated capabilities and follow `docs/cmds-delidev-storage-contract.md`.

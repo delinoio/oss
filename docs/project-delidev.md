@@ -21,6 +21,7 @@ Codex native flows use a common minimum SemVer `0.151.0` with no upper bound und
 New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation-issue-1152), while strict schedule definitions and server recurrence authority remain unchanged.
 
 ## Domain Contract Documents
+- [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Protected account browser](cmds-delidev-browser-contract.md)
