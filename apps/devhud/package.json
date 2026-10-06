@@ -37,7 +37,12 @@
     "test": "pnpm lint && pnpm test:unit && pnpm test:components && node --experimental-strip-types --test scripts/localization.test.mjs scripts/registry.test.mjs scripts/accessibility.test.mjs scripts/native-bridge.test.mjs scripts/desktop-window.test.mjs scripts/mobile-policy.test.mjs scripts/generate-mobile.test.mjs scripts/development-csp.test.mjs scripts/frontend-output-policy.test.mjs scripts/platform-smoke-child.test.mjs scripts/run-tauri.test.mjs scripts/run-mobile.test.mjs scripts/stage-native-messaging-host.test.mjs scripts/verify-pins-policy.test.mjs scripts/diagnostics-policy.test.mjs scripts/validate-updater-release.test.mjs && node scripts/verify-frontend-output.mjs && pnpm mobile:check",
     "verify:pins": "node scripts/verify-pins.mjs",
     "release:validate-updater": "node scripts/validate-updater-release.mjs",
-    "smoke:platform": "node scripts/platform-smoke.mjs"
+    "smoke:platform": "node scripts/platform-smoke.mjs",
+    "ci:typecheck": "tsc --noEmit",
+    "ci:build:frontend": "rsbuild build",
+    "ci:contracts": "node --experimental-strip-types --test scripts/localization.test.mjs scripts/registry.test.mjs scripts/accessibility.test.mjs scripts/native-bridge.test.mjs scripts/desktop-window.test.mjs scripts/mobile-policy.test.mjs scripts/generate-mobile.test.mjs scripts/development-csp.test.mjs scripts/frontend-output-policy.test.mjs scripts/platform-smoke-child.test.mjs scripts/run-tauri.test.mjs scripts/run-mobile.test.mjs scripts/stage-native-messaging-host.test.mjs scripts/verify-pins-policy.test.mjs scripts/diagnostics-policy.test.mjs scripts/validate-updater-release.test.mjs",
+    "ci:clean-frontend": "node scripts/verify-frontend-output.mjs",
+    "ci:security:contracts": "node --test scripts/diagnostics-policy.test.mjs scripts/native-bridge.test.mjs scripts/mobile-policy.test.mjs"
   },
   "dependencies": {
     "@connectrpc/connect": "2.1.2",

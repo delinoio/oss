@@ -41,7 +41,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - An expired preparation after restart remains ambiguous and follows busy-aware cleanup. A busy rejection preserves the job and derives an unobserved start from the persisted creation time, never a new recovery-time deadline. Forced termination is reserved for an explicit force-stop or an established busy-job timeout.
 - A delayed busy-removal response can restore `Busy` only if the runner still exists in the exact lifecycle phase that initiated removal and no completion, force, remote removal, confirmed termination, or quarantine outcome committed while the request was in flight. Late responses preserve later phases and absent records. When no job start was observed, the original creation-time-based deadline remains authoritative; capacity stays reserved until termination is confirmed.
 - `pause` stops acquisition/provisioning, preserves busy work, and retires idle runners. `drain` pauses and waits. `stop` drains and exits after local termination/cleanup; unresolved remote cleanup remains durable and visible. `stop --pool NAME` drains just that pool, including its older generations; offline drain/stop waits use the same pool selection if the manager becomes unavailable; `stop --pool NAME --force` restricts forced termination to it. `stop --force` immediately cancels in-flight preparation and terminates only verified owned work. It never permits deletion of unrelated resources.
-- Resume revalidates credentials, backend/image and resource conditions. Reload validates the candidate before accepting one new generation. A validated reload resumes a suspended replacement only when the prior failure's relevant input changed: connection or runner group for authentication; target, group or scale-set identity for a recorded remote scale-set ownership failure; image, runner version, platform or startup environment for their matching failures. Local execution ownership conflicts and legacy ownership failures without a recorded source stay suspended until ownership is resolved and the operator explicitly resumes them. Runner-version recovery requires a change to the runner-bearing image, source, path, version or platform; a DinD daemon image alone is unrelated. For a preparation failure, only the affected backend's preparation timeout and its Docker socket or Tart executable count as relevant global settings; the job timeout and the other backend's settings do not. A relevant global setting change alone replaces the suspended generation. Other suspensions carry their exact safe problem and preparation-failure count into the replacement. Failed reloads change nothing; unchanged configuration, missing prior reason, operator pause and stop never auto-resume. Existing jobs retain original generation/configuration/deadlines. Changed or removed pools drain; a replacement using the same remote identity waits for old ownership to retire and still verifies ownership before creation. Storage relocation is not a live reload operation. Reload serializes with image operations and cannot clear an already requested manager stop.
+- Resume revalidates credentials, backend/image and resource conditions. Reload validates the candidate before accepting one new generation. A validated reload resumes a suspended replacement only when the prior failure's relevant input changed: connection or runner group for authentication; target, group or scale-set identity for a recorded remote scale-set ownership failure; image, runner version, platform or startup environment for their matching failures. Local execution ownership conflicts and legacy ownership failures without a recorded source stay suspended until ownership is resolved and the operator explicitly resumes them. Runner-version recovery requires a change to the runner-bearing image, source, path, version or platform; a DinD daemon image alone is unrelated. For a preparation failure, only the affected backend's preparation timeout and its Docker socket or Tart executable count as relevant global settings; the job timeout and the other backend's settings do not. A relevant global setting change alone replaces the suspended generation. Other suspensions carry their exact safe problem and preparation-failure count into the replacement. Rejected configuration leaves the committed configuration unchanged; unchanged configuration, missing prior reason, operator pause and stop never auto-resume. Existing jobs retain original generation/configuration/deadlines. Changed or removed pools drain; a replacement using the same remote identity waits for old ownership to retire and still verifies ownership before creation. Storage relocation is not a live reload operation. Reload serializes with image operations and cannot clear an already requested manager stop.
 - Status and doctor report a safe `DEPENDENCY_RETRY` diagnostic when legacy state has a suspended pool with no recorded problem, without guessing the original cause or automatically resuming it. A verified managed image replacement may clear only a matching image/version suspension or a three-failure startup preparation circuit breaker; unrelated authentication/ownership failures, operator pause, drain and stop remain authoritative.
 - Lifecycle transitions, reservation publication, GitHub ownership, and cleanup progress are persisted. Restart reconciles actual Docker/Tart resources and GitHub registrations, preserves verified live work, resumes cleanup idempotently, and quarantines ambiguous state. Reservations are not released until termination is confirmed. No automatic GitHub job rerun is performed.
 - Missing-registration inspection revalidates the lifecycle before starting backend work and inside the atomic state update after an absent GitHub lookup. Only an active preparing/idle/busy execution without completion, forced cleanup, remote removal or confirmed termination may be quarantined by absence. An older lookup cannot overwrite cleanup/completion, replace an existing quarantine diagnostic or recreate a pruned record. Discarded absence results emit no quarantine warning; a failed commit logs only a safe state-storage error. Actual Docker/Tart or GitHub identity errors still quarantine through the existing ownership checks, including errors returned by in-flight work after completion. Ordinary cleanup confirms termination before releasing capacity and retains unfinished local/remote cleanup for retry. This issue #903 fix prevents new stale transitions; it does not migrate or automatically recover existing quarantines.
@@ -90,6 +90,85 @@ Before a Linux service start reloads/enables or stop/uninstall drains/disables t
 
 Before start, stop, or uninstall, securely read and structurally parse the generated user-service definition. Require its absolute `--config` path to match the requested path. For a requested path containing `..`, resolve both the original spelling and its lexical normalization, rejecting them if symlink traversal changes the resolved path; the caller must not load one file while matching the installed service against another. Executable and configuration arguments in generated definitions must already be canonical absolute paths before comparison; for systemd, `ExecStart` and `ExecStop` must agree on both. Enumerate the full standard user unit search path; any competing `runmoor.service` file outside the installed definition, or any Runmoor-specific or service-type drop-in directory, makes the effective definition ambiguous and fails closed. Missing, symlinked, foreign-owned, malformed, duplicate, or ambiguous definitions fail with `CONFIG_INVALID` before contacting a manager, opening offline state, invoking an OS service command, or deleting the definition. Stop/uninstall retain the validated file identity and contents, revalidate them after draining before contacting the service manager, and revalidate again immediately before deletion; a changed or replaced definition is preserved. Parse the plist and systemd argument syntax as structured data; never interpret these definitions through a shell or substring search. Diagnostics do not disclose either configuration path.
 
+### Service version reload (unreleased)
+
+`reload` obtains the running version from a live `/v1/control` response. Offline
+status reports the CLI version and cannot authorize an upgrade. Linux
+`SO_PEERCRED` and macOS `LOCAL_PEERPID`/`LOCAL_PEERCRED` identify the response's
+same-user process without changing JSON schema v1. A service main PID matching
+that peer must also match the securely parsed definition's exact invocation.
+Foreground managers retain ordinary reload behavior, including when another
+configuration has an installed service. An unreachable manager does not start a
+stopped service. Stable SemVer triplets compare numerically; equal/newer managers
+reload configuration without changing their service definition or downgrading.
+
+Before replacement, the newer CLI reads state without migration and applies the
+same whole-candidate capacity, backend and remote validation as manager reload.
+Managed pools defer image preparation as before. Verify the installed executable
+reports this CLI's version/revision. Validate the original definition's file
+identity and contents, and the original manager's PID/start identity. Stage an
+owner-only target definition with a recorded file identity. A private
+`.runmoor-service.lock` beside the unit serializes install/start/stop/uninstall
+and service reload. A private `.runmoor-service-reload.json` journals the
+installation, configuration/storage references, original/target definitions and
+file identities, native process identity, UUID-v7 token and typed operation stage.
+It contains no credentials and adds no public field or SQLite migration.
+
+The journal records the reload CLI's PID and process-start identity as its
+completion owner. While holding the service-operation lock, an authenticated
+retry atomically replaces that identity with its own verified identity through
+the exact-record private-file checks. Transfer ownership before resumed native
+actions, replacement readiness checks or completion, including when the target
+is already ready. Identity or journal-update failure preserves recovery intent
+and permits no native mutation. Replacement startup retains the journal while
+the current owner is live. A confirmed exited owner permits reclamation; legacy
+records without an initiator remain conservative until recovery claims them.
+The retry removes its journal only after readiness and final normal reload
+acceptance succeed.
+
+Linux atomically publishes the target definition, performs `daemon-reload`,
+revalidates the original active invocation against its captured definition, and
+uses `systemctl --user kill --kill-who=main --signal=SIGKILL runmoor.service`.
+Existing `Restart=on-failure` starts the replacement; `KillMode=process` remains
+unchanged. This path does not issue service restart, manager Stop, or drain.
+Session selectors remain limited to the documented `systemctl` environment.
+macOS uses `launchctl debug --program` with an exact one-run private
+`__service-reload-handoff` invocation, then `kickstart -k`. The harmless helper
+reads only its private authority record, keeps no manager state and waits for
+unload or user-session termination. It remains available if the initiating CLI
+is interrupted. Verify its exact arguments before `bootout`, confirm a reachable
+GUI domain, publish the target plist, then `bootstrap`. This replaces launchd's
+cached executable as well as its on-disk reference; `AbandonProcessGroup=true`
+continues to protect independent executions. An inactive unverified loaded job
+or a changed native/definition identity remains an error.
+
+Only the actual replacement service may use the journal to load the last
+committed requested configuration before reading the candidate TOML. Its
+startup acceptance preserves durable Stop and pool/global pause decisions.
+Complete startup acceptance and session reset before exposing control; entering
+the manager loop must not overwrite a reload or Stop accepted after readiness.
+Independent executions, original generations, reservations, deadlines, image
+operations and uncertain cleanup reconcile through their existing ownership
+boundaries. A final normal reload revalidates and atomically accepts the candidate.
+The existing two-minute CLI context covers preflight, native replacement,
+readiness and configuration acceptance. Success requires the new native
+invocation, matching live socket peer/version, and non-stopping status.
+
+Persist intent before native actions. After interruption, observe a matching
+replacement or the journaled helper before continuing; never blindly repeat a
+kill/bootstrap or operate on another generation. Failures retain the last
+committed configuration and private recovery intent, even if the service
+executable has already changed. Retry with the same installed CLI/configuration
+after inspecting status and the user service. Unknown identities require
+operator reconciliation. Never automatically restore an older binary after
+state migration. Structured logs record versions, stages and safe error codes;
+they omit private paths, raw arguments, environment values and native stderr.
+
+Tests inject native services and dependencies, exercise real Unix peer identity,
+and preserve busy execution state across the replacement fixture. Supported
+target builds and native child-process fixtures do not certify actual launchd,
+systemd user-session replacement or live GitHub/Docker/Tart/host jobs.
+
 ## Storage
 
 - Config: `$XDG_CONFIG_HOME/runmoor/config.toml`, otherwise `~/.config/runmoor/config.toml`.
@@ -99,7 +178,7 @@ Before start, stop, or uninstall, securely read and structurally parse the gener
 - SQLite schema v1 stores an atomic snapshot row under WAL/FULL durability: installation identity, configuration generations/references, pool/session metadata without tokens, runner lifecycle and reservations, image revisions, and cleanup progress. A nonblocking file lock excludes concurrent manager or offline state access.
 - SQLite opens the exact absolute `state.sqlite` filename through an escaped `file:` URI, preserving literal `?`, `#`, `%`, spaces, and Unicode in valid filesystem paths. For paths containing `?`, if the intended database is absent or empty while the prefix used by older raw-DSN opens is a regular file, startup fails before creating the state directory, data directory, manager lock, or database. The error omits private paths and requires stopping all affected managers and preserving complete backups of both locations before explicit recovery; Runmoor never adopts, moves, or deletes the ambiguous legacy database automatically.
 - Delete completed execution history after seven days. Preserve unresolved cleanup and ownership indefinitely. User-created sealed images remain until explicit deletion; generated revisions use reference-aware managed retention. SQLite upgrades atomically in v1-to-v2-to-v3-to-v4 order; other unsupported versions are rejected.
-- Storage relocation is accepted only after all executions complete cleanup and all image setup/removal operations close; it atomically rebinds retained generations while preserving installation ownership. Backup only after drain and stop: preserve the complete state and managed data directories, protect referenced credentials separately, and pair backups with a compatible binary. Runmoor binary updates and rollback are manual; never open a newer state schema with an older binary.
+- Storage relocation is accepted only after all executions complete cleanup and all image setup/removal operations close; it atomically rebinds retained generations while preserving installation ownership. Backup only after drain and stop: preserve the complete state and managed data directories, protect referenced credentials separately, and pair backups with a compatible binary. Installing Runmoor binaries and rollback remain manual; explicit service reload may advance a running owned manager to that installed binary; never open a newer state schema with an older binary.
 
 ## Security
 

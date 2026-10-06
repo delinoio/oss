@@ -14,6 +14,8 @@
     "ci:migrations": "go test ./internal/postgres -run 'TestMigrate|TestNewPool|TestNewSweeperPool'",
     "ci:integration": "go test -tags=integration ./internal/postgres",
     "ci:api": "go test ./internal/auth ./internal/rpc ./internal/server ./internal/upload ./internal/updates",
-    "ci:sweeper": "go test ./cmd/devhud-api-sweeper ./internal/sweeper"
+    "ci:sweeper": "go test ./cmd/devhud-api-sweeper ./internal/sweeper",
+    "ci:oci": "node ../../scripts/ci/from-root.mjs bash servers/devhud-api/scripts/ci-oci.sh",
+    "ci:oci:integration": "node ../../scripts/ci/from-root.mjs go test -tags=integration ./servers/devhud-api/internal/postgres"
   }
 }

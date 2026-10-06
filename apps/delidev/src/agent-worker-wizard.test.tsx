@@ -6,9 +6,11 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountTypeFilter, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, SubscriptionServiceIdentity, SystemCapability, SystemService, newRequestId, type SaveAgentWorkerRequest, type SearchModelsRequest } from "@delinoio/delidev-api-client";
+import { AccountTypeFilter, ConfigurationQuery, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, SubscriptionServiceIdentity, SystemCapability, SystemService, newRequestId, type SaveAgentWorkerRequest, type SearchModelsRequest } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { document, encode } from "./documents";
+import { AgentWorkerWizard } from "./agent-worker-wizard";
+import { MutationIntents, useRetainedMutation } from "./mutation";
 
 function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1]) {
   const row = (kind: EntityKind, data: Record<string, unknown>, schemaVersion = 1) => create(ResourceSchema, { kind, schemaVersion, id: newRequestId(), revision: 1n, documentJson: encode(data) });
@@ -32,17 +34,19 @@ function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1]) {
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
   const view = (upstream: Transport = transport, visible = true) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><Settings visible={visible} /></QueryClientProvider></TransportProvider></StrictMode>;
-  return { provider, otherProvider, accounts, subscription, models, agent, records, save, search, discover, list, get, transport, client, view };
+  const wizardView = (active = true, upstream: Transport = transport) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><AgentWorkerWizard active={active} saved={() => {}} cancel={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
+  return { provider, otherProvider, accounts, subscription, models, agent, records, save, search, discover, list, get, transport, client, view, wizardView };
 }
-async function start(value: ReturnType<typeof fixture>, edit = false) {
-  render(value.view());
+async function start(value: ReturnType<typeof fixture>, edit = false, transport = value.transport) {
+  render(value.view(transport));
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(edit ? await screen.findByRole("button", { name: "Edit Existing Worker" }) : screen.getByRole("button", { name: "New Agent Worker" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
 }
+const confirmHarness = (name = "Codex") => fireEvent.click(screen.getByRole("radio", { name }));
 const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
 async function accounts(value: ReturnType<typeof fixture>, multi = false) {
-  next();
+  confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
   fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
@@ -52,20 +56,22 @@ async function accounts(value: ReturnType<typeof fixture>, multi = false) {
   await screen.findByRole("combobox", { name: "Model" });
 }
 
-it("selects one harness card without advancing, saving or searching models", async () => {
+it.each(["Codex", "Claude Code", "OpenCode", "Grok Build"])("confirms %s and immediately focuses Accounts without saving or searching models", async name => {
   const value = fixture(); await start(value);
   const group = screen.getByRole("radiogroup", { name: "Harness" });
   const cards = within(group).getAllByRole("radio");
   expect(cards.map(card => card.getAttribute("aria-label"))).toEqual(["Codex", "Claude Code", "OpenCode", "Grok Build"]);
   expect(within(group).getByRole("radio", { checked: true })).toBe(cards[0]);
   expect(cards.map(card => card.tabIndex)).toEqual([0, -1, -1, -1]);
-  fireEvent.click(cards[2]);
-  expect(within(group).getByRole("radio", { checked: true })).toBe(cards[2]);
-  expect(cards.map(card => card.tabIndex)).toEqual([-1, -1, 0, -1]);
+  expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+  expect(group.getAttribute("aria-describedby")!.split(" ").map(id => globalThis.document.getElementById(id)?.textContent)).toContain("Choose a harness to continue to Accounts.");
+  fireEvent.submit(group.closest("form")!);
   expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+  confirmHarness(name);
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBe(globalThis.document.activeElement);
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
-  next();
-  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByRole("radio", { checked: true, name }).tabIndex).toBe(0);
 });
 
 it("moves harness selection and focus with arrows, Home and End", async () => {
@@ -79,11 +85,12 @@ it("moves harness selection and focus with arrows, Home and End", async () => {
     expect(globalThis.document.activeElement).toBe(cards[index]);
     expect(within(group).getByRole("radio", { checked: true })).toBe(cards[index]);
     expect(cards.filter(card => card.tabIndex === 0)).toEqual([cards[index]]);
+    expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
   }
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
 });
 
-it("prefills the saved harness and focuses the first card for an unsupported saved value", async () => {
+it("keeps an unsupported saved harness on its step until a supported card is confirmed", async () => {
   const value = fixture();
   value.agent.documentJson = encode({ ...document(value.agent), harness: "unsupported-harness" });
   await start(value, true);
@@ -91,11 +98,10 @@ it("prefills the saved harness and focuses the first card for an unsupported sav
   expect(within(group).queryByRole("radio", { checked: true })).toBeNull();
   const codex = within(group).getByRole("radio", { name: "Codex" });
   expect(codex.tabIndex).toBe(0);
-  next();
-  expect(screen.getByRole("alert").textContent).toContain("Choose a supported harness.");
-  expect(globalThis.document.activeElement).toBe(codex);
-  fireEvent.click(within(group).getByRole("radio", { name: "Grok Build" }));
-  next();
+  fireEvent.submit(codex.closest("form")!);
+  expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+  confirmHarness("Grok Build");
   expect(screen.getByRole("option", { name: "Grok subscription" })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
 });
@@ -108,17 +114,17 @@ it("starts edits with the saved non-default harness selected", async () => {
 });
 
 it("preserves edit selections on harness reselection and clears them only on a change", async () => {
-  const value = fixture(); await start(value, true); next();
+  const value = fixture(); await start(value, true); confirmHarness();
   await waitFor(() => expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`));
   await screen.findByRole("checkbox", { name: /Personal API/ }); next();
   expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
   fireEvent.click(screen.getByRole("button", { name: "Back" })); fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  fireEvent.click(screen.getByRole("radio", { name: "Codex" })); next();
+  confirmHarness();
   expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`);
   expect(screen.getByText("1 accounts selected")).toBeTruthy(); next();
   expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
   fireEvent.click(screen.getByRole("button", { name: "Back" })); fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" })); next();
+  confirmHarness("Claude Code");
   expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe("");
   expect(screen.getByText("0 accounts selected")).toBeTruthy();
   expect(screen.queryByRole("option", { name: "ChatGPT subscription" })).toBeNull();
@@ -136,8 +142,67 @@ it("disables harness choices when the server lacks wizard support", async () => 
   const cards = screen.getAllByRole("radio");
   expect(cards.every(card => (card as HTMLButtonElement).disabled)).toBe(true);
   fireEvent.keyDown(cards[0], { key: "ArrowDown" });
+  confirmHarness();
   expect(screen.getByRole("radio", { checked: true, name: "Codex" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
+});
+
+it("waits for server support and blocks confirmation while inactive", async () => {
+  const value = fixture(); let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (args[0].name === "GetStatus") await pending; return value.transport.unary(...args); } };
+  const view = render(value.wizardView(true, transport));
+  await screen.findByText("Checking server support…");
+  confirmHarness("Claude Code");
+  expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+  await act(async () => release());
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+  view.rerender(value.wizardView(false, transport));
+  expect(screen.getAllByRole("radio").every(card => (card as HTMLButtonElement).disabled)).toBe(true);
+  confirmHarness("Claude Code"); fireEvent.keyDown(screen.getByRole("radio", { name: "Codex" }), { key: "End" });
+  expect(screen.getByRole("radio", { name: "Codex", checked: true })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
+});
+
+it.each(["pending", "uncertain"])("blocks harness confirmation while a retained save is %s", async state => {
+  const value = fixture(); let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  value.save.mockImplementation(async () => { await pending; throw new ConnectError("Lost acknowledgement", Code.Unavailable); });
+  function RetainedSave() {
+    const mutation = useRetainedMutation("agent-worker-wizard:new", ConfigurationQuery.saveAgentWorker);
+    return <button onClick={() => void mutation.send({ mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(document(value.agent)) })}>Start retained save</button>;
+  }
+  render(<StrictMode><TransportProvider transport={value.transport}><QueryClientProvider client={value.client}><MutationIntents><RetainedSave /><AgentWorkerWizard active saved={() => {}} cancel={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>);
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Start retained save" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  if (state === "uncertain") { await act(async () => release()); await screen.findByRole("button", { name: "Retry the same Worker save" }); }
+  expect(screen.getAllByRole("radio").every(card => (card as HTMLButtonElement).disabled)).toBe(true);
+  confirmHarness("Claude Code"); fireEvent.keyDown(screen.getByRole("radio", { name: "Codex" }), { key: "End" });
+  expect(screen.getByRole("radio", { name: "Codex", checked: true })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+  expect(value.save).toHaveBeenCalledTimes(1); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
+  if (state === "pending") await act(async () => release());
+});
+
+it("rejects a harness change exceeding the draft limit without advancing or changing the saved harness", async () => {
+  const value = fixture();
+  const draft = { ...document(value.agent), accounts: [], model_id: "", options: { retained: "" } };
+  draft.options.retained = "x".repeat((1 << 20) - 4 - encode(draft).byteLength);
+  value.agent.documentJson = encode(draft);
+  expect(value.agent.documentJson.byteLength).toBe((1 << 20) - 4);
+  await start(value, true);
+  confirmHarness("Claude Code");
+  expect(screen.getByText("This configuration is too large.")).toBeTruthy();
+  expect(screen.getByRole("radio", { name: "Codex", checked: true })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+  confirmHarness();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBe(globalThis.document.activeElement);
+  expect(screen.getByText("0 accounts selected")).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
 
 it("removes Models and saves an ordered multi-account Worker only at the last step", async () => {
@@ -187,7 +252,7 @@ it("supports keyboard autocomplete and direct IDs without endpoint requests", as
 });
 
 it("requires accounts, restricts Fixed routing and resets incompatible source selections", async () => {
-  const value = fixture(); await start(value); next(); next();
+  const value = fixture(); await start(value); confirmHarness(); next();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
   await screen.findByRole("option", { name: "OpenAI API" });
@@ -209,7 +274,7 @@ it("requires accounts, restricts Fixed routing and resets incompatible source se
 });
 
 it("uses service-scoped subscription reads and keeps manual input available when discovery is unsupported", async () => {
-  const value = fixture(); await start(value); next();
+  const value = fixture(); await start(value); confirmHarness();
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: "subscription:chatgpt" } });
   fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
   await screen.findByText(/Subscription model discovery is unsupported/);
@@ -235,7 +300,7 @@ it.each(["api", "subscription"] as const)("shows connected ready/unverified %s c
   ];
   const choices = states.map(state => create(ResourceSchema, { ...original, id: newRequestId(), documentJson: encode({ ...document(original), ...state }) }));
   value.list.mockImplementation(request => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? choices : value.records.filter(row => row.kind === request.filter?.kind), nextPageToken: "" }));
-  await start(value); next();
+  await start(value); confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: type === "api" ? `api:${value.provider.id}` : "subscription:chatgpt" } });
   const section = screen.getByRole("region", { name: "Choose accounts" });
@@ -253,7 +318,7 @@ it("keeps pagination and explicit refresh when a complete page has only hidden c
     resources: request.filter?.kind === EntityKind.ACCOUNT ? request.filter.pageToken ? [value.accounts[1]] : connected ? [value.accounts[0]] : [value.accounts[2]] : value.records.filter(row => row.kind === request.filter?.kind),
     nextPageToken: request.filter?.kind === EntityKind.ACCOUNT && !request.filter.pageToken ? "account-page-2" : "",
   }));
-  await start(value); next();
+  await start(value); confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
   await screen.findByText("No accounts to select on this page.");
@@ -273,6 +338,79 @@ it("keeps pagination and explicit refresh when a complete page has only hidden c
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
 
+it.each(["choices", "hidden-only", "failed", "invalid"] as const)("hides hidden-only emptiness during a pending refresh that returns %s", async result => {
+  const value = fixture();
+  const loaded = value.list.getMockImplementation()!;
+  const hiddenPage = { resources: [value.accounts[2]], nextPageToken: "account-page-2" };
+  value.list.mockImplementation(request => request.filter?.kind === EntityKind.ACCOUNT ? hiddenPage : loaded(request));
+  let refreshing = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (refreshing && args[0].name === "ListResources") await pending; return value.transport.unary(...args); } };
+  await start(value, false, transport);
+  confirmHarness();
+  await screen.findByRole("option", { name: "OpenAI API" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  await screen.findByText("No accounts to select on this page.");
+  refreshing = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
+  expect((screen.getByRole("button", { name: "Next account page" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+  expect(screen.queryByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeNull();
+  expect(screen.queryByText("Loading accounts…")).toBeNull();
+  value.list.mockImplementation(request => {
+    if (request.filter?.kind !== EntityKind.ACCOUNT) return loaded(request);
+    if (result === "failed") throw new ConnectError("Account read unavailable", Code.Unavailable);
+    return result === "choices" ? { ...hiddenPage, resources: [value.accounts[0]] } : result === "invalid" ? { ...hiddenPage, resources: [value.subscription] } : hiddenPage;
+  });
+  await act(async () => release());
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
+  if (result === "hidden-only") {
+    expect(screen.getByText("No accounts to select on this page.")).toBeTruthy();
+    expect(screen.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeTruthy();
+  } else {
+    expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+    if (result === "choices") expect(screen.getByRole("checkbox", { name: /Personal API/ })).toBeTruthy();
+    else if (result === "failed") expect(screen.getByText("Refresh failed. Showing the last successfully loaded accounts.")).toBeTruthy();
+    else expect(screen.getByText(/This account page includes unsupported or mismatched source data/)).toBeTruthy();
+  }
+  expect((screen.getByRole("button", { name: "Next account page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText("0 accounts selected")).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it("retains cached choices and selected account order and weights while refresh is pending", async () => {
+  const value = fixture();
+  const expected = [{ id: value.accounts[0].id, weight: 3 }, { id: value.accounts[1].id, weight: 5 }];
+  value.agent.documentJson = encode({ ...document(value.agent), accounts: expected });
+  let refreshing = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (refreshing && args[0].name === "ListResources") await pending; return value.transport.unary(...args); } };
+  await start(value, true, transport);
+  confirmHarness();
+  await screen.findByRole("checkbox", { name: /Personal API/ });
+  fireEvent.click(screen.getByText("Routing options"));
+  refreshing = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
+  expect((screen.getByRole("checkbox", { name: /Personal API/ }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByText("2 accounts selected")).toBeTruthy();
+  const selected = within(screen.getByRole("region", { name: "Choose accounts" })).getByRole("list");
+  expect(within(selected).getAllByRole("listitem").map(row => row.querySelector("strong")!.textContent)).toEqual(["Personal API", "Team API"]);
+  expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe("3");
+  expect((screen.getByLabelText("Weight for account 2") as HTMLInputElement).value).toBe("5");
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+  await act(async () => release());
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
+  next(); await screen.findByRole("combobox", { name: "Model" }); next();
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson)).accounts).toEqual(expected);
+  expect(value.discover).not.toHaveBeenCalled();
+});
+
 it.each(["initial", "refresh"])("keeps an %s account read failure distinct from hidden-only emptiness", async state => {
   const value = fixture();
   const loaded = value.list.getMockImplementation()!;
@@ -282,7 +420,7 @@ it.each(["initial", "refresh"])("keeps an %s account read failure distinct from 
     return loaded(request);
   });
   if (state === "initial") failRead();
-  await start(value); next();
+  await start(value); confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
   if (state === "refresh") {
@@ -303,7 +441,7 @@ it.each(["edit", "refresh"])("preserves hidden selected account order, weights a
     value.agent.documentJson = encode({ ...document(value.agent), accounts: expected });
     value.accounts[0].documentJson = encode({ ...document(value.accounts[0]), health: "failed" });
     value.save.mockImplementation(async request => ({ requestId: request.mutation!.requestId, resource: create(ResourceSchema, { ...value.agent, revision: 2n, documentJson: request.documentJson }) }));
-    await start(value, true); next();
+    await start(value, true); confirmHarness();
     await screen.findByText("No accounts to select on this page.");
   } else {
     await start(value); await accounts(value, true);
@@ -337,7 +475,7 @@ it.each(["edit", "refresh"])("preserves hidden selected account order, weights a
 it("removes a hidden selection only through its explicit Routing options action", async () => {
   const value = fixture();
   value.accounts[0].documentJson = encode({ ...document(value.accounts[0]), health: "failed" });
-  await start(value, true); next();
+  await start(value, true); confirmHarness();
   await screen.findByText("No accounts to select on this page.");
   await screen.findByText("1 accounts selected");
   fireEvent.click(screen.getByText("Routing options"));
@@ -369,8 +507,8 @@ it("prefills edits, preserves hidden options and exact uncertain requests across
   value.save.mockImplementation(async request => ({ requestId: request.mutation!.requestId, resource: value.agent }));
   const view = render(value.view());
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(await screen.findByRole("button", { name: "Edit Existing Worker" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
-  next(); await waitFor(() => expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`));
+  await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
+  confirmHarness(); await waitFor(() => expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`));
   await screen.findByText("1 accounts selected"); next(); next();
   const name = screen.getByRole("textbox", { name: "Name" });
   expect((name as HTMLInputElement).value).toBe("Existing Worker");
@@ -388,7 +526,7 @@ it("prefills edits, preserves hidden options and exact uncertain requests across
 
 it("preserves accountless legacy Workers but requires adding an account to save them", async () => {
   const value = fixture(); value.records[value.records.indexOf(value.agent)] = create(ResourceSchema, { ...value.agent, documentJson: encode({ ...document(value.agent), accounts: [] }) });
-  await start(value, true); next(); next();
+  await start(value, true); confirmHarness(); next();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
 });
 
@@ -406,7 +544,7 @@ it("blocks stale Worker saves and ignores late successful results after Settings
 });
 
 it("retains a stale edit and returns empty-name validation to its input", async () => {
-  const value = fixture(); await start(value, true); next();
+  const value = fixture(); await start(value, true); confirmHarness();
   await screen.findByRole("checkbox", { name: /Personal API/ }); next(); next();
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
@@ -458,7 +596,7 @@ it("rejects a mismatched source page as a whole instead of filtering a loaded pa
   const value = fixture();
   value.subscription.documentJson = encode({ ...document(value.subscription), health: "failed" });
   value.list.mockImplementation(request => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? [value.accounts[0], value.subscription] : value.records.filter(row => row.kind === request.filter?.kind), nextPageToken: "" }));
-  await start(value); next();
+  await start(value); confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
   await screen.findByText(/This account page includes unsupported or mismatched source data/);

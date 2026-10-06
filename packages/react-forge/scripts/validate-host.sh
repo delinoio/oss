@@ -17,8 +17,13 @@ cargo test --locked --target "$target" -p react-forge-node -p forge-package -p f
 cargo test --locked --target "$target" -p forge-document -p forge-pdf -- --include-ignored
 cargo clippy --locked --target "$target" -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-sprite -p forge-sfx -p forge-figma --all-targets -- -D warnings
 export REACT_FORGE_SKIP_SCENE_TESTS=1
-pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge 2>&1 | tee "$RUNNER_TEMP/react-forge-turbo.log"
-pnpm --filter @delino/react-forge typecheck:examples
+# CI enters through the package task graph. Release callers retain this standalone gate.
+if [[ "${REACT_FORGE_TASK_GRAPH:-0}" != 1 ]]; then
+  pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge 2>&1 | tee "$RUNNER_TEMP/react-forge-turbo.log"
+  pnpm --filter @delino/react-forge typecheck:examples
+else
+  printf '%s\n' 'Package build/typecheck/lint/test/examples completed through the CI Turbo dependency graph.' > "$RUNNER_TEMP/react-forge-turbo.log"
+fi
 
 if [[ "$RUNNER_OS" == "Windows" ]]; then
   REACT_FORGE_WINDOWS_CONSOLE_TEST=1 cargo test --locked --target "$target" -p react-forge-node --test windows_console -- --nocapture

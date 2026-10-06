@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
@@ -40,7 +43,7 @@ test("CI evidence distinguishes PR validation from full native packaging", () =>
   }
   for (const id of ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"]) assert.equal(ciPaths[id].native, true);
   assert.equal(ciPaths["devhud-mobile-contracts"].native, undefined);
-  assert.match(ciWorkflow, /node scripts\/ci\/run-affected\.mjs devhud test/u);
+  assert.match(ciWorkflow, /node scripts\/ci\/run-affected\.mjs devhud ci:check/u);
   assert.match(workflowContract, /counterfactual estimate, not a measured post-change improvement/u);
 });
 
@@ -117,6 +120,75 @@ test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {
   }
 });
 
+test("CEF maintainer summary heredoc parses as a Node module", () => {
+  const steps = yaml.load(workflow).jobs.compare.steps;
+  const summaryStep = steps.find(({ name }) => name === "Write maintainer summary");
+  const heredoc = summaryStep.run.match(/^node --input-type=module <<'NODE' >> "\$GITHUB_STEP_SUMMARY"\n([\s\S]*?)\nNODE$/mu);
+  assert.ok(heredoc, "extract the actual workflow summary heredoc");
+  const result = spawnSync(process.execPath, ["--input-type=module", "--check"], {
+    input: heredoc[1], encoding: "utf8", timeout: 10_000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+
+  const uploadStep = steps.find(({ name }) => name === "Upload bounded metadata report");
+  assert.ok(steps.indexOf(uploadStep) > steps.indexOf(summaryStep));
+  assert.equal(summaryStep.if, undefined);
+  assert.equal(summaryStep["continue-on-error"], undefined);
+  assert.equal(uploadStep.if, undefined);
+  assert.match(uploadStep.uses, /^actions\/upload-artifact@/u);
+  assert.equal(uploadStep.with.path, "devhud-cef-security-review.json");
+  assert.equal(uploadStep.with["if-no-files-found"], "error");
+  assert.equal(uploadStep.with["retention-days"], 35);
+});
+
+for (const { name, signals, total, comparison, truncated } of [
+  { name: "zero signals", signals: [], total: 0, comparison: { status: "identical", aheadBy: 0, behindBy: 0, totalCommits: 0 }, truncated: false },
+  { name: "truncated signals", signals: Array.from({ length: 50 }, () => fixture.securitySignals[0]), total: 75, comparison: fixture.comparison, truncated: true },
+]) {
+  test(`CEF maintainer summary writes safe metadata for ${name}`, (t) => {
+    const directory = mkdtempSync(join(tmpdir(), "devhud-cef-summary-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const rawContent = "fixture-only-raw-content-not-for-summary";
+    const report = {
+      ...fixture,
+      comparison,
+      securitySignals: signals.map((signal) => ({ ...signal, message: rawContent })),
+      securitySignalTotal: total,
+      securitySignalsTruncated: truncated,
+      commitMessage: rawContent,
+      credentials: rawContent,
+      nativeContent: rawContent,
+    };
+    const reportPath = join(directory, "devhud-cef-security-review.json");
+    const reportBytes = `${JSON.stringify(report)}\n`;
+    writeFileSync(reportPath, reportBytes, { mode: 0o600 });
+    const summaryPath = join(directory, "summary.md");
+    const summaryStep = yaml.load(workflow).jobs.compare.steps.find(({ name }) => name === "Write maintainer summary");
+    const result = spawnSync("bash", ["-c", summaryStep.run], {
+      cwd: directory,
+      env: { PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH}`, GITHUB_STEP_SUMMARY: summaryPath },
+      encoding: "utf8", timeout: 10_000,
+    });
+    assert.equal(result.status, 0, result.stderr || result.error?.message);
+    const summary = readFileSync(summaryPath, "utf8");
+    for (const line of [
+      "## DevHud CEF security review",
+      `- Committed Tauri revision: \`${fixture.committedRevision}\``,
+      `- Upstream \`feat/cef\`: \`${fixture.upstreamRevision}\``,
+      `- Comparison: ${comparison.status}, ahead ${comparison.aheadBy}, behind ${comparison.behindBy}`,
+      `- Security-related commit signals: ${signals.length}`,
+      `- Security-related signals retained: ${signals.length} of ${total}${truncated ? " (truncated)" : ""}`,
+      "- Mutation/publication performed: false/false",
+    ]) assert.ok(summary.split("\n").includes(line), line);
+    assert.equal(summary.includes("(truncated)"), truncated);
+    assert.ok(!summary.includes(rawContent));
+    assert.ok(!summary.includes(fixture.securitySignals[0].sha));
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+    assert.equal(readFileSync(reportPath, "utf8"), reportBytes);
+  });
+}
+
 test("operations contract preserves high-risk CEF, rollback, retention, and redaction boundaries", () => {
   for (const phrase of [
     "no automatic downgrade", "partial GA", "remote-alert service", "kill switch", "Cargo.lock", "compatibility matrix",
@@ -154,4 +226,16 @@ test("CI validates release fixtures without publication authority", () => {
   assert.match(workflowContract, /CI never builds a signed private candidate and never publishes/iu);
   assert.match(operations, /CI never builds a signed private candidate and never publishes/iu);
   assert.match(support, /validation evidence only/iu);
+});
+
+test("CI cache identity has no release authority and preserves non-cacheable native checks", () => {
+  for (const text of [workflowContract, operations, support]) assert.match(text, /cache-only|Cache-only|Cache access only|Remote Cache access only/u);
+  const action = yaml.load(readFileSync(`${root}/.github/actions/setup-turbo-cache/action.yml`, "utf8"));
+  const auth = action.runs.steps.find(({ id }) => id === "auth");
+  assert.equal(auth.continueOnError, undefined);
+  assert.equal(auth["continue-on-error"], true);
+  assert.match(auth.uses, /@49d7b1b46ba4c9251e1977986bfe18336feabc8f$/u);
+  assert.match(auth.if, /head.repo.full_name == github.repository/u);
+  const tasks = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8")).tasks;
+  for (const name of ["ci:clean-frontend", "mobile:check", "test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]) assert.equal(tasks[name].cache, false, name);
 });

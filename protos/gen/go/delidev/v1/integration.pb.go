@@ -21,6 +21,116 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type GitHubTokenKind int32
+
+const (
+	GitHubTokenKind_GIT_HUB_TOKEN_KIND_UNSPECIFIED  GitHubTokenKind = 0
+	GitHubTokenKind_GIT_HUB_TOKEN_KIND_FINE_GRAINED GitHubTokenKind = 1
+	GitHubTokenKind_GIT_HUB_TOKEN_KIND_CLASSIC      GitHubTokenKind = 2
+)
+
+// Enum value maps for GitHubTokenKind.
+var (
+	GitHubTokenKind_name = map[int32]string{
+		0: "GIT_HUB_TOKEN_KIND_UNSPECIFIED",
+		1: "GIT_HUB_TOKEN_KIND_FINE_GRAINED",
+		2: "GIT_HUB_TOKEN_KIND_CLASSIC",
+	}
+	GitHubTokenKind_value = map[string]int32{
+		"GIT_HUB_TOKEN_KIND_UNSPECIFIED":  0,
+		"GIT_HUB_TOKEN_KIND_FINE_GRAINED": 1,
+		"GIT_HUB_TOKEN_KIND_CLASSIC":      2,
+	}
+)
+
+func (x GitHubTokenKind) Enum() *GitHubTokenKind {
+	p := new(GitHubTokenKind)
+	*p = x
+	return p
+}
+
+func (x GitHubTokenKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GitHubTokenKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_integration_proto_enumTypes[0].Descriptor()
+}
+
+func (GitHubTokenKind) Type() protoreflect.EnumType {
+	return &file_delidev_v1_integration_proto_enumTypes[0]
+}
+
+func (x GitHubTokenKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GitHubTokenKind.Descriptor instead.
+func (GitHubTokenKind) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{0}
+}
+
+type GitHubTokenIdentityState int32
+
+const (
+	GitHubTokenIdentityState_GIT_HUB_TOKEN_IDENTITY_STATE_UNSPECIFIED       GitHubTokenIdentityState = 0
+	GitHubTokenIdentityState_GIT_HUB_TOKEN_IDENTITY_STATE_VERIFIED          GitHubTokenIdentityState = 1
+	GitHubTokenIdentityState_GIT_HUB_TOKEN_IDENTITY_STATE_INVALID_TOKEN     GitHubTokenIdentityState = 2
+	GitHubTokenIdentityState_GIT_HUB_TOKEN_IDENTITY_STATE_ACCESS_RESTRICTED GitHubTokenIdentityState = 3
+	GitHubTokenIdentityState_GIT_HUB_TOKEN_IDENTITY_STATE_SSO_REQUIRED      GitHubTokenIdentityState = 4
+	GitHubTokenIdentityState_GIT_HUB_TOKEN_IDENTITY_STATE_RATE_LIMITED      GitHubTokenIdentityState = 5
+	GitHubTokenIdentityState_GIT_HUB_TOKEN_IDENTITY_STATE_UNAVAILABLE       GitHubTokenIdentityState = 6
+)
+
+// Enum value maps for GitHubTokenIdentityState.
+var (
+	GitHubTokenIdentityState_name = map[int32]string{
+		0: "GIT_HUB_TOKEN_IDENTITY_STATE_UNSPECIFIED",
+		1: "GIT_HUB_TOKEN_IDENTITY_STATE_VERIFIED",
+		2: "GIT_HUB_TOKEN_IDENTITY_STATE_INVALID_TOKEN",
+		3: "GIT_HUB_TOKEN_IDENTITY_STATE_ACCESS_RESTRICTED",
+		4: "GIT_HUB_TOKEN_IDENTITY_STATE_SSO_REQUIRED",
+		5: "GIT_HUB_TOKEN_IDENTITY_STATE_RATE_LIMITED",
+		6: "GIT_HUB_TOKEN_IDENTITY_STATE_UNAVAILABLE",
+	}
+	GitHubTokenIdentityState_value = map[string]int32{
+		"GIT_HUB_TOKEN_IDENTITY_STATE_UNSPECIFIED":       0,
+		"GIT_HUB_TOKEN_IDENTITY_STATE_VERIFIED":          1,
+		"GIT_HUB_TOKEN_IDENTITY_STATE_INVALID_TOKEN":     2,
+		"GIT_HUB_TOKEN_IDENTITY_STATE_ACCESS_RESTRICTED": 3,
+		"GIT_HUB_TOKEN_IDENTITY_STATE_SSO_REQUIRED":      4,
+		"GIT_HUB_TOKEN_IDENTITY_STATE_RATE_LIMITED":      5,
+		"GIT_HUB_TOKEN_IDENTITY_STATE_UNAVAILABLE":       6,
+	}
+)
+
+func (x GitHubTokenIdentityState) Enum() *GitHubTokenIdentityState {
+	p := new(GitHubTokenIdentityState)
+	*p = x
+	return p
+}
+
+func (x GitHubTokenIdentityState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GitHubTokenIdentityState) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_integration_proto_enumTypes[1].Descriptor()
+}
+
+func (GitHubTokenIdentityState) Type() protoreflect.EnumType {
+	return &file_delidev_v1_integration_proto_enumTypes[1]
+}
+
+func (x GitHubTokenIdentityState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GitHubTokenIdentityState.Descriptor instead.
+func (GitHubTokenIdentityState) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{1}
+}
+
 type PullRequestProblemCollectionKind int32
 
 const (
@@ -57,11 +167,11 @@ func (x PullRequestProblemCollectionKind) String() string {
 }
 
 func (PullRequestProblemCollectionKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_integration_proto_enumTypes[0].Descriptor()
+	return file_delidev_v1_integration_proto_enumTypes[2].Descriptor()
 }
 
 func (PullRequestProblemCollectionKind) Type() protoreflect.EnumType {
-	return &file_delidev_v1_integration_proto_enumTypes[0]
+	return &file_delidev_v1_integration_proto_enumTypes[2]
 }
 
 func (x PullRequestProblemCollectionKind) Number() protoreflect.EnumNumber {
@@ -70,7 +180,7 @@ func (x PullRequestProblemCollectionKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PullRequestProblemCollectionKind.Descriptor instead.
 func (PullRequestProblemCollectionKind) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{0}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{2}
 }
 
 type GitHubTokenAccess int32
@@ -109,11 +219,11 @@ func (x GitHubTokenAccess) String() string {
 }
 
 func (GitHubTokenAccess) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_integration_proto_enumTypes[1].Descriptor()
+	return file_delidev_v1_integration_proto_enumTypes[3].Descriptor()
 }
 
 func (GitHubTokenAccess) Type() protoreflect.EnumType {
-	return &file_delidev_v1_integration_proto_enumTypes[1]
+	return &file_delidev_v1_integration_proto_enumTypes[3]
 }
 
 func (x GitHubTokenAccess) Number() protoreflect.EnumNumber {
@@ -122,7 +232,334 @@ func (x GitHubTokenAccess) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GitHubTokenAccess.Descriptor instead.
 func (GitHubTokenAccess) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{3}
+}
+
+type InspectGitHubTokenRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Transient write-only input. Inspection does not store a token or profile.
+	Token         []byte `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InspectGitHubTokenRequest) Reset() {
+	*x = InspectGitHubTokenRequest{}
+	mi := &file_delidev_v1_integration_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InspectGitHubTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InspectGitHubTokenRequest) ProtoMessage() {}
+
+func (x *InspectGitHubTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_integration_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InspectGitHubTokenRequest.ProtoReflect.Descriptor instead.
+func (*InspectGitHubTokenRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *InspectGitHubTokenRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *InspectGitHubTokenRequest) GetToken() []byte {
+	if x != nil {
+		return x.Token
+	}
+	return nil
+}
+
+type InspectGitHubTokenResponse struct {
+	state     protoimpl.MessageState   `protogen:"open.v1"`
+	RequestId string                   `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	State     GitHubTokenIdentityState `protobuf:"varint,2,opt,name=state,proto3,enum=delidev.v1.GitHubTokenIdentityState" json:"state,omitempty"`
+	// Present only for verified identity; never a repository access grant.
+	Identity      *GitHubTokenIdentity `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
+	ProblemJson   []byte               `protobuf:"bytes,4,opt,name=problem_json,json=problemJson,proto3" json:"problem_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InspectGitHubTokenResponse) Reset() {
+	*x = InspectGitHubTokenResponse{}
+	mi := &file_delidev_v1_integration_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InspectGitHubTokenResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InspectGitHubTokenResponse) ProtoMessage() {}
+
+func (x *InspectGitHubTokenResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_integration_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InspectGitHubTokenResponse.ProtoReflect.Descriptor instead.
+func (*InspectGitHubTokenResponse) Descriptor() ([]byte, []int) {
 	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *InspectGitHubTokenResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *InspectGitHubTokenResponse) GetState() GitHubTokenIdentityState {
+	if x != nil {
+		return x.State
+	}
+	return GitHubTokenIdentityState_GIT_HUB_TOKEN_IDENTITY_STATE_UNSPECIFIED
+}
+
+func (x *InspectGitHubTokenResponse) GetIdentity() *GitHubTokenIdentity {
+	if x != nil {
+		return x.Identity
+	}
+	return nil
+}
+
+func (x *InspectGitHubTokenResponse) GetProblemJson() []byte {
+	if x != nil {
+		return x.ProblemJson
+	}
+	return nil
+}
+
+type GitHubTokenIdentity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Login         string                 `protobuf:"bytes,3,opt,name=login,proto3" json:"login,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitHubTokenIdentity) Reset() {
+	*x = GitHubTokenIdentity{}
+	mi := &file_delidev_v1_integration_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitHubTokenIdentity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitHubTokenIdentity) ProtoMessage() {}
+
+func (x *GitHubTokenIdentity) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_integration_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitHubTokenIdentity.ProtoReflect.Descriptor instead.
+func (*GitHubTokenIdentity) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GitHubTokenIdentity) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *GitHubTokenIdentity) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *GitHubTokenIdentity) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+type PrepareGitHubTokenFormRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	TokenKind     GitHubTokenKind        `protobuf:"varint,2,opt,name=token_kind,json=tokenKind,proto3,enum=delidev.v1.GitHubTokenKind" json:"token_kind,omitempty"`
+	ResourceOwner string                 `protobuf:"bytes,3,opt,name=resource_owner,json=resourceOwner,proto3" json:"resource_owner,omitempty"`
+	Access        GitHubTokenAccess      `protobuf:"varint,4,opt,name=access,proto3,enum=delidev.v1.GitHubTokenAccess" json:"access,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareGitHubTokenFormRequest) Reset() {
+	*x = PrepareGitHubTokenFormRequest{}
+	mi := &file_delidev_v1_integration_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareGitHubTokenFormRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareGitHubTokenFormRequest) ProtoMessage() {}
+
+func (x *PrepareGitHubTokenFormRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_integration_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareGitHubTokenFormRequest.ProtoReflect.Descriptor instead.
+func (*PrepareGitHubTokenFormRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *PrepareGitHubTokenFormRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PrepareGitHubTokenFormRequest) GetTokenKind() GitHubTokenKind {
+	if x != nil {
+		return x.TokenKind
+	}
+	return GitHubTokenKind_GIT_HUB_TOKEN_KIND_UNSPECIFIED
+}
+
+func (x *PrepareGitHubTokenFormRequest) GetResourceOwner() string {
+	if x != nil {
+		return x.ResourceOwner
+	}
+	return ""
+}
+
+func (x *PrepareGitHubTokenFormRequest) GetAccess() GitHubTokenAccess {
+	if x != nil {
+		return x.Access
+	}
+	return GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_UNSPECIFIED
+}
+
+type PrepareGitHubTokenFormResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	TokenKind     GitHubTokenKind        `protobuf:"varint,2,opt,name=token_kind,json=tokenKind,proto3,enum=delidev.v1.GitHubTokenKind" json:"token_kind,omitempty"`
+	ResourceOwner string                 `protobuf:"bytes,3,opt,name=resource_owner,json=resourceOwner,proto3" json:"resource_owner,omitempty"`
+	Access        GitHubTokenAccess      `protobuf:"varint,4,opt,name=access,proto3,enum=delidev.v1.GitHubTokenAccess" json:"access,omitempty"`
+	// Canonical official form only; preparation has no credential side effects.
+	Url           string `protobuf:"bytes,5,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareGitHubTokenFormResponse) Reset() {
+	*x = PrepareGitHubTokenFormResponse{}
+	mi := &file_delidev_v1_integration_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareGitHubTokenFormResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareGitHubTokenFormResponse) ProtoMessage() {}
+
+func (x *PrepareGitHubTokenFormResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_integration_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareGitHubTokenFormResponse.ProtoReflect.Descriptor instead.
+func (*PrepareGitHubTokenFormResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PrepareGitHubTokenFormResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PrepareGitHubTokenFormResponse) GetTokenKind() GitHubTokenKind {
+	if x != nil {
+		return x.TokenKind
+	}
+	return GitHubTokenKind_GIT_HUB_TOKEN_KIND_UNSPECIFIED
+}
+
+func (x *PrepareGitHubTokenFormResponse) GetResourceOwner() string {
+	if x != nil {
+		return x.ResourceOwner
+	}
+	return ""
+}
+
+func (x *PrepareGitHubTokenFormResponse) GetAccess() GitHubTokenAccess {
+	if x != nil {
+		return x.Access
+	}
+	return GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_UNSPECIFIED
+}
+
+func (x *PrepareGitHubTokenFormResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
 }
 
 type RefreshPullRequestProblemsRequest struct {
@@ -138,7 +575,7 @@ type RefreshPullRequestProblemsRequest struct {
 
 func (x *RefreshPullRequestProblemsRequest) Reset() {
 	*x = RefreshPullRequestProblemsRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[0]
+	mi := &file_delidev_v1_integration_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -150,7 +587,7 @@ func (x *RefreshPullRequestProblemsRequest) String() string {
 func (*RefreshPullRequestProblemsRequest) ProtoMessage() {}
 
 func (x *RefreshPullRequestProblemsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[0]
+	mi := &file_delidev_v1_integration_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -163,7 +600,7 @@ func (x *RefreshPullRequestProblemsRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use RefreshPullRequestProblemsRequest.ProtoReflect.Descriptor instead.
 func (*RefreshPullRequestProblemsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{0}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RefreshPullRequestProblemsRequest) GetRequestId() string {
@@ -205,7 +642,7 @@ type RefreshPullRequestProblemsResponse struct {
 
 func (x *RefreshPullRequestProblemsResponse) Reset() {
 	*x = RefreshPullRequestProblemsResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[1]
+	mi := &file_delidev_v1_integration_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -217,7 +654,7 @@ func (x *RefreshPullRequestProblemsResponse) String() string {
 func (*RefreshPullRequestProblemsResponse) ProtoMessage() {}
 
 func (x *RefreshPullRequestProblemsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[1]
+	mi := &file_delidev_v1_integration_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -230,7 +667,7 @@ func (x *RefreshPullRequestProblemsResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use RefreshPullRequestProblemsResponse.ProtoReflect.Descriptor instead.
 func (*RefreshPullRequestProblemsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{1}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RefreshPullRequestProblemsResponse) GetProblemSet() *Resource {
@@ -267,7 +704,7 @@ type ListPullRequestProblemsRequest struct {
 
 func (x *ListPullRequestProblemsRequest) Reset() {
 	*x = ListPullRequestProblemsRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[2]
+	mi := &file_delidev_v1_integration_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -279,7 +716,7 @@ func (x *ListPullRequestProblemsRequest) String() string {
 func (*ListPullRequestProblemsRequest) ProtoMessage() {}
 
 func (x *ListPullRequestProblemsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[2]
+	mi := &file_delidev_v1_integration_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -292,7 +729,7 @@ func (x *ListPullRequestProblemsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPullRequestProblemsRequest.ProtoReflect.Descriptor instead.
 func (*ListPullRequestProblemsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{2}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListPullRequestProblemsRequest) GetRemoteRepositoryId() string {
@@ -335,7 +772,7 @@ type ListPullRequestProblemsResponse struct {
 
 func (x *ListPullRequestProblemsResponse) Reset() {
 	*x = ListPullRequestProblemsResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[3]
+	mi := &file_delidev_v1_integration_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -347,7 +784,7 @@ func (x *ListPullRequestProblemsResponse) String() string {
 func (*ListPullRequestProblemsResponse) ProtoMessage() {}
 
 func (x *ListPullRequestProblemsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[3]
+	mi := &file_delidev_v1_integration_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -360,7 +797,7 @@ func (x *ListPullRequestProblemsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPullRequestProblemsResponse.ProtoReflect.Descriptor instead.
 func (*ListPullRequestProblemsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{3}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListPullRequestProblemsResponse) GetProblemSet() *Resource {
@@ -394,7 +831,7 @@ type DismissPullRequestProblemRequest struct {
 
 func (x *DismissPullRequestProblemRequest) Reset() {
 	*x = DismissPullRequestProblemRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[4]
+	mi := &file_delidev_v1_integration_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -406,7 +843,7 @@ func (x *DismissPullRequestProblemRequest) String() string {
 func (*DismissPullRequestProblemRequest) ProtoMessage() {}
 
 func (x *DismissPullRequestProblemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[4]
+	mi := &file_delidev_v1_integration_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -419,7 +856,7 @@ func (x *DismissPullRequestProblemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DismissPullRequestProblemRequest.ProtoReflect.Descriptor instead.
 func (*DismissPullRequestProblemRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{4}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DismissPullRequestProblemRequest) GetMutation() *Mutation {
@@ -447,7 +884,7 @@ type DismissPullRequestProblemResponse struct {
 
 func (x *DismissPullRequestProblemResponse) Reset() {
 	*x = DismissPullRequestProblemResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[5]
+	mi := &file_delidev_v1_integration_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -459,7 +896,7 @@ func (x *DismissPullRequestProblemResponse) String() string {
 func (*DismissPullRequestProblemResponse) ProtoMessage() {}
 
 func (x *DismissPullRequestProblemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[5]
+	mi := &file_delidev_v1_integration_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -472,7 +909,7 @@ func (x *DismissPullRequestProblemResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use DismissPullRequestProblemResponse.ProtoReflect.Descriptor instead.
 func (*DismissPullRequestProblemResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{5}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DismissPullRequestProblemResponse) GetProblem() *Resource {
@@ -508,7 +945,7 @@ type ListPullRequestRemediationAttemptsRequest struct {
 
 func (x *ListPullRequestRemediationAttemptsRequest) Reset() {
 	*x = ListPullRequestRemediationAttemptsRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[6]
+	mi := &file_delidev_v1_integration_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -520,7 +957,7 @@ func (x *ListPullRequestRemediationAttemptsRequest) String() string {
 func (*ListPullRequestRemediationAttemptsRequest) ProtoMessage() {}
 
 func (x *ListPullRequestRemediationAttemptsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[6]
+	mi := &file_delidev_v1_integration_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -533,7 +970,7 @@ func (x *ListPullRequestRemediationAttemptsRequest) ProtoReflect() protoreflect.
 
 // Deprecated: Use ListPullRequestRemediationAttemptsRequest.ProtoReflect.Descriptor instead.
 func (*ListPullRequestRemediationAttemptsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{6}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListPullRequestRemediationAttemptsRequest) GetRemoteRepositoryId() string {
@@ -575,7 +1012,7 @@ type ListPullRequestRemediationAttemptsResponse struct {
 
 func (x *ListPullRequestRemediationAttemptsResponse) Reset() {
 	*x = ListPullRequestRemediationAttemptsResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[7]
+	mi := &file_delidev_v1_integration_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -587,7 +1024,7 @@ func (x *ListPullRequestRemediationAttemptsResponse) String() string {
 func (*ListPullRequestRemediationAttemptsResponse) ProtoMessage() {}
 
 func (x *ListPullRequestRemediationAttemptsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[7]
+	mi := &file_delidev_v1_integration_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -600,7 +1037,7 @@ func (x *ListPullRequestRemediationAttemptsResponse) ProtoReflect() protoreflect
 
 // Deprecated: Use ListPullRequestRemediationAttemptsResponse.ProtoReflect.Descriptor instead.
 func (*ListPullRequestRemediationAttemptsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{7}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListPullRequestRemediationAttemptsResponse) GetProblemSet() *Resource {
@@ -634,7 +1071,7 @@ type ResumePullRequestRemediationRequest struct {
 
 func (x *ResumePullRequestRemediationRequest) Reset() {
 	*x = ResumePullRequestRemediationRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[8]
+	mi := &file_delidev_v1_integration_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -646,7 +1083,7 @@ func (x *ResumePullRequestRemediationRequest) String() string {
 func (*ResumePullRequestRemediationRequest) ProtoMessage() {}
 
 func (x *ResumePullRequestRemediationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[8]
+	mi := &file_delidev_v1_integration_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -659,7 +1096,7 @@ func (x *ResumePullRequestRemediationRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ResumePullRequestRemediationRequest.ProtoReflect.Descriptor instead.
 func (*ResumePullRequestRemediationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{8}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ResumePullRequestRemediationRequest) GetMutation() *Mutation {
@@ -680,7 +1117,7 @@ type ResumePullRequestRemediationResponse struct {
 
 func (x *ResumePullRequestRemediationResponse) Reset() {
 	*x = ResumePullRequestRemediationResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[9]
+	mi := &file_delidev_v1_integration_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -692,7 +1129,7 @@ func (x *ResumePullRequestRemediationResponse) String() string {
 func (*ResumePullRequestRemediationResponse) ProtoMessage() {}
 
 func (x *ResumePullRequestRemediationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[9]
+	mi := &file_delidev_v1_integration_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -705,7 +1142,7 @@ func (x *ResumePullRequestRemediationResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ResumePullRequestRemediationResponse.ProtoReflect.Descriptor instead.
 func (*ResumePullRequestRemediationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{9}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ResumePullRequestRemediationResponse) GetProblemSet() *Resource {
@@ -740,7 +1177,7 @@ type GetGitHubTokenFormRequest struct {
 
 func (x *GetGitHubTokenFormRequest) Reset() {
 	*x = GetGitHubTokenFormRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[10]
+	mi := &file_delidev_v1_integration_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -752,7 +1189,7 @@ func (x *GetGitHubTokenFormRequest) String() string {
 func (*GetGitHubTokenFormRequest) ProtoMessage() {}
 
 func (x *GetGitHubTokenFormRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[10]
+	mi := &file_delidev_v1_integration_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -765,7 +1202,7 @@ func (x *GetGitHubTokenFormRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGitHubTokenFormRequest.ProtoReflect.Descriptor instead.
 func (*GetGitHubTokenFormRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{10}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetGitHubTokenFormRequest) GetProfileId() string {
@@ -800,7 +1237,7 @@ type GetGitHubTokenFormResponse struct {
 
 func (x *GetGitHubTokenFormResponse) Reset() {
 	*x = GetGitHubTokenFormResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[11]
+	mi := &file_delidev_v1_integration_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -812,7 +1249,7 @@ func (x *GetGitHubTokenFormResponse) String() string {
 func (*GetGitHubTokenFormResponse) ProtoMessage() {}
 
 func (x *GetGitHubTokenFormResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[11]
+	mi := &file_delidev_v1_integration_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -825,7 +1262,7 @@ func (x *GetGitHubTokenFormResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGitHubTokenFormResponse.ProtoReflect.Descriptor instead.
 func (*GetGitHubTokenFormResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{11}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetGitHubTokenFormResponse) GetSchemaVersion() uint32 {
@@ -854,7 +1291,7 @@ type SaveIntegrationProfileRequest struct {
 
 func (x *SaveIntegrationProfileRequest) Reset() {
 	*x = SaveIntegrationProfileRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[12]
+	mi := &file_delidev_v1_integration_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +1303,7 @@ func (x *SaveIntegrationProfileRequest) String() string {
 func (*SaveIntegrationProfileRequest) ProtoMessage() {}
 
 func (x *SaveIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[12]
+	mi := &file_delidev_v1_integration_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +1316,7 @@ func (x *SaveIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveIntegrationProfileRequest.ProtoReflect.Descriptor instead.
 func (*SaveIntegrationProfileRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{12}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SaveIntegrationProfileRequest) GetMutation() *Mutation {
@@ -914,7 +1351,7 @@ type SaveIntegrationProfileResponse struct {
 
 func (x *SaveIntegrationProfileResponse) Reset() {
 	*x = SaveIntegrationProfileResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[13]
+	mi := &file_delidev_v1_integration_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -926,7 +1363,7 @@ func (x *SaveIntegrationProfileResponse) String() string {
 func (*SaveIntegrationProfileResponse) ProtoMessage() {}
 
 func (x *SaveIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[13]
+	mi := &file_delidev_v1_integration_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +1376,7 @@ func (x *SaveIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveIntegrationProfileResponse.ProtoReflect.Descriptor instead.
 func (*SaveIntegrationProfileResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{13}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SaveIntegrationProfileResponse) GetProfile() *Resource {
@@ -974,7 +1411,7 @@ type ReplaceIntegrationTokenRequest struct {
 
 func (x *ReplaceIntegrationTokenRequest) Reset() {
 	*x = ReplaceIntegrationTokenRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[14]
+	mi := &file_delidev_v1_integration_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -986,7 +1423,7 @@ func (x *ReplaceIntegrationTokenRequest) String() string {
 func (*ReplaceIntegrationTokenRequest) ProtoMessage() {}
 
 func (x *ReplaceIntegrationTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[14]
+	mi := &file_delidev_v1_integration_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -999,7 +1436,7 @@ func (x *ReplaceIntegrationTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplaceIntegrationTokenRequest.ProtoReflect.Descriptor instead.
 func (*ReplaceIntegrationTokenRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{14}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ReplaceIntegrationTokenRequest) GetMutation() *Mutation {
@@ -1029,7 +1466,7 @@ type ReplaceIntegrationTokenResponse struct {
 
 func (x *ReplaceIntegrationTokenResponse) Reset() {
 	*x = ReplaceIntegrationTokenResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[15]
+	mi := &file_delidev_v1_integration_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1041,7 +1478,7 @@ func (x *ReplaceIntegrationTokenResponse) String() string {
 func (*ReplaceIntegrationTokenResponse) ProtoMessage() {}
 
 func (x *ReplaceIntegrationTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[15]
+	mi := &file_delidev_v1_integration_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1054,7 +1491,7 @@ func (x *ReplaceIntegrationTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplaceIntegrationTokenResponse.ProtoReflect.Descriptor instead.
 func (*ReplaceIntegrationTokenResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{15}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReplaceIntegrationTokenResponse) GetProfile() *Resource {
@@ -1094,7 +1531,7 @@ type ValidateIntegrationProfileRequest struct {
 
 func (x *ValidateIntegrationProfileRequest) Reset() {
 	*x = ValidateIntegrationProfileRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[16]
+	mi := &file_delidev_v1_integration_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1106,7 +1543,7 @@ func (x *ValidateIntegrationProfileRequest) String() string {
 func (*ValidateIntegrationProfileRequest) ProtoMessage() {}
 
 func (x *ValidateIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[16]
+	mi := &file_delidev_v1_integration_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1119,7 +1556,7 @@ func (x *ValidateIntegrationProfileRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ValidateIntegrationProfileRequest.ProtoReflect.Descriptor instead.
 func (*ValidateIntegrationProfileRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{16}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ValidateIntegrationProfileRequest) GetMutation() *Mutation {
@@ -1141,7 +1578,7 @@ type ValidateIntegrationProfileResponse struct {
 
 func (x *ValidateIntegrationProfileResponse) Reset() {
 	*x = ValidateIntegrationProfileResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[17]
+	mi := &file_delidev_v1_integration_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1153,7 +1590,7 @@ func (x *ValidateIntegrationProfileResponse) String() string {
 func (*ValidateIntegrationProfileResponse) ProtoMessage() {}
 
 func (x *ValidateIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[17]
+	mi := &file_delidev_v1_integration_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1166,7 +1603,7 @@ func (x *ValidateIntegrationProfileResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ValidateIntegrationProfileResponse.ProtoReflect.Descriptor instead.
 func (*ValidateIntegrationProfileResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{17}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ValidateIntegrationProfileResponse) GetProfile() *Resource {
@@ -1206,7 +1643,7 @@ type DeleteIntegrationProfileRequest struct {
 
 func (x *DeleteIntegrationProfileRequest) Reset() {
 	*x = DeleteIntegrationProfileRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[18]
+	mi := &file_delidev_v1_integration_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1218,7 +1655,7 @@ func (x *DeleteIntegrationProfileRequest) String() string {
 func (*DeleteIntegrationProfileRequest) ProtoMessage() {}
 
 func (x *DeleteIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[18]
+	mi := &file_delidev_v1_integration_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1231,7 +1668,7 @@ func (x *DeleteIntegrationProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteIntegrationProfileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteIntegrationProfileRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{18}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *DeleteIntegrationProfileRequest) GetMutation() *Mutation {
@@ -1255,7 +1692,7 @@ type DeleteIntegrationProfileResponse struct {
 
 func (x *DeleteIntegrationProfileResponse) Reset() {
 	*x = DeleteIntegrationProfileResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[19]
+	mi := &file_delidev_v1_integration_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1267,7 +1704,7 @@ func (x *DeleteIntegrationProfileResponse) String() string {
 func (*DeleteIntegrationProfileResponse) ProtoMessage() {}
 
 func (x *DeleteIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[19]
+	mi := &file_delidev_v1_integration_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1280,7 +1717,7 @@ func (x *DeleteIntegrationProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteIntegrationProfileResponse.ProtoReflect.Descriptor instead.
 func (*DeleteIntegrationProfileResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{19}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *DeleteIntegrationProfileResponse) GetProfile() *Resource {
@@ -1328,7 +1765,7 @@ type InspectRepositoryIntegrationRequest struct {
 
 func (x *InspectRepositoryIntegrationRequest) Reset() {
 	*x = InspectRepositoryIntegrationRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[20]
+	mi := &file_delidev_v1_integration_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1340,7 +1777,7 @@ func (x *InspectRepositoryIntegrationRequest) String() string {
 func (*InspectRepositoryIntegrationRequest) ProtoMessage() {}
 
 func (x *InspectRepositoryIntegrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[20]
+	mi := &file_delidev_v1_integration_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1353,7 +1790,7 @@ func (x *InspectRepositoryIntegrationRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use InspectRepositoryIntegrationRequest.ProtoReflect.Descriptor instead.
 func (*InspectRepositoryIntegrationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{20}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *InspectRepositoryIntegrationRequest) GetRepositoryId() string {
@@ -1374,7 +1811,7 @@ type InspectRepositoryIntegrationResponse struct {
 
 func (x *InspectRepositoryIntegrationResponse) Reset() {
 	*x = InspectRepositoryIntegrationResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[21]
+	mi := &file_delidev_v1_integration_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1386,7 +1823,7 @@ func (x *InspectRepositoryIntegrationResponse) String() string {
 func (*InspectRepositoryIntegrationResponse) ProtoMessage() {}
 
 func (x *InspectRepositoryIntegrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[21]
+	mi := &file_delidev_v1_integration_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1399,7 +1836,7 @@ func (x *InspectRepositoryIntegrationResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use InspectRepositoryIntegrationResponse.ProtoReflect.Descriptor instead.
 func (*InspectRepositoryIntegrationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{21}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *InspectRepositoryIntegrationResponse) GetSchemaVersion() uint32 {
@@ -1428,7 +1865,7 @@ type QueryRepositoryIntegrationRequest struct {
 
 func (x *QueryRepositoryIntegrationRequest) Reset() {
 	*x = QueryRepositoryIntegrationRequest{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[22]
+	mi := &file_delidev_v1_integration_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1440,7 +1877,7 @@ func (x *QueryRepositoryIntegrationRequest) String() string {
 func (*QueryRepositoryIntegrationRequest) ProtoMessage() {}
 
 func (x *QueryRepositoryIntegrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[22]
+	mi := &file_delidev_v1_integration_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1453,7 +1890,7 @@ func (x *QueryRepositoryIntegrationRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use QueryRepositoryIntegrationRequest.ProtoReflect.Descriptor instead.
 func (*QueryRepositoryIntegrationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{22}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *QueryRepositoryIntegrationRequest) GetRepositoryId() string {
@@ -1487,7 +1924,7 @@ type QueryRepositoryIntegrationResponse struct {
 
 func (x *QueryRepositoryIntegrationResponse) Reset() {
 	*x = QueryRepositoryIntegrationResponse{}
-	mi := &file_delidev_v1_integration_proto_msgTypes[23]
+	mi := &file_delidev_v1_integration_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1499,7 +1936,7 @@ func (x *QueryRepositoryIntegrationResponse) String() string {
 func (*QueryRepositoryIntegrationResponse) ProtoMessage() {}
 
 func (x *QueryRepositoryIntegrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_integration_proto_msgTypes[23]
+	mi := &file_delidev_v1_integration_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1512,7 +1949,7 @@ func (x *QueryRepositoryIntegrationResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use QueryRepositoryIntegrationResponse.ProtoReflect.Descriptor instead.
 func (*QueryRepositoryIntegrationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{23}
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *QueryRepositoryIntegrationResponse) GetSchemaVersion() uint32 {
@@ -1534,7 +1971,36 @@ var File_delidev_v1_integration_proto protoreflect.FileDescriptor
 const file_delidev_v1_integration_proto_rawDesc = "" +
 	"\n" +
 	"\x1cdelidev/v1/integration.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xc1\x01\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"P\n" +
+	"\x19InspectGitHubTokenRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\fR\x05token\"\xd7\x01\n" +
+	"\x1aInspectGitHubTokenResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12:\n" +
+	"\x05state\x18\x02 \x01(\x0e2$.delidev.v1.GitHubTokenIdentityStateR\x05state\x12;\n" +
+	"\bidentity\x18\x03 \x01(\v2\x1f.delidev.v1.GitHubTokenIdentityR\bidentity\x12!\n" +
+	"\fproblem_json\x18\x04 \x01(\fR\vproblemJson\"T\n" +
+	"\x13GitHubTokenIdentity\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12\x14\n" +
+	"\x05login\x18\x03 \x01(\tR\x05login\"\xd8\x01\n" +
+	"\x1dPrepareGitHubTokenFormRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12:\n" +
+	"\n" +
+	"token_kind\x18\x02 \x01(\x0e2\x1b.delidev.v1.GitHubTokenKindR\ttokenKind\x12%\n" +
+	"\x0eresource_owner\x18\x03 \x01(\tR\rresourceOwner\x125\n" +
+	"\x06access\x18\x04 \x01(\x0e2\x1d.delidev.v1.GitHubTokenAccessR\x06access\"\xeb\x01\n" +
+	"\x1ePrepareGitHubTokenFormResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12:\n" +
+	"\n" +
+	"token_kind\x18\x02 \x01(\x0e2\x1b.delidev.v1.GitHubTokenKindR\ttokenKind\x12%\n" +
+	"\x0eresource_owner\x18\x03 \x01(\tR\rresourceOwner\x125\n" +
+	"\x06access\x18\x04 \x01(\x0e2\x1d.delidev.v1.GitHubTokenAccessR\x06access\x12\x10\n" +
+	"\x03url\x18\x05 \x01(\tR\x03url\"\xc1\x01\n" +
 	"!RefreshPullRequestProblemsRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12#\n" +
@@ -1640,7 +2106,19 @@ const file_delidev_v1_integration_proto_rawDesc = "" +
 	"query_json\x18\x03 \x01(\fR\tqueryJson\"p\n" +
 	"\"QueryRepositoryIntegrationResponse\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12#\n" +
-	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson*\xeb\x01\n" +
+	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson*z\n" +
+	"\x0fGitHubTokenKind\x12\"\n" +
+	"\x1eGIT_HUB_TOKEN_KIND_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fGIT_HUB_TOKEN_KIND_FINE_GRAINED\x10\x01\x12\x1e\n" +
+	"\x1aGIT_HUB_TOKEN_KIND_CLASSIC\x10\x02*\xe3\x02\n" +
+	"\x18GitHubTokenIdentityState\x12,\n" +
+	"(GIT_HUB_TOKEN_IDENTITY_STATE_UNSPECIFIED\x10\x00\x12)\n" +
+	"%GIT_HUB_TOKEN_IDENTITY_STATE_VERIFIED\x10\x01\x12.\n" +
+	"*GIT_HUB_TOKEN_IDENTITY_STATE_INVALID_TOKEN\x10\x02\x122\n" +
+	".GIT_HUB_TOKEN_IDENTITY_STATE_ACCESS_RESTRICTED\x10\x03\x12-\n" +
+	")GIT_HUB_TOKEN_IDENTITY_STATE_SSO_REQUIRED\x10\x04\x12-\n" +
+	")GIT_HUB_TOKEN_IDENTITY_STATE_RATE_LIMITED\x10\x05\x12,\n" +
+	"(GIT_HUB_TOKEN_IDENTITY_STATE_UNAVAILABLE\x10\x06*\xeb\x01\n" +
 	" PullRequestProblemCollectionKind\x124\n" +
 	"0PULL_REQUEST_PROBLEM_COLLECTION_KIND_UNSPECIFIED\x10\x00\x121\n" +
 	"-PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK\x10\x01\x12+\n" +
@@ -1650,8 +2128,10 @@ const file_delidev_v1_integration_proto_rawDesc = "" +
 	" GIT_HUB_TOKEN_ACCESS_UNSPECIFIED\x10\x00\x12.\n" +
 	"*GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES\x10\x01\x12,\n" +
 	"(GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES\x10\x02\x12-\n" +
-	")GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES\x10\x032\xd8\v\n" +
-	"\x12IntegrationService\x12o\n" +
+	")GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES\x10\x032\xae\r\n" +
+	"\x12IntegrationService\x12c\n" +
+	"\x12InspectGitHubToken\x12%.delidev.v1.InspectGitHubTokenRequest\x1a&.delidev.v1.InspectGitHubTokenResponse\x12o\n" +
+	"\x16PrepareGitHubTokenForm\x12).delidev.v1.PrepareGitHubTokenFormRequest\x1a*.delidev.v1.PrepareGitHubTokenFormResponse\x12o\n" +
 	"\x16SaveIntegrationProfile\x12).delidev.v1.SaveIntegrationProfileRequest\x1a*.delidev.v1.SaveIntegrationProfileResponse\x12r\n" +
 	"\x17ReplaceIntegrationToken\x12*.delidev.v1.ReplaceIntegrationTokenRequest\x1a+.delidev.v1.ReplaceIntegrationTokenResponse\x12{\n" +
 	"\x1aValidateIntegrationProfile\x12-.delidev.v1.ValidateIntegrationProfileRequest\x1a..delidev.v1.ValidateIntegrationProfileResponse\x12u\n" +
@@ -1677,87 +2157,104 @@ func file_delidev_v1_integration_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_integration_proto_rawDescData
 }
 
-var file_delidev_v1_integration_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_delidev_v1_integration_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_delidev_v1_integration_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_delidev_v1_integration_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_delidev_v1_integration_proto_goTypes = []any{
-	(PullRequestProblemCollectionKind)(0),              // 0: delidev.v1.PullRequestProblemCollectionKind
-	(GitHubTokenAccess)(0),                             // 1: delidev.v1.GitHubTokenAccess
-	(*RefreshPullRequestProblemsRequest)(nil),          // 2: delidev.v1.RefreshPullRequestProblemsRequest
-	(*RefreshPullRequestProblemsResponse)(nil),         // 3: delidev.v1.RefreshPullRequestProblemsResponse
-	(*ListPullRequestProblemsRequest)(nil),             // 4: delidev.v1.ListPullRequestProblemsRequest
-	(*ListPullRequestProblemsResponse)(nil),            // 5: delidev.v1.ListPullRequestProblemsResponse
-	(*DismissPullRequestProblemRequest)(nil),           // 6: delidev.v1.DismissPullRequestProblemRequest
-	(*DismissPullRequestProblemResponse)(nil),          // 7: delidev.v1.DismissPullRequestProblemResponse
-	(*ListPullRequestRemediationAttemptsRequest)(nil),  // 8: delidev.v1.ListPullRequestRemediationAttemptsRequest
-	(*ListPullRequestRemediationAttemptsResponse)(nil), // 9: delidev.v1.ListPullRequestRemediationAttemptsResponse
-	(*ResumePullRequestRemediationRequest)(nil),        // 10: delidev.v1.ResumePullRequestRemediationRequest
-	(*ResumePullRequestRemediationResponse)(nil),       // 11: delidev.v1.ResumePullRequestRemediationResponse
-	(*GetGitHubTokenFormRequest)(nil),                  // 12: delidev.v1.GetGitHubTokenFormRequest
-	(*GetGitHubTokenFormResponse)(nil),                 // 13: delidev.v1.GetGitHubTokenFormResponse
-	(*SaveIntegrationProfileRequest)(nil),              // 14: delidev.v1.SaveIntegrationProfileRequest
-	(*SaveIntegrationProfileResponse)(nil),             // 15: delidev.v1.SaveIntegrationProfileResponse
-	(*ReplaceIntegrationTokenRequest)(nil),             // 16: delidev.v1.ReplaceIntegrationTokenRequest
-	(*ReplaceIntegrationTokenResponse)(nil),            // 17: delidev.v1.ReplaceIntegrationTokenResponse
-	(*ValidateIntegrationProfileRequest)(nil),          // 18: delidev.v1.ValidateIntegrationProfileRequest
-	(*ValidateIntegrationProfileResponse)(nil),         // 19: delidev.v1.ValidateIntegrationProfileResponse
-	(*DeleteIntegrationProfileRequest)(nil),            // 20: delidev.v1.DeleteIntegrationProfileRequest
-	(*DeleteIntegrationProfileResponse)(nil),           // 21: delidev.v1.DeleteIntegrationProfileResponse
-	(*InspectRepositoryIntegrationRequest)(nil),        // 22: delidev.v1.InspectRepositoryIntegrationRequest
-	(*InspectRepositoryIntegrationResponse)(nil),       // 23: delidev.v1.InspectRepositoryIntegrationResponse
-	(*QueryRepositoryIntegrationRequest)(nil),          // 24: delidev.v1.QueryRepositoryIntegrationRequest
-	(*QueryRepositoryIntegrationResponse)(nil),         // 25: delidev.v1.QueryRepositoryIntegrationResponse
-	(*Resource)(nil),                                   // 26: delidev.v1.Resource
-	(*Mutation)(nil),                                   // 27: delidev.v1.Mutation
+	(GitHubTokenKind)(0),                               // 0: delidev.v1.GitHubTokenKind
+	(GitHubTokenIdentityState)(0),                      // 1: delidev.v1.GitHubTokenIdentityState
+	(PullRequestProblemCollectionKind)(0),              // 2: delidev.v1.PullRequestProblemCollectionKind
+	(GitHubTokenAccess)(0),                             // 3: delidev.v1.GitHubTokenAccess
+	(*InspectGitHubTokenRequest)(nil),                  // 4: delidev.v1.InspectGitHubTokenRequest
+	(*InspectGitHubTokenResponse)(nil),                 // 5: delidev.v1.InspectGitHubTokenResponse
+	(*GitHubTokenIdentity)(nil),                        // 6: delidev.v1.GitHubTokenIdentity
+	(*PrepareGitHubTokenFormRequest)(nil),              // 7: delidev.v1.PrepareGitHubTokenFormRequest
+	(*PrepareGitHubTokenFormResponse)(nil),             // 8: delidev.v1.PrepareGitHubTokenFormResponse
+	(*RefreshPullRequestProblemsRequest)(nil),          // 9: delidev.v1.RefreshPullRequestProblemsRequest
+	(*RefreshPullRequestProblemsResponse)(nil),         // 10: delidev.v1.RefreshPullRequestProblemsResponse
+	(*ListPullRequestProblemsRequest)(nil),             // 11: delidev.v1.ListPullRequestProblemsRequest
+	(*ListPullRequestProblemsResponse)(nil),            // 12: delidev.v1.ListPullRequestProblemsResponse
+	(*DismissPullRequestProblemRequest)(nil),           // 13: delidev.v1.DismissPullRequestProblemRequest
+	(*DismissPullRequestProblemResponse)(nil),          // 14: delidev.v1.DismissPullRequestProblemResponse
+	(*ListPullRequestRemediationAttemptsRequest)(nil),  // 15: delidev.v1.ListPullRequestRemediationAttemptsRequest
+	(*ListPullRequestRemediationAttemptsResponse)(nil), // 16: delidev.v1.ListPullRequestRemediationAttemptsResponse
+	(*ResumePullRequestRemediationRequest)(nil),        // 17: delidev.v1.ResumePullRequestRemediationRequest
+	(*ResumePullRequestRemediationResponse)(nil),       // 18: delidev.v1.ResumePullRequestRemediationResponse
+	(*GetGitHubTokenFormRequest)(nil),                  // 19: delidev.v1.GetGitHubTokenFormRequest
+	(*GetGitHubTokenFormResponse)(nil),                 // 20: delidev.v1.GetGitHubTokenFormResponse
+	(*SaveIntegrationProfileRequest)(nil),              // 21: delidev.v1.SaveIntegrationProfileRequest
+	(*SaveIntegrationProfileResponse)(nil),             // 22: delidev.v1.SaveIntegrationProfileResponse
+	(*ReplaceIntegrationTokenRequest)(nil),             // 23: delidev.v1.ReplaceIntegrationTokenRequest
+	(*ReplaceIntegrationTokenResponse)(nil),            // 24: delidev.v1.ReplaceIntegrationTokenResponse
+	(*ValidateIntegrationProfileRequest)(nil),          // 25: delidev.v1.ValidateIntegrationProfileRequest
+	(*ValidateIntegrationProfileResponse)(nil),         // 26: delidev.v1.ValidateIntegrationProfileResponse
+	(*DeleteIntegrationProfileRequest)(nil),            // 27: delidev.v1.DeleteIntegrationProfileRequest
+	(*DeleteIntegrationProfileResponse)(nil),           // 28: delidev.v1.DeleteIntegrationProfileResponse
+	(*InspectRepositoryIntegrationRequest)(nil),        // 29: delidev.v1.InspectRepositoryIntegrationRequest
+	(*InspectRepositoryIntegrationResponse)(nil),       // 30: delidev.v1.InspectRepositoryIntegrationResponse
+	(*QueryRepositoryIntegrationRequest)(nil),          // 31: delidev.v1.QueryRepositoryIntegrationRequest
+	(*QueryRepositoryIntegrationResponse)(nil),         // 32: delidev.v1.QueryRepositoryIntegrationResponse
+	(*Resource)(nil),                                   // 33: delidev.v1.Resource
+	(*Mutation)(nil),                                   // 34: delidev.v1.Mutation
 }
 var file_delidev_v1_integration_proto_depIdxs = []int32{
-	0,  // 0: delidev.v1.RefreshPullRequestProblemsRequest.kind:type_name -> delidev.v1.PullRequestProblemCollectionKind
-	26, // 1: delidev.v1.RefreshPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
-	26, // 2: delidev.v1.ListPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
-	26, // 3: delidev.v1.ListPullRequestProblemsResponse.problems:type_name -> delidev.v1.Resource
-	27, // 4: delidev.v1.DismissPullRequestProblemRequest.mutation:type_name -> delidev.v1.Mutation
-	26, // 5: delidev.v1.DismissPullRequestProblemResponse.problem:type_name -> delidev.v1.Resource
-	26, // 6: delidev.v1.ListPullRequestRemediationAttemptsResponse.problem_set:type_name -> delidev.v1.Resource
-	26, // 7: delidev.v1.ListPullRequestRemediationAttemptsResponse.attempts:type_name -> delidev.v1.Resource
-	27, // 8: delidev.v1.ResumePullRequestRemediationRequest.mutation:type_name -> delidev.v1.Mutation
-	26, // 9: delidev.v1.ResumePullRequestRemediationResponse.problem_set:type_name -> delidev.v1.Resource
-	1,  // 10: delidev.v1.GetGitHubTokenFormRequest.access:type_name -> delidev.v1.GitHubTokenAccess
-	27, // 11: delidev.v1.SaveIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	26, // 12: delidev.v1.SaveIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
-	27, // 13: delidev.v1.ReplaceIntegrationTokenRequest.mutation:type_name -> delidev.v1.Mutation
-	26, // 14: delidev.v1.ReplaceIntegrationTokenResponse.profile:type_name -> delidev.v1.Resource
-	27, // 15: delidev.v1.ValidateIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	26, // 16: delidev.v1.ValidateIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
-	27, // 17: delidev.v1.DeleteIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	26, // 18: delidev.v1.DeleteIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
-	14, // 19: delidev.v1.IntegrationService.SaveIntegrationProfile:input_type -> delidev.v1.SaveIntegrationProfileRequest
-	16, // 20: delidev.v1.IntegrationService.ReplaceIntegrationToken:input_type -> delidev.v1.ReplaceIntegrationTokenRequest
-	18, // 21: delidev.v1.IntegrationService.ValidateIntegrationProfile:input_type -> delidev.v1.ValidateIntegrationProfileRequest
-	20, // 22: delidev.v1.IntegrationService.DeleteIntegrationProfile:input_type -> delidev.v1.DeleteIntegrationProfileRequest
-	22, // 23: delidev.v1.IntegrationService.InspectRepositoryIntegration:input_type -> delidev.v1.InspectRepositoryIntegrationRequest
-	24, // 24: delidev.v1.IntegrationService.QueryRepositoryIntegration:input_type -> delidev.v1.QueryRepositoryIntegrationRequest
-	12, // 25: delidev.v1.IntegrationService.GetGitHubTokenForm:input_type -> delidev.v1.GetGitHubTokenFormRequest
-	2,  // 26: delidev.v1.IntegrationService.RefreshPullRequestProblems:input_type -> delidev.v1.RefreshPullRequestProblemsRequest
-	4,  // 27: delidev.v1.IntegrationService.ListPullRequestProblems:input_type -> delidev.v1.ListPullRequestProblemsRequest
-	6,  // 28: delidev.v1.IntegrationService.DismissPullRequestProblem:input_type -> delidev.v1.DismissPullRequestProblemRequest
-	8,  // 29: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:input_type -> delidev.v1.ListPullRequestRemediationAttemptsRequest
-	10, // 30: delidev.v1.IntegrationService.ResumePullRequestRemediation:input_type -> delidev.v1.ResumePullRequestRemediationRequest
-	15, // 31: delidev.v1.IntegrationService.SaveIntegrationProfile:output_type -> delidev.v1.SaveIntegrationProfileResponse
-	17, // 32: delidev.v1.IntegrationService.ReplaceIntegrationToken:output_type -> delidev.v1.ReplaceIntegrationTokenResponse
-	19, // 33: delidev.v1.IntegrationService.ValidateIntegrationProfile:output_type -> delidev.v1.ValidateIntegrationProfileResponse
-	21, // 34: delidev.v1.IntegrationService.DeleteIntegrationProfile:output_type -> delidev.v1.DeleteIntegrationProfileResponse
-	23, // 35: delidev.v1.IntegrationService.InspectRepositoryIntegration:output_type -> delidev.v1.InspectRepositoryIntegrationResponse
-	25, // 36: delidev.v1.IntegrationService.QueryRepositoryIntegration:output_type -> delidev.v1.QueryRepositoryIntegrationResponse
-	13, // 37: delidev.v1.IntegrationService.GetGitHubTokenForm:output_type -> delidev.v1.GetGitHubTokenFormResponse
-	3,  // 38: delidev.v1.IntegrationService.RefreshPullRequestProblems:output_type -> delidev.v1.RefreshPullRequestProblemsResponse
-	5,  // 39: delidev.v1.IntegrationService.ListPullRequestProblems:output_type -> delidev.v1.ListPullRequestProblemsResponse
-	7,  // 40: delidev.v1.IntegrationService.DismissPullRequestProblem:output_type -> delidev.v1.DismissPullRequestProblemResponse
-	9,  // 41: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:output_type -> delidev.v1.ListPullRequestRemediationAttemptsResponse
-	11, // 42: delidev.v1.IntegrationService.ResumePullRequestRemediation:output_type -> delidev.v1.ResumePullRequestRemediationResponse
-	31, // [31:43] is the sub-list for method output_type
-	19, // [19:31] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	1,  // 0: delidev.v1.InspectGitHubTokenResponse.state:type_name -> delidev.v1.GitHubTokenIdentityState
+	6,  // 1: delidev.v1.InspectGitHubTokenResponse.identity:type_name -> delidev.v1.GitHubTokenIdentity
+	0,  // 2: delidev.v1.PrepareGitHubTokenFormRequest.token_kind:type_name -> delidev.v1.GitHubTokenKind
+	3,  // 3: delidev.v1.PrepareGitHubTokenFormRequest.access:type_name -> delidev.v1.GitHubTokenAccess
+	0,  // 4: delidev.v1.PrepareGitHubTokenFormResponse.token_kind:type_name -> delidev.v1.GitHubTokenKind
+	3,  // 5: delidev.v1.PrepareGitHubTokenFormResponse.access:type_name -> delidev.v1.GitHubTokenAccess
+	2,  // 6: delidev.v1.RefreshPullRequestProblemsRequest.kind:type_name -> delidev.v1.PullRequestProblemCollectionKind
+	33, // 7: delidev.v1.RefreshPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
+	33, // 8: delidev.v1.ListPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
+	33, // 9: delidev.v1.ListPullRequestProblemsResponse.problems:type_name -> delidev.v1.Resource
+	34, // 10: delidev.v1.DismissPullRequestProblemRequest.mutation:type_name -> delidev.v1.Mutation
+	33, // 11: delidev.v1.DismissPullRequestProblemResponse.problem:type_name -> delidev.v1.Resource
+	33, // 12: delidev.v1.ListPullRequestRemediationAttemptsResponse.problem_set:type_name -> delidev.v1.Resource
+	33, // 13: delidev.v1.ListPullRequestRemediationAttemptsResponse.attempts:type_name -> delidev.v1.Resource
+	34, // 14: delidev.v1.ResumePullRequestRemediationRequest.mutation:type_name -> delidev.v1.Mutation
+	33, // 15: delidev.v1.ResumePullRequestRemediationResponse.problem_set:type_name -> delidev.v1.Resource
+	3,  // 16: delidev.v1.GetGitHubTokenFormRequest.access:type_name -> delidev.v1.GitHubTokenAccess
+	34, // 17: delidev.v1.SaveIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	33, // 18: delidev.v1.SaveIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	34, // 19: delidev.v1.ReplaceIntegrationTokenRequest.mutation:type_name -> delidev.v1.Mutation
+	33, // 20: delidev.v1.ReplaceIntegrationTokenResponse.profile:type_name -> delidev.v1.Resource
+	34, // 21: delidev.v1.ValidateIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	33, // 22: delidev.v1.ValidateIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	34, // 23: delidev.v1.DeleteIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	33, // 24: delidev.v1.DeleteIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	4,  // 25: delidev.v1.IntegrationService.InspectGitHubToken:input_type -> delidev.v1.InspectGitHubTokenRequest
+	7,  // 26: delidev.v1.IntegrationService.PrepareGitHubTokenForm:input_type -> delidev.v1.PrepareGitHubTokenFormRequest
+	21, // 27: delidev.v1.IntegrationService.SaveIntegrationProfile:input_type -> delidev.v1.SaveIntegrationProfileRequest
+	23, // 28: delidev.v1.IntegrationService.ReplaceIntegrationToken:input_type -> delidev.v1.ReplaceIntegrationTokenRequest
+	25, // 29: delidev.v1.IntegrationService.ValidateIntegrationProfile:input_type -> delidev.v1.ValidateIntegrationProfileRequest
+	27, // 30: delidev.v1.IntegrationService.DeleteIntegrationProfile:input_type -> delidev.v1.DeleteIntegrationProfileRequest
+	29, // 31: delidev.v1.IntegrationService.InspectRepositoryIntegration:input_type -> delidev.v1.InspectRepositoryIntegrationRequest
+	31, // 32: delidev.v1.IntegrationService.QueryRepositoryIntegration:input_type -> delidev.v1.QueryRepositoryIntegrationRequest
+	19, // 33: delidev.v1.IntegrationService.GetGitHubTokenForm:input_type -> delidev.v1.GetGitHubTokenFormRequest
+	9,  // 34: delidev.v1.IntegrationService.RefreshPullRequestProblems:input_type -> delidev.v1.RefreshPullRequestProblemsRequest
+	11, // 35: delidev.v1.IntegrationService.ListPullRequestProblems:input_type -> delidev.v1.ListPullRequestProblemsRequest
+	13, // 36: delidev.v1.IntegrationService.DismissPullRequestProblem:input_type -> delidev.v1.DismissPullRequestProblemRequest
+	15, // 37: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:input_type -> delidev.v1.ListPullRequestRemediationAttemptsRequest
+	17, // 38: delidev.v1.IntegrationService.ResumePullRequestRemediation:input_type -> delidev.v1.ResumePullRequestRemediationRequest
+	5,  // 39: delidev.v1.IntegrationService.InspectGitHubToken:output_type -> delidev.v1.InspectGitHubTokenResponse
+	8,  // 40: delidev.v1.IntegrationService.PrepareGitHubTokenForm:output_type -> delidev.v1.PrepareGitHubTokenFormResponse
+	22, // 41: delidev.v1.IntegrationService.SaveIntegrationProfile:output_type -> delidev.v1.SaveIntegrationProfileResponse
+	24, // 42: delidev.v1.IntegrationService.ReplaceIntegrationToken:output_type -> delidev.v1.ReplaceIntegrationTokenResponse
+	26, // 43: delidev.v1.IntegrationService.ValidateIntegrationProfile:output_type -> delidev.v1.ValidateIntegrationProfileResponse
+	28, // 44: delidev.v1.IntegrationService.DeleteIntegrationProfile:output_type -> delidev.v1.DeleteIntegrationProfileResponse
+	30, // 45: delidev.v1.IntegrationService.InspectRepositoryIntegration:output_type -> delidev.v1.InspectRepositoryIntegrationResponse
+	32, // 46: delidev.v1.IntegrationService.QueryRepositoryIntegration:output_type -> delidev.v1.QueryRepositoryIntegrationResponse
+	20, // 47: delidev.v1.IntegrationService.GetGitHubTokenForm:output_type -> delidev.v1.GetGitHubTokenFormResponse
+	10, // 48: delidev.v1.IntegrationService.RefreshPullRequestProblems:output_type -> delidev.v1.RefreshPullRequestProblemsResponse
+	12, // 49: delidev.v1.IntegrationService.ListPullRequestProblems:output_type -> delidev.v1.ListPullRequestProblemsResponse
+	14, // 50: delidev.v1.IntegrationService.DismissPullRequestProblem:output_type -> delidev.v1.DismissPullRequestProblemResponse
+	16, // 51: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:output_type -> delidev.v1.ListPullRequestRemediationAttemptsResponse
+	18, // 52: delidev.v1.IntegrationService.ResumePullRequestRemediation:output_type -> delidev.v1.ResumePullRequestRemediationResponse
+	39, // [39:53] is the sub-list for method output_type
+	25, // [25:39] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_integration_proto_init() }
@@ -1771,8 +2268,8 @@ func file_delidev_v1_integration_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_integration_proto_rawDesc), len(file_delidev_v1_integration_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   24,
+			NumEnums:      4,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

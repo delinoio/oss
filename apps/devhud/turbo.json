@@ -1,6 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "extends": ["//"],
+  "extends": [
+    "//"
+  ],
   "tasks": {
     "test": {
       "cache": false
@@ -9,28 +11,68 @@
       "cache": false
     },
     "test:unit": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "test:components": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "test:security": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "test:adapters": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "test:native:capture": {
-      "cache": false
+      "cache": false,
+      "dependsOn": [
+        "ci:build:frontend"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CARGO_NET_OFFLINE"
+      ]
     },
     "test:native:shortcuts": {
-      "cache": false
+      "cache": false,
+      "dependsOn": [
+        "test:native:capture"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CARGO_NET_OFFLINE"
+      ]
     },
     "test:native:ipc": {
-      "cache": false
+      "cache": false,
+      "dependsOn": [
+        "test:native:shortcuts"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CARGO_NET_OFFLINE"
+      ]
     },
     "test:native:updater": {
-      "cache": false
+      "cache": false,
+      "dependsOn": [
+        "test:native:ipc"
+      ],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CARGO_NET_OFFLINE"
+      ]
     },
     "mobile:generate": {
       "cache": false
@@ -43,6 +85,152 @@
     },
     "smoke:platform": {
       "cache": false
+    },
+    "ci:build:frontend": {
+      "cache": true,
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/docs/apps-devhud-*.md"
+      ],
+      "outputs": [
+        "dist/**"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT",
+        "TAURI_ENV_PLATFORM",
+        "TAURI_ENV_TARGET_TRIPLE"
+      ]
+    },
+    "ci:contracts": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:clean-frontend": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "mobile:check": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "verify:pins": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "ci:check": {
+      "cache": false,
+      "dependsOn": [
+        "ci:typecheck",
+        "test:unit",
+        "test:components",
+        "ci:contracts",
+        "ci:clean-frontend",
+        "mobile:check"
+      ]
+    },
+    "ci:security:contracts": {
+      "cache": false
+    },
+    "ci:security": {
+      "cache": false,
+      "dependsOn": [
+        "test:security",
+        "test:adapters",
+        "ci:security:contracts"
+      ]
     }
   }
 }

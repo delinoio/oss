@@ -1,5 +1,7 @@
 # DevHud Support and Severity Contract
 
+PR validation executes package-owned Turbo leaves through `ci:check`, preserving the complete frontend assertions, repeated clean-build checks and native boundaries. Cache-only Vercel OIDC access follows `docs/repository-workflow-contract.md`; it grants no deployment, signing or release authority. Turbo run summaries complement `CI Result` and native evidence.
+
 ## Support triage
 
 Support uses the authenticated administrator surface only: `AdminService` metadata-only users, usage counters, upload metadata, and audit events. Record the request correlation ID, exact account/upload identifier, expected state, safe reason, and next action. Never copy settings bodies, credentials, signed/public URLs, DOM, screenshots, Deck results, local paths, prompts, agent output, or issue bodies into tickets or logs.
@@ -11,6 +13,8 @@ CI results, generated SBOMs/provenance, dry package layouts, and release fixture
 PR CI deliberately defers the ten desktop and seven mobile packaging entries while retaining affected tests, static mobile/widget checks, deterministic frontend output, CEF pins, and OCI validation. Related main pushes run Windows/Linux desktop and Android native entries; macOS desktop and iOS native evidence comes from unconditional manual CI or the exact signed private candidate. The candidate requires both Mac desktop packages, signed iOS arm64, and arm64/x64 simulator builds. Consult the execution-plan summary: `CI Result` accepts only planned skips and fails on missing, failed, cancelled, or unexpectedly skipped validation.
 
 A clean-checkout API or sweeper compile that reports missing embedded administrator assets is a build-prerequisite failure, not a runtime service incident. Re-run the repository-owned `pnpm --filter devhud-admin build:embedded` generator/verifier or the Docker build boundary; never recover by committing or copying a `dist` tree from another checkout.
+
+For CEF comparison triage, inspect the maintainer summary and its 35-day bounded metadata artifact. The summary includes committed/upstream revisions, comparison status and counts, retained/total signal counts, and any truncation marker. A summary failure skips the subsequent report upload. Synthetic summary fixtures prove local parsing and metadata output only; confirm the exact hosted run before claiming comparison or upload success. Raw commit messages, credentials, and native content remain excluded.
 
 ## Upload, deletion, and audit cases
 

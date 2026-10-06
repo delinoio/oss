@@ -21,14 +21,18 @@ type integrationCheck struct {
 // Called under the gate. Completion closes before map cleanup takes the gate,
 // so cancellation can join HTTP and token clearing without a lock inversion.
 func (s *Service) stopIntegrationCheck(ctx context.Context, id domain.ID) error {
-	check := s.integrationChecks[id]
+	return stopIntegrationRead(ctx, s.integrationChecks, id)
+}
+
+func stopIntegrationRead(ctx context.Context, checks map[domain.ID]*integrationCheck, id domain.ID) error {
+	check := checks[id]
 	if check == nil {
 		return nil
 	}
 	check.cancel()
 	select {
 	case <-check.done:
-		delete(s.integrationChecks, id)
+		delete(checks, id)
 		return nil
 	case <-ctx.Done():
 		return domain.SafeError(ctx.Err())
@@ -75,7 +79,7 @@ func (s *Service) inspectIntegration(ctx context.Context, meta *pb.Mutation, gen
 	if s.integrationChecks[input.ID] != nil {
 		return store.Result{}, domain.Fail(domain.Conflict, "This profile already has a running validation.", "Wait for it to finish before validating again.")
 	}
-	if len(s.integrationChecks) >= 8 {
+	if len(s.integrationChecks)+len(s.integrationPreviews) >= 8 {
 		return store.Result{}, domain.Fail(domain.ResourceExhausted, "The GitHub validation limit is reached.", "Retry after another profile's validation finishes.")
 	}
 	if s.integrationChecks == nil {

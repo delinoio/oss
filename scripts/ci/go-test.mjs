@@ -82,7 +82,9 @@ export function runGoTests(shard, { run = spawnSync, log = console.log, platform
   // exceeds 20 minutes; this watchdog does not extend any product deadline.
   // Reassess the larger budget after native fixture timings permit reduction.
   const timeout = shard === GoTestShard.Worker ? "45m" : "20m";
-  const args = ["test", ...(shard === GoTestShard.All ? [] : ["-p=1"]), `-timeout=${timeout}`, ...packages];
+  // Subprocess command changes can leave a consumer's test binary unchanged.
+  // Disable result reuse so TestMain runs; compiled objects remain cacheable.
+  const args = ["test", "-count=1", ...(shard === GoTestShard.All ? [] : ["-p=1"]), `-timeout=${timeout}`, ...packages];
   const testStarted = performance.now();
   const result = run("go", args, commandOptions);
   if (result.error) throw result.error;
@@ -93,7 +95,7 @@ export function runGoTests(shard, { run = spawnSync, log = console.log, platform
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const args = process.argv.slice(2);
+    const args = process.argv.length === 2 && process.env.CI_GO_TEST_SHARD ? ["--shard", process.env.CI_GO_TEST_SHARD] : process.argv.slice(2);
     if (args.length !== 2 || args[0] !== "--shard") throw new Error("Expected --shard all|core|server|harness|worker");
     process.exitCode = runGoTests(args[1]);
   } catch (error) {

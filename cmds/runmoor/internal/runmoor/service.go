@@ -180,6 +180,23 @@ func requireSystemdActiveIdentity(ctx context.Context, exec CommandExecutor, def
 
 func Service(ctx context.Context, action, path string, c Config, exec CommandExecutor) error {
 	unit := servicePath()
+	if action == "install" {
+		if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+			return err
+		}
+	} else if action == "start" || action == "stop" || action == "uninstall" {
+		// Validate before creating the serialization lock or contacting the OS.
+		if err := requireServiceConfigMatch(runtime.GOOS, unit, path); err != nil {
+			return err
+		}
+	} else {
+		return problem(ErrConfig, "Unknown service action.", "Use service install, start, stop or uninstall.")
+	}
+	lock, err := lockServiceOperation(unit)
+	if err != nil {
+		return err
+	}
+	defer unlockState(lock)
 	uid := strconv.Itoa(os.Getuid())
 	domain := "gui/" + uid
 	var definitionSnapshot *serviceDefinitionSnapshot
