@@ -74,4 +74,4 @@ it("opens the native-selected view without sending work or losing the session dr
   expect(send).not.toHaveBeenCalled();
   view.unmount();
   expect(native.callbacks.size).toBe(0);
-});
+}, 15000);

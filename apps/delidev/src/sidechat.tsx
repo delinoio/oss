@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 
 export function SidechatFindings({ session, messages }: { session: Resource; messages: readonly Resource[] }) {
+  useLocale();
   const fork = object(document(session).fork);
   const sidechat = Boolean(fork.sidechat_parent_snapshot);
   const parentId = text(fork.source_session_id);
@@ -36,14 +37,14 @@ export function SidechatFindings({ session, messages }: { session: Resource; mes
     setAccepted(undefined);
     void mutation.send({ mutation: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() }, parentId, expectedParentRevision: target.revision, messages: chosen.map((row) => ({ messageId: row.id, expectedRevision: row.revision })) });
   };
-  return <section className="sidechat-findings" aria-label="Sidechat findings">
-    <p>Read-only Sidechat · Parent session {parentId}. Select complete replies on this page to add to the parent queue. Use the parent queue's Steer action explicitly when needed.</p>
-    {!supported ? <p role="status">Update the connected server to send Sidechat findings.</p> : <>
-      <fieldset disabled={blocked}><legend>Replies to send</legend>{eligible.length ? eligible.map((row, index) => <label key={row.id}><input type="checkbox" checked={selected.has(row.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(row.id); else next.delete(row.id); return next; })} />Reply {index + 1}<span>{text(document(row).text)}</span></label>) : <p>No complete Sidechat replies on this page.</p>}</fieldset>
-      {chosen.length > 20 || bytes > 256 * 1024 ? <p role="alert">Select at most 20 replies within 256 KiB. Replies are sent in full.</p> : null}
-      <button disabled={blocked || parent.isFetching || !parent.data?.resource || chosen.length === 0 || chosen.length > 20 || bytes > 256 * 1024} onClick={send}>Send selected findings to parent queue</button>
+  return <section className="sidechat-findings" aria-label={copy("sidechat.sidechatFindings_b85000")}>
+    <p><LocalizedText id="sidechat.readOnlySidechatParentSessionSelect_ceb705" components={{ s0: <>{parentId}</> }} /></p>
+    {!supported ? <p role="status">{copy("sidechat.updateTheConnectedServerToSend_9dd279")}</p> : <>
+      <fieldset disabled={blocked}><legend>{copy("sidechat.repliesToSend_a20827")}</legend>{eligible.length ? eligible.map((row, index) => <label key={row.id}><input type="checkbox" checked={selected.has(row.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(row.id); else next.delete(row.id); return next; })} /><LocalizedText id="sidechat.reply_b9b235" components={{ s0: <>{index + 1}</>, s1: <span>{text(document(row).text)}</span> }} /></label>) : <p>{copy("sidechat.noCompleteSidechatRepliesOnThis_b35106")}</p>}</fieldset>
+      {chosen.length > 20 || bytes > 256 * 1024 ? <p role="alert">{copy("sidechat.selectAtMost20RepliesWithin_7b1bc4")}</p> : null}
+      <button disabled={blocked || parent.isFetching || !parent.data?.resource || chosen.length === 0 || chosen.length > 20 || bytes > 256 * 1024} onClick={send}>{copy("sidechat.sendSelectedFindingsToParentQueue_5db660")}</button>
     </>}
-    <Problem error={parent.error} /><Problem error={mutation.error} />{mutation.uncertain ? <><p role="status">The original selected messages and revisions are retained while the result is uncertain.</p><button disabled={mutation.busy} onClick={mutation.retry}>Retry the same findings request</button></> : null}
-    {accepted ? <p role="status">Selected findings queued as {accepted}. Review them in the parent queue.</p> : null}
+    <Problem error={parent.error} /><Problem error={mutation.error} />{mutation.uncertain ? <><p role="status">{copy("sidechat.theOriginalSelectedMessagesAndRevisions_45372d")}</p><button disabled={mutation.busy} onClick={mutation.retry}>{copy("sidechat.retryTheSameFindingsRequest_23e1d3")}</button></> : null}
+    {accepted ? <p role="status"><LocalizedText id="sidechat.selectedFindingsQueuedAsReviewThem_7c06ec" components={{ s0: <>{accepted}</> }} /></p> : null}
   </section>;
 }

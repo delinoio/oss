@@ -58,7 +58,7 @@ func validateConfig(config Config) (net.IP, error) {
 	return ip, nil
 }
 
-func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
+func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result error) {
 	if config.Listen == "" {
 		config.Listen = DefaultListen
 	}
@@ -103,7 +103,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err != nil {
 		return err
 	}
-	defer state.Close()
+	defer func() { result = errors.Join(result, state.Close()) }()
 	if config.StartupID == "" {
 		if _, err := WriteRunning(config.DataDir, config); err != nil {
 			return err
@@ -193,11 +193,21 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	catalogDone := make(chan struct{})
 	go func() {
 		defer close(catalogDone)
-		if !config.disableCatalogMaintenance {
+		if !config.disableCatalogMaintenance && !config.DisableBackgroundMaintenanceForTesting {
 			service.runCatalogMaintenance(catalogCtx)
 		}
 	}()
 	defer func() { stopCatalog(); <-catalogDone }()
+	knownCtx, stopKnown := context.WithCancel(child)
+	knownDone := make(chan struct{})
+	go func() {
+		defer close(knownDone)
+		if !config.disableKnownModelMaintenance && !config.DisableBackgroundMaintenanceForTesting {
+			service.knownSubscriptionModels().Run(knownCtx)
+		}
+	}()
+	defer func() { stopKnown(); <-knownDone }()
+
 	dispatchCtx, stopDispatch := context.WithCancel(child)
 	dispatchDone := make(chan struct{})
 	go func() {
@@ -257,6 +267,11 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	stopCatalog()
 	<-catalogDone
+	// Catalog refresh may be resolving the account-backed outbound route. Join
+	// it before releasing account secrets so no maintenance request can touch a
+	// closed vault during the explicit shutdown path.
+	stopKnown()
+	<-knownDone
 	stopRemediation()
 	<-remediationDone
 	stopDispatch()

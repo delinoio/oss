@@ -15,7 +15,7 @@ use tauri::{AppHandle, WebviewWindow};
 use tauri_runtime_cef::CefRuntime;
 use tokio::sync::oneshot;
 
-use super::{SavedWindows, saved_binding, tray_host, trusted_main};
+use super::{ProductWindows, saved_binding, tray_host, trusted_local};
 
 const MAX_ACTIVE: usize = 256;
 const MAX_SEEN: usize = 10000;
@@ -51,10 +51,10 @@ pub struct NotificationHost {
 
 fn instance(
     window: &WebviewWindow<CefRuntime>,
-    windows: &SavedWindows,
+    windows: &ProductWindows,
 ) -> Result<Option<String>, NativeFailure> {
-    if window.label() == "main" {
-        trusted_main(window)?;
+    if super::is_local(window) {
+        trusted_local(window)?;
         Ok(None)
     } else {
         Ok(Some(saved_binding(window, windows)?.instance))
@@ -63,85 +63,120 @@ fn instance(
 #[tauri::command]
 pub async fn begin_notifications(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<String, NativeFailure> {
-    let instance = instance(&window, &windows)?;
-    if host.stopping.load(Ordering::Acquire) {
-        return Err(NativeFailure::Busy);
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
+        let instance = instance(&window, &windows)?;
+        if host.stopping.load(Ordering::Acquire) {
+            return Err(NativeFailure::Busy);
+        }
+        let scope = uuid::Uuid::now_v7().to_string();
+        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+        state.begin(Target {
+            label: window.label().into(),
+            scope: scope.clone(),
+            instance,
+        })?;
+        Ok(scope)
     }
-    let scope = uuid::Uuid::now_v7().to_string();
-    let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
-    state.begin(Target {
-        label: window.label().into(),
-        scope: scope.clone(),
-        instance,
-    })?;
-    Ok(scope)
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 pub async fn end_notifications(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
     scope: String,
 ) -> Result<(), NativeFailure> {
-    let original = instance(&window, &windows)?;
-    canonical_id(&scope)?;
-    let target = Target {
-        label: window.label().into(),
-        scope,
-        instance: original,
-    };
-    let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
-    state.end(&target);
-    Ok(())
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
+        let original = instance(&window, &windows)?;
+        canonical_id(&scope)?;
+        let target = Target {
+            label: window.label().into(),
+            scope,
+            instance: original,
+        };
+        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+        state.end(&target);
+        Ok(())
+    }
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 pub async fn notification_permission(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<Readiness, NativeFailure> {
-    instance(&window, &windows)?;
-    if host.at_capacity() {
-        return Ok(Readiness::unavailable(PermissionProblem::Capacity));
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
+        instance(&window, &windows)?;
+        if host.at_capacity() {
+            return Ok(Readiness::unavailable(PermissionProblem::Capacity));
+        }
+        Ok(
+            tokio::time::timeout(Duration::from_secs(5), notifications::permission(false))
+                .await
+                .unwrap_or(Readiness::unavailable(PermissionProblem::OsUnavailable)),
+        )
     }
-    Ok(
-        tokio::time::timeout(Duration::from_secs(5), notifications::permission(false))
-            .await
-            .unwrap_or(Readiness::unavailable(PermissionProblem::OsUnavailable)),
-    )
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 pub async fn request_notification_permission(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
 ) -> Result<Readiness, NativeFailure> {
-    instance(&window, &windows)?;
-    let receiver = host.request_permission()?;
-    receiver.await.map_err(|_| NativeFailure::Busy)
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
+        instance(&window, &windows)?;
+        let receiver = host.request_permission()?;
+        receiver.await.map_err(|_| NativeFailure::Busy)
+    }
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 pub async fn present_notification(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
     scope: String,
     notice: Notice,
 ) -> Result<PresentationResult, NativeFailure> {
-    let original = instance(&window, &windows)?;
-    canonical_id(&scope)?;
-    notice.validate()?;
-    let target = Target {
-        label: window.label().into(),
-        scope,
-        instance: original,
-    };
-    let receiver = host.start(app, target, notice)?;
-    Ok(receiver.await.unwrap_or(PresentationResult::Uncertain))
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
+        let original = instance(&window, &windows)?;
+        canonical_id(&scope)?;
+        notice.validate()?;
+        let target = Target {
+            label: window.label().into(),
+            scope,
+            instance: original,
+        };
+        let receiver = host.start(app, target, notice)?;
+        Ok(receiver.await.unwrap_or(PresentationResult::Uncertain))
+    }
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 impl State {

@@ -7,7 +7,9 @@
   "pnportPreviewVersion": "0.1.0-next.1",
   "description": "Native Yarn Plug'n'Play subprocess filesystem",
   "license": "Apache-2.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "test:package": "node scripts/smoke.mjs",
@@ -17,6 +19,8 @@
     "test:cache": "node scripts/cache-conformance.mjs run",
     "test:typescript:prepare": "node scripts/typescript-conformance.mjs prepare",
     "test:typescript": "node scripts/typescript-conformance.mjs run",
-    "benchmark": "node scripts/benchmark.mjs"
+    "benchmark": "node scripts/benchmark.mjs",
+    "ci:release": "node ../../scripts/ci/from-root.mjs node --test scripts/release/project.test.mjs scripts/release/pnport-*.test.mjs",
+    "ci:package": "node scripts/package.mjs main"
   }
 }

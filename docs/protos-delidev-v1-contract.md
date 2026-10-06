@@ -1,15 +1,94 @@
 # DeliDev v1 Connect contract
 
-## Agent Worker wizard reservations
+## Agent Worker source-route reservations
 
-The planned Agent Worker wizard uses main-first reservations under issue #964:
-System capability 33, list-only subscription-service selectors on resource and
-model pages, and typed `SaveAgentWorkerRequest` / `AgentWorkerModelSelection`.
-Reservation-only publication does not activate these declarations or operations.
-The existing configuration, CLI, native observation and migration boundaries
-remain authoritative until the complete feature is implemented.
+Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
+`AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
+is exclusive with the legacy singular model. Establish both ledger reservations
+on main before activation. Capability 35 keeps its known-subscription-model
+ownership. No active schema, generated output, advertisement or migration is
+introduced by this prerequisite.
+
+
+
+
+## Known subscription model allocation and activation
+
+Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
+and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
+advisory subscription catalog. The closed catalog-source enum reserves
+UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
+reserves native ID/display name/order/minimum harness version/retirement date
+fields 1–5. The request reserves subscription service field 1; the response
+reserves subscription service/models/catalog version/updated at/source fields 1–5.
+These allocations reached main in PR #1370 before dependent activation. The
+complete feature activates capability 35 and the owner/client read-only RPC in
+provider.proto; generated bindings use the normal compatibility pipeline.
+Reservations alone grant no feature support. The active advisory read grants no
+authentication, account entitlement, native discovery or execution capability.
+The response echoes the exact closed service, includes at most 200 models and
+uses BUNDLED/CACHE/ONLINE provenance; unsupported service values fail. No database
+migration is introduced. Follow the catalog, desktop and network contracts.
+
+## GitHub token-first onboarding reservations
+
+Issue #964 reserves `SystemCapability.GITHUB_TOKEN_ONBOARDING_V1 = 34` for
+profile-independent token identity inspection and official token-form preparation.
+`GitHubTokenKind` reserves UNSPECIFIED 0, FINE_GRAINED 1 and CLASSIC 2.
+`GitHubTokenIdentityState` reserves UNSPECIFIED 0, VERIFIED 1, INVALID_TOKEN 2,
+ACCESS_RESTRICTED 3, SSO_REQUIRED 4, RATE_LIMITED 5 and UNAVAILABLE 6.
+The five new message declarations and their fields are recorded with exclusive
+ownership in `allocations.json`: token inspection request ID/token 1–2, response
+request ID/state/identity/problem JSON 1–4, public identity ID/node ID/login 1–3,
+form request request ID/token kind/resource owner/access 1–4 and form response
+request ID/token kind/resource owner/access/URL 1–5. Establish this closure on main
+before dependent implementation. This prerequisite introduces no active schema,
+generated binding, advertised support, credential lifetime, browser authority or
+database migration. Existing profile/revision-bound token forms remain unchanged.
+
+### Activated onboarding boundary
+
+After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
+
+## Agent Worker wizard
+
+PR #1351 established the issue #964 allocations on main before implementation.
+System `AGENT_WORKER_WIZARD_V1 = 33` advertises source-scoped account/model lists
+and atomic `ConfigurationService.SaveAgentWorker`. `ListResourcesRequest` field
+4 and `SearchModelsRequest` field 7 select a closed subscription service. Reject
+unknown services, API/provider combinations and account selectors on other kinds.
+Filter in SQL before pagination and bind the source into each cursor. Unspecified
+selectors preserve legacy behavior; shared Filter, snapshots and events do not
+change.
+
+`SaveAgentWorkerRequest` carries mutation, document, typed model selection and
+schema version in fields 1–4. `AgentWorkerModelSelection` uses a oneof canonical
+model ID or exact executable/native ID, plus the canonical model's expected
+revision. A canonical selection requires a nonzero revision; a direct ID requires
+zero. The RPC reuses the existing `SaveConfigurationResponse` acknowledgement,
+with narrow Buf lint exceptions on the two save methods for this deliberate reuse.
+Existing RPCs, CLI operations and resource/storage schemas remain compatible.
+The new path requires at least one account and one common API provider or native
+subscription service. Fixed routing requires exactly one account. Go resolves or
+creates the model and saves the Worker in one receipt transaction. Saved harness
+compatibility is a configuration declaration, never native/account/platform proof.
+No database migration is added. Follow the [catalog contract](cmds-delidev-catalog-contract.md)
+and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
 ## Repository addition reservations
+
+### Remote-first repository reservations
+
+The approved remote-first extension under issue #964 reserves System
+`REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19`.
+Establish both allocations on main before active declarations, generated bindings
+or advertisements. URL-only registration will be an owner/client configuration
+operation without Worker admission; managed Worktree preparation will clone the
+immutable remote source on its selected Worker. Optional checkouts remain the
+source only for explicit Local execution. System 31/32 and Worker 18 retain their
+separate immediate-clone/listing contracts. Reservations grant no configuration,
+Git, filesystem or execution capability and add no SQLite migration.
 
 Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
 `GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
@@ -56,6 +135,18 @@ reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
 ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
+
+The additional shared RPC closure records PR #1221's existing
+`CompactSessionRequest` and `CompactSessionResponse` assignments in the immutable
+baseline, then reserves `CompactSessionRequest.expected_execution_id = 2` and
+`CompactSessionResponse.session = 4` under issue #1203 with #1093/#1202 as shared
+consumers. Establish these reservations on main before adding active fields or
+generated bindings. The expected execution must join the exact original source
+at acceptance and remain part of the actor-bound receipt identity. The response
+must join the current session and original job in one authorized read, including
+reference-only replay; its existing `request_id` remains the original action ID.
+Current native compaction support does not imply these additional fields exist.
+The reservation change adds no capability or migration.
 
 Issue #1206's [native Codex model observation contract](cmds-delidev-native-models-contract.md)
 activates main-established server capability 16 and Worker capability 7.
@@ -650,3 +741,21 @@ Main-established capability 30 and PR #1332's reserved declarations activate the
 The existing schema-v2 account JSON may retain optional server-owned `server_operation.cleanup_phase` with closed `native-confirmed` or `credentials-confirmed` values for failed initial server login cleanup. Omitted legacy metadata remains unchanged. This checkpoint grants no authentication, callback or configuration-deletion authority; the subscription contract defines its original-owner and cleanup requirements. No protobuf field, capability, generated declaration or database migration is added.
 
 PR #1336 established the diagnostic allocations on main at `82d8859e98485458ccf8708225c0c6694d9cfab5`. The optional `GetSubscriptionProgressResponse.diagnostic` field 7 now uses those exact declarations: detected version 1, minimum version 2, closed phase 3, stable code 4, safe message 5, guidance 6 and correlation ID 7. An empty detected version means no verified version; absent diagnostic means the server did not report metadata. Native failure attribution never grants account, callback or retry authority. Preserve original actor/operation ownership and terminal read authorization; older clients can ignore the additive field. Regenerate Go and TypeScript bindings from the reconciled schema. No migration or capability number is added.
+
+## General API OAuth extension
+
+Main-established issue #964 allocations add inventory capability 6, device
+connection method 4, closed flow PKCE/DEVICE, Google project options and original
+completion state. Preserve capability 5 and historical OpenRouter receipt input.
+Declare the reserved additive fields before generation; reservations alone grant
+no provider support. The common/Hugging Face implementation returns PKCE flow
+only on a live Start, advertises capability 6 only for accepted exact profiles,
+and keeps authorization URL/code/state outside cached query variables. Device
+user codes remain Start-only; later provider implementations retain their gates.
+- For server-owned Baseten Device approval, Start returns flow DEVICE and the
+  temporary user code only with the original live Start reply. Status is a read.
+  After the sole Go completion claim, its existing response request_id identifies
+  that original completion receipt; code-free local recovery retains the original
+  expected attempt revision 1. Cancellation keeps its own mutation receipt.
+  Public Complete cannot supply a Device callback or initiate polling. These
+  semantics reuse the main-reserved fields and grant no unregistered capability.

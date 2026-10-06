@@ -8,7 +8,11 @@ import (
 )
 
 func scope(f store.Filter) string {
-	return fmt.Sprintf("page:%s:%s:%s:%s:%s", f.Kind, f.SessionID, f.ProjectID, f.AccountType, f.ProviderID)
+	base := fmt.Sprintf("page:%s:%s:%s:%s:%s", f.Kind, f.SessionID, f.ProjectID, f.AccountType, f.ProviderID)
+	if f.SubscriptionService != "" {
+		return base + ":subscription:" + string(f.SubscriptionService)
+	}
+	return base
 }
 
 func listScope(f store.Filter, providerID string) string {

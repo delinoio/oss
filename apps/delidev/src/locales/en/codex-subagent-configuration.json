@@ -1,0 +1,12 @@
+{
+  "codex-subagent-configuration.codexSubagents_8b1822": "Codex subagents",
+  "codex-subagent-configuration.updateTheConnectedServerAndRunner_466379": "Update the connected server and Runner Device to apply Codex subagent configuration. Saved values are retained.",
+  "codex-subagent-configuration.childrenUseTheParentSSelected_7b2922": "Children use the parent's selected account. The accepted execution freezes these choices; later Agent edits apply to future sessions.",
+  "codex-subagent-configuration.subagentModel_28463c": "Subagent model",
+  "codex-subagent-configuration.useTheExactRegisteredNativeModel_e6e196": "Use the exact registered native model from the same provider or subscription service. An empty value leaves Codex's native default unspecified.",
+  "codex-subagent-configuration.subagentEffort_eea2b1": "Subagent effort",
+  "codex-subagent-configuration.useNativeDefault_b5fc7e": "Use native default",
+  "codex-subagent-configuration.unsupportedSelection_7c6fcd": "Unsupported selection · <s0/>",
+  "codex-subagent-configuration.maximumConcurrency0UsesNativeDefault_451d39": "Maximum concurrency (0 uses native default)",
+  "codex-subagent-configuration.requestedSettingsDoNotEstablishAn_4e5da8": "Requested settings do not establish an observed child model. Subagents shows available native observations separately."
+}

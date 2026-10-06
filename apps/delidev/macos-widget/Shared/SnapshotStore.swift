@@ -53,6 +53,67 @@ struct SnapshotStore {
         defer { close(dir) }
         return try read(at: dir)
     }
+
+    private func readLanguage(at dir: Int32) throws -> WidgetLanguageDocument {
+        let fd = openat(dir, "language-v1.json", O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        if fd < 0 && errno == ENOENT { return WidgetLanguageDocument(version: 1, language: .system) }
+        defer { if fd >= 0 { close(fd) } }
+        try checked(fd)
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_size > 0, info.st_size <= 4096 else { throw SnapshotFailure.storage }
+        var bytes = Data(count: Int(info.st_size))
+        let count = bytes.withUnsafeMutableBytes { buffer -> Int in
+            var position = 0
+            while position < buffer.count {
+                let size = Darwin.read(fd, buffer.baseAddress!.advanced(by: position), buffer.count - position)
+                if size < 0 && errno == EINTR { continue }
+                if size <= 0 { return -1 }
+                position += size
+            }
+            return position
+        }
+        guard count == bytes.count,
+              let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              Set(object.keys) == Set(["version", "language"]) else { throw SnapshotFailure.invalid }
+        let value = try JSONDecoder().decode(WidgetLanguageDocument.self, from: bytes)
+        try value.validate()
+        return value
+    }
+
+    func readLanguage() throws -> LanguagePreference {
+        let dir = try opened(create: false)
+        defer { close(dir) }
+        return try readLanguage(at: dir).language
+    }
+
+    func setLanguage(_ value: WidgetLanguageDocument) throws {
+        try value.validate()
+        let dir = try opened(create: true)
+        defer { close(dir) }
+        let lock = openat(dir, "writer.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
+        defer { if lock >= 0 { close(lock) } }
+        try checked(lock)
+        guard flock(lock, LOCK_EX | LOCK_NB) == 0 else { throw SnapshotFailure.storage }
+        defer { flock(lock, LOCK_UN) }
+        let current = try readLanguage(at: dir)
+        if current.language == value.language { return }
+        let bytes = try JSONEncoder().encode(value)
+        let staging = ".language-\(UUID().uuidString)"
+        let fd = openat(dir, staging, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw SnapshotFailure.storage }
+        defer { close(fd); unlinkat(dir, staging, 0) }
+        let written = bytes.withUnsafeBytes { buffer -> Bool in
+            var position = 0
+            while position < buffer.count {
+                let size = Darwin.write(fd, buffer.baseAddress!.advanced(by: position), buffer.count - position)
+                if size < 0 && errno == EINTR { continue }
+                if size <= 0 { return false }
+                position += size
+            }
+            return true
+        }
+        guard written, fsync(fd) == 0, renameat(dir, staging, dir, "language-v1.json") == 0, fsync(dir) == 0 else { throw SnapshotFailure.storage }
+    }
     func apply(_ request: Publication, now: Date = Date()) throws {
         let dir = try opened(create: true)
         defer { close(dir) }

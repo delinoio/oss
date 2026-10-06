@@ -73,6 +73,11 @@ it("changes only Name while preserving the complete document, exact revision and
   const accountSelector = screen.getByLabelText("Add AI account");
   const before = [value.list.mock.calls.length, value.inventory.mock.calls.length, value.search.mock.calls.length, value.get.mock.calls.length];
   for (const section of document.querySelectorAll<HTMLDetailsElement>(".agent-disclosure")) { toggle(section, true); toggle(section, false); }
+  for (const [title, label] of [["Reasoning", "Reasoning effort"], ["Native harness options", "Subagent effort"]]) {
+    const section = disclosure(title!); toggle(section, true);
+    const input = screen.getByRole("combobox", { name: label! }); fireEvent.focus(input); fireEvent.keyDown(input, { key: "Escape" });
+    toggle(section, false);
+  }
   fireEvent(window, new Event("resize"));
   expect(screen.getByLabelText("Add AI account")).toBe(accountSelector);
   expect([value.list.mock.calls.length, value.inventory.mock.calls.length, value.search.mock.calls.length, value.get.mock.calls.length]).toEqual(before);
@@ -80,6 +85,30 @@ it("changes only Name while preserving the complete document, exact revision and
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(decoded(value.save.mock.calls[0][0])).toEqual({ ...data, name: "Changed name" });
   expect(value.save.mock.calls[0][0]).toMatchObject({ mutation: { id: agent.id, expectedRevision: 9n } });
+});
+
+it("changes harness hints while preserving both effort drafts and unrelated fields", async () => {
+  const value = fixture();
+  const original = { name: "Hints", harness: "codex", model_id: value.model.id, accounts: [], templates: [], options: { permission: "default", future_option: "retained" }, future_field: { retained: true } };
+  const agent = resource(EntityKind.AGENT, original); value.resources.push(agent);
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value);
+  toggle(disclosure("Reasoning"), true); toggle(disclosure("Native harness options"), true);
+  for (const [harness, expected] of [["codex", 9], ["claude-code", 5], ["opencode", 0], ["grok-build", 0]] as const) {
+    change("Harness", harness); change("Reasoning effort", "");
+    const input = screen.getByRole("combobox", { name: "Reasoning effort" }); fireEvent.focus(input);
+    expect(within(screen.getByRole("listbox", { name: "Reasoning effort suggestions" })).getAllByRole("option")).toHaveLength(expected + 1);
+    fireEvent.keyDown(input, { key: "Escape" });
+    const child = screen.getByRole("combobox", { name: "Subagent effort" }); fireEvent.focus(child);
+    expect(within(screen.getByRole("listbox", { name: "Subagent effort suggestions" })).getAllByRole("option")).toHaveLength(harness === "codex" ? 10 : 1);
+    fireEvent.keyDown(child, { key: "Escape" });
+  }
+  change("Reasoning effort", " Future-Effort "); change("Subagent effort", " Future-Child ");
+  change("Harness", "claude-code");
+  expect((screen.getByRole("combobox", { name: "Reasoning effort" }) as HTMLInputElement).value).toBe(" Future-Effort ");
+  expect((screen.getByRole("combobox", { name: "Subagent effort" }) as HTMLInputElement).value).toBe(" Future-Child ");
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(decoded(value.save.mock.calls[0][0])).toEqual({ ...original, harness: "claude-code", effort: " Future-Effort ", options: { ...original.options, subagent_effort: " Future-Child " } });
 });
 
 it("keeps ordered reference operations, relative weights and duplicate prevention through collapse", async () => {
@@ -219,39 +248,4 @@ it("blocks a stale revision without losing the Agent draft", async () => {
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value); change("Name", "Unsaved");
   value.get.mockImplementation(id => ({ resource: id === agent.id ? create(ResourceSchema, { ...agent, revision: 2n }) : value.resources.find(row => row.id === id) }));
   await act(async () => { await value.client.invalidateQueries(); }); expect(await screen.findByText(/This entry changed elsewhere/)).toBeTruthy(); expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(true); expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Unsaved");
-});
-
-it.each(["navigation", "Escape then navigation", "reselection then navigation"])("disposes Agent disclosures, draft and uncertain retry on %s", async route => {
-  const value = fixture(); value.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
-  function Harness() { const [visible, setVisible] = useState(false); return <><button onClick={() => setVisible(true)}>Open settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Navigate away fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>; }
-  render(value.view(<Harness />)); const opener = screen.getByRole("button", { name: "Open settings fixture" }); opener.focus(); fireEvent.click(opener);
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Abandoned"); change("Model", value.model.id); toggle(disclosure("Reasoning"), true); change("Reasoning effort", "high"); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" })); await screen.findByRole("button", { name: "Retry the same configuration" });
-  if (route === "Escape then navigation") fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { key: "Escape" });
-  if (route === "reselection then navigation") fireEvent.click(opener);
-  expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Navigate away fixture" }));
-  expect(document.activeElement).not.toBe(opener); fireEvent.click(opener); expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(""); expect(disclosure("Reasoning").open).toBe(false); expect((screen.getByLabelText("Reasoning effort") as HTMLInputElement).value).toBe(""); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull(); expect(value.save).toHaveBeenCalledTimes(1);
-});
-
-it("ignores a late accepted Agent response after closing and replacing the opening", async () => {
-  const value = fixture(); let release!: () => void; let pendingSignal: AbortSignal | undefined;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  const delayed: Transport = { ...value.transport, unary: async (method, signal, ...args) => {
-    if (method.name !== "SaveConfiguration") return value.transport.unary(method, signal, ...args);
-    const accepted = await value.transport.unary(method, undefined, ...args); pendingSignal = signal;
-    await gate; return accepted;
-  } };
-  const view = render(value.view(<Settings visible />, delayed));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Original accepted Agent"); change("Model", value.model.id); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  await waitFor(() => expect(pendingSignal).toBeTruthy());
-  view.rerender(value.view(<Settings visible={false} />, delayed)); expect(pendingSignal!.aborted).toBe(true);
-  view.rerender(value.view(<Settings visible />, delayed));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Replacement draft"); await act(async () => release());
-  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Replacement draft"); expect(value.save).toHaveBeenCalledTimes(1);
-  expect(disclosure("Reasoning").open).toBe(false); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
 });

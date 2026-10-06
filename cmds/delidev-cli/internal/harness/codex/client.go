@@ -251,8 +251,16 @@ func (c *Client) Close() error {
 func (c *Client) Version() string { return c.version }
 
 func (c *Client) recordFailure(ctx context.Context, phase domain.CodexPhase, returned *error) {
+	c.recordFailureAtStage(ctx, phase, "", returned)
+}
+
+func (c *Client) recordFailureAtStage(ctx context.Context, phase domain.CodexPhase, stage managedFailureStage, returned *error) {
 	*returned = domain.WithCodexDiagnostic(c.version, phase, *returned)
 	if d := domain.CodexErrorDiagnostic(*returned); d != nil && c.logger != nil {
-		c.logger.WarnContext(ctx, "codex_native_operation_failed", "version", d.DetectedVersion, "minimum_version", d.MinimumVersion, "phase", d.Phase, "code", d.Code, "correlation_id", c.ownerID, "recovery_code", domain.SafeError(*returned).Code)
+		attributes := []any{"version", d.DetectedVersion, "minimum_version", d.MinimumVersion, "phase", d.Phase, "code", d.Code, "correlation_id", c.ownerID, "recovery_code", domain.SafeError(*returned).Code}
+		if stage != "" {
+			attributes = append(attributes, "stage", stage)
+		}
+		c.logger.WarnContext(ctx, "codex_native_operation_failed", attributes...)
 	}
 }

@@ -106,12 +106,15 @@ before dropping any handle or advancing any generation. Failure retains the
 original views for exact Hide cleanup; no replacement child is created. Presentation
 reservation/open obey the same unmap-before-release rule. Removal and quit retain
 closing handles until their exact callbacks, so Hide can still reach a child whose
-asynchronous close has not completed. Discovered profile removal synchronously
-unmaps every matching child before requesting closure, attempts later users even
-after an unmap failure, and retains each original presentation for exact Hide
-retry or its close callback. Failed unmapping never permits directory purge.
-Close requests after tab replacement and profile removal run
-outside native state; pending old creation callbacks remain generation-guarded.
+asynchronous close has not completed. Discovered profile removal and forgetting
+a saved server/device scope mark every matching view closing, then synchronously
+unmap every child before requesting closure. Both paths attempt later users even
+after an unmap failure and retain each original handle and presentation for exact
+Hide retry or its close callback. Scope forgetting preserves unrelated server/device
+profiles and pending-creation guards. Failed unmapping never permits directory purge.
+Removal unmaps and close requests run outside native state. Close requests after
+tab replacement also run outside native state; pending old creation callbacks
+remain generation-guarded.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
@@ -168,9 +171,15 @@ backups and absent-field historical device records remain valid. One account per
 device is enforced by the transaction and validated bounded inventory, rather
 than consuming a reserved migration for an index.
 
-Native cache paths are constructed solely from canonical server/device/account
-UUIDs beneath the prepared owner-private `browser-data/profiles` root. The
-actual initialized CEF request-context path must equal that exact path. A live
+Native System cache paths are constructed solely from canonical server/device/account
+UUIDs beneath the prepared owner-private `browser-data/profiles` root. Only
+macOS `debug_assertions` builds use explicit CEF Mock storage and the corresponding
+`browser-data/development/profiles` root, with `browser-data/development` as their
+CEF root. Every other build retains explicit System storage and the original CEF
+root. Shared `tabs.json` metadata remains under the original System profile path;
+the development cookie path is separate. Existing cookies are never copied,
+re-encrypted or removed merely by switching builds. The actual initialized CEF
+request-context path must equal the selected mode's exact path. A live
 process shares one context for each profile, including multiple session windows. At most 64 request contexts are retained per
 native process; reopening the desktop releases that runtime capacity without
 deleting profiles.
@@ -178,6 +187,22 @@ Tabs are bounded to 16 and 256 KiB, atomically saved locally with private files;
 cookies, storage, history and browser credentials belong to that context. They
 never enter SQLite, RPC bodies, configuration transfers or Worker workspaces.
 Session deletion, Archive and panel closure do not create removal obligations.
+
+`src-tauri/src/browser_storage.rs` owns this compiled policy and the common
+owner-private `browser-data/browser-host.lock` lease. Open the original lock file
+without replacing it, or create a private regular file when absent, before CEF
+initialization; reject symlinks, hard-linked/shared Unix files and competing
+hosts. Never unlink or replace the lock. Keep its exclusive OS file lock until
+CEF returns, tracked workers join and durable local cleanup finishes. Both modes
+share the lease, so they cannot concurrently use or remove the same profiles.
+Older binaries that do not hold this lease must not run concurrently against the
+same data directory. Missing, malformed or inaccessible storage fails explicitly;
+neither mode silently unlocks a keychain or falls back after a System error.
+
+The Mock cookie key is a publicly known test constant with no meaningful at-rest
+protection. It does not change the native Go API/PAT/OAuth credential stores,
+Chromium sandbox requirements, external-child IPC denial or account authority.
+Development behavior cannot establish production Keychain or shutdown acceptance.
 
 Account configuration deletion atomically marks every registered device profile
 removal-pending with the original deletion request and increments its revision,
@@ -212,6 +237,16 @@ CEF's event loop alive until its close callbacks run; background polling joins;
 Only afterward can the complete resolved profile directory be removed. Cookie or
 cache clearing, an Exit event, a close request or a renderer acknowledgment is
 not proof of full process cleanup.
+
+Local profile purge removes its exact development directory and original System
+directory before any server acknowledgment. Forgotten-scope purge similarly
+removes both exact device directories before retiring its local marker. Remove
+development first to preserve shared System metadata if that step fails. Validate
+existing private ancestors without creating missing profile directories; retain
+the original journal and request identity on any failed purge. Synchronize each
+surviving parent after deletion, including an exact retry that observes absence
+after an earlier synchronization failure. Partial deletion never authorizes an
+acknowledgment, and unrelated server/device/account directories remain intact.
 
 Forgetting a saved connection finishes fallible window setup before staging its
 original server/device/connection/pairing and exact removal-request identity.
@@ -254,7 +289,7 @@ requests cannot extend that list. Popups, downloads, file pickers and permission
 denied; script clipboard/paste access is disabled. Ordinary external HTTP(S) pages
 receive only their profile's web credentials, never product or platform credentials.
 The external CEF client has no app process-message handler or native capability.
-Product controls are accepted only from trusted main/saved app documents and
+Product controls are accepted only from registered trusted local/saved app documents and
 independently reread current Go ownership before browsing mutations.
 
 The Go-prepared root enforces private Unix permissions or owner-only inherited

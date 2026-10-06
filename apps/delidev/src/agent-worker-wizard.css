@@ -1,0 +1,68 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.settings-layout .worker-wizard { max-width: 720px; width: 100%; }
+.worker-wizard > h2 { font-size: 16px; margin: 0 0 24px; }
+.worker-wizard > h3 { margin: 28px 0 16px; font-size: 18px; }
+.worker-steps { list-style: none; padding: 0; margin: 0; display: flex; gap: 24px; border-bottom: 1px solid var(--border); padding-bottom: 24px; }
+.worker-steps li { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.worker-steps li > span:first-child { border: 1px solid var(--border); border-radius: 50%; width: 28px; height: 28px; display: grid; place-items: center; flex-shrink: 0; }
+.worker-steps li[aria-current="step"] { color: var(--selected-text); font-weight: 600; }
+.worker-steps li[aria-current="step"] > span:first-child { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.worker-steps li[data-completed="true"] { color: var(--text); }
+.worker-wizard fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.worker-wizard label { display: grid; gap: 8px; margin: 16px 0; }
+.worker-wizard input:not([type="checkbox"]), .worker-wizard select { min-height: 40px; border-radius: 8px; width: 100%; }
+.worker-account-list { border-top: 1px solid var(--border); margin-top: 24px; }
+.worker-account-empty { padding: 16px 0; }
+.worker-account-empty p { margin: 0; }
+.worker-account-empty p + p { margin-top: 4px; color: var(--muted); }
+.worker-wizard .worker-account-row { display: flex; gap: 14px; align-items: flex-start; margin: 0; padding: 16px 0; border-bottom: 1px solid var(--border); }
+.worker-account-row > input { margin-top: 4px; flex-shrink: 0; }
+.worker-account-row > span { display: grid; gap: 4px; }
+.worker-wizard small { color: var(--muted); overflow-wrap: anywhere; }
+.worker-wizard nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.worker-wizard button { min-height: 40px; }
+.worker-harness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.worker-wizard .worker-harness-guidance { margin: 16px 0 0; color: var(--muted); }
+/* Large Harness cards override the shared Settings control minimum and borders.
+   Keep this scoped specificity while the shared :is() rule includes all buttons.
+   The wizard mounts both in the category page and in the task dialog. */
+.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card,
+.settings-task-body .agent-configuration.worker-wizard .worker-harness-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; min-height: 176px; padding: 24px; border: 2px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); text-align: left; }
+.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card[aria-checked="false"]:enabled:hover,
+.settings-task-body .agent-configuration.worker-wizard .worker-harness-card[aria-checked="false"]:enabled:hover { border-color: var(--control-border); background: var(--surface-subtle); }
+.settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card[aria-checked="true"],
+.settings-task-body .agent-configuration.worker-wizard .worker-harness-card[aria-checked="true"] { border-color: var(--accent); background: var(--selected-background); }
+.worker-harness-mark { display: block; flex: 0 0 48px; width: 48px; height: 48px; margin-bottom: 16px; background: var(--text); mask-position: center; mask-size: contain; mask-repeat: no-repeat; }
+.worker-harness-mark-codex { mask-image: url("../public/subscription-marks/openai.svg"); }
+.worker-harness-mark-claude-code { mask-image: url("../public/subscription-marks/claude.svg"); }
+.worker-harness-mark-opencode { mask-image: url("../public/subscription-marks/opencode.svg"); }
+.worker-harness-mark-grok-build { mask-image: url("../public/subscription-marks/grok.svg"); }
+.worker-harness-name { font-size: 16px; line-height: 24px; font-weight: 600; }
+.worker-harness-card small { margin-top: 4px; font-size: 12px; line-height: 18px; }
+.worker-harness-indicator { position: absolute; top: 24px; right: 24px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--control-border); border-radius: 50%; color: var(--on-accent); }
+.worker-harness-card[aria-checked="true"] .worker-harness-indicator { border-color: var(--accent); background: var(--accent); }
+.worker-harness-indicator svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@container (width < 640px) { .worker-harness-grid { grid-template-columns: minmax(0, 1fr); } }
+.worker-routing, .worker-summary { border-top: 1px solid var(--border); margin-top: 24px; padding: 16px 0; }
+.worker-routing > summary { cursor: pointer; min-height: 40px; }
+.worker-routing summary small { display: block; margin-top: 6px; }
+.worker-routing li { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.worker-model-combobox { position: relative; }
+.worker-model-combobox > ul { position: relative; z-index: 1; margin: 4px 0 0; padding: 0; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; max-height: 280px; overflow: auto; }
+.worker-model-combobox li { padding: 12px 16px; cursor: pointer; overflow-wrap: anywhere; }
+.worker-model-combobox li small { display: block; margin-top: 4px; }
+.worker-model-combobox li[aria-selected="true"], .worker-model-combobox li:hover { background: var(--selected-background); }
+.worker-footer { display: flex; justify-content: space-between; gap: 16px; margin: 32px 0 16px; padding-top: 24px; border-top: 1px solid var(--border); }
+.worker-footer > div { display: flex; gap: 12px; }
+.worker-summary p, .worker-summary li { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .worker-steps { gap: 12px; flex-wrap: wrap; }
+  .worker-steps li:not([aria-current="step"]) > span:last-child { display: none; }
+  .worker-footer { flex-wrap: wrap; }
+  .worker-wizard nav button { font-size: 12px; }
+}
+
+.worker-wizard input[type="checkbox"] { width: 16px; min-height: 16px; height: 16px; }
+
+.worker-model-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.worker-model-origin { font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }

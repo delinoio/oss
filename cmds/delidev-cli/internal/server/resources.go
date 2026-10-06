@@ -99,6 +99,10 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 			return f, err
 		}
 	}
+	f.SubscriptionService = rpc.SubscriptionService(input.SubscriptionService)
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || input.AccountType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API) {
+		return f, domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
+	}
 	switch input.AccountType {
 	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED:
 	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API:
@@ -111,7 +115,7 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 	if f.AccountType == domain.SubscriptionAccount && f.ProviderID != "" {
 		return f, domain.Fail(domain.InvalidArgument, "Subscription account lists do not use providers.", "List subscription service accounts without a provider filter.")
 	}
-	if (f.AccountType != "" || f.ProviderID != "") && f.Kind != domain.AccountKind {
+	if (f.AccountType != "" || f.ProviderID != "" || f.SubscriptionService != "") && f.Kind != domain.AccountKind {
 		return f, domain.Fail(domain.InvalidArgument, "Account type filtering is supported only for account lists.", "Select account as the resource kind.")
 	}
 	if input.Filter.PageToken != "" {
@@ -256,6 +260,13 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 			return rpc.Error(err, correlation)
 		}
 		for _, event := range events {
+			kind := rpc.WireKind(event.Kind)
+			if kind == pb.EntityKind_ENTITY_KIND_UNSPECIFIED {
+				// Private store kinds, including routing, have no public resource.
+				// Advance over their durable rows so a full private page cannot loop.
+				cursor.Sequence = event.Cursor
+				continue
+			}
 			token, err := s.Identity.EncodeCursor(security.Cursor{Scope: cursor.Scope, Sequence: event.Cursor})
 			if err != nil {
 				return rpc.Error(err, correlation)
@@ -274,7 +285,7 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 			if err := controller.SetWriteDeadline(time.Now().Add(15 * time.Second)); err != nil {
 				return rpc.Error(err, correlation)
 			}
-			if err := stream.Send(&pb.WatchEventsResponse{Cursor: token, Id: string(event.ID), EntityId: string(event.EntityID), Kind: rpc.WireKind(event.Kind), SessionId: string(event.SessionID), Revision: event.Revision, Action: action, Time: event.Time.Format(time.RFC3339Nano)}); err != nil {
+			if err := stream.Send(&pb.WatchEventsResponse{Cursor: token, Id: string(event.ID), EntityId: string(event.EntityID), Kind: kind, SessionId: string(event.SessionID), Revision: event.Revision, Action: action, Time: event.Time.Format(time.RFC3339Nano)}); err != nil {
 				return rpc.Error(err, correlation)
 			}
 			if err := controller.SetWriteDeadline(time.Time{}); err != nil {

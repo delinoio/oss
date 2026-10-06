@@ -23,7 +23,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 30
+const SchemaVersion = 31
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -290,6 +290,12 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	if version >= 30 {
 		var layout string
 		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='provider_presets_layout'").Scan(&layout); err != nil || layout != "hosted-additions-26-v1" {
+			return corrupt()
+		}
+	}
+	if version >= 31 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='account_oauth_credentials_layout'").Scan(&layout); err != nil || layout != "token-generations-v1" {
 			return corrupt()
 		}
 	}
@@ -765,13 +771,14 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 }
 
 type Filter struct {
-	Kind        domain.Kind        `json:"kind"`
-	SessionID   domain.ID          `json:"session_id,omitempty"`
-	ProjectID   domain.ID          `json:"project_id,omitempty"`
-	ProviderID  domain.ID          `json:"provider_id,omitempty"`
-	AccountType domain.AccountType `json:"account_type,omitempty"`
-	After       domain.ID          `json:"after,omitempty"`
-	Limit       int                `json:"limit"`
+	SubscriptionService domain.SubscriptionService `json:"subscription_service,omitempty"`
+	Kind                domain.Kind                `json:"kind"`
+	SessionID           domain.ID                  `json:"session_id,omitempty"`
+	ProjectID           domain.ID                  `json:"project_id,omitempty"`
+	ProviderID          domain.ID                  `json:"provider_id,omitempty"`
+	AccountType         domain.AccountType         `json:"account_type,omitempty"`
+	After               domain.ID                  `json:"after,omitempty"`
+	Limit               int                        `json:"limit"`
 }
 
 func (f Filter) validate() error {
@@ -788,13 +795,16 @@ func (f Filter) validate() error {
 			}
 		}
 	}
-	if f.ProviderID != "" || f.AccountType != "" {
+	if f.ProviderID != "" || f.AccountType != "" || f.SubscriptionService != "" {
 		if f.Kind != domain.AccountKind {
 			return domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind.")
 		}
 	}
 	if f.AccountType != "" && f.AccountType != domain.APIAccount && f.AccountType != domain.SubscriptionAccount {
 		return domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription.")
+	}
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || f.AccountType == domain.APIAccount) {
+		return domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
 	}
 	return nil
 }
@@ -815,6 +825,10 @@ func listRows(ctx context.Context, q queryer, f Filter, limit int) ([]Record, er
 	if f.AccountType != "" {
 		query += " AND json_extract(CAST(body AS TEXT),'$.type')=?"
 		args = append(args, f.AccountType)
+	}
+	if f.SubscriptionService != "" {
+		query += " AND json_extract(body,'$.type')='subscription' AND json_extract(body,'$.subscription_service')=?"
+		args = append(args, f.SubscriptionService)
 	}
 	if f.SessionID != "" {
 		query += " AND session_id=?"

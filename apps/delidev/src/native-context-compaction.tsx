@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
 const exact = (value: Document, keys: string[]) => Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
@@ -9,10 +9,11 @@ export function validNativeContextCompaction(progress: unknown): boolean {
 }
 
 export function NativeContextCompaction({ progress, state }: { progress: unknown; state: string }) {
-  if (state !== "complete" || !validNativeContextCompaction(progress)) return <details><summary>Context compaction · Unavailable</summary><p>The retained context observation is unavailable or inconsistent.</p></details>;
+  useLocale();
+  if (state !== "complete" || !validNativeContextCompaction(progress)) return <details><summary>{copy("native-context-compaction.contextCompactionUnavailable_368e82")}</summary><p>{copy("native-context-compaction.theRetainedContextObservationIsUnavailable_e3e304")}</p></details>;
   const c = object(object(progress).compaction);
-  return <details open><summary>Context compaction · Automatic · {c.stage === "started" ? "Started" : "Completed"}</summary>
-    <p>{c.harness === "opencode" ? "OpenCode" : "Codex"} is compacting its working context. The conversation remains retained.</p>
-    <dl><dt>Current context tokens</dt><dd>Not reported</dd><dt>Original context reference</dt><dd>{c.native_item_id as string}</dd></dl>
+  return <details open><summary><LocalizedText id="native-context-compaction.contextCompactionAutomatic_e2d9be" components={{ s0: <>{c.stage === "started" ? copy("native-context-compaction.started_ecbc89") : copy("native-context-compaction.completed_22a970")}</> }} /></summary>
+    <p><LocalizedText id="native-context-compaction.isCompactingItsWorkingContextThe_3d6bfb" components={{ s0: <>{c.harness === "opencode" ? copy("native-context-compaction.opencode_3af0e5") : copy("native-context-compaction.codex_616efb")}</> }} /></p>
+    <dl><dt>{copy("native-context-compaction.currentContextTokens_77a977")}</dt><dd>{copy("native-context-compaction.notReported_adadfa")}</dd><dt>{copy("native-context-compaction.originalContextReference_ad006e")}</dt><dd>{c.native_item_id as string}</dd></dl>
   </details>;
 }

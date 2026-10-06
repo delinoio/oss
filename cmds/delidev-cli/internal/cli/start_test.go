@@ -30,7 +30,7 @@ import (
 // Only the test binary's explicit server re-exec path enters the CLI. Tests
 // never start an installed harness or load a user data directory.
 func init() {
-	if len(os.Args) >= 5 && os.Args[1] == "--data-dir" && ((os.Args[3] == "server" && os.Args[4] == "run") || (os.Args[3] == "worker" && os.Args[4] == "start")) {
+	if len(os.Args) >= 5 && os.Args[1] == "--data-dir" && ((os.Args[3] == "server" && (os.Args[4] == "run" || os.Args[4] == "desktop-host")) || (os.Args[3] == "worker" && os.Args[4] == "start")) {
 		os.Exit(Run(context.Background(), os.Args[1:], IO{}))
 	}
 }
@@ -58,7 +58,7 @@ func startupCertificate(t *testing.T, expired bool) server.Config {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := server.Config{DataDir: filepath.Join(root, "server"), Listen: "127.0.0.1:0", TLSCertificate: filepath.Join(root, "tls.pem"), TLSKey: filepath.Join(root, "key.pem")}
+	config := server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: filepath.Join(root, "server"), Listen: "127.0.0.1:0", TLSCertificate: filepath.Join(root, "tls.pem"), TLSKey: filepath.Join(root, "key.pem")}
 	if err := os.WriteFile(config.TLSCertificate, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); err != nil {
 		t.Fatal(err)
 	}

@@ -44,7 +44,7 @@ func TestDesktopLaunchSharesDeadlineAcrossAdmissionAndController(t *testing.T) {
 	started := time.Now()
 	done := make(chan error, 1)
 	go func() {
-		_, err := detachedStartup(ctx, options{dataDir: root}, server.Config{DataDir: root, Listen: "127.0.0.1:0"}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}, startupDesktopLaunch)
+		_, err := detachedStartup(ctx, options{dataDir: root}, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0"}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}, startupDesktopLaunch)
 		done <- err
 	}()
 	select {
@@ -89,7 +89,7 @@ func TestDesktopLaunchCanceledControllersCannotAcquireUncontendedLocks(t *testin
 	if _, err := waitStartupController(ctx, root); domain.SafeError(err).Code != domain.Canceled {
 		t.Fatal("canceled launch acquired startup controller", err)
 	}
-	if _, err := detachedStartup(ctx, options{dataDir: root}, server.Config{DataDir: root, Listen: "127.0.0.1:0"}, IO{}, startupDesktopLaunch); domain.SafeError(err).Code != domain.Canceled {
+	if _, err := detachedStartup(ctx, options{dataDir: root}, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0"}, IO{}, startupDesktopLaunch); domain.SafeError(err).Code != domain.Canceled {
 		t.Fatal("canceled fresh launch was admitted", err)
 	}
 	if intent, err := server.ReadLifecycle(root); err != nil || intent.Version != 0 {
@@ -123,7 +123,7 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := server.Config{DataDir: root, Listen: "127.0.0.1:0"}
+	config := server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0"}
 	if _, err := server.WriteRunning(root, config); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,12 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ownership.Close()
+	ownershipClosed := false
+	defer func() {
+		if !ownershipClosed {
+			_ = ownership.Close()
+		}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	o := options{dataDir: root}
@@ -197,6 +202,7 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	if err := ownership.Close(); err != nil {
 		t.Fatal(err)
 	}
+	ownershipClosed = true
 	if err := <-done; err != nil {
 		t.Fatal("fresh launch did not resume after cleanup", err)
 	}
@@ -204,8 +210,31 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.transport.CloseIdleConnections()
-	defer c.system.StopServer(context.Background(), request(c, &pb.StopServerRequest{RequestId: string(domain.NewID())}))
+	// StopServer acknowledges the durable stop intent before the native process
+	// releases server.lock. Join that real lifecycle boundary before TempDir
+	// cleanup so Windows cannot report a live server handle as test residue.
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer stopCancel()
+		if _, err := c.system.StopServer(stopCtx, request(c, &pb.StopServerRequest{RequestId: string(domain.NewID())})); err != nil {
+			t.Error("replacement server stop was not accepted", err)
+		}
+		for {
+			lock, err := security.TryLock(filepath.Join(root, "server.lock"))
+			if err == nil {
+				if err := lock.Close(); err != nil {
+					t.Error("replacement server lock did not close", err)
+				}
+				break
+			}
+			if stopCtx.Err() != nil {
+				t.Error("replacement server did not release ownership", stopCtx.Err())
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		c.transport.CloseIdleConnections()
+	})
 	next, err := server.ReadLifecycle(root)
 	if err != nil || next.State != server.DesiredRunning || next.Generation == original.Generation {
 		t.Fatal("fresh launch did not publish a replacement generation", next, err)
@@ -214,7 +243,7 @@ func TestDesktopLaunchJoinsStillAnsweringStoppedServer(t *testing.T) {
 
 func TestDesktopLaunchPreservesLegacyListenerAndAbsentConfiguration(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")
-	config := server.Config{DataDir: root, Listen: "127.0.0.1:0"}
+	config := server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0"}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	foreground, exit := context.WithCancel(ctx)
@@ -285,7 +314,7 @@ func TestDesktopLaunchPreservesLegacyListenerAndAbsentConfiguration(t *testing.T
 
 func TestDesktopLaunchInitializesReusesAndPreservesStop(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")
-	config := server.Config{DataDir: root, Listen: "127.0.0.1:0"}
+	config := server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0"}
 	o := options{dataDir: root}
 	streams := IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
@@ -366,7 +395,7 @@ func TestDesktopLaunchPreservesMalformedServiceAndIncompleteCleanup(t *testing.T
 			if err := security.PrivateDir(root); err != nil {
 				t.Fatal(err)
 			}
-			config := server.Config{DataDir: root, Listen: "127.0.0.1:0"}
+			config := server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0"}
 			var held *security.Lock
 			original := []byte("{malformed-registration}")
 			if mode == "service" {

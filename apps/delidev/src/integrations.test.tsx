@@ -28,7 +28,8 @@ function fixture() {
 it("creates a fine-grained profile without token or fabricated identity fields", async () => {
   const f = fixture(); render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
-  expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Profile name" }));
+  const initialName = await screen.findByRole("textbox", { name: "Profile name" });
+  expect(document.activeElement).toBe(initialName);
   expect((screen.getByRole("textbox", { name: "Resource owner" }) as HTMLInputElement).required).toBe(true);
   expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Team" } });
@@ -169,7 +170,7 @@ it("renders separate storage and identity facts with readable immutable metadata
   expect(screen.getByText("Identity verification does not confirm repository access.")).toBeTruthy();
   expect(f.validate).not.toHaveBeenCalled(); fireEvent.click(manage);
   expect(screen.getByText(/Authenticated as fixture-user · GitHub ID 9007199254740993/)).toBeTruthy();
-  expect(screen.getByText("Checked at 2026-09-30T04:00:00Z")).toBeTruthy();
+  expect(within(screen.getByRole("dialog")).getByText("Checked at 2026-09-30T04:00:00Z")).toBeTruthy();
   expect((screen.getByText("Create a token on GitHub").closest("details") as HTMLDetailsElement).open).toBe(false);
   const input = screen.getByLabelText("GitHub personal access token") as HTMLInputElement;
   expect(input.value).toBe(""); expect(input.placeholder).toBe("Enter a personal access token");
@@ -235,7 +236,7 @@ it("keeps declining deletion free of side effects", async () => {
 it("retains an uncertain profile save exactly through category inactivity without automatic replay", async () => {
   const f = fixture(); f.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
   const view = render(f.view()); fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Team" } });
+  fireEvent.change(await screen.findByRole("textbox", { name: "Profile name" }), { target: { value: "Team" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "team-owner" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   await screen.findByRole("button", { name: "Retry the same profile save" });

@@ -16,6 +16,7 @@ use cef::*;
 use delidev_desktop::{
     Connector, NativeFailure, SavedConnection,
     browser::{self, Policy, ProfileRecord, ProfileState, Tab, Tabs},
+    browser_storage::{BrowserStorage, BrowserStorageMode},
     canonical_id,
 };
 use serde::{Deserialize, Serialize};
@@ -76,7 +77,10 @@ struct ViewRequest {
 }
 struct RuntimeProfile {
     record: ProfileRecord,
+    // Shared tab metadata stays in the original directory. Only CEF data uses
+    // the mode-specific cache directory; deletion retains both identities.
     path: PathBuf,
+    cache_path: PathBuf,
     policy: Arc<Mutex<Policy>>,
     scope: Option<SavedConnection>,
     tabs: Tabs,
@@ -86,6 +90,7 @@ struct RuntimeProfile {
     removing: bool,
     storage_revision: u64,
 }
+#[derive(Clone)]
 struct View {
     profile: String,
     generation: u64,
@@ -198,6 +203,7 @@ impl ReservationAttempt {
 }
 pub struct BrowserHost {
     root: PathBuf,
+    profile_storage: BrowserStorage,
     connector: Arc<Connector>,
     observer: Arc<Connector>,
     state: Mutex<State>,
@@ -214,13 +220,14 @@ pub struct BrowserHost {
     address_join: Mutex<Option<thread::JoinHandle<()>>>,
 }
 impl BrowserHost {
-    pub fn new(root: PathBuf, connector: Arc<Connector>) -> Result<Self> {
-        browser::private_dir(&root)?;
+    pub fn new(root: PathBuf, connector: Arc<Connector>, mode: BrowserStorageMode) -> Result<Self> {
+        let profile_storage = BrowserStorage::open(root.clone(), mode)?;
         browser::private_dir(&root.join("profiles"))?;
         browser::private_dir(&root.join("removals"))?;
         browser::private_dir(&root.join("forgotten"))?;
         Ok(Self {
             root,
+            profile_storage,
             observer: Arc::new(connector.browser_observer()?),
             connector,
             state: Mutex::new(State::default()),
@@ -263,6 +270,10 @@ impl BrowserHost {
             host.close_browser(1);
         }
         Ok(())
+    }
+
+    pub fn cache_root(&self) -> PathBuf {
+        self.profile_storage.cache_root()
     }
 
     // Blocking worker only. Hold the publication fence until the UI callback
@@ -552,6 +563,7 @@ impl BrowserHost {
         } else {
             None
         };
+        let cache_path = self.profile_storage.prepare_profile(&record)?;
         let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
         let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if self.stopping.load(Ordering::Acquire)
@@ -587,6 +599,7 @@ impl BrowserHost {
                 RuntimeProfile {
                     record,
                     path,
+                    cache_path,
                     policy: Arc::new(Mutex::new(policy)),
                     scope,
                     tabs,
@@ -697,7 +710,7 @@ impl BrowserHost {
             p.pending.push(request);
             if p.context.is_none() {
                 let settings = RequestContextSettings {
-                    cache_path: p.path.to_string_lossy().as_ref().into(),
+                    cache_path: p.cache_path.to_string_lossy().as_ref().into(),
                     persist_session_cookies: 1,
                     ..Default::default()
                 };
@@ -1177,30 +1190,40 @@ impl BrowserHost {
     fn close_profile_with(
         &self,
         profile: &str,
+        unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<()> {
+        self.close_profiles_with(&[profile.to_owned()], unmap)
+    }
+
+    fn close_profiles_with(
+        &self,
+        profiles: &[String],
         mut unmap: impl FnMut(&View) -> Result<()>,
     ) -> Result<()> {
-        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let views: Vec<_> = {
+            let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+            state
+                .views
+                .values_mut()
+                .filter(|view| profiles.contains(&view.profile))
+                .map(|view| {
+                    view.closing = true;
+                    view.clone()
+                })
+                .collect()
+        };
         let mut first_failure = None;
-        let mut closing = Vec::new();
         // Removal must synchronously hide every credential-bearing child before
         // asynchronous CEF closure. Keep the exact handles for Hide retries and
-        // close callbacks, including when one native unmap fails.
-        for view in state
-            .views
-            .values_mut()
-            .filter(|view| view.profile == profile)
-        {
-            view.closing = true;
+        // close callbacks, including when one native unmap fails. Native calls
+        // use retained snapshots outside state so callbacks can acquire it.
+        for view in &views {
             if let Err(code) = unmap(view) {
                 first_failure.get_or_insert(code);
             }
-            if let Some(browser) = &view.browser {
-                closing.push(browser.clone());
-            }
         }
-        drop(state);
-        for browser in closing {
-            if let Some(host) = browser.host() {
+        for view in views {
+            if let Some(host) = view.browser.and_then(|browser| browser.host()) {
                 host.close_browser(1);
             }
         }
@@ -1304,31 +1327,33 @@ impl BrowserHost {
     }
 
     pub fn close_scope(&self, scope: &SavedConnection) {
-        let Ok(mut state) = self.state.lock() else {
-            return;
+        if let Err(code) = self.close_scope_with(scope, unmap_view) {
+            tracing::warn!(operation = "browser_scope_close", ?code);
+        }
+    }
+
+    fn close_scope_with(
+        &self,
+        scope: &SavedConnection,
+        unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<()> {
+        let profiles = {
+            let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+            state
+                .profiles
+                .iter_mut()
+                .filter(|(_, profile)| {
+                    profile.record.data.server_id == scope.server_id
+                        && profile.record.data.device_id == scope.device_id
+                        && profile.removing
+                })
+                .map(|(id, profile)| {
+                    profile.pending.clear();
+                    id.clone()
+                })
+                .collect::<Vec<_>>()
         };
-        let mut profiles = Vec::new();
-        for (id, profile) in &mut state.profiles {
-            if profile.record.data.server_id == scope.server_id
-                && profile.record.data.device_id == scope.device_id
-                && profile.removing
-            {
-                profile.pending.clear();
-                profiles.push(id.clone());
-            }
-        }
-        let closing: Vec<_> = state
-            .views
-            .values()
-            .filter(|view| profiles.contains(&view.profile))
-            .filter_map(|view| view.browser.clone())
-            .collect();
-        drop(state);
-        for browser in closing {
-            if let Some(host) = browser.host() {
-                host.close_browser(1);
-            }
-        }
+        self.close_profiles_with(&profiles, unmap)
     }
 
     fn finish_forgotten(&self, started: Instant) -> Result<()> {
@@ -1370,19 +1395,8 @@ impl BrowserHost {
                     continue;
                 }
             }
-            let server = self.root.join("profiles").join(&scope.server_id);
-            let device = server.join(&scope.device_id);
-            if server.exists() {
-                browser::private_dir(&server)?;
-                if device.exists() {
-                    browser::private_dir(&device)?;
-                    fs::remove_dir_all(&device).map_err(|_| NativeFailure::StorageUnavailable)?;
-                    #[cfg(unix)]
-                    std::fs::File::open(&server)
-                        .and_then(|f| f.sync_all())
-                        .map_err(|_| NativeFailure::StorageUnavailable)?;
-                }
-            }
+            self.profile_storage
+                .remove_device(&scope.server_id, &scope.device_id)?;
             fs::remove_file(path).map_err(|_| NativeFailure::StorageUnavailable)?;
             tracing::info!(
                 operation = "browser_scope_removal",
@@ -1613,14 +1627,9 @@ impl BrowserHost {
                 // owning server is temporarily offline.
                 // Its receipt remains pending until a fresh exact status and
                 // acknowledgment.
-                let cache = browser::profile_path(&self.root.join("profiles"), &removal.record)?;
                 removal.shutdown_confirmed = true;
                 browser::write_private(&path, &removal)?;
-                fs::remove_dir_all(&cache).map_err(|_| NativeFailure::StorageUnavailable)?;
-                #[cfg(unix)]
-                std::fs::File::open(cache.parent().unwrap())
-                    .and_then(|f| f.sync_all())
-                    .map_err(|_| NativeFailure::StorageUnavailable)?;
+                self.profile_storage.remove_profile(&removal.record)?;
                 Ok(())
             })();
             if let Err(code) = result {
@@ -1792,7 +1801,7 @@ fn create_child(
         return Err(NativeFailure::Stopped);
     }
     let actual = CefString::from(&context.cache_path()).to_string();
-    if std::path::Path::new(&actual) != p.path {
+    if std::path::Path::new(&actual) != p.cache_path {
         return Err(NativeFailure::InvalidEvidence);
     }
     let url = p
@@ -2084,16 +2093,94 @@ fn position(
 mod tests {
     use std::os::unix::fs::PermissionsExt;
 
+    use cef::rc::ConvertReturnValue;
     use delidev_desktop::browser::Profile;
 
     use super::*;
+
+    struct CloseProbe {
+        host: std::sync::Weak<BrowserHost>,
+        window: String,
+        events: Arc<Mutex<Vec<String>>>,
+    }
+
+    fn browser_fixture(
+        host: &Arc<BrowserHost>,
+        window: &str,
+        events: &Arc<Mutex<Vec<String>>>,
+    ) -> Browser {
+        unsafe extern "C" fn get_host(
+            raw: *mut cef::sys::cef_browser_t,
+        ) -> *mut cef::sys::cef_browser_host_t {
+            cef::rc::RcImpl::<_, cef::BrowserHost>::get(raw)
+                .interface
+                .clone()
+                .into()
+        }
+        unsafe extern "C" fn close_browser(raw: *mut cef::sys::cef_browser_host_t, force: i32) {
+            let probe = &cef::rc::RcImpl::<_, CloseProbe>::get(raw).interface;
+            let unlocked = probe
+                .host
+                .upgrade()
+                .is_some_and(|host| host.state.try_lock().is_ok());
+            probe.events.lock().unwrap().push(format!(
+                "close:{}:unlocked={unlocked}:force={force}",
+                probe.window
+            ));
+        }
+        // Use disposable reference-counted CEF interfaces with no native
+        // window. Only the injected unmap and close probes run;
+        // callbacks stay held.
+        // SAFETY: These CEF interfaces contain only integer fields and optional
+        // function pointers. RcImpl fills their reference-counted base below.
+        let mut raw_host: cef::sys::cef_browser_host_t = unsafe { std::mem::zeroed() };
+        raw_host.close_browser = Some(close_browser);
+        let probe = CloseProbe {
+            host: Arc::downgrade(host),
+            window: window.into(),
+            events: Arc::clone(events),
+        };
+        let raw_host = cef::rc::RcImpl::new(raw_host, probe).cast::<cef::sys::cef_browser_host_t>();
+        let child_host: cef::BrowserHost = raw_host.wrap_result();
+        // SAFETY: The browser interface has the same nullable C field layout.
+        let mut raw: cef::sys::cef_browser_t = unsafe { std::mem::zeroed() };
+        raw.get_host = Some(get_host);
+        cef::rc::RcImpl::new(raw, child_host)
+            .cast::<cef::sys::cef_browser_t>()
+            .wrap_result()
+    }
+
+    fn forgotten_scope(record: &ProfileRecord) -> SavedConnection {
+        SavedConnection {
+            version: 1,
+            revision: 2,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "fixture".into(),
+            endpoint: "https://server.test".into(),
+            server_id: record.data.server_id.clone(),
+            pairing_id: uuid::Uuid::now_v7().to_string(),
+            device_id: record.data.device_id.clone(),
+            state: delidev_desktop::SavedConnectionState::Removing,
+            created_at: "2026-09-30T00:00:00Z".into(),
+            removal: Some(delidev_desktop::RemovalMetadata {
+                request_id: uuid::Uuid::now_v7().to_string(),
+                expected_revision: 1,
+            }),
+        }
+    }
     fn storage_fixture() -> (tempfile::TempDir, Arc<BrowserHost>, ProfileRecord) {
+        storage_fixture_with_mode(BrowserStorageMode::System)
+    }
+
+    fn storage_fixture_with_mode(
+        mode: BrowserStorageMode,
+    ) -> (tempfile::TempDir, Arc<BrowserHost>, ProfileRecord) {
         let temp = tempfile::tempdir().unwrap();
         let sidecar = temp.path().join("sidecar");
         fs::write(&sidecar, "#!/bin/sh\nexit 1\n").unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
         let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
-        let host = Arc::new(BrowserHost::new(temp.path().join("cef"), connector).unwrap());
+        let host = Arc::new(BrowserHost::new(temp.path().join("cef"), connector, mode).unwrap());
         let record = ProfileRecord {
             id: uuid::Uuid::now_v7().to_string(),
             revision: 1,
@@ -2106,6 +2193,113 @@ mod tests {
             },
         };
         (temp, host, record)
+    }
+
+    #[test]
+    fn development_context_uses_isolated_cookies_and_shared_tabs() {
+        let (_temp, host, record) = storage_fixture_with_mode(BrowserStorageMode::DevelopmentMock);
+        let original = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
+        fs::write(original.join("Cookies"), b"original cookie fixture").unwrap();
+        let view = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &view).unwrap();
+        host.prepare_open(
+            "fixture",
+            &view,
+            None,
+            record.clone(),
+            "https://fixture.test/",
+        )
+        .unwrap();
+        let state = host.state.lock().unwrap();
+        let profile = &state.profiles[&record.id];
+        assert_eq!(profile.path, original);
+        assert!(
+            profile
+                .cache_path
+                .starts_with(host.root.join("development/profiles"))
+        );
+        assert!(!profile.cache_path.join("Cookies").exists());
+        let tabs: Tabs = read_json(&original.join("tabs.json")).unwrap();
+        assert_eq!(tabs.tabs[0].url, "https://fixture.test/");
+        assert_eq!(
+            fs::read(original.join("Cookies")).unwrap(),
+            b"original cookie fixture"
+        );
+    }
+
+    #[test]
+    fn failed_cookie_purge_retains_receipt_and_sends_no_acknowledgment() {
+        for failing_mode in [
+            BrowserStorageMode::DevelopmentMock,
+            BrowserStorageMode::System,
+        ] {
+            let (temp, host, mut record) =
+                storage_fixture_with_mode(BrowserStorageMode::DevelopmentMock);
+            record.revision = 2;
+            record.data.state = ProfileState::RemovalPending;
+            record.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
+            let development = host.profile_storage.prepare_profile(&record).unwrap();
+            let original = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
+            fs::write(original.join("Cookies"), b"original fixture").unwrap();
+            let observed = temp.path().join("desktop-client");
+            browser::private_dir(&observed).unwrap();
+            let mut removed = record.clone();
+            removed.revision += 1;
+            removed.data.state = ProfileState::Removed;
+            browser::write_private(
+                &observed.join("pending.json"),
+                &serde_json::json!({"version":1,"result":{"profile":record}}),
+            )
+            .unwrap();
+            browser::write_private(
+                &observed.join("removed.json"),
+                &serde_json::json!({"version":1,"result":{"profile":removed}}),
+            )
+            .unwrap();
+            fs::write(
+                temp.path().join("sidecar"),
+                r#"#!/bin/sh
+for arg do
+  if [ "$arg" = "confirm-removal" ]; then
+    : > "$2/desktop-client/acknowledged"
+    exec /bin/cat "$2/desktop-client/removed.json"
+  fi
+done
+exec /bin/cat "$2/desktop-client/pending.json"
+"#,
+            )
+            .unwrap();
+            host.prepare_removal(record.clone(), None).unwrap();
+            let intent = host
+                .root
+                .join("removals")
+                .join(format!("{}.json", record.id));
+            let request = read_json::<Removal>(&intent).unwrap().request_id;
+            let blocked = if failing_mode == BrowserStorageMode::System {
+                &original
+            } else {
+                &development
+            };
+            fs::set_permissions(blocked, fs::Permissions::from_mode(0o755)).unwrap();
+            host.stopping.store(true, Ordering::Release);
+            assert_eq!(host.finish_removals(), Err(NativeFailure::PermissionDenied));
+            assert_eq!(read_json::<Removal>(&intent).unwrap().request_id, request);
+            assert!(!observed.join("acknowledged").exists());
+            assert_eq!(
+                fs::read(original.join("Cookies")).unwrap(),
+                b"original fixture"
+            );
+            assert_eq!(
+                development.exists(),
+                failing_mode == BrowserStorageMode::DevelopmentMock
+            );
+            fs::set_permissions(blocked, fs::Permissions::from_mode(0o700)).unwrap();
+            host.finish_removals().unwrap();
+            assert!(observed.join("acknowledged").exists());
+            assert!(!intent.exists());
+            assert!(!original.exists());
+            assert!(!development.exists());
+        }
     }
 
     fn active_storage_fixture() -> (
@@ -2533,6 +2727,7 @@ mod tests {
             host.prepare_removal(record.clone(), None).unwrap();
             let mut unmapped = Vec::new();
             let result = host.close_profile_with(&record.id, |view| {
+                assert!(host.state.try_lock().is_ok());
                 assert!(view.closing);
                 assert_eq!(view.view_id, view_id);
                 assert_eq!(view.generation, original.generation);
@@ -2573,6 +2768,232 @@ mod tests {
             assert!(state.views.contains_key("unrelated"));
             assert!(state.profiles[&record.id].path.join("tabs.json").exists());
         }
+    }
+
+    #[test]
+    fn forgotten_scope_unmaps_every_child_before_close_and_retains_callback_ownership() {
+        for failed_window in [None, Some("fixture")] {
+            let (_temp, host, record, view_id, original) = active_storage_fixture();
+            let scope = forgotten_scope(&record);
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let mut records = Vec::new();
+            let mut requests = vec![original.clone()];
+            for window in ["second", "other-device", "other-server"] {
+                let mut other = record.clone();
+                other.id = uuid::Uuid::now_v7().to_string();
+                other.data.account_id = uuid::Uuid::now_v7().to_string();
+                match window {
+                    "other-device" => other.data.device_id = uuid::Uuid::now_v7().to_string(),
+                    "other-server" => other.data.server_id = uuid::Uuid::now_v7().to_string(),
+                    _ => {}
+                }
+                host.reserve(window, &view_id).unwrap();
+                host.prepare_open(
+                    window,
+                    &view_id,
+                    None,
+                    other.clone(),
+                    "https://fixture.test",
+                )
+                .unwrap();
+                let mut request = original.clone();
+                request.window = window.into();
+                let mut state = host.state.lock().unwrap();
+                let mut view = state.views["fixture"].clone();
+                view.profile = other.id.clone();
+                view.request = request.clone();
+                state.views.insert(window.into(), view);
+                state
+                    .profiles
+                    .get_mut(&other.id)
+                    .unwrap()
+                    .pending
+                    .push(request.clone());
+                records.push(other);
+                requests.push(request);
+            }
+            {
+                let mut state = host.state.lock().unwrap();
+                let mut sibling = state.views["fixture"].clone();
+                sibling.request.window = "sibling".into();
+                requests.push(sibling.request.clone());
+                state.views.insert("sibling".into(), sibling);
+                for (window, view) in &mut state.views {
+                    view.browser = Some(browser_fixture(&host, window, &events));
+                }
+                state.live = state.views.len();
+                state
+                    .profiles
+                    .get_mut(&record.id)
+                    .unwrap()
+                    .pending
+                    .push(original.clone());
+            }
+            let handles: BTreeMap<_, _> = host
+                .state
+                .lock()
+                .unwrap()
+                .views
+                .iter()
+                .map(|(window, view)| (window.clone(), view.browser.as_ref().unwrap().get_raw()))
+                .collect();
+            host.prepare_forget(&scope).unwrap();
+            // Discovery must also discard context-ready work queued before
+            // close.
+            host.state
+                .lock()
+                .unwrap()
+                .profiles
+                .get_mut(&record.id)
+                .unwrap()
+                .pending
+                .push(original.clone());
+            let result = host.close_scope_with(&scope, |view| {
+                let state = host.state.try_lock().expect("unmap must run outside state");
+                for window in ["fixture", "second", "sibling"] {
+                    assert!(state.views[window].closing);
+                }
+                assert!(view.browser.is_some());
+                assert_eq!(view.view_id, view_id);
+                assert_eq!(view.generation, original.generation);
+                events
+                    .lock()
+                    .unwrap()
+                    .push(format!("unmap:{}", view.request.window));
+                if failed_window == Some(view.request.window.as_str()) {
+                    Err(NativeFailure::SidecarFailed)
+                } else {
+                    Ok(())
+                }
+            });
+            assert_eq!(
+                result,
+                failed_window.map_or(Ok(()), |_| Err(NativeFailure::SidecarFailed))
+            );
+            assert_eq!(
+                *events.lock().unwrap(),
+                [
+                    "unmap:fixture",
+                    "unmap:second",
+                    "unmap:sibling",
+                    "close:fixture:unlocked=true:force=1",
+                    "close:second:unlocked=true:force=1",
+                    "close:sibling:unlocked=true:force=1",
+                ]
+            );
+            {
+                let state = host.state.lock().unwrap();
+                assert_eq!(state.live, 5);
+                assert_eq!(state.views.len(), 5);
+                for window in ["fixture", "second", "sibling"] {
+                    assert!(state.views[window].closing);
+                    assert!(state.views[window].browser.is_some());
+                    assert_eq!(
+                        state.views[window].browser.as_ref().unwrap().get_raw(),
+                        handles[window]
+                    );
+                }
+                for window in ["other-device", "other-server"] {
+                    assert!(!state.views[window].closing);
+                    let profile = &state.profiles[&state.views[window].profile];
+                    assert!(!profile.removing);
+                    assert_eq!(profile.pending.len(), 1);
+                }
+                assert!(state.profiles[&record.id].pending.is_empty());
+                assert!(state.profiles[&records[0].id].pending.is_empty());
+                for profile in state.profiles.values() {
+                    assert!(profile.path.join("tabs.json").exists());
+                }
+            }
+            host.stopping.store(true, Ordering::Release);
+            assert_eq!(host.finish_removals(), Err(NativeFailure::InvalidEvidence));
+            let intent = host
+                .forgotten_path(&scope.server_id, &scope.device_id)
+                .unwrap();
+            assert!(
+                read_json::<ForgottenScope>(&intent).unwrap()
+                    == ForgottenScope::from_connection(&scope).unwrap()
+            );
+            // Repeated discovery retains the same handles and durable intent.
+            host.prepare_forget(&scope).unwrap();
+            host.close_scope_with(&scope, |_| Ok(())).unwrap();
+            {
+                let state = host.state.lock().unwrap();
+                assert_eq!(state.live, 5);
+                for (window, handle) in &handles {
+                    assert_eq!(
+                        state.views[window].browser.as_ref().unwrap().get_raw(),
+                        *handle
+                    );
+                }
+            }
+            for request in requests
+                .iter()
+                .filter(|r| matches!(r.window.as_str(), "fixture" | "second" | "sibling"))
+            {
+                host.child_closed(request);
+            }
+            let state = host.state.lock().unwrap();
+            assert_eq!(state.live, 2);
+            assert_eq!(state.views.len(), 2);
+            assert!(state.views.contains_key("other-device"));
+            assert!(state.views.contains_key("other-server"));
+            assert!(intent.exists());
+            for profile in state.profiles.values() {
+                assert!(profile.path.join("tabs.json").exists());
+            }
+        }
+    }
+
+    #[test]
+    fn forgotten_scope_keeps_pending_creation_denied_until_its_exact_callback() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        let scope = forgotten_scope(&record);
+        {
+            let mut state = host.state.lock().unwrap();
+            state.views.get_mut("fixture").unwrap().creation_pending = true;
+            state.live = 1;
+        }
+        host.prepare_forget(&scope).unwrap();
+        for _ in 0..2 {
+            host.close_scope_with(&scope, |view| {
+                assert!(view.closing);
+                assert!(view.creation_pending);
+                assert!(view.browser.is_none());
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(
+                host.hide_with("fixture", &record.id, &view_id, |_| panic!(
+                    "creation remains pending"
+                ))
+                .err(),
+                Some(NativeFailure::Busy)
+            );
+        }
+        assert_eq!(
+            host.prepare_control("fixture", &record.id, &view_id, Action::Reload, None, None),
+            Err(NativeFailure::Stopped)
+        );
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let child = browser_fixture(&host, "fixture", &events);
+        assert_eq!(
+            host.child_created(&record.id, &request, &child),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert_eq!(
+            *events.lock().unwrap(),
+            ["close:fixture:unlocked=true:force=1"]
+        );
+        let state = host.state.lock().unwrap();
+        assert_eq!(state.live, 1);
+        assert!(state.views["fixture"].closing);
+        assert!(state.views["fixture"].creation_pending);
+        drop(state);
+        host.child_closed(&request);
+        assert_eq!(host.state.lock().unwrap().live, 0);
+        assert!(host.state.lock().unwrap().views.is_empty());
+        assert!(host.hide("fixture", &record.id, &view_id).is_ok());
     }
 
     #[test]
@@ -3202,7 +3623,12 @@ esac
         fs::write(&sidecar, "#!/bin/sh\nexit 1\n").unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
         let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
-        let host = BrowserHost::new(temp.path().join("cef"), connector).unwrap();
+        let host = BrowserHost::new(
+            temp.path().join("cef"),
+            connector,
+            BrowserStorageMode::System,
+        )
+        .unwrap();
         let scope = SavedConnection {
             version: 1,
             revision: 2,
@@ -3245,6 +3671,12 @@ esac
         let mut other = record.clone();
         other.data.device_id = uuid::Uuid::now_v7().to_string();
         let preserved = browser::profile_path(&host.root.join("profiles"), &other).unwrap();
+        let development_root = host.root.join("development");
+        browser::private_dir(&development_root).unwrap();
+        let development_profiles = development_root.join("profiles");
+        browser::private_dir(&development_profiles).unwrap();
+        let development = browser::profile_path(&development_profiles, &record).unwrap();
+        let development_preserved = browser::profile_path(&development_profiles, &other).unwrap();
         // A native staging marker without an accepted Go receipt must preserve
         // the entire profile on exit and release denial after fresh evidence.
         let mut paired = scope.clone();
@@ -3261,6 +3693,7 @@ esac
         host.finish_removals().unwrap();
         assert!(cache.exists());
         assert!(preserved.exists());
+        assert!(development.exists());
         assert!(
             !host
                 .forgotten_path(&scope.server_id, &scope.device_id)
@@ -3285,9 +3718,28 @@ esac
         assert!(host.finish_removals().is_err());
         assert!(cache.exists());
         host.state.lock().unwrap().live = 0;
+        fs::set_permissions(
+            development.parent().unwrap(),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        assert_eq!(host.finish_removals(), Err(NativeFailure::PermissionDenied));
+        assert!(
+            host.forgotten_path(&scope.server_id, &scope.device_id)
+                .unwrap()
+                .exists()
+        );
+        assert!(cache.exists());
+        fs::set_permissions(
+            development.parent().unwrap(),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
         host.finish_removals().unwrap();
         assert!(!cache.parent().unwrap().exists());
+        assert!(!development.parent().unwrap().exists());
         assert!(preserved.exists());
+        assert!(development_preserved.exists());
         assert_eq!(
             fs::read_dir(host.root.join("forgotten")).unwrap().count(),
             0
@@ -3341,7 +3793,12 @@ esac
         fs::write(&sidecar, "#!/bin/sh\nexit 1\n").unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
         let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
-        let host = BrowserHost::new(temp.path().join("cef"), connector).unwrap();
+        let host = BrowserHost::new(
+            temp.path().join("cef"),
+            connector,
+            BrowserStorageMode::System,
+        )
+        .unwrap();
         let record = ProfileRecord {
             id: uuid::Uuid::now_v7().to_string(),
             revision: 2,
@@ -3395,14 +3852,15 @@ esac
         // Restart, rather than reusing in-memory progress. Every receipt
         // remains offline, so only the durable cursor can reach the
         // remaining directory.
-        let restarted = BrowserHost::new(host.root.clone(), Arc::clone(&host.connector)).unwrap();
+        let root = host.root.clone();
+        let connector = Arc::clone(&host.connector);
+        drop(host);
+        let restarted =
+            BrowserHost::new(root.clone(), connector, BrowserStorageMode::System).unwrap();
         restarted.stopping.store(true, Ordering::Release);
         restarted.finish_removals().unwrap();
         assert!(caches.iter().all(|cache| !cache.exists()));
-        assert_eq!(
-            fs::read_dir(host.root.join("removals")).unwrap().count(),
-            65
-        );
+        assert_eq!(fs::read_dir(root.join("removals")).unwrap().count(), 65);
     }
     #[test]
     fn pending_cleanup_waits_for_owned_late_flush_and_native_close_proof() {
@@ -3434,7 +3892,12 @@ esac
         .unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
         let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
-        let host = BrowserHost::new(temp.path().join("cef"), connector).unwrap();
+        let host = BrowserHost::new(
+            temp.path().join("cef"),
+            connector,
+            BrowserStorageMode::System,
+        )
+        .unwrap();
         let cache = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
         host.prepare_removal(record.clone(), None).unwrap();
         host.state.lock().unwrap().live = 1;

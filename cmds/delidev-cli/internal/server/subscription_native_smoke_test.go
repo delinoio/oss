@@ -102,3 +102,43 @@ func TestInstalledCodexInterruptedLoginCleanup(t *testing.T) {
 	}
 	t.Log("installed Codex initial login interruption and explicit account deletion passed in temporary state; no browser, OAuth completion or inference")
 }
+
+// Explicit opt-in validates account/read after a credential-free local logout.
+// Empty temporary homes cannot borrow an existing ChatGPT or API login.
+func TestInstalledCodexSubscriptionEmptyLogout(t *testing.T) {
+	executable := os.Getenv("DELIDEV_NATIVE_INITIALIZE_EXECUTABLE")
+	if executable == "" {
+		t.Skip("explicit installed Codex opt-in required")
+	}
+	if !filepath.IsAbs(executable) {
+		t.Fatal("absolute native executable required")
+	}
+	t.Setenv("PATH", filepath.Dir(executable)+string(os.PathListSeparator)+"/usr/bin"+string(os.PathListSeparator)+"/bin")
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	root, owner := t.TempDir(), domain.NewID()
+	native, err := openServerSubscription(ctx, root, owner, nil, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal("isolated native initialization failed", domain.SafeError(err).Code)
+	}
+	home := filepath.Join(root, "subscription-runtime", "auth", string(owner))
+	defer func() {
+		if err := native.Close(nil); err != nil {
+			t.Error("native process/private runtime cleanup was not confirmed", domain.SafeError(err).Code)
+		}
+		if _, err := os.Lstat(home); !os.IsNotExist(err) {
+			t.Error("original private runtime remains after native closure")
+		}
+	}()
+	auth := filepath.Join(home, "codex", "auth.json")
+	if _, err := os.Lstat(auth); !os.IsNotExist(err) {
+		t.Fatal("empty runtime unexpectedly contains account credentials")
+	}
+	if err := native.LogoutManaged(ctx); err != nil {
+		t.Fatal("credential-free native logout/account read failed", domain.SafeError(err).Code)
+	}
+	if _, err := os.Lstat(auth); !os.IsNotExist(err) {
+		t.Fatal("credential-free logout created account credentials")
+	}
+	t.Logf("version=%s; empty-home logout/account read only, no browser, OAuth completion or inference", native.Version())
+}

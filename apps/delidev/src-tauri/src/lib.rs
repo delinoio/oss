@@ -18,9 +18,12 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
 mod browser_opener;
+pub mod language;
 pub mod oauth;
 pub mod provider_guidance;
 pub mod updater;
+pub mod widget_writer;
+pub mod window_registry;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
@@ -81,6 +84,7 @@ fn sidecar_lookup_path(inherited: Option<&std::ffi::OsStr>) -> OsString {
 }
 
 pub mod browser;
+pub mod browser_storage;
 mod connections;
 pub use connections::{
     RemovalMetadata, RemovedConnections, SavedConnection, SavedConnectionState, canonical_id,
@@ -95,6 +99,7 @@ mod worker_network;
 pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};
 pub use worker_network::WorkerNetworkAction;
 
+mod desktop_host;
 mod supervision;
 pub use supervision::{LocalServerState, LocalServerStatus, Supervision};
 
@@ -193,6 +198,7 @@ pub struct Connector {
     command_timeout: Duration,
     listen: String,
     exiting: AtomicBool,
+    hosted: Mutex<Vec<desktop_host::DesktopChild>>,
 }
 
 impl Connector {
@@ -292,6 +298,7 @@ impl Connector {
             command_timeout: COMMAND_TIMEOUT,
             listen: "127.0.0.1:46310".into(),
             exiting: AtomicBool::new(false),
+            hosted: Mutex::new(Vec::new()),
         })
     }
 
@@ -422,9 +429,7 @@ impl Connector {
     }
 
     fn connect_inner(&self, action: &str) -> Result<Connection> {
-        // The Go executable owns compatibility, startup locking and detachment.
-        // Dropping this client never invokes stop or assumes server ownership.
-        let started = self.run(&self.server_arguments(action))?;
+        let started = self.run_desktop_host(action)?;
         if self.server_state(&started)? != LocalServerState::Ready {
             return Err(NativeFailure::Stopped);
         }
@@ -481,27 +486,7 @@ impl Connector {
         Ok(connection)
     }
 
-    fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
-        self.run_with_input(arguments, None)
-    }
-
-    fn run_with_input(
-        &self,
-        arguments: &[OsString],
-        input: Option<Zeroizing<Vec<u8>>>,
-    ) -> Result<serde_json::Value> {
-        self.run_with_input_bound(arguments, input, self.command_timeout)
-    }
-
-    fn run_with_input_bound(
-        &self,
-        arguments: &[OsString],
-        input: Option<Zeroizing<Vec<u8>>>,
-        timeout: Duration,
-    ) -> Result<serde_json::Value> {
-        if self.exiting.load(Ordering::Acquire) {
-            return Err(NativeFailure::Stopped);
-        }
+    fn sidecar_command(&self, arguments: &[OsString], input: bool) -> Result<Command> {
         let metadata =
             fs::symlink_metadata(&self.executable).map_err(|_| NativeFailure::SidecarMissing)?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -512,11 +497,7 @@ impl Connector {
             .arg("--data-dir")
             .arg(&self.root)
             .args(arguments)
-            .stdin(if input.is_some() {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
+            .stdin(if input { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear();
@@ -562,6 +543,31 @@ impl Connector {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW applies only to the short CLI controller.
         }
+        Ok(command)
+    }
+
+    fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
+        self.run_with_input(arguments, None)
+    }
+
+    fn run_with_input(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+    ) -> Result<serde_json::Value> {
+        self.run_with_input_bound(arguments, input, self.command_timeout)
+    }
+
+    fn run_with_input_bound(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+        timeout: Duration,
+    ) -> Result<serde_json::Value> {
+        if self.exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        let mut command = self.sidecar_command(arguments, input.is_some())?;
         let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
         let stdout = child.stdout.take().ok_or(NativeFailure::SidecarFailed)?;
         let stderr = child.stderr.take().ok_or(NativeFailure::SidecarFailed)?;
@@ -627,7 +633,7 @@ impl Connector {
 
     fn ensure(&self) -> Result<LocalServerState> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
-        let value = self.run(&self.server_arguments("ensure"))?;
+        let value = self.run_desktop_host("ensure")?;
         self.server_state(&value)
     }
 
@@ -803,7 +809,10 @@ mod desktop_capability_tests {
     #[test]
     fn native_authority_belongs_only_to_trusted_webviews() {
         for (source, labels) in [
-            (include_str!("../capabilities/main.json"), vec!["main"]),
+            (
+                include_str!("../capabilities/main.json"),
+                vec!["main", "local-*"],
+            ),
             (include_str!("../capabilities/saved.json"), vec!["server-*"]),
         ] {
             let capability: serde_json::Value = serde_json::from_str(source).unwrap();
@@ -861,3 +870,5 @@ mod repository_folder_tests {
         );
     }
 }
+
+pub mod localization;

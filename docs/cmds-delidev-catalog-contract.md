@@ -1,5 +1,67 @@
 # DeliDev provider and model catalog
 
+## Planned Agent Worker source routes
+
+The owner-approved extension under issue #964 reserves System capability 36
+and SaveAgentWorkerRequest field 5 before implementation. One Agent Worker will
+retain one Harness and ordered source groups, each with same-source accounts
+and its own typed model choice. Model reuse/creation and Worker saving remain
+atomic. A new session may advance only when every account in the preceding group
+has confirmed quota exhaustion; authentication, connection, compatibility and
+unknown quota cannot authorize fallback. Observed quota recovery restores source
+priority for later new sessions. Existing sessions keep their selected account
+and model. Reservations alone grant no support and introduce no migration.
+
+## Known subscription model suggestions
+
+`internal/knownmodels` owns the versioned, embedded `catalog.json`, the validated
+private download cache and one joined server refresh loop. Its immutable fetch
+URL is `https://raw.githubusercontent.com/delinoio/oss/main/cmds/delidev-cli/internal/knownmodels/catalog.json`.
+Only reviewed main data reaches installed servers. A single app/server upgrade
+adds the feature; later catalog changes need no release. No SQLite migration is
+introduced. Cache publication uses the existing atomic private-file writer.
+
+Schema 1 includes a semantic SHA-256 catalog version, reviewed-data date, source
+URLs/revisions/digests, and exactly ChatGPT, Claude and Grok in that order. Each
+service has 1–200 unique exact native IDs with display name, order and source keys.
+Known minimum harness versions and definite retirement dates are retained. A
+retirement date removes a new suggestion on that UTC date, including offline use.
+Unknown fields/schema, duplicate keys/IDs, invalid dates/digests, empty or oversized
+inventories and incomplete provenance cannot replace the last valid catalog.
+
+`ProviderService.ListKnownSubscriptionModels(subscription_service)` requires
+owner or paired-client role plus current store authorization. It returns at most
+200 candidates, catalog version/date and BUNDLED, CACHE or ONLINE source. Worker
+credentials are denied. The read neither downloads data nor reads account secrets,
+starts native tools or creates saved models. Initial reads use the embedded or
+valid private cached catalog. Successful server downloads refresh after 24 hours;
+failures retain the last valid catalog and retry after one hour. Restart retains
+the last successful download deadline when the cached reviewed date is newer than
+the bundled date or when both the date and semantic catalog version exactly
+match. An equal-date version mismatch is ambiguous, so the server uses the
+bundled catalog and refreshes immediately. Each request has a 15-second deadline
+and 1 MiB body limit. Redirects, ambient proxies and route fallback are
+forbidden; server shutdown cancels and joins the request and maintenance owner.
+
+Known metadata is separate from native discovery, credential/account entitlement,
+readiness and canonical saved-model authority. Known selections use the existing
+atomic Worker native-ID save. Saved selections retain exact model ID/revision
+checks. Removal from recommendations never removes saved models, configurations
+or immutable historical execution attribution. API endpoint discovery is unchanged.
+
+The collector uses the revision-pinned official Codex `models-manager/models.json`
+(public visibility and nonempty subscription plans), official Codex retirement
+notices, Claude Code family/selection instructions plus the current official
+model table, and the Grok Build recommended coding default. API-only inventory,
+hidden models and arbitrary configuration examples are excluded. A failed or
+empty extraction is fatal. Source-only/date-only reads preserve reviewed bytes;
+changes to IDs, display names, order or model metadata produce a review PR under
+[the workflow contract](repository-workflow-contract.md#delidev-known-model-catalog).
+If a reviewer closes that PR without merging, the publisher records the closed
+candidate version and does not reopen it until a genuinely changed catalog is
+collected.
+
+
 ## Scope
 
 Native Codex observations and explicit registration are owned
@@ -138,3 +200,26 @@ Update this contract, provider/account and protocol contracts, the project index
 ### Provider activation and filtering
 
 Follow [API provider activation](cmds-delidev-provider-activation-contract.md) for stable preset identity, effective legacy defaults, bounded ProviderService inventory, exact account counts, provider-scoped account pages and the additive `SearchModels.enabled_providers_only` filter. The active-provider condition is applied before SQL pagination and included in signed cursor scope. Disabled providers retain canonical model records and remain resolvable for historical references; catalog visibility never grants execution.
+
+## Agent Worker model selection
+
+System capability 33 and ConfigurationService.SaveAgentWorker follow the main
+reservations established in PR #1351. Source-scoped account and model list
+selectors are applied in SQL before LIMIT and bound into signed cursors. Unknown
+services, mixed API/service filters and non-account account selectors fail.
+Unspecified fields keep legacy behavior; coherent snapshots/events are unchanged.
+
+Go derives one common source from at least one current selected account inside
+the receipt transaction. Native subscription services require their matching
+harness. Fixed routing requires one account; ordered weights remain unchanged.
+The typed selection either names a canonical model with its exact revision or
+an exact native ID within that source. Native IDs never resolve through CLI
+aliases or other sources. Reuse the canonical model when present and preserve
+its identity, display/advisory settings and discovery/manual/NEW provenance.
+Final save may add explicitly configured harness compatibility without claiming
+native or account acceptance. New internal models use manual provenance and
+unknown advisory metadata. Failed Worker validation/revision/template writes
+roll back every model write and receipt. Concurrent saves share the existing
+SQLite transaction and model-identity checks; exact replay cannot recreate a
+deleted Worker. Existing model/configuration CLI and RPC paths retain their
+accountless behavior. No migration or historical snapshot rewrite is introduced.
