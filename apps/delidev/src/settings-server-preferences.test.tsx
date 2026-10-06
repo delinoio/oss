@@ -6,8 +6,8 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type ListResourcesRequest, type Resource } from "@delinoio/delidev-api-client";
-import { ConfigurationEditor, Settings } from "./settings";
+import { ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type ListResourcesRequest, type SaveConfigurationRequest, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationEditor, ConfigurationEditorPresentation, Settings } from "./settings";
 import { newConfiguration } from "./configuration-fields";
 import { encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
@@ -24,8 +24,13 @@ function resource(kind: EntityKind, data: Document, revision = 8n) {
 function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise<Page>) {
   const list = vi.fn((request: ListResourcesRequest) => request.filter?.kind === EntityKind.SETTINGS && read
     ? read(request.filter.pageToken) : { resources: rows.filter(row => row.kind === request.filter?.kind) });
-  const save = vi.fn(async (_request: unknown) => ({ resource: resource(EntityKind.SETTINGS, newConfiguration(EntityKind.SETTINGS)) }));
-  const get = vi.fn((request: { id: string }) => ({ resource: rows.find(row => row.id === request.id) }));
+  const save = vi.fn(async (request: SaveConfigurationRequest) => {
+    const saved = create(ResourceSchema, { kind: EntityKind.SETTINGS, id: request.mutation?.id || newRequestId(), schemaVersion: 1, revision: (request.mutation?.expectedRevision ?? 0n) + 1n, documentJson: request.documentJson });
+    const index = rows.findIndex(row => row.id === saved.id);
+    if (index < 0) rows.push(saved); else rows[index] = saved;
+    return { resource: saved };
+  });
+  const get = vi.fn((request: { id: string }): { resource?: Resource } | Promise<{ resource?: Resource }> => ({ resource: rows.find(row => row.id === request.id) }));
   const makeTransport = () => createRouterTransport(router => {
     router.service(ResourceService, { listResources: list, getResource: get });
     router.service(ConfigurationService, { saveConfiguration: save });
@@ -39,106 +44,236 @@ function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise
 function choosePreferences() { fireEvent.click(screen.getByRole("button", { name: "Server preferences" })); }
 function details() { return screen.getByText("Remediation details").closest("details")!; }
 
-it("shows the exact final-empty content only after a successful first read", async () => {
+const known = { default_routing: "priority", automatic_fetch: false, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } };
+function saveButton() { return screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement; }
+function discardButton() { return screen.getByRole("button", { name: "Discard changes" }) as HTMLButtonElement; }
+function routing() { return screen.getByLabelText("Default account routing") as HTMLSelectElement; }
+
+it("shows an ordinary form only after a complete empty read without creating settings", async () => {
   let resolve!: (value: Page) => void;
   const pending = new Promise<Page>(done => { resolve = done; });
   const value = fixture([], () => pending);
   render(value.view(<Settings />)); choosePreferences();
   expect(screen.getByRole("status").textContent).toBe("Loading server preferences…");
-  expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
-  resolve({ resources: [] });
-  const empty = await screen.findByRole("region", { name: "No saved server preferences" });
-  for (const copy of ["Review the defaults, then save one preference set for this server.", "Choose the default policy for Agent Workers that inherit server routing.", "Allow fetching before Worktree preparation. Repository preferences also apply.", "Configure bounded automatic fixes for linked pull requests. All automatic policies default off.", "Choose New Server preferences to review and save."]) expect(within(empty).getByText(copy)).toBeTruthy();
-  expect(screen.getByText("Default routing, Worktree fetch, and pull request remediation.")).toBeTruthy();
-  expect(screen.getAllByRole("button", { name: "New Server preferences" })).toHaveLength(1);
-  expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(false);
-  expect(within(empty).queryByRole("button")).toBeNull();
-  expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
-  expect(document.querySelector(".settings-server-preferences")).toBeNull();
-  expect(value.save).not.toHaveBeenCalled();
-});
-
-it.each([Code.PermissionDenied, Code.Unavailable])("does not create or claim empty on an initial %s failure", async code => {
-  const value = fixture([], () => { throw new ConnectError("Fixture read failure", code); });
-  render(value.view(<Settings />)); choosePreferences();
-  await screen.findByRole("alert");
-  expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
-  expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByText("No server preferences on this page.")).toBeNull();
-  expect(value.save).not.toHaveBeenCalled();
-});
-
-it("does not authorize creation on empty continuation or later pages", async () => {
-  let failedRefresh = false;
-  const value = fixture([], token => { if (failedRefresh) throw new ConnectError("Refresh unavailable", Code.Unavailable); return { resources: [], nextPageToken: token ? "" : "opaque-page-2" }; });
-  render(value.view(<Settings />)); choosePreferences();
-  await screen.findByText("No server preferences on this page.");
-  expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
-  expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "opaque-page-2", "opaque-page-2"]));
-  await waitFor(() => expect(value.client.isFetching()).toBe(0));
-  failedRefresh = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await screen.findByRole("alert");
-  expect(screen.getByText("No server preferences on this page.")).toBeTruthy();
-  expect(screen.getByText("Refresh failed. Showing the last successfully loaded results.")).toBeTruthy();
-  expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(value.save).not.toHaveBeenCalled();
-});
-
-const known = { default_routing: "priority", automatic_fetch: false, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } };
-it.each([true, false])("retains the last successful result during and after failed refresh, empty: %s", async empty => {
-  const row = resource(EntityKind.SETTINGS, known);
-  let fail = false;
-  let reject!: (error: ConnectError) => void;
-  const pending = new Promise<Page>((_resolve, rejection) => { reject = rejection; });
-  const value = fixture([row], () => fail ? pending : { resources: empty ? [] : [row] });
-  render(value.view(<Settings />)); choosePreferences();
-  const panel = await screen.findByRole(empty ? "region" : "article", { name: empty ? "No saved server preferences" : "Saved server preferences" });
-  fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await screen.findByText("Refreshing server preferences…");
-  if (empty) expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
-  reject(new ConnectError("Refresh unavailable", Code.Unavailable));
-  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
-  expect(screen.getByRole(empty ? "region" : "article", { name: empty ? "No saved server preferences" : "Saved server preferences" })).toBe(panel);
-  expect(screen.getByRole("alert")).toBeTruthy();
-  if (empty) expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
-  fail = false; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "", ""]);
-  expect(value.save).not.toHaveBeenCalled();
-});
-
-it("summarizes exact known stored values and keeps one title-aligned Edit action", async () => {
-  const row = resource(EntityKind.SETTINGS, known);
-  const value = fixture([row]);
-  render(value.view(<Settings />)); choosePreferences();
-  const summary = within(await screen.findByRole("article", { name: "Saved server preferences" }));
-  expect(summary.getByText(row.id)).toBeTruthy(); expect(summary.getByText("priority")).toBeTruthy(); expect(summary.getByText("Disabled")).toBeTruthy();
-  expect(summary.getAllByText("On")).toHaveLength(2); expect(summary.getAllByText("Off")).toHaveLength(1);
-  expect(summary.getByText("Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.")).toBeTruthy();
-  const edit = screen.getByRole("button", { name: "Edit Server preferences" });
-  expect(edit.closest(".settings-toolbar")).toBeTruthy();
+  expect(screen.queryByRole("form")).toBeNull();
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
-  expect(screen.queryByRole("button", { name: /Delete Server/ })).toBeNull();
+  resolve({ resources: [] });
+  const form = await screen.findByRole("form", { name: "Server preferences form" });
+  expect(routing().value).toBe("sequential-exhaustion");
+  expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+  expect(details().open).toBe(false);
+  expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(true);
+  expect(screen.queryByText("No saved server preferences")).toBeNull();
+  expect(screen.queryByRole("heading", { name: /New Server|Edit Server/ })).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
+  expect(form.compareDocumentPosition(screen.getByRole("button", { name: "Network settings" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.change(routing(), { target: { value: "priority" } });
+  expect(saveButton().disabled).toBe(false); expect(discardButton().disabled).toBe(false);
+  expect(screen.getByText("Unsaved changes")).toBeTruthy();
+  fireEvent.click(discardButton());
+  expect(routing().value).toBe("sequential-exhaustion"); expect(saveButton().disabled).toBe(true);
+  expect(screen.getByRole("form")).toBe(form); expect(value.save).not.toHaveBeenCalled();
 });
 
-it.each(["future", "invalid-json", "missing-policy", "unknown-routing", "invalid-fetch"])("shows unavailable rather than defaults for %s", async variant => {
+it.each([Code.PermissionDenied, Code.Unavailable])("does not fabricate defaults on an initial %s failure", async code => {
+  const value = fixture([], () => { throw new ConnectError("Fixture read failure", code); });
+  render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("alert");
+  expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByLabelText("Default account routing")).toBeNull();
+  expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each(["empty-continuation", "singleton-continuation", "multiple"])("does not admit an editor for %s", async variant => {
+  const rows = variant === "empty-continuation" ? [] : [resource(EntityKind.SETTINGS, known)];
+  if (variant === "multiple") rows.push(resource(EntityKind.SETTINGS, known));
+  const value = fixture(rows, () => ({ resources: rows, nextPageToken: variant === "multiple" ? "" : "opaque-page-2" }));
+  render(value.view(<Settings />)); choosePreferences();
+  await screen.findByRole("region", { name: "Server preferences unavailable" });
+  for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
+  expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("opens saved values directly with no New, Edit, summary or deletion workflow", async () => {
+  const row = resource(EntityKind.SETTINGS, known), value = fixture([row]);
+  render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+  expect(routing().value).toBe("priority");
+  expect((screen.getByLabelText("Allow automatic fetch before Worktree preparation") as HTMLInputElement).checked).toBe(false);
+  for (const label of ["New Server preferences", "Edit Server preferences", "Delete Server preferences"]) expect(screen.queryByRole("button", { name: label })).toBeNull();
+  expect(screen.queryByText("Saved server preferences")).toBeNull(); expect(saveButton().disabled).toBe(true);
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each(["future", "invalid-json", "missing-policy", "unknown-routing", "invalid-fetch"])("keeps identity without invented values for %s", async variant => {
   const row = resource(EntityKind.SETTINGS, variant === "missing-policy" ? {} : variant === "unknown-routing" ? { ...known, default_routing: "future-routing" } : variant === "invalid-fetch" ? { ...known, automatic_fetch: null } : known);
   if (variant === "future") row.schemaVersion = 2;
   if (variant === "invalid-json") row.documentJson = new Uint8Array([255]);
   const value = fixture([row]); render(value.view(<Settings />)); choosePreferences();
-  const summary = within(await screen.findByRole("article", { name: "Saved server preferences" }));
-  expect(summary.getByText(row.id)).toBeTruthy(); expect(summary.getByRole("status").textContent).toContain("Policy values are unavailable.");
-  for (const invented of ["Allowed", "Disabled", "On", "Off", "priority", "sequential-exhaustion"]) expect(summary.queryByText(invented)).toBeNull();
-  expect((screen.getByRole("button", { name: "Edit Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
+  const unavailable = within(await screen.findByRole("region", { name: "Server preferences unavailable" }));
+  expect(unavailable.getByText(row.id)).toBeTruthy(); expect(unavailable.getByRole("status").textContent).toContain("Policy values are unavailable.");
+  expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByLabelText("Default account routing")).toBeNull();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([true, false])("preserves the mounted dirty form through refresh failure, empty: %s", async empty => {
+  const rows = empty ? [] : [resource(EntityKind.SETTINGS, known)];
+  let fail = false, reject!: (error: ConnectError) => void;
+  const value = fixture(rows, () => fail ? new Promise<Page>((_resolve, rejection) => { reject = rejection; }) : { resources: rows });
+  render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
+  fireEvent.change(routing(), { target: { value: "fixed" } });
+  details().open = true;
+  fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("Refreshing server preferences…"); expect(saveButton().disabled).toBe(true);
+  reject(new ConnectError("Refresh unavailable", Code.Unavailable));
+  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.getByRole("form")).toBe(form); expect(routing().value).toBe("fixed"); expect(details().open).toBe(true);
+  expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(false);
+  fail = false; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await waitFor(() => expect(saveButton().disabled).toBe(false)); expect(routing().value).toBe("fixed");
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("adopts the first save and keeps the same form, disclosure and singleton for another save", async () => {
+  const value = fixture(); render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
+  details().open = true;
+  fireEvent.change(routing(), { target: { value: "priority" } }); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  expect(screen.getByRole("form")).toBe(form); expect(details().open).toBe(true); expect(saveButton().disabled).toBe(true);
+  const first = (await value.save.mock.results[0].value).resource;
+  fireEvent.click(screen.getByLabelText("Allow automatic fetch before Worktree preparation"));
+  await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0].mutation).toMatchObject({ id: first.id, expectedRevision: first.revision });
+  expect(screen.getByRole("form")).toBe(form);
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[1][0].documentJson))).toEqual({ ...newConfiguration(EntityKind.SETTINGS), default_routing: "priority", automatic_fetch: false });
+});
+
+it("retains a changed draft on external revision drift and discards into the latest full document", async () => {
+  const original = resource(EntityKind.SETTINGS, { ...known, retained_extension: { value: "keep" } });
+  const rows = [original], value = fixture(rows);
+  render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+  fireEvent.change(routing(), { target: { value: "fixed" } });
+  rows[0] = { ...original, revision: 9n, documentJson: encode({ ...known, default_routing: "round-robin", retained_extension: { value: "latest" } }) };
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText(/Server preferences changed elsewhere/);
+  expect(routing().value).toBe("fixed"); expect(saveButton().disabled).toBe(true);
+  fireEvent.click(discardButton()); expect(routing().value).toBe("round-robin");
+  fireEvent.change(routing(), { target: { value: "reset-window" } });
+  await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  expect(value.save.mock.calls[0][0].mutation).toMatchObject({ id: original.id, expectedRevision: 9n });
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson))).toEqual({ ...known, default_routing: "reset-window", retained_extension: { value: "latest" } });
+});
+
+it("adopts an external revision automatically only while the form is clean", async () => {
+  const original = resource(EntityKind.SETTINGS, known), rows = [original], value = fixture(rows);
+  render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
+  rows[0] = { ...original, revision: 9n, documentJson: encode({ ...known, default_routing: "round-robin" }) };
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await waitFor(() => expect(routing().value).toBe("round-robin"));
+  expect(saveButton().disabled).toBe(true); expect(screen.getByRole("form")).toBe(form); expect(value.save).not.toHaveBeenCalled();
+});
+
+it("retains the original request and freezes discard after an uncertain save", async () => {
+  const value = fixture(); value.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
+  render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+  fireEvent.change(routing(), { target: { value: "priority" } }); fireEvent.click(saveButton());
+  const retry = await screen.findByRole("button", { name: "Retry the same configuration" });
+  expect(discardButton().disabled).toBe(true); expect(saveButton().disabled).toBe(true); expect(routing().matches(":disabled")).toBe(true);
+  fireEvent.click(retry); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull());
+  expect(routing().value).toBe("priority"); expect(value.save).toHaveBeenCalledTimes(2);
+});
+
+it("keeps a save response authoritative when a previously started read returns an older revision", async () => {
+  const original = resource(EntityKind.SETTINGS, known), value = fixture([original]);
+  let resolve!: (response: { resource: Resource }) => void;
+  value.get.mockImplementation(() => new Promise(done => { resolve = done; }));
+  render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} initial={original} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{ complete: true, resource: original, fetching: false }} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.change(routing(), { target: { value: "fixed" } }); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  resolve({ resource: original }); await waitFor(() => expect(value.client.isFetching()).toBe(0));
+  expect(routing().value).toBe("fixed"); expect(screen.queryByText(/changed elsewhere/)).toBeNull();
+  fireEvent.change(routing(), { target: { value: "reset-window" } }); expect(saveButton().disabled).toBe(false);
+  fireEvent.click(saveButton()); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0].mutation).toMatchObject({ id: original.id, expectedRevision: 9n });
+});
+
+it("keeps a dirty initial draft when another client creates the singleton", async () => {
+  const rows: Resource[] = [], value = fixture(rows);
+  render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+  fireEvent.change(routing(), { target: { value: "fixed" } });
+  const external = resource(EntityKind.SETTINGS, known); rows.push(external);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText(/Server preferences changed elsewhere/);
+  expect(routing().value).toBe("fixed"); expect(saveButton().disabled).toBe(true);
+  fireEvent.click(discardButton()); expect(routing().value).toBe("priority");
+  fireEvent.change(routing(), { target: { value: "remaining-quota" } });
+  await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  expect(value.save.mock.calls[0][0].mutation).toMatchObject({ id: external.id, expectedRevision: external.revision });
+});
+
+it("blocks another save after a server revision rejection and reads the concurrent singleton", async () => {
+  const rows: Resource[] = [], value = fixture(rows), external = resource(EntityKind.SETTINGS, known);
+  value.save.mockImplementationOnce(async () => { rows.push(external); throw new ConnectError("Revision conflict", Code.Aborted); });
+  render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+  fireEvent.change(routing(), { target: { value: "fixed" } }); fireEvent.click(saveButton());
+  await screen.findByText(/Server preferences changed elsewhere/);
+  expect(saveButton().disabled).toBe(true); expect(routing().value).toBe("fixed");
+  fireEvent.click(discardButton()); expect(routing().value).toBe("priority");
+  fireEvent.change(routing(), { target: { value: "reset-window" } });
+  await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0].mutation).toMatchObject({ id: external.id, expectedRevision: external.revision });
+});
+
+it.each(["foreign-id", "foreign-kind", "old-revision", "unreadable"])("retains uncertainty instead of adopting a %s save response", async variant => {
+  const original = resource(EntityKind.SETTINGS, known), value = fixture([original]);
+  const returned = { ...original, revision: 9n };
+  if (variant === "foreign-id") returned.id = newRequestId();
+  if (variant === "foreign-kind") returned.kind = EntityKind.PROJECT;
+  if (variant === "old-revision") returned.revision = original.revision;
+  if (variant === "unreadable") returned.documentJson = new Uint8Array([255]);
+  value.save.mockResolvedValueOnce({ resource: returned });
+  render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+  fireEvent.change(routing(), { target: { value: "fixed" } }); fireEvent.click(saveButton());
+  await screen.findByRole("button", { name: "Retry the same configuration" });
+  expect(routing().value).toBe("fixed"); expect(discardButton().disabled).toBe(true); expect(saveButton().disabled).toBe(true);
+  expect(value.save).toHaveBeenCalledOnce();
+});
+
+it("keeps a retained draft read-only when refresh finds unsupported settings", async () => {
+  const original = resource(EntityKind.SETTINGS, known), rows = [original], value = fixture(rows);
+  render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
+  fireEvent.change(routing(), { target: { value: "fixed" } }); rows[0] = { ...original, schemaVersion: 2, revision: 9n };
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByRole("region", { name: "Server preferences unavailable" });
+  expect(screen.getByText(original.id)).toBeTruthy(); expect(screen.getByRole("form")).toBe(form);
+  expect(routing().value).toBe("fixed"); expect(routing().matches(":disabled")).toBe(true); expect(saveButton().disabled).toBe(true);
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("retains the inline draft and disclosure across same-identity transport replacement", async () => {
+  const value = fixture([resource(EntityKind.SETTINGS, known)]);
+  const view = render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
+  fireEvent.change(routing(), { target: { value: "fixed" } }); details().open = true;
+  view.rerender(value.view(<Settings />, value.makeTransport()));
+  await waitFor(() => expect(value.client.isFetching()).toBe(0));
+  expect(screen.getByRole("form")).toBe(form); expect(routing().value).toBe("fixed"); expect(details().open).toBe(true);
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("opens inline remediation details and focuses their first invalid control before saving", async () => {
+  const value = fixture(); render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+  details().open = true;
+  const limit = screen.getByLabelText("Consecutive automatic attempt limit");
+  fireEvent.change(limit, { target: { value: "0" } }); details().open = false;
+  fireEvent.click(saveButton()); expect(details().open).toBe(true);
+  await waitFor(() => expect(document.activeElement).toBe(limit)); expect(value.save).not.toHaveBeenCalled();
 });
 
 it("preserves mounted disclosure values and resource cursors through collapse and reconnect", async () => {
@@ -208,29 +343,20 @@ it("retains a draft after revision drift and blocks a fresh save", async () => {
   expect(value.save).not.toHaveBeenCalled();
 });
 
-it("disposes a changed disclosure and ignores a late prior save in a replacement visit", async () => {
-  const value = fixture();
-  let resolve!: (response: { resource: Resource }) => void;
+it("disposes a changed disclosure and ignores a late save in a replacement visit", async () => {
+  const value = fixture(); let resolve!: (response: { resource: Resource }) => void;
   value.save.mockImplementation(() => new Promise(done => { resolve = done; }));
-  const view = render(value.view(<Settings visible />)); choosePreferences();
-  await waitFor(() => expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "New Server preferences" }));
-  details().open = true;
-  fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "11" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
-  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
-  view.rerender(value.view(<Settings visible={false} />));
-  view.rerender(value.view(<Settings visible />));
+  const view = render(value.view(<Settings visible />)); choosePreferences(); await screen.findByRole("form");
+  details().open = true; fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "11" } });
+  fireEvent.click(saveButton()); await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  expect(discardButton().disabled).toBe(true);
+  view.rerender(value.view(<Settings visible={false} />)); view.rerender(value.view(<Settings visible />));
   expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
-  choosePreferences(); await screen.findByRole("region", { name: "No saved server preferences" });
-  resolve({ resource: resource(EntityKind.SETTINGS, known) });
-  await waitFor(() => expect(value.client.isMutating()).toBe(0));
+  choosePreferences(); await screen.findByRole("form");
+  resolve({ resource: resource(EntityKind.SETTINGS, known) }); await waitFor(() => expect(value.client.isMutating()).toBe(0));
   expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
-  expect(screen.queryByRole("article", { name: "Saved server preferences" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "New Server preferences" }));
-  expect(details().open).toBe(false);
-  expect((screen.getByLabelText("Consecutive automatic attempt limit") as HTMLInputElement).value).toBe("3");
-  expect(value.save).toHaveBeenCalledOnce();
+  expect(details().open).toBe(false); expect((screen.getByLabelText("Consecutive automatic attempt limit") as HTMLInputElement).value).toBe("3");
+  expect(routing().value).toBe("sequential-exhaustion"); expect(value.save).toHaveBeenCalledOnce();
 });
 
 it("ignores a late prior read after its Settings visit was replaced", async () => {
@@ -239,12 +365,8 @@ it("ignores a late prior read after its Settings visit was replaced", async () =
   const value = fixture([], () => waiting ? pending : { resources: [] });
   const view = render(value.view(<Settings visible />)); choosePreferences();
   await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.kind === EntityKind.SETTINGS)).toBe(true));
-  view.rerender(value.view(<Settings visible={false} />));
-  waiting = false; view.rerender(value.view(<Settings visible />)); choosePreferences();
-  await screen.findByRole("region", { name: "No saved server preferences" });
-  resolve({ resources: [resource(EntityKind.SETTINGS, known)] });
-  await waitFor(() => expect(value.client.isFetching()).toBe(0));
-  expect(screen.queryByRole("article", { name: "Saved server preferences" })).toBeNull();
-  expect(screen.getByRole("region", { name: "No saved server preferences" })).toBeTruthy();
-  expect(value.save).not.toHaveBeenCalled();
+  view.rerender(value.view(<Settings visible={false} />)); waiting = false;
+  view.rerender(value.view(<Settings visible />)); choosePreferences(); await screen.findByRole("form");
+  resolve({ resources: [resource(EntityKind.SETTINGS, known)] }); await waitFor(() => expect(value.client.isFetching()).toBe(0));
+  expect(routing().value).toBe("sequential-exhaustion"); expect(value.save).not.toHaveBeenCalled();
 });

@@ -67,17 +67,30 @@ try {
       checked++;
     }
     if (!populated) {
-      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "New Repository"], ["Server preferences", "New Server preferences"], ["Models", "New Model"], ["Integrations", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
-        await select(category); await page.getByRole("button", { name: action, exact: true }).click();
+      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", null], ["Models", "New Model"], ["Integrations", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
+        await select(category); if (action) await page.getByRole("button", { name: action, exact: true }).click();
         if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
-        const form = page.locator(".settings-content form:visible"); await form.waitFor();
+        const form = category === "Repositories" ? page.getByRole("region", { name: "Add repository", exact: true }) : page.locator(".settings-content form:visible"); await form.waitFor();
         assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
-        assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
+        assert(await form.evaluate((node, cap) => node.getBoundingClientRect().width <= cap, category === "Repositories" ? 760.5 : 720.5), `${category} form cap`);
         assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
         assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
         if (category === "Agent Workers") assert(await form.evaluate(node => node.getBoundingClientRect().width >= 640 || getComputedStyle(node.querySelector(".agent-core-columns")).gridTemplateColumns.split(" ").length === 1), "Narrow Agent fields stack");
         formsChecked++;
-        await page.getByRole("button", { name: category === "AI API Keys" ? "Back to AI API Keys" : category === "Notifications" ? "Cancel notification edit" : "Cancel edit", exact: true }).click();
+        if (category === "Server preferences") {
+          assert.equal(await page.getByRole("button", { name: /^(New|Edit) Server preferences$/ }).count(), 0);
+          assert(await page.getByRole("button", { name: "Save changes", exact: true }).isDisabled());
+          const routing = page.getByLabel("Default account routing");
+          await routing.selectOption("priority");
+          assert(await page.getByRole("button", { name: "Save changes", exact: true }).isEnabled());
+          await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+          assert.equal(await routing.inputValue(), "sequential-exhaustion");
+          await page.locator(".server-remediation-details summary").focus();
+          await page.keyboard.press("Enter");
+          assert(await page.locator(".server-remediation-details").evaluate(node => node.open));
+          await page.keyboard.press("Enter");
+          assert(!(await page.locator(".server-remediation-details").evaluate(node => node.open)));
+        } else await page.getByRole("button", { name: category === "AI API Keys" ? "Back to AI API Keys" : category === "Notifications" ? "Cancel notification edit" : category === "Repositories" ? "Back to repositories" : "Cancel edit", exact: true }).click();
         if (category === "AI API Keys" && await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).isVisible()) await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).click();
       }
     }
