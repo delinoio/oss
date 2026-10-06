@@ -29,6 +29,11 @@ it("requires host confirmation, clears secrets and never retries an ambiguous in
  fireEvent.click(install); await screen.findByText(/original start response is unconfirmed/);
  expect(secret.value).toBe(""); expect(f.start).toHaveBeenCalledTimes(1);
  expect(JSON.stringify(f.client.getMutationCache().getAll().map(m => m.state.variables))).not.toContain("secret-sentinel");
- expect((install.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+ expect((install as HTMLButtonElement).disabled).toBe(true);
+ const inspect = screen.getByRole("button", { name: "Inspect host identity" }) as HTMLButtonElement;
+ expect(inspect.disabled).toBe(true);
+ fireEvent.submit(inspect.form!);
+ expect(f.inspect).toHaveBeenCalledTimes(1);
+ expect((screen.getByLabelText("Original setup ID") as HTMLInputElement).disabled).toBe(true);
  f.setRequested(); fireEvent.click(screen.getByRole("button", { name: "Inspect original setup" })); await waitFor(() => expect(screen.queryByRole("button", { name: "Install and start Worker" })).toBeNull()); expect(f.start).toHaveBeenCalledTimes(1);
 });

@@ -45,8 +45,8 @@ use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
     Connection, Connector, DesktopRegistration, LocalServerStatus, LocalWorkerAction,
     LocalWorkerProof, LocalWorkerStatus, NativeFailure, RemovedConnections, SavedConnection,
-    SavedConnectionState, Supervision, WorkerNetworkAction, bundled_sidecar, canonical_id,
-    connection_origin, default_data_root,
+    SavedConnectionState, Supervision, WorkerNetworkAction, browser_storage::BrowserStorageMode,
+    bundled_sidecar, canonical_id, connection_origin, default_data_root,
 };
 use notification_host::{
     NotificationHost, begin_notifications, end_notifications, notification_permission,
@@ -1598,14 +1598,26 @@ fn run() -> Result<(), NativeFailure> {
     let notifications = Arc::new(NotificationHost::default());
     let oauth = Arc::new(delidev_desktop::oauth::OAuthHost::default());
     let browser_cache = connector.prepare_browser_storage()?;
+    let storage_mode = BrowserStorageMode::current();
     let browser = Arc::new(browser_host::BrowserHost::new(
-        browser_cache.clone(),
+        browser_cache,
         Arc::clone(&connector),
+        storage_mode,
     )?);
+    tracing::info!(operation = "browser_storage", mode = ?storage_mode);
+    if storage_mode == BrowserStorageMode::DevelopmentMock {
+        tracing::warn!(
+            operation = "browser_storage",
+            code = "development-public-cookie-key",
+            "Development browser cookies use a public test key and have no meaningful encryption \
+             protection at rest."
+        );
+    }
     let app = tauri::Builder::<CefRuntime>::new()
         // Windows is an approved unsandboxed exception until upstream supports
         // Chromium's broker for executable hosts. Auto warns about that limit;
-        // macOS/Linux require sandboxing. Keep OS-backed profile encryption.
+        // macOS/Linux require sandboxing. Cookie encryption follows the
+        // compiled storage policy, independently of Chromium's sandbox.
         .runtime(
             tauri_runtime_cef::Cef::default()
                 .sandbox(if cfg!(windows) {
@@ -1613,8 +1625,11 @@ fn run() -> Result<(), NativeFailure> {
                 } else {
                     tauri_runtime_cef::SandboxPolicy::Required
                 })
-                .secret_storage(tauri_runtime_cef::SecretStorage::System)
-                .root_cache_path(&browser_cache),
+                .secret_storage(match storage_mode {
+                    BrowserStorageMode::System => tauri_runtime_cef::SecretStorage::System,
+                    BrowserStorageMode::DevelopmentMock => tauri_runtime_cef::SecretStorage::Mock,
+                })
+                .root_cache_path(browser.cache_root()),
         )
         .manage(Arc::new(UpdateHost::default()))
         .manage(Arc::clone(&browser))
