@@ -121,7 +121,7 @@ func (s *Service) authorizeOAuthDevice(ctx context.Context, a domain.AccountOAut
 	current, readErr := s.oauthRead(work, a.ID)
 	if readErr == nil && current.State == domain.OAuthAwaiting && current.Generation == s.oauthGeneration && ctx.Err() == nil {
 		if err == nil {
-			err = s.Store.Read(work, func(tx *store.Tx) error { return s.oauthProvider(tx, a.ProviderID, a.ProviderRevision) })
+			err = s.Store.Read(work, func(tx *store.Tx) error { return s.oauthAttemptProvider(tx, a) })
 		}
 		if err == nil {
 			live := s.oauthLive[a.ID]
@@ -190,7 +190,7 @@ func (s *Service) pollOAuthDevice(ctx context.Context, a domain.AccountOAuthAtte
 			e = oauthCredentialProblem()
 		}
 		if e == nil {
-			e = s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthProvider(tx, a.ProviderID, a.ProviderRevision) })
+			e = s.Store.Read(ctx, func(tx *store.Tx) error { return s.oauthAttemptProvider(tx, a) })
 		}
 		unlock()
 		if e != nil {
