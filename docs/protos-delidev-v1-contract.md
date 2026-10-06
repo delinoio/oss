@@ -1,5 +1,30 @@
 # DeliDev v1 Connect contract
 
+## Agent Worker source-route reservations
+
+Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
+`AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
+is exclusive with the legacy singular model. Establish both ledger reservations
+on main before activation. Capability 35 keeps its known-subscription-model
+ownership. No active schema, generated output, advertisement or migration is
+introduced by this prerequisite.
+
+
+
+
+## Known subscription model reservations
+
+Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
+and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
+advisory subscription catalog. The closed catalog-source enum reserves
+UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
+reserves native ID/display name/order/minimum harness version/retirement date
+fields 1–5. The request reserves subscription service field 1; the response
+reserves subscription service/models/catalog version/updated at/source fields 1–5.
+Establish these allocations on main before dependent implementation. Reservations
+grant no catalog retrieval, authentication, account entitlement, native discovery
+or execution capability. No database migration is introduced.
 
 ## GitHub token-first onboarding reservations
 
@@ -43,6 +68,18 @@ No database migration is added. Follow the [catalog contract](cmds-delidev-catal
 and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
 ## Repository addition reservations
+
+### Remote-first repository reservations
+
+The approved remote-first extension under issue #964 reserves System
+`REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19`.
+Establish both allocations on main before active declarations, generated bindings
+or advertisements. URL-only registration will be an owner/client configuration
+operation without Worker admission; managed Worktree preparation will clone the
+immutable remote source on its selected Worker. Optional checkouts remain the
+source only for explicit Local execution. System 31/32 and Worker 18 retain their
+separate immediate-clone/listing contracts. Reservations grant no configuration,
+Git, filesystem or execution capability and add no SQLite migration.
 
 Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
 `GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and

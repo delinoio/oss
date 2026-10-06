@@ -10,12 +10,12 @@ import { AccountTypeFilter, ConfigurationService, EntityKind, ProviderInventoryC
 import { Settings } from "./settings";
 import { document, encode } from "./documents";
 
-function fixture() {
+function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1]) {
   const row = (kind: EntityKind, data: Record<string, unknown>, schemaVersion = 1) => create(ResourceSchema, { kind, schemaVersion, id: newRequestId(), revision: 1n, documentJson: encode(data) });
   const provider = row(EntityKind.PROVIDER, { name: "OpenAI API", enabled: true, discovery: true, protocol: "openai-responses" });
   const otherProvider = row(EntityKind.PROVIDER, { name: "Other API", enabled: true, discovery: true, protocol: "openai-responses" });
   const accounts = ["Personal API", "Team API", "Backup API"].map((alias, i) => row(EntityKind.ACCOUNT, { alias, type: "api", provider_id: provider.id, enabled: true, health: i === 2 ? "disconnected" : "unverified", ...(i < 2 ? { connection: { authentication: "keyless" } } : {}) }));
-  const subscription = row(EntityKind.ACCOUNT, { alias: "ChatGPT account", type: "subscription", subscription_service: "chatgpt", enabled: true, health: "disconnected" }, 2);
+  const subscription = row(EntityKind.ACCOUNT, { alias: "ChatGPT account", type: "subscription", subscription_service: "chatgpt", enabled: true, health: "ready", connection: { id: newRequestId() } }, 2);
   const models = ["Example A", "Example B"].map((name, i) => row(EntityKind.MODEL, { name, native_id: `example-${i}`, provider_id: provider.id, harnesses: [], hidden: i === 1, manual: false, new: true }));
   const agent = row(EntityKind.AGENT, { name: "Existing Worker", harness: "codex", model_id: models[0].id, accounts: [{ id: accounts[0].id, weight: 3 }], templates: [], options: { permission: "default", service_tier: "priority" }, effort: "high" });
   const records = [provider, otherProvider, ...accounts, subscription, ...models, agent];
@@ -25,7 +25,7 @@ function fixture() {
   const list = vi.fn((request: { filter?: { kind: EntityKind; pageToken: string }; providerId: string; subscriptionService: SubscriptionServiceIdentity }) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? request.subscriptionService === SubscriptionServiceIdentity.CHATGPT ? [subscription] : request.providerId === provider.id ? request.filter.pageToken ? [accounts[1], accounts[2]] : [accounts[0]] : [] : records.filter(value => value.kind === request.filter?.kind), nextPageToken: request.filter?.kind === EntityKind.ACCOUNT && request.providerId === provider.id && !request.filter.pageToken ? "account-page-2" : "" }));
   const get = vi.fn((request: { id: string }) => ({ resource: records.find(value => value.id === request.id) }));
   const transport = createRouterTransport(router => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AGENT_WORKER_WIZARD_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities }) });
     router.service(ProviderService, { listProviderInventory: () => ({ entries: [provider, otherProvider].map(value => ({ provider: value, providerId: value.id, displayName: document(value).name as string, enabled: true })), capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] }), searchModels: search, discoverModels: discover });
     router.service(ResourceService, { listResources: list, getResource: get });
     router.service(ConfigurationService, { saveAgentWorker: save });
@@ -51,6 +51,94 @@ async function accounts(value: ReturnType<typeof fixture>, multi = false) {
   next();
   await screen.findByRole("combobox", { name: "Model" });
 }
+
+it("selects one harness card without advancing, saving or searching models", async () => {
+  const value = fixture(); await start(value);
+  const group = screen.getByRole("radiogroup", { name: "Harness" });
+  const cards = within(group).getAllByRole("radio");
+  expect(cards.map(card => card.getAttribute("aria-label"))).toEqual(["Codex", "Claude Code", "OpenCode", "Grok Build"]);
+  expect(within(group).getByRole("radio", { checked: true })).toBe(cards[0]);
+  expect(cards.map(card => card.tabIndex)).toEqual([0, -1, -1, -1]);
+  fireEvent.click(cards[2]);
+  expect(within(group).getByRole("radio", { checked: true })).toBe(cards[2]);
+  expect(cards.map(card => card.tabIndex)).toEqual([-1, -1, 0, -1]);
+  expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
+  next();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+});
+
+it("moves harness selection and focus with arrows, Home and End", async () => {
+  const value = fixture(); await start(value);
+  const group = screen.getByRole("radiogroup", { name: "Harness" });
+  const cards = within(group).getAllByRole("radio");
+  const moves: [string, number][] = [["ArrowLeft", 3], ["ArrowRight", 0], ["ArrowDown", 1], ["ArrowUp", 0], ["End", 3], ["ArrowDown", 0], ["Home", 0]];
+  cards[0].focus();
+  for (const [key, index] of moves) {
+    fireEvent.keyDown(globalThis.document.activeElement!, { key });
+    expect(globalThis.document.activeElement).toBe(cards[index]);
+    expect(within(group).getByRole("radio", { checked: true })).toBe(cards[index]);
+    expect(cards.filter(card => card.tabIndex === 0)).toEqual([cards[index]]);
+  }
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
+});
+
+it("prefills the saved harness and focuses the first card for an unsupported saved value", async () => {
+  const value = fixture();
+  value.agent.documentJson = encode({ ...document(value.agent), harness: "unsupported-harness" });
+  await start(value, true);
+  const group = screen.getByRole("radiogroup", { name: "Harness" });
+  expect(within(group).queryByRole("radio", { checked: true })).toBeNull();
+  const codex = within(group).getByRole("radio", { name: "Codex" });
+  expect(codex.tabIndex).toBe(0);
+  next();
+  expect(screen.getByRole("alert").textContent).toContain("Choose a supported harness.");
+  expect(globalThis.document.activeElement).toBe(codex);
+  fireEvent.click(within(group).getByRole("radio", { name: "Grok Build" }));
+  next();
+  expect(screen.getByRole("option", { name: "Grok subscription" })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("starts edits with the saved non-default harness selected", async () => {
+  const value = fixture(); value.agent.documentJson = encode({ ...document(value.agent), harness: "opencode" });
+  await start(value, true);
+  expect(screen.getByRole("radio", { checked: true, name: "OpenCode" }).tabIndex).toBe(0);
+  expect(screen.getAllByRole("radio", { checked: true })).toHaveLength(1);
+});
+
+it("preserves edit selections on harness reselection and clears them only on a change", async () => {
+  const value = fixture(); await start(value, true); next();
+  await waitFor(() => expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`));
+  await screen.findByRole("checkbox", { name: /Personal API/ }); next();
+  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
+  fireEvent.click(screen.getByRole("button", { name: "Back" })); fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Codex" })); next();
+  expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`);
+  expect(screen.getByText("1 accounts selected")).toBeTruthy(); next();
+  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
+  fireEvent.click(screen.getByRole("button", { name: "Back" })); fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" })); next();
+  expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe("");
+  expect(screen.getByText("0 accounts selected")).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "ChatGPT subscription" })).toBeNull();
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ })); next();
+  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("");
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it("disables harness choices when the server lacks wizard support", async () => {
+  const value = fixture([]); render(value.view());
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
+  await screen.findByText("Update the server to configure Agent Workers with this wizard.");
+  const cards = screen.getAllByRole("radio");
+  expect(cards.every(card => (card as HTMLButtonElement).disabled)).toBe(true);
+  fireEvent.keyDown(cards[0], { key: "ArrowDown" });
+  expect(screen.getByRole("radio", { checked: true, name: "Codex" })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
+});
 
 it("removes Models and saves an ordered multi-account Worker only at the last step", async () => {
   const value = fixture(); await start(value);
@@ -128,6 +216,138 @@ it("uses service-scoped subscription reads and keeps manual input available when
   expect(value.list.mock.calls.some(([request]) => request.subscriptionService === SubscriptionServiceIdentity.CHATGPT)).toBe(true);
   await waitFor(() => expect(value.search.mock.calls.some(([request]) => request.subscriptionService === SubscriptionServiceIdentity.CHATGPT && request.providerId === "")).toBe(true));
   expect(screen.queryByRole("button", { name: "Refresh models from endpoint" })).toBeNull();
+});
+
+it.each(["api", "subscription"] as const)("shows connected ready/unverified %s choices without changing enablement", async type => {
+  const value = fixture();
+  const original = type === "api" ? value.accounts[0] : value.subscription;
+  const states = [
+    { alias: "Ready choice", health: "ready", enabled: false },
+    { alias: "Unverified choice", health: "unverified" },
+    { alias: "Disconnected choice", health: "disconnected", connection: null },
+    { alias: "Failed choice", health: "failed" },
+    { alias: "Expired choice", health: "expired" },
+    { alias: "Revoked choice", health: "revoked" },
+    { alias: "Cleanup choice", health: "ready", removal: { id: newRequestId() } },
+    { alias: "Missing connection choice", health: "ready", connection: null },
+    { alias: "Invalid connection choice", health: "unverified", connection: "disconnected" },
+    { alias: "Unknown health choice", health: "unknown" },
+  ];
+  const choices = states.map(state => create(ResourceSchema, { ...original, id: newRequestId(), documentJson: encode({ ...document(original), ...state }) }));
+  value.list.mockImplementation(request => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? choices : value.records.filter(row => row.kind === request.filter?.kind), nextPageToken: "" }));
+  await start(value); next();
+  await screen.findByRole("option", { name: "OpenAI API" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: type === "api" ? `api:${value.provider.id}` : "subscription:chatgpt" } });
+  const section = screen.getByRole("region", { name: "Choose accounts" });
+  await within(section).findByRole("checkbox", { name: /Ready choice.*Disabled/ });
+  expect(within(section).getByRole("checkbox", { name: /Unverified choice/ })).toBeTruthy();
+  expect(within(section).getAllByRole("checkbox")).toHaveLength(2);
+  for (const state of states.slice(2)) expect(within(section).queryByText(state.alias)).toBeNull();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it("keeps pagination and explicit refresh when a complete page has only hidden choices", async () => {
+  const value = fixture();
+  let connected = false;
+  value.list.mockImplementation(request => ({
+    resources: request.filter?.kind === EntityKind.ACCOUNT ? request.filter.pageToken ? [value.accounts[1]] : connected ? [value.accounts[0]] : [value.accounts[2]] : value.records.filter(row => row.kind === request.filter?.kind),
+    nextPageToken: request.filter?.kind === EntityKind.ACCOUNT && !request.filter.pageToken ? "account-page-2" : "",
+  }));
+  await start(value); next();
+  await screen.findByRole("option", { name: "OpenAI API" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  await screen.findByText("No accounts to select on this page.");
+  expect(screen.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeTruthy();
+  expect(screen.queryByRole("checkbox", { name: /Backup API/ })).toBeNull();
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.ACCOUNT)).toHaveLength(1);
+  expect((screen.getByRole("button", { name: "Next account page" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Next account page" }));
+  await screen.findByRole("checkbox", { name: /Team API/ });
+  expect(value.list.mock.calls.at(-1)![0].filter?.pageToken).toBe("account-page-2");
+  fireEvent.click(screen.getByRole("button", { name: "First account page" }));
+  await screen.findByText("No accounts to select on this page.");
+  connected = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+  await screen.findByRole("checkbox", { name: /Personal API/ });
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it.each(["initial", "refresh"])("keeps an %s account read failure distinct from hidden-only emptiness", async state => {
+  const value = fixture();
+  const loaded = value.list.getMockImplementation()!;
+  value.list.mockImplementation(request => request.filter?.kind === EntityKind.ACCOUNT ? { resources: [value.accounts[2]], nextPageToken: "" } : loaded(request));
+  const failRead = () => value.list.mockImplementation(request => {
+    if (request.filter?.kind === EntityKind.ACCOUNT) throw new ConnectError("Account read unavailable", Code.Unavailable);
+    return loaded(request);
+  });
+  if (state === "initial") failRead();
+  await start(value); next();
+  await screen.findByRole("option", { name: "OpenAI API" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  if (state === "refresh") {
+    await screen.findByText("No accounts to select on this page.");
+    failRead(); fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+    await screen.findByText("Refresh failed. Showing the last successfully loaded accounts.");
+  }
+  await within(screen.getByRole("region", { name: "Choose accounts" })).findByRole("alert");
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+  expect(screen.queryByText(/No accounts for this source/)).toBeNull();
+  expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it.each(["edit", "refresh"])("preserves hidden selected account order, weights and save bytes after %s", async state => {
+  const value = fixture();
+  const expected = state === "edit" ? [{ id: value.accounts[2].id, weight: 5 }, { id: value.accounts[0].id, weight: 3 }] : [{ id: value.accounts[0].id, weight: 3 }, { id: value.accounts[1].id, weight: 5 }];
+  if (state === "edit") {
+    value.agent.documentJson = encode({ ...document(value.agent), accounts: expected });
+    value.accounts[0].documentJson = encode({ ...document(value.accounts[0]), health: "failed" });
+    value.save.mockImplementation(async request => ({ requestId: request.mutation!.requestId, resource: create(ResourceSchema, { ...value.agent, revision: 2n, documentJson: request.documentJson }) }));
+    await start(value, true); next();
+    await screen.findByText("No accounts to select on this page.");
+  } else {
+    await start(value); await accounts(value, true);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  }
+  fireEvent.click(screen.getByText("Routing options"));
+  if (state === "refresh") {
+    fireEvent.change(screen.getByLabelText("Weight for account 1"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Weight for account 2"), { target: { value: "5" } });
+    for (const index of [0, 1]) {
+      const original = value.accounts[index];
+      const changed = create(ResourceSchema, { ...original, revision: 2n, documentJson: encode({ ...document(original), health: "failed" }) });
+      value.accounts[index] = changed; value.records[value.records.findIndex(row => row.id === original.id)] = changed;
+    }
+    await act(async () => { await value.client.invalidateQueries(); });
+    await screen.findByText("No accounts to select on this page.");
+  }
+  await screen.findByText("2 accounts selected");
+  expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe(String(expected[0].weight));
+  expect((screen.getByLabelText("Weight for account 2") as HTMLInputElement).value).toBe(String(expected[1].weight));
+  expect(screen.queryByRole("checkbox", { name: /Personal API|Team API|Backup API/ })).toBeNull();
+  next();
+  fireEvent.change(await screen.findByRole("combobox", { name: "Model" }), { target: { value: "exact-model" } }); next();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retained selection Worker" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson)).accounts).toEqual(expected);
+  expect(value.discover).not.toHaveBeenCalled();
+});
+
+it("removes a hidden selection only through its explicit Routing options action", async () => {
+  const value = fixture();
+  value.accounts[0].documentJson = encode({ ...document(value.accounts[0]), health: "failed" });
+  await start(value, true); next();
+  await screen.findByText("No accounts to select on this page.");
+  await screen.findByText("1 accounts selected");
+  fireEvent.click(screen.getByText("Routing options"));
+  expect(screen.getByRole("button", { name: "Remove account 1" })).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "Choose accounts" })).getByText("Personal API")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Remove account 1" }));
+  expect(screen.getByText("0 accounts selected")).toBeTruthy();
+  next();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
 });
 
 it.each(["failed", "empty"])("accepts direct IDs with a %s catalog and retains earlier selections across pagination", async state => {
@@ -236,12 +456,14 @@ it("returns a changed canonical model to its input before saving", async () => {
 
 it("rejects a mismatched source page as a whole instead of filtering a loaded page", async () => {
   const value = fixture();
+  value.subscription.documentJson = encode({ ...document(value.subscription), health: "failed" });
   value.list.mockImplementation(request => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? [value.accounts[0], value.subscription] : value.records.filter(row => row.kind === request.filter?.kind), nextPageToken: "" }));
   await start(value); next();
   await screen.findByRole("option", { name: "OpenAI API" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
   await screen.findByText(/This account page includes unsupported or mismatched source data/);
   expect(screen.queryByRole("checkbox", { name: /Personal API/ })).toBeNull();
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
   next();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();

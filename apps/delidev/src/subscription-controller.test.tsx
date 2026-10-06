@@ -94,7 +94,12 @@ it("starts an existing account login without a Runner Device and retries the exa
   await screen.findByRole("article", { name: "Existing subscription" });
   fireEvent.click(screen.getByRole("button", { name: "Manage login for Existing subscription" }));
   fireEvent.click(await screen.findByRole("button", { name: "Sign in to ChatGPT" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Retry original request" }));
+  await screen.findByRole("button", { name: "Retry original request" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Manage subscription" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(value.login).toHaveBeenCalledTimes(1); expect(value.cancel).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry original request" }));
   await screen.findByRole("button", { name: "Open browser again" }, { timeout: 3000 });
   expect(value.login).toHaveBeenCalledTimes(2); expect(value.login.mock.calls[0][0]).toEqual(value.login.mock.calls[1][0]);
   expect(value.login.mock.calls[0][0]).toMatchObject({ machineId: "", action: 1, deviceCode: false, mutation: { expectedRevision: 1n } });

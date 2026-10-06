@@ -1,7 +1,19 @@
 {
-  "extends": ["//"],
+  "extends": [
+    "//"
+  ],
   "tasks": {
-    "test": {"cache": false},
-    "test:unit": {"cache": false}
+    "test": {
+      "cache": false,
+      "passThroughEnv": [
+        "DELIDEV_TEST_BINARY"
+      ]
+    },
+    "test:unit": {
+      "cache": false,
+      "passThroughEnv": [
+        "DELIDEV_TEST_BINARY"
+      ]
+    }
   }
 }

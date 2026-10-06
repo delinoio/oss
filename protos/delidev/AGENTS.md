@@ -1,3 +1,7 @@
+- Agent Worker source routes reserve System capability 36 and SaveAgentWorkerRequest.route_models field 5 under issue #964. Establish both on main before activation; reuse AgentWorkerModelSelection and the save acknowledgement. Preserve the legacy single-model request and capability 35. Reservations add no migration or routing capability.
+
+- Known subscription model suggestions under issue #964 reserve System capability 35 and the new catalog-source enum/model/list declarations. Establish these allocations on main before dependent implementation. Reservations grant no known-model retrieval, native discovery, account entitlement or execution capability and add no migration. Follow the catalog, protocol and structure contracts.
+
 # DeliDev delidev ownership
 
 - GitHub token-first onboarding under issue #964 reserves System capability 34, the new `GitHubTokenKind` / `GitHubTokenIdentityState` enums and `InspectGitHubToken` / `PrepareGitHubTokenForm` request/response and identity declarations. Establish these reservations on main before dependent schemas or code. Reservations grant no token inspection, credential retention or browser authority and require no migration. Follow the integration and protocol contracts.

@@ -209,7 +209,7 @@ it("retains pairing through reconnect and discards it after category departure",
   expect((screen.getByRole("textbox", { name: "Device name" }) as HTMLInputElement).value).toBe("");
   fireEvent.click(screen.getByRole("button", { name: "Cancel pairing" }));
   const trigger = screen.getByRole("button", { name: "Create pairing document" });
-  expect(window.document.activeElement).toBe(trigger);
+  await waitFor(() => expect(window.document.activeElement).toBe(trigger));
   expect(trigger.closest(".settings-toolbar")).toBeTruthy();
   expect(value.issue).not.toHaveBeenCalled();
 });
@@ -222,7 +222,7 @@ it("returns confirmed revocation to Details once and falls back to Refresh when 
   await screen.findByText("Authorization revoked for DeliDev local Worker.");
   expect(screen.getByText("Retained sessions stay saved. Revocation does not confirm native cleanup or erase the device's private files.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Return to devices" }));
-  expect(window.document.activeElement).toBe(workerDetails());
+  await waitFor(() => expect(window.document.activeElement).toBe(workerDetails()));
   const refresh = screen.getByRole("button", { name: "Refresh settings" }); refresh.focus();
   fireEvent.click(refresh); await waitFor(() => expect(screen.queryByRole("button", { name: "Revoke DeliDev local Worker" })).toBeNull());
   expect(window.document.activeElement).toBe(refresh);
@@ -230,6 +230,6 @@ it("returns confirmed revocation to Details once and falls back to Refresh when 
   fireEvent.click(await screen.findByRole("button", { name: "Revoke DeliDev local Worker" }));
   value.state.rows = []; await value.client.invalidateQueries();
   fireEvent.click(screen.getByRole("button", { name: "Keep device authorized" }));
-  expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Refresh settings" }));
+  await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Refresh settings" })));
   expect(value.revoke).toHaveBeenCalledTimes(1);
 });
