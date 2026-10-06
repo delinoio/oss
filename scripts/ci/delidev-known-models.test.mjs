@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { buildCatalog, validateCatalog, reconcile, changes, extractChatGPT, extractClaude, extractGrok, canonical, catalogPath } from "../delidev/known-subscription-models.mjs";
 import { createHash } from "node:crypto";
-import { assertBotBranch, describeUpdate, branch } from "../delidev/known-subscription-models-pr.mjs";
+import { assertBotBranch, describeUpdate, findClosedCandidateReview, branch } from "../delidev/known-subscription-models-pr.mjs";
 
 const sourceHosts = { codex: "github.com", "openai-retirement": "learn.chatgpt.com", "claude-code": "code.claude.com", "claude-models": "platform.claude.com", "grok-build": "docs.x.ai" };
 const sources = Object.entries(sourceHosts).map(([key, host]) => ({ key, url: `https://${host}/fixture`, revision: "fixture", sha256: "a".repeat(64) }));
@@ -90,6 +90,13 @@ test("existing PR updates require complete bot-only history and catalog-only cha
   assert.throws(() => assertBotBranch({ ...state, pullRequests: [...state.pullRequests, ...state.pullRequests] }));
   const body = describeUpdate(fixture(), fixture(), "a".repeat(40));
   assert.match(body, /No automatic merge/); assert.match(body, /SHA-256/); assert.match(body, /No subscription entitlement/);
+});
+test("a manually closed review suppresses the same candidate until metadata changes", () => {
+  const candidate = fixture();
+  const review = { html_url: "https://github.com/delinoio/oss/pull/456", user: { login: "delino-release-bot[bot]" }, head: { sha: "candidate", repo: { full_name: "delinoio/oss" } }, base: { ref: "main" } };
+  assert.equal(findClosedCandidateReview([review], candidate.catalog_version, () => candidate), review);
+  assert.equal(findClosedCandidateReview([review], "sha256:" + "b".repeat(64), () => candidate), undefined);
+  assert.equal(findClosedCandidateReview([{ ...review, user: { login: "human" } }], candidate.catalog_version, () => candidate), undefined);
 });
 test("daily workflow validates before a narrowly scoped write token and protects review ownership", async () => {
   const workflow = await readFile(".github/workflows/delidev-known-models.yml", "utf8");

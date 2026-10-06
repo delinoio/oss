@@ -54,6 +54,9 @@ hidden models and arbitrary configuration examples are excluded. A failed or
 empty extraction is fatal. Source-only/date-only reads preserve reviewed bytes;
 changes to IDs, display names, order or model metadata produce a review PR under
 [the workflow contract](repository-workflow-contract.md#delidev-known-model-catalog).
+If a reviewer closes that PR without merging, the publisher records the closed
+candidate version and does not reopen it until a genuinely changed catalog is
+collected.
 
 
 ## Scope

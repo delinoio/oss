@@ -16,6 +16,12 @@ export function assertBotBranch({ commits, files, total, pullRequests }) {
   if (total > 100 || commits.length !== total || commits.some(commit => commit.author?.login !== bot || commit.committer?.login !== bot)) throw new Error("Branch includes non-bot or incomplete history");
   if (files.some(file => file.filename !== catalogPath) || pullRequests.length > 1 || pullRequests.some(pr => pr.user?.login !== bot || pr.head.repo?.full_name !== repository || pr.base.ref !== "main")) throw new Error("Branch or PR has another owner");
 }
+export function findClosedCandidateReview(pullRequests, candidateVersion, readCatalog) {
+  return pullRequests.find(pr => {
+    if (pr.user?.login !== bot || pr.head?.repo?.full_name !== repository || pr.base?.ref !== "main" || !pr.head.sha) return false;
+    return readCatalog(pr.head.sha).catalog_version === candidateVersion;
+  });
+}
 export function describeUpdate(before, after, revision) {
   const diff = changes(before, after);
   const list = items => items.length ? items.map(item => `- \`${item}\``).join("\n") : "- None";
@@ -51,6 +57,12 @@ export async function publish() {
   const previous = validateCatalog(JSON.parse(command("git", ["show", `${revision}:${catalogPath}`])));
   const candidateChanged = candidate.catalog_version !== previous.catalog_version;
   const pulls = api(`repos/${repository}/pulls?state=open&head=delinoio:${branch}&base=main&per_page=100`);
+  const closedPulls = api(`repos/${repository}/pulls?state=closed&head=delinoio:${branch}&base=main&per_page=100`);
+  const readReviewCatalog = sha => {
+    const file = api(`repos/${repository}/contents/${catalogPath}?ref=${encodeURIComponent(sha)}`);
+    if (file.encoding !== "base64" || file.size > 1 << 20) throw new Error("Closed candidate review unavailable");
+    return validateCatalog(JSON.parse(Buffer.from(file.content, "base64").toString("utf8")));
+  };
   // Inspect refs without treating a permission/network error as branch absence.
   const refs = api(`repos/${repository}/git/matching-refs/heads/${branch}`);
   const existing = refs.filter(ref => ref.ref === `refs/heads/${branch}`);
@@ -77,6 +89,10 @@ export async function publish() {
   } else {
     assertBotBranch({ commits: [], files: [], total: 0, pullRequests: pulls });
     if (!candidateChanged) return { changed: false };
+  }
+  if (!pulls.length) {
+    const closed = findClosedCandidateReview(closedPulls, candidate.catalog_version, readReviewCatalog);
+    if (closed) return { changed: false, closed_pull_request: closed.html_url };
   }
   // Re-fetch every recorded source after branch ownership checks and before
   // any candidate commit or push. A source revision/digest change means the
