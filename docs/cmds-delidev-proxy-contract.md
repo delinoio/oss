@@ -56,6 +56,8 @@ Decoded JSON object names also enter independent global and parent-path matchers
 
 HTTP-200 standalone error envelopes use the same protected-code/local-body fallback as non-200 errors before returning a synthesized HTTP 502 response. A successful transport status cannot bypass protected-value checks.
 
+Every locally generated error body uses the protected-value guard once the execution credential or selected account key is available. This includes keys returned together with an error, diagnostic publication failures, upstream request/transport failures, rejected JSON and failures before SSE output starts. If the fixed local body also collides, retain the failure status and safe correlation/security headers with an empty body. Pre-key denials never read a credential solely to construct an error. A failure after SSE output starts still aborts the original response without appending a local error, forging completion or retrying the provider. Key acquisition, upstream dispatch and lease release remain once-only.
+
 Cancellation may abort the original downstream response, but every started
 body/deadline cancellation callback is joined before the HTTP handler returns.
 Its response-writer ownership cannot cross into another request on a reused

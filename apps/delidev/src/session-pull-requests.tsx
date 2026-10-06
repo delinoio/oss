@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource, type UnlinkSessionPullRequestRequest } from "@delinoio/delidev-api-client";
 import { document, items, text, type Document } from "./documents";
 import { bounded, date, positive, uuid } from "./github-query-model";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { OpenPRProblemHistory } from "./pr-problems";
 import { Problem } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
@@ -43,16 +43,42 @@ function LinkForm({ sessionId, projectId, refreshed }: { sessionId: string; proj
   </form>;
 }
 
+function usePRUnlink(sessionId: string, associationId: string, refreshed: () => void) {
+  return useRetainedMutation(`session-pr:unlink:${sessionId}:${associationId}`, SessionQuery.unlinkSessionPullRequest, refreshed, (result, request) =>
+    request.sessionId === sessionId && request.mutation?.id === associationId && result.id === request.mutation.id && result.requestId === request.mutation.requestId);
+}
+
+function PendingUnlink({ sessionId, associationId, refreshed }: { sessionId: string; associationId: string; refreshed: () => void }) {
+  const remove = usePRUnlink(sessionId, associationId, refreshed);
+  const original = remove.input as UnlinkSessionPullRequestRequest | undefined;
+  const valid = original?.sessionId === sessionId && original.mutation?.id === associationId && uuid(original.mutation.requestId) && original.mutation.expectedRevision > 0n && original.mutation.expectedRevision < 1n << 63n;
+  return <article aria-label={`Pending PR unlink ${associationId}`}>
+    <p>Original association: {associationId}</p>
+    <p role="status">{remove.busy ? "Submitting original PR unlink…" : "PR unlink acknowledgment is uncertain."}</p>
+    <Problem error={remove.error} />
+    {!valid ? <p role="alert">The retained unlink request could not be verified.</p> : remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>Retry original PR unlink</button> : null}
+  </article>;
+}
+
+function PendingUnlinks({ sessionId, refreshed }: { sessionId: string; refreshed: () => void }) {
+  const prefix = `session-pr:unlink:${sessionId}:`;
+  const intents = useRetainedMutationIntents(prefix).filter((intent) => uuid(intent.key.slice(prefix.length)));
+  // Unlink can remove its own row before the original receipt reaches this
+  // connection. Recovery must remain independent of the current resource page.
+  return intents.length ? <section aria-label="Pending PR unlinks"><h4>Pending PR unlinks</h4>
+    {intents.map((intent) => <PendingUnlink key={intent.key} sessionId={sessionId} associationId={intent.key.slice(prefix.length)} refreshed={refreshed} />)}
+  </section> : null;
+}
+
 function LinkRow({ row, value, sessionId, refreshed }: { row: Resource; value: Document; sessionId: string; refreshed: () => void }) {
-  const [notice, setNotice] = useState("");
-  const remove = useRetainedMutation(`session-pr:unlink:${sessionId}:${row.id}`, SessionQuery.unlinkSessionPullRequest, (r) => { if (r.id !== row.id) setNotice("The unlink acknowledgment could not be verified. Refresh current associations."); refreshed(); });
+  const remove = usePRUnlink(sessionId, row.id, refreshed);
   return <article aria-label={`Linked PR ${text(value.owner)}/${text(value.name)}#${text(value.number)}`}>
     <h4>{text(value.owner)}/{text(value.name)}#{text(value.number)}</h4><p>{text(value.title)}</p>
     <p>Linked observation: {text(value.observed_at)}. Current PR state and access may have changed.</p>
     <details><summary>Original PR identity</summary><p>Repository ID {text(value.remote_repository_id)} · PR ID {text(value.pull_request_id)} · Node {text(value.pull_request_node_id)}</p><p>Configured repository: {text(value.repository_id)}</p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></details>
     <OpenPRProblemHistory selection={{ repositoryId: text(value.repository_id), remoteRepositoryId: text(value.remote_repository_id), pullRequestId: text(value.pull_request_id), number: text(value.number) }} />
     <button disabled={remove.busy || remove.uncertain} onClick={() => void remove.send({ sessionId, mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() } })}>Unlink #{text(value.number)}</button>
-    <Problem error={remove.error} />{notice ? <p role="alert">{notice}</p> : null}{remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>Retry original PR unlink</button> : null}
+    {!remove.busy && !remove.uncertain ? <Problem error={remove.error} /> : null}
   </article>;
 }
 
@@ -64,6 +90,7 @@ function RetainedLinks({ session }: { session: Resource }) {
   const valid = rows.length <= 50 && new Set(rows.map((row) => row.id)).size === rows.length && decoded.every(Boolean);
   return <section aria-label="Session PR associations"><p>Associations remain after Archive or problem resolution. Unlinking removes only this session's association.</p>
     <button disabled={list.isFetching} onClick={refresh}>Refresh PR associations</button><Problem error={list.error} />{list.error && list.data ? <p>Previous associations are shown; refresh failed.</p> : null}
+    <PendingUnlinks sessionId={session.id} refreshed={refresh} />
     {list.isPending ? <p>Loading PR associations…</p> : !valid ? <p role="alert">The association page is inconsistent and cannot be displayed.</p> : rows.length ? rows.map((row, index) => <LinkRow key={row.id} row={row} value={decoded[index]!} sessionId={session.id} refreshed={refresh} />) : <p>No PR associations on this page.</p>}
     <nav aria-label="PR association pages"><button disabled={!page || list.isFetching} onClick={() => setPage("")}>First association page</button><button disabled={!valid || !list.data?.nextPageToken || list.isFetching} onClick={() => setPage(list.data!.nextPageToken)}>Next association page</button></nav>
     {uuid(session.projectId) ? <LinkForm sessionId={session.id} projectId={session.projectId} refreshed={refresh} /> : <p>Linking a PR requires a project session. Existing associations remain inspectable.</p>}

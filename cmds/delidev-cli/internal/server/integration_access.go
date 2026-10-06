@@ -81,7 +81,7 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 	if s.integrationChecks[profileID] != nil {
 		return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The selected profile already has an active GitHub inspection.", "Wait for its result before starting another inspection.")
 	}
-	if len(s.integrationChecks) >= 8 {
+	if len(s.integrationChecks)+len(s.integrationPreviews) >= 8 {
 		return repositoryIntegrationSelection{}, domain.Fail(domain.ResourceExhausted, "The server's GitHub inspection limit is reached.", "Retry after an active inspection completes.")
 	}
 	if s.integrationChecks == nil {

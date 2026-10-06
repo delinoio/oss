@@ -14,6 +14,8 @@ PR CI deliberately defers the ten desktop and seven mobile packaging entries whi
 
 A clean-checkout API or sweeper compile that reports missing embedded administrator assets is a build-prerequisite failure, not a runtime service incident. Re-run the repository-owned `pnpm --filter devhud-admin build:embedded` generator/verifier or the Docker build boundary; never recover by committing or copying a `dist` tree from another checkout.
 
+For CEF comparison triage, inspect the maintainer summary and its 35-day bounded metadata artifact. The summary includes committed/upstream revisions, comparison status and counts, retained/total signal counts, and any truncation marker. A summary failure skips the subsequent report upload. Synthetic summary fixtures prove local parsing and metadata output only; confirm the exact hosted run before claiming comparison or upload success. Raw commit messages, credentials, and native content remain excluded.
+
 ## Upload, deletion, and audit cases
 
 Use `AdminService.QuarantineUpload` or `AdminService.DeleteUpload` only with a validated non-blank reason and expected-state compare-and-set. Quarantine/removal is metadata-first and must not expose image bytes or locators. Preserve operation leases and tombstones; a conflict or uncertain removal remains visible for retry.

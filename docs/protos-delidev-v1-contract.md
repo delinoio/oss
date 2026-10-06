@@ -42,6 +42,10 @@ before dependent implementation. This prerequisite introduces no active schema,
 generated binding, advertised support, credential lifetime, browser authority or
 database migration. Existing profile/revision-bound token forms remain unchanged.
 
+### Activated onboarding boundary
+
+After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
+
 ## Agent Worker wizard
 
 PR #1351 established the issue #964 allocations on main before implementation.
@@ -718,3 +722,14 @@ Main-established capability 30 and PR #1332's reserved declarations activate the
 ### Codex diagnostic activation
 
 PR #1336 established the diagnostic allocations on main at `82d8859e98485458ccf8708225c0c6694d9cfab5`. The optional `GetSubscriptionProgressResponse.diagnostic` field 7 now uses those exact declarations: detected version 1, minimum version 2, closed phase 3, stable code 4, safe message 5, guidance 6 and correlation ID 7. An empty detected version means no verified version; absent diagnostic means the server did not report metadata. Native failure attribution never grants account, callback or retry authority. Preserve original actor/operation ownership and terminal read authorization; older clients can ignore the additive field. Regenerate Go and TypeScript bindings from the reconciled schema. No migration or capability number is added.
+
+## General API OAuth extension
+
+Main-established issue #964 allocations add inventory capability 6, device
+connection method 4, closed flow PKCE/DEVICE, Google project options and original
+completion state. Preserve capability 5 and historical OpenRouter receipt input.
+Declare the reserved additive fields before generation; reservations alone grant
+no provider support. The common/Hugging Face implementation returns PKCE flow
+only on a live Start, advertises capability 6 only for accepted exact profiles,
+and keeps authorization URL/code/state outside cached query variables. Device
+user codes remain Start-only; later provider implementations retain their gates.

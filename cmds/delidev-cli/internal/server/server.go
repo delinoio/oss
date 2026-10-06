@@ -6,6 +6,7 @@ import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
@@ -68,6 +69,7 @@ type Service struct {
 	integrationOnce               sync.Once
 	integrationGate               chan struct{}
 	integrationChecks             map[domain.ID]*integrationCheck
+	integrationPreviews           map[domain.ID]*integrationCheck
 	integrationSecrets            integrationSecrets
 	ownedPAT                      *credentials.PATStore
 	github                        githubIdentity
@@ -86,6 +88,10 @@ type Service struct {
 	accountGate                   chan struct{}
 	oauthGeneration               domain.ID
 	oauthLive                     map[domain.ID]*oauthLive
+	oauthRegistrations            map[domain.ProviderPresetID]providers.OAuthRegistration
+	oauthTokenClient              oauthTokenClient
+	oauthRefreshMu                sync.Mutex
+	oauthRefreshes                map[domain.ID]chan struct{}
 	oauthExchange                 oauthExchange
 	accountChecks                 map[domain.ID]map[domain.ID]accountCheck
 	accountSecrets                accountSecrets

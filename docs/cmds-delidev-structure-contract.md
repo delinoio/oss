@@ -95,7 +95,7 @@ CLI framing/authentication and command groups have separate files. They retain
 existing order, authorization, cleanup and output behavior.
 
 The original structural change retained schema 24. The current executable registry
-implements real migrations through 30; later reserved versions remain inactive. Versioned migration
+implements real migrations through 31; later reserved versions remain inactive. Versioned migration
 definitions share creation and upgrade paths while retaining backup-first atomic
 upgrade and all recognized historical layout repairs. Historical migration tests
 start from fixed historical SQL, not a newer schema with an expanding drop list.
@@ -221,6 +221,16 @@ of `delidev.proto`, including newly added services. The relocation manifest rema
 a historical order and breaking-check map; it is not the current service inventory.
 Both aggregate views therefore include `NetworkService` and `SubscriptionService`
 without adding their declarations to the relocation map.
+The historical prefix contains 358 declarations: 303 messages, 36 enums and
+19 services, including PullRequestFix, Terminal and Browser. Preserve their
+per-kind positions from the intact map at
+`54187b780d48e94a49763e87fc140f449869d9f4`. Go and TypeScript regression tests
+share the fixed `protos/delidev/v1/contracttest/testdata/legacy-declaration-order.json`
+snapshot; expected order must not come from the editable relocation map.
+The fixed snapshot also pins the relocation names, kinds, files and complete
+map order, including moves across declaration kinds.
+WorkspaceStorage and other additive declarations follow this prefix and remain
+discoverable through public imports, direct enumeration and reconstructed registries.
 Issue #1084 activates its already reserved wire allocations without changing
 that historical map. Generated service/query facades retain both services.
 
