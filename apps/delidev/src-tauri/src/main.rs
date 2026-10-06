@@ -1212,7 +1212,10 @@ fn run() -> Result<(), NativeFailure> {
                 } else {
                     tauri_runtime_cef::SandboxPolicy::Required
                 })
-                .secret_storage(storage_mode.cef_secret_storage())
+                .secret_storage(match storage_mode {
+                    BrowserStorageMode::System => tauri_runtime_cef::SecretStorage::System,
+                    BrowserStorageMode::DevelopmentMock => tauri_runtime_cef::SecretStorage::Mock,
+                })
                 .root_cache_path(browser.cache_root()),
         )
         .manage(Arc::new(UpdateHost::default()))
