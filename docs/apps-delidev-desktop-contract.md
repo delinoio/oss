@@ -407,6 +407,34 @@ edit. They may open independently and retain mounted controls and queries:
 | 2 | Instructions | Template count; all ordered reference operations |
 | 3 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
 
+Reasoning effort and Subagent effort use the shared editable combobox in
+`apps/delidev/src/reasoning-effort-field.tsx` and its static stylesheet. These
+harness-level hints do not establish selected-model or execution support:
+
+| Harness | Reasoning effort hints | Subagent effort hints |
+| --- | --- | --- |
+| Codex | none, minimal, low, medium, high, xhigh, max, ultra, persistent | The same nine values |
+| Claude Code | low, medium, high, xhigh, max | None |
+| OpenCode / Grok Build | None | None |
+
+Focus or the list button opens the in-flow list, capped at 280px with scrolling.
+Filter hints by a case-insensitive prefix; trim only the search comparison, never
+the stored input. Use native default remains the first option and explicitly
+passes an empty string. Direct input remains editable, including unknown values;
+existing server validation and errors remain authoritative. Opening, closing or
+changing harness never writes an effort value or adds an omitted field. A harness
+change replaces hints and clears keyboard selection while retaining both drafts.
+
+Arrow keys move the active option and keep it visible. Enter selects that option;
+with no active option it closes the open list and retains direct input without
+submitting. Escape, Tab and focus departure close without selecting. Composition
+keys are left to the IME. Each input has a unique combobox/listbox identity,
+active-descendant and help association. Use the existing semantic themes, 40px
+controls, 8px corners and responsive form width, without extra panels or input
+focus rings. Preserve Codex child capability-disabled values and ancestor form
+locks for both the input and custom list actions. The component adds no query,
+RPC, discovery, persistence, public schema or native execution authority.
+
 Accounts & routing moves to Accounts, retaining ordered weighted links and all
 add/move/remove operations. The legacy configuration RPC and shared field seam
 still permit accountless Workers; existing records remain valid. The wizard
@@ -991,6 +1019,30 @@ Original Stop closures explain that the unanswered request was canceled after ve
 ## Security
 Only trusted app content receives native capabilities. Renderer/server calls require exact allowed origins and the explicitly selected connection. Account credentials and GitHub PATs must never enter read responses. Never expose a shell, arbitrary executable/file reader, network proxy, or secret-bearing diagnostic object to the renderer.
 
+### Development browser storage
+
+Only macOS native builds with `debug_assertions` select CEF `SecretStorage::Mock`.
+Every other native build selects `SecretStorage::System`. The mode is compiled,
+not selected by a renderer, environment variable or application argument.
+The embedded development launch enables `custom-protocol`; at the pinned Tauri
+revision that makes `Auto` select System even in a debug build, so both modes
+must be selected explicitly. Mock avoids Chromium Safe Storage Keychain prompts
+after ad-hoc rebuilds without an Apple developer account or signing certificate.
+It encrypts cookies with a public test key and provides no meaningful protection
+at rest. Emit one bounded development notice and the closed mode classification,
+never cookie bytes, URLs, native errors or private filesystem paths.
+
+The original `browser-data` remains the System CEF root. Development uses its
+owner-private `development` child for CEF and external request-context data.
+Shared tabs, profile-removal journals and forgotten-connection markers remain in
+their original locations. Neither mode copies or re-encrypts existing cookies;
+the first development launch uses a fresh cookie jar. Existing configuration,
+account identity, Go protected credentials and runtime pins remain unchanged.
+Follow the [browser contract](cmds-delidev-browser-contract.md) for exact
+mode-specific paths, the shared process lease and deletion of both copies.
+Development Mock is a contributor workflow exception; it does not satisfy
+production Keychain, responsive native shutdown or release acceptance.
+
 ## Logging
 Expose typed safe problems and correlation IDs, plus independent connection/retry state. Never log input, resource documents, tokens, native output or account locators. Native logs use stable operation/failure classifications.
 
@@ -1381,6 +1433,10 @@ run, not responsive Quit or a resolved review. The test's new private server
 could not bind the occupied default port, so it provides no new connected-server
 retention acceptance. Preserve the original pin and encryption; do not use a
 mock Keychain, force-exit success or unseen prompt handling as a fix.
+
+The development storage exception above does not resolve this production/native
+acceptance gap. Any new development observation must remain separate from that
+original System-storage evidence and its unresolved shutdown requirements.
 
 
 ### Combined desktop navigation and backup surfaces

@@ -6770,6 +6770,20 @@
       "member": "source",
       "number": 5,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_AGENT_WORKER_SOURCE_ROUTES_V1",
+      "number": 36
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "route_models",
+      "number": 5
     }
   ]
 }

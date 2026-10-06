@@ -1,5 +1,18 @@
 # DeliDev provider and model catalog
 
+## Planned Agent Worker source routes
+
+The owner-approved extension under issue #964 reserves System capability 36
+and SaveAgentWorkerRequest field 5 before implementation. One Agent Worker will
+retain one Harness and ordered source groups, each with same-source accounts
+and its own typed model choice. Model reuse/creation and Worker saving remain
+atomic. A new session may advance only when every account in the preceding group
+has confirmed quota exhaustion; authentication, connection, compatibility and
+unknown quota cannot authorize fallback. Observed quota recovery restores source
+priority for later new sessions. Existing sessions keep their selected account
+and model. Reservations alone grant no support and introduce no migration.
+
+
 ## Scope
 
 Native Codex observations and explicit registration are owned
