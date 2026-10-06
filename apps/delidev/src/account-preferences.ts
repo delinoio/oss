@@ -20,7 +20,7 @@ export function accountPreferencesDocument(resource: Resource, preferences: Part
     replacements.set(key, JSON.stringify(value));
   }
   if (resource.documentJson.byteLength > 1 << 20) throw new Error("Account document is too large");
-  const raw = new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson);
+  const raw = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(resource.documentJson);
   let cursor = 0;
   const invalid = (): never => { throw new Error("Invalid account document"); };
   const whitespace = () => { while (/[ \t\r\n]/.test(raw[cursor] ?? "") && cursor < raw.length) cursor++; };

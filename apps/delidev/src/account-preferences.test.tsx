@@ -42,6 +42,8 @@ it.each([
 
 it("rejects invalid UTF-8, oversized input/output and changes outside the preference allowlist", () => {
   expect(() => accountPreferencesDocument(create(ResourceSchema, { documentJson: new Uint8Array([255]) }), { enabled: true })).toThrow();
+  expect(() => accountPreferencesDocument(resource("\uFEFF" + original()), { enabled: true })).toThrow();
+  expect(() => accountPreferencesDocument(resource('{"alias":"a","nested":' + "[".repeat(129) + "0" + "]".repeat(129) + "}"), { enabled: true })).toThrow();
   expect(() => accountPreferencesDocument(resource(original() + " ".repeat(1 << 20)), { enabled: true })).toThrow();
   expect(() => accountPreferencesDocument(resource(), { alias: "a".repeat(1 << 20) })).toThrow();
   expect(() => accountPreferencesDocument(resource(), { health: "ready" } as never)).toThrow("Invalid account preference");
