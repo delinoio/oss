@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, PullRequestFixProfile, PullRequestFixQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -12,9 +12,9 @@ import { Problem } from "./ui";
 
 export function PRFixAction({ row, set, value, selection, disabled, refreshed }: { row: Resource; set: Resource; value: Document; selection: PRProblemSelection; disabled: boolean; refreshed: () => void }) {
   useLocale();
- const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useState("");
+ const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useProductMessage("");
  const fix = useRetainedMutation(`pr-fix:${selection.remoteRepositoryId}:${selection.pullRequestId}`, PullRequestFixQuery.requestPullRequestFix, (response) => {
-  setNotice(`Fix accepted in session ${response.session!.id}. Evidence changes to handled only after a verified push.`); setOpen(false); refreshed();
+  setNotice(ownedMessage("pr-fix.sentence.613a13e6da0e", { v0: response.session!.id })); setOpen(false); refreshed();
  }, (response, request) => {
   const original = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(request.documentJson)) as Document;
   const attempt = response.attempt, inventory = response.problemSet, session = response.session;

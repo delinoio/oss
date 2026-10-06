@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -19,7 +19,7 @@ export function readSessionPR(row: Resource, sessionId: string): Document | unde
 
 function LinkForm({ sessionId, projectId, refreshed }: { sessionId: string; projectId: string; refreshed: () => void }) {
   useLocale();
-  const [repository, setRepository] = useState(""), [number, setNumber] = useState(""), [notice, setNotice] = useState("");
+  const [repository, setRepository] = useState(""), [number, setNumber] = useState(""), [notice, setNotice] = useProductMessage("");
   const expected = useRef<{ requestId: string; repositoryId: string; number: string } | undefined>(undefined);
   const project = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: projectId }, readOptions);
   const row = project.data?.resource;
@@ -30,8 +30,8 @@ function LinkForm({ sessionId, projectId, refreshed }: { sessionId: string; proj
   const configured = selected.data?.resource?.id === repository && selected.data.resource.kind === EntityKind.REPOSITORY ? document(selected.data.resource) : {};
   const link = useRetainedMutation(`session-pr:link:${sessionId}`, SessionQuery.linkSessionPullRequest, (r) => {
     const value = r.association && readSessionPR(r.association, sessionId);
-    if (!value || !expected.current || value.repository_id !== expected.current.repositoryId || value.number !== expected.current.number || r.requestId !== expected.current.requestId || r.association?.id !== r.requestId) { setNotice("The link was acknowledged, but its response could not be verified. Refresh retained associations before another operation."); refreshed(); return; }
-    setNumber(""); setNotice("PR association saved."); refreshed();
+    if (!value || !expected.current || value.repository_id !== expected.current.repositoryId || value.number !== expected.current.number || r.requestId !== expected.current.requestId || r.association?.id !== r.requestId) { setNotice(ownedMessage("session-pull-requests.extra.26513f241135")); refreshed(); return; }
+    setNumber(""); setNotice(ownedMessage("session-pull-requests.extra.d68ee597ba2c")); refreshed();
   });
   const blocked = link.busy || link.uncertain;
   const ready = repositories.includes(repository) && uuid(configured.integration_id) && Boolean(text(configured.github_owner) && text(configured.github_name)) && !project.error && !selected.error && positive(number);
@@ -47,8 +47,8 @@ function LinkForm({ sessionId, projectId, refreshed }: { sessionId: string; proj
 
 function LinkRow({ row, value, sessionId, refreshed }: { row: Resource; value: Document; sessionId: string; refreshed: () => void }) {
   useLocale();
-  const [notice, setNotice] = useState("");
-  const remove = useRetainedMutation(`session-pr:unlink:${sessionId}:${row.id}`, SessionQuery.unlinkSessionPullRequest, (r) => { if (r.id !== row.id) setNotice("The unlink acknowledgment could not be verified. Refresh current associations."); refreshed(); });
+  const [notice, setNotice] = useProductMessage("");
+  const remove = useRetainedMutation(`session-pr:unlink:${sessionId}:${row.id}`, SessionQuery.unlinkSessionPullRequest, (r) => { if (r.id !== row.id) setNotice(ownedMessage("session-pull-requests.extra.648a9b6650b9")); refreshed(); });
   return <article aria-label={copy("session-pull-requests.linkedPr_299ef1", { v0: text(value.owner), v1: text(value.name), v2: text(value.number) })}>
     <h4>{text(value.owner)}/{text(value.name)}#{text(value.number)}</h4><p>{text(value.title)}</p>
     <p><LocalizedText id="session-pull-requests.linkedObservationCurrentPrStateAnd_e8d519" components={{ s0: <>{text(value.observed_at)}</> }} /></p>

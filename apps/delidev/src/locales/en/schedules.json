@@ -83,5 +83,11 @@
   "schedules.retainedScheduleHistoryLookup_80858c": "Retained schedule history lookup",
   "schedules.retainedScheduleId_1b69be": "Retained schedule ID",
   "schedules.openRetainedHistory_95da82": "Open retained history",
-  "schedules.selectAScheduleFromTheSidebar_6800ae": "Select a schedule from the sidebar to inspect its details and retained history."
+  "schedules.selectAScheduleFromTheSidebar_6800ae": "Select a schedule from the sidebar to inspect its details and retained history.",
+  "schedules.extra.d5ef9d155d1e": "Unnamed schedule",
+  "schedules.extra.1a9ab790643b": "The schedule or prompt is too large. The previous draft is retained.",
+  "schedules.extra.1c1c1bfaa5af": "All schedules",
+  "schedules.extra.92c1cdfdf4cb": "Enabled",
+  "schedules.extra.e159b06187d3": "Paused",
+  "schedules.extra.170fa2a3d0f0": "None scheduled"
 }

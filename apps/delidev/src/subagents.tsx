@@ -6,11 +6,11 @@ import { items, object, text } from "./documents";
 import { Problem } from "./ui";
 import { validateSubagentPage, type SubagentRow } from "./subagent-record";
 
-const unavailable = <p>{copy("subagents.theRetainedChildPageIsUnavailable_e2dd4a")}</p>;
+const unavailable = () => <p>{copy("subagents.theRetainedChildPageIsUnavailable_e2dd4a")}</p>;
 export function SubagentRows({ rows, sessionId }: { rows: readonly Resource[]; sessionId: string }) {
   useLocale();
   const accepted = useMemo(() => validateSubagentPage(rows, sessionId), [rows, sessionId]);
-  return accepted ? <ChildRows rows={accepted} /> : unavailable;
+  return accepted ? <ChildRows rows={accepted} /> : unavailable();
 }
 
 function ChildRows({ rows }: { rows: readonly SubagentRow[] }) {
@@ -21,12 +21,12 @@ function ChildRows({ rows }: { rows: readonly SubagentRow[] }) {
       const output = object(child.output), usage = object(child.usage);
       const blocks = items(output.blocks).map(object);
       return <tr key={row.id}>
-        <td><code>{text(child.native_id)}</code><details><summary>{copy("subagents.sourceCoverage_0b8649")}</summary><p>{text(record.harness)} {text(record.native_version)}</p><p><LocalizedText id="subagents.execution_2ce365" components={{ s0: <>{text(record.execution_id)}</> }} /></p><p><LocalizedText id="subagents.parentTool_5586e7" components={{ s0: <>{text(child.parent_tool_id) || "Unavailable"}</> }} /></p><ul>{items(record.sources).map(object).map((source, index) => <li key={index}><LocalizedText id="subagents.sequence_440e77" components={{ s0: <>{text(source.source)}</>, s1: <>{text(source.source_id)}</>, s2: <>{String(source.sequence ?? "Unavailable")}</>, s3: <>{text(object(source.usage).native_report) ? <pre>{text(object(source.usage).native_report)}</pre> : null}</> }} /></li>)}</ul></details></td>
+        <td><code>{text(child.native_id)}</code><details><summary>{copy("subagents.sourceCoverage_0b8649")}</summary><p>{text(record.harness)} {text(record.native_version)}</p><p><LocalizedText id="subagents.execution_2ce365" components={{ s0: <>{text(record.execution_id)}</> }} /></p><p><LocalizedText id="subagents.parentTool_5586e7" components={{ s0: <>{text(child.parent_tool_id) || copy("subagents.extra.ca1844969742")}</> }} /></p><ul>{items(record.sources).map(object).map((source, index) => <li key={index}><LocalizedText id="subagents.sequence_440e77" components={{ s0: <>{text(source.source)}</>, s1: <>{text(source.source_id)}</>, s2: <>{String(source.sequence ?? copy("subagents.extra.ca1844969742"))}</>, s3: <>{text(object(source.usage).native_report) ? <pre>{text(object(source.usage).native_report)}</pre> : null}</> }} /></li>)}</ul></details></td>
         <td><code>{text(child.parent_id)}</code>{child.parent_id === record.root_id ? <p>{copy("subagents.rootSession_6cdfaa")}</p> : null}</td>
-        <td>{text(child.status) || "Unavailable"}</td>
-        <td><LocalizedText id="subagents.observed_ae32e4" components={{ s0: <>{text(child.observed_model) || "Unavailable"}</> }} /><p><LocalizedText id="subagents.requested_a7d830" components={{ s0: <>{text(child.requested_model) || "Unavailable"}</> }} /></p></td>
+        <td>{text(child.status) || copy("subagents.extra.ca1844969742")}</td>
+        <td><LocalizedText id="subagents.observed_ae32e4" components={{ s0: <>{text(child.observed_model) || copy("subagents.extra.ca1844969742")}</> }} /><p><LocalizedText id="subagents.requested_a7d830" components={{ s0: <>{text(child.requested_model) || copy("subagents.extra.ca1844969742")}</> }} /></p></td>
         <td>{child.output == null ? copy("subagents.unavailable_ca1844") : <><p>{output.partial === true ? copy("subagents.partialNativeOutput_731a58") : copy("subagents.observedNativeOutput_37d11c")}</p><code>{text(output.native_message_id)}</code>{text(output.text) ? <pre>{text(output.text)}</pre> : null}{blocks.map((block, index) => <div key={index}><small>{text(block.kind)}</small>{block.text == null ? <p>{copy("subagents.contentUnavailable_e9f250")}</p> : <pre>{text(block.text)}</pre>}</div>)}</>}</td>
-        <td>{child.usage == null ? copy("subagents.unavailable_ca1844") : <><p>{text(usage.scope)}</p><p><LocalizedText id="subagents.total_dc9841" components={{ s0: <>{text(usage.total) || "Unavailable"}</> }} /></p><p><LocalizedText id="subagents.input_f51d4a" components={{ s0: <>{text(usage.input) || "Unavailable"}</> }} /></p><p><LocalizedText id="subagents.output_296ead" components={{ s0: <>{text(usage.output) || "Unavailable"}</> }} /></p><p>{copy("subagents.observationOnlyExcludedFromAdditiveBilling_23cc58")}</p></>}</td>
+        <td>{child.usage == null ? copy("subagents.unavailable_ca1844") : <><p>{text(usage.scope)}</p><p><LocalizedText id="subagents.total_dc9841" components={{ s0: <>{text(usage.total) || copy("subagents.extra.ca1844969742")}</> }} /></p><p><LocalizedText id="subagents.input_f51d4a" components={{ s0: <>{text(usage.input) || copy("subagents.extra.ca1844969742")}</> }} /></p><p><LocalizedText id="subagents.output_296ead" components={{ s0: <>{text(usage.output) || copy("subagents.extra.ca1844969742")}</> }} /></p><p>{copy("subagents.observationOnlyExcludedFromAdditiveBilling_23cc58")}</p></>}</td>
       </tr>;
     })}</tbody>
   </table>;
@@ -50,7 +50,7 @@ export function Subagents({ sessionId, revision }: { sessionId: string; revision
     {status.data && !supported ? <p>{copy("subagents.thisServerDoesNotSupportChild_0baf88")}</p> : null}
     {query.error ? <Problem error={query.error} /> : null}
     {query.isPending && supported ? <p>{copy("subagents.loadingChildObservations_0a8d53")}</p> : null}
-    {supported && query.data && !rows ? unavailable : null}
+    {supported && query.data && !rows ? unavailable() : null}
     {supported && rows?.length === 0 ? <p>{copy("subagents.noNativeChildObservationsAreAvailable_8c2be5")}</p> : null}
     {needsOpenCodeUpdate ? <p>{copy("subagents.updateTheServerAndRunnerDevice_ac66cd")}</p> : supported && rows && rows.length > 0 ? <ChildRows rows={rows} /> : null}
     <button disabled={!supported || query.isFetching} onClick={() => void query.refetch()}>{copy("subagents.refreshSubagents_1ffca1")}</button>

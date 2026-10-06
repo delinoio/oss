@@ -15,11 +15,11 @@ function nativeSummary(data: Document) {
   const options = object(data.options);
   const unknown = Object.keys(options).some(key => !nativeKeys.includes(key) && !permissionKeys.includes(key));
   const customized = nativeKeys.some(key => options[key] !== undefined && options[key] !== "" && !(key === "max_concurrency" && options[key] === 0));
-  return unknown ? "Customized · unknown options retained" : customized ? "Customized" : "Defaults";
+  return unknown ? copy("agent-configuration.extra.43b8a39e8e17") : customized ? copy("agent-configuration.extra.5987219128d4") : copy("agent-configuration.extra.610b7468ce69");
 }
 
 function retainedSummary(value: unknown, inherited: string) {
-  return value === undefined || value === "" ? inherited : typeof value === "string" ? value : "Unsupported value retained";
+  return value === undefined || value === "" ? inherited : typeof value === "string" ? value : copy("agent-configuration.extra.b21853cdda69");
 }
 
 function SectionIcon({ section }: { section: AgentSection }) {
@@ -41,7 +41,7 @@ function Disclosure({ section, summary, children, invalidValue = false, note }: 
   const problem = invalid || invalidValue || Object.values(reads).some(Boolean);
   return <div className="agent-optional-section">
     <details className="agent-disclosure" onInvalidCapture={event => { event.currentTarget.open = true; setInvalid(true); }} onChangeCapture={event => setInvalid(Boolean(firstInvalidControl(event.currentTarget)))}>
-      <summary><SectionIcon section={section} /><span className="agent-section-copy"><span className="agent-section-title">{section}{problem ? <span className="agent-section-problem" role="status">{copy("agent-configuration.needsAttention_c1ebc7")}</span> : null}</span><span className="agent-section-summary">{summary}</span></span><svg className="agent-chevron" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m9 5 7 7-7 7" /></svg></summary>
+      <summary><SectionIcon section={section} /><span className="agent-section-copy"><span className="agent-section-title">{copy(section === AgentSection.Reasoning ? "agent-configuration.section.reasoning" : section === AgentSection.Accounts ? "agent-configuration.section.accounts" : section === AgentSection.Instructions ? "agent-configuration.section.instructions" : "agent-configuration.section.native")}{problem ? <span className="agent-section-problem" role="status">{copy("agent-configuration.needsAttention_c1ebc7")}</span> : null}</span><span className="agent-section-summary">{summary}</span></span><svg className="agent-chevron" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m9 5 7 7-7 7" /></svg></summary>
       <div className="agent-section-fields"><AgentReadProblem.Provider value={reportRead}>{children}</AgentReadProblem.Provider></div>
     </details>
     {note ? <p className="agent-section-note">{note}</p> : null}
@@ -60,9 +60,9 @@ export function AgentConfiguration({ data, core, permissions, reasoning, account
   return <>
     <section className="agent-core" aria-labelledby={coreId}><header><h4 id={coreId}>{copy("agent-configuration.coreSettings_3f8268")}</h4><p>{copy("agent-configuration.requiredFieldsAreMarked_a99eff")}</p></header>{core}<div className="agent-permissions">{permissions}</div></section>
     <section className="agent-optional" aria-labelledby={optionalId}><header><h4 id={optionalId}>{copy("agent-configuration.optionalSettings_e88b5c")}</h4><p>{copy("agent-configuration.leaveTheseUnchangedToKeepThe_73a428")}</p></header>
-      <Disclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, "Native default")} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</Disclosure>
-      <Disclosure section={AgentSection.Accounts} summary={`${links.length} accounts · ${retainedSummary(data.routing, "Server default")}`} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? "Can be saved without accounts; execution requires an eligible account." : undefined}>{accounts}</Disclosure>
-      <Disclosure section={AgentSection.Instructions} summary={`${items(data.templates).length} templates`}>{instructions}</Disclosure>
+      <Disclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, copy("agent-configuration.extra.2bab94029bed"))} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</Disclosure>
+      <Disclosure section={AgentSection.Accounts} summary={copy("agent-configuration.sentence.ad26a61b1351", { v0: links.length, v1: retainedSummary(data.routing, copy("agent-configuration.extra.42b998374988")) })} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? copy("agent-configuration.extra.8116757327fb") : undefined}>{accounts}</Disclosure>
+      <Disclosure section={AgentSection.Instructions} summary={copy("agent-configuration.sentence.74d105c1160d", { v0: items(data.templates).length })}>{instructions}</Disclosure>
       <Disclosure section={AgentSection.Native} summary={nativeSummary(data)} invalidValue={invalidConcurrency}>{native}</Disclosure>
     </section>
   </>;

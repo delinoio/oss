@@ -75,8 +75,8 @@ export function ScheduleCreation({ definition, change, active, blocked, localAva
     setWeekday(next);
   };
   const summary = preset
-    ? timeInvalid ? "Enter a valid time in HH:mm." : `${frequency === Frequency.Weekly ? `Weekly on ${weekdayNames[weekday]}` : frequencyNames[frequency]} at ${time} · ${text(definition.timezone)}`
-    : `Custom cron · ${text(definition.timezone)}`;
+    ? timeInvalid ? copy("schedule-creation.extra.9cd18d06fde1") : copy("schedule-creation.sentence.6caab2b232d7", { v0: frequency === Frequency.Weekly ? copy("schedule-creation.weeklyOn", { day: weekdayNames[weekday] }) : frequencyNames[frequency], v1: time, v2: text(definition.timezone) })
+    : copy("schedule-creation.sentence.2a3f85460313", { v0: text(definition.timezone) });
   return <section className="schedule-creation"><form onSubmit={(event) => { event.preventDefault(); if (!blocked && !timeInvalid) void submit(); }}>
     <div className="schedule-creation-scroll">
       <header className="schedule-creation-header"><h2>{copy("schedule-creation.newSchedule_3bfe90")}</h2><p>{copy("schedule-creation.setUpARecurringTaskFor_a7ff02")}</p></header>

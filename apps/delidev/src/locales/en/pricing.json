@@ -43,5 +43,6 @@
   "pricing.loadingPricing_856f08": "Loading pricing…",
   "pricing.theModelConfigurationChangedReturnTo_063c62": "The model configuration changed. Return to Models and refresh before editing its pricing.",
   "pricing.editTokenPricing_44ae61": "Edit token pricing",
-  "pricing.backToModels_a28c02": "Back to Models"
+  "pricing.backToModels_a28c02": "Back to Models",
+  "pricing.extra.6d92cc676144": "Review the pricing fields."
 }

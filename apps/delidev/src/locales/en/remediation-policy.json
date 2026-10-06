@@ -21,5 +21,8 @@
   "remediation-policy.enabledPoliciesRunBoundedFixesFor_2758c5": "Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.",
   "remediation-policy.remediationDetails_15b723": "Remediation details",
   "remediation-policy.sessionStrategyExecutionTargetsConflictsAttempt_ef59b9": "Session strategy, execution targets, conflicts, attempt limit, and reviewers.",
-  "remediation-policy.remediationDetails_8af20a": "Remediation details<s0/>"
+  "remediation-policy.remediationDetails_8af20a": "Remediation details<s0/>",
+  "remediation-policy.extra.5ecef0b36ba3": "Automatically fix required CI failures",
+  "remediation-policy.extra.feab8b0b6d7b": "Automatically handle matching published feedback",
+  "remediation-policy.extra.7f64e75c8c6e": "Automatically resolve verified merge conflicts"
 }

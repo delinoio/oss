@@ -111,7 +111,7 @@ export function ApiProviderSettings({
   const noEnabledProviders = Boolean(activeInventory.data && providerInventoryReady(activeInventory.data.capabilities) && activeInventory.data.entries.length === 0 && !activeInventory.data.nextPageToken);
   const row = (entry: ProviderInventoryEntry) => {
     const customCopy = presetData(entry, presets);
-    const accountState = entry.accountCountsAvailable ? `${entry.connectedAccounts.toString()} connected · ${entry.totalAccounts.toString()} total` : "Entry counts unavailable";
+    const accountState = entry.accountCountsAvailable ? copy("provider-model-settings.sentence.490d50c6611c", { v0: entry.connectedAccounts.toString(), v1: entry.totalAccounts.toString() }) : copy("provider-model-settings.extra.555765b26ebc");
     return <article className="result provider-row" key={providerIdentity(entry)}>
       <div className="provider-row-heading"><div><h4>{entry.displayName}</h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? copy("provider-model-settings.customApiProvider_c1db3d") : local.includes(entry) ? copy("provider-model-settings.localApiServer_dd8eec") : copy("provider-model-settings.preset_7252e7")}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} /></div>
       <p><LocalizedText id="provider-model-settings.entriesConnectionStateIsSeparateFrom_e54388" components={{ s0: <>{accountState}</> }} /></p>
@@ -188,7 +188,7 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
     entries.push(model);
     grouped.set(providerID, entries);
   }
-  const groupName = (id: string) => id.startsWith("subscription:") ? subscriptionServiceNames[subscriptionService(id.slice(13))!] ?? "Unsupported subscription service" : resourceName(providers.get(id));
+  const groupName = (id: string) => id.startsWith("subscription:") ? subscriptionServiceNames[subscriptionService(id.slice(13))!] ?? copy("provider-model-settings.extra.fdfda19280ec") : resourceName(providers.get(id));
   return <section className="models-list" aria-label={copy("provider-model-settings.modelsFromActiveApiProvidersAnd_6f3768")}>
     <SettingsHeading title={copy("provider-model-settings.models_d17d2d")} actions={<>
       <button className="primary" type="button" disabled={!ready} onClick={() => createModel()}><LocalizedText id="provider-model-settings.newModel_aabdb9" components={{ s0: <span aria-hidden="true">+</span> }} /></button>
@@ -213,8 +213,8 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
         return <article className="models-row" key={model.id}>
           <div className="models-row-details">
             <div className="models-row-heading"><h4>{text(data.name) || text(data.native_id)}</h4><span className="models-status">{data.new === true ? copy("provider-model-settings.new_a253ff") : copy("provider-model-settings.reviewed_fad605")}</span><span className="models-status">{data.hidden === true ? copy("provider-model-settings.hidden_7e6fef") : copy("provider-model-settings.visible_8411f5")}</span></div>
-            <div className="models-identifiers"><p><LocalizedText id="provider-model-settings.nativeId_3dd1ba" components={{ s0: <>{text(data.native_id) || "Unavailable"}</> }} /></p><p><LocalizedText id="provider-model-settings.cliAlias_275567" components={{ s0: <>{text(data.alias) || "None"}</> }} /></p></div>
-            <p><LocalizedText id="provider-model-settings.configuredHarnesses_94210e" components={{ s0: <>{items(data.harnesses).map(text).join(", ") || "None"}</> }} /></p>
+            <div className="models-identifiers"><p><LocalizedText id="provider-model-settings.nativeId_3dd1ba" components={{ s0: <>{text(data.native_id) || copy("provider-model-settings.extra.ca1844969742")}</> }} /></p><p><LocalizedText id="provider-model-settings.cliAlias_275567" components={{ s0: <>{text(data.alias) || copy("provider-model-settings.extra.dc937b598926")}</> }} /></p></div>
+            <p><LocalizedText id="provider-model-settings.configuredHarnesses_94210e" components={{ s0: <>{items(data.harnesses).map(text).join(", ") || copy("provider-model-settings.extra.dc937b598926")}</> }} /></p>
           </div>
           <div className="models-row-actions"><button type="button" disabled={!supportsResourceSchema(model) || document(model).retired === true} onClick={() => editModel(model)}>{copy("provider-model-settings.editModel_1733ca")}</button><button type="button" disabled={!supportsResourceSchema(model) || document(model).retired === true} onClick={() => priceModel(model)}>{copy("provider-model-settings.tokenPricing_56b24f")}</button></div>
         </article>;

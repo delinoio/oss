@@ -25,7 +25,7 @@ const nativeProblems: Record<string, string> = {
   get "timed-out"() { return copy("desktop.localStartupHasNotCompletedCheck_90d29e"); },
   get incompatible() { return copy("desktop.theRunningServerUsesADifferent_327644"); },
   get "credential-unavailable"() { return copy("desktop.thisDesktopCredentialIsUnavailableOr_55cfb5"); },
-  "permission-denied": localPermissionProblem,
+  get "permission-denied"() { return localPermissionProblem(); },
   get "invalid-evidence"() { return copy("desktop.theRetainedLocalConnectionRequiresInspection_c0ad7a"); },
   get "storage-unavailable"() { return copy("desktop.thePrivateDelidevConfigurationDirectoryIs_3958ae"); },
 };

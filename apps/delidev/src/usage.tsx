@@ -1,4 +1,4 @@
-import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, displayLocale, useLocale  } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, EntityKind, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
@@ -24,12 +24,12 @@ function sameFilters(left: Filters, right: Filters): boolean {
 }
 
 function measure(value?: UsageMeasure): string {
-  if (!value || value.measuredResponses === 0 || !/^\d+$/.test(value.knownTotal)) return "Unavailable";
+  if (!value || value.measuredResponses === 0 || !/^\d+$/.test(value.knownTotal)) return copy("usage.extra.ca1844969742");
   return BigInt(value.knownTotal).toLocaleString(displayLocale());
 }
 
-const primaryMeasures = [["Known total tokens", "total"], ["Input tokens", "input"], ["Output tokens", "output"]] as const;
-const secondaryMeasures = [["Cached input", "cachedInput"], ["Cache-write input", "cacheWriteInput"], ["Reasoning output", "reasoningOutput"]] as const;
+const primaryMeasures = () => [[copy("usage.extra.6e3886ad15d2"), "total"], [copy("usage.extra.dd856eeb5046"), "input"], [copy("usage.extra.a9b50ea0c4a7"), "output"]] as const;
+const secondaryMeasures = () => [[copy("usage.extra.876a4379087b"), "cachedInput"], [copy("usage.extra.f8bc2d034686"), "cacheWriteInput"], [copy("usage.extra.f85860ca7347"), "reasoningOutput"]] as const;
 
 function MeasureCard({ label, value, primary = false }: { label: string; value?: UsageMeasure; primary?: boolean }) {
   useLocale();
@@ -38,7 +38,7 @@ function MeasureCard({ label, value, primary = false }: { label: string; value?:
 
 function Measures({ value }: { value?: UsageTotals }) {
   useLocale();
-  return <dl className="usage-row-measures">{[...primaryMeasures, ...secondaryMeasures].map(([label, key]) => <MeasureCard key={label} label={label} value={value?.[key]} />)}</dl>;
+  return <dl className="usage-row-measures">{[...primaryMeasures(), ...secondaryMeasures()].map(([label, key]) => <MeasureCard key={key} label={label} value={value?.[key]} />)}</dl>;
 }
 
 function formatAppliedTime(milliseconds: bigint, timeZone: string): string {
@@ -46,22 +46,22 @@ function formatAppliedTime(milliseconds: bigint, timeZone: string): string {
 }
 
 function pendingRange(selection: ReturnType<typeof request>): string {
-  if (selection.fromUnixMs === 0n && selection.untilUnixMs === 0n) return "Last 30 days · server time";
+  if (selection.fromUnixMs === 0n && selection.untilUnixMs === 0n) return copy("usage.extra.5f5f75f8e14c");
   const from = selection.fromUnixMs || (selection.untilUnixMs ? selection.untilUnixMs - 30n * 86_400_000n : 0n);
-  const start = from ? formatAppliedTime(from, selection.timeZone) : "30 days before server now";
-  const end = selection.untilUnixMs ? formatAppliedTime(selection.untilUnixMs, selection.timeZone) : "server now";
-  return `${start} – ${end} (exclusive)`;
+  const start = from ? formatAppliedTime(from, selection.timeZone) : copy("usage.pendingStart");
+  const end = selection.untilUnixMs ? formatAppliedTime(selection.untilUnixMs, selection.timeZone) : copy("usage.extra.ca936ad0748f");
+  return copy("usage.range", { from: start, until: end });
 }
 
 function appliedFilters(selection: ReturnType<typeof request>): string[] {
   const values: string[] = [];
-  if (selection.sessionId) values.push(`Session ${selection.sessionId}`);
-  if (selection.projectId) values.push(`Project ${selection.projectId}`);
-  if (selection.generalChat) values.push("General Chat");
-  if (selection.accountId) values.push(`Account ${selection.accountId}`);
-  if (selection.providerId) values.push(`API ${selection.providerId}`);
-  if (selection.subscriptionService) values.push(`Subscription service ${SubscriptionServiceIdentity[selection.subscriptionService].toLowerCase()}`);
-  if (selection.modelId) values.push(`Model ${selection.modelId}`);
+  if (selection.sessionId) values.push(copy("usage.sentence.15934289ffb2", { v0: selection.sessionId }));
+  if (selection.projectId) values.push(copy("usage.sentence.874241e2ef76", { v0: selection.projectId }));
+  if (selection.generalChat) values.push(copy("usage.extra.f634bca1f142"));
+  if (selection.accountId) values.push(copy("usage.sentence.a422d5ea430e", { v0: selection.accountId }));
+  if (selection.providerId) values.push(copy("usage.sentence.886fdf04e3f3", { v0: selection.providerId }));
+  if (selection.subscriptionService) values.push(copy("usage.sentence.67a16314500f", { v0: SubscriptionServiceIdentity[selection.subscriptionService].toLowerCase() }));
+  if (selection.modelId) values.push(copy("usage.sentence.1d3a37cc1c5e", { v0: selection.modelId }));
   return values;
 }
 
@@ -70,7 +70,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
   const [draft, setDraft] = useState<Filters>(emptyFilters);
   const [appliedDraft, setAppliedDraft] = useState<Filters>(emptyFilters);
   const [selection, setSelection] = useState(() => request(emptyFilters, detectDeviceTimeZone()));
-  const [invalid, setInvalid] = useState("");
+  const [invalid, setInvalid] = useProductMessage("");
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const nativeFilters = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
   const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active });
@@ -89,7 +89,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       setAppliedDraft({ ...draft });
       closeDrawer();
     } catch {
-      setInvalid("Choose valid local date and time values in the detected IANA timezone, with From before the exclusive Until and no more than 366 days apart.");
+      setInvalid(ownedMessage("usage.extra.fac4f0da83d0"));
     }
   };
   const reset = () => {
@@ -133,8 +133,8 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
     {!data && result.isPending ? <div className="usage-skeletons" aria-hidden="true"><div /><div /><div /><div /></div> : null}
     {data ? <>
       <section className="usage-summary" aria-labelledby="usage-summary-title"><h2 id="usage-summary-title">{copy("usage.knownTokenTotals_17a07e")}</h2><p><LocalizedText id="usage.distinctResponsesRecorded_baaa83" components={{ s0: <>{data.totals?.responses.toLocaleString(displayLocale()) ?? "0"}</> }} /></p>
-        <dl className="usage-metrics-primary">{primaryMeasures.map(([label, key]) => <MeasureCard key={label} primary label={label} value={data.totals?.[key]} />)}</dl>
-        <dl className="usage-metrics-secondary">{secondaryMeasures.map(([label, key]) => <MeasureCard key={label} label={label} value={data.totals?.[key]} />)}</dl>
+        <dl className="usage-metrics-primary">{primaryMeasures().map(([label, key]) => <MeasureCard key={key} primary label={label} value={data.totals?.[key]} />)}</dl>
+        <dl className="usage-metrics-secondary">{secondaryMeasures().map(([label, key]) => <MeasureCard key={key} label={label} value={data.totals?.[key]} />)}</dl>
         <p className="usage-subset-note">{copy("usage.cachedInputIsPartOfInput_fa92e1")}</p>
       </section>
       <div className="usage-coverage"><strong>{copy("usage.incompleteCoverage_0922dc")}</strong><span>{data.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES ? copy("usage.observedRootResponsesOnlyMissingOlder_ae66ec") : copy("usage.thisServerSTelemetryCoverageIs_d25728")}</span><span><LocalizedText id="usage.acceptedExecutionsHaveNoResponseUsage_9f2beb" components={{ s0: <>{data.acceptedExecutionsWithoutResponse.toLocaleString(displayLocale())}</> }} /></span><span><LocalizedText id="usage.nativeContextActionsHaveNoExact_9bc220" components={{ s0: <>{data.acceptedCompactionsWithoutResponse.toLocaleString(displayLocale())}</> }} /></span></div>
@@ -142,9 +142,9 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       {responseAnalytics?.granularity === UsageTimeGranularity.DAY ? <UsageCharts analytics={responseAnalytics} timeZone={appliedZone} /> : <p className="usage-charts-unavailable" role="status">{copy("usage.dailyAndModelChartsAreUnavailable_a70ff8")}</p>}
       <section className="usage-detail" aria-labelledby="usage-detail-title"><h2 id="usage-detail-title">{copy("usage.sessionModelAndAccountDetails_778c53")}</h2>
         {responseGroups.length ? <div className="usage-table" role="region" aria-label={copy("usage.sessionModelAndAccountUsageTable_fc350c")} tabIndex={0}><table><caption>{copy("usage.knownResponseSubtotalsWithOriginalSession_e1cb71")}</caption><thead><tr><th scope="col">{copy("usage.sessionProject_59a44c")}</th><th scope="col">{copy("usage.account_7e1b0d")}</th><th scope="col">{copy("usage.modelApi_6a8129")}</th><th scope="col">{copy("usage.tokens_a039df")}</th><th scope="col">{copy("usage.tokenPriceEstimate_ed3009")}</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${subscriptionServiceLabel(group.subscriptionService)}:${group.modelId}`}>
-          <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || `Project ${group.projectId}` : copy("usage.generalChat_f634bc")}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
-          <td><span>{group.accountName || "Retained account"}</span><small>{group.accountId}</small></td>
-          <td><span>{group.modelName || "Retained model"}</span><small>{group.modelId}</small><p>{group.subscriptionService ? copy("usage.subscriptionService_67a163", { v0: subscriptionServiceLabel(group.subscriptionService) }) : group.providerName || `API ${group.providerId}`}</p><small>{group.providerId}</small></td>
+          <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || copy("usage.sentence.874241e2ef76", { v0: group.projectId }) : copy("usage.generalChat_f634bc")}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
+          <td><span>{group.accountName || copy("usage.extra.415673677e87")}</span><small>{group.accountId}</small></td>
+          <td><span>{group.modelName || copy("usage.extra.a99bc331d9ad")}</span><small>{group.modelId}</small><p>{group.subscriptionService ? copy("usage.subscriptionService_67a163", { v0: subscriptionServiceLabel(group.subscriptionService) }) : group.providerName || copy("usage.sentence.886fdf04e3f3", { v0: group.providerId })}</p><small>{group.providerId}</small></td>
           <td><strong>{measure(group.totals?.total)}</strong><p><LocalizedText id="usage.responses_5238cc" components={{ s0: <>{group.totals?.responses.toLocaleString(displayLocale())}</>, s1: <>{group.totals?.total?.unavailableResponses ? copy("usage.unavailable_e4701b", { v0: group.totals.total.unavailableResponses }) : ""}</> }} /></p><details><summary>{copy("usage.tokenBreakdown_c7576a")}</summary><Measures value={group.totals} /></details></td><td><EstimateAmounts value={group.estimates} /></td>
         </tr>)}</tbody></table></div> : <p>{copy("usage.noExactResponseUsageIsRecorded_d85b24")}</p>}
       </section>

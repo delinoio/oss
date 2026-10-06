@@ -17,5 +17,6 @@
   "github-reviewers.appAttribution_c427b6": "App attribution",
   "github-reviewers.app_077060": "{{v0}} · App {{v1}} · {{v2}}",
   "github-reviewers.githubReportsNoAppAttribution_9f3c38": "GitHub reports no App attribution",
-  "github-reviewers.appNotVerified_ad3966": "App not verified · {{v0}}"
+  "github-reviewers.appNotVerified_ad3966": "App not verified · {{v0}}",
+  "github-reviewers.extra.064effacbffd": "Numeric ID unavailable"
 }

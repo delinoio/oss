@@ -1,11 +1,11 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 export enum ProviderGuidanceAction { Documentation = "documentation", ApiKeys = "api-keys" }
 export function ProviderGuidance({ preset, documentation, keyCreation }: { preset?: string; documentation: string; keyCreation?: string }) {
   useLocale();
-  const [busy, setBusy] = useState(false), [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false), [status, setStatus] = useProductMessage("");
   const owner = useRef(0), pending = useRef(false);
   useEffect(() => { owner.current++; pending.current = false; setBusy(false); setStatus(""); return () => { owner.current++; }; }, [preset]);
   const open = async (action: ProviderGuidanceAction) => {
@@ -15,8 +15,8 @@ export function ProviderGuidance({ preset, documentation, keyCreation }: { prese
       // The native host selects its compiled official URL from this closed
       // identity/action. Server-provided help text cannot expand OS authority.
       await invoke("open_provider_guidance", { preset, action });
-      if (owner.current === original) setStatus("Sent to your default browser. Create the key there, then connect it here.");
-    } catch { if (owner.current === original) setStatus("Browser opening was not confirmed. Inspect your browser before trying again."); }
+      if (owner.current === original) setStatus(ownedMessage("provider-guidance.extra.028de0ea70b9"));
+    } catch { if (owner.current === original) setStatus(ownedMessage("provider-guidance.extra.45a2c8995dcd")); }
     finally { if (owner.current === original) { pending.current = false; setBusy(false); } }
   };
   return <div>

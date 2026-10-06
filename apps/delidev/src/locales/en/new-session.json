@@ -33,5 +33,7 @@
   "new-session.yourMessageIsRetainedRefreshThe_295fd7": "Your message is retained. Refresh the session list and inspect the original operation before creating another session.",
   "new-session.inspectSessions_aa8dcc": "Inspect sessions",
   "new-session.sessionCreatedAs_362cd1": "Session created as “<s0/>”. ",
-  "new-session.openSession_b205bb": "Open session"
+  "new-session.openSession_b205bb": "Open session",
+  "new-session.extra.08fb485eeaf6": "Review the budget.",
+  "new-session.extra.cffdba22adf2": "New session"
 }

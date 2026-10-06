@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { DeviceQuery, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -10,21 +10,25 @@ import "./device-settings.css";
 enum DeviceAuthorization { Authorized = "Authorized", Revoked = "Revoked", Unknown = "Unknown" }
 export enum DeviceRevocationExit { Cancel, Result }
 export enum DeviceAction { Details = "details", Revoke = "revoke" }
-const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export function deviceDate(value: unknown): string {
   const raw = text(value);
   const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/.exec(raw);
-  if (!parts) return "Unknown";
+  if (!parts) return copy("device-settings.extra.b764cdc0eab7");
   const [, year, month, day, hour, minute, second, , offsetHour, offsetMinute] = parts;
   const y = Number(year), m = Number(month), d = Number(day);
   const monthDays = [31, y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   // Date.parse normalizes impossible calendar dates; reject those instead of
   // presenting a fabricated summary. The original text remains in Details.
-  if (m < 1 || m > 12 || d < 1 || d > monthDays[m - 1] || Number(hour) > 23 || Number(minute) > 59 || Number(second) > 59 || Number(offsetHour ?? 0) > 23 || Number(offsetMinute ?? 0) > 59) return "Unknown";
+  if (m < 1 || m > 12 || d < 1 || d > monthDays[m - 1] || Number(hour) > 23 || Number(minute) > 59 || Number(second) > 59 || Number(offsetHour ?? 0) > 23 || Number(offsetMinute ?? 0) > 59) return copy("device-settings.extra.b764cdc0eab7");
   const date = new Date(raw);
-  if (!Number.isFinite(date.getTime())) return "Unknown";
-  return `${String(date.getUTCDate()).padStart(2, "0")} ${months[date.getUTCMonth()]} ${String(date.getUTCFullYear()).padStart(4, "0")}, ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")} UTC`;
+  if (!Number.isFinite(date.getTime())) return copy("device-settings.extra.b764cdc0eab7");
+  const formatter = new Intl.DateTimeFormat(displayLocale(), { timeZone: "UTC", year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" });
+  if (displayLocale() === "en-US") {
+    const parts = new Map(formatter.formatToParts(date).map(part => [part.type, part.value]));
+    return `${parts.get("day")} ${parts.get("month")} ${parts.get("year")}, ${parts.get("hour")}:${parts.get("minute")} UTC`;
+  }
+  return formatter.format(date);
 }
 
 function DeviceMetadata({ resource }: { resource: Resource }) {
@@ -33,8 +37,8 @@ function DeviceMetadata({ resource }: { resource: Resource }) {
   return <dl className="paired-device-metadata">
     <dt>{copy("device-settings.deviceId_6e0a0b")}</dt><dd>{resource.id}</dd>
     {text(value.machine_id) ? <><dt>{copy("device-settings.runnerDeviceId_a03c92")}</dt><dd>{text(value.machine_id)}</dd></> : null}
-    <dt>{copy("device-settings.originalPairedTimestamp_7fae2b")}</dt><dd>{text(value.paired_at) || "Unknown"}</dd>
-    {value.revoked === true || text(value.revoked_at) ? <><dt>{copy("device-settings.originalRevokedTimestamp_c0f6f5")}</dt><dd>{text(value.revoked_at) || "Unknown"}</dd></> : null}
+    <dt>{copy("device-settings.originalPairedTimestamp_7fae2b")}</dt><dd>{text(value.paired_at) || copy("device-settings.extra.b764cdc0eab7")}</dd>
+    {value.revoked === true || text(value.revoked_at) ? <><dt>{copy("device-settings.originalRevokedTimestamp_c0f6f5")}</dt><dd>{text(value.revoked_at) || copy("device-settings.extra.b764cdc0eab7")}</dd></> : null}
     {text(value.type) && value.type !== "client" && value.type !== "worker" ? <><dt>{copy("device-settings.type_baaddf")}</dt><dd>{text(value.type)}</dd></> : null}
     {text(value.health) ? <><dt>{copy("device-settings.status_920e41")}</dt><dd>{text(value.health)}</dd></> : null}
     {text(value.harness) ? <><dt>{copy("device-settings.harness_e3b5b4")}</dt><dd>{text(value.harness)}</dd></> : null}
@@ -43,14 +47,14 @@ function DeviceMetadata({ resource }: { resource: Resource }) {
 
 export function DeviceRow({ resource, currentDeviceId, expanded, toggle, revoke }: { resource: Resource; currentDeviceId?: string; expanded: boolean; toggle: () => void; revoke: () => void }) {
   useLocale();
-  const value = document(resource), name = text(value.name) || text(value.alias) || "Unknown";
+  const value = document(resource), name = text(value.name) || text(value.alias) || copy("device-settings.extra.b764cdc0eab7");
   const authorization = value.revoked === true ? DeviceAuthorization.Revoked : value.revoked === false ? DeviceAuthorization.Authorized : DeviceAuthorization.Unknown;
   const id = useId();
   const self = resource.id === currentDeviceId;
   return <article className="paired-device-row" aria-label={name}>
     <div className="paired-device-main">
       <svg className="paired-device-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={value.type === "worker" ? "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01" : "M3 4h18v13H3zM8 21h8m-4-4v4"} /></svg>
-      <div className="paired-device-identity"><h3>{name}</h3><div className="paired-device-facts"><span>{value.type === "client" ? copy("device-settings.desktopClient_cfe9ad") : value.type === "worker" ? copy("device-settings.worker_a67b04") : copy("device-settings.unknown_b764cd")}</span><span className={authorization === DeviceAuthorization.Authorized ? "paired-device-badge paired-device-authorized" : "paired-device-badge"}>{authorization}</span>{self ? <span>{copy("device-settings.thisDesktopClient_eaab20")}</span> : null}</div><p className="paired-device-dates"><LocalizedText id="device-settings.paired_446e5e" components={{ s0: <>{deviceDate(value.paired_at)}</>, s1: <>{value.revoked === true ? copy("device-settings.revoked_513da5", { v0: deviceDate(value.revoked_at) }) : ""}</> }} /></p>{self ? <p className="paired-device-self">{copy("device-settings.thisDesktopClientCannotRevokeIts_f0f65f")}</p> : null}</div>
+      <div className="paired-device-identity"><h3>{name}</h3><div className="paired-device-facts"><span>{value.type === "client" ? copy("device-settings.desktopClient_cfe9ad") : value.type === "worker" ? copy("device-settings.worker_a67b04") : copy("device-settings.unknown_b764cd")}</span><span className={authorization === DeviceAuthorization.Authorized ? "paired-device-badge paired-device-authorized" : "paired-device-badge"}>{authorization === DeviceAuthorization.Authorized ? copy("device-settings.authorized_67f542") : authorization === DeviceAuthorization.Revoked ? copy("device-settings.revoked_f6f738") : copy("device-settings.unknown_b764cd")}</span>{self ? <span>{copy("device-settings.thisDesktopClient_eaab20")}</span> : null}</div><p className="paired-device-dates"><LocalizedText id="device-settings.paired_446e5e" components={{ s0: <>{deviceDate(value.paired_at)}</>, s1: <>{value.revoked === true ? copy("device-settings.revoked_513da5", { v0: deviceDate(value.revoked_at) }) : ""}</> }} /></p>{self ? <p className="paired-device-self">{copy("device-settings.thisDesktopClientCannotRevokeIts_f0f65f")}</p> : null}</div>
       <div className="actions paired-device-actions"><button type="button" data-device-id={resource.id} data-device-action={DeviceAction.Details} aria-label={copy("device-settings.detailsFor_0bbada", { v0: name })} aria-expanded={expanded} aria-controls={id} onClick={toggle}><LocalizedText id="device-settings.details_6bb37e" components={{ s0: <span aria-hidden="true"> {expanded ? "⌃" : "⌄"}</span> }} /></button>{value.revoked === false && !self ? <button type="button" className="paired-device-revoke" data-device-id={resource.id} data-device-action={DeviceAction.Revoke} disabled={resource.schemaVersion !== 1} aria-label={copy("device-settings.revoke_d6e405", { v0: name })} onClick={revoke}>{copy("device-settings.revoke_87e6d0")}</button> : null}</div>
     </div>
     <div id={id} hidden={!expanded} className="paired-device-disclosure"><DeviceMetadata resource={resource} /></div>

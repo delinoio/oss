@@ -469,8 +469,8 @@ function AccountCreationWizard({
     const current = connected ?? createdAccount;
     const data = document(current);
     const hasCredentials = Boolean(text(object(data.connection).id));
-    const validationState = text(object(data.validation).state) || "not yet observed";
-    const validationLabel = text(data.health) === "unverified" ? "validation required" : `validation ${validationState}`;
+    const validationState = text(object(data.validation).state) || copy("account-settings.extra.3bc91159cd96");
+    const validationLabel = text(data.health) === "unverified" ? copy("account-settings.extra.b2c4eef1f935") : copy("account-settings.sentence.60031f8620a9", { v0: validationState });
     return <section className="account-wizard api-keys-view" aria-labelledby="api-account-created-title">
       <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</button>
       <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><h2 id="api-account-created-title">{resourceName(current)}</h2>
@@ -529,7 +529,7 @@ function AccountCreationWizard({
           {keyless ? <p>{copy("account-settings.connectToThisLocalEndpointOn_70be8a")}</p> : <>
             <label>{copy("account-settings.apiKey_16f0ee")}<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={apiKey} aria-invalid={(attempted || apiKey.length > 0) && !apiKeyValid} onChange={(event) => setApiKey(event.target.value)} /></label>
             {!providerChecking && !create.busy && !create.uncertain && (attempted || apiKey.length > 0) && !apiKeyValid ? <p role="alert">{copy("account-settings.enter18192PrintableAsciiBytes_5695b1")}</p> : null}
-            <details><summary>{copy("account-settings.whereToGetAnApiKey_525ff8")}</summary><p>{selectedProvider?.keyGuidance || "Use the provider's documented API key flow."}</p>{selectedProvider ? <ProviderGuidance preset={selectedProvider.presetId} documentation={selectedProvider.documentationUrl} keyCreation={selectedProvider.keyCreationUrl} /> : null}</details>
+            <details><summary>{copy("account-settings.whereToGetAnApiKey_525ff8")}</summary><p>{selectedProvider?.keyGuidance || copy("account-settings.extra.7a611b78ccfc")}</p>{selectedProvider ? <ProviderGuidance preset={selectedProvider.presetId} documentation={selectedProvider.documentationUrl} keyCreation={selectedProvider.keyCreationUrl} /> : null}</details>
           </>}
           <p>{copy("account-settings.useASeparateEntryForEach_d8b0c8")}</p><p>{copy("account-settings.storedSecurelyOnTheSelectedServer_110ddf")}</p>
           <details open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}><summary>{copy("account-settings.advancedPreferences_6abb0c")}</summary>
@@ -670,10 +670,10 @@ function ApiAccountSettings({
         return <article className="api-entry-row" key={row.id}>
           <h2>{resourceName(row)}</h2>
           {row.schemaVersion !== 1 ? <p className="api-entry-provider-name">{row.id}</p> : null}
-          <p className="api-entry-provider-name">{provider?.displayName ?? "Provider unavailable · " + text(data.provider_id)}</p>
+          <p className="api-entry-provider-name">{provider?.displayName ?? copy("account-settings.extra.37709967fc3f") + text(data.provider_id)}</p>
           <dl>
             <div><dt>{copy("account-settings.connection_5d80f5")}</dt><dd>{text(object(data.removal).request_id) ? copy("account-settings.credentialCleanupPending_50459d") : text(object(data.connection).id) ? copy("account-settings.credentialConnected_eed6f1") : copy("account-settings.disconnected_04dfac")}</dd></div>
-            <div><dt>{copy("account-settings.health_ac2be4")}</dt><dd>{text(data.health) || "Unknown"}</dd></div>
+            <div><dt>{copy("account-settings.health_ac2be4")}</dt><dd>{text(data.health) || copy("account-settings.extra.b764cdc0eab7")}</dd></div>
             <div><dt>{copy("account-settings.entry_861e39")}</dt><dd>{data.enabled === true ? copy("account-settings.enabled_92c1cd") : copy("account-settings.disabled_75081b")}</dd></div>
             <div><dt>{copy("account-settings.providerStatus_369744")}</dt><dd>{provider ? provider.enabled ? copy("account-settings.enabled_92c1cd") : copy("account-settings.off_ca7981") : copy("account-settings.unavailable_ca1844")}</dd></div>
             <div><dt>{copy("account-settings.quota_e67c46")}</dt><dd>{data.confirmed_exhausted === true ? copy("account-settings.confirmedExhausted_763851") : quotaCount ? copy("account-settings.observations_402a6b", { v0: quotaCount }) : copy("account-settings.noQuotaObservation_d9e3af")}</dd></div>

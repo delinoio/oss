@@ -13,6 +13,12 @@ export function Failure({ failure }: { failure?: ClientFailure }) {
   if (!failure) return null;
   return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong><p>{copy(failureGuidance[failure.code])}</p><details><summary>{copy("ui.technicalDetails")}</summary><strong>{failure.message}</strong><p>{failure.guidance}</p><code>{failure.code}</code></details>{failure.correlationId ? <small><LocalizedText id="ui.reference_0eac07" components={{ s0: <>{failure.correlationId}</> }} /></small> : null}</div>;
 }
+export function ServiceProblem({ code, children }: { code?: string; children: ReactNode }) {
+  useLocale();
+  const normalized = code?.replaceAll("-", "_");
+  const key = normalized && Object.hasOwn(failureGuidance, normalized) ? failureGuidance[normalized as FailureCode] : "ui.failure.internal";
+  return <div className="problem" role="alert"><p>{copy(key)}</p><details><summary>{copy("ui.technicalDetails")}</summary>{children}</details></div>;
+}
 export function Modal({ title, close, children, visible = true }: { title: string; close: () => void; children: ReactNode; visible?: boolean }) {
   useLocale();
   const id = useId();

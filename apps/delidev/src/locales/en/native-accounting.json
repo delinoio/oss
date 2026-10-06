@@ -26,5 +26,17 @@
   "native-accounting.revision_058534": "Revision <s0/>",
   "native-accounting.pricedMissingUsageMissingPriceNot_393c9f": "<s0/>: <s1/> · <s2/> priced · <s3/> missing usage · <s4/> missing price · <s5/> not applicable",
   "native-accounting.noOriginalUnitsAreRecordedFor_7dfc97": "No original units are recorded for these filters. This does not establish zero usage or cost.",
-  "native-accounting.claudeAndOpencodeAccountingIsUnavailable_19b5e9": "Claude and OpenCode accounting is unavailable from this server version. Update the server to view it."
+  "native-accounting.claudeAndOpencodeAccountingIsUnavailable_19b5e9": "Claude and OpenCode accounting is unavailable from this server version. Update the server to view it.",
+  "native-accounting.extra.36ecb4f86691": "Input",
+  "native-accounting.extra.0008ce30b97d": "Cache read",
+  "native-accounting.extra.e7fc264359d6": "Cache write",
+  "native-accounting.extra.b2439bcb8dee": "Output",
+  "native-accounting.extra.852cb285e12d": "Thinking / reasoning",
+  "native-accounting.extra.b1cbbb5582ff": "Native total",
+  "native-accounting.extra.ca1844969742": "Unavailable",
+  "native-accounting.extra.3081f2ba9c0e": "Claude main-loop inputs",
+  "native-accounting.extra.583cefc35691": "OpenCode steps",
+  "native-accounting.extra.f634bca1f142": "General Chat",
+  "native-accounting.unavailableUnits_one": " · {{count}} unavailable unit",
+  "native-accounting.unavailableUnits_other": " · {{count}} unavailable units"
 }

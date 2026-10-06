@@ -53,5 +53,9 @@
   "schedule-creation.enabledOnCreation_f6e986": "Enabled on creation",
   "schedule-creation.pausedOnCreation_484218": "Paused on creation",
   "schedule-creation.cancel_19766e": "Cancel",
-  "schedule-creation.createSchedule_5b08f3": "Create schedule"
+  "schedule-creation.createSchedule_5b08f3": "Create schedule",
+  "schedule-creation.extra.9cd18d06fde1": "Enter a valid time in HH:mm.",
+  "schedule-creation.sentence.6caab2b232d7": "{{v0}} at {{v1}} · {{v2}}",
+  "schedule-creation.sentence.2a3f85460313": "Custom cron · {{v0}}",
+  "schedule-creation.weeklyOn": "Weekly on {{day}}"
 }

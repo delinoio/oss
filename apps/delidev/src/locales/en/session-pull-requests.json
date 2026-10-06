@@ -25,5 +25,8 @@
   "session-pull-requests.nextAssociationPage_75769b": "Next association page",
   "session-pull-requests.linkingAPrRequiresAProject_301f3d": "Linking a PR requires a project session. Existing associations remain inspectable.",
   "session-pull-requests.closePrAssociations_622b6a": "Close PR associations",
-  "session-pull-requests.showPrAssociations_8dbf45": "Show PR associations"
+  "session-pull-requests.showPrAssociations_8dbf45": "Show PR associations",
+  "session-pull-requests.extra.26513f241135": "The link was acknowledged, but its response could not be verified. Refresh retained associations before another operation.",
+  "session-pull-requests.extra.d68ee597ba2c": "PR association saved.",
+  "session-pull-requests.extra.648a9b6650b9": "The unlink acknowledgment could not be verified. Refresh current associations."
 }

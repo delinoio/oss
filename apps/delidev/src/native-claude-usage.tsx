@@ -43,12 +43,12 @@ function valid(v: Record<string, unknown>) {
   if (v.source === Source.Result) return result(v.result) && v.provider === undefined && v.message_id === undefined && v.native_message_id === undefined && v.model === undefined && v.index === undefined;
   return Object.values(Source).includes(v.source as Source) && provider(v.provider) && v.result === undefined && messageID(v.message_id) && text(v.native_message_id, 1024) && v.native_message_id.trim().length > 0 && label(v.model) && (v.source === Source.Block ? v.index !== undefined : v.index === undefined);
 }
-const labels = [["input_tokens", "Input excluding cache"], ["cache_read_input_tokens", "Cache read input"], ["cache_creation_input_tokens", "Cache creation input"], ["output_tokens", "Output including thinking"]] as const;
+const labels = () => [["input_tokens", copy("native-claude-usage.extra.7fa3de9600ee")], ["cache_read_input_tokens", copy("native-claude-usage.extra.085171a719a1")], ["cache_creation_input_tokens", copy("native-claude-usage.extra.7018ea47815e")], ["output_tokens", copy("native-claude-usage.extra.ca019159180d")]] as const;
 function ProviderCounts({ value }: { value: unknown }) {
   useLocale();
   if (value == null) return <p>{copy("native-claude-usage.mainLoopUsageUnavailable_8890bb")}</p>;
   const p = object(value);
-  return <><dl>{labels.map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{p[key] == null ? copy("native-claude-usage.unavailable_ca1844") : p[key] as string}</dd></div>)}</dl><details><summary>{copy("native-claude-usage.nativeUsageDetails_c90c8b")}</summary><pre>{JSON.stringify(p, null, 2)}</pre></details></>;
+  return <><dl>{labels().map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{p[key] == null ? copy("native-claude-usage.unavailable_ca1844") : p[key] as string}</dd></div>)}</dl><details><summary>{copy("native-claude-usage.nativeUsageDetails_c90c8b")}</summary><pre>{JSON.stringify(p, null, 2)}</pre></details></>;
 }
 
 export function NativeClaudeProviderUsage({ value }: { value: unknown }) {

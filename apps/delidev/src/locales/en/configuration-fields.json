@@ -142,5 +142,20 @@
   "configuration-fields.unknown_b764cd": "Unknown",
   "configuration-fields.metadataContextLimit_91b325": "Metadata: <s0/> · context limit: <s1/>",
   "configuration-fields.legacySubscriptionConfigurationWasRetiredChoose_bb6be6": "Legacy subscription configuration was retired. Choose the current model and accounts explicitly. Project restrictions that became empty continue to deny all accounts.",
-  "configuration-fields.confirmReconfiguredModelAndAccounts_021890": "Confirm reconfigured model and accounts"
+  "configuration-fields.confirmReconfiguredModelAndAccounts_021890": "Confirm reconfigured model and accounts",
+  "configuration-fields.extra.dc937b598926": "None",
+  "configuration-fields.extra.b764cdc0eab7": "Unknown",
+  "configuration-fields.sentence.054bff468121": "Showing cached {{v0}} choices. {{v1}} Your current selection is retained.",
+  "configuration-fields.sentence.1ad5938a045c": "{{v0}} Your current selection is retained.",
+  "configuration-fields.sentence.3d9404257563": "Loading {{v0}} choices…",
+  "configuration-fields.sentence.244a41434b15": "No selectable {{v0}} choices are on this page. More choices are available.",
+  "configuration-fields.sentence.9117e85a4bce": "No selectable {{v0}} choices are on this page.",
+  "configuration-fields.sentence.5398fd2fa5b0": "The selected {{v0}} is outside this page. Its exact identity remains selected.",
+  "configuration-fields.sentence.38798a0275ce": "The selected {{v0}} is outside this page or unavailable. Its identity is retained; no other choice was selected.",
+  "configuration-fields.choices.denied": "The server denied access to these choices.",
+  "configuration-fields.choices.deniedRetrying": "The server denied access to these choices; retrying.",
+  "configuration-fields.choices.connection": "The server connection failed while loading these choices.",
+  "configuration-fields.choices.connectionRetrying": "The server connection failed while loading these choices; retrying.",
+  "configuration-fields.choices.request": "The latest request for these choices failed.",
+  "configuration-fields.choices.requestRetrying": "The latest request for these choices failed; retrying."
 }

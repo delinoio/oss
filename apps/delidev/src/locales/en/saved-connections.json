@@ -55,5 +55,9 @@
   "saved-connections.moreRemovedConnections_5f8390": "More removed connections",
   "saved-connections.retainedWorkerFor_8f7a9b": "Retained Worker for {{v0}}",
   "saved-connections.retainedWorkerFor_0cc5fa": "Retained Worker for <s0/>",
-  "saved-connections.closeRetainedWorkerControls_52e73a": "Close retained Worker controls"
+  "saved-connections.closeRetainedWorkerControls_52e73a": "Close retained Worker controls",
+  "saved-connections.extra.2c160a020769": "The client pairing is saved. Open its server window to verify authorization and connect.",
+  "saved-connections.extra.6fd6eef963de": "The original client pairing is saved.",
+  "saved-connections.extra.880fe388c7ae": "This local client connection was removed. Its server sessions, independent Worker and work files remain retained.",
+  "saved-connections.sentence.99477aa7f910": "Name edit accepted. Current connection name: {{v0}}. Open windows and server sessions keep their original connection."
 }

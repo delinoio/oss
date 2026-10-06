@@ -32,5 +32,10 @@
   "prerequisites.configureAnAgentWorkerWithIts_b5534e": "Configure an Agent Worker with its selected model, account and harness.",
   "prerequisites.moreAgentWorkersExistOpenSettings_71120c": "More Agent Workers exist. Open Settings for the remaining records.",
   "prerequisites.chooseAProjectForRepositoryWork_101a36": "Choose a project for repository work, or General Chat. Session creation validates the exact selections again.",
-  "prerequisites.theseAreSeparateObservationsNotA_c09fb7": "These are separate observations, not a successful execution test. Refresh after setup changes."
+  "prerequisites.theseAreSeparateObservationsNotA_c09fb7": "These are separate observations, not a successful execution test. Refresh after setup changes.",
+  "prerequisites.state.notChecked": "Not checked",
+  "prerequisites.state.observed": "Observed",
+  "prerequisites.state.setup": "Needs setup",
+  "prerequisites.state.unknown": "Unknown",
+  "prerequisites.state.failed": "Check failed"
 }

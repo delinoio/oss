@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { object, text } from "./documents";
@@ -41,7 +41,7 @@ export function SavedConnections({ visible, close, actions }: { visible: boolean
   const [name, setName] = useState("");
   const [grant, setGrant] = useState("");
   const [attempt, setAttempt] = useState<{ id: string; name: string; grant: string }>();
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useProductMessage("");
   const [edit, setEdit] = useState<{ profile: SavedConnection; name: string; requestId?: string }>();
   const [removal, setRemoval] = useState<{ profile: SavedConnection; requestId?: string; revision: number }>();
   const refresh = async () => {
@@ -69,7 +69,7 @@ export function SavedConnections({ visible, close, actions }: { visible: boolean
       const result = await actions.pair(original.id, original.name, original.grant);
       if (result.id !== original.id || result.state !== SavedConnectionState.Paired) throw "invalid-evidence";
       setAttempt(undefined); setGrant(""); setName("");
-      setMessage("The client pairing is saved. Open its server window to verify authorization and connect.");
+      setMessage(ownedMessage("saved-connections.extra.2c160a020769"));
       await refresh();
     } catch (error) { setError(error); if (error === "invalid-input") setAttempt(undefined); }
     finally { setBusy(false); }
@@ -82,7 +82,7 @@ export function SavedConnections({ visible, close, actions }: { visible: boolean
       if (profile.state === SavedConnectionState.Pending) {
         const value = await actions.retry(profile.id);
         if (value.id !== profile.id || value.state !== SavedConnectionState.Paired) throw "invalid-evidence";
-        setMessage("The original client pairing is saved.");
+        setMessage(ownedMessage("saved-connections.extra.6fd6eef963de"));
         await refresh();
       } else await actions.open(profile.id);
     } catch (error) { setError(error); }
@@ -97,7 +97,7 @@ export function SavedConnections({ visible, close, actions }: { visible: boolean
       const result = await actions.rename(original.profile.id, original.requestId, original.profile.revision, original.name);
       if (result.id !== original.profile.id || result.server_id !== original.profile.server_id || result.endpoint !== original.profile.endpoint || result.pairing_id !== original.profile.pairing_id || result.revision <= original.profile.revision) throw "invalid-evidence";
       setEdit(undefined);
-      setMessage(`Name edit accepted. Current connection name: ${result.name}. Open windows and server sessions keep their original connection.`);
+      setMessage(ownedMessage("saved-connections.sentence.99477aa7f910", { v0: result.name }));
       await refresh();
     } catch (error) { setError(error); if (error === "invalid-input") setEdit({ ...original, requestId: undefined }); }
     finally { setBusy(false); }
@@ -111,7 +111,7 @@ export function SavedConnections({ visible, close, actions }: { visible: boolean
       const result = await actions.remove(original.profile.id, original.requestId, original.revision);
       if (result.id !== original.profile.id || result.state !== SavedConnectionState.Removed || result.removal?.request_id !== original.requestId || result.removal.expected_revision !== original.revision) throw "invalid-evidence";
       setRemoval(undefined);
-      setMessage("This local client connection was removed. Its server sessions, independent Worker and work files remain retained.");
+      setMessage(ownedMessage("saved-connections.extra.880fe388c7ae"));
       await refresh();
     } catch (error) { setError(error); }
     finally { setBusy(false); }

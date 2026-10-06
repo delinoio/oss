@@ -14,5 +14,10 @@
   "native-usage.theMatchingNativeUsageObservationIs_14a62c": "The matching native usage observation is unavailable.",
   "native-usage.recordedExecution_2fdcd7": "Recorded execution: <s0/>",
   "native-usage.thisObservationBelongsToAPreceding_165fda": "This observation belongs to a preceding execution.",
-  "native-usage.refreshNativeUsage_4fc93f": "Refresh native usage"
+  "native-usage.refreshNativeUsage_4fc93f": "Refresh native usage",
+  "native-usage.extra.5062c025b237": "Uncached input",
+  "native-usage.extra.085171a719a1": "Cache read input",
+  "native-usage.extra.06c03c4d8fe8": "Cache write input",
+  "native-usage.extra.152c2e5abcdf": "Output excluding reasoning",
+  "native-usage.extra.f85860ca7347": "Reasoning output"
 }

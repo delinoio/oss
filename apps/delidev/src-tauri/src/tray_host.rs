@@ -331,7 +331,10 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
             append(
                 app,
                 &submenu,
-                &translated(Message::Updated, &[("at", &overview.observed_at)]),
+                &translated(
+                    Message::Updated,
+                    &[("at", &crate::localization::date(&overview.observed_at))],
+                ),
                 None,
                 &mut state,
             )?;
@@ -502,7 +505,10 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
                         append(
                             app,
                             &quota,
-                            &translated(Message::ObservedAt, &[("at", at)]),
+                            &translated(
+                                Message::ObservedAt,
+                                &[("at", &crate::localization::date(at))],
+                            ),
                             None,
                             &mut state,
                         )?;
@@ -511,7 +517,10 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
                         append(
                             app,
                             &quota,
-                            &translated(Message::ResetAt, &[("at", at)]),
+                            &translated(
+                                Message::ResetAt,
+                                &[("at", &crate::localization::date(at))],
+                            ),
                             None,
                             &mut state,
                         )?;

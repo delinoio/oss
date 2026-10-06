@@ -5,7 +5,7 @@ import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, TerminalAction, TerminalQuery, TerminalService, SystemQuery, SystemCapability, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { Problem } from "./ui";
+import { ServiceProblem, Problem  } from "./ui";
 
 enum OutputState { Connecting = "connecting", Attached = "attached", Detached = "detached", Exited = "exited" }
 
@@ -106,7 +106,7 @@ function TerminalView({ resource, refresh }: { resource: Resource; refresh: () =
     <p role="status">{state} · {text(data.state)}{data.cleanup_verified ? copy("session-terminals.processCleanupVerified_024000") : copy("session-terminals.processCleanupPending_efa78d")}</p>
     <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{text(data.machine_id)}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>
     <Problem error={error} />{state === OutputState.Detached ? <button onClick={() => setRestart((value) => value + 1)}>{copy("session-terminals.reattachOriginalTerminal_b22f08")}</button> : null}
-    <pre className="terminal-output" tabIndex={0} aria-label="Terminal output">{output || "Waiting for terminal output…"}</pre>
+    <pre className="terminal-output" tabIndex={0} aria-label={copy("session-terminals.attribute.34ad7d49708a")}>{output || copy("session-terminals.extra.d1bcaf842eff")}</pre>
     <p>{copy("session-terminals.textOutputViewUseTerminalByte_d43051")}</p>
     <form onSubmit={(event) => { event.preventDefault(); send(TerminalAction.INPUT, lineInput); }}>
       <label>{copy("session-terminals.terminalInput_32822e")}<textarea ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={inputBlocked} rows={2} autoComplete="off" spellCheck={false} /></label>
@@ -121,6 +121,6 @@ function TerminalView({ resource, refresh }: { resource: Resource; refresh: () =
     </form>
     <button disabled={control.busy || control.uncertain || !!data.cleanup_verified || !!data.close_request_id} onClick={() => send(TerminalAction.CLOSE)}>{copy("session-terminals.closeTerminal_7d02fb")}</button>
     <Problem error={control.error} />{control.uncertain ? <button disabled={control.busy} onClick={control.retry}>{copy("session-terminals.retryTheSameTerminalOperation_92eff7")}</button> : null}
-    {object(data.problem).message ? <p role="alert">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p> : null}
+    {object(data.problem).message ? <ServiceProblem code={text(object(data.problem).code) || text(object(data.problem).problem_code)}><p role="alert">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p></ServiceProblem> : null}
   </section>;
 }

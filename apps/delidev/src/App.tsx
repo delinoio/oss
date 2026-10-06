@@ -49,7 +49,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const saveDraft = (id: string, value: string) => setDraftState((current) => {
     const size = new TextEncoder().encode(value).byteLength;
     const total = [...current.drafts].reduce((bytes, [key, draft]) => bytes + (key === id ? 0 : new TextEncoder().encode(draft).byteLength), size);
-    if (size > 256 << 10 || total > 4 << 20 || (value && !current.drafts.has(id) && current.drafts.size >= 1000)) return { ...current, error: "The draft limit is reached. Shorten this message or send or clear another draft." };
+    if (size > 256 << 10 || total > 4 << 20 || (value && !current.drafts.has(id) && current.drafts.size >= 1000)) return { ...current, error: copy("App.extra.979e130130a9") };
     const drafts = new Map(current.drafts);
     if (value) drafts.set(id, value); else drafts.delete(id);
     return { drafts };
@@ -76,7 +76,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     setSurface(Surface.Settings);
   };
   const consumeSettingsEntry = useCallback(() => setSettingsEntry(undefined), []);
-  const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession ? "session navigation" : surface === Surface.Settings ? "settings categories" : surface === Surface.PullRequests ? "pull request filters" : surface === Surface.Usage ? "usage filters" : surface === Surface.Schedules ? "schedule navigation" : surface === Surface.Activity ? "activity filters" : surface === Surface.Inbox ? "inbox filters" : "search filters";
+  const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession ? copy("App.extra.2998edd080d1") : surface === Surface.Settings ? copy("App.extra.a1de4eceaa3b") : surface === Surface.PullRequests ? copy("App.extra.23533b15bc29") : surface === Surface.Usage ? copy("App.extra.34d76f3f7da4") : surface === Surface.Schedules ? copy("App.extra.a6a986427e87") : surface === Surface.Activity ? copy("App.extra.3fa855f8f6de") : surface === Surface.Inbox ? copy("App.extra.a1de2be5c09b") : copy("App.extra.1f73d5f3eac5");
   const startNewSession = () => { leaveSettings(Surface.NewSession); setDrawerOpen(false); setNewSessionActivation((value) => value + 1); setSurface(Surface.NewSession); };
   const navigate = (destination: Surface) => {
     leaveSettings(destination);

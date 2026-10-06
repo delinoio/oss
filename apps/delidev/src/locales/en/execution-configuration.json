@@ -61,5 +61,13 @@
   "execution-configuration.appliedInstructionTemplateOrder_be0ff4": "Applied instruction template order",
   "execution-configuration.templateRevision_10577b": "Template <s0/> · <s1/> · revision <s2/>",
   "execution-configuration.savedTemplateTextIsUnavailable_95e25e": "Saved template text is unavailable.",
-  "execution-configuration.appliedTemplateOrderIsUnavailable_02e090": "Applied template order is unavailable."
+  "execution-configuration.appliedTemplateOrderIsUnavailable_02e090": "Applied template order is unavailable.",
+  "execution-configuration.extra.dc12bec5d71f": "Not specified",
+  "execution-configuration.extra.ca1844969742": "Unavailable",
+  "execution-configuration.extra.4ee7e86d4220": "Empty native value",
+  "execution-configuration.extra.4eb2581de1a8": "Known model metadata",
+  "execution-configuration.extra.5852e0c77d3d": "User-declared model metadata",
+  "execution-configuration.extra.643fd990f260": "Unavailable account",
+  "execution-configuration.extra.ccd130d59f4b": "Unavailable reference",
+  "execution-configuration.attribute.e9ae418fcc27": "Combined applied instructions"
 }

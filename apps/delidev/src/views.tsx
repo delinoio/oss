@@ -12,6 +12,20 @@ import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen } from "./s
 import { ActivityPRDetails } from "./activity-pr-source";
 import "./activity-sidebar.css";
 
+const activityNames: Partial<Record<ActivityKind, import("./localization").MessageKey>> = {
+  [ActivityKind.UNSPECIFIED]: "views.activity.UNSPECIFIED",
+  [ActivityKind.EXECUTION_ACCEPTED]: "views.activity.EXECUTION_ACCEPTED",
+  [ActivityKind.EXECUTION_SUCCEEDED]: "views.activity.EXECUTION_SUCCEEDED",
+  [ActivityKind.EXECUTION_FAILED]: "views.activity.EXECUTION_FAILED",
+  [ActivityKind.EXECUTION_STOPPED]: "views.activity.EXECUTION_STOPPED",
+  [ActivityKind.SCHEDULE_CRON]: "views.activity.SCHEDULE_CRON",
+  [ActivityKind.SCHEDULE_RUN_NOW]: "views.activity.SCHEDULE_RUN_NOW",
+  [ActivityKind.PR_PROBLEM_OBSERVED]: "views.activity.PR_PROBLEM_OBSERVED",
+  [ActivityKind.PR_PROBLEM_DISMISSED]: "views.activity.PR_PROBLEM_DISMISSED",
+  [ActivityKind.PR_REMEDIATION_ATTEMPT]: "views.activity.PR_REMEDIATION_ATTEMPT",
+  [ActivityKind.PR_VERIFIED_HANDLED]: "views.activity.PR_VERIFIED_HANDLED"
+};
+
 export enum Surface { Sessions = "sessions", NewSession = "new-session", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search", Settings = "settings" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
   useLocale();
@@ -49,7 +63,7 @@ export function Search({ active, open }: { active: boolean; open: (id: string) =
         <ResourceChoice label={copy("views.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={draft.agentId} change={(id) => change("agentId", id)} active={active} />
         <ResourceChoice label={copy("views.account_7e1b0d")} kind={EntityKind.ACCOUNT} value={draft.accountId} change={(id) => change("accountId", id)} active={active} />
         <label>{copy("views.outcome_4e80ab")}<select value={draft.outcome} onChange={(event) => change("outcome", Number(event.target.value) as SearchExecutionOutcome)}>{[
-          [SearchExecutionOutcome.UNSPECIFIED, "All"], [SearchExecutionOutcome.NOT_STARTED, "Not started"], [SearchExecutionOutcome.RUNNING, "Running"], [SearchExecutionOutcome.SUCCEEDED, "Succeeded"], [SearchExecutionOutcome.FAILED, "Failed"], [SearchExecutionOutcome.STOPPED, "Stopped"],
+          [SearchExecutionOutcome.UNSPECIFIED, copy("views.extra.a52ace420f21")], [SearchExecutionOutcome.NOT_STARTED, copy("views.extra.ba35f0c47d86")], [SearchExecutionOutcome.RUNNING, copy("views.extra.f4ccae29e1bb")], [SearchExecutionOutcome.SUCCEEDED, copy("views.extra.6d9a6f97a5fd")], [SearchExecutionOutcome.FAILED, copy("views.extra.031a8f0f659d")], [SearchExecutionOutcome.STOPPED, copy("views.extra.1a4f630ac1b6")],
         ].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <button className="primary" disabled={!draft.query.trim()}>{copy("views.search_49c266")}</button>
       </form>
@@ -103,7 +117,7 @@ export function Activity({ active, open }: { active: boolean; open: (id: string)
     </div>
   </SidebarSurface>
   <section hidden={!active} className="page"><header><h2>{copy("views.activity_38da15")}</h2><button disabled={result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}>{copy("views.refresh_0e9161")}</button></header><Problem error={result.error} />{result.isFetching ? <p role="status">{copy("views.loadingActivity_a389c3")}</p> : null}{result.error && result.data ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_c8711b")}</p> : null}
-    {result.data?.entries.map((entry) => <article className="result" key={entry.id}><strong>{ActivityKind[entry.kind]?.toLowerCase().replaceAll("_", " ")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString(displayLocale())}</time></p>{entry.pullRequest ? <ActivityPRDetails target={entry.pullRequest} revision={entry.sourceRevision} active={active} /> : null}{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>{copy("views.openSession_b205bb")}</button> : !entry.pullRequest ? <p>{copy("views.waitingOrSkippedOccurrence_94fac5")}</p> : null}{entry.accountId ? <small><LocalizedText id="views.account_cc4945" components={{ s0: <>{entry.accountId}</> }} /></small> : null}</article>)}
+    {result.data?.entries.map((entry) => <article className="result" key={entry.id}><strong>{activityNames[entry.kind] ? copy(activityNames[entry.kind]!) : copy("views.activity.UNSPECIFIED")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString(displayLocale())}</time></p>{entry.pullRequest ? <ActivityPRDetails target={entry.pullRequest} revision={entry.sourceRevision} active={active} /> : null}{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>{copy("views.openSession_b205bb")}</button> : !entry.pullRequest ? <p>{copy("views.waitingOrSkippedOccurrence_94fac5")}</p> : null}{entry.accountId ? <small><LocalizedText id="views.account_cc4945" components={{ s0: <>{entry.accountId}</> }} /></small> : null}</article>)}
     {result.data?.entries.length === 0 ? <p>{page ? copy("views.noFurtherActivityOnThisPage_1ca656") : copy("views.noActivityYet_a288d2")}</p> : null}<Pager page={page} setPage={setPage} next={result.data?.nextPageToken} busy={result.isFetching} />
   </section></>;
 }

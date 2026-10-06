@@ -5,7 +5,7 @@ import { EntityKind, NativeModelQuery, SystemCapability, SystemQuery, newRequest
 import { document, items, object, text, type Document } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
-import { More, Problem } from "./ui";
+import { ServiceProblem, More, Problem  } from "./ui";
 
 export function NativeModelSettings({ active, createModel }: { active: boolean; createModel: (data: Document) => void }) {
   useLocale();
@@ -64,14 +64,14 @@ export function NativeModelSettings({ active, createModel }: { active: boolean; 
     {job ? <div><p role="status"><LocalizedText id="native-model-settings.observation_48f31e" components={{ s0: <>{job.id}</>, s1: <>{state}</>, s2: <>{text(object(document(job).output).observed_at)}</> }} /></p>
       <button type="button" disabled={!active || operation.isFetching} onClick={() => void operation.refetch()}>{copy("native-model-settings.refreshObservationStatus_2714ea")}</button>
       {["queued", "claimed"].includes(state) ? <button type="button" disabled={blocked} onClick={() => void cancellation.send({ mutation: { requestId: newRequestId(), id: job.id, expectedRevision: job.revision } })}>{copy("native-model-settings.cancelObservation_0f4be7")}</button> : null}
-      {document(job).problem ? <p role="alert">{text(object(document(job).problem).message)}</p> : null}
+      {document(job).problem ? <ServiceProblem code={text(object(document(job).problem).code) || text(object(document(job).problem).problem_code)}><p role="alert">{text(object(document(job).problem).message)}</p></ServiceProblem> : null}
       {state !== "succeeded" && operation.data?.lastSuccess ? <button type="button" onClick={() => { setObservationID(operation.data!.lastSuccess!.id); setPage(""); }}>{copy("native-model-settings.showLastSuccessfulObservation_e2c0d6")}</button> : null}
     </div> : null}
     <Problem error={operation.error} /><Problem error={cancellation.error} />
     {cancellation.uncertain ? <button type="button" disabled={cancellation.busy} onClick={cancellation.retry}>{copy("native-model-settings.retryTheSameCancellation_0bc7e1")}</button> : null}
     <Problem error={models.error} />
     {malformed ? <p role="alert">{copy("native-model-settings.theObservationPageIsMalformedNo_ac73dd")}</p> : null}
-    {models.data && !malformed ? <><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{models.data.job?.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? "Unavailable")}</> }} /></p>
+    {models.data && !malformed ? <><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{models.data.job?.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p>
       {entries.length === 0 ? <p>{copy("native-model-settings.noNativeModelsInThisObservation_a24b4f")}</p> : entries.map((entry) => <article key={text(entry.id)}>
         <h3>{text(entry.display_name)}</h3><p><LocalizedText id="native-model-settings.pickerIdExecutableModel_ea304e" components={{ s0: <>{text(entry.id)}</>, s1: <>{text(entry.model)}</> }} /></p>
         <p>{text(entry.description)}</p><p><LocalizedText id="native-model-settings.reasoningInputServiceTiers_aa5c58" components={{ s0: <>{items(entry.reasoning).map(text).join(", ")}</>, s1: <>{items(entry.modalities).map(text).join(", ")}</>, s2: <>{items(entry.service_tiers).map(text).join(", ")}</>, s3: <>{entry.hidden === true ? copy("native-model-settings.hidden_7e6fef") : copy("native-model-settings.visible_8411f5")}</> }} /></p>

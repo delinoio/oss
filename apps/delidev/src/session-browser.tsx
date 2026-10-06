@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke } from "@tauri-apps/api/core";
@@ -32,7 +32,7 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
   const [address, setAddress] = useState("");
   const [profileId, setProfileId] = useState<string>();
   const [state, setState] = useState<BrowserState>();
-  const [failure, setFailure] = useState<string>();
+  const [failure, setFailure] = useProductMessage();
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
   const viewport = useRef<HTMLDivElement>(null);
@@ -42,7 +42,7 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
   const capabilities = useQuery(BrowserQuery.getBrowserCapabilities, {}, {retry:false});
   const supported = capabilities.data?.capabilities.includes(BrowserCapability.PROTECTED_DEVICE_PROFILE_V1) === true;
   const registration = useRetainedMutation(`browser-register:${session.id}:${accountId}`, BrowserQuery.registerBrowserProfile, (response) => {
-    try { setProfileId(browserProfile(response.profile, accountId)); setFailure(undefined); } catch { setFailure("Browser profile ownership is unavailable. Refresh the session."); }
+    try { setProfileId(browserProfile(response.profile, accountId)); setFailure(undefined); } catch { setFailure(ownedMessage("session-browser.extra.5092c54369dd")); }
   });
   useEffect(() => { alive.current = true; addressInput.current?.focus(); return () => { alive.current = false; }; }, []);
   useEffect(() => {
@@ -78,7 +78,7 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
         if (presentation.current === viewId) presentation.current = "";
         if (hideRetry !== undefined) { window.clearTimeout(hideRetry); hideRetry = undefined; }
       } catch {
-        if (!disposed) setFailure("The browser view could not be hidden. Retrying native closure.");
+        if (!disposed) setFailure(ownedMessage("session-browser.extra.a520c066c88f"));
         // Keep exact cleanup ownership after unmount. A failed Hide has not
         // released the raw child; retry only this closure, never an open/action.
         if (hideRetry === undefined) hideRetry = window.setTimeout(() => { hideRetry = undefined; void hide(); }, 250);
@@ -102,13 +102,13 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
           if (disposed || presentation.current !== viewId) { await hide(); return; }
           if (!visible()) { await hide(); return; }
           setState(result);
-        } catch { failed = true; if (!disposed) setFailure("The native browser is unavailable. Check device authorization, then retry explicitly. Restarting the desktop releases retained profile contexts."); }
+        } catch { failed = true; if (!disposed) setFailure(ownedMessage("session-browser.extra.08759b664829")); }
         finally { opening = false; if (queued) { queued = false; void update(); } }
       } else {
         if (geometry === lastBounds) return;
         resizing = true;
         const viewId = presentation.current;
-        try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action: BrowserAction.Resize, bounds: area })); if (!disposed && opened && presentation.current === viewId) { lastBounds = geometry; setState(result); } } catch { lastBounds = ""; if (!disposed) setFailure("The browser view could not be updated."); }
+        try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action: BrowserAction.Resize, bounds: area })); if (!disposed && opened && presentation.current === viewId) { lastBounds = geometry; setState(result); } } catch { lastBounds = ""; if (!disposed) setFailure(ownedMessage("session-browser.extra.1b8cff3d45fb")); }
         finally { resizing = false; if (queued) { queued = false; void update(); } }
       }
     };
@@ -118,7 +118,7 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
     const visibility = new MutationObserver(() => void update()); visibility.observe(documentGlobal().body, { subtree: true, attributes: true, attributeFilter: ["hidden", "inert", "open", "class"], childList: true });
     const timer = window.setInterval(() => {
       if (!opened || disposed) return;
-      void invoke<BrowserState>("browser_state", { profileId, viewId: presentation.current }).then((value) => { if (!disposed) setState(browserState(value)); }).catch(() => { if (!disposed) setFailure("The local browser state is unavailable."); });
+      void invoke<BrowserState>("browser_state", { profileId, viewId: presentation.current }).then((value) => { if (!disposed) setState(browserState(value)); }).catch(() => { if (!disposed) setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4")); });
     }, 1000);
     return () => { disposed = true; window.removeEventListener("scroll", move, true); window.removeEventListener("resize", move); observer.disconnect(); visibility.disconnect(); window.clearInterval(timer); void hide(); };
     // Address changes navigate the existing native tab only at the explicit Go action.
@@ -128,7 +128,7 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
     if (!profileId || busy || state?.removal_pending) return;
     setBusy(true); setFailure(undefined);
     try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action, url: address, tabId })); if (alive.current) setState(result); }
-    catch { if (alive.current) setFailure("The browser action failed. Check its address and the current server and account authorization."); }
+    catch { if (alive.current) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
     finally { if (alive.current) setBusy(false); }
   };
   const blocked = busy || registration.busy || registration.uncertain || state?.removal_pending;

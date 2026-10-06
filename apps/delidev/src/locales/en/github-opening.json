@@ -14,5 +14,10 @@
   "github-opening.noClassicScopesWillBePreselected_667cb5": "No classic scopes will be preselected for public repository lookup.",
   "github-opening.reviewTheFormAndCreateThe_d41506": "Review the form and create the token yourself, then enter it in the protected token field below. Opening a form does not create or save a token.",
   "github-opening.openOfficialGithubTokenForm_d8a937": "Open official GitHub token form",
-  "github-opening.openTheOfficialFormFromThe_dc9177": "Open the official form from the desktop app or use the CLI token-form command."
+  "github-opening.openTheOfficialFormFromThe_dc9177": "Open the official form from the desktop app or use the CLI token-form command.",
+  "github-opening.extra.03f69885814b": "Open on GitHub",
+  "github-opening.extra.96dce755f727": "Sent to your default browser. This does not verify page access.",
+  "github-opening.extra.45a2c8995dcd": "Browser opening was not confirmed. Inspect your browser before trying again.",
+  "github-opening.extra.783701cedcbe": "Sent to your default browser. Review repository selection, permissions and expiry before generating a token.",
+  "github-opening.extra.f2427e02d7bb": "The official form could not be confirmed. Refresh the profile and inspect your browser before trying again."
 }

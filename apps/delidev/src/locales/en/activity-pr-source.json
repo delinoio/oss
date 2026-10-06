@@ -15,5 +15,6 @@
   "activity-pr-source.actor_3b75fc": "Actor: <s0/><s1/>",
   "activity-pr-source.originalActivityReferences_bae436": "Original activity references",
   "activity-pr-source.sourceRevisionRequest_b783ad": "Source <s0/> · revision <s1/> · request <s2/>",
-  "activity-pr-source.problemVersion_f62c8e": "Problem <s0/> · version <s1/>"
+  "activity-pr-source.problemVersion_f62c8e": "Problem <s0/> · version <s1/>",
+  "activity-pr-source.extra.4faa01b666e4": "Empty original feedback."
 }

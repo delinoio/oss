@@ -18,28 +18,28 @@ interface DraftCollection { values: ReadonlyMap<string, InboxInteractionDraft>; 
 
 function itemLabel(view: InboxView): string {
   const entry = view.entry;
-  if (!entry) return "Inbox item unavailable";
+  if (!entry) return copy("inbox.extra.3414410d9a33");
   const source = document(entry).source;
   if (source === "interaction" && view.interaction) {
     const data = document(view.interaction);
     const type = text(data.type);
-    if (type === "user-question") return "Agent question";
-    if (type === "native-approval") return "Native approval";
-    return "Request unavailable";
+    if (type === "user-question") return copy("inbox.extra.1a6b3f08b7cf");
+    if (type === "native-approval") return copy("inbox.extra.c515b98726fe");
+    return copy("inbox.extra.6e39d7d8300f");
   }
-  if (source==="subscription-recovery") return "Subscription quota recovered";
+  if (source==="subscription-recovery") return copy("inbox.extra.41bb49877013");
  if (source === "execution-terminal") {
     const outcome = text(object(document(entry).terminal).outcome);
-    if (outcome === "succeeded") return "Execution succeeded";
-    if (outcome === "failed") return "Execution failed";
-    if (outcome === "stopped") return "Execution stopped";
+    if (outcome === "succeeded") return copy("inbox.extra.c05259db17d5");
+    if (outcome === "failed") return copy("inbox.extra.19e5e642387b");
+    if (outcome === "stopped") return copy("inbox.extra.963e6e93605c");
   }
-  return "Inbox item unavailable";
+  return copy("inbox.extra.3414410d9a33");
 }
 
 function recordedTime(resource: Resource): { label: string; machineValue?: string } {
   const raw = resource.createdAt;
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw) || !Number.isFinite(Date.parse(raw))) return { label: "Recorded time unavailable" };
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw) || !Number.isFinite(Date.parse(raw))) return { label: copy("inbox.extra.b0e8642e6377") };
   return { label: new Date(raw).toLocaleString(displayLocale()), machineValue: raw };
 }
 
@@ -65,17 +65,17 @@ function itemIcon(view: InboxView): { symbol: string; tone: string } {
 
 function statusText(value: unknown): string {
   const state = text(value);
-  if (!state) return "Not submitted";
+  if (!state) return copy("inbox.extra.d3289e625281");
   if (["queued", "claimed", "transmitted", "uncertain", "accepted", "canceled"].includes(state)) return state[0]!.toUpperCase() + state.slice(1);
-  return "Unavailable";
+  return copy("inbox.extra.ca1844969742");
 }
 
 function closureText(value: unknown): string {
   const state = text(value);
-  if (state === "open") return "Open";
-  if (state === "native-closed") return "Closed";
-  if (state === "turn-ended") return "Turn ended";
-  return "Unavailable";
+  if (state === "open") return copy("inbox.extra.ed077f3d8125");
+  if (state === "native-closed") return copy("inbox.extra.c21ead0614e7");
+  if (state === "turn-ended") return copy("inbox.extra.ce8389f3b06b");
+  return copy("inbox.extra.ca1844969742");
 }
 
 export function Inbox({ active, open, notificationId = "", notificationActivation = 0 }: { active: boolean; open: (sessionId: string) => void; notificationId?: string; notificationActivation?: number }) {
@@ -216,7 +216,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
       if (isEmptyInteractionDraft(editable)) values.delete(resource.id); else values.set(resource.id, next);
       const total = [...values.values()].reduce((bytes, item) => bytes + draftByteLength(item), 0);
       if (values.size > 1000 || total > 4 * 1024 * 1024) {
-        errors.set(resource.id, values.size > 1000 ? "The Inbox draft limit is 1,000 nonempty requests. Clear or submit a draft before changing this one." : "The Inbox draft limit is 4 MiB per connection. Shorten or clear a draft before changing this one.");
+        errors.set(resource.id, values.size > 1000 ? copy("inbox.extra.7b8f9efcb9a9") : copy("inbox.extra.c3dba8527625"));
         return { values: current.values, errors };
       }
       errors.delete(resource.id);
@@ -240,7 +240,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
   return <>
     <SidebarSurface active={active} title={copy("inbox.inbox_94835e")}>
       <div className="sidebar-filter-options" aria-label={copy("inbox.inboxReadState_b2b35f")}>
-        {([[InboxReadState.UNSPECIFIED, "All items"], [InboxReadState.UNREAD, "Unread"], [InboxReadState.READ, "Read"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={draftFilters.readState === value} onClick={() => setDraftFilters((current) => ({ ...current, readState: value }))}>{label}</button>)}
+        {([[InboxReadState.UNSPECIFIED, copy("inbox.extra.51107686754a")], [InboxReadState.UNREAD, copy("inbox.extra.1b9f384c1436")], [InboxReadState.READ, copy("inbox.extra.9b9a8d05a7ec")]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={draftFilters.readState === value} onClick={() => setDraftFilters((current) => ({ ...current, readState: value }))}>{label}</button>)}
       </div>
       <label>{copy("inbox.source_0e570c")}<select value={draftFilters.source} onChange={(event) => setDraftFilters((current) => ({ ...current, source: Number(event.target.value) as InboxSource }))}><option value={InboxSource.UNSPECIFIED}>{copy("inbox.allSources_08e774")}</option><option value={InboxSource.INTERACTION}>{copy("inbox.requests_ada275")}</option><option value={InboxSource.SUBSCRIPTION_RECOVERY}>{copy("inbox.quotaRecovery_26ec8e")}</option><option value={InboxSource.EXECUTION_TERMINAL}>{copy("inbox.executionResults_d2adcc")}</option></select></label>
       <ResourceChoice label={copy("inbox.project_985959")} kind={EntityKind.PROJECT} value={draftFilters.projectId} change={(projectId) => setDraftFilters((current) => ({ ...current, projectId }))} active={active} />

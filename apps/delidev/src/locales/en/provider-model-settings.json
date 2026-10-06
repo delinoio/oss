@@ -66,5 +66,10 @@
   "provider-model-settings.editModel_1733ca": "Edit model",
   "provider-model-settings.tokenPricing_56b24f": "Token pricing",
   "provider-model-settings.modelPages_507678": "Model pages",
-  "provider-model-settings.modelChoicesRetainIndependentSubscriptionService_a2c413": "Model choices retain independent subscription-service identity or an enabled API provider. Existing disabled references stay attached to their original identities."
+  "provider-model-settings.modelChoicesRetainIndependentSubscriptionService_a2c413": "Model choices retain independent subscription-service identity or an enabled API provider. Existing disabled references stay attached to their original identities.",
+  "provider-model-settings.extra.555765b26ebc": "Entry counts unavailable",
+  "provider-model-settings.extra.fdfda19280ec": "Unsupported subscription service",
+  "provider-model-settings.extra.ca1844969742": "Unavailable",
+  "provider-model-settings.extra.dc937b598926": "None",
+  "provider-model-settings.sentence.490d50c6611c": "{{v0}} connected · {{v1}} total"
 }

@@ -1,13 +1,13 @@
 {
   "sidechat.sidechatFindings_b85000": "Sidechat 발견 사항",
-  "sidechat.readOnlySidechatParentSessionSelect_ceb705": "Read-only Sidechat · Parent session <s0/>. Select complete replies on this page to add to the parent queue. Use the parent queue's Steer action explicitly when needed.",
-  "sidechat.updateTheConnectedServerToSend_9dd279": "Update the connected server to send Sidechat findings.",
+  "sidechat.readOnlySidechatParentSessionSelect_ceb705": "읽기 전용 Sidechat · 부모 세션 <s0/>. 이 페이지에서 완료된 응답을 선택하여 부모 대기열에 추가하세요. 필요할 때 부모 대기열의 방향 조정 동작을 직접 사용하세요.",
+  "sidechat.updateTheConnectedServerToSend_9dd279": "Sidechat 발견 사항을 보내려면 연결된 서버를 업데이트하세요.",
   "sidechat.repliesToSend_a20827": "전송할 답변",
   "sidechat.reply_b9b235": "답변 <s0/><s1/>",
-  "sidechat.noCompleteSidechatRepliesOnThis_b35106": "No complete Sidechat replies on this page.",
-  "sidechat.selectAtMost20RepliesWithin_7b1bc4": "Select at most 20 replies within 256 KiB. Replies are sent in full.",
-  "sidechat.sendSelectedFindingsToParentQueue_5db660": "Send selected findings to parent queue",
-  "sidechat.theOriginalSelectedMessagesAndRevisions_45372d": "The original selected messages and revisions are retained while the result is uncertain.",
-  "sidechat.retryTheSameFindingsRequest_23e1d3": "Retry the same findings request",
-  "sidechat.selectedFindingsQueuedAsReviewThem_7c06ec": "Selected findings queued as <s0/>. Review them in the parent queue."
+  "sidechat.noCompleteSidechatRepliesOnThis_b35106": "이 페이지에 완료된 Sidechat 답변이 없습니다.",
+  "sidechat.selectAtMost20RepliesWithin_7b1bc4": "256 KiB 이내로 답변을 최대 20개 선택하세요. 답변은 전체가 전송됩니다.",
+  "sidechat.sendSelectedFindingsToParentQueue_5db660": "선택한 발견 사항을 상위 대기열로 보내기",
+  "sidechat.theOriginalSelectedMessagesAndRevisions_45372d": "결과가 불확실한 동안 원래 선택한 메시지 및 리비전이 유지됩니다.",
+  "sidechat.retryTheSameFindingsRequest_23e1d3": "동일한 발견 사항 요청 다시 시도",
+  "sidechat.selectedFindingsQueuedAsReviewThem_7c06ec": "선택한 발견 사항이 <s0/>로 대기열에 추가되었습니다. 상위 대기열에서 검토하세요."
 }

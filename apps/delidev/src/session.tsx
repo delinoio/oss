@@ -30,7 +30,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { Failure, Problem } from "./ui";
+import { ServiceProblem, Failure, Problem  } from "./ui";
 import { Interaction } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
 import { SessionForkAction } from "./session-fork";
@@ -138,6 +138,7 @@ export function interactionRows(base: readonly Resource[], live: ReadonlyMap<str
 }
 
 const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
+  useLocale();
   const data = readDocument(resource);
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
  if (Object.hasOwn(data, "grok_user")) return <NativeGrokUser data={data} />;
@@ -172,9 +173,9 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
   const progress = object(data.progress);
   const plan = object(progress.plan);
   return <article className="message" aria-label={copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
-    <header><strong>{text(data.role) || "Agent"}</strong><small>{text(data.state)}</small></header>
+    <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{text(data.state)}</small></header>
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
-    {toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <details><summary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || "Native operation"}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></summary>
+    {toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <details><summary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></summary>
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
       {text(command.cwd) ? <p><LocalizedText id="session.directory_369f13" components={{ s0: <>{text(command.cwd)}</> }} /></p> : null}
       {text(tool.output) ? <pre>{text(tool.output)}</pre> : null}
@@ -183,7 +184,7 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
       {items(tool.patches).map((patch, index) => <details key={index}><summary><LocalizedText id="session.patchObservation_8b886e" components={{ s0: <>{index + 1}</> }} /></summary>{items(object(patch).changes).map((item, part) => <pre key={part}>{text(object(item).path)}{"\n"}{text(object(item).diff)}</pre>)}</details>)}
       {items(tool.inputs).map((input, index) => <pre key={index}>Tool input: {text(object(object(input).input).text)}</pre>)}
     </details> : null}
-    {started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <details open><summary>{text(started.kind) || "Native artifact"}</summary>
+    {started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <details open><summary>{text(started.kind) || copy("session.extra.a3e40dda2eb1")}</summary>
       {text(started.text) ? <pre>{text(started.text)}</pre> : null}
       {[...items(started.summary), ...items(started.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}
       {items(artifact.deltas).length ? <details><summary>{copy("session.streamedObservations_589dae")}</summary>{items(artifact.deltas).map((item, index) => { const delta = object(object(item).delta); return <pre key={index}>{text(delta.kind)}{typeof delta.index === "number" ? ` ${delta.index}` : ""}: {text(delta.text)}</pre>; })}</details> : null}
@@ -244,14 +245,14 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     void control.send({ mutation: { id, expectedRevision: session.revision, requestId: newRequestId() }, action: value });
   };
   return <div className={`session-workspace${panel !== SessionPanel.Closed ? " files-open" : ""}`}><section className="session" aria-label={copy("session.currentSession_a32789")}>
-    <header className="session-header"><div><h2>{resourceName(session)}</h2><p>{workspaceNames[text(data.workspace) as Workspace] || "Workspace"} · {text(data.outcome)} · {text(data.dispatch)} · {text(data.archive)}</p>{titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? copy("session.message_2fa20b", { v0: titlePresentation.detail }) : ""}</p> : null}</div>
+    <header className="session-header"><div><h2>{resourceName(session)}</h2><p>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")} · {text(data.outcome)} · {text(data.dispatch)} · {text(data.archive)}</p>{titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? copy("session.message_2fa20b", { v0: titlePresentation.detail }) : ""}</p> : null}</div>
       <div className="actions">{session ? <SessionForkAction source={session} /> : null}<button disabled={Boolean(object(data.fork).sidechat_parent_snapshot)} ref={terminalsButton} aria-expanded={panel === SessionPanel.Terminals} aria-controls={`terminals-${id}`} onClick={() => setPanel(panel === SessionPanel.Terminals ? SessionPanel.Closed : SessionPanel.Terminals)}>{copy("session.terminals_7482c4")}</button><button ref={filesButton} aria-expanded={panel === SessionPanel.Files} aria-controls={`files-${id}`} onClick={() => setPanel(panel === SessionPanel.Files ? SessionPanel.Closed : SessionPanel.Files)}>{copy("session.files_abc7e9")}</button><button ref={diffButton} aria-expanded={panel === SessionPanel.Diff} aria-controls={`diff-${id}`} onClick={() => setPanel(panel === SessionPanel.Diff ? SessionPanel.Closed : SessionPanel.Diff)}>{copy("session.diff_7ecf46")}</button><button ref={diagnosticsButton} aria-expanded={panel === SessionPanel.Diagnostics} aria-controls={`diagnostics-${id}`} onClick={() => setPanel(panel === SessionPanel.Diagnostics ? SessionPanel.Closed : SessionPanel.Diagnostics)}>{copy("session.diagnostics_268f14")}</button><button ref={browserButton} aria-expanded={panel === SessionPanel.Browser} aria-controls={`browser-${id}`} onClick={() => setPanel(panel === SessionPanel.Browser ? SessionPanel.Closed : SessionPanel.Browser)}>{copy("session.browser_d31de1")}</button><button disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
         <button disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
         <button disabled={!session || control.busy || control.uncertain || budgetBlocked || Object.hasOwn(data, "startup_rejection") || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>{copy("session.resume_d640c7")}</button></div></header>
     <p className="connection" role="status">{live.state === ConnectionState.Live ? copy("session.connected_229655") : live.state === ConnectionState.Reconnecting ? copy("session.connectionLostRetainedStateShown_8cc737") : live.state === ConnectionState.Failed ? copy("session.connectionRequiresAttention_160d4a") : copy("session.connecting_72021e")}</p>
     <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
     {text(data.recovery) !== "none" && text(data.recovery) ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{text(data.recovery)}</> }} /></p> : null}
-    {object(data.problem).message ? <p className="notice">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p> : null}
+    {object(data.problem).message ? <ServiceProblem code={text(object(data.problem).code) || text(object(data.problem).problem_code)}><p className="notice">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p></ServiceProblem> : null}
     {session ? <StartupRejection session={session} /> : null}
     <Problem error={control.error} />{control.uncertain ? <button onClick={control.retry} disabled={control.busy}>{copy("session.retryTheSameControlRequest_609aff")}</button> : null}
     {session ? <><SessionTools resource={session} changed={setAcknowledged} /><SessionStorageAction source={session} /><SessionPullRequests key={id} session={session} /><ExecutionConfiguration resource={session} /><NativeUsage session={session} /><SessionContext key={id} session={session} /><Subagents key={id} sessionId={id} revision={session.revision.toString()} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></> : null}

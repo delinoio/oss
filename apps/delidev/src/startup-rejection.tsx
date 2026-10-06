@@ -8,9 +8,9 @@ const digest = (value: unknown) => typeof value === "string" && /^[0-9a-f]{64}$/
 const exact = (value: Document, keys: string[]) => Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 const revision = (value: unknown) => typeof value === "string" && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18446744073709551615n;
 const reasons: Record<string, string> = {
-  conflict: "The PR or prepared workspace changed.", missing_input: "Required PR or Git input was unavailable.",
-  unavailable: "The Worker could not complete the Git check.", canceled: "Startup was canceled.",
-  resource_exhausted: "The startup check reached a resource limit.", invalid_argument: "The startup check rejected an input.",
+  get conflict() { return copy("startup-rejection.extra.0ab4527c94e0"); }, get missing_input() { return copy("startup-rejection.extra.2bdb660fc027"); },
+  get unavailable() { return copy("startup-rejection.extra.319c00c76acb"); }, get canceled() { return copy("startup-rejection.extra.a78e7fc39866"); },
+  get resource_exhausted() { return copy("startup-rejection.extra.933576bc6c6f"); }, get invalid_argument() { return copy("startup-rejection.extra.bfc1004381ca"); },
 };
 
 export function startupRejection(resource?: Resource): Document | undefined {

@@ -83,5 +83,6 @@
   "backups.imageAbsenceConfirmedOriginalUnlinkByte_435895": "Image absence confirmed; original unlink byte count unavailable",
   "backups.deletionJobPages_68fad7": "Deletion job pages",
   "backups.firstDeletionPage_b8a839": "First deletion page",
-  "backups.nextDeletionPage_f9e500": "Next deletion page"
+  "backups.nextDeletionPage_f9e500": "Next deletion page",
+  "backups.sentence.e6f7491a0231": "{{v0}} · {{v1}} UTC"
 }

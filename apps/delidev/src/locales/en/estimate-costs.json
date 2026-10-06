@@ -17,5 +17,9 @@
   "estimate-costs.category_292c06": "Category",
   "estimate-costs.pricedTokens_37b8cd": "Priced tokens",
   "estimate-costs.knownAmount_7ef51e": "Known amount",
-  "estimate-costs.responseEvidence_cb3bca": "Response evidence"
+  "estimate-costs.responseEvidence_cb3bca": "Response evidence",
+  "estimate-costs.extra.ca1844969742": "Unavailable",
+  "estimate-costs.input": "Input",
+  "estimate-costs.cachedInput": "Cached input",
+  "estimate-costs.output": "Output"
 }

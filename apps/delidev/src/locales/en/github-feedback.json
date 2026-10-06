@@ -17,5 +17,11 @@
   "github-feedback.feedbackIdentityAndContentVersion_56157d": "Feedback identity and content version",
   "github-feedback.githubAddress_e2d25b": "GitHub address: <s0/>",
   "github-feedback.originalId_b7f034": "Original ID: <s0/> · <s1/>",
-  "github-feedback.contentVersion_0bc2d3": "Content version: <s0/>"
+  "github-feedback.contentVersion_0bc2d3": "Content version: <s0/>",
+  "github-feedback.extra.7f33299db6b9": "Review body",
+  "github-feedback.extra.a965be705c49": "Code review comment",
+  "github-feedback.extra.f79456bcd564": "PR conversation comment",
+  "github-feedback.extra.a326f4758492": "Author unavailable",
+  "github-feedback.extra.de4e3fe5f1d2": "Numeric identity unavailable",
+  "github-feedback.extra.b8e6ea915c53": "Empty review body."
 }

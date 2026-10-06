@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { productError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -38,7 +38,7 @@ export function NewSession({ active, ownsActivation, activation, readLocalWorker
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [promptLimit, setPromptLimit] = useState(false);
   const [budget, setBudget] = useState(emptyBudget);
-  const [budgetProblem, setBudgetProblem] = useState("");
+  const [budgetProblem, setBudgetProblem] = useProductMessage("");
   const [invalidAcknowledgment, setInvalidAcknowledgment] = useState(false);
   const [createdElsewhere, setCreatedElsewhere] = useState<Resource>();
   const firstMessage = useRef<HTMLTextAreaElement>(null);
@@ -82,7 +82,7 @@ export function NewSession({ active, ownsActivation, activation, readLocalWorker
       estimatedBudget = budgetInput(budget);
       setBudgetProblem("");
     } catch (error) {
-      setBudgetProblem(error instanceof Error ? error.message : "Review the budget.");
+      setBudgetProblem(productError(error, "new-session.extra.08fb485eeaf6"));
       return;
     }
     const workspaceType = project ? workspace : Workspace.GeneralChat;
@@ -128,7 +128,7 @@ export function NewSession({ active, ownsActivation, activation, readLocalWorker
     setStarting([]);
     setWorkspace(id ? Workspace.Worktree : Workspace.GeneralChat);
   };
-  const title = createdElsewhere ? text(document(createdElsewhere).name) || "New session" : "New session";
+  const title = createdElsewhere ? text(document(createdElsewhere).name) || copy("new-session.extra.cffdba22adf2") : copy("new-session.extra.cffdba22adf2");
 
   return <section hidden={!active} className="new-session-page" aria-labelledby="new-session-heading">
     <div className="new-session-content">

@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@connectrpc/connect-query";
@@ -27,7 +27,7 @@ export function PairingGrant({ authority, active, triggerContainer }: { authorit
   const original = useRef<Attempt>(undefined);
   const [accepted, setAccepted] = useState<Resource | "unknown">();
   const [revealed, setRevealed] = useState(false), [preparing, setPreparing] = useState(false);
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const [now, setNow] = useState(Date.now);
   const alive = useRef(false), gate = useRef(false);
   const output = useRef<HTMLTextAreaElement>(null);
@@ -67,8 +67,8 @@ export function PairingGrant({ authority, active, triggerContainer }: { authorit
   const revealable = active && initial && latest && !changed && !inconsistent && !current.error && !expired && !used && Boolean(attempt?.code);
   const submit = async () => {
     if (gate.current || attempt || !active || !alive.current) return;
-    if (!name || new TextEncoder().encode(name).byteLength > 256 || name.includes("\0")) { setProblem("Enter a device name of at most 256 UTF-8 bytes without NUL characters."); return; }
-    if (!canonicalId.test(authority.serverId)) { setProblem("Verify the selected server before creating a pairing document."); return; }
+    if (!name || new TextEncoder().encode(name).byteLength > 256 || name.includes("\0")) { setProblem(ownedMessage("pairing-grant.extra.f8ed54ba4886")); return; }
+    if (!canonicalId.test(authority.serverId)) { setProblem(ownedMessage("pairing-grant.extra.13e686c6b6c8")); return; }
     gate.current = true; setPreparing(true); setProblem("");
     try {
       const random = crypto.getRandomValues(new Uint8Array(32));
@@ -79,7 +79,7 @@ export function PairingGrant({ authority, active, triggerContainer }: { authorit
       const value: Attempt = { requestId: newRequestId(), name, type: kind === PairingKind.Client ? DeviceType.CLIENT : DeviceType.WORKER, code, authority: { ...authority } };
       original.current = value; setAttempt(value);
       await mutation.send({ requestId: value.requestId, name: value.name, type: value.type, codeDigest: digest });
-    } catch { if (alive.current) setProblem("Secure pairing material could not be prepared. Use the trusted desktop app and try again."); }
+    } catch { if (alive.current) setProblem(ownedMessage("pairing-grant.extra.25c7a1082af4")); }
     finally { gate.current = false; if (alive.current) setPreparing(false); }
   };
   const discard = () => { original.current = undefined; setAttempt(undefined); setAccepted(undefined); setRevealed(false); setName(""); setProblem(""); focusTrigger.current = true; setEditing(false); };

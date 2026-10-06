@@ -1,4 +1,4 @@
-import { copy, useLocale } from "./localization";
+import { ownedMessage, resolveMessage, type OwnedMessage, copy, useLocale } from "./localization";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -15,10 +15,10 @@ export const useOAuthNativeControl = () => useContext(NativeContext);
 export function OAuthNativeProvider({ control, children }: { control: OAuthNativeControl; children: ReactNode }) {
   useLocale(); return <NativeContext.Provider value={control}>{children}</NativeContext.Provider>; }
 enum Stage { Starting, Awaiting, Exchanging, Saving, Canceling, Recovering, Connected, Canceled, Expired, Interrupted, Recovery }
-interface View { provider: AccountProviderSummary; stage: Stage; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string; openFailed?: boolean }
+interface View { provider: AccountProviderSummary; stage: Stage; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string | OwnedMessage; openFailed?: boolean }
 interface Pending {
   provider: AccountProviderSummary; nativeOpening: string; generation: string; callback: string; startId: string;
-  attempt?: AccountOAuthAttempt; completion?: Mutation; cancel?: Mutation; problem?: string; openFailed?: boolean; bound: boolean; serverStartDispatched: boolean; polling: boolean; busy: boolean; disposed: boolean;
+  attempt?: AccountOAuthAttempt; completion?: Mutation; cancel?: Mutation; problem?: string | OwnedMessage; openFailed?: boolean; bound: boolean; serverStartDispatched: boolean; polling: boolean; busy: boolean; disposed: boolean;
 }
 const validId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
 function stage(state: AccountOAuthState): Stage {
@@ -65,13 +65,13 @@ export function useOpenRouterOAuth() {
     opening?.controller.signal.addEventListener("abort", close, { once: true });
     return () => { alive.current = false; opening?.controller.signal.removeEventListener("abort", close); close(); };
   }, [opening, native]);
-  const failure = (value: Pending, message: string) => { value.problem = message; if (current(value)) setView(previous => ({ provider: value.provider, stage: previous?.stage ?? Stage.Recovery, attempt: value.attempt, account: previous?.account, problem: message, openFailed: previous?.openFailed })); };
+  const failure = (value: Pending, message: string | OwnedMessage) => { value.problem = message; if (current(value)) setView(previous => ({ provider: value.provider, stage: previous?.stage ?? Stage.Recovery, attempt: value.attempt, account: previous?.account, problem: message, openFailed: previous?.openFailed })); };
   const accept = (value: Pending, result: CompleteAccountOAuthResponse | CancelAccountOAuthResponse | GetAccountOAuthStatusResponse) => {
     const attempt = checkedAttempt(result.attempt, value), account = checkedAccount(result.account, value);
     value.attempt = attempt;
     if (attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_CONNECTED) { value.problem = undefined; value.openFailed = false; }
     if (current(value)) setView({ provider: value.provider, stage: stage(attempt.state), attempt, account,
-      problem: attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? "Authorization is no longer available for this provider. Cancel the original attempt and refresh the provider, or use an API key instead." : "The original result requires recovery. Inspect the OpenRouter keys dashboard; local cancellation cannot revoke a provider key. Recover only the original saved local result." : value.problem, openFailed: value.openFailed });
+      problem: attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? ownedMessage("account-oauth.extra.02b9057706ae") : ownedMessage("account-oauth.extra.50181bfbea4a") : value.problem, openFailed: value.openFailed });
   };
   const finish = async (value: Pending, code: Uint8Array) => {
     if (!current(value) || !value.attempt || value.completion) { code.fill(0); return; }
@@ -82,7 +82,7 @@ export function useOpenRouterOAuth() {
       const result = await service.completeAccountOAuth({ mutation: value.completion, authorizationCode: code });
       if (result.requestId !== value.completion.requestId) throw new Error("completion receipt");
       if (current(value)) accept(value, result);
-    } catch { failure(value, "Completion was not confirmed. Inspect the original attempt. An uncertain exchange is never repeated."); }
+    } catch { failure(value, ownedMessage("account-oauth.extra.c91835a315d9")); }
     finally { code.fill(0); value.busy = false; }
   };
   const startOriginal = async (value: Pending) => {
@@ -103,7 +103,7 @@ export function useOpenRouterOAuth() {
       setView({ provider: value.provider, stage: stage(value.attempt.state), attempt: value.attempt });
       if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && result.authorizationUrl && !value.bound) {
         try { await native(value.nativeOpening, OAuthNativeAction.BindOpen, value.generation, value.attempt.id, result.authorizationUrl); value.bound = true; value.openFailed = false; value.problem = undefined; }
-        catch { value.openFailed = true; failure(value, "The browser could not be opened. Open it again deliberately or cancel this connection."); }
+        catch { value.openFailed = true; failure(value, ownedMessage("account-oauth.extra.f0d9ec9fd7e7")); }
       }
     } catch (error) {
       const rejected = ConnectError.from(error).findDetails(ErrorDetailSchema).some(detail => detail.cause === "oauth_start_not_admitted");
@@ -111,8 +111,8 @@ export function useOpenRouterOAuth() {
         value.serverStartDispatched = false;
         // Keep the opening until explicit Cancel/Back performs native disposal.
         // The cause proves admission rolled back; transport errors cannot do so.
-        failure(value, "Authorization was not started. Cancel or return to providers to refresh this provider, or use an API key instead.");
-      } else failure(value, "Authorization could not be confirmed. Retry only the original start or inspect the original attempt before starting another connection.");
+        failure(value, ownedMessage("account-oauth.extra.3843239cf0da"));
+      } else failure(value, ownedMessage("account-oauth.extra.66c9a691ff0d"));
     }
     finally { value.busy = false; }
   };
@@ -124,7 +124,7 @@ export function useOpenRouterOAuth() {
   const observe = async (value: Pending) => {
     if (!current(value) || !value.attempt) return;
     try { const result = await service.getAccountOAuthStatus({ attemptId: value.attempt.id }); if (current(value)) accept(value, result); }
-    catch { failure(value, "The original connection status is unavailable. Inspect again; this does not repeat authorization or exchange."); }
+    catch { failure(value, ownedMessage("account-oauth.extra.f6dcc33443bb")); }
   };
   useEffect(() => {
     if (!view) return;
@@ -148,7 +148,7 @@ export function useOpenRouterOAuth() {
           }
         }
         if (current(value) && !value.busy) await observe(value);
-      } catch { failure(value, "The original browser callback could not be verified. Inspect or cancel this attempt; no new exchange was sent."); }
+      } catch { failure(value, ownedMessage("account-oauth.extra.1890f536687d")); }
       finally { value.polling = false; }
     };
     const timer = setInterval(() => void poll(), 500);
@@ -179,7 +179,7 @@ export function useOpenRouterOAuth() {
       // A typed revision conflict proves this cancellation was not admitted.
       // Unknown/cleanup outcomes retain their original exact request instead.
       if (clientFailure(error).code === FailureCode.Conflict) value.cancel = undefined;
-      failure(value, "Cancellation or credential cleanup was not confirmed. Keep this original attempt and retry its cancellation before another connection.");
+      failure(value, ownedMessage("account-oauth.extra.9668547d218a"));
     }
     finally { value.busy = false; }
   };
@@ -187,14 +187,14 @@ export function useOpenRouterOAuth() {
     const value = pending.current; if (!native || !value?.attempt || !current(value) || value.busy || value.completion) return;
     if (!value.bound) { await startOriginal(value); return; }
     try { await native(value.nativeOpening, OAuthNativeAction.Reopen, value.generation, value.attempt.id, ""); value.problem = undefined; value.openFailed = false; if (current(value)) setView(previous => previous ? { ...previous, openFailed: false, problem: undefined } : previous); }
-    catch { failure(value, "The browser could not be opened for this original live attempt. Cancel before starting another."); }
+    catch { failure(value, ownedMessage("account-oauth.extra.12e9df66c23f")); }
   };
   const recover = async () => {
     const value = pending.current; if (!value?.completion || !current(value) || value.busy) return;
     value.busy = true;
     setView(previous => previous ? { ...previous, stage: Stage.Recovering, problem: undefined } : previous);
     try { const result = await service.completeAccountOAuth({ mutation: value.completion, authorizationCode: new Uint8Array() }); if (result.requestId !== value.completion.requestId) throw new Error("recovery receipt"); if (current(value)) accept(value, result); }
-    catch { failure(value, "The original saved local result could not be recovered. Inspect the OpenRouter keys dashboard. No exchange was repeated."); }
+    catch { failure(value, ownedMessage("account-oauth.extra.01b9ed071310")); }
     finally { value.busy = false; }
   };
   return { view, available: Boolean(native), start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
@@ -209,14 +209,14 @@ export function OpenRouterOAuth({ flow, back, manual, edit, manage, done }: { fl
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;
   const connected = view.stage === Stage.Connected && view.account;
   const waiting = view.stage === Stage.Awaiting;
-  const progress = view.stage === Stage.Starting ? "Preparing authorization…" : view.stage === Stage.Exchanging ? "Exchanging authorization…" : view.stage === Stage.Saving ? "Saving your connection…" : view.stage === Stage.Canceling ? "Confirming cancellation and cleanup…" : view.stage === Stage.Recovering ? "Recovering the original saved result…" : connected ? "OpenRouter connected" : waiting ? "Waiting for authorization…" : view.stage === Stage.Expired ? "Authorization expired" : view.stage === Stage.Interrupted ? "Authorization was interrupted" : view.stage === Stage.Canceled ? "Connection canceled" : "Connection requires recovery";
+  const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : connected ? copy("account-oauth.extra.2d889940c25c") : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());
   return <section className="api-keys-view account-oauth-card" aria-labelledby="account-oauth-title">
     <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>{copy("account-oauth.connectOpenrouter_6c38bc")}</h2>
     <p className="account-oauth-subheading">{copy("account-oauth.completeSignInInYourBrowser_64e524")}</p>
     <p>{copy("account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0")}</p>
     <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div>
-    {view.problem ? <p role="alert">{view.problem}</p> : null}
+    {view.problem ? <p role="alert">{resolveMessage(view.problem)}</p> : null}
     {connected ? <div className="actions"><button onClick={() => leave(false, () => edit(connected))}>{copy("account-oauth.editAccount_ab6a16")}</button><button onClick={() => leave(false, () => manage(connected))}>{copy("account-oauth.manageAccount_ddb585")}</button><button onClick={() => leave(false, done)}>{copy("account-oauth.done_11a676")}</button></div> : <>
       <div className="actions"><button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></div>
       <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>{copy("account-oauth.useAnApiKeyInstead_b728ab")}</button>

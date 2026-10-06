@@ -27,5 +27,6 @@
   "session-tools.retryTheSame_4cb78a": "Retry the same <s0/>",
   "session-tools.workspacePreparationOperation_7d976d": "Workspace preparation operation",
   "session-tools.workspaceRecoveryOperation_1c66c0": "Workspace recovery operation",
-  "session-tools.executionRecoveryOperation_8fc7ad": "Execution recovery operation"
+  "session-tools.executionRecoveryOperation_8fc7ad": "Execution recovery operation",
+  "session-tools.extra.6051f94ab1ce": "Not prepared"
 }

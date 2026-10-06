@@ -18,5 +18,11 @@
   "session-browser.browserTabs_3e94f1": "Browser tabs",
   "session-browser.tab_eb3a73": "Tab <s0/> · <s1/>",
   "session-browser.closeTab_bc9560": "Close tab {{v0}}",
-  "session-browser.untrustedBrowserContent_9c54bc": "Untrusted browser content"
+  "session-browser.untrustedBrowserContent_9c54bc": "Untrusted browser content",
+  "session-browser.extra.5092c54369dd": "Browser profile ownership is unavailable. Refresh the session.",
+  "session-browser.extra.a520c066c88f": "The browser view could not be hidden. Retrying native closure.",
+  "session-browser.extra.08759b664829": "The native browser is unavailable. Check device authorization, then retry explicitly. Restarting the desktop releases retained profile contexts.",
+  "session-browser.extra.1b8cff3d45fb": "The browser view could not be updated.",
+  "session-browser.extra.c6d1ec80c1c4": "The local browser state is unavailable.",
+  "session-browser.extra.51fee7071e2b": "The browser action failed. Check its address and the current server and account authorization."
 }

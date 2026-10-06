@@ -3,5 +3,6 @@
   "jobs.workerOperation_8d8a5d": "Worker operation: <s0/>",
   "jobs.acceptedByTheServerWaitingFor_2b0bf0": "Accepted by the server. Waiting for the selected Worker to finish.",
   "jobs.theWorkerOutcomeIsUncertainInspect_2212e2": "The Worker outcome is uncertain. Inspect the original operation before starting another.",
-  "jobs.refreshOperation_8b5c83": "Refresh operation"
+  "jobs.refreshOperation_8b5c83": "Refresh operation",
+  "jobs.extra.b764cdc0eab7": "Unknown"
 }

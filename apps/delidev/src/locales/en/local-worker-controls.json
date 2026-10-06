@@ -19,5 +19,15 @@
   "local-worker-controls.keepWorkerRunning_6abcfd": "Keep Worker running",
   "local-worker-controls.theRetainedStopTargetsOnlyIts_b08b1d": "The retained stop targets only its original generation.",
   "local-worker-controls.retryOriginalWorkerStop_70aea2": "Retry original Worker stop",
-  "local-worker-controls.acknowledgeRefreshedWorkerState_afc0fe": "Acknowledge refreshed Worker state"
+  "local-worker-controls.acknowledgeRefreshedWorkerState_afc0fe": "Acknowledge refreshed Worker state",
+  "local-worker-controls.extra.ba35f0c47d86": "Not started",
+  "local-worker-controls.extra.aeed4d26bb5f": "Starting",
+  "local-worker-controls.extra.dff8b845bd8d": "Controller running",
+  "local-worker-controls.extra.a71ee1d4ac5c": "Stopping",
+  "local-worker-controls.extra.85fc46c17cd7": "Exited",
+  "local-worker-controls.extra.7564cd2e0474": "Exit unconfirmed",
+  "local-worker-controls.extra.2f06614e997d": "The local Worker could not be inspected. Register it if this computer has no Worker, or inspect its original private scope and device registration.",
+  "local-worker-controls.extra.e5f1eb4d93a8": "No readable retained Worker was found. Preserve its original scope and inspect its device registration; removal does not create or replace a Worker.",
+  "local-worker-controls.extra.fac1a4d002f4": "The original stop is unconfirmed. Refresh status or retry that same generation; another Worker will not be stopped.",
+  "local-worker-controls.extra.7c9605e7ec95": "The local Worker action is unconfirmed. Refresh status before another action. Registration and accepted jobs are preserved."
 }

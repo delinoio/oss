@@ -91,5 +91,13 @@
   "settings.savedProjects_f85c7c": "Saved projects",
   "settings.savedRunnerDevices_9e6092": "Saved runner devices",
   "settings.loadingRunnerDevices_a75d73": "Loading runner devices...",
-  "settings.noSavedEntriesOnThisPage_ea1b6b": "No saved entries on this page."
+  "settings.noSavedEntriesOnThisPage_ea1b6b": "No saved entries on this page.",
+  "settings.extra.0097158d86f7": "This configuration is too large. Shorten the text before adding more content.",
+  "settings.extra.1ebd6d7b3aeb": "AI API key entry",
+  "settings.extra.302fcd6cacc5": "Pair devices using a short-lived document.",
+  "settings.extra.bd632b65e652": "Configure these entries through the DeliDev CLI.",
+  "settings.extra.7a611b78ccfc": "Use the provider's documented API key flow.",
+  "settings.group.aiAgents": "AI & agents",
+  "settings.group.workspace": "Workspace",
+  "settings.group.system": "System"
 }

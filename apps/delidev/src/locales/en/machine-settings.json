@@ -17,5 +17,8 @@
   "machine-settings.verifyTheInstalledNativeProtocolWithout_0ea550": "Verify the installed native protocol without login or inference",
   "machine-settings.checkInstalledHarnesses_c38636": "Check installed harnesses",
   "machine-settings.workerConfigurationChangedElsewhereYourPath_34c382": "Worker configuration changed elsewhere. Your path draft is retained; discard it and reopen the latest paths before saving.",
-  "machine-settings.retryTheSameHarnessCheck_7aa9ae": "Retry the same harness check"
+  "machine-settings.retryTheSameHarnessCheck_7aa9ae": "Retry the same harness check",
+  "machine-settings.extra.b764cdc0eab7": "Unknown",
+  "machine-settings.extra.94439a19cde1": "Worker PATH",
+  "machine-settings.extra.d16948e73a68": "Not checked"
 }

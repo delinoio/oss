@@ -1,4 +1,4 @@
-import { copy, useLocale } from "./localization";
+import {  ownedMessage, useProductMessage, copy, useLocale   } from "./localization";
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import type { PairingAuthority } from "./pairing-grant";
 import { useSettingsOpening } from "./settings-lifetime";
@@ -11,20 +11,20 @@ export function WorkerNetworkControlProvider({ control, children }: { control: C
 export function WorkerNetworkNative({ machine, authority, prepared }: { machine: string; authority: PairingAuthority; prepared: (recipient: WorkerRecipient) => void }) {
   useLocale();
   const control = useContext(Context), opening = useSettingsOpening();
-  const [busy, setBusy] = useState(false), [problem, setProblem] = useState(""), [outcome, setOutcome] = useState("");
+  const [busy, setBusy] = useState(false), [problem, setProblem] = useProductMessage(""), [outcome, setOutcome] = useProductMessage("");
   const [ciphertext, setCiphertext] = useState(""), [digest, setDigest] = useState(""), [confirm, setConfirm] = useState(false);
   const pending = useRef(false);
   const run = async (action: WorkerNetworkAction) => {
     if (!control || pending.current || opening?.disposed) return;
     const input = action === WorkerNetworkAction.Import ? encryptedInput(ciphertext) : new Uint8Array();
-    if (!input || action === WorkerNetworkAction.Import && (!confirm || !/^[0-9a-f]{64}$/.test(digest))) { setProblem("Paste the encrypted Base64 bundle and separately authenticated digest, then confirm the original recipient import."); return; }
+    if (!input || action === WorkerNetworkAction.Import && (!confirm || !/^[0-9a-f]{64}$/.test(digest))) { setProblem(ownedMessage("worker-network-native.extra.0590779bd8e2")); return; }
     pending.current = true; setBusy(true); setProblem(""); setOutcome("");
     try {
       const result = opening ? await opening.native(() => control(machine, action, input, action === WorkerNetworkAction.Import ? digest : "")) : await control(machine, action, input, action === WorkerNetworkAction.Import ? digest : "");
       if (opening?.disposed) return;
-      if (action !== WorkerNetworkAction.Import) { const recipient = workerRecipient(result, authority, machine); if (!recipient) throw new Error("recipient"); prepared(recipient); setOutcome("Original public recipient inspected. Its protected key stays on this computer."); }
-      else { const row = result as Record<string, unknown>; if (row.version !== 1 || row.ciphertext_digest !== digest || typeof row.generation !== "string" || !/^[1-9][0-9]{0,18}$/.test(row.generation)) throw new Error("import"); setOutcome(`Encrypted generation ${row.generation} imported. Inspect current control status after an explicit Worker restart. Import alone does not prove network use.`); setCiphertext(""); setDigest(""); setConfirm(false); }
-    } catch { if (!opening?.disposed) setProblem("The original same-computer Worker operation could not be verified. Inspect its registration and current route. An import may have committed; retain the original encrypted input and digest for explicit reconciliation."); }
+      if (action !== WorkerNetworkAction.Import) { const recipient = workerRecipient(result, authority, machine); if (!recipient) throw new Error("recipient"); prepared(recipient); setOutcome(ownedMessage("worker-network-native.extra.9b693b5af315")); }
+      else { const row = result as Record<string, unknown>; if (row.version !== 1 || row.ciphertext_digest !== digest || typeof row.generation !== "string" || !/^[1-9][0-9]{0,18}$/.test(row.generation)) throw new Error("import"); setOutcome(ownedMessage("worker-network-native.sentence.49a8a8c21241", { v0: row.generation })); setCiphertext(""); setDigest(""); setConfirm(false); }
+    } catch { if (!opening?.disposed) setProblem(ownedMessage("worker-network-native.extra.af95af8c4781")); }
     finally { pending.current = false; if (!opening?.disposed) setBusy(false); }
   };
   return <section aria-label={copy("worker-network-native.thisComputerSWorkerNetwork_ddbb96")}><h4>{copy("worker-network-native.thisComputerSMatchingWorker_0db01d")}</h4><p>{copy("worker-network-native.theseControlsUseOnlyTheAlready_4de670")}</p>

@@ -66,7 +66,7 @@ function QueryProblem({ query, label, retryLabel }: { query: NavigationQuery; la
   if (!query.error) return null;
   const { failure, stalled } = query.error;
   const reload = failure.code === FailureCode.CursorExpired || stalled;
-  const message = reload ? `${label}: ${stalled ? "The list continuation did not advance." : "The list cursor expired."}` : query.loaded ? `Could not ${query.error.stage === ReadStage.Additional ? "load more" : "refresh"} ${label}. Previous data is shown.` : failure.code === FailureCode.PermissionDenied ? `You do not have permission to view ${label}.` : `Could not connect to load ${label}.`;
+  const message = reload ? `${label}: ${stalled ? copy("sidebar.extra.ad70acba0412") : copy("sidebar.extra.b36417b2a769")}` : query.loaded ? copy("sidebar.sentence.28902f557c4c", { v0: query.error.stage === ReadStage.Additional ? copy("sidebar.extra.de45c9bc43ff") : "refresh", v1: label }) : failure.code === FailureCode.PermissionDenied ? copy("sidebar.sentence.1c87008c72bf", { v0: label }) : copy("sidebar.sentence.3c9f0d81b95a", { v0: label });
   return <div className="sidebar-query-problem">
     <span role="status">{message}{failure.correlationId ? copy("sidebar.correlation_3851eb", { v0: failure.correlationId }) : ""}</span>
     <button type="button" aria-label={reload ? copy("sidebar.reloadList_83b8c9", { v0: label }) : retryLabel} disabled={Boolean(query.loading)} onClick={reload ? query.reload : query.retry}>{reload ? copy("sidebar.reloadList_095352") : copy("sidebar.retry_942087")}</button>
@@ -98,7 +98,7 @@ function Continuation({ query, label, root, active }: { query: NavigationQuery; 
 
 function workspaceLabel(raw: string): string {
   if (Object.values(Workspace).includes(raw as Workspace)) return workspaceNames[raw as Workspace];
-  return raw ? `Unknown workspace (${raw})` : "Unknown workspace";
+  return raw ? copy("sidebar.sentence.7e9a504e5355", { v0: raw }) : copy("sidebar.extra.814a1748b7f0");
 }
 
 function executionLabel(raw: string): string {
@@ -140,7 +140,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const titleState = titlePresentation?.label;
   const titleStateDescription = titlePresentation ? [titleState, titlePresentation.detail].filter(Boolean).join(". ") : "";
   const titleStateSummary = titlePresentation ? [titleState?.replace(/^Title /, "").replace(/^[a-z]/, (letter) => letter.toUpperCase()), titlePresentation.shortDetail].filter(Boolean).join(" · ") : "";
-  const description = `Session: ${workspace} ${title}. Execution state: ${executionLabel(outcome)}. Archive state: ${archiveLabel(archive)}. Workspace: ${workspace}.${titleStateDescription ? ` ${titleStateDescription}.` : ""}`;
+  const description = copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
   const showTooltip = () => {
     const rect = element.current?.getBoundingClientRect();
     if (!rect) return;
@@ -248,7 +248,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
     return () => window.document.removeEventListener("pointerdown", outside);
   }, [optionsOpen]);
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
-  const serverName = serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : "This computer";
+  const serverName = serverPresentation?.kind === ServerPresentationKind.Saved ? serverPresentation.name : copy("sidebar.extra.26f9f95a152f");
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia("(max-width: 759px)");
@@ -381,7 +381,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
         <QueryProblem query={sessions} label={copy("sidebar.sessions_1225ae")} retryLabel={copy("sidebar.retryGlobalSessions_4d93c1")} />
         {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingProjects_6970a1")}</p> : null}
         {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>{copy("sidebar.noProjectsLoaded_9b9e01")}</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}>{copy("sidebar.createAProject_c52af0")}</button></div> : null}
-        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: `Project · ${id}`, fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
+        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
         <Continuation query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat">
           <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>

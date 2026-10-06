@@ -12,5 +12,9 @@
   "notification-presentation.theDesktopNotificationServiceSupportsActions_aec2f5": "The desktop notification service supports actions. This service does not report user permission or whether a banner was shown.",
   "notification-presentation.focusOrDoNotDisturbMay_42e527": "Focus or Do Not Disturb may still suppress banners.",
   "notification-presentation.allowDesktopNotifications_c30c0d": "Allow desktop notifications",
-  "notification-presentation.permissionIsSharedByDelidevWindows_5376fc": "Permission is shared by DeliDev windows on this computer."
+  "notification-presentation.permissionIsSharedByDelidevWindows_5376fc": "Permission is shared by DeliDev windows on this computer.",
+  "notification-presentation.extra.0be8addf8c13": "Native notifications require the installed DeliDev app bundle.",
+  "notification-presentation.extra.49bd1f979ff9": "This desktop notification service cannot open notification actions.",
+  "notification-presentation.extra.d0382f5b548f": "The native notification limit is reached for this app process. Requests remain in the inbox; restart DeliDev to clear its native presentation state.",
+  "notification-presentation.extra.e8b3afa7a523": "Native notification service is unavailable."
 }

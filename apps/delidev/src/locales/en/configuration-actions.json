@@ -30,5 +30,6 @@
   "configuration-actions.score_aa9007": " · Score: {{v0}}",
   "configuration-actions.reset_0cc57c": " · Reset: {{v0}}",
   "configuration-actions.weightQuota_fe7185": "Weight: <s0/> · Quota: <s1/><s2/><s3/>",
-  "configuration-actions.routingEvidenceIsUnavailable_3f3ff4": "Routing evidence is unavailable."
+  "configuration-actions.routingEvidenceIsUnavailable_3f3ff4": "Routing evidence is unavailable.",
+  "configuration-actions.extra.af7eed90a41e": "None eligible"
 }

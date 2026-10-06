@@ -1,11 +1,12 @@
 {
-  "pr-fix.fixAttemptOwnsThisPrInspect_85a121": "Fix attempt <s0/> owns this PR. Inspect its retained history before another fix.",
+  "pr-fix.fixAttemptOwnsThisPrInspect_85a121": "수정 시도 <s0/>이(가) 이 PR을 소유합니다. 다른 수정 전에 유지된 기록을 확인하세요.",
   "pr-fix.fixNow_879349": "지금 수정",
-  "pr-fix.retryOriginalFixRequest_3ecf60": "Retry original fix request",
+  "pr-fix.retryOriginalFixRequest_3ecf60": "원래 수정 요청 다시 시도",
   "pr-fix.manualPrFix_5b64d4": "수동 PR 수정",
   "pr-fix.fixProject_e1ce32": "프로젝트 수정",
-  "pr-fix.theServerReusesTheMostRecent_add8ed": "The server reuses the most recent eligible linked session or prepares a new PR-head workspace with its configured Codex Agent and Worker. Paused and archived sessions stay paused. The execution Worker uses its prepared Git identity.",
-  "pr-fix.thisServerHasNoSupportedManual_5d3d3f": "This server has no supported manual PR fix profile.",
+  "pr-fix.theServerReusesTheMostRecent_add8ed": "서버는 조건을 충족하는 가장 최근의 연결된 세션을 재사용하거나 설정된 Codex 에이전트와 워커로 새 PR 헤드 작업 공간을 준비합니다. 일시 중지·보관된 세션은 중지를 유지합니다. 실행 워커는 준비된 Git 신원을 사용합니다.",
+  "pr-fix.thisServerHasNoSupportedManual_5d3d3f": "이 서버에 지원되는 수동 PR 수정 프로필이 없습니다.",
   "pr-fix.startFix_039be8": "수정 시작",
-  "pr-fix.cancel_19766e": "취소"
+  "pr-fix.cancel_19766e": "취소",
+  "pr-fix.sentence.613a13e6da0e": "세션 {{v0}}에서 수정이 수락되었습니다. 검증된 push 이후에만 근거가 처리됨으로 바뀝니다."
 }

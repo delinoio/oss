@@ -104,7 +104,7 @@ function ProviderMark({ brand }: { brand?: SubscriptionBrand }) {
 
 function QuotaWindow({ window, now }: { window: SubscriptionQuotaWindow; now: number }) {
   useLocale();
-  const label = window.label || window.id || "Unidentified window";
+  const label = window.label || window.id || copy("subscription-settings.extra.dab02c29147d");
   const presentation = quotaPresentation(window, now);
   return <div className="subscription-quota" data-state={presentation.state}>
     <div className="subscription-quota-heading"><strong>{label}</strong><span>{presentation.percent === undefined ? copy("subscription-settings.remainingUnknown_e49e1a") : copy("subscription-settings.remaining_fe6b6b", { v0: presentation.percent })}</span></div>
@@ -166,7 +166,7 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
       <p><LocalizedText id="subscription-settings.disconnectItsCredentialsWillBeRemoved_65894e" components={{ s0: <>{account.alias}</> }} /></p>
       <div className="actions"><button type="button" disabled={!canDisconnect} onClick={() => { setConfirm(false); account.disconnect?.(); disconnectButton.current?.focus(); }}>{copy("subscription-settings.confirmDisconnection_d61f53")}</button><button type="button" onClick={closeConfirm}>{copy("subscription-settings.keepAccountConnected_00ae06")}</button></div>
     </div> : null}
-    {details ? <div id={detailsId} className="subscription-details"><h4>{copy("subscription-settings.accountDetails_17be95")}</h4><dl><div><dt>{copy("subscription-settings.health_558984")}</dt><dd>{account.health || "Unknown"}</dd></div><div><dt>{copy("subscription-settings.account_7e1b0d")}</dt><dd>{account.enabled ? copy("subscription-settings.enabled_92c1cd") : copy("subscription-settings.disabled_75081b")}</dd></div><div><dt>{copy("subscription-settings.serviceStatus_cce5ed")}</dt><dd>{account.providerState}</dd></div><div><dt>{copy("subscription-settings.exhaustion_c52628")}</dt><dd>{account.confirmedExhausted ? copy("subscription-settings.confirmedExhausted_763851") : copy("subscription-settings.notConfirmedExhausted_a80dbe")}</dd></div></dl>
+    {details ? <div id={detailsId} className="subscription-details"><h4>{copy("subscription-settings.accountDetails_17be95")}</h4><dl><div><dt>{copy("subscription-settings.health_558984")}</dt><dd>{account.health || copy("subscription-settings.extra.b764cdc0eab7")}</dd></div><div><dt>{copy("subscription-settings.account_7e1b0d")}</dt><dd>{account.enabled ? copy("subscription-settings.enabled_92c1cd") : copy("subscription-settings.disabled_75081b")}</dd></div><div><dt>{copy("subscription-settings.serviceStatus_cce5ed")}</dt><dd>{account.providerState}</dd></div><div><dt>{copy("subscription-settings.exhaustion_c52628")}</dt><dd>{account.confirmedExhausted ? copy("subscription-settings.confirmedExhausted_763851") : copy("subscription-settings.notConfirmedExhausted_a80dbe")}</dd></div></dl>
       {account.windows.length > 2 ? <div className="subscription-quota-grid">{account.windows.slice(2).map((window, index) => <QuotaWindow key={`${window.id}:${index + 2}`} window={window} now={now} />)}</div> : null}
       <div className="actions"><button type="button" disabled={!account.metadataAvailable} onClick={account.details}>{copy("subscription-settings.manageMetadata_ddc14e")}</button><button type="button" onClick={() => { setDetails(false); menuButton.current?.focus(); }}>{copy("subscription-settings.closeAccountDetails_c62a46")}</button></div>
     </div> : null}
@@ -182,7 +182,7 @@ const readLabels: Partial<Record<SubscriptionReadState, string>> = {
 };
 
 /** Presentation only; the owning controller negotiates every native action. */
-export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = "Subscription login is not available yet. This server does not support subscription connection, quota refresh or disconnection.", selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
+export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
   useLocale();
   const noticeId = useId();
   const [, expireObservation] = useReducer((revision: number) => revision + 1, 0);

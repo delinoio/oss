@@ -43,5 +43,16 @@
   "sidebar.disconnectedPreviousDataMayBeStale_359e28": "Disconnected · previous data may be stale",
   "sidebar.connected_229655": "Connected",
   "sidebar.connecting_72021e": "Connecting…",
-  "sidebar.disconnected_04dfac": "Disconnected"
+  "sidebar.disconnected_04dfac": "Disconnected",
+  "sidebar.extra.ad70acba0412": "The list continuation did not advance.",
+  "sidebar.extra.b36417b2a769": "The list cursor expired.",
+  "sidebar.extra.de45c9bc43ff": "load more",
+  "sidebar.extra.814a1748b7f0": "Unknown workspace",
+  "sidebar.extra.26f9f95a152f": "This computer",
+  "sidebar.sentence.28902f557c4c": "Could not {{v0}} {{v1}}. Previous data is shown.",
+  "sidebar.sentence.1c87008c72bf": "You do not have permission to view {{v0}}.",
+  "sidebar.sentence.3c9f0d81b95a": "Could not connect to load {{v0}}.",
+  "sidebar.sentence.7e9a504e5355": "Unknown workspace ({{v0}})",
+  "sidebar.sentence.407326d462c1": "Session: {{v0}} {{v1}}. Execution state: {{v2}}. Archive state: {{v3}}. Workspace: {{v4}}.{{v5}}",
+  "sidebar.sentence.7436726e0559": "Project · {{v0}}"
 }

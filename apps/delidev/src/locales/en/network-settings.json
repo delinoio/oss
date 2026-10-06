@@ -67,5 +67,9 @@
   "network-settings.encryptedBundleBase64_81471f": "Encrypted bundle (Base64)",
   "network-settings.authenticatedCiphertextDigest_3026f9": "Authenticated ciphertext digest",
   "network-settings.copyTheCiphertextToTheIntended_37e10e": "Copy the ciphertext to the intended Worker. Supply this digest independently to its import confirmation.",
-  "network-settings.retryOriginalEncryptedExport_e22883": "Retry original encrypted export"
+  "network-settings.retryOriginalEncryptedExport_e22883": "Retry original encrypted export",
+  "network-settings.extra.167cab7952f7": "Export was acknowledged without a valid encrypted result. Inspect the original request; no replacement was created.",
+  "network-settings.extra.002c7c68468b": "Direct",
+  "network-settings.extra.65c55c94d0e0": "The public recipient document exceeds its limit.",
+  "network-settings.extra.8264d06ae667": "This public recipient does not match the selected server and Runner Device."
 }

@@ -1,4 +1,4 @@
-import { copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -64,16 +64,16 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
       <dt>{copy("request-diagnostics.observed_64fa8a")}</dt><dd>{value.observedAt}</dd><dt>{copy("request-diagnostics.finished_7804f7")}</dt><dd>{value.finishedAt ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
       <dt>{copy("request-diagnostics.httpLatency_4cebf1")}</dt><dd>{value.durationMs === undefined ? copy("request-diagnostics.unavailable_ca1844") : copy("request-diagnostics.ms_d659ce", { v0: value.durationMs.toString() })}</dd>
       <dt>{copy("request-diagnostics.httpAttempt_4a264f")}</dt><dd>{value.httpAttempted === undefined ? copy("request-diagnostics.unavailable_ca1844") : value.httpAttempted ? copy("request-diagnostics.sendClaimedProviderAcceptanceIsUnconfirmed_0370a9") : copy("request-diagnostics.noHttpAttempt_56754e")}</dd>
-      <dt>{copy("request-diagnostics.httpStatus_0f7cf9")}</dt><dd>{value.httpStatus ?? copy("request-diagnostics.unavailable_ca1844")}</dd><dt>{copy("request-diagnostics.error_54a0e8")}</dt><dd>{value.errorCode || "None observed"}</dd>
+      <dt>{copy("request-diagnostics.httpStatus_0f7cf9")}</dt><dd>{value.httpStatus ?? copy("request-diagnostics.unavailable_ca1844")}</dd><dt>{copy("request-diagnostics.error_54a0e8")}</dt><dd>{value.errorCode || copy("request-diagnostics.extra.7b563836dc50")}</dd>
       <dt>{native ? copy("request-diagnostics.selectedEffort_2a276e") : copy("request-diagnostics.requestedEffort_59fdfe")}</dt><dd>{value.requestedEffort ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
       <dt>{native ? copy("request-diagnostics.nativeEffectiveEffort_1e90c0") : copy("request-diagnostics.providerObservedEffort_b13db8")}</dt><dd>{value.effectiveEffort ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
       <dt>{native ? copy("request-diagnostics.selectedServiceTier_2c8ca9") : copy("request-diagnostics.requestedServiceTier_14f88a")}</dt><dd>{value.requestedServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
       <dt>{native ? copy("request-diagnostics.nativeEffectiveServiceTier_d412ae") : copy("request-diagnostics.providerObservedServiceTier_01a40b")}</dt><dd>{value.effectiveServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
     </dl>
     <details><summary>{copy("request-diagnostics.originalIdentities_580b0d")}</summary><dl>{[
-      ["Publication request", value.publicationRequestId], ["Correlation", value.correlationId], ["Native request", value.nativeRequestId],
-      ["Provider request", value.providerRequestId], ["Native response", value.nativeResponseId], ["Native thread", value.nativeThreadId], ["Native turn", value.nativeTurnId],
-    ].map(([label, id]) => <div key={label}><dt>{label}</dt><dd>{id || "Unavailable"}</dd></div>)}</dl></details>
+      [copy("request-diagnostics.extra.406c0cd17230"), value.publicationRequestId], [copy("request-diagnostics.extra.5f1a25573a30"), value.correlationId], [copy("request-diagnostics.extra.ba2dea0965ff"), value.nativeRequestId],
+      [copy("request-diagnostics.extra.45d8583658f2"), value.providerRequestId], [copy("request-diagnostics.extra.6e5cd62e3845"), value.nativeResponseId], [copy("request-diagnostics.extra.230d0da59fbf"), value.nativeThreadId], [copy("request-diagnostics.extra.a12de5a8959e"), value.nativeTurnId],
+    ].map(([label, id], index) => <div key={index}><dt>{label}</dt><dd>{id || copy("request-diagnostics.extra.ca1844969742")}</dd></div>)}</dl></details>
   </article>;
 }
 
@@ -81,7 +81,7 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
   useLocale();
   const input = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(""), [execution, setExecution] = useState(""), [page, setPage] = useState("");
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const status = useQuery(SystemQuery.getStatus, {}, { retry: false });
   const supported = status.data?.capabilities.includes(SystemCapability.REQUEST_DIAGNOSTICS_V1) ?? false;
   const result = useQuery(SessionQuery.listRequestDiagnostics, { sessionId, executionId: execution, pageSize: 50, pageToken: page }, {
@@ -93,7 +93,7 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
     <header><h2>{copy("request-diagnostics.modelRequestDiagnostics_0c266b")}</h2><button onClick={close}>{copy("request-diagnostics.closeDiagnostics_143427")}</button></header>
     <p>{copy("request-diagnostics.nativeInputsAndIndividualHttpAttempts_6d3cf6")}</p>
     <p>{copy("request-diagnostics.httpLatencyCoversTheObservedRequest_bc4448")}</p>
-    <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem("Enter an exact execution UUID v7, or leave this empty for all executions."); return; } setProblem(""); setExecution(draft); setPage(""); }}>
+    <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a")); return; } setProblem(""); setExecution(draft); setPage(""); }}>
       <label>{copy("request-diagnostics.executionIdOptional_43c4ca")}<input ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button disabled={!supported}>{copy("request-diagnostics.applyExecutionFilter_591b7d")}</button>
     </form>
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={status.error || result.error} />

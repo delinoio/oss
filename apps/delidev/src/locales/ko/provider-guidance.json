@@ -1,6 +1,8 @@
 {
-  "provider-guidance.openOfficialKeyCreation_1c1c04": "Open official key creation",
-  "provider-guidance.openProviderDocumentation_9682aa": "Open provider documentation",
-  "provider-guidance.officialKeyCreation_adef05": "Official key creation: <s0/>",
-  "provider-guidance.providerDocumentation_7eeff8": "Provider documentation: <s0/>"
+  "provider-guidance.openOfficialKeyCreation_1c1c04": "공식 키 발급 페이지 열기",
+  "provider-guidance.openProviderDocumentation_9682aa": "제공자 문서 열기",
+  "provider-guidance.officialKeyCreation_adef05": "공식 키 발급: <s0/>",
+  "provider-guidance.providerDocumentation_7eeff8": "제공자 문서: <s0/>",
+  "provider-guidance.extra.028de0ea70b9": "기본 브라우저로 전송했습니다. 그곳에서 키를 생성한 후 여기에 연결하세요.",
+  "provider-guidance.extra.45a2c8995dcd": "브라우저 열기를 확인하지 못했습니다. 다시 시도하기 전에 브라우저를 확인하세요."
 }

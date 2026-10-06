@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, FailureCode, IntegrationQuery, ResourceQuery, clientFailure, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { Problem } from "./ui";
+import { ServiceProblem, Problem  } from "./ui";
 import { GitHubTokenForm } from "./github-opening";
 import { useSettingsOpening } from "./settings-lifetime";
 
@@ -21,8 +21,8 @@ const identityLabels: Record<IdentityState, string> = {
   get [IdentityState.RateLimited]() { return copy("integrations.rateLimited_a06130"); }, get [IdentityState.Unavailable]() { return copy("integrations.unavailable_ca1844"); },
 };
 function profileDescription(data: Document): string {
-  const kind = data.token_kind === TokenKind.FineGrained ? "Fine-grained PAT" : data.token_kind === TokenKind.Classic ? "Classic PAT" : "Unsupported token type";
-  return `${kind} · ${text(data.resource_owner) || "No owner restriction declared"}`;
+  const kind = data.token_kind === TokenKind.FineGrained ? copy("integrations.extra.ccbe41029c83") : data.token_kind === TokenKind.Classic ? copy("integrations.extra.41e9c09d008a") : copy("integrations.extra.3471e3c6191a");
+  return `${kind} · ${text(data.resource_owner) || copy("integrations.extra.6ae50316d97d")}`;
 }
 function ProfileFacts({ profile }: { profile: Resource }) {
   useLocale();
@@ -45,7 +45,7 @@ function IntegrationIcon({ kind }: { kind: IntegrationIconKind }) {
       : <path d="m12 2 8 3v6c0 5-4 8-8 11-4-3-8-6-8-11V5Zm-4 9 3 3 5-6" />}
   </svg>;
 }
-const tokenStorageNote = "Tokens are stored in the selected server's OS credential store. Saved tokens cannot be displayed.";
+const tokenStorageNote = () => copy("integrations.extra.59b5da9c12c7");
 type MutationIdentity = { id: string; expectedRevision: bigint; requestId: string };
 function pendingIdentity(id: string, pending: Document): MutationIdentity | undefined {
   const revision = text(pending.expected_revision), requestId = text(pending.request_id);
@@ -70,7 +70,7 @@ function IntegrationEditor({ initial, active, close }: { initial?: Resource; act
   // background reads retain its draft and must not steal focus on return.
   const entered = useRef(false);
   useEffect(() => { if (active && !entered.current) { entered.current = true; nameInput.current?.focus(); } }, [active]);
-  return <form className="integration-editor" onSubmit={(event) => { event.preventDefault(); if (blocked || stale || current.error) return; void save.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ name, provider: "github.com", token_kind: kind, ...(owner ? { resource_owner: owner } : {}) }) }); }}>
+  return <form className="integration-editor" onSubmit={(event) => { event.preventDefault(); if (blocked || stale || current.error) return; void save.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ name, provider: copy("integrations.extra.3aeb00246038"), token_kind: kind, ...(owner ? { resource_owner: owner } : {}) }) }); }}>
     <h3>{initial ? copy("integrations.renameGithubProfile_1f9dd2") : copy("integrations.newGithubProfile_e9e486")}</h3>
     <fieldset disabled={blocked}><label>{copy("integrations.profileName_d36632")}<input ref={nameInput} required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} /></label><label>{copy("integrations.tokenType_ced916")}<select disabled={Boolean(initial)} value={kind} onChange={(event) => setKind(event.target.value)}><option value={TokenKind.FineGrained}>{copy("integrations.fineGrainedPatPreferred_70fe9c")}</option><option value={TokenKind.Classic}>{copy("integrations.classicPat_41e9c0")}</option></select></label><label>{copy("integrations.resourceOwner_f8abf0")}<input disabled={Boolean(initial)} required={kind === TokenKind.FineGrained} maxLength={100} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" value={owner} onChange={(event) => setOwner(event.target.value)} /></label><p>{copy("integrations.useASeparateFineGrainedProfile_11aa24")}</p><p>{copy("integrations.tokenTypeAndOwnerCannotBe_4aad40")}</p></fieldset>
     {stale ? <p role="alert">{copy("integrations.thisProfileChangedReopenItsCurrent_50a08c")}</p> : null}<Problem error={current.error || save.error} />
@@ -129,7 +129,7 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
       </details>
       <form onSubmit={(event) => { event.preventDefault(); void sendToken(); }}><fieldset disabled={blocked || deleting || Boolean(result.error)}>
         <label>{copy("integrations.githubPersonalAccessToken_235203")}<input type="password" autoComplete="off" spellCheck={false} maxLength={512} placeholder={copy("integrations.enterAPersonalAccessToken_b4175a")} value={token} onChange={(event) => setToken(event.target.value)} /></label>
-        <p className="integration-secondary">{tokenStorageNote}</p>
+        <p className="integration-secondary">{tokenStorageNote()}</p>
         {retryIdentity || pending.operation === "replace-token" ? <p>{copy("integrations.reenterTheSameTokenToRetry_d082cd")}</p> : null}
         <button className="primary" disabled={!/^[!-~]{1,512}$/.test(token) || (pending.operation === "replace-token" && !original)}>{retryIdentity || pending.operation === "replace-token" ? copy("integrations.retryOriginalTokenReplacement_cdf40d") : copy("integrations.saveAndValidateToken_d79171")}</button>
       </fieldset></form>
@@ -144,7 +144,7 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
       <button className="integration-danger" disabled={blocked || Boolean(result.error) || (deleting && !original)} onClick={() => deleting && original ? void remove.send({ mutation: original }) : setConfirm(true)}>{deleting ? copy("integrations.retryOriginalProfileDeletion_861363") : copy("integrations.deleteProfile_47311a")}</button>
       {confirm ? <div className="notice"><p>{copy("integrations.deleteThisProfileAndItsServer_d6827d")}</p><div className="actions"><button className="integration-danger" disabled={blocked} onClick={() => void remove.send({ mutation: mutation() })}>{copy("integrations.confirmProfileDeletion_079ac8")}</button><button disabled={blocked} onClick={() => setConfirm(false)}>{copy("integrations.keepProfile_8e76f0")}</button></div></div> : null}
     </section>
-    {text(object(validation.problem).message) ? <p role="alert">{text(object(validation.problem).message)} {text(object(validation.problem).guidance)}</p> : null}{problem ? <p role="alert">{text(problem.message)} {text(problem.guidance)}</p> : null}
+    {text(object(validation.problem).message) ? <ServiceProblem code={text(object(validation.problem).code) || text(object(validation.problem).problem_code)}><p role="alert">{text(object(validation.problem).message)} {text(object(validation.problem).guidance)}</p></ServiceProblem> : null}{problem ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
     <Problem error={result.error || tokenError} />{[validate, remove].map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="integrations.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("integrations.validation_98c41d") : copy("integrations.deletion_7770ba")}</> }} /></button> : null}</div>)}
   </section>;
 }
@@ -185,7 +185,7 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
         {successfulEmpty ? <ol className="integration-steps" aria-label={copy("integrations.githubProfileSetupExplanation_75a33a")}><li>{copy("integrations.createAProfile_6d7bee")}</li><li>{copy("integrations.connectAToken_d30079")}</li><li>{copy("integrations.selectItInRepositories_80273c")}</li></ol> : null}
         <p className="integration-access-note">{copy("integrations.identityVerificationDoesNotConfirmRepository_7d904f")}</p>
       </section>
-      <p className="integration-storage-note"><IntegrationIcon kind={IntegrationIconKind.Shield} /><span>{tokenStorageNote}</span></p>
+      <p className="integration-storage-note"><IntegrationIcon kind={IntegrationIconKind.Shield} /><span>{tokenStorageNote()}</span></p>
       {!successfulEmpty ? <nav className="settings-pages" aria-label={copy("integrations.githubProfilePages_677951")}><button disabled={!page || result.isFetching} onClick={() => setPage("")}>{copy("integrations.firstPage_0bdbb7")}</button><button disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>{copy("integrations.nextPage_c08ac7")}</button></nav> : null}
     </>}
   </section>;

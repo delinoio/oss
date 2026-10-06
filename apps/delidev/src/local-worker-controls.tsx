@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
 
 export enum LocalWorkerAction { Register = "register", Start = "start", Stop = "stop", Status = "status" }
@@ -15,18 +15,18 @@ const descriptions: Record<LocalWorkerState, string> = {
   get [LocalWorkerState.Uncertain]() { return copy("local-worker-controls.workerExitIsUnconfirmedInspectIts_ed152e"); },
 };
 const badges: Record<LocalWorkerState, string> = {
-  [LocalWorkerState.NotStarted]: "Not started",
-  [LocalWorkerState.Starting]: "Starting",
-  [LocalWorkerState.Running]: "Controller running",
-  [LocalWorkerState.Stopping]: "Stopping",
-  [LocalWorkerState.Exited]: "Exited",
-  [LocalWorkerState.Uncertain]: "Exit unconfirmed",
+  get [LocalWorkerState.NotStarted]() { return copy("local-worker-controls.extra.ba35f0c47d86"); },
+  get [LocalWorkerState.Starting]() { return copy("local-worker-controls.extra.aeed4d26bb5f"); },
+  get [LocalWorkerState.Running]() { return copy("local-worker-controls.extra.dff8b845bd8d"); },
+  get [LocalWorkerState.Stopping]() { return copy("local-worker-controls.extra.a71ee1d4ac5c"); },
+  get [LocalWorkerState.Exited]() { return copy("local-worker-controls.extra.85fc46c17cd7"); },
+  get [LocalWorkerState.Uncertain]() { return copy("local-worker-controls.extra.7564cd2e0474"); },
 };
 
 export function LocalWorkerControls({ control, active, changed, allowRegistration = true, pendingChanged, presentation = LocalWorkerPresentation.Default }: { control: ControlLocalWorker; active: boolean; changed: () => void; allowRegistration?: boolean; pendingChanged?: (pending: boolean) => void; presentation?: LocalWorkerPresentation }) {
   useLocale();
   const [status, setStatus] = useState<LocalWorkerStatus>();
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<string>();
   const [pendingStop, setPendingStop] = useState<string>();
@@ -38,7 +38,7 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
     if (gate.current) return;
     gate.current = true; setBusy(true);
     try { const value = await controlRef.current(LocalWorkerAction.Status); if (alive.current) { setStatus(value); if (clearProblem) setProblem(""); } }
-    catch { if (alive.current) setProblem(allowRegistration ? "The local Worker could not be inspected. Register it if this computer has no Worker, or inspect its original private scope and device registration." : "No readable retained Worker was found. Preserve its original scope and inspect its device registration; removal does not create or replace a Worker."); }
+    catch { if (alive.current) setProblem(allowRegistration ? ownedMessage("local-worker-controls.extra.2f06614e997d") : ownedMessage("local-worker-controls.extra.e5f1eb4d93a8")); }
     finally { gate.current = false; if (alive.current) setBusy(false); }
   };
   useEffect(() => {
@@ -59,7 +59,7 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
     } catch {
       if (!alive.current) return;
       if (action === LocalWorkerAction.Stop) setPendingStop(generation);
-      setProblem(action === LocalWorkerAction.Stop ? "The original stop is unconfirmed. Refresh status or retry that same generation; another Worker will not be stopped." : "The local Worker action is unconfirmed. Refresh status before another action. Registration and accepted jobs are preserved.");
+      setProblem(action === LocalWorkerAction.Stop ? ownedMessage("local-worker-controls.extra.fac1a4d002f4") : ownedMessage("local-worker-controls.extra.7c9605e7ec95"));
     } finally {
       gate.current = false;
       if (alive.current) { setBusy(false); void refresh(); }

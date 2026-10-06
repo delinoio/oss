@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { formatDecimal, productError, ProductError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { subscriptionServiceLabel, InputPricingMode, UsageQuery, newRequestId, type PricingVersion, type Resource, type TokenPricing } from "@delinoio/delidev-api-client";
@@ -10,7 +10,7 @@ export function PricingBasis({ value }: { value: PricingVersion }) {
   useLocale();
   const p = value.basis;
   if (!p) return <p>{copy("pricing.pricingBasisUnavailable_1b8fe3")}</p>;
-  return <div className="pricing-basis"><dl><dt>{copy("pricing.source_0e570c")}</dt><dd>{p.source}</dd><dt>{copy("pricing.asOf_431575")}</dt><dd>{p.asOf}</dd><dt>{copy("pricing.currency_3ac1a9")}</dt><dd>{p.currency}</dd><dt>{copy("pricing.inputPricing_a2d912")}</dt><dd>{p.inputMode === InputPricingMode.UNIFORM ? copy("pricing.uniformInputCacheIncluded_420f49") : p.inputMode === InputPricingMode.CACHED_DISCOUNT ? copy("pricing.separateUncachedInputAndCachedReads_c91ad9") : copy("pricing.unknownMode_892fdb")}</dd><dt>{copy("pricing.inputMillion_fb54c1")}</dt><dd>{p.inputPerMillion ?? copy("pricing.unavailable_ca1844")}</dd>{p.inputMode === InputPricingMode.CACHED_DISCOUNT ? <><dt>{copy("pricing.cachedInputMillion_187c72")}</dt><dd>{p.cachedInputPerMillion ?? copy("pricing.unavailable_ca1844")}</dd></> : null}<dt>{copy("pricing.outputMillion_bd8cb4")}</dt><dd>{p.outputPerMillion ?? copy("pricing.unavailable_ca1844")}</dd></dl>
+  return <div className="pricing-basis"><dl><dt>{copy("pricing.source_0e570c")}</dt><dd>{p.source}</dd><dt>{copy("pricing.asOf_431575")}</dt><dd>{p.asOf}</dd><dt>{copy("pricing.currency_3ac1a9")}</dt><dd>{p.currency}</dd><dt>{copy("pricing.inputPricing_a2d912")}</dt><dd>{p.inputMode === InputPricingMode.UNIFORM ? copy("pricing.uniformInputCacheIncluded_420f49") : p.inputMode === InputPricingMode.CACHED_DISCOUNT ? copy("pricing.separateUncachedInputAndCachedReads_c91ad9") : copy("pricing.unknownMode_892fdb")}</dd><dt>{copy("pricing.inputMillion_fb54c1")}</dt><dd>{formatDecimal(p.inputPerMillion ?? "") || copy("pricing.unavailable_ca1844")}</dd>{p.inputMode === InputPricingMode.CACHED_DISCOUNT ? <><dt>{copy("pricing.cachedInputMillion_187c72")}</dt><dd>{formatDecimal(p.cachedInputPerMillion ?? "") || copy("pricing.unavailable_ca1844")}</dd></> : null}<dt>{copy("pricing.outputMillion_bd8cb4")}</dt><dd>{formatDecimal(p.outputPerMillion ?? "") || copy("pricing.unavailable_ca1844")}</dd></dl>
     {p.exclusions.length ? <><h4>{copy("pricing.declaredExclusions_dc075b")}</h4><ul>{p.exclusions.map((value, index) => <li key={index}>{value}</li>)}</ul></> : null}
     <p>{copy("pricing.onlyObservedTokenCategoriesAreCovered_783253")}</p>
     <small><LocalizedText id="pricing.version_4fda4a" components={{ s0: <>{value.revision.toString()}</>, s1: <>{value.id}</> }} /></small><small><LocalizedText id="pricing.originalModel_62c471" components={{ s0: <>{value.modelId}</>, s1: <>{value.subscriptionService ? copy("pricing.subscriptionService_596422", { v0: subscriptionServiceLabel(value.subscriptionService) }) : copy("pricing.provider_28af03", { v0: value.providerId })}</> }} /></small>
@@ -23,21 +23,21 @@ function draftPrice(value?: TokenPricing): Draft {
 function priceInput(draft: Draft) {
   const rate = (value: string) => {
     if (!value) return undefined;
-    if (!/^(0|[1-9][0-9]{0,17})(\.[0-9]{1,9})?$/.test(value)) throw new Error("Use nonnegative decimal rates with at most nine fractional digits; leave missing rates blank.");
+    if (!/^(0|[1-9][0-9]{0,17})(\.[0-9]{1,9})?$/.test(value)) throw new ProductError("validation.a1d598578ee9");
     return value;
   };
   const date = new Date(`${draft.asOf}T00:00:00Z`);
-  if (!/^[A-Z]{3}$/.test(draft.currency) || !draft.source.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(draft.asOf) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== draft.asOf || draft.asOf < "1970-01-01") throw new Error("Provide a three-letter uppercase currency, source and valid as-of date.");
+  if (!/^[A-Z]{3}$/.test(draft.currency) || !draft.source.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(draft.asOf) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== draft.asOf || draft.asOf < "1970-01-01") throw new ProductError("validation.02134c57a4a6");
   const basis = { currency: draft.currency, source: draft.source, asOf: draft.asOf, inputMode: draft.inputMode, inputPerMillion: rate(draft.input), cachedInputPerMillion: draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? rate(draft.cached) : undefined, outputPerMillion: rate(draft.output), exclusions: draft.exclusions ? draft.exclusions.split("\n") : [] };
-  if (basis.inputPerMillion === undefined && basis.cachedInputPerMillion === undefined && basis.outputPerMillion === undefined) throw new Error("Provide at least one explicit rate. A zero rate must be entered as 0.");
+  if (basis.inputPerMillion === undefined && basis.cachedInputPerMillion === undefined && basis.outputPerMillion === undefined) throw new ProductError("validation.e5d23860896b");
   const bytes = (value: string) => new TextEncoder().encode(value).length;
-  if (bytes(basis.source) > 2048 || basis.exclusions.length > 16 || basis.exclusions.some((value) => !value.trim() || bytes(value) > 512)) throw new Error("Keep the source within 2,048 bytes and use at most 16 nonempty exclusion lines of 512 bytes each.");
+  if (bytes(basis.source) > 2048 || basis.exclusions.length > 16 || basis.exclusions.some((value) => !value.trim() || bytes(value) > 512)) throw new ProductError("validation.3574c19968e0");
   return basis;
 }
 function PricingEditor({ model, initial, modelRevision, current, readError, saved, cancel }: { model: Resource; initial?: PricingVersion; modelRevision: bigint; current?: { pricing?: PricingVersion; modelRevision: bigint }; readError?: unknown; saved: (value?: PricingVersion) => void; cancel: () => void }) {
   useLocale();
   const [draft, setDraft] = useState(() => draftPrice(initial?.basis));
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const mutation = useRetainedMutation(`pricing:${model.id}`, UsageQuery.setModelPricing, (value) => saved(value.pricing));
   const stale = current && (current.modelRevision !== modelRevision || current.pricing?.id !== initial?.id);
   const blocked = mutation.busy || mutation.uncertain;
@@ -45,7 +45,7 @@ function PricingEditor({ model, initial, modelRevision, current, readError, save
   return <form onSubmit={(event) => {
     event.preventDefault(); if (blocked || stale || readError || !current) return;
     try { const basis = priceInput(draft); setProblem(""); void mutation.send({ mutation: { id: model.id, expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, expectedModelRevision: modelRevision, basis }); }
-    catch (error) { setProblem(error instanceof Error ? error.message : "Review the pricing fields."); }
+    catch (error) { setProblem(productError(error, "pricing.extra.6d92cc676144")); }
   }}><h4>{copy("pricing.newPricingVersion_cd6ddf")}</h4><fieldset disabled={blocked}>
     <label>{copy("pricing.currency_3ac1a9")}<input value={draft.currency} maxLength={3} placeholder={copy("pricing.usd_a26cdf")} onChange={(event) => change("currency", event.target.value)} /></label>
     <label>{copy("pricing.pricingSource_c4d80f")}<textarea value={draft.source} maxLength={2048} onChange={(event) => change("source", event.target.value)} /></label>

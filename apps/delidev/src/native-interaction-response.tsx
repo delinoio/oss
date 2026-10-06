@@ -24,7 +24,7 @@ export function NativeQuestionResponse({ resource, questions, closed, accepted, 
   const blocked = closed || mutation.busy || mutation.uncertain || !submissionAllowed;
   return <form aria-label={copy("native-interaction-response.answerOriginalOpencodeQuestions_872727")} onSubmit={(event) => { event.preventDefault(); if (blocked || missing || invalid || oversized) return; void mutation.send({ mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() }, responseJson: encode(response) }); }}>
     <fieldset disabled={blocked}>
-      {questions.map((q, i) => <fieldset key={i}><legend>{q.header || `Question ${i + 1}`}</legend>
+      {questions.map((q, i) => <fieldset key={i}><legend>{q.header || copy("native-interaction-response.sentence.49c0fedf3648", { v0: i + 1 })}</legend>
         {q.options.map((option, j) => <label className="checkbox" key={j}><input type={q.multiple ? "checkbox" : "radio"} name={`native-question-${resource.id}-${i}`} checked={(selected[i] ?? []).includes(option.label)} disabled={q.options.filter((o) => o.label === option.label).length > 1} onChange={(event) => {
           setEditable({ ...editable, unanswered: { ...unanswered, [i]: false }, customEnabled: !q.multiple ? { ...customEnabled, [i]: false } : customEnabled, selected: selectedRows.map((row, index) => index !== i ? row : event.target.checked ? q.multiple ? [...row, option.label] : [option.label] : row.filter((v) => v !== option.label)) });
         }} /><span>{option.label || "(Empty option)"}</span></label>)}

@@ -96,5 +96,11 @@
   "account-settings.noEntriesForThisProvider_86ca40": "No entries for this provider.",
   "account-settings.noEntriesOnThisPage_c02ff6": "No entries on this page.",
   "account-settings.entryPages_b4e028": "Entry pages",
-  "account-settings.credentialsAreStoredSecurelyOnThe_be612b": "Credentials are stored securely on the selected server."
+  "account-settings.credentialsAreStoredSecurelyOnThe_be612b": "Credentials are stored securely on the selected server.",
+  "account-settings.extra.3bc91159cd96": "not yet observed",
+  "account-settings.extra.b2c4eef1f935": "validation required",
+  "account-settings.extra.7a611b78ccfc": "Use the provider's documented API key flow.",
+  "account-settings.extra.37709967fc3f": "Provider unavailable · ",
+  "account-settings.extra.b764cdc0eab7": "Unknown",
+  "account-settings.sentence.60031f8620a9": "validation {{v0}}"
 }

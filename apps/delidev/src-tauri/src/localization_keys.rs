@@ -78,6 +78,20 @@ pub enum Message {
     SelectServerTitle,
     ServerTypeDisplayName,
     ServerName,
+    Date,
+    Month1,
+    Month2,
+    Month3,
+    Month4,
+    Month5,
+    Month6,
+    Month7,
+    Month8,
+    Month9,
+    Month10,
+    Month11,
+    Month12,
+    WidgetEstimateUnavailable,
 }
 impl Message {
     pub fn key(self) -> &'static str {
@@ -158,6 +172,20 @@ impl Message {
             Self::SelectServerTitle => "selectServerTitle",
             Self::ServerTypeDisplayName => "serverTypeDisplayName",
             Self::ServerName => "serverName",
+            Self::Date => "date",
+            Self::Month1 => "month1",
+            Self::Month2 => "month2",
+            Self::Month3 => "month3",
+            Self::Month4 => "month4",
+            Self::Month5 => "month5",
+            Self::Month6 => "month6",
+            Self::Month7 => "month7",
+            Self::Month8 => "month8",
+            Self::Month9 => "month9",
+            Self::Month10 => "month10",
+            Self::Month11 => "month11",
+            Self::Month12 => "month12",
+            Self::WidgetEstimateUnavailable => "widgetEstimateUnavailable",
         }
     }
 }

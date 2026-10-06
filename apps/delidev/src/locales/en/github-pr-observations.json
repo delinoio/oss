@@ -19,5 +19,8 @@
   "github-pr-observations.state_a3b50c": "State",
   "github-pr-observations.description_526e00": "Description",
   "github-pr-observations.creator_88447b": "Creator",
-  "github-pr-observations.noCommitStatusContextsOnThis_b459e0": "No commit status contexts on this returned page."
+  "github-pr-observations.noCommitStatusContextsOnThis_b459e0": "No commit status contexts on this returned page.",
+  "github-pr-observations.extra.b73bbd676d6a": "GitHub returned an empty comparison diff.",
+  "github-pr-observations.extra.adadface0166": "Not reported",
+  "github-pr-observations.extra.ca1844969742": "Unavailable"
 }

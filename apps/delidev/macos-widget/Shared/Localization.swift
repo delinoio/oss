@@ -79,6 +79,20 @@ enum WidgetMessage: String {
     case selectServerTitle
     case serverTypeDisplayName
     case serverName
+    case date
+    case month1
+    case month2
+    case month3
+    case month4
+    case month5
+    case month6
+    case month7
+    case month8
+    case month9
+    case month10
+    case month11
+    case month12
+    case widgetEstimateUnavailable
 }
 private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
     .english: [
@@ -158,6 +172,20 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "selectServerTitle": "Select Server",
         "serverTypeDisplayName": "Server",
         "serverName": "Name",
+        "date": "{{month}} {{day}}, {{year}}, {{clock}} {{zone}}",
+        "month1": "January",
+        "month2": "February",
+        "month3": "March",
+        "month4": "April",
+        "month5": "May",
+        "month6": "June",
+        "month7": "July",
+        "month8": "August",
+        "month9": "September",
+        "month10": "October",
+        "month11": "November",
+        "month12": "December",
+        "widgetEstimateUnavailable": "{{currency}} unavailable · estimate",
     ],
     .korean: [
         "show": "DeliDev 표시",
@@ -236,6 +264,20 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "selectServerTitle": "서버 선택",
         "serverTypeDisplayName": "서버",
         "serverName": "이름",
+        "date": "{{year}}년 {{month}} {{day}}일 {{clock}} {{zone}}",
+        "month1": "1월",
+        "month2": "2월",
+        "month3": "3월",
+        "month4": "4월",
+        "month5": "5월",
+        "month6": "6월",
+        "month7": "7월",
+        "month8": "8월",
+        "month9": "9월",
+        "month10": "10월",
+        "month11": "11월",
+        "month12": "12월",
+        "widgetEstimateUnavailable": "{{currency}} 사용 불가 · 추정값",
     ],
 ]
 func widgetCopy(_ key: WidgetMessage, _ language: WidgetLanguage, _ values: [String: String] = [:]) -> String {

@@ -24,27 +24,27 @@ const labels: Record<SessionTitleState, string> = {
 };
 
 const reasons: Record<string, string> = {
-  "unsupported-agent-profile": "The original Agent profile does not support title generation.",
-  "worker-capability-absent": "The original Worker did not prove the required title capability.",
-  "budget-reached": "The session budget did not allow another request.",
-  canceled: "Title generation was canceled with the session operation.",
-  "authority-lost": "The original account or session permission is no longer available.",
-  "invalid-output": "The title result did not pass validation.",
-  "inference-failed": "The title request failed; the conversation remains available.",
-  "cleanup-uncertain": "Worker cleanup is uncertain; inspect the retained operation.",
-  "manual-rename": "A manual rename now owns this title.",
+  get "unsupported-agent-profile"() { return copy("session-title.extra.b1cfcf6f1ba4"); },
+  get "worker-capability-absent"() { return copy("session-title.extra.adb334a75949"); },
+  get "budget-reached"() { return copy("session-title.extra.0a98a1052ba2"); },
+  get canceled() { return copy("session-title.extra.473157bf8b8e"); },
+  get "authority-lost"() { return copy("session-title.extra.550d15708cce"); },
+  get "invalid-output"() { return copy("session-title.extra.fae8644abb79"); },
+  get "inference-failed"() { return copy("session-title.extra.547cca3850e6"); },
+  get "cleanup-uncertain"() { return copy("session-title.extra.a4dcd69e159f"); },
+  get "manual-rename"() { return copy("session-title.extra.24ecf17871e5"); },
 };
 
 const shortReasons: Record<string, string> = {
-  "unsupported-agent-profile": "Agent profile",
-  "worker-capability-absent": "Worker capability",
-  "budget-reached": "Budget reached",
-  canceled: "Canceled",
-  "authority-lost": "Authority lost",
-  "invalid-output": "Invalid output",
-  "inference-failed": "Inference failed",
-  "cleanup-uncertain": "Cleanup uncertain",
-  "manual-rename": "Manual rename",
+  get "unsupported-agent-profile"() { return copy("session-title.extra.c00881f82856"); },
+  get "worker-capability-absent"() { return copy("session-title.extra.ce8353ca4914"); },
+  get "budget-reached"() { return copy("session-title.extra.691fb5a6027e"); },
+  get canceled() { return copy("session-title.extra.13ca2ee24993"); },
+  get "authority-lost"() { return copy("session-title.extra.45d7462719c5"); },
+  get "invalid-output"() { return copy("session-title.extra.3f7bbf047330"); },
+  get "inference-failed"() { return copy("session-title.extra.d7dec563b46e"); },
+  get "cleanup-uncertain"() { return copy("session-title.extra.4e49f30cdabe"); },
+  get "manual-rename"() { return copy("session-title.extra.a37a649ad48c"); },
 };
 
 export function sessionTitlePresentation(value: unknown): { label: string; detail?: string; shortDetail?: string } | undefined {
@@ -52,13 +52,13 @@ export function sessionTitlePresentation(value: unknown): { label: string; detai
   if (data.name_mode !== "automatic") return undefined;
   const state = text(data.title_state);
   if (!Object.values(SessionTitleState).includes(state as SessionTitleState)) {
-    return { label: state ? `Unknown title state (${state})` : "Title state unavailable" };
+    return { get label() { return state ? copy("session-title.sentence.adc6a2c6a5eb", { v0: state }) : copy("session-title.extra.17b90626003c"); } };
   }
   const reason = text(data.title_reason);
   return {
-    label: labels[state as SessionTitleState],
-    detail: reasons[reason] ?? (reason ? `Unknown title reason (${reason})` : undefined),
-    shortDetail: reason ? shortReasons[reason] ?? "Other reason" : undefined,
+    get label() { return labels[state as SessionTitleState]; },
+    get detail() { return reasons[reason] ?? (reason ? copy("session-title.sentence.0e3944f9aca4", { v0: reason }) : undefined); },
+    get shortDetail() { return reason ? shortReasons[reason] ?? copy("session-title.extra.14a71f1899d6") : undefined; },
   };
 }
 

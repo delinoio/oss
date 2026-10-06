@@ -35,5 +35,9 @@
   "interactions.unsupportedNativeDecision_72a15c": "Unsupported native decision",
   "interactions.sendSelectedPermissions_b0cf2a": "Send selected permissions",
   "interactions.sendDecision_c45798": "Send decision",
-  "interactions.retryTheSameApprovalResponse_d37bf9": "Retry the same approval response"
+  "interactions.retryTheSameApprovalResponse_d37bf9": "Retry the same approval response",
+  "interactions.extra.a5276b87c12c": "The complete answer is too large. Shorten it before adding more text.",
+  "interactions.extra.d3289e625281": "Not submitted",
+  "interactions.sentence.49c0fedf3648": "Question {{v0}}",
+  "interactions.pattern": "Pattern: {{pattern}}"
 }

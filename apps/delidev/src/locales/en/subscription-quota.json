@@ -31,5 +31,6 @@
   "subscription-quota.reconcileOriginalCreditOperation_2ca418": "Reconcile original credit operation",
   "subscription-quota.retryOriginalQuotaOrCreditRequest_071535": "Retry original quota or credit request",
   "subscription-quota.retryOriginalCreditReconciliationRequest_1dd094": "Retry original credit reconciliation request",
-  "subscription-quota.retryOriginalRecoveryPreference_fa3cb3": "Retry original recovery preference"
+  "subscription-quota.retryOriginalRecoveryPreference_fa3cb3": "Retry original recovery preference",
+  "subscription-quota.extra.ca1844969742": "Unavailable"
 }

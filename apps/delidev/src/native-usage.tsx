@@ -11,12 +11,12 @@ enum Source {
   Assistant = "assistant-finalized",
 }
 
-const counterLabels = [
-  ["uncached_input", "Uncached input"],
-  ["cache_read_input", "Cache read input"],
-  ["cache_write_input", "Cache write input"],
-  ["nonreasoning_output", "Output excluding reasoning"],
-  ["reasoning_output", "Reasoning output"],
+const counterLabels = () => [
+  ["uncached_input", copy("native-usage.extra.5062c025b237")],
+  ["cache_read_input", copy("native-usage.extra.085171a719a1")],
+  ["cache_write_input", copy("native-usage.extra.06c03c4d8fe8")],
+  ["nonreasoning_output", copy("native-usage.extra.152c2e5abcdf")],
+  ["reasoning_output", copy("native-usage.extra.f85860ca7347")],
 ] as const;
 
 function counter(value: unknown): value is string {
@@ -33,12 +33,12 @@ export function NativeUsageObservation({ value }: { value: Record<string, unknow
   useLocale();
   const counts = object(value.counts);
   const estimate = value.native_estimate;
-  if (!Object.values(Source).includes(value.source as Source) || !counterLabels.every(([key]) => counter(counts[key])) || counts.total != null && !counter(counts.total) || !nativeEstimate(estimate)) {
+  if (!Object.values(Source).includes(value.source as Source) || !counterLabels().every(([key]) => counter(counts[key])) || counts.total != null && !counter(counts.total) || !nativeEstimate(estimate)) {
     return <p>{copy("native-usage.theRetainedNativeUsageObservationIs_bbd973")}</p>;
   }
   return <>
     <p><LocalizedText id="native-usage.source_590a7b" components={{ s0: <>{value.source === Source.Step ? copy("native-usage.completedNativeStep_81d2fc") : copy("native-usage.finalizedAssistantMessage_15531a")}</> }} /></p>
-    <dl>{counterLabels.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{counts[key] as string}</dd></div>)}
+    <dl>{counterLabels().map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{counts[key] as string}</dd></div>)}
       <dt>{copy("native-usage.reportedTotal_30b27c")}</dt><dd>{counts.total == null ? copy("native-usage.unavailable_ca1844") : counts.total as string}</dd>
       <dt>{copy("native-usage.nativeEstimateCurrencyUnspecified_62f71a")}</dt><dd>{estimate}</dd>
     </dl>

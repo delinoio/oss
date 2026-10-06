@@ -164,12 +164,15 @@ struct Publication: Decodable {
 
 // Formatting never converts token/currency strings to a floating-point value,
 // pools currencies or treats an absent observation as measured zero.
-func tokenLabel(_ usage: Usage?) -> String {
-    guard let value = usage?.known_tokens else { return "Today's tokens unavailable" }
-    return "\(value) known tokens · incomplete"
+func tokenLabel(_ usage: Usage?, language: WidgetLanguage = .english) -> String {
+    guard let value = usage?.known_tokens else { return widgetCopy(.widgetTokensUnavailable, language) }
+    return widgetCopy(.widgetTokens, language, ["tokens": value])
 }
-func estimateLabels(_ usage: Usage?) -> [String] {
-    (usage?.estimates ?? []).map { "\($0.currency) \($0.known_amount ?? "unavailable") · estimate" }
+func estimateLabels(_ usage: Usage?, language: WidgetLanguage = .english) -> [String] {
+    (usage?.estimates ?? []).map { estimate in
+        if let amount = estimate.known_amount { return widgetCopy(.widgetEstimate, language, ["currency": estimate.currency, "amount": amount]) }
+        return widgetCopy(.widgetEstimateUnavailable, language, ["currency": estimate.currency])
+    }
 }
 
 func quotaMessage(_ state: QuotaState) -> WidgetMessage {

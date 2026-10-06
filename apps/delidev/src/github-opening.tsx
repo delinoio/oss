@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -27,14 +27,14 @@ export function githubForm(raw: Uint8Array, profile: Resource, access: Access): 
   return value.url === expected ? expected : undefined;
 }
 
-export function OpenGitHub({ url, disabled = false, label = "Open on GitHub" }: { url: string; disabled?: boolean; label?: string }) {
+export function OpenGitHub({ url, disabled = false, label = copy("github-opening.extra.03f69885814b") }: { url: string; disabled?: boolean; label?: string }) {
   useLocale();
-  const [busy, setBusy] = useState(false), [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false), [status, setStatus] = useProductMessage("");
   const open = async () => {
     if (busy || disabled || !isTauri()) return;
     setBusy(true); setStatus("");
-    try { await invoke("open_github", { url }); setStatus("Sent to your default browser. This does not verify page access."); }
-    catch { setStatus("Browser opening was not confirmed. Inspect your browser before trying again."); }
+    try { await invoke("open_github", { url }); setStatus(ownedMessage("github-opening.extra.96dce755f727")); }
+    catch { setStatus(ownedMessage("github-opening.extra.45a2c8995dcd")); }
     finally { setBusy(false); }
   };
   return <div><button type="button" disabled={disabled || busy || !isTauri()} onClick={() => void open()}>{label}</button>{!isTauri() ? <p>{copy("github-opening.browserOpeningIsAvailableInThe_33be1f")}</p> : null}{status ? <p role="status">{status}</p> : null}</div>;
@@ -44,7 +44,7 @@ export function GitHubTokenForm({ profile, active, disabled, showHeading = true 
   useLocale();
   const p = document(profile), fine = p.token_kind === "fine-grained";
   const [access, setAccess] = useState<Access>(fine ? GitHubTokenAccess.SELECTED_REPOSITORIES : GitHubTokenAccess.PUBLIC_REPOSITORIES);
-  const [busy, setBusy] = useState(false), [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false), [status, setStatus] = useProductMessage("");
   const epoch = useRef(0);
   useEffect(() => { epoch.current++; if (!active || disabled) setBusy(false); return () => { epoch.current++; }; }, [active, disabled]);
   const form = useQuery(IntegrationQuery.getGitHubTokenForm, { profileId: profile.id, expectedRevision: profile.revision, access }, { enabled: false, retry: false, gcTime: 0, staleTime: 0 });
@@ -58,8 +58,8 @@ export function GitHubTokenForm({ profile, active, disabled, showHeading = true 
       if (!url) throw new Error("Invalid form");
       if (epoch.current !== original) return;
       await invoke("open_github", { url });
-      if (epoch.current === original) setStatus("Sent to your default browser. Review repository selection, permissions and expiry before generating a token.");
-    } catch { if (epoch.current === original) setStatus("The official form could not be confirmed. Refresh the profile and inspect your browser before trying again."); }
+      if (epoch.current === original) setStatus(ownedMessage("github-opening.extra.783701cedcbe"));
+    } catch { if (epoch.current === original) setStatus(ownedMessage("github-opening.extra.f2427e02d7bb")); }
     finally { if (epoch.current === original) setBusy(false); }
   };
   return <section aria-label={copy("github-opening.githubTokenCreation_acffe8")}>{showHeading ? <h4>{copy("github-opening.createATokenOnGithub_519994")}</h4> : null}{fine ? <><p><LocalizedText id="github-opening.resourceOwnerTheOfficialFormDefaults_f8b002" components={{ s0: <>{text(p.resource_owner)}</> }} /></p><p>{copy("github-opening.metadataContentsPullRequestsIssuesAnd_a0bd31")}</p></> : <><label>{copy("github-opening.classicTokenAccess_d1110d")}<select value={access} disabled={busy || disabled} onChange={(event) => { setAccess(Number(event.target.value) as Access); setStatus(""); }}><option value={GitHubTokenAccess.PUBLIC_REPOSITORIES}>{copy("github-opening.publicRepositoriesOnlyNoScopes_d7d490")}</option><option value={GitHubTokenAccess.PRIVATE_REPOSITORIES}>{copy("github-opening.privateRepositoriesBroadRepoScope_5791af")}</option></select></label>{access === GitHubTokenAccess.PRIVATE_REPOSITORIES ? <p role="note">{copy("github-opening.classicRepoGrantsBroadReadWrite_1e0aa7")}</p> : <p>{copy("github-opening.noClassicScopesWillBePreselected_667cb5")}</p>}</>}<p>{copy("github-opening.reviewTheFormAndCreateThe_d41506")}</p><button type="button" disabled={!active || disabled || busy || !isTauri()} onClick={() => void open()}>{copy("github-opening.openOfficialGithubTokenForm_d8a937")}</button>{!isTauri() ? <p>{copy("github-opening.openTheOfficialFormFromThe_dc9177")}</p> : null}{status ? <p role="status">{status}</p> : null}</section>;

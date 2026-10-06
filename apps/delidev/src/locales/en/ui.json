@@ -4,7 +4,7 @@
   "ui.close_7d9eb7": "Close",
   "ui.loading_ba3bbb": "Loading…",
   "ui.loadMore_ac8991": "Load more",
-  "ui.requestFailed": "The DeliDev request could not complete.",
+  "ui.requestFailed": "DeliDev could not complete this request.",
   "ui.technicalDetails": "Technical details",
   "ui.failure.invalid_argument": "Check the input values before submitting again.",
   "ui.failure.not_found": "This item is unavailable. Refresh the current list before acting.",

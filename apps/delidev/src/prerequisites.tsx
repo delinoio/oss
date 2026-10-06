@@ -123,7 +123,7 @@ function configurations(rows: Resource[] | undefined, kind: EntityKind): Documen
 }
 function Step({ label, state, children }: { label: string; state: CheckState; children: React.ReactNode }) {
   useLocale();
-  return <li><h4>{label}: {state}</h4>{children}</li>;
+  return <li><h4>{label}: {copy(state === CheckState.NotChecked ? "prerequisites.state.notChecked" : state === CheckState.Observed ? "prerequisites.state.observed" : state === CheckState.Setup ? "prerequisites.state.setup" : state === CheckState.Failed ? "prerequisites.state.failed" : "prerequisites.state.unknown")}</h4>{children}</li>;
 }
 
 // Read-only snapshots deliberately do not grant execution readiness. In particular,

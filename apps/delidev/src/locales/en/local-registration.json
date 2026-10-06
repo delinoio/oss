@@ -12,5 +12,11 @@
   "local-registration.recovering_959bdc": "Recovering…",
   "local-registration.retryOriginalDesktopRecovery_3b14fa": "Retry original desktop recovery",
   "local-registration.confirmDesktopReRegistration_d9ee3f": "Confirm desktop re-registration",
-  "local-registration.close_7d9eb7": "Close"
+  "local-registration.close_7d9eb7": "Close",
+  "local-registration.extra.26ef939a1688": "Access was denied. Check that the selected device is authorized and that DeliDev's private data directory and registration files are owned by your account and accessible only to you. On macOS/Linux, use 0700 for private directories and 0600 for private files, then retry. Preserve existing data.",
+  "local-registration.extra.4dd6b9aec612": "The original owner or replacement credential is unavailable. Restore the original owner access before retrying; no automatic registration will occur.",
+  "local-registration.extra.9de930e2084f": "The original registration or recovery files changed or are incomplete. Preserve them for inspection; recovery cannot safely continue.",
+  "local-registration.extra.0052bdc7399b": "Another operation or a changed registration prevents this request. Check desktop registration and retain any original recovery request.",
+  "local-registration.extra.c2c03db23ff0": "Use a desktop version compatible with the original local server.",
+  "local-registration.extra.881bd1533eb2": "The operation could not be confirmed. Check desktop registration or retry the same recovery; do not reset the server."
 }

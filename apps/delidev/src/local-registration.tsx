@@ -8,7 +8,7 @@ export interface NativeConnection { endpoint: string; token: string; server_id: 
 export enum RegistrationState { Authorized = "authorized", Revoked = "revoked", Recovering = "recovering" }
 export interface DesktopRegistration { state: RegistrationState; server_id: string; device_id: string; revision: string; request_id?: string }
 interface RecoveryRequest { serverId: string; deviceId: string; revision: string; requestId: string }
-export const localPermissionProblem = "Access was denied. Check that the selected device is authorized and that DeliDev's private data directory and registration files are owned by your account and accessible only to you. On macOS/Linux, use 0700 for private directories and 0600 for private files, then retry. Preserve existing data.";
+export const localPermissionProblem = () => copy("local-registration.extra.26ef939a1688");
 const id = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function registration(value: DesktopRegistration): DesktopRegistration {
   if (!value || !Object.values(RegistrationState).includes(value.state) || !id.test(value.server_id) || !id.test(value.device_id)
@@ -17,12 +17,12 @@ function registration(value: DesktopRegistration): DesktopRegistration {
   return value;
 }
 function recoveryProblem(error: unknown) {
-  if (error === "credential-unavailable") return "The original owner or replacement credential is unavailable. Restore the original owner access before retrying; no automatic registration will occur.";
-  if (error === "permission-denied") return localPermissionProblem;
-  if (error === "invalid-evidence") return "The original registration or recovery files changed or are incomplete. Preserve them for inspection; recovery cannot safely continue.";
-  if (error === "busy") return "Another operation or a changed registration prevents this request. Check desktop registration and retain any original recovery request.";
-  if (error === "incompatible") return "Use a desktop version compatible with the original local server.";
-  return "The operation could not be confirmed. Check desktop registration or retry the same recovery; do not reset the server.";
+  if (error === "credential-unavailable") return copy("local-registration.extra.4dd6b9aec612");
+  if (error === "permission-denied") return localPermissionProblem();
+  if (error === "invalid-evidence") return copy("local-registration.extra.9de930e2084f");
+  if (error === "busy") return copy("local-registration.extra.0052bdc7399b");
+  if (error === "incompatible") return copy("local-registration.extra.c2c03db23ff0");
+  return copy("local-registration.extra.881bd1533eb2");
 }
 
 export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = true }: { active?: boolean; busy: boolean; setBusy: (value: boolean) => void; recovered: (connection: NativeConnection) => Promise<void> }) {

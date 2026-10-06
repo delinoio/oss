@@ -33,5 +33,6 @@
   "device-settings.thisDeviceChangedAfterTheConfirmation_174a53": "This device changed after the confirmation opened. Return to the latest device before a new revocation.",
   "device-settings.confirmDeviceRevocation_8cf482": "Confirm device revocation",
   "device-settings.retryOriginalDeviceRevocation_976bec": "Retry original device revocation",
-  "device-settings.keepDeviceAuthorized_704f74": "Keep device authorized"
+  "device-settings.keepDeviceAuthorized_704f74": "Keep device authorized",
+  "device-settings.extra.b764cdc0eab7": "Unknown"
 }

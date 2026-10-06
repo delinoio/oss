@@ -18,7 +18,7 @@ const modifiedTime = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", hour: "
 
 function modificationLabel(value: string) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : `${modifiedDate.format(date)} · ${modifiedTime.format(date)} UTC`;
+  return Number.isNaN(date.getTime()) ? value : copy("backups.sentence.e6f7491a0231", { v0: modifiedDate.format(date), v1: modifiedTime.format(date) });
 }
 
 function hidePager(page: string, count: number | undefined, next: string | undefined, error: unknown) {
@@ -111,7 +111,7 @@ export function Backups({ active }: { active: boolean }) {
         {inventory.data?.backups.length === 0 ? <p>{page ? copy("backups.noBackupsOnThisPage_056811") : copy("backups.noManagedBackups_c08d9c")}</p> : null}
       </div>
       <table role="table" aria-labelledby={`${panelId}-inventory`}>
-        <thead><tr role="row"><th role="columnheader" id={`${panelId}-modified`} scope="col">{copy("backups.modifiedUtcBackupId_bacb2a")}</th><th role="columnheader" id={`${panelId}-size`} scope="col">{copy("backups.size_1af851")}</th><th role="columnheader" id={`${panelId}-integrity`} scope="col">{copy("backups.integrity_ad5ea6")}</th><th role="columnheader" id={`${panelId}-action`} scope="col"><span className="backups-sr-only">{copy("backups.action_64cff1")}</span></th></tr></thead>
+        <thead><tr role="row"><th role="columnheader" id={`${panelId}-modified`} scope={"col"}>{copy("backups.modifiedUtcBackupId_bacb2a")}</th><th role="columnheader" id={`${panelId}-size`} scope={"col"}>{copy("backups.size_1af851")}</th><th role="columnheader" id={`${panelId}-integrity`} scope={"col"}>{copy("backups.integrity_ad5ea6")}</th><th role="columnheader" id={`${panelId}-action`} scope={"col"}><span className="backups-sr-only">{copy("backups.action_64cff1")}</span></th></tr></thead>
         <tbody>{inventory.data?.backups.map(item => <tr role="row" key={item.id} className={selected === item.id ? "backups-selected" : undefined}>
           <td role="cell" headers={`${panelId}-modified`}><time dateTime={item.modifiedAt}>{modificationLabel(item.modifiedAt)}</time><span className="backups-sr-only"><LocalizedText id="backups.originalModificationTimestamp_06e09f" components={{ s0: <>{item.modifiedAt}</> }} /></span><code className="backups-id">{item.id}</code></td>
           <td role="cell" headers={`${panelId}-size`}><LocalizedText id="backups.bytes_825916" components={{ s0: <span className="backups-cell-label" aria-hidden="true">{copy("backups.size_1af851")}</span>, s1: <>{bytes.format(item.sizeBytes)}</> }} /></td>

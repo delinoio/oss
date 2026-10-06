@@ -30,5 +30,17 @@
   "repository-registration.inspectionWasAcknowledgedWithoutAReadable_28ee95": "Inspection was acknowledged without a readable result. Observe the original operation before another request.",
   "repository-registration.optionalSettings_e88b5c": "Optional settings",
   "repository-registration.retryTheSameInspection_8ce3eb": "Retry the same inspection",
-  "repository-registration.retryTheSameRepositorySave_b78084": "Retry the same repository save"
+  "repository-registration.retryTheSameRepositorySave_b78084": "Retry the same repository save",
+  "repository-registration.extra.725492fb2d32": "Another window is choosing a folder. Wait for it to finish, then try Choose folder again.",
+  "repository-registration.extra.79de1a72a2e7": "The selected folder cannot be used. Choose another folder or enter a valid absolute checkout path.",
+  "repository-registration.extra.0cb2cb5d6d57": "Folder selection was denied. Check this window's authorization and folder access, then try Choose folder again.",
+  "repository-registration.extra.3a5c3abe26a1": "Folder selection failed. Try Choose folder again or enter an absolute checkout path.",
+  "repository-registration.extra.26f9f95a152f": "This computer",
+  "repository-registration.extra.6501182438e2": "Selected remote computer",
+  "repository-registration.extra.2d1caf8c0851": "Access to this computer's Worker was denied. Check device authorization and private-state permissions, then retry.",
+  "repository-registration.extra.4bbf580a7dcf": "This computer's Worker could not be verified. Check its registration and connection in Runner Devices, then retry. The selected folder is retained.",
+  "repository-registration.extra.e8a01a7b61e7": "The inspection summary is unreadable. Inspect the original operation before continuing.",
+  "repository-registration.extra.eede23d37ef3": "This configuration is too large. Reduce its options.",
+  "repository-registration.extra.ca1844969742": "Unavailable",
+  "repository-registration.extra.3471f15c181b": "Unavailable locally"
 }

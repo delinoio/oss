@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { NativeGrokInteraction } from "./native-grok-interactions";
 import { useState } from "react";
 import { InteractionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -25,7 +25,7 @@ export function Interaction({ resource, refresh, draft, saveDraft, clearDraft, s
   const data = document(current);
   const changed = (result?: Resource) => { if (result) { setAccepted(result); clearDraft?.(); } refresh(); };
   return <article className="interaction"><header><h3>{text(data.type) === InteractionType.Question ? copy("interactions.agentQuestion_1a6b3f") : copy("interactions.nativeApproval_c515b9")}</h3><small>{text(data.closure)}</small></header>
-    <p><LocalizedText id="interactions.response_83879c" components={{ s0: <>{text(object(data.response ?? data.approval_response).state) || "Not submitted"}</> }} /></p>
+    <p><LocalizedText id="interactions.response_83879c" components={{ s0: <>{text(object(data.response ?? data.approval_response).state) || copy("interactions.extra.d3289e625281")}</> }} /></p>
     {Object.hasOwn(data,"grok") ? <NativeGrokInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.claude != null ? <NativeClaudeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.opencode != null ? <NativeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Question ? <Questions resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Approval ? <Approval resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : <p>{copy("interactions.thisNativeRequestTypeIsNot_6fd7af")}</p>}
   </article>;
 }
@@ -36,7 +36,7 @@ function Questions({ resource, accepted, draft, saveDraft, submissionAllowed, re
   const questions = items(object(data.questions).questions).map(object);
   const [editable, setEditable] = useEditableInteractionDraft<Extract<InteractionDraftState, { kind: InteractionDraftKind.CodexQuestion }>>(InteractionDraftKind.CodexQuestion, () => ({ kind: InteractionDraftKind.CodexQuestion, selected: {}, free: {}, unanswered: {} }), draft, saveDraft);
   const { selected, free, unanswered } = editable;
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const mutation = useRetainedMutation(`answer:${resource.id}`, InteractionQuery.respondQuestion, (result) => accepted(result.interaction));
   const protectedAnswer = questions.some((q) => q.secret === true);
   const closed = text(data.closure) !== "open" || Boolean(data.response);
@@ -46,13 +46,13 @@ function Questions({ resource, accepted, draft, saveDraft, submissionAllowed, re
     return [id, [...new Set([...(own(choices, id) ?? []), ...(own(extra, id) ? [own(extra, id)] : [])])]];
   }));
   const update = (choices: Record<string, string[]>, extra: Record<string, string>, unansweredState = unanswered) => {
-    if (encode({ answers: answers(choices, extra) }).byteLength > responseLimit) { setProblem("The complete answer is too large. Shorten it before adding more text."); return; }
+    if (encode({ answers: answers(choices, extra) }).byteLength > responseLimit) { setProblem(ownedMessage("interactions.extra.a5276b87c12c")); return; }
     setEditable({ ...editable, selected: choices, free: extra, unanswered: unansweredState }); setProblem("");
   };
   const missing = questions.some((q) => !answers()[text(q.id)].length && !own(unanswered, text(q.id)));
   return <form onSubmit={(event) => { event.preventDefault(); if (blocked || missing) return; void mutation.send({ mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() }, responseJson: encode({ answers: answers() }) }); }}>
     <fieldset disabled={blocked}>
-      {questions.map((q, index) => { const id = text(q.id); return <fieldset key={id}><legend>{text(q.header) || `Question ${index + 1}`}</legend><p>{text(q.text)}</p>
+      {questions.map((q, index) => { const id = text(q.id); return <fieldset key={id}><legend>{text(q.header) || copy("interactions.sentence.49c0fedf3648", { v0: index + 1 })}</legend><p>{text(q.text)}</p>
         {q.secret === true ? <p>{copy("interactions.thisQuestionRequiresProtectedAnswerDelivery_e552da")}</p> : <>
           {items(q.options).map((option, optionIndex) => { const value = object(option), label = text(value.label); return <label className="checkbox" key={optionIndex}><input type="checkbox" checked={(own(selected, id) ?? []).includes(label)} onChange={(event) => { const unansweredNext = { ...unanswered, [id]: false }; update({ ...selected, [id]: event.target.checked ? [...(own(selected, id) ?? []), label] : (own(selected, id) ?? []).filter((item) => item !== label) }, free, unansweredNext); }} /><span>{label}{text(value.description) ? <small>{text(value.description)}</small> : null}</span></label>; })}
           {q.other === true || items(q.options).length === 0 ? <label>{items(q.options).length ? copy("interactions.anotherAnswer_b941a8") : copy("interactions.yourAnswer_d0e869")}<textarea autoFocus={index === 0 && items(q.options).length === 0} rows={2} value={own(free, id) ?? ""} onChange={(event) => { update(selected, { ...free, [id]: event.target.value }, { ...unanswered, [id]: false }); }} /></label> : null}
@@ -75,7 +75,7 @@ function requestedEntries(profile: Document): Document[] {
 }
 function pathLabel(value: Document): string {
   if (value.type === "path") return text(value.path);
-  if (value.type === "glob_pattern") return `Pattern: ${text(value.pattern)}`;
+  if (value.type === "glob_pattern") return copy("interactions.pattern", { pattern: text(value.pattern) });
   const special = object(value.value);
   return `${text(special.kind)}${text(special.path) ? ` · ${text(special.path)}` : ""}${text(special.subpath) ? ` / ${text(special.subpath)}` : ""}`;
 }

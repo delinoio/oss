@@ -1,10 +1,10 @@
 {
-  "native-claude-retry.theRetainedClaudeRetryIsUnavailable_6f0bde": "The retained Claude retry is unavailable or inconsistent.",
-  "native-claude-retry.nativeRetryAttempt_a0b7b9": "Native retry attempt",
-  "native-claude-retry.nativeMaximumRetries_617637": "Native maximum retries",
-  "native-claude-retry.reportedRetryDelayMs_951c2b": "Reported retry delay (ms)",
+  "native-claude-retry.theRetainedClaudeRetryIsUnavailable_6f0bde": "유지된 Claude 재시도를 확인할 수 없거나 일관되지 않습니다.",
+  "native-claude-retry.nativeRetryAttempt_a0b7b9": "네이티브 재시도",
+  "native-claude-retry.nativeMaximumRetries_617637": "네이티브 최대 재시도 횟수",
+  "native-claude-retry.reportedRetryDelayMs_951c2b": "보고된 재시도 지연(ms)",
   "native-claude-retry.reportedError_1f1a98": "보고된 오류",
   "native-claude-retry.httpStatus_0f7cf9": "HTTP 상태",
   "native-claude-retry.notReported_adadfa": "보고되지 않음",
-  "native-claude-retry.thisRecordsClaudeSRetryObservation_e4c795": "This records Claude’s retry observation. It does not confirm another request, input acceptance, completion or billed usage."
+  "native-claude-retry.thisRecordsClaudeSRetryObservation_e4c795": "Claude의 재시도 관측 기록입니다. 다른 요청, 입력 접수, 완료 또는 청구 사용량을 확인하지 않습니다."
 }

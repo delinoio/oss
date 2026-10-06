@@ -75,5 +75,11 @@
   "integrations.identityVerificationDoesNotConfirmRepository_7d904f": "Identity verification does not confirm repository access.",
   "integrations.githubProfilePages_677951": "GitHub profile pages",
   "integrations.firstPage_0bdbb7": "First page",
-  "integrations.nextPage_c08ac7": "Next page"
+  "integrations.nextPage_c08ac7": "Next page",
+  "integrations.extra.ccbe41029c83": "Fine-grained PAT",
+  "integrations.extra.41e9c09d008a": "Classic PAT",
+  "integrations.extra.3471e3c6191a": "Unsupported token type",
+  "integrations.extra.6ae50316d97d": "No owner restriction declared",
+  "integrations.extra.59b5da9c12c7": "Tokens are stored in the selected server's OS credential store. Saved tokens cannot be displayed.",
+  "integrations.extra.3aeb00246038": "github.com"
 }

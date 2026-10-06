@@ -47,5 +47,17 @@
   "usage-chart.model_836ccd": "{{v0}} · model {{v1}}",
   "usage-chart.tokens_eb2379": "<s0/> · <s1/> · <s2/> tokens · <s3/>",
   "usage-chart.moveFocusToAChartRow_839f35": "Move focus to a chart row to inspect its original identity and exact totals.",
-  "usage-chart.unmeasuredModelsAreNotRankedTheir_7ac3b6": "Unmeasured models are not ranked. Their original identities remain in View data."
+  "usage-chart.unmeasuredModelsAreNotRankedTheir_7ac3b6": "Unmeasured models are not ranked. Their original identities remain in View data.",
+  "usage-chart.extra.ca1844969742": "Unavailable",
+  "usage-chart.extra.33553459e8b2": "Known total",
+  "usage-chart.extra.36ecb4f86691": "Input",
+  "usage-chart.extra.876a4379087b": "Cached input",
+  "usage-chart.extra.f8bc2d034686": "Cache-write input",
+  "usage-chart.extra.b2439bcb8dee": "Output",
+  "usage-chart.extra.f85860ca7347": "Reasoning output",
+  "usage-chart.extra.1b8bc2ba488c": "Other models",
+  "usage-chart.extra.3947dfdaa0f8": "Retained provider",
+  "usage-chart.extra.a99bc331d9ad": "Retained model",
+  "usage-chart.sentence.196fc0970efc": "{{v0}} responses · {{v1}} measured · {{v2}} unavailable",
+  "usage-chart.sentence.1d3a37cc1c5e": "Model {{v0}}"
 }

@@ -27,5 +27,15 @@
   "github-ci.githubRequired_303be0": "GitHub required",
   "github-ci.githubOptional_5148ec": "GitHub optional",
   "github-ci.app_979677": " · App {{v0}}",
-  "github-ci.message_2fa20b": " · {{v0}}"
+  "github-ci.message_2fa20b": " · {{v0}}",
+  "github-ci.extra.ecbc89cd37a0": "Started",
+  "github-ci.extra.22a970d2e5b1": "Completed",
+  "github-ci.extra.d70b9e24bca2": "Created",
+  "github-ci.extra.3a5ecca188c0": "Updated",
+  "github-ci.extra.4c198f5da765": "Original title",
+  "github-ci.extra.8696494cf17f": "Original summary",
+  "github-ci.extra.89420fdb493e": "Original text",
+  "github-ci.extra.00ffd18a5ad0": "Original description",
+  "github-ci.extra.46167b516d99": "No restriction reported",
+  "github-ci.extra.ca1844969742": "Unavailable"
 }

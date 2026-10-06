@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createInstance } from "i18next";
-import { initReactI18next, Trans, useTranslation } from "react-i18next";
-import type { ReactElement, ComponentType } from "react";
+import { initReactI18next, useTranslation } from "react-i18next";
+import { Fragment, useState, type Dispatch, type SetStateAction, type ReactElement } from "react";
 import { english, korean } from "./locales/resources";
 
 export enum SupportedLanguage { English = "en", Korean = "ko" }
-export type MessageKey = keyof typeof english;
+type PluralBase<T> = T extends `${infer Name}_one` ? Name : never;
+export type MessageKey = keyof typeof english | PluralBase<keyof typeof english>;
 export const i18n = createInstance();
 void i18n.use(initReactI18next).init({
   resources: { en: { translation: english }, ko: { translation: korean } },
@@ -30,18 +31,53 @@ export function copy(key: MessageKey, values: Record<string, unknown> = {}): str
   return i18n.t(key, values);
 }
 
+export interface OwnedMessage { readonly key: MessageKey; readonly values: Record<string, unknown> }
+export function ownedMessage(key: MessageKey, values: Record<string, unknown> = {}): OwnedMessage {
+  return { key, values };
+}
+export function resolveMessage(value: OwnedMessage | string | undefined): string | undefined {
+  return typeof value === "object" ? copy(value.key, value.values) : value;
+}
+
+// Validation errors retain a stable catalog identity across language changes.
+// Error.message remains English for diagnostics and existing technical callers.
+export class ProductError extends Error {
+  readonly productMessage: OwnedMessage;
+  constructor(key: MessageKey) {
+    super(english[key as keyof typeof english]);
+    this.productMessage = ownedMessage(key);
+  }
+}
+export function productError(error: unknown, fallback: MessageKey): OwnedMessage {
+  return error instanceof ProductError ? error.productMessage : ownedMessage(fallback);
+}
+
+// Store presentation ownership rather than a translated result. Language changes
+// update an existing notice without repeating the action that created it.
+type MessageState<T> = string | OwnedMessage | (T extends string ? never : undefined);
+export function useProductMessage<T extends string | undefined = undefined>(initial?: T): [T extends string ? string : string | undefined, Dispatch<SetStateAction<MessageState<T>>>] {
+  useLocale();
+  const [value, setValue] = useState<MessageState<T>>(initial as MessageState<T>);
+  return [resolveMessage(value) as T extends string ? string : string | undefined, setValue];
+}
+
 /** Subscribe without making language part of business queries or lifetimes. */
 export function useLocale(): SupportedLanguage {
   const { i18n: instance } = useTranslation();
   return instance.resolvedLanguage === SupportedLanguage.Korean ? SupportedLanguage.Korean : SupportedLanguage.English;
 }
 
-const Translation = Trans as unknown as ComponentType<{ i18n: typeof i18n; i18nKey: MessageKey; values?: Record<string, unknown>; components?: Record<string, ReactElement> }>;
-
-export function LocalizedText({ id, values, components }: {
-  id: MessageKey; values?: Record<string, unknown>; components?: Record<string, ReactElement>;
+/** Only catalog-owned slots are parsed. Original data remains inert children.
+ * Stable slot IDs preserve child identity when another language reorders them.
+ */
+export function LocalizedText({ id, components = {} }: {
+  id: MessageKey; components?: Record<string, ReactElement>;
 }) {
-  return <Translation i18n={i18n} i18nKey={id} values={values} components={components} />;
+  useLocale();
+  return copy(id).split(/(<s\d+\/>)/).map((part, index) => {
+    const slot = /^<(s\d+)\/>$/.exec(part)?.[1];
+    return slot ? <Fragment key={slot}>{components[slot]}</Fragment> : <Fragment key={`text-${index}`}>{part}</Fragment>;
+  });
 }
 
 export function displayLocale(): string {
@@ -54,4 +90,14 @@ export function formatNumber(value: number | bigint): string {
 
 export function formatDate(value: Date, options?: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat(displayLocale(), options ?? { dateStyle: "medium", timeStyle: "medium" }).format(value);
+}
+
+/** Group an exact decimal string without rounding, currency conversion or Number coercion. */
+export function formatDecimal(value: string): string {
+  if (value.length > 4096 || !/^-?(0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return value;
+  const [integer, fraction] = value.replace(/^-/, "").split(".");
+  const formatter = new Intl.NumberFormat(displayLocale());
+  const decimal = formatter.formatToParts(1.1).find(part => part.type === "decimal")?.value ?? ".";
+  const sign = value.startsWith("-") ? formatter.formatToParts(-1).find(part => part.type === "minusSign")?.value ?? "-" : "";
+  return sign + formatter.format(BigInt(integer)) + (fraction === undefined ? "" : decimal + fraction);
 }

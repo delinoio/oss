@@ -12,16 +12,16 @@ import { document, items, object, text, type Document } from "./documents";
 
 const knownOptions = new Set(["permission", "claude_permission", "approval_policy", "subagent_model", "subagent_effort", "max_concurrency", "approval_review_model", "service_tier"]);
 
-function requested(value: unknown): string { return text(value) || "Not specified"; }
+function requested(value: unknown): string { return text(value) || copy("execution-configuration.extra.dc12bec5d71f"); }
 function observed(value: unknown): string {
-  if (typeof value !== "string") return "Unavailable";
-  return value === "" ? "Empty native value" : value;
+  if (typeof value !== "string") return copy("execution-configuration.extra.ca1844969742");
+  return value === "" ? copy("execution-configuration.extra.4ee7e86d4220") : value;
 }
 function integer(value: unknown): string {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? String(value) : "Unavailable";
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? String(value) : copy("execution-configuration.extra.ca1844969742");
 }
 function grokContext(value: unknown): string {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1024 && value <= 1_000_000_000 ? String(value) : "Unavailable";
+  return typeof value === "number" && Number.isInteger(value) && value >= 1024 && value <= 1_000_000_000 ? String(value) : copy("execution-configuration.extra.ca1844969742");
 }
 
 function NativeObservations({ progress, selection, harness }: { progress: Document; selection: Document; harness: unknown }) {
@@ -57,13 +57,14 @@ function NativeObservations({ progress, selection, harness }: { progress: Docume
 // template would replace historical choices with later edits or deletions.
 // Render only DeliDev-owned fields, never arbitrary native prompt/config data.
 export const ExecutionConfiguration = memo(function ExecutionConfiguration({ resource }: { resource: Resource }) {
+  useLocale();
   const data = document(resource);
   const initial = object(data.initial_execution);
   const configuration = object(initial.configuration);
   const options = object(configuration.options);
   const context = object(configuration.grok_context);
   const childModel = object(configuration.subagent_model);
-  const contextSource = context.source === "known" ? "Known model metadata" : context.source === "user-declared" ? "User-declared model metadata" : "Unavailable";
+  const contextSource = context.source === "known" ? copy("execution-configuration.extra.4eb2581de1a8") : context.source === "user-declared" ? copy("execution-configuration.extra.5852e0c77d3d") : copy("execution-configuration.extra.ca1844969742");
   const current = object(data.current_execution);
   const selection = text(current.id) ? current : { id: initial.id, input_id: initial.input_id, account_id: initial.initial_account_id };
   const templates = items(configuration.templates);
@@ -76,9 +77,9 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
         <h3>{copy("execution-configuration.savedConfiguration_d194b3")}</h3>
         <p>{copy("execution-configuration.capturedWhenTheFirstExecutionWas_e736dd")}</p>
         <dl>
-          <dt>{copy("execution-configuration.harness_e3b5b4")}</dt><dd>{text(configuration.harness) || "Unavailable"}</dd>
+          <dt>{copy("execution-configuration.harness_e3b5b4")}</dt><dd>{text(configuration.harness) || copy("execution-configuration.extra.ca1844969742")}</dd>
           <dt>{copy("execution-configuration.requestedModel_b36591")}</dt><dd>{text(configuration.native_model)}</dd>
-          {configuration.harness === Harness.Grok ? <><dt>{copy("execution-configuration.savedGrokContextWindow_df1d70")}</dt><dd>{contextSource === "Unavailable" ? copy("execution-configuration.unavailable_ca1844") : grokContext(context.tokens)}</dd><dt>{copy("execution-configuration.savedContextSource_adf512")}</dt><dd>{contextSource}</dd></> : null}
+          {configuration.harness === Harness.Grok ? <><dt>{copy("execution-configuration.savedGrokContextWindow_df1d70")}</dt><dd>{context.source !== "known" && context.source !== "user-declared" ? copy("execution-configuration.unavailable_ca1844") : grokContext(context.tokens)}</dd><dt>{copy("execution-configuration.savedContextSource_adf512")}</dt><dd>{contextSource}</dd></> : null}
           <dt>{copy("execution-configuration.requestedReasoningEffort_dc59bb")}</dt><dd>{requested(configuration.effort)}</dd>
           <dt>{copy("execution-configuration.savedPermissionSelection_abd7db")}</dt><dd>{requested(options.permission)}</dd>
           {configuration.harness === Harness.Claude || options.claude_permission !== undefined ? <><dt>{copy("execution-configuration.savedClaudePermission_0741e2")}</dt><dd>{requested(options.claude_permission)}</dd></> : null}
@@ -89,22 +90,22 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
           <dt>{copy("execution-configuration.requestedConcurrency_406d92")}</dt><dd>{options.max_concurrency === undefined || options.max_concurrency === 0 ? copy("execution-configuration.nativeDefaultRequested_6a1fdb") : integer(options.max_concurrency)}</dd>
           <dt>{copy("execution-configuration.requestedApprovalReviewModel_136d13")}</dt><dd>{requested(options.approval_review_model)}</dd>
           <dt>{copy("execution-configuration.requestedServiceTier_14f88a")}</dt><dd>{requested(options.service_tier)}</dd>
-          <dt>{copy("execution-configuration.accountRouting_0c3707")}</dt><dd>{text(configuration.routing) || "Unavailable"}</dd>
-          <dt>{copy("execution-configuration.firstAccount_2896cc")}</dt><dd>{text(initial.initial_account_id) || "Unavailable"}</dd>
-          <dt>{copy("execution-configuration.selectedExecutionAccount_012de8")}</dt><dd>{text(selection.account_id) || "Unavailable"}</dd>
+          <dt>{copy("execution-configuration.accountRouting_0c3707")}</dt><dd>{text(configuration.routing) || copy("execution-configuration.extra.ca1844969742")}</dd>
+          <dt>{copy("execution-configuration.firstAccount_2896cc")}</dt><dd>{text(initial.initial_account_id) || copy("execution-configuration.extra.ca1844969742")}</dd>
+          <dt>{copy("execution-configuration.selectedExecutionAccount_012de8")}</dt><dd>{text(selection.account_id) || copy("execution-configuration.extra.ca1844969742")}</dd>
         </dl>
         {Object.keys(options).some((key) => !knownOptions.has(key)) ? <p className="notice">{copy("execution-configuration.thisSnapshotContainsAdditionalOptionsThat_76c12b")}</p> : null}
         <details><summary>{copy("execution-configuration.snapshotReferencesAndAccountOrder_513309")}</summary>
-          <dl><dt>{copy("execution-configuration.firstExecution_5294a1")}</dt><dd>{text(initial.id)}</dd><dt>{copy("execution-configuration.selectedExecution_c6fa3c")}</dt><dd>{text(selection.id)}</dd><dt>{copy("execution-configuration.agentWorker_a4caa7")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(configuration.agent_id)}</>, s1: <>{integer(configuration.agent_revision)}</> }} /></dd><dt>{copy("execution-configuration.model_5e2c61")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(configuration.model_id)}</>, s1: <>{integer(configuration.model_revision)}</> }} /></dd><dt>{copy("execution-configuration.provider_472590")}</dt><dd>{text(configuration.provider_id)}</dd><dt>{copy("execution-configuration.acceptedAt_1b8950")}</dt><dd>{text(initial.accepted_at) || "Unavailable"}</dd></dl>
-          {Array.isArray(configuration.accounts) ? <ol aria-label={copy("execution-configuration.savedAccountOrder_c00a0a")}>{accounts.map((value, index) => { const account = object(value); return <li key={index}><LocalizedText id="execution-configuration.weight_0d7216" components={{ s0: <>{text(account.id) || "Unavailable account"}</>, s1: <>{integer(account.weight)}</> }} /></li>; })}</ol> : <p>{copy("execution-configuration.savedAccountOrderIsUnavailable_e54c4a")}</p>}
+          <dl><dt>{copy("execution-configuration.firstExecution_5294a1")}</dt><dd>{text(initial.id)}</dd><dt>{copy("execution-configuration.selectedExecution_c6fa3c")}</dt><dd>{text(selection.id)}</dd><dt>{copy("execution-configuration.agentWorker_a4caa7")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(configuration.agent_id)}</>, s1: <>{integer(configuration.agent_revision)}</> }} /></dd><dt>{copy("execution-configuration.model_5e2c61")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(configuration.model_id)}</>, s1: <>{integer(configuration.model_revision)}</> }} /></dd><dt>{copy("execution-configuration.provider_472590")}</dt><dd>{text(configuration.provider_id)}</dd><dt>{copy("execution-configuration.acceptedAt_1b8950")}</dt><dd>{text(initial.accepted_at) || copy("execution-configuration.extra.ca1844969742")}</dd></dl>
+          {Array.isArray(configuration.accounts) ? <ol aria-label={copy("execution-configuration.savedAccountOrder_c00a0a")}>{accounts.map((value, index) => { const account = object(value); return <li key={index}><LocalizedText id="execution-configuration.weight_0d7216" components={{ s0: <>{text(account.id) || copy("execution-configuration.extra.643fd990f260")}</>, s1: <>{integer(account.weight)}</> }} /></li>; })}</ol> : <p>{copy("execution-configuration.savedAccountOrderIsUnavailable_e54c4a")}</p>}
         </details>
       </section>
       <NativeObservations progress={object(data.execution)} selection={selection} harness={configuration.harness} />
       <section aria-label={copy("execution-configuration.appliedDelidevInstructions_f2bcde")}>
         <h3>{copy("execution-configuration.appliedDelidevInstructions_f2bcde")}</h3>
         <p>{copy("execution-configuration.readOnlyAdditionalInstructionsFromThis_8850cd")}</p>
-        {typeof configuration.instructions !== "string" ? <p>{copy("execution-configuration.appliedInstructionTextIsUnavailable_b0a185")}</p> : configuration.instructions === "" ? <p>{copy("execution-configuration.noAdditionalDelidevInstructionsWereSelected_7b2306")}</p> : <pre aria-label="Combined applied instructions">{configuration.instructions}</pre>}
-        {Array.isArray(configuration.templates) ? <ol aria-label={copy("execution-configuration.appliedInstructionTemplateOrder_be0ff4")}>{templates.map((value, index) => { const template = object(value); return <li key={index}><details><summary><LocalizedText id="execution-configuration.templateRevision_10577b" components={{ s0: <>{index + 1}</>, s1: <>{text(template.id) || "Unavailable reference"}</>, s2: <>{integer(template.revision)}</> }} /></summary>{typeof template.contents === "string" ? <pre>{template.contents}</pre> : <p>{copy("execution-configuration.savedTemplateTextIsUnavailable_95e25e")}</p>}</details></li>; })}</ol> : <p>{copy("execution-configuration.appliedTemplateOrderIsUnavailable_02e090")}</p>}
+        {typeof configuration.instructions !== "string" ? <p>{copy("execution-configuration.appliedInstructionTextIsUnavailable_b0a185")}</p> : configuration.instructions === "" ? <p>{copy("execution-configuration.noAdditionalDelidevInstructionsWereSelected_7b2306")}</p> : <pre aria-label={copy("execution-configuration.attribute.e9ae418fcc27")}>{configuration.instructions}</pre>}
+        {Array.isArray(configuration.templates) ? <ol aria-label={copy("execution-configuration.appliedInstructionTemplateOrder_be0ff4")}>{templates.map((value, index) => { const template = object(value); return <li key={index}><details><summary><LocalizedText id="execution-configuration.templateRevision_10577b" components={{ s0: <>{index + 1}</>, s1: <>{text(template.id) || copy("execution-configuration.extra.ccd130d59f4b")}</>, s2: <>{integer(template.revision)}</> }} /></summary>{typeof template.contents === "string" ? <pre>{template.contents}</pre> : <p>{copy("execution-configuration.savedTemplateTextIsUnavailable_95e25e")}</p>}</details></li>; })}</ol> : <p>{copy("execution-configuration.appliedTemplateOrderIsUnavailable_02e090")}</p>}
       </section>
     </>}
   </details>;

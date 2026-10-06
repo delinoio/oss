@@ -1,4 +1,4 @@
-import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
+import { formatDecimal, productError, ProductError, ownedMessage, useProductMessage, LocalizedText, copy, displayLocale, useLocale  } from "./localization";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { BudgetState, SessionQuery, UsageCoverage, newRequestId, type Resource, type SessionBudgetView } from "@delinoio/delidev-api-client";
@@ -9,7 +9,7 @@ export interface BudgetDraft { enabled: boolean; currency: string; threshold: st
 export const emptyBudget: BudgetDraft = { enabled: false, currency: "", threshold: "" };
 export function budgetInput(draft: BudgetDraft) {
   if (!draft.enabled) return undefined;
-  if (!/^[A-Z]{3}$/.test(draft.currency) || !/^(0|[1-9][0-9]{0,17})(\.[0-9]{1,15})?$/.test(draft.threshold)) throw new Error("Provide an uppercase three-letter budget currency and a nonnegative decimal threshold with at most fifteen fractional digits.");
+  if (!/^[A-Z]{3}$/.test(draft.currency) || !/^(0|[1-9][0-9]{0,17})(\.[0-9]{1,15})?$/.test(draft.threshold)) throw new ProductError("validation.6dd2f4b85563");
   return { currency: draft.currency, threshold: draft.threshold };
 }
 export function BudgetFields({ draft, change }: { draft: BudgetDraft; change: (value: BudgetDraft) => void }) {
@@ -20,14 +20,14 @@ function BudgetEditor({ initial, current, readError, saved, cancel }: { initial:
   useLocale();
   const [revision, setRevision] = useState(initial.session!.revision);
   const [draft, setDraft] = useState<BudgetDraft>(() => initial.budget ? { enabled: true, ...initial.budget } : emptyBudget);
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const mutation = useRetainedMutation(`budget:${initial.session!.id}`, SessionQuery.setSessionBudget, (value) => saved(value.view));
   const stale = Boolean(current?.session && current.session.revision !== revision);
   const blocked = mutation.busy || mutation.uncertain;
   return <form onSubmit={(event) => {
     event.preventDefault(); if (blocked || stale || readError || !current?.session) return;
     try { const budget = budgetInput(draft); setProblem(""); void mutation.send({ mutation: { id: initial.session!.id, expectedRevision: revision, requestId: newRequestId() }, change: budget ? { case: "budget", value: budget } : { case: "remove", value: true } }); }
-    catch (error) { setProblem(error instanceof Error ? error.message : "Review the budget fields."); }
+    catch (error) { setProblem(productError(error, "session-budget.extra.96afe54d0f2e")); }
   }}><fieldset disabled={blocked}><BudgetFields draft={draft} change={setDraft} /></fieldset>
     <p>{copy("session-budget.raisingOrRemovingABudgetAllows_1d7a26")}</p>
     {stale ? <p role="alert">{copy("session-budget.theSessionChangedYourBudgetDraft_fa196c")}</p> : null}
@@ -47,7 +47,7 @@ export function SessionBudget({ resource, changed, blocked }: { resource: Resour
   const current = view?.selectedCurrency;
   return <section aria-label={copy("session-budget.sessionEstimatedCostBudget_3b3c9f")} className="session-budget"><header><h3>{copy("session-budget.estimatedCostBudget_b859b0")}</h3><button disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("session-budget.refreshBudget_13bcdd")}</button></header>
     <Problem error={result.error} />{view && result.error ? <p className="notice">{copy("session-budget.theDisplayedBudgetEvidenceMayBe_7abe71")}</p> : null}
-    {view?.budget ? <><p><LocalizedText id="session-budget.thresholdKnownLifetimeSubtotal_2c6c7e" components={{ s0: <>{view.budget.currency}</>, s1: <>{view.budget.threshold}</>, s2: <>{current?.knownAmount ? copy("session-budget.message_42d375", { v0: current.currency, v1: current.knownAmount }) : copy("session-budget.unavailable_ca1844")}</> }} /></p>
+    {view?.budget ? <><p><LocalizedText id="session-budget.thresholdKnownLifetimeSubtotal_2c6c7e" components={{ s0: <>{view.budget.currency}</>, s1: <>{formatDecimal(view.budget.threshold)}</>, s2: <>{current?.knownAmount ? copy("session-budget.message_42d375", { v0: current.currency, v1: formatDecimal(current.knownAmount) }) : copy("session-budget.unavailable_ca1844")}</> }} /></p>
       {view.state === BudgetState.THRESHOLD_REACHED ? <p role="alert">{copy("session-budget.budgetThresholdReachedNewTurnsAnd_6236ce")}</p> : view.state === BudgetState.ALLOW_INCOMPLETE ? <p className="notice">{copy("session-budget.incompleteEvidenceNewExecutionMayProceed_6c86c6")}</p> : <p className="notice">{copy("session-budget.budgetEvaluationIsUnavailableTheServer_f17303")}</p>}
       <p><LocalizedText id="session-budget.responsesWithCompleteTokenPriceCategories_cc7aef" components={{ s0: <>{current?.completeResponses.toLocaleString(displayLocale()) ?? "0"}</>, s1: <>{current?.partialResponses.toLocaleString(displayLocale()) ?? "0"}</>, s2: <>{current?.unavailableResponses.toLocaleString(displayLocale()) ?? "0"}</>, s3: <>{view.unpricedResponses.toLocaleString(displayLocale())}</>, s4: <>{view.otherCurrencyResponses.toLocaleString(displayLocale())}</> }} /></p>
       {view.coverage === UsageCoverage.OBSERVED_ROOT_ACCOUNTING_UNITS ? <p><LocalizedText id="session-budget.nativeUnitsWithCompleteCategoriesPartial_8d9ff0" components={{ s0: <>{current?.completeNativeUnits.toLocaleString(displayLocale()) ?? "0"}</>, s1: <>{current?.partialNativeUnits.toLocaleString(displayLocale()) ?? "0"}</>, s2: <>{current?.unavailableNativeUnits.toLocaleString(displayLocale()) ?? "0"}</>, s3: <>{view.unpricedNativeUnits.toLocaleString(displayLocale())}</>, s4: <>{view.otherCurrencyNativeUnits.toLocaleString(displayLocale())}</> }} /></p> : <p>{copy("session-budget.nativeBudgetEvidenceIsUnavailableFrom_a6710d")}</p>}

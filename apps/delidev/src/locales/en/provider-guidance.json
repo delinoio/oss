@@ -2,5 +2,7 @@
   "provider-guidance.openOfficialKeyCreation_1c1c04": "Open official key creation",
   "provider-guidance.openProviderDocumentation_9682aa": "Open provider documentation",
   "provider-guidance.officialKeyCreation_adef05": "Official key creation: <s0/>",
-  "provider-guidance.providerDocumentation_7eeff8": "Provider documentation: <s0/>"
+  "provider-guidance.providerDocumentation_7eeff8": "Provider documentation: <s0/>",
+  "provider-guidance.extra.028de0ea70b9": "Sent to your default browser. Create the key there, then connect it here.",
+  "provider-guidance.extra.45a2c8995dcd": "Browser opening was not confirmed. Inspect your browser before trying again."
 }

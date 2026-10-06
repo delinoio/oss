@@ -17,5 +17,8 @@
   "server-preferences.on_130011": "On",
   "server-preferences.off_ca7981": "Off",
   "server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f": "Unsupported server preferences schema. Policy values are unavailable.",
-  "server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc": "Server preferences are unreadable or contain unsupported policy values. Policy values are unavailable."
+  "server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc": "Server preferences are unreadable or contain unsupported policy values. Policy values are unavailable.",
+  "server-preferences.extra.5ecef0b36ba3": "Automatically fix required CI failures",
+  "server-preferences.extra.feab8b0b6d7b": "Automatically handle matching published feedback",
+  "server-preferences.extra.7f64e75c8c6e": "Automatically resolve verified merge conflicts"
 }

@@ -1,13 +1,13 @@
 {
-  "native-context-compaction.contextCompactionUnavailable_368e82": "Context compaction · Unavailable",
-  "native-context-compaction.theRetainedContextObservationIsUnavailable_e3e304": "The retained context observation is unavailable or inconsistent.",
+  "native-context-compaction.contextCompactionUnavailable_368e82": "컨텍스트 압축 · 사용 불가",
+  "native-context-compaction.theRetainedContextObservationIsUnavailable_e3e304": "유지된 컨텍스트 관측을 확인할 수 없거나 일관되지 않습니다.",
   "native-context-compaction.started_ecbc89": "시작됨",
   "native-context-compaction.completed_22a970": "완료됨",
-  "native-context-compaction.contextCompactionAutomatic_e2d9be": "Context compaction · Automatic · <s0/>",
+  "native-context-compaction.contextCompactionAutomatic_e2d9be": "컨텍스트 압축 · 자동 · <s0/>",
   "native-context-compaction.opencode_3af0e5": "OpenCode",
   "native-context-compaction.codex_616efb": "Codex",
-  "native-context-compaction.isCompactingItsWorkingContextThe_3d6bfb": "<s0/> is compacting its working context. The conversation remains retained.",
-  "native-context-compaction.currentContextTokens_77a977": "Current context tokens",
+  "native-context-compaction.isCompactingItsWorkingContextThe_3d6bfb": "<s0/>이(가) 작업 컨텍스트를 압축하는 중입니다. 대화는 계속 유지됩니다.",
+  "native-context-compaction.currentContextTokens_77a977": "현재 컨텍스트 토큰",
   "native-context-compaction.notReported_adadfa": "보고되지 않음",
-  "native-context-compaction.originalContextReference_ad006e": "Original context reference"
+  "native-context-compaction.originalContextReference_ad006e": "원래 컨텍스트 참조"
 }

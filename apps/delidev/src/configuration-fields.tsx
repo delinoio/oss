@@ -1,6 +1,6 @@
 import { LocalizedText, copy, useLocale } from "./localization";
 import { defaultRemediationPolicy, RemediationDetailPresentation, RemediationPolicyFields } from "./remediation-policy";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useId, useState } from "react";
 import { AgentConfiguration, AgentReadProblem } from "./agent-configuration";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
@@ -98,29 +98,30 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const failure = pageFailure ?? (agentPresentation && needsProviderCapability ? inventory.error ?? inventory.failureReason ?? selected.error ?? selected.failureReason ?? selectedProvider.error ?? selectedProvider.failureReason : undefined);
   const initialFetching = fetching || (agentPresentation && needsProviderCapability && inventory.isFetching && !ready);
   const readProblem = Boolean(failure || selectedProviderOff || (active && needsProviderCapability && inventory.data && !ready));
-  useEffect(() => { reportRead?.(label, readProblem); }, [label, readProblem, reportRead]);
+  const readIdentity = useId();
+  useEffect(() => { reportRead?.(readIdentity, readProblem); return () => reportRead?.(readIdentity, false); }, [readIdentity, readProblem, reportRead]);
   const errorCode = failure instanceof ConnectError ? failure.code : undefined;
   let statusMessage = "";
   if (active && (showStatus || agentPresentation)) {
     if (failure) {
       const reason = errorCode === Code.PermissionDenied || errorCode === Code.Unauthenticated
-        ? `The server denied access to these choices${fetching ? "; retrying." : "."}`
+        ? copy(fetching ? "configuration-fields.choices.deniedRetrying" : "configuration-fields.choices.denied")
         : errorCode === Code.Unavailable || errorCode === Code.DeadlineExceeded
-          ? `The server connection failed while loading these choices${fetching ? "; retrying." : "."}`
-          : `The latest request for these choices failed${fetching ? "; retrying." : "."}`;
+          ? copy(fetching ? "configuration-fields.choices.connectionRetrying" : "configuration-fields.choices.connection")
+          : copy(fetching ? "configuration-fields.choices.requestRetrying" : "configuration-fields.choices.request");
       statusMessage = pageData
-        ? `Showing cached ${resourceLabel} choices. ${reason} Your current selection is retained.`
-        : `${reason} Your current selection is retained.`;
+        ? copy("configuration-fields.sentence.054bff468121", { v0: resourceLabel, v1: reason })
+        : copy("configuration-fields.sentence.1ad5938a045c", { v0: reason });
     } else if (initialFetching && !pageData) {
-      statusMessage = `Loading ${resourceLabel} choices…`;
+      statusMessage = copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel });
     } else if (pageData && (agentPresentation ? pageRows : rows).length === 0) {
       statusMessage = nextPage
-        ? `No selectable ${resourceLabel} choices are on this page. More choices are available.`
-        : `No selectable ${resourceLabel} choices are on this page.`;
+        ? copy("configuration-fields.sentence.244a41434b15", { v0: resourceLabel })
+        : copy("configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel });
     } else if (value && selectedOffPage) {
-      statusMessage = `The selected ${resourceLabel} is outside this page. Its exact identity remains selected.`;
+      statusMessage = copy("configuration-fields.sentence.5398fd2fa5b0", { v0: resourceLabel });
     } else if (value && !rows.some((row) => row.id === value)) {
-      statusMessage = `The selected ${resourceLabel} is outside this page or unavailable. Its identity is retained; no other choice was selected.`;
+      statusMessage = copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel });
     }
   }
   return <div className="resource-choice"><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<select autoFocus={autoFocus} aria-label={markRequired ? label : undefined} disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)), rows.find((row) => row.id === event.target.value))}><option value="">{emptyLabel ?? copy("configuration-fields.select_586618", { v0: resourceLabel.toLowerCase() })}</option>{value && !rows.some((row) => row.id === value) ? <option value={value} disabled><LocalizedText id="configuration-fields.selected_3d6467" components={{ s0: <>{kindNames[kind]}</>, s1: <>{value}</> }} /></option> : null}{rows.map((row) => { const off = row.id === value && selectedProviderOff; const name = resourceName(row); return <option key={row.id} value={row.id} disabled={off}>{off ? copy("configuration-fields.offProvider_749d7d", { v0: name }) : name}{kind === EntityKind.ACCOUNT ? copy("configuration-fields.message_2fa20b", { v0: text(document(row).health) }) : ""}</option>; })}</select></label>
@@ -228,7 +229,7 @@ export function RepositoryFields({ data, change, active, pendingOperation, requi
   useEffect(() => { pendingOperation?.(blocked); return () => pendingOperation?.(false); }, [blocked, pendingOperation]);
   return <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /><TextField label={copy("configuration-fields.preferredGitRemote_ef1241")} value={data.preferred_remote} change={(preferred_remote) => change({ ...data, preferred_remote })} /><TextField label={copy("configuration-fields.githubRepositoryOwner_47e01a")} value={data.github_owner} max={100} change={(github_owner) => change({ ...data, github_owner })} /><TextField label={copy("configuration-fields.githubRepositoryName_b09ffb")} value={data.github_name} max={100} change={(github_name) => change({ ...data, github_name })} /><ResourceChoice label={copy("configuration-fields.githubProfile_5a175c")} kind={EntityKind.INTEGRATION} value={text(data.integration_id)} active={active} change={(integration_id) => change({ ...data, integration_id })} /><p>{copy("configuration-fields.aMissingOrDeletedProfileRequires_1ea24e")}</p><p>{copy("configuration-fields.inspectionReadsTheSelectedWorkerS_2a92e4")}</p>
     <fieldset disabled={blocked}><legend>{copy("configuration-fields.addACheckout_0ee4d5")}</legend><ResourceChoice label={copy("configuration-fields.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} change={setMachine} /><TextField label={copy("configuration-fields.absoluteCheckoutPathOnThisWorker_4274b3")} value={path} max={4096} change={setPath} /><button type="button" disabled={!machine || !path || checkouts.some((checkout) => checkout.machine_id === machine) || checkouts.length >= 1000} onClick={() => void inspect.send({ requestId: newRequestId(), machineId: machine, path, preferredRemote: text(data.preferred_remote) })}>{copy("configuration-fields.inspectCheckout_55462c")}</button></fieldset><Problem error={inspect.error} />{inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>{copy("configuration-fields.retryTheSameInspection_8ce3eb")}</button> : null}
-    {unknownInspection ? <p role="alert">{copy("configuration-fields.inspectionWasAcknowledgedWithoutAReadable_568e22")}</p> : null}{inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <>{state === JobState.Succeeded ? <><p><LocalizedText id="configuration-fields.inspectedRoot_722a3f" components={{ s0: <>{text(output.root)}</> }} /></p><p><LocalizedText id="configuration-fields.remotes_c63ee4" components={{ s0: <>{items(output.remotes).map(text).join(", ") || "None"}</> }} /></p><p><LocalizedText id="configuration-fields.recordedRemoteDefaults_76261a" components={{ s0: <>{Object.entries(object(output.default_refs)).map(([remote, ref]) => `${remote}: ${text(ref)}`).join(", ") || "Unknown"}</> }} /></p><button type="button" disabled={!text(output.root) || checkouts.some((checkout) => checkout.machine_id === inspection.machine)} onClick={() => { change({ ...data, checkouts: [...checkouts, { machine_id: inspection.machine, path: text(output.root) }] }); setInspection(undefined); setPath(""); setMachine(""); }}>{copy("configuration-fields.addInspectedCheckout_5f3da2")}</button></> : null}{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button type="button" onClick={() => setInspection(undefined)}>{copy("configuration-fields.closeInspection_009fe6")}</button> : null}</>}</TrackedJob> : null}
+    {unknownInspection ? <p role="alert">{copy("configuration-fields.inspectionWasAcknowledgedWithoutAReadable_568e22")}</p> : null}{inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <>{state === JobState.Succeeded ? <><p><LocalizedText id="configuration-fields.inspectedRoot_722a3f" components={{ s0: <>{text(output.root)}</> }} /></p><p><LocalizedText id="configuration-fields.remotes_c63ee4" components={{ s0: <>{items(output.remotes).map(text).join(", ") || copy("configuration-fields.extra.dc937b598926")}</> }} /></p><p><LocalizedText id="configuration-fields.recordedRemoteDefaults_76261a" components={{ s0: <>{Object.entries(object(output.default_refs)).map(([remote, ref]) => `${remote}: ${text(ref)}`).join(", ") || copy("configuration-fields.extra.b764cdc0eab7")}</> }} /></p><button type="button" disabled={!text(output.root) || checkouts.some((checkout) => checkout.machine_id === inspection.machine)} onClick={() => { change({ ...data, checkouts: [...checkouts, { machine_id: inspection.machine, path: text(output.root) }] }); setInspection(undefined); setPath(""); setMachine(""); }}>{copy("configuration-fields.addInspectedCheckout_5f3da2")}</button></> : null}{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button type="button" onClick={() => setInspection(undefined)}>{copy("configuration-fields.closeInspection_009fe6")}</button> : null}</>}</TrackedJob> : null}
     <ol>{checkouts.map((checkout) => {
       const required = Boolean(requiredCheckout && checkout.machine_id === requiredCheckout.machine_id && checkout.path === requiredCheckout.path);
       return <li key={text(checkout.machine_id)}><p>{text(checkout.machine_id)} · {text(checkout.path)}</p>{required ? <p>{copy("configuration-fields.useChangeFolderToReplaceThis_dd80d8")}</p> : null}<button type="button" disabled={required} onClick={() => change({ ...data, checkouts: checkouts.filter((row) => row.machine_id !== checkout.machine_id) })}>{copy("configuration-fields.removeCheckout_3cea97")}</button></li>;

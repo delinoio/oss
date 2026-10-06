@@ -40,7 +40,7 @@ export function ServerPreferencesSummary({ row }: { row: Resource }) {
       <section className="server-preference-section"><h3>{copy("server-preferences.worktreeFetch_0d4c18")}</h3><dl><dt>{copy("server-preferences.automaticFetchBeforeWorktreePreparation_510043")}</dt><dd>{data.automatic_fetch ? copy("server-preferences.allowed_1bb201") : copy("server-preferences.disabled_75081b")}</dd></dl></section>
       <section className="server-preference-section"><h3>{copy("server-preferences.pullRequestRemediation_4cded4")}</h3>
         <p>{copy("server-preferences.enabledPoliciesRunBoundedFixesFor_2758c5")}</p>
-        <dl>{[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{policy[key] ? copy("server-preferences.on_130011") : copy("server-preferences.off_ca7981")}</dd></div>)}</dl>
+        <dl>{[["ci_failure", copy("server-preferences.extra.5ecef0b36ba3")], ["review_feedback", copy("server-preferences.extra.feab8b0b6d7b")], ["merge_conflict", copy("server-preferences.extra.7f64e75c8c6e")]].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{policy[key] ? copy("server-preferences.on_130011") : copy("server-preferences.off_ca7981")}</dd></div>)}</dl>
       </section>
     </> : <p role="status">{row.schemaVersion !== 1 ? copy("server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f") : copy("server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc")}</p>}
   </article>;

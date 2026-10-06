@@ -51,5 +51,7 @@
   "github-items.usePlainWordsNumbersSpacesHyphens_a1e3a4": "Use plain words, numbers, spaces, hyphens, underscores or periods. Leave search empty to list items.",
   "github-items.readGithubItems_9d9b08": "Read GitHub items",
   "github-items.closeGithubItems_ed30c0": "Close GitHub items",
-  "github-items.browseGithubItems_40ff50": "Browse GitHub items"
+  "github-items.browseGithubItems_40ff50": "Browse GitHub items",
+  "github-items.extra.c8c2e1d98310": "No body.",
+  "github-items.extra.a326f4758492": "Author unavailable"
 }

@@ -5,7 +5,7 @@ import { document, object, text, type Document } from "./documents";
 import { JobState } from "./jobs";
 import { useRetainedMutation } from "./mutation";
 import { NativeContextCompaction } from "./native-context-compaction";
-import { Problem } from "./ui";
+import { ServiceProblem, Problem  } from "./ui";
 
 export function contextDocument(bytes: Uint8Array | undefined, session: string): Document | undefined {
   if (!bytes || bytes.byteLength > 1 << 20) return;
@@ -41,7 +41,7 @@ export function SessionContext({ session }: { session: Resource }) {
       {state === JobState.Succeeded && result.compact_result === "success" ? <p>{copy("session-context.theNativeContextWasCompactedAnd_c4307f")}</p> : null}
       {result.harness === "codex" && typeof codex.actions === "number" ? <p><LocalizedText id="session-context.retainedCompactionsResponseCounters_8201cb" components={{ s0: <>{codex.actions}</>, s1: <>{Array.isArray(codex.response_usages) && codex.response_usages.length > 0 ? copy("session-context.reported_34540b") : copy("session-context.notReportedByTheNativeProcess_e76117")}</> }} /></p> : null}
       {result.harness === "opencode" && typeof opencode.actions === "number" ? <p><LocalizedText id="session-context.retainedCompactionsNativeStepCounters_5af773" components={{ s0: <>{opencode.actions}</>, s1: <>{Array.isArray(opencode.usages) && opencode.usages.length > 0 ? copy("session-context.reported_34540b") : copy("session-context.notReportedByTheNativeProcess_e76117")}</> }} /></p> : null}
-      {text(problem.message) ? <p role="alert">{text(problem.message)} {text(problem.guidance)}</p> : null}
+      {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
       {state === JobState.Uncertain ? <p role="alert">{copy("session-context.thisActionRequiresReconciliationPreserveThe_8ba4a5")}</p> : null}
     </section> : null}
     <p>{copy("session-context.compactTheNativeWorkingContextAt_69b0dd")}</p>

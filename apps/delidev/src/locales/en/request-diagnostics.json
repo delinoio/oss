@@ -45,5 +45,15 @@
   "request-diagnostics.noRetainedRequestObservationsForThis_ddf6c6": "No retained request observations for this selection. Historical or unobserved native requests cannot be reconstructed.",
   "request-diagnostics.diagnosticPages_45198d": "Diagnostic pages",
   "request-diagnostics.firstPage_0bdbb7": "First page",
-  "request-diagnostics.nextPage_c08ac7": "Next page"
+  "request-diagnostics.nextPage_c08ac7": "Next page",
+  "request-diagnostics.extra.7b563836dc50": "None observed",
+  "request-diagnostics.extra.406c0cd17230": "Publication request",
+  "request-diagnostics.extra.5f1a25573a30": "Correlation",
+  "request-diagnostics.extra.ba2dea0965ff": "Native request",
+  "request-diagnostics.extra.45d8583658f2": "Provider request",
+  "request-diagnostics.extra.6e5cd62e3845": "Native response",
+  "request-diagnostics.extra.230d0da59fbf": "Native thread",
+  "request-diagnostics.extra.a12de5a8959e": "Native turn",
+  "request-diagnostics.extra.ca1844969742": "Unavailable",
+  "request-diagnostics.extra.4fa709f4f55a": "Enter an exact execution UUID v7, or leave this empty for all executions."
 }

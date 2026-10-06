@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -17,18 +17,18 @@ function NewComment({ sessionId, diff, saved, close }: { sessionId: string; diff
   const [start, setStart] = useState("1"), [end, setEnd] = useState("1"), [body, setBody] = useState("");
   const query = { operation: "git-diff", repository_id: diff.repository_id, comparison: diff.comparison, path: diff.path };
   const context = useQuery(SessionQuery.readSessionReviewContext, { sessionId, queryJson: encode(query) }, { ...workspaceReadOptions, select: (r) => readReviewContext(r.documentJson, diff) });
-  const mutation = useRetainedMutation(`review:create:${sessionId}`, SessionQuery.createLocalReviewComment, (r) => { saved(r.comment ? "Comment saved." : "Comment acknowledged. Refresh reviews to inspect the result."); close(); });
+  const mutation = useRetainedMutation(`review:create:${sessionId}`, SessionQuery.createLocalReviewComment, (r) => { saved(r.comment ? copy("local-reviews.extra.22c97ed3217b") : copy("local-reviews.extra.29ba3bbaf8fc")); close(); });
   const blocked = mutation.busy || mutation.uncertain;
   const file = context.data?.files.find((v) => v.path === filePath) ?? context.data?.files[0];
   const pick: Selection = { path: file?.path ?? "", kind, ...(kind === AnchorKind.Lines ? { side, start: Number(start), end: Number(end) } : {}) };
   const preview = selectedContext(file, pick);
   return <form aria-label={copy("local-reviews.newLocalReviewComment_ccfb31")} onSubmit={(event) => { event.preventDefault(); if (blocked || preview === undefined || context.error || !body.trim()) return; void mutation.send({ requestId: newRequestId(), sessionId, documentJson: encode({ query, diff_revision: diff.revision, selection: pick, body }) }); }}>
-    <h4>{copy("local-reviews.newComment_cf9c25")}</h4>{context.error instanceof ReviewContextError ? <p role="alert">{context.error.message}</p> : <Problem error={context.error} />}{context.isPending ? <p role="status">{copy("local-reviews.readingReviewLocations_00d23b")}</p> : null}
+    <h4>{copy("local-reviews.newComment_cf9c25")}</h4>{context.error instanceof ReviewContextError ? <p role="alert">{copy(context.error.productMessage.key)}</p> : <Problem error={context.error} />}{context.isPending ? <p role="status">{copy("local-reviews.readingReviewLocations_00d23b")}</p> : null}
     {context.error ? <button type="button" disabled={blocked || context.isFetching} onClick={() => void context.refetch()}>{copy("local-reviews.retryOriginalReviewLocations_c44ebc")}</button> : null}
     {context.data && !context.data.files.length ? <p>{copy("local-reviews.thisComparisonHasNoChangedFile_0d46bf")}</p> : null}
     <fieldset disabled={blocked || !file || Boolean(context.error)}><label>{copy("local-reviews.reviewFile_d5f013")}<select value={file?.path ?? ""} onChange={(e) => { setFilePath(e.target.value); setKind(AnchorKind.File); }}>{context.data?.files.map((f) => <option key={f.path} value={f.path}>{f.path}{f.kind === "non-line" ? copy("local-reviews.fileCommentsOnly_b3d4e3") : ""}</option>)}</select></label>
       <label>{copy("local-reviews.commentLocation_fb237d")}<select value={kind} onChange={(e) => setKind(e.target.value as AnchorKind)}><option value={AnchorKind.File}>{copy("local-reviews.wholeFile_b9c0ee")}</option>{file?.kind === "text" ? <option value={AnchorKind.Lines}>{copy("local-reviews.visibleLines_5f83af")}</option> : null}</select></label>
-      {kind === AnchorKind.Lines ? <><label>{copy("local-reviews.diffSide_1f49a7")}<select value={side} onChange={(e) => setSide(e.target.value as ReviewSide)}><option value={ReviewSide.New}>{copy("local-reviews.new_18fdd5")}</option><option value={ReviewSide.Old}>{copy("local-reviews.old_bca971")}</option></select></label><label>{copy("local-reviews.firstLine_2361df")}<input type="number" min="1" step="1" value={start} onChange={(e) => setStart(e.target.value)} /></label><label>{copy("local-reviews.lastLine_d3626c")}<input type="number" min="1" step="1" value={end} onChange={(e) => setEnd(e.target.value)} /></label><p>{copy("local-reviews.chooseUpTo20ConsecutiveVisible_12e359")}</p>{preview === undefined ? <p role="alert">{copy("local-reviews.thisRangeHasNoUnambiguousText_07fe4d")}</p> : <pre aria-label="Selected review context">{preview || "(Empty selected text)"}</pre>}</> : null}
+      {kind === AnchorKind.Lines ? <><label>{copy("local-reviews.diffSide_1f49a7")}<select value={side} onChange={(e) => setSide(e.target.value as ReviewSide)}><option value={ReviewSide.New}>{copy("local-reviews.new_18fdd5")}</option><option value={ReviewSide.Old}>{copy("local-reviews.old_bca971")}</option></select></label><label>{copy("local-reviews.firstLine_2361df")}<input type="number" min="1" step="1" value={start} onChange={(e) => setStart(e.target.value)} /></label><label>{copy("local-reviews.lastLine_d3626c")}<input type="number" min="1" step="1" value={end} onChange={(e) => setEnd(e.target.value)} /></label><p>{copy("local-reviews.chooseUpTo20ConsecutiveVisible_12e359")}</p>{preview === undefined ? <p role="alert">{copy("local-reviews.thisRangeHasNoUnambiguousText_07fe4d")}</p> : <pre aria-label={copy("local-reviews.attribute.09359102ca4b")}>{preview || "(Empty selected text)"}</pre>}</> : null}
       <label>{copy("local-reviews.reviewComment_c8866a")}<textarea value={body} maxLength={8192} onChange={(e) => setBody(e.target.value)} /></label>
     </fieldset>
     <Problem error={mutation.error} /><div className="actions"><button disabled={blocked || preview === undefined || !body.trim() || Boolean(context.error)}>{copy("local-reviews.saveComment_448d29")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("local-reviews.retryOriginalComment_3a8f1e")}</button> : null}<button type="button" disabled={mutation.busy} onClick={close}>{copy("local-reviews.closeCommentEditor_60629c")}</button></div>
@@ -56,14 +56,14 @@ function CommentRow({ row, comment, sessionId, diff, selected, choose, refreshed
 
 export function LocalReviews({ sessionId, diff, reading }: { sessionId: string; diff: Diff; reading: boolean }) {
   useLocale();
-  const [page, setPage] = useState(""), [authoring, setAuthoring] = useState<Diff>(), [notice, setNotice] = useState("");
+  const [page, setPage] = useState(""), [authoring, setAuthoring] = useState<Diff>(), [notice, setNotice] = useProductMessage("");
   const [selected, setSelected] = useState<Map<string, Selected>>(() => new Map()), [mode, setMode] = useState(Mode.Execute), [allowStale, setAllowStale] = useState(false);
   const list = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.REVIEW, sessionId, pageToken: page, pageSize: 50 } }, { staleTime: 0, gcTime: 0, refetchOnWindowFocus: false, retry: false });
   const refresh = () => { void list.refetch(); };
-  const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? `Request changes queued as input ${r.change.input.id}.` : "Submission acknowledged. Inspect the session queue and review history."); refresh(); });
+  const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? ownedMessage("local-reviews.sentence.72171603f37d", { v0: r.change.input.id }) : ownedMessage("local-reviews.extra.68459ebcb74e")); refresh(); });
   const blocked = submit.busy || submit.uncertain;
   const rows = list.data?.resources ?? [];
-  const choose = (id: string, value?: Selected) => { if (blocked) return; if (value && selected.size >= 25 && !selected.has(id)) { setNotice("Select at most 25 comments for one request."); return; } setSelected((previous) => { const next = new Map(previous); if (value) next.set(id, value); else next.delete(id); return next; }); };
+  const choose = (id: string, value?: Selected) => { if (blocked) return; if (value && selected.size >= 25 && !selected.has(id)) { setNotice(ownedMessage("local-reviews.extra.28df21a538c2")); return; } setSelected((previous) => { const next = new Map(previous); if (value) next.set(id, value); else next.delete(id); return next; }); };
   return <section aria-label={copy("local-reviews.localAgentReview_4069f1")} className="local-reviews">
     <h3>{copy("local-reviews.localAgentReview_4069f1")}</h3><p>{copy("local-reviews.saveFileOrLineCommentsThen_fb2192")}</p>
     <div className="actions"><button disabled={reading || Boolean(authoring) || blocked} onClick={() => setAuthoring(diff)}>{copy("local-reviews.addReviewComment_659e59")}</button><button disabled={list.isFetching} onClick={refresh}>{copy("local-reviews.refreshReviews_d7467d")}</button></div>

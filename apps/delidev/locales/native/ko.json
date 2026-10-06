@@ -74,5 +74,19 @@
   "serverPrompt": "서버 하나를 선택하세요.",
   "selectServerTitle": "서버 선택",
   "serverTypeDisplayName": "서버",
-  "serverName": "이름"
+  "serverName": "이름",
+  "month1": "1월",
+  "month2": "2월",
+  "month3": "3월",
+  "month4": "4월",
+  "month5": "5월",
+  "month6": "6월",
+  "month7": "7월",
+  "month8": "8월",
+  "month9": "9월",
+  "month10": "10월",
+  "month11": "11월",
+  "month12": "12월",
+  "date": "{{year}}년 {{month}} {{day}}일 {{clock}} {{zone}}",
+  "widgetEstimateUnavailable": "{{currency}} 사용 불가 · 추정값"
 }

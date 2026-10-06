@@ -47,5 +47,9 @@
   "session.execute_e3a67d": "Execute",
   "session.plan_fa8ed0": "Plan",
   "session.queueMessage_891d4e": "Queue message",
-  "session.retryTheSameMessage_5656d9": "Retry the same message"
+  "session.retryTheSameMessage_5656d9": "Retry the same message",
+  "session.extra.11b39c93777e": "Agent",
+  "session.extra.a3e40dda2eb1": "Native artifact",
+  "session.extra.87bb59ba2f92": "Workspace",
+  "session.extra.fa176576233d": "Native operation"
 }

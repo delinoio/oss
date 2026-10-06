@@ -1,6 +1,15 @@
 {
   "App.skipToContent_ac576a": "본문으로 건너뛰기",
   "App.open_a007d6": "<s0/> 열기",
-  "App.yourSessionsInOnePlace_5dad94": "Your sessions, in one place",
-  "App.selectARetainedSessionOrStart_a9de9e": "Select a retained session or start a new conversation."
+  "App.yourSessionsInOnePlace_5dad94": "내 세션을 한곳에서",
+  "App.selectARetainedSessionOrStart_a9de9e": "유지된 세션을 선택하거나 새 대화를 시작하세요.",
+  "App.extra.979e130130a9": "초안 한도에 도달했습니다. 이 메시지를 줄이거나 다른 초안을 전송 또는 지우세요.",
+  "App.extra.2998edd080d1": "세션 탐색",
+  "App.extra.a1de4eceaa3b": "설정 항목",
+  "App.extra.23533b15bc29": "풀 리퀘스트 필터",
+  "App.extra.34d76f3f7da4": "사용량 필터",
+  "App.extra.a6a986427e87": "일정 탐색",
+  "App.extra.3fa855f8f6de": "활동 필터",
+  "App.extra.a1de2be5c09b": "받은 편지함 필터",
+  "App.extra.1f73d5f3eac5": "검색 필터"
 }

@@ -56,5 +56,10 @@
   "native-grok.noAssistantTextWasObservedContext_8f05d7": "No assistant text was observed. Context tokens do not replace missing response usage.",
   "native-grok.partialOutputRemainsVisibleContextTokens_cf473f": "Partial output remains visible. Context tokens do not replace missing response usage.",
   "native-grok.theOriginalSuccessfulResultIsRetained_9490e8": "The original successful result is retained alongside your Stop request.",
-  "native-grok.thisResultDoesNotAuthorizeAnother_f4977e": "<s0/> This result does not authorize another input or prove that history can be resumed."
+  "native-grok.thisResultDoesNotAuthorizeAnother_f4977e": "<s0/> This result does not authorize another input or prove that history can be resumed.",
+  "native-grok.extra.dd856eeb5046": "Input tokens",
+  "native-grok.extra.a9b50ea0c4a7": "Output tokens",
+  "native-grok.extra.57e07052a840": "Cache read input tokens",
+  "native-grok.extra.cb8efc59a7e1": "Cache creation input tokens",
+  "native-grok.extra.157b0f67b442": "Reasoning tokens"
 }

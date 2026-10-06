@@ -62,5 +62,11 @@
   "local-reviews.includeStaleCommentsAfterCheckingTheir_87ab7b": "Include stale comments after checking their original locations",
   "local-reviews.theServerChecksTheSelectedComparisons_6a6cfc": "The server checks the selected comparisons again before accepting this request. While the agent is running, feedback is queued. Use the session queue's explicit Steer action only when supported.",
   "local-reviews.retryOriginalReviewSubmission_b3064b": "Retry original review submission",
-  "local-reviews.clearSelectedComments_8db10f": "Clear selected comments"
+  "local-reviews.clearSelectedComments_8db10f": "Clear selected comments",
+  "local-reviews.extra.22c97ed3217b": "Comment saved.",
+  "local-reviews.extra.29ba3bbaf8fc": "Comment acknowledged. Refresh reviews to inspect the result.",
+  "local-reviews.extra.68459ebcb74e": "Submission acknowledged. Inspect the session queue and review history.",
+  "local-reviews.extra.28df21a538c2": "Select at most 25 comments for one request.",
+  "local-reviews.sentence.72171603f37d": "Request changes queued as input {{v0}}.",
+  "local-reviews.attribute.09359102ca4b": "Selected review context"
 }

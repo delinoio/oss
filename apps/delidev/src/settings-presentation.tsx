@@ -1,10 +1,10 @@
-import { useLocale } from "./localization";
+import { copy, useLocale  } from "./localization";
 import type { ReactNode } from "react";
 import "./settings-presentation.css";
 
 // These helpers own markup only. Reads, eligibility, pagination, mutations and
 // visit lifetime remain with each category's existing controller.
-export function SettingsHeading({ title, description, scope = "Saved on the selected server.", actions }: { title: string; description?: string; scope?: string; actions?: ReactNode }) {
+export function SettingsHeading({ title, description, scope = copy("settings-presentation.extra.93dbee418838"), actions }: { title: string; description?: string; scope?: string; actions?: ReactNode }) {
   useLocale();
   return <header className="settings-category-heading">
     <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{title}</h1>{description ? <p>{description}</p> : null}{scope ? <p className="settings-scope">{scope}</p> : null}</div>

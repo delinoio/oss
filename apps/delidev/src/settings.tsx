@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { providerPresetNames } from "@delinoio/delidev-api-client";
 import { useOpenRouterOAuth } from "./account-oauth";
 import { SubscriptionAccounts } from "./subscription-accounts";
@@ -45,7 +45,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const form = useRef<HTMLFormElement>(null);
   const current = useQuery(ResourceQuery.getResource, { kind, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
   const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result) => { if (result.job) setJob(result.job); else if (result.resource) saved(); else setJob("unknown"); });
@@ -62,11 +62,11 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     return () => window.cancelAnimationFrame(frame);
   }, [active, blocked, focusName, initial, kind, nameFocused]);
   const change = (value: Document) => {
-    if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem("This configuration is too large. Shorten the text before adding more content."); return; }
+    if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem(ownedMessage("settings.extra.0097158d86f7")); return; }
     setData(value); setProblem("");
   };
   const isApiEntry = kind === EntityKind.ACCOUNT && data.type === "api";
-  const kindLabel = isApiEntry ? "AI API key entry" : kindNames[kind];
+  const kindLabel = isApiEntry ? copy("settings.extra.1ebd6d7b3aeb") : kindNames[kind];
   if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h1><LocalizedText id="settings.saveAccepted_51c311" components={{ s0: <>{kindLabel}</> }} /></h1><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : <h3><LocalizedText id="settings.saveAccepted_51c311" components={{ s0: <>{kindLabel}</> }} /></h3>}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><button onClick={saved}>{copy("settings.done_11a676")}</button></> : state === JobState.Failed || state === JobState.Canceled ? <button onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</button> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
   return <form ref={form} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || data.reconfiguration_required === true || !validSubscriptionProvider || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: configurationSchemaVersion(kind, data), documentJson: encode(data) }); }}>
@@ -227,8 +227,8 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
   const hasSpecializedPanel = isAccountCategory || isApiProviders || isModels;
   const hasOverlay = Boolean(editing || account || deleting || routing || machine || device || pricing);
   const categoryDescription = kind === EntityKind.DEVICE
-    ? "Pair devices using a short-lived document."
-    : kind === EntityKind.MACHINE && !controlLocalWorker ? "Configure these entries through the DeliDev CLI."
+    ? copy("settings.extra.302fcd6cacc5")
+    : kind === EntityKind.MACHINE && !controlLocalWorker ? copy("settings.extra.bd632b65e652")
     : selected.description;
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration && !hasSpecializedPanel });
   // Generic category selection resets its cursor, not these opening-local
@@ -277,7 +277,7 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
     displayName: entry.displayName,
     enabled: entry.enabled,
     provider: entry.provider,
-    keyGuidance: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.key_guidance) || "Use the provider's documented API key flow.",
+    keyGuidance: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.key_guidance) || copy("settings.extra.7a611b78ccfc"),
     documentationUrl: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.documentation),
     presetId: providerPresetNames.get(entry.presetId),
     keyCreationUrl: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.key_creation_url),
@@ -342,7 +342,7 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
       <SidebarSurface active title={copy("settings.settings_74a883")} className="settings-navigation">
         <nav aria-label={copy("settings.settingsCategories_b9ed95")}>
           {settingsGroups.map((group) => <section className="settings-nav-group" key={group.label}>
-            <h2>{group.label}</h2>
+            <h2>{copy(group.label === SettingsGroup.AiAgents ? "settings.group.aiAgents" : group.label === SettingsGroup.Workspace ? "settings.group.workspace" : "settings.group.system")}</h2>
             {group.categories.map((category) => <button type="button" className="settings-category-button" key={category} data-settings-category={category} disabled={categoryLocked} aria-current={selectedCategory === category ? "page" : undefined} aria-pressed={selectedCategory === category} onClick={() => chooseCategory(category)}>
               <SettingsIcon category={category} /><span>{settingsCategories[category].label}</span>
             </button>)}

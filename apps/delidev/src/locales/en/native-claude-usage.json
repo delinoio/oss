@@ -16,5 +16,9 @@
   "native-claude-usage.nativeMainLoopTurn_7fae43": "Native main-loop turn",
   "native-claude-usage.nativeCumulativeModelLedger_46974a": "Native cumulative model ledger",
   "native-claude-usage.noModelEntriesReported_d168a7": "No model entries reported.",
-  "native-claude-usage.nativeCumulativeUsdEstimate_f82a7c": "Native cumulative USD estimate"
+  "native-claude-usage.nativeCumulativeUsdEstimate_f82a7c": "Native cumulative USD estimate",
+  "native-claude-usage.extra.7fa3de9600ee": "Input excluding cache",
+  "native-claude-usage.extra.085171a719a1": "Cache read input",
+  "native-claude-usage.extra.7018ea47815e": "Cache creation input",
+  "native-claude-usage.extra.ca019159180d": "Output including thinking"
 }

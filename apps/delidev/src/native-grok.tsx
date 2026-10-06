@@ -64,13 +64,13 @@ export function NativeGrokText({ data }: { data: Document }) {
   </article>;
 }
 
-const labels = [["input_tokens", "Input tokens"], ["output_tokens", "Output tokens"], ["cache_read_input_tokens", "Cache read input tokens"], ["cache_creation_input_tokens", "Cache creation input tokens"], ["reasoning_tokens", "Reasoning tokens"]] as const;
+const labels = () => [["input_tokens", copy("native-grok.extra.dd856eeb5046")], ["output_tokens", copy("native-grok.extra.a9b50ea0c4a7")], ["cache_read_input_tokens", copy("native-grok.extra.57e07052a840")], ["cache_creation_input_tokens", copy("native-grok.extra.cb8efc59a7e1")], ["reasoning_tokens", copy("native-grok.extra.157b0f67b442")]] as const;
 export function NativeGrokUsage({ value }: { value: Document }) {
   useLocale();
   const counts = object(value.counts);
-  if (!exact(value, ["ordinal", "counts"]) || !ordinal(value.ordinal) || !exact(counts, labels.map(([key]) => key)) || !labels.every(([key]) => count(counts[key]))) return <p>{copy("native-grok.theRetainedGrokUsageIsUnavailable_9ac016")}</p>;
+  if (!exact(value, ["ordinal", "counts"]) || !ordinal(value.ordinal) || !exact(counts, labels().map(([key]) => key)) || !labels().every(([key]) => count(counts[key]))) return <p>{copy("native-grok.theRetainedGrokUsageIsUnavailable_9ac016")}</p>;
   return <section aria-label={copy("native-grok.grokResponseUsage_e5fd60")}><p><LocalizedText id="native-grok.sourceOriginalCompletedResponseInThis_db7138" components={{ s0: <>{value.ordinal as number}</> }} /></p><dl>
-    {labels.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{counts[key] as string}</dd></div>)}
+    {labels().map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{counts[key] as string}</dd></div>)}
     <dt>{copy("native-grok.responseTotal_3ef98a")}</dt><dd>{copy("native-grok.notReported_adadfa")}</dd><dt>{copy("native-grok.actualCost_7bd390")}</dt><dd>{copy("native-grok.notReported_adadfa")}</dd>
   </dl><p>{copy("native-grok.theseCountersDescribeThisResponseOnly_9eefdb")}</p></section>;
 }
@@ -85,7 +85,7 @@ export function NativeGrokTerminal({ progress }: { progress: Document }) {
   useLocale();
   if (progress.grok_terminal == null) return null;
   const v = object(progress.grok_terminal), counts = object(v.counts), observed = object(progress.observed), content = object(progress.grok_content);
-  const valid = uuid(progress.execution_id, 7) && uuid(progress.native_thread_id, 7) && uuid(progress.native_turn_id, 4) && progress.outcome === "succeeded" && exact(v, ["kind", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "counts", "total_tokens", "model_calls", "api_duration_ms", "turns", "closure_id", "history_digest", ...(v.user !== undefined ? ["user"] : [])]) && v.kind === "closed-first-text" && eventIndex(v.native_event_id, progress.native_thread_id) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && [v.elapsed_ms, v.total_tokens, v.api_duration_ms].every(count) && v.model_calls === "1" && v.turns === "1" && uuid(v.closure_id, 7) && typeof v.history_digest === "string" && /^[a-f0-9]{64}$/.test(v.history_digest) && typeof v.model === "string" && v.model.length > 0 && v.model === observed.model && observed.grok_mode === "default" && closedResponse(content, progress.native_thread_id, v.native_event_id) && exact(counts, labels.map(([key]) => key)) && labels.every(([key]) => count(counts[key])) && [progress.grok_stop, progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].every((value) => value == null);
+  const valid = uuid(progress.execution_id, 7) && uuid(progress.native_thread_id, 7) && uuid(progress.native_turn_id, 4) && progress.outcome === "succeeded" && exact(v, ["kind", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "counts", "total_tokens", "model_calls", "api_duration_ms", "turns", "closure_id", "history_digest", ...(v.user !== undefined ? ["user"] : [])]) && v.kind === "closed-first-text" && eventIndex(v.native_event_id, progress.native_thread_id) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && [v.elapsed_ms, v.total_tokens, v.api_duration_ms].every(count) && v.model_calls === "1" && v.turns === "1" && uuid(v.closure_id, 7) && typeof v.history_digest === "string" && /^[a-f0-9]{64}$/.test(v.history_digest) && typeof v.model === "string" && v.model.length > 0 && v.model === observed.model && observed.grok_mode === "default" && closedResponse(content, progress.native_thread_id, v.native_event_id) && exact(counts, labels().map(([key]) => key)) && labels().every(([key]) => count(counts[key])) && [progress.grok_stop, progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].every((value) => value == null);
   const userValid = v.user === undefined ? progress.grok_user_message_id === undefined : uuid(progress.grok_user_message_id, 7) && typeof progress.native_thread_id === "string" && userHistory(object(v.user), progress.native_thread_id) && object(v.user).model === v.model && eventIndex(object(v.user).native_event_id, progress.native_thread_id)! < eventIndex(content.last_event, progress.native_thread_id)!;
   if (!valid || !userValid) return <p>{copy("native-grok.theRetainedGrokCompletionIsUnavailable_0c1237")}</p>;
   return <details><summary>{copy("native-grok.originalGrokInputCompletion_0d2093")}</summary><dl>
@@ -123,7 +123,7 @@ function stoppedInput(progress: Document) {
     return exact(content, ["responses", "message_id", "message_bytes", "message_chunks", "text_bytes", "last_event", "last_chunk"]) && content.responses === 0 && content.message_id === v.message_id && content.message_chunks === v.text_chunks && Number.isInteger(content.message_bytes) && Number(content.message_bytes) > 0 && Number(content.message_bytes) <= (256 << 10) && content.text_bytes === content.message_bytes && count(content.last_chunk) && BigInt(content.last_chunk) > 0n;
   }
   const result = object(v.completed), counts = object(result.counts);
-  return v.category === undefined && v.context_tokens === undefined && closedResponse(content, thread, v.native_event_id) && exact(result, ["counts", "total_tokens", "model_calls", "api_duration_ms", "turns"]) && result.model_calls === "1" && result.turns === "1" && [result.total_tokens, result.api_duration_ms].every(count) && exact(counts, labels.map(([key]) => key)) && labels.every(([key]) => count(counts[key]));
+  return v.category === undefined && v.context_tokens === undefined && closedResponse(content, thread, v.native_event_id) && exact(result, ["counts", "total_tokens", "model_calls", "api_duration_ms", "turns"]) && result.model_calls === "1" && result.turns === "1" && [result.total_tokens, result.api_duration_ms].every(count) && exact(counts, labels().map(([key]) => key)) && labels().every(([key]) => count(counts[key]));
 }
 
 export function NativeGrokStop({ progress }: { progress: Document }) {

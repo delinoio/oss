@@ -6,13 +6,13 @@ import { AccountQuery, EntityKind, ProviderQuery, ResourceQuery, newRequestId, t
 import { document, object, resourceName, text, type Document } from "./documents";
 import { Authentication } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
-import { Problem } from "./ui";
+import { ServiceProblem, Problem  } from "./ui";
 import "./api-account.css";
 
 function Observation({ label, value }: { label: string; value: unknown }) {
   useLocale();
   const observation = object(value), problem = object(observation.problem);
-  return <div><p>{label}: {text(observation.state) || "Unknown"}{text(observation.observed_at) ? copy("account-connection.message_2fa20b", { v0: text(observation.observed_at) }) : ""}</p>{text(problem.message) ? <p role="alert">{text(problem.message)} {text(problem.guidance)}</p> : null}</div>;
+  return <div><p>{label}: {text(observation.state) || copy("account-connection.extra.b764cdc0eab7")}{text(observation.observed_at) ? copy("account-connection.message_2fa20b", { v0: text(observation.observed_at) }) : ""}</p>{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}</div>;
 }
 export function AccountConnection(props: { initial: Resource; active: boolean; close: () => void }) {
   useLocale();
@@ -61,7 +61,7 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
     {confirm && data.type !== "subscription" ? <div className="notice"><p>{isApi ? copy("account-connection.disconnectingCancelsThisEntrySActive_a31581") : copy("account-connection.disconnectingCancelsThisAccountSActive_c12e4f")}</p><button disabled={blocked} onClick={() => void disconnect.send({ mutation: mutation() })}>{copy("account-connection.confirmDisconnection_d61f53")}</button><button disabled={blocked} onClick={() => setConfirm(false)}>{isApi ? copy("account-connection.keepEntryConnected_269a70") : copy("account-connection.keepAccountConnected_00ae06")}</button></div> : null}
     {data.type === "subscription" && data.removal ? <p role="status">{copy("account-connection.credentialCleanupPendingSubscriptionCredentialCleanup_bcd643")}</p> : null}
     {data.type !== "subscription" && data.removal ? <p>{copy("account-connection.disconnectedCredentialCleanupIsPending_66cdef")}<button disabled={blocked || !Number.isSafeInteger(removal.expected_revision)} onClick={retryRemoval}>{copy("account-connection.retryOriginalCredentialCleanup_bb5e5d")}</button></p> : null}
-    {cleanup ? <p role="alert">{text(cleanup.message)} {text(cleanup.guidance)}</p> : null}
+    {cleanup ? <ServiceProblem code={text(cleanup.code) || text(cleanup.problem_code)}><p role="alert">{text(cleanup.message)} {text(cleanup.guidance)}</p></ServiceProblem> : null}
     <Observation label={copy("account-connection.validation_68e1ca")} value={data.validation} /><Observation label={copy("account-connection.modelDiscovery_3c49ba")} value={data.catalog} />
     <Problem error={result.error || provider.error} />{data.type !== "subscription" ? operations.map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="account-connection.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("account-connection.connection_b38d9d") : index === 1 ? copy("account-connection.disconnection_4bd886") : index === 2 ? copy("account-connection.validation_98c41d") : copy("account-connection.modelRefresh_795dab")}</> }} /></button> : null}</div>) : null}
   </section>;

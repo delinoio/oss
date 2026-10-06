@@ -1,3 +1,13 @@
 {
-  "subscription-login.retryOriginalRequest_008780": "Retry original request"
+  "subscription-login.retryOriginalRequest_008780": "Retry original request",
+  "subscription-login.extra.22765583eb23": "Browser sign-in requires the desktop app.",
+  "subscription-login.extra.07d42279a62f": "The original sign-in request could not be confirmed. Keep this screen open and retry the original request.",
+  "subscription-login.extra.c7ce5cc2ddce": "The browser could not be opened. Use Open browser again to open the original sign-in page.",
+  "subscription-login.extra.53784001245e": "The original callback status is uncertain. Waiting for server confirmation; callback delivery will not be retried.",
+  "subscription-login.extra.c8dad9da5412": "The original callback result is uncertain. Waiting for the server to confirm sign-in; the callback will not be sent again.",
+  "subscription-login.extra.0e515dfbf962": "The original sign-in status could not be verified. Waiting for another status check.",
+  "subscription-login.extra.34521ed193ad": "The browser could not be opened. You can try Open browser again.",
+  "subscription-login.extra.13e06932e780": "The original cancellation could not be confirmed. Sign-in status will continue to be checked.",
+  "subscription-login.extra.21ebd4c8705a": "The account name could not be saved. Your edit is kept; check the current account and save again.",
+  "subscription-login.extra.557b693dbfb7": "The original request could not be confirmed."
 }

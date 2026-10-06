@@ -56,5 +56,11 @@
   "pr-problems.firstProblemPage_cdd66d": "First problem page",
   "pr-problems.nextProblemPage_de4c68": "Next problem page",
   "pr-problems.closeRetainedPrProblems_3f8091": "Close retained PR problems",
-  "pr-problems.showRetainedPrProblems_0758db": "Show retained PR problems"
+  "pr-problems.showRetainedPrProblems_0758db": "Show retained PR problems",
+  "pr-problems.extra.a326f4758492": "Author unavailable",
+  "pr-problems.extra.9ead3dff0264": "Empty published body.",
+  "pr-problems.extra.81e3ec48dfc5": "Published comment",
+  "pr-problems.extra.ca1844969742": "Unavailable",
+  "pr-problems.sentence.6c6da9a2aa0e": "Required CI failure · {{v0}}",
+  "pr-problems.sentence.9c334bded783": "Merge conflict · {{v0}} → {{v1}}"
 }

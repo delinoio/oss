@@ -53,5 +53,7 @@
   "session-storage.permanentDeletion_082b6b": "permanent deletion",
   "session-storage.retryTheSameRequest_723e0c": "Retry the same <s0/> request",
   "session-storage.originalAction_319e9b": "Original action: <s0/>",
-  "session-storage.returnToRetainedStorageOrDeletion_a1fed8": "Return to retained storage or deletion operation"
+  "session-storage.returnToRetainedStorageOrDeletion_a1fed8": "Return to retained storage or deletion operation",
+  "session-storage.extra.b764cdc0eab7": "Unknown",
+  "session-storage.sentence.4c59147c97a5": "{{v0}} bytes"
 }

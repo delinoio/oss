@@ -70,7 +70,11 @@ it("keeps failed storage, handshake, superseded account and partial notices outs
   data.more_credentials = true;
   const value = fixture(data), view = render(value.view(<Doctor active />));
   await screen.findByText("Inspect storage permissions.");
-  for (const text of ["permission_denied", "Handshake failed", "unavailable", "Inspect the retained handshake.", "Connection changed during inspection", "Refresh for the current connection."]) expect(screen.getByText(text, { exact: false }).closest("details")).toBeNull();
+  for (const text of ["Handshake failed", "Connection changed during inspection"]) expect(screen.getByText(text, { exact: false }).closest("details")).toBeNull();
+  for (const text of ["permission_denied", "Inspect the retained handshake.", "Refresh for the current connection."]) for (const node of screen.getAllByText(text, { exact: false })) {
+    const details = node.closest("details");
+    if (details) { expect(details.querySelector("summary")?.textContent).toBe("Technical details"); expect(details.open).toBe(false); }
+  }
   expect(screen.getByText(/Only the first 50 accounts/).closest("details")).toBeNull();
   expect(screen.getByText("Handshake failed").closest("article")).toBe(screen.getByText("First Worker").closest("article"));
   expect(screen.getByText("Refresh for the current connection.").closest("article")?.textContent).toContain("Account:");
@@ -216,5 +220,5 @@ it("preserves legacy fields and field-level unknown classifications without inve
   value.state.report = data; await refresh();
   expect(screen.getByText("Unknown installation state", { exact: false })).toBeTruthy(); expect(screen.getByText("Unknown protocol state")).toBeTruthy();
   expect(view.container.querySelector("img, a, [style]")).toBeNull(); expect(view.container.querySelector(".diagnostics-observation")?.textContent).toContain("Read succeeded");
-  for (const text of screen.getAllByText(markup)) if (!text.textContent?.startsWith("Reported capabilities")) expect(text.closest("details")).toBeNull();
+  for (const text of screen.getAllByText(markup)) if (!text.textContent?.startsWith("Reported capabilities")) { const details = text.closest("details"); if (details) { expect(details.querySelector("summary")?.textContent).toBe("Technical details"); expect(details.open).toBe(false); } }
 });

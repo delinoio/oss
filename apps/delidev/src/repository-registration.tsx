@@ -1,4 +1,4 @@
-import { copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
@@ -21,10 +21,10 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 function folderSelectionProblem(error: unknown): string {
   if (error instanceof ConnectError) return error.rawMessage;
   switch (error) {
-    case "busy": return "Another window is choosing a folder. Wait for it to finish, then try Choose folder again.";
-    case "invalid-evidence": return "The selected folder cannot be used. Choose another folder or enter a valid absolute checkout path.";
-    case "permission-denied": return "Folder selection was denied. Check this window's authorization and folder access, then try Choose folder again.";
-    default: return "Folder selection failed. Try Choose folder again or enter an absolute checkout path.";
+    case "busy": return copy("repository-registration.extra.725492fb2d32");
+    case "invalid-evidence": return copy("repository-registration.extra.79de1a72a2e7");
+    case "permission-denied": return copy("repository-registration.extra.0cb2cb5d6d57");
+    default: return copy("repository-registration.extra.3a5c3abe26a1");
   }
 }
 
@@ -73,7 +73,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const [data, setData] = useState<Document>(() => newConfiguration(EntityKind.REPOSITORY));
   const [manual, setManual] = useState(false), [computer, setComputer] = useState(Computer.Local);
   const [path, setPath] = useState(""), [machine, setMachine] = useState(""), [machineName, setMachineName] = useState("");
-  const [busy, setBusy] = useState(false), [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState(false), [problem, setProblem] = useProductMessage("");
   const [source, setSource] = useState<Source>();
   const [inspection, setInspection] = useState<{ job: Resource; source: Source }>();
   const [summary, setSummary] = useState<{ output: Document; source: Source }>();
@@ -140,20 +140,20 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       const selectedMachine = local ? await verifyLocal() : machine;
       if (!live()) return;
       if (!uuid.test(selectedMachine)) throw new ConnectError("Select the computer that owns this checkout.", Code.InvalidArgument);
-      await inspectSource({ path: selectedPath, machine: selectedMachine, name: local ? "This computer" : machineName || "Selected remote computer", local });
+      await inspectSource({ path: selectedPath, machine: selectedMachine, name: local ? copy("repository-registration.extra.26f9f95a152f") : machineName || copy("repository-registration.extra.6501182438e2"), local });
     } catch (error) {
-      if (live()) setProblem(stage === SelectionStage.Picker ? folderSelectionProblem(error) : error instanceof ConnectError ? error.rawMessage : error === "permission-denied" ? "Access to this computer's Worker was denied. Check device authorization and private-state permissions, then retry." : "This computer's Worker could not be verified. Check its registration and connection in Runner Devices, then retry. The selected folder is retained.");
+      if (live()) setProblem(stage === SelectionStage.Picker ? folderSelectionProblem(error) : error instanceof ConnectError ? error.rawMessage : error === "permission-denied" ? ownedMessage("repository-registration.extra.2d1caf8c0851") : ownedMessage("repository-registration.extra.4bbf580a7dcf"));
     } finally { gate.current = false; if (live()) setBusy(false); }
   };
   const completeInspection = useCallback((output: Document) => {
     if (!inspection || !alive.current || opening?.disposed) return;
-    if (!validRepositoryInspection(output)) { setUnknown(true); setProblem("The inspection summary is unreadable. Inspect the original operation before continuing."); return; }
+    if (!validRepositoryInspection(output)) { setUnknown(true); setProblem(ownedMessage("repository-registration.extra.e8a01a7b61e7")); return; }
     setData({ ...newConfiguration(EntityKind.REPOSITORY), name: text(output.name), checkouts: [{ machine_id: inspection.source.machine, path: text(output.root) }], ...inferredGitHub(output, "") });
     setSummary({ output, source: inspection.source });
     setOptions(false); setManual(false); setInspection(undefined);
   }, [inspection, opening]);
   const change = (next: Document) => {
-    if (encode(next).byteLength > 1 << 20) { setProblem("This configuration is too large. Reduce its options."); return; }
+    if (encode(next).byteLength > 1 << 20) { setProblem(ownedMessage("repository-registration.extra.eede23d37ef3")); return; }
     if (summary && next.preferred_remote !== data.preferred_remote) next = { ...next, ...inferredGitHub(summary.output, text(next.preferred_remote)) };
     setData(next); setProblem("");
   };
@@ -173,7 +173,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {summary ? <section className="repository-summary" aria-label={copy("repository-registration.repositoryDetected_998040")}>
         <div className="repository-summary-heading"><div><h3>{text(data.name)}</h3><p>{copy("repository-registration.repositoryDetected_998040")}</p></div><button type="button" disabled={blocked} onClick={() => void start(true)}>{copy("repository-registration.changeFolder_0eb4a7")}</button></div>
         <p className="repository-path">{text(summary.output.root)}</p>
-        <dl><div><dt>{copy("repository-registration.computer_76ed42")}</dt><dd>{summary.source.name}</dd></div><div><dt>{copy("repository-registration.gitRemote_915936")}</dt><dd>{remote || "Unavailable"}</dd></div><div><dt>{copy("repository-registration.defaultBranch_411aa6")}</dt><dd>{text(object(summary.output.default_refs)[remote]) || "Unavailable locally"}</dd></div><div><dt>{copy("repository-registration.github_f911e4")}</dt><dd>{text(github.owner) && text(github.name) ? copy("repository-registration.message_37651e", { v0: text(github.owner), v1: text(github.name) }) : copy("repository-registration.unavailable_ca1844")}</dd></div></dl>
+        <dl><div><dt>{copy("repository-registration.computer_76ed42")}</dt><dd>{summary.source.name}</dd></div><div><dt>{copy("repository-registration.gitRemote_915936")}</dt><dd>{remote || copy("repository-registration.extra.ca1844969742")}</dd></div><div><dt>{copy("repository-registration.defaultBranch_411aa6")}</dt><dd>{text(object(summary.output.default_refs)[remote]) || copy("repository-registration.extra.3471f15c181b")}</dd></div><div><dt>{copy("repository-registration.github_f911e4")}</dt><dd>{text(github.owner) && text(github.name) ? copy("repository-registration.message_37651e", { v0: text(github.owner), v1: text(github.name) }) : copy("repository-registration.unavailable_ca1844")}</dd></div></dl>
         <p>{copy("repository-registration.githubDetectionIsMetadataOnlySelect_8699ce")}</p>
       </section> : <section className="repository-folder-card"><h3>{copy("repository-registration.chooseYourRepositoryFolder_6b70c3")}</h3><p>{copy("repository-registration.selectAnExistingGitRepositoryOn_bbdcf5")}</p><button ref={initialAction} type="button" className="primary" disabled={blocked || !chooseFolder} onClick={() => void start(true)}>{copy("repository-registration.chooseFolder_3db741")}</button><button type="button" disabled={blocked} aria-expanded={manual} onClick={() => setManual(value => !value)}>{copy("repository-registration.enterAPath_fe3f3a")}</button><p>{copy("repository-registration.thisComputer_26f9f9")}</p></section>}
       {summary && !manual ? <button type="button" disabled={blocked} onClick={() => setManual(true)}>{copy("repository-registration.enterAPath_fe3f3a")}</button> : null}
