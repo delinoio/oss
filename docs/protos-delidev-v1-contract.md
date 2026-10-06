@@ -1,5 +1,14 @@
 # DeliDev v1 Connect contract
 
+## Agent Worker wizard reservations
+
+The planned Agent Worker wizard uses main-first reservations under issue #964:
+System capability 33, list-only subscription-service selectors on resource and
+model pages, and typed `SaveAgentWorkerRequest` / `AgentWorkerModelSelection`.
+Reservation-only publication does not activate these declarations or operations.
+The existing configuration, CLI, native observation and migration boundaries
+remain authoritative until the complete feature is implemented.
+
 ## Repository addition reservations
 
 Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and

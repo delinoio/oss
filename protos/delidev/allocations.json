@@ -6279,6 +6279,20 @@
     {
       "issue": 964,
       "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_AGENT_WORKER_WIZARD_V1",
+      "number": 33
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListResourcesRequest",
+      "member": "subscription_service",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
       "declaration": "AccountOAuthFlow",
       "newDeclaration": true,
       "member": "ACCOUNT_OAUTH_FLOW_UNSPECIFIED",
@@ -6303,10 +6317,25 @@
     {
       "issue": 964,
       "kind": "message",
+      "declaration": "SearchModelsRequest",
+      "member": "subscription_service",
+      "number": 7
+    },
+    {
+      "issue": 964,
+      "kind": "message",
       "declaration": "AccountOAuthGoogleOptions",
       "newDeclaration": true,
       "member": "quota_project_id",
       "number": 1
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
     },
     {
       "issue": 964,
@@ -6318,9 +6347,25 @@
     {
       "issue": 964,
       "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
       "declaration": "StartAccountOAuthResponse",
       "member": "flow",
       "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "model",
+      "number": 3,
+      "newDeclaration": true
     },
     {
       "issue": 964,
@@ -6332,9 +6377,41 @@
     {
       "issue": 964,
       "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "schema_version",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
       "declaration": "CompleteAccountOAuthRequest",
       "member": "authorization_state",
       "number": 3
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AgentWorkerModelSelection",
+      "member": "model_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AgentWorkerModelSelection",
+      "member": "native_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AgentWorkerModelSelection",
+      "member": "expected_model_revision",
+      "number": 3,
+      "newDeclaration": true
     }
   ]
 }

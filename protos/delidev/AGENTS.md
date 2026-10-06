@@ -2,6 +2,13 @@
 
 - General API OAuth follows `docs/cmds-delidev-account-oauth-contract.md`. Establish issue #964's inventory capability 6, device method 4, closed flow enum, Google options and additive Start/Complete fields on main before use. Preserve OpenRouter capability 5 and existing wire assignments. Reservations grant no OAuth support; new providers require registered DeliDev public/native apps, real API compatibility and native/server support before advertisement.
 
+- Agent Worker wizard reservations under issue #964 own System capability 33,
+  `ListResourcesRequest.subscription_service = 4`,
+  `SearchModelsRequest.subscription_service = 7`, and the new
+  `SaveAgentWorkerRequest` / `AgentWorkerModelSelection` declarations. Establish
+  them on main before dependent implementation. Reservations grant no wizard,
+  source-filter or atomic-save support and require no database migration.
+
 - Repository addition under issue #964 reserves System capabilities 31/32 and Worker capability 18 plus the five new listing/clone messages in `allocations.json`. Establish reservations on main before active declarations or generated code. Reservations grant no GitHub read or filesystem write; preserve server-only PATs, Worker-owned Git authentication and existing Local checkout deletion ownership. Follow the structure and protocol contracts.
 
 - Codex forward-version diagnostics reserve progress field 7 and the new `CodexDiagnostic` / `CodexDiagnosticPhase` declarations under issue #964. Establish their ledger reservations on main before use; reservation-only changes grant no version or runtime support. Keep diagnostics bounded and content-free under the protocol contract.

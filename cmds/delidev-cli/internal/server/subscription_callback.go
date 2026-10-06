@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -18,6 +19,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
+
+var subscriptionBrowserState = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,512}$`)
 
 func serverLoginCallback(authorization string) (string, string, bool) {
 	if len(authorization) > 8192 {
@@ -38,7 +41,14 @@ func serverLoginCallback(authorization string) (string, string, bool) {
 	}
 	state := q.Get("state")
 	callback := q.Get("redirect_uri")
-	if len(state) < 16 || len(state) > 512 || strings.ContainsAny(state, "\x00\r\n\t ") || callback != "http://localhost:1457/auth/callback" {
+	if !subscriptionBrowserState.MatchString(state) {
+		return "", "", false
+	}
+	// Preserve the registered authority returned by the original native login.
+	// Codex 0.151.0 uses localhost; 0.159.2 uses the literal IPv4 loopback.
+	switch callback {
+	case "http://localhost:1457/auth/callback", "http://127.0.0.1:1457/auth/callback":
+	default:
 		return "", "", false
 	}
 	return callback, state, true
@@ -160,9 +170,9 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 	destination = ""
 	if err == nil {
 		// Resolve no remote hostname and inherit no proxy. The original native
-		// callback is IPv4-only; its Host remains the registered localhost authority.
+		// callback is IPv4-only; retain its exact registered HTTP authority.
+		request.Host = request.URL.Host
 		request.URL.Host = "127.0.0.1:1457"
-		request.Host = "localhost:1457"
 		response, e := client.Do(request)
 		err = e
 		if response != nil {
