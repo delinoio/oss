@@ -203,6 +203,19 @@ The `async-commit-hook` job also owns shared protocol freshness for DevHud schem
 
 The always-running `changes` job computes the execution plan with `scripts/ci/plan.mjs` and `scripts/ci/job-paths.json`. Domain jobs depend on this plan and use job-level conditions, so unrelated jobs do not allocate runners. `ci-contracts` always validates the workflow and planner. Rules cover Go, Rust, every Node workspace, environment tooling, all implemented DevHud domains, packaging, public documentation, and private-package, public-release, and CEF-review workflows. Runmoor-only release scripts do not select DevHud native packaging.
 
+Job ownership, configuration forcing and workspace forcing share one dependency-free
+dot-aware path matcher. Wildcards include hidden files and directories at every
+depth; literal-dot patterns retain their literal dots. Match Git's POSIX paths
+without removing filename characters, including whitespace, newlines and literal
+backslashes. Preserve single-segment wildcards, zero-or-more-directory globstars
+and event eligibility. Planning works before pnpm installation. In particular,
+changes limited to `apps/devhud-admin/.env.example` or
+`servers/devhud-api/.env.example` select `repository-environment` on both PRs and
+main pushes, and hidden descendants of `.github/actions/` force every eligible
+job. Hidden inputs inside a job's workspace retain ordinary affected execution;
+owned inputs outside that workspace force it. Unrelated hidden paths do not
+select jobs.
+
 The `devhud-release-contracts` job runs the complete top-level `scripts/release/*.test.mjs` suite, including release fixtures shared with other projects. Every test fixture in that suite, committed data under `scripts/release/fixtures/`, and the shared `project.mjs`, `runmoor.mjs`, and `update-homebrew.sh` implementations they exercise select this Ubuntu job on PRs and main pushes. Other project-specific release scripts retain their narrower owners. A Runmoor fixture or implementation change does not select DevHud desktop or mobile packaging.
 
 Changes to `scripts/release/generate-delidev-updater.mjs` select both
