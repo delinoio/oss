@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"io"
 	"log/slog"
 	"mime"
@@ -286,13 +287,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Retain validated invocation metadata before accessing the protected store.
 	// Request-controlled settings and IDs require the original credential guard.
 	var key []byte
+	var quotaProject string
 	if lease.Scope.Provider.Authentication != domain.KeylessAuth {
-		if lease.Key == nil {
+		if lease.Key == nil && lease.Credential == nil {
 			code = domain.Unavailable
 			fail(http.StatusServiceUnavailable, code)
 			return
 		}
-		key, err = lease.Key(ctx)
+		if lease.Credential != nil {
+			credential, e := lease.Credential(ctx)
+			key, quotaProject, err = credential.Key, credential.QuotaProject, e
+		} else {
+			key, err = lease.Key(ctx)
+		}
 		defer clear(key)
 		if err != nil {
 			code = safeCode(err)
@@ -323,6 +330,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	upstream, err := upstreamRequest(ctx, r, raw, lease.Scope, key, operation, stream, correlation)
 	if err != nil {
+		code = safeCode(err)
+		fail(errorStatus(err), code)
+		return
+	}
+	if err = providers.ApplyOAuthProject(upstream, lease.Scope.Provider, quotaProject); err != nil {
 		code = safeCode(err)
 		fail(errorStatus(err), code)
 		return

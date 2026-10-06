@@ -7,3 +7,5 @@
 - Keep generated native guidance byte-identical across hosts through its exact-path LF attribute; regenerate from the registry and preserve the freshness check rather than accepting platform-specific JSON bytes.
 
 - oauth_clients.json contains only compiled DeliDev public registration/ordinary API acceptance metadata, shared with native. Pending/unverified profiles cannot advertise support. Never copy other applications client IDs or accept user-selected OAuth authorities. Follow `docs/cmds-delidev-account-oauth-contract.md`.
+
+- OAuth Google inspection uses the server-resolved connection quota project, Bearer access token and fixed Google destination. Preserve API-key inspection separately, refuse foreign provider/project combinations and never forward downstream quota headers. Follow `docs/cmds-delidev-account-oauth-contract.md`.

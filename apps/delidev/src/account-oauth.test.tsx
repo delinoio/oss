@@ -12,10 +12,10 @@ import { SettingsLifetime } from "./settings-lifetime";
 import type { AccountProviderSummary } from "./account-settings";
 import { encode } from "./documents";
 
-function fixture(args: { huggingFace?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
-  const name = args.huggingFace ? "Hugging Face Inference Providers" : "OpenRouter";
+function fixture(args: { huggingFace?: boolean; gemini?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
+  const name = args.huggingFace ? "Hugging Face Inference Providers" : args.gemini ? "Google Gemini" : "OpenRouter";
   const providerId = newRequestId(), attemptId = newRequestId(), nativeGeneration = newRequestId();
-  const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name, preset_id: args.huggingFace ? "hugging-face" : "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
+  const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name, preset_id: args.huggingFace ? "hugging-face" : args.gemini ? "gemini" : "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
   const selected: AccountProviderSummary = { providerId, provider, displayName: name, enabled: true, oauthAvailable: true, keyGuidance: "", documentationUrl: "" };
   const attempt = (state = State.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION, revision = 1n) => create(AccountOAuthAttemptSchema, { id: attemptId, providerId, revision, state, expiresAt: new Date(Date.now() + 600000).toISOString() });
   let retained = attempt(), callback = false;
@@ -28,9 +28,9 @@ function fixture(args: { huggingFace?: boolean; oldNative?: boolean; complete?: 
   const status = vi.fn(async () => ({ attempt: retained, account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED ? account : undefined }));
   const transport = createRouterTransport(router => router.service(AccountService, { startAccountOAuth: start, completeAccountOAuth: complete, cancelAccountOAuth: cancel, getAccountOAuthStatus: status }));
   const native = vi.fn<OAuthNativeControl>(args.native ?? (async (_opening, action, generation): Promise<OAuthNativeResult> => {
-    if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: args.oldNative ? [] : [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace] };
-    if (action === OAuthNativeAction.Begin || action === OAuthNativeAction.BeginHuggingFace) return { generation: nativeGeneration, callback_url: `http://localhost:55451/oauth/openrouter/${"a".repeat(64)}` };
-    if (action === OAuthNativeAction.Take && callback) { callback = false; return { generation, code: rawCode, state: args.huggingFace ? rawState : undefined }; }
+    if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: args.oldNative ? [] : [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace, AccountOAuthProfile.GoogleGemini] };
+    if (action === OAuthNativeAction.Begin || action === OAuthNativeAction.BeginHuggingFace || action === OAuthNativeAction.BeginGoogleGemini) return { generation: nativeGeneration, callback_url: `http://localhost:55451/oauth/openrouter/${"a".repeat(64)}` };
+    if (action === OAuthNativeAction.Take && callback) { callback = false; return { generation, code: rawCode, state: args.huggingFace || args.gemini ? rawState : undefined }; }
     return { generation };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -121,8 +121,8 @@ it("retries the exact browser binding after a native failure before admission", 
  let binds = 0;
  const generation = newRequestId();
  const f = fixture({ native: async (_opening, action, current) => {
-  if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace] };
-    if (action === OAuthNativeAction.Begin || action === OAuthNativeAction.BeginHuggingFace) return { generation, callback_url: `http://localhost:55451/oauth/openrouter/${"c".repeat(64)}` };
+  if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace, AccountOAuthProfile.GoogleGemini] };
+    if (action === OAuthNativeAction.Begin || action === OAuthNativeAction.BeginHuggingFace || action === OAuthNativeAction.BeginGoogleGemini) return { generation, callback_url: `http://localhost:55451/oauth/openrouter/${"c".repeat(64)}` };
   if (action === OAuthNativeAction.BindOpen && ++binds === 1) throw new Error("native identity temporarily busy");
   return { generation: current };
  }});
@@ -190,4 +190,24 @@ it("does not start Hugging Face with an older native profile inventory", async (
   fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
   expect(f.start).not.toHaveBeenCalled();
   expect(screen.queryByRole("heading", { name: "Connect Hugging Face Inference Providers" })).toBeNull();
+});
+
+it("asks for the Google quota project before any browser or server Start", async () => {
+ const f = fixture({ gemini: true });
+ await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Profiles)).toBe(true));
+ fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
+ await screen.findByRole("heading", { name: "Connect Google Gemini" });
+ expect(screen.getByText("Use the Google Cloud project that will pay for API usage.")).toBeTruthy();
+ expect(f.start).not.toHaveBeenCalled();
+ expect(f.native.mock.calls.every(call => call[1] === OAuthNativeAction.Profiles)).toBe(true);
+ const project = screen.getByRole("textbox", { name: "Google Cloud project ID" });
+ fireEvent.change(project, { target: { value: "BadProject" } });
+ fireEvent.click(screen.getByRole("button", { name: "Continue in browser" }));
+ expect(screen.getByRole("alert")).toBeTruthy(); expect(f.start).not.toHaveBeenCalled();
+ fireEvent.change(project, { target: { value: "my-ai-project" } });
+ fireEvent.click(screen.getByRole("button", { name: "Continue in browser" }));
+ await screen.findByText("Waiting for authorization…");
+ expect(f.start).toHaveBeenCalledWith(expect.objectContaining({ google: expect.objectContaining({ quotaProjectId: "my-ai-project" }) }), expect.anything());
+ expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BeginGoogleGemini)).toHaveLength(1);
+ f.trigger(); await screen.findByText("Google Gemini connected", {}, { timeout: 2500 });
 });

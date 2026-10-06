@@ -153,7 +153,9 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 		Revision           uint64
 		Actor              domain.Principal
 		CallbackCommitment string
-	}{domain.ID(m.Id), m.ExpectedRevision, actor, s.oauthCommitment("callback", domain.ID(m.RequestId), []byte(req.Msg.CallbackUrl))}
+		GoogleProject      string `json:",omitempty"`
+		GoogleOptions      bool   `json:",omitempty"`
+	}{domain.ID(m.Id), m.ExpectedRevision, actor, s.oauthCommitment("callback", domain.ID(m.RequestId), []byte(req.Msg.CallbackUrl)), req.Msg.GetGoogle().GetQuotaProjectId(), req.Msg.Google != nil}
 	result, replayed, err := s.Store.Replay(ctx, domain.ID(m.RequestId), "oauth.start", input)
 	var original domain.ID
 	var live *oauthLive
@@ -192,7 +194,12 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 			if e = profile.callback(req.Msg.CallbackUrl); e != nil {
 				return nil, e
 			}
-			if req.Msg.Google != nil {
+			if profile.preset == domain.PresetGemini {
+				if !input.GoogleOptions || !domain.ValidGoogleProjectID(input.GoogleProject) {
+					return nil, domain.Fail(domain.InvalidArgument, "A valid Google Cloud project ID is required.", "Choose the project that pays for API usage before continuing.")
+				}
+				a.QuotaProject = input.GoogleProject
+			} else if input.GoogleOptions {
 				return nil, domain.Fail(domain.InvalidArgument, "Google project options are unsupported for this provider.", "Use the selected provider's own connection options.")
 			}
 			live.profile = profile
@@ -208,6 +215,10 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 				a.Preset = profile.preset
 				a.StateCommitment = s.oauthCommitment("state", a.StartRequestID, live.state)
 				q = url.Values{"client_id": {profile.registration.ClientID}, "redirect_uri": {live.callback}, "response_type": {"code"}, "scope": {profile.scope}, "code_challenge": {base64.RawURLEncoding.EncodeToString(hash[:])}, "code_challenge_method": {"S256"}, "state": {string(live.state)}}
+				if profile.preset == domain.PresetGemini {
+					q.Set("access_type", "offline")
+					q.Set("prompt", "consent")
+				}
 				live.authorization = profile.authorization + "?" + q.Encode()
 			}
 			if err := tx.ExpireAccountOAuth(now); err != nil {

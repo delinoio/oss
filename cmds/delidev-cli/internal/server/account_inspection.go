@@ -139,11 +139,13 @@ func (s *Service) inspectAccount(ctx context.Context, meta *pb.Mutation, operati
 	}()
 	observation := accountInspection{Observation: providers.Observation{Authentication: domain.AuthenticationUnknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}}
 	var key []byte
+	var quotaProject string
 	unlock()
 	locked = false
 	if account.Connection.Authentication != domain.KeylessAuth {
 		credential, e := s.resolveAPICredential(checkCtx, input.ID, account.Connection.ID, account.ProviderID)
 		key = credential.key
+		quotaProject = credential.quotaProject
 		if e != nil {
 			observation.Problem = domain.SafeError(e)
 		}
@@ -152,7 +154,7 @@ func (s *Service) inspectAccount(ctx context.Context, meta *pb.Mutation, operati
 	started := time.Now()
 	s.logger.Info("account_inspection_started", "operation", operation, "account_id", input.ID, "request_id", meta.RequestId, "correlation_id", correlation)
 	if observation.Problem == nil {
-		observation.Observation, err = providers.Inspect(checkCtx, provider, key, s.outboundResolver())
+		observation.Observation, err = providers.InspectOAuth(checkCtx, provider, key, quotaProject, s.outboundResolver())
 		if err != nil {
 			observation.Problem = domain.SafeError(err)
 		} else {

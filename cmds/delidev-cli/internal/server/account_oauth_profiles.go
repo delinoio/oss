@@ -37,6 +37,12 @@ func (s *Service) oauthProfile(p domain.Provider) (oauthProfile, error) {
 		profile.authorization = "https://huggingface.co/oauth/authorize"
 		profile.token = "https://huggingface.co/oauth/token"
 		profile.scope = "inference-api"
+	case domain.PresetGemini:
+		profile.name = "Google Gemini"
+		profile.endpoint = "https://generativelanguage.googleapis.com/v1beta/openai"
+		profile.authorization = "https://accounts.google.com/o/oauth2/v2/auth"
+		profile.token = "https://oauth2.googleapis.com/token"
+		profile.scope = "https://www.googleapis.com/auth/cloud-platform"
 	default:
 		return profile, oauthUnsupported()
 	}
@@ -49,7 +55,11 @@ func (s *Service) oauthProfile(p domain.Provider) (oauthProfile, error) {
 			registrations = providers.OAuthRegistrations()
 		}
 		profile.registration = registrations[profile.preset]
-		if !profile.registration.Accepted() || profile.registration.RedirectURI != "http://localhost/oauth/hugging-face/callback" {
+		expectedCallback := "http://localhost/oauth/hugging-face/callback"
+		if profile.preset == domain.PresetGemini {
+			expectedCallback = "http://127.0.0.1/oauth/google-gemini/callback"
+		}
+		if !profile.registration.Accepted() || profile.registration.RedirectURI != expectedCallback {
 			return profile, oauthUnsupported()
 		}
 	}

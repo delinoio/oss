@@ -84,13 +84,40 @@ client ID, `registered` status and ordinary API `accepted` status. Native profil
 inventory and server capability 6 must agree before a new browser option appears;
 older native hosts retain OpenRouter behavior. Current new registrations remain
 pending/unverified. Implemented fixture paths do not establish activation or real
-account/native acceptance. Gemini and Baseten adapters remain subsequent work.
+account/native acceptance. Baseten remains subsequent work.
 
 CLI Start accepts `--callback-url`; Hugging Face requires the registered callback.
 OpenRouter alone retains no-callback headless mode. `--callback-stdin` accepts a
 bounded protobuf JSON envelope containing only base64 `authorizationCode` and
 `authorizationState`. Mutation identity comes from original CLI flags, never the
 callback. `--code-stdin` and explicit original `--recover` remain supported.
+
+## Google Gemini project-bound PKCE
+
+The Gemini adapter binds the exact managed OpenAI-compatible endpoint at
+`https://generativelanguage.googleapis.com/v1beta/openai`, the DeliDev desktop
+public client and registered IPv4 loopback `/oauth/google-gemini/callback` path.
+Use Google PKCE with `https://www.googleapis.com/auth/cloud-platform` scope,
+`access_type=offline` and `prompt=consent`. Code exchange and refresh use only
+`https://oauth2.googleapis.com/token`. The native opener validates every fixed
+field and the original state, and permits only bounded Google authuser/prompt
+callback metadata in addition to code/state/scope or access_denied.
+
+Before any listener, Start or browser opening, the common card requires a Google
+Cloud project ID. Validate 6–30 lowercase letters, digits or hyphens, starting
+with a letter and ending with a letter/digit. Start receipts include immutable
+project options without changing historical OpenRouter inputs. Keep the project
+in private connection metadata. Inspection and native execution use the same
+protected access token with `Authorization: Bearer` and `x-goog-user-project`;
+never send an OAuth token as `x-goog-api-key`. Independently validate the exact
+managed provider and official Google destination before attaching the project.
+Downstream project headers cannot replace this connection binding. API keys and
+foreign/regional providers cannot inherit the project.
+
+The compiled Google registration remains pending/unverified. Google OAuth for
+the general API is documented, but the DeliDev client and actual compatible
+inference path still require service acceptance before capability advertisement.
+Fixture checks, desktop builds and public registration are distinct evidence.
 
 ## OpenRouter account OAuth PKCE (issue #1146)
 

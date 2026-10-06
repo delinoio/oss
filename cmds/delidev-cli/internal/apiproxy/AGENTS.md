@@ -7,3 +7,5 @@
 - Only manual Codex context actions enable completed HTTP response usage observation. Run reflection guards before handing an original hashed response/counter projection to persistence. Preserve nullable integer splits; do not collect ordinary native responses twice, infer native turn identity or log response bodies. Original request diagnostics anchor this observation even when Stop wins after submission. Follow `docs/cmds-delidev-compaction-contract.md`.
 
 - Retain OpenCode tool-call frames through the validated terminal DONE marker, independently of finish_reason. Malformed/truncated streams, repeated calls or cancellation discard all buffered executable frames; preserve their original order only after terminal validation.
+
+- Execution leases can return a protected credential and its original Google quota project together. Attach x-goog-user-project only after exact managed Gemini and official destination checks; downstream headers cannot supply billing authority. Preserve original execution/connection cancellation and secret clearing. Follow `docs/cmds-delidev-account-oauth-contract.md`.
