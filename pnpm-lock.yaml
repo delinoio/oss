@@ -54,10 +54,10 @@ importers:
         specifier: 4.3.2
         version: 4.3.2
       lefthook:
-        specifier: ^2.1.4
+        specifier: 2.1.4
         version: 2.1.4
       turbo:
-        specifier: ^2.9.14
+        specifier: 2.9.18
         version: 2.9.18
 
   apps/async-commit-hook:
@@ -304,8 +304,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/docs-site-switcher
       '@rspress/core':
-        specifier: ^2.0.14
-        version: 2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
+        specifier: 2.0.14
+        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
       entities:
         specifier: 6.0.1
         version: 6.0.1
@@ -3703,7 +3703,7 @@ snapshots:
     optionalDependencies:
       '@rspack/core': 2.1.8(@swc/helpers@0.5.23)
 
-  '@rspress/core@2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)':
+  '@rspress/core@2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)':
     dependencies:
       '@mdx-js/mdx': 3.1.1
       '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.8)
