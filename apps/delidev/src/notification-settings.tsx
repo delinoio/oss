@@ -1,3 +1,4 @@
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize } from "./settings-task";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ enum FocusTarget { FirstCheckbox, Edit }
 
 function covered(node: HTMLElement) {
   return Boolean(node.closest("[hidden], [inert]")) || Array.from(document.querySelectorAll('dialog[open]:not([role="region"]), [role="dialog"]:not(dialog)')).some((dialog) => {
+    if (dialog.contains(node)) return false;
     const style = getComputedStyle(dialog);
     return !dialog.closest("[hidden], [inert]") && style.display !== "none" && style.visibility !== "hidden";
   });
@@ -79,9 +81,7 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
     onWorkflowReadyChange?.(Boolean(draft || mutation.busy || mutation.uncertain));
     return () => onWorkflowReadyChange?.(false);
   }, [draft, mutation.busy, mutation.uncertain, onWorkflowReadyChange]);
-  return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>Notifications</h1><p>Choose which updates this client receives.</p><p className="notification-scope">For this client on the selected server</p></div> : null}
-    <NativeNotificationSettings active={active} />
-    <form ref={form} className="notification-preferences" onSubmit={(event) => { event.preventDefault(); if (!draft || blocked || stale || current.error || current.isFetching) return; void mutation.send({ requestId: newRequestId(), preferences: draft }); }}>
+  const preferences = <form id={`${ids}-form`} ref={form} className="notification-preferences" onSubmit={(event) => { event.preventDefault(); if (!draft || blocked || stale || current.error || current.isFetching) return; void mutation.send({ requestId: newRequestId(), preferences: draft }); }}>
       <div className="notification-section-heading"><h2 id={`${ids}-preferences`}>Notify this client about</h2>{value && !draft ? <button ref={edit} type="button" disabled={blocked || Boolean(current.error) || current.isFetching} onClick={() => { focusIntent.current = FocusTarget.FirstCheckbox; setDraft({ ...value }); }}>Edit notification preferences</button> : null}</div>
       <Problem error={current.error} /><Problem error={mutation.error} />
       {current.error && current.data?.preferences ? <p role="status">Notification preferences could not be refreshed. The displayed values may be out of date.</p> : null}
@@ -91,10 +91,13 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
       </fieldset>}
       {mutation.busy ? <p role="status">Saving notification preferences…</p> : null}
       {stale ? <p role="alert">These preferences changed elsewhere. Your draft is retained. Cancel this edit and reopen the current preferences before saving.</p> : null}
-      <div className="actions">{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>Save notification preferences</button><button type="button" disabled={blocked} onClick={finishEdit}>Cancel notification edit</button></> : null}
+      <SettingsTaskActions form={`${ids}-form`}>{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>Save notification preferences</button><button type="button" data-settings-task-cancel disabled={blocked} onClick={finishEdit}>Cancel notification edit</button></> : null}
         {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same notification preferences</button> : null}
-      </div>
-    </form>
+      </SettingsTaskActions>
+    </form>;
+  return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>Notifications</h1><p>Choose which updates this client receives.</p><p className="notification-scope">For this client on the selected server</p></div> : null}
+    <NativeNotificationSettings active={active} />
+    {draft ? <><section aria-label="Saved notification preferences"><h2>Notify this client about</h2><div className="notification-row"><div><p>Questions and approval requests</p><p>When a session needs your answer or approval.</p></div><span className="notification-value">{current.data?.preferences?.interactions ? "Enabled" : "Disabled"}</span></div><div className="notification-row"><div><p>Execution completion, failure and interruption</p><p>When an execution succeeds, fails or stops.</p></div><span className="notification-value">{current.data?.preferences?.terminals ? "Enabled" : "Disabled"}</span></div></section><SettingsTaskDialog title="Edit notification preferences" size={SettingsDialogSize.Form} retained={blocked} close={finishEdit}>{preferences}</SettingsTaskDialog></> : preferences}
     <aside className="notification-inbox-guidance"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16l2 12v4H2v-4L4 4Zm-2 12h6l2 3h4l2-3h6" /></svg><div><p>Inbox requests stay available even when notifications are off.</p><p>Opening a notification never marks an item read, answers a request, approves work or resumes a session.</p></div></aside>
     <details className="notification-delivery"><summary>About notification delivery</summary><p>A submitted notification does not prove that its banner was displayed.</p><p>Reading an inbox item never answers it.</p></details>
   </section>;
