@@ -277,11 +277,14 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 // Reappearance cannot give the generic copy remover new traversal authority.
 func removeSessionCopy(ctx context.Context, root, path string) error {
 	parent := filepath.Dir(path)
-	if parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") || parent == filepath.Join(root, "workspace-removal-quarantine") {
+	name := filepath.Base(path)
+	canonicalFinalClaim := parent == filepath.Join(root, "storage-removal-root-claims") && len(name) == 41 && name[36:] == ".json" && domain.ID(name[:36]).Validate() == nil
+	if parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") || parent == filepath.Join(root, "workspace-removal-quarantine") || canonicalFinalClaim {
 		// Workspace cleanup already checked the original native staging,
-		// public removal, or final-root identity. A later replacement or an
-		// old name without a published proof remains protected here. The
-		// generic session remover must never acquire authority over it.
+		// public removal, final-root identity, or final-root claim. A later
+		// replacement or an old name without a published proof remains
+		// protected here. The generic session remover must never acquire
+		// authority over it.
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 			return domain.SessionDeletionPending()
 		}

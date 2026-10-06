@@ -710,8 +710,12 @@ before honoring the caller's cancellation. Recovery with a missing root and no u
 including interruption between unlink and receipt publication. With the original
 receipt, recovery synchronizes both parents and independently requires both
 names absent before recording completion. Missing or replaced proof/root never
-reconstructs removal authority from absence or matching bytes. Retire this proof
-only at the acknowledged-report boundary after checking final namespace absence.
+reconstructs removal authority from absence or matching bytes. The workspace
+owner retires only a validated final-root proof after its durable removed state
+and final namespace absence, before generic session-copy cleanup; legacy intent
+and journal retirement remains separate. A canonical proof that reappears after
+that boundary is absence-only. Retire the remaining proof records only at the
+acknowledged-report boundary after checking final namespace absence.
 Permanent deletion resumes only the original final-root transition and includes
 its namespace, proof and target-attributed atomic-write remnants in both removal
 and completed-proof replay inventories; generic copy cleanup cannot remove a

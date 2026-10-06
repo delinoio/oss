@@ -79,17 +79,17 @@ func removeVerifiedFinalRoot(path, quarantinePath, expectedIdentity string, befo
 	lockedIdentity, lockedErr := directoryFileIdentity(root)
 	currentIdentity, currentMode, currentErr := directoryIdentityAt(sourceParent, filepath.Base(path))
 	if lockedErr != nil || currentErr != nil || lockedIdentity != expectedIdentity || currentIdentity != lockedIdentity || currentMode.Perm() == 0 {
-		return ResultUncertain()
+		return restoreFinalRootMode(root, ResultUncertain())
 	}
 	if afterIdentityCheck != nil {
 		if err := afterIdentityCheck(); err != nil {
-			return err
+			return restoreFinalRootMode(root, err)
 		}
 	}
 	lockedIdentity, lockedErr = directoryFileIdentity(root)
 	currentIdentity, currentMode, currentErr = directoryIdentityAt(sourceParent, filepath.Base(path))
 	if lockedErr != nil || currentErr != nil || lockedIdentity != expectedIdentity || currentIdentity != lockedIdentity || currentMode.Perm() == 0 {
-		return ResultUncertain()
+		return restoreFinalRootMode(root, ResultUncertain())
 	}
 	if path != quarantinePath {
 		if _, _, err := directoryIdentityAt(quarantineParent, filepath.Base(quarantinePath)); err == nil || !errors.Is(err, os.ErrNotExist) {
@@ -101,27 +101,21 @@ func removeVerifiedFinalRoot(path, quarantinePath, expectedIdentity string, befo
 	}
 	currentIdentity, currentMode, currentErr = directoryIdentityAt(quarantineParent, filepath.Base(quarantinePath))
 	if currentErr != nil || currentIdentity != expectedIdentity || currentMode.Perm() == 0 {
-		return ResultUncertain()
+		return restoreFinalRootMode(root, ResultUncertain())
 	}
 	if err := root.Chmod(0); err != nil {
 		return err
 	}
 	currentIdentity, currentMode, currentErr = directoryIdentityAt(quarantineParent, filepath.Base(quarantinePath))
 	if currentErr != nil || currentIdentity != expectedIdentity || currentMode.Perm() != 0 {
-		return ResultUncertain()
+		return restoreFinalRootMode(root, ResultUncertain())
 	}
 	expectedPath, err := finalRootUnlinkPath(quarantinePath)
 	if err != nil {
-		return ResultUncertain()
+		return restoreFinalRootMode(root, ResultUncertain())
 	}
 	if err := unix.Unlinkat(int(quarantineParent.Fd()), filepath.Base(quarantinePath), unix.AT_REMOVEDIR); err != nil {
-		if restoreErr := root.Chmod(0700); restoreErr != nil {
-			return err
-		}
-		if syncErr := root.Sync(); syncErr != nil {
-			return syncErr
-		}
-		return err
+		return restoreFinalRootMode(root, err)
 	}
 	return verifyFinalRootAfterUnlink(root, quarantineParent, filepath.Base(quarantinePath), expectedIdentity, expectedPath)
 }

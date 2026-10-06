@@ -18,6 +18,16 @@ import (
 // reach the private parent through .. and move that root between the final
 // identity check and unlinkat. The final check then rejects a replacement
 // installed by a writer that already retained the private parent.
+func restoreFinalRootMode(root *os.File, cause error) error {
+	if restoreErr := root.Chmod(0700); restoreErr != nil {
+		return fmt.Errorf("final-root transition: %w; restore mode: %v", cause, restoreErr)
+	}
+	if syncErr := root.Sync(); syncErr != nil {
+		return fmt.Errorf("final-root transition: %w; sync restored mode: %v", cause, syncErr)
+	}
+	return cause
+}
+
 func removeVerifiedFinalRootStandard(path, _ string, expectedIdentity string, beforeUnlink, afterIdentityCheck func() error) error {
 	parent, err := os.Open(filepath.Dir(path))
 	if err != nil {
@@ -47,7 +57,7 @@ func removeVerifiedFinalRootStandard(path, _ string, expectedIdentity string, be
 	lockedIdentity, lockedErr := directoryFileIdentity(root)
 	currentIdentity, currentMode, currentErr := directoryIdentityAt(parent, filepath.Base(path))
 	if lockedErr != nil || currentErr != nil || lockedIdentity != expectedIdentity || currentIdentity != lockedIdentity || currentMode.Perm() != 0 {
-		return ResultUncertain()
+		return restoreFinalRootMode(root, ResultUncertain())
 	}
 	// There is no portable POSIX unlink-by-open-directory-handle operation.
 	// Give the caller's last mutation checkpoint a final opportunity to report a
@@ -56,30 +66,24 @@ func removeVerifiedFinalRootStandard(path, _ string, expectedIdentity string, be
 	// narrow kernel-level interval after this check.
 	if afterIdentityCheck != nil {
 		if err := afterIdentityCheck(); err != nil {
-			return err
+			return restoreFinalRootMode(root, err)
 		}
 	}
 	lockedIdentity, lockedErr = directoryFileIdentity(root)
 	currentIdentity, currentMode, currentErr = directoryIdentityAt(parent, filepath.Base(path))
 	if lockedErr != nil || currentErr != nil || lockedIdentity != expectedIdentity || currentIdentity != lockedIdentity || currentMode.Perm() != 0 {
-		return ResultUncertain()
+		return restoreFinalRootMode(root, ResultUncertain())
 	}
 	expectedPath, err := finalRootUnlinkPath(path)
 	if err != nil {
-		return ResultUncertain()
+		return restoreFinalRootMode(root, ResultUncertain())
 	}
 
 	if err := unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR); err != nil {
 		// A retained writer can make the directory non-empty after the final
 		// identity check. Restore the exact verified mode before returning so a
 		// retry can reopen the private root and continue the original transition.
-		if restoreErr := root.Chmod(0700); restoreErr != nil {
-			return fmt.Errorf("unlink final root: %w; restore mode: %v", err, restoreErr)
-		}
-		if syncErr := root.Sync(); syncErr != nil {
-			return fmt.Errorf("unlink final root: %w; sync restored mode: %v", err, syncErr)
-		}
-		return err
+		return restoreFinalRootMode(root, err)
 	}
 	if err := verifyFinalRootAfterUnlink(root, parent, filepath.Base(path), expectedIdentity, expectedPath); err != nil {
 		return err

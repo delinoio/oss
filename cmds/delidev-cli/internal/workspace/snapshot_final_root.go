@@ -171,6 +171,31 @@ func (m *Manager) finalRemovalClaimAbsent(claim storageFinalRootClaim) error {
 	return storageNameAbsent(m.finalRemovalQuarantine(claim))
 }
 
+// retireFinalRemovalClaim removes only the final-root proof after the
+// workspace-owned transition has reached its durable removed state. Legacy
+// removal intent and journals remain for the generic session-removal phase.
+func (m *Manager) retireFinalRemovalClaim(ctx context.Context, r StorageRequest, original storageRemovalClaim) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path := m.finalRemovalClaimPath(r.OperationID)
+	raw, err := security.ReadPrivate(path, 4096)
+	if err != nil {
+		return ResultUncertain()
+	}
+	var claim storageFinalRootClaim
+	if domain.Decode(raw, &claim) != nil || claim.State != storageFinalRootRemoved {
+		return ResultUncertain()
+	}
+	if _, err := m.readFinalRemovalClaim(r, original); err != nil || m.finalRemovalClaimAbsent(claim) != nil {
+		return ResultUncertain()
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	return security.SyncParent(path)
+}
+
 func (m *Manager) claimFinalRemovalRoot(ctx context.Context, r StorageRequest, original storageRemovalClaim) error {
 	if err := m.finalRootFault(storageFinalRootBeforeClaim); err != nil {
 		return err
@@ -411,6 +436,13 @@ func (m *Manager) cleanupDeletionFinalRoots(ctx context.Context, w domain.Sessio
 		r := StorageRequest{OperationID: copy.JobID, SnapshotID: copy.SnapshotID, Action: intent.Action, Preparation: PrepareRequest{SessionID: w.SessionID}}
 		claim, _, _, err := m.readRemovalClaimState(r, raw)
 		if err != nil || m.finishFinalRootRemovalWithNamespace(ctx, r, claim, namespace) != nil {
+			return domain.SessionDeletionPending()
+		}
+		// The workspace owner retires only the validated final-root proof before
+		// generic cleanup sees its canonical path. Legacy intent and journals stay
+		// available for that later removal phase. A proof that reappears after this
+		// boundary remains absence-only in worker cleanup.
+		if err := m.retireFinalRemovalClaim(ctx, r, claim); err != nil {
 			return domain.SessionDeletionPending()
 		}
 		delete(namespace, copy.JobID)
