@@ -109,7 +109,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const offline = Boolean(serverMachine.data?.resource && Number.isFinite(lastSeen) && Date.now() - lastSeen > 45_000);
   const blocked = busy || clone.busy || clone.uncertain || Boolean(cloneJob) || inspect.busy || inspect.uncertain || Boolean(inspection) || unknown || save.busy || save.uncertain || Boolean(saveJob) || childPending;
   const taskVisible = useSettingsTaskVisible(), cancelTask = useCloseSettingsTask(cancel), inTask = useInSettingsTask();
-  useRetainSettingsTask(Boolean(saveJob || cloneJob || inspection) || unknown || childPending);
+  useRetainSettingsTask(Boolean(saveJob || cloneJob) || unknown || childPending);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { if (taskVisible) initialAction.current?.focus(); }, [taskVisible]);
   const live = () => alive.current && !opening?.disposed;

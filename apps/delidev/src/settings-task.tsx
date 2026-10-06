@@ -120,17 +120,20 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
       node.close();
       // A category departure or replacement dialog cannot restore a stale opener.
       if (anotherModal(node)) return;
-      requestAnimationFrame(() => {
+      const restoreFocus = () => {
         if (anotherModal(node)) return;
         const focused = document.activeElement;
         if (focused !== document.body && focused !== document.documentElement && focused !== opener.current) return;
-        const openerTarget = opener.current?.isConnected && !opener.current.matches(":disabled, [hidden], [aria-hidden=true]") ? opener.current : null;
+        const openerTarget = opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") ? opener.current : null;
         const fallback = categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null;
         const target = openerTarget ?? (available(fallback) ? fallback : null);
         if (target?.matches("h1")) target.tabIndex = -1;
         target?.focus({ preventScroll: true });
         if (target && document.activeElement !== target) requestAnimationFrame(() => { if (target.isConnected) target.focus({ preventScroll: true }); });
-      });
+        return target;
+      };
+      restoreFocus();
+      requestAnimationFrame(restoreFocus);
     };
   // Step changes do not create another modal opening or overwrite its opener.
   }, [visible, host?.outlet]);
