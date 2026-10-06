@@ -1433,22 +1433,6 @@
     "GetBrowserCapabilitiesResponse": {
       "kind": "message",
       "file": "delidev/v1/browser.proto"
-    },
-    "KnownSubscriptionModelCatalogSource": {
-      "kind": "enum",
-      "file": "delidev/v1/provider.proto"
-    },
-    "KnownSubscriptionModel": {
-      "kind": "message",
-      "file": "delidev/v1/provider.proto"
-    },
-    "ListKnownSubscriptionModelsRequest": {
-      "kind": "message",
-      "file": "delidev/v1/provider.proto"
-    },
-    "ListKnownSubscriptionModelsResponse": {
-      "kind": "message",
-      "file": "delidev/v1/provider.proto"
     }
   }
 }
