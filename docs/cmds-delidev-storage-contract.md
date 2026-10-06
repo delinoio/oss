@@ -336,6 +336,20 @@ paths remain absent. Dependent Sidechats join this ownership graph through their
 original child plans and unpublished Fork metadata claims before parent removal.
 Future session-owned native services must join the same acknowledgement boundary
 before exposure.
+
+Permanent deletion reconciles each present original `workspace-removals/<job>`
+namespace under the session, observation and snapshot namespace gates before
+ordinary copy cleanup. The immutable job/session/snapshot references must match
+its original synchronized intent and version-2 claim. The claim binds the exact
+intent digest and native root identity; its immutable inventory and existing
+partial-removal journal authorize only the original pinned entries. This step
+runs no native execution or input replay and cannot create a missing claim.
+Missing, malformed, legacy or mismatched proof, replaced roots and changed/new
+entries remain protected with `recovery_required`; completion remains pending.
+Retain the intent, claim and journal through validated removal and the normal
+acknowledgement boundary. The generic Worker callback checks removal namespace
+absence only, as for staging, and never traverses a later reappearance.
+
 The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database

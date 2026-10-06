@@ -245,15 +245,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 				continue
 			}
-			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") {
-				// Workspace cleanup already checked the original native staging
-				// identity. A later replacement must remain protected here.
-				if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
-					return domain.SessionDeletionPending()
-				}
-				continue
-			}
-			if e := removeSessionTree(ctx, root, path); e != nil {
+			if e := removeSessionCopy(ctx, root, path); e != nil {
 				return e
 			}
 		}
@@ -269,6 +261,19 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}
 	proof.Complete = true
 	return proof, writeJSON(path, proof)
+}
+
+// Workspace cleanup already validated original storage namespace ownership.
+// Reappearance cannot give the generic copy remover new traversal authority.
+func removeSessionCopy(ctx context.Context, root, path string) error {
+	parent := filepath.Dir(path)
+	if parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+		return nil
+	}
+	return removeSessionTree(ctx, root, path)
 }
 
 // Walk first without following symlinks, then remove deepest paths first. Each

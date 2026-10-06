@@ -61,6 +61,10 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	if err := m.requireNoSidechatReferences(ctx, w.SessionID); err != nil {
 		return err
 	}
+	stage = "storage-removal-ownership"
+	if err := m.cleanupDeletionRemovals(ctx, w); err != nil {
+		return err
+	}
 	stage = "storage-staging-ownership"
 	if err := m.cleanupDeletionStaging(ctx, w); err != nil {
 		return err
