@@ -9,6 +9,8 @@ Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows Con
 
 Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Schema allocations reach main before activation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
 
+ChatGPT account deletion follows the [Settings task retention boundary](apps-delidev-subscription-settings-contract.md#task-dialogs): X/Escape retains original logout/deletion requests and the accepted cleanup view in the active category. Explicit Back/Return and category/Settings disposal remain separate from dismissal; hidden completion cannot reopen, navigate or take focus.
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
 
