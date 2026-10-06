@@ -189,6 +189,14 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 				return started, errSecret
 			}
 			if operation == ResponseCreate && kind == "error" {
+				if event == "" {
+					// The synthesized event line is new SSE metadata. Inspect it
+					// before terminal delivery so a data-only native error cannot
+					// complete a protected metadata prefix and flush pending frames.
+					if err := fragments.inspectMetadata([]byte(prefix + string(raw) + "\n\n")); err != nil {
+						return started, err
+					}
+				}
 				// The retained sequence number participates in the same path
 				// guard as earlier events, including split numeric credentials.
 				if err := fragments.inspect(raw); err != nil {

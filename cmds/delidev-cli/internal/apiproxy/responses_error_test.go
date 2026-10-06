@@ -157,6 +157,24 @@ func TestProxyResponsesStreamErrorCannotCompleteProtectedSequence(t *testing.T) 
 	}
 }
 
+func TestProxyResponsesDataOnlyErrorCannotFlushProtectedMetadataPrefix(t *testing.T) {
+	f := newProxyFixture(t, domain.OpenAIResponses, []Operation{ResponseCreate}, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "event: prefix\n\n")
+		w.(http.Flusher).Flush()
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"private detail\"}\n\n")
+	})
+	f.authority.key = "prefixerror"
+	response, raw, err := f.request(t, "/responses", `{"model":"fixed-model","stream":true}`, nil)
+	if err != nil || response.StatusCode != http.StatusBadGateway || bytes.Contains(raw, []byte("prefix")) || bytes.Contains(raw, []byte("event: error")) {
+		t.Fatalf("protected metadata prefix escaped or was delivered: %v %v %s", response, err, raw)
+	}
+	waitProxyLeaseRelease(t, f)
+	if strings.Contains(f.logs.String(), f.authority.key) {
+		t.Fatal("protected metadata prefix escaped into logs")
+	}
+}
+
 func TestProxyChatStreamErrorRetainsNestedEnvelope(t *testing.T) {
 	f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
