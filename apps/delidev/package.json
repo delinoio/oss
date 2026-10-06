@@ -13,8 +13,8 @@
     "build:frontend": "pnpm prepare:localization && rsbuild build",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && pnpm test:localization && vitest run && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm test:widget && pnpm test:qa && pnpm build && node scripts/qa/check-release.mjs",
-    "test:unit": "vitest run",
+    "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm test:widget && pnpm test:qa && pnpm build && node scripts/qa/check-release.mjs",
+    "test:unit": "vitest run --exclude \"**/*.integration.test.*\"",
     "prepare:assets": "pnpm prepare:localization && node scripts/prepare-assets.mjs",
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
     "prepare:widget": "pnpm prepare:localization && node scripts/build-widget.mjs",
@@ -29,9 +29,16 @@
     "bundle:updater-dry-run": "node scripts/bundle-updater-dry-run.mjs",
     "prepare:localization": "node scripts/generate-localization.mjs",
     "test:localization": "node scripts/generate-localization.mjs --check && node --test scripts/localization.test.mjs",
+    "test:integration": "vitest run .integration.test.",
+    "ci:release": "node scripts/qa/check-release.mjs",
     "test:ci:checks": "pnpm typecheck && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm test:widget && pnpm test:qa && pnpm build && node scripts/qa/check-release.mjs",
     "test:ci:tests-1": "vitest run --shard=1/2",
-    "test:ci:tests-2": "vitest run --shard=2/2"
+    "test:ci:tests-2": "vitest run --shard=2/2",
+    "test:unit:1": "vitest run --exclude \"**/*.integration.test.*\" --shard=1/2",
+    "test:unit:2": "vitest run --exclude \"**/*.integration.test.*\" --shard=2/2",
+    "test:integration:1": "vitest run .integration.test. --shard=1/2",
+    "test:integration:2": "vitest run .integration.test. --shard=2/2",
+    "ci:qa": "node --test scripts/qa/*.test.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",

@@ -22,6 +22,7 @@
   "agent-worker-wizard.updateServerWizard": "이 마법사로 에이전트 워커를 구성하려면 서버를 업데이트하세요.",
   "agent-worker-wizard.reconfigurationRequired": "이 워커에는 계정과 모델을 명시적으로 다시 구성해야 합니다. 과거 실행은 원래 귀속을 유지합니다.",
   "agent-worker-wizard.chooseTool": "이 워커를 실행할 도구를 선택하세요.",
+  "agent-worker-wizard.chooseHarnessToContinueToAccounts": "계속하려면 하니스를 선택하세요: 계정.",
   "agent-worker-wizard.harness": "하네스",
   "agent-worker-wizard.chooseAccounts": "계정 선택",
   "agent-worker-wizard.changeHarness": "하네스 변경",
