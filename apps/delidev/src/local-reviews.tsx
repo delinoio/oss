@@ -2,13 +2,26 @@ import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Mode, encode } from "./documents";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
 import { workspaceReadOptions } from "./session-files";
 import { type Diff } from "./session-diff-model";
 import { AnchorKind, ReviewContextError, ReviewSide, freshness, readComment, readSubmission, readReviewContext, selectedContext, type Comment, type Selection } from "./local-review-model";
 import { Problem } from "./ui";
 
 type Selected = { resource: Resource; comment: Comment };
+
+function useCommentDeletion(key: string, accepted: () => void) {
+  return useRetainedMutation(key, SessionQuery.deleteLocalReviewComment, accepted, (result, request) =>
+    Boolean(request.mutation?.id && request.mutation.requestId && result.id === request.mutation.id && result.requestId === request.mutation.requestId));
+}
+
+function PendingCommentDeletion({ intent, commentId, accepted }: { intent: RetainedMutationIntent; commentId: string; accepted: () => void }) {
+  const mutation = useCommentDeletion(intent.key, accepted);
+  return <article aria-label={`Pending deletion of review comment ${commentId}`}>
+    <p>Comment deletion · {commentId}</p><p role="status">{intent.busy ? "Waiting for comment deletion acknowledgement…" : "Comment deletion acknowledgement is uncertain."}</p>
+    <Problem error={mutation.error} />{intent.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry original comment deletion</button> : null}
+  </article>;
+}
 
 function NewComment({ sessionId, diff, saved, close }: { sessionId: string; diff: Diff; saved: (message: string) => void; close: () => void }) {
   const [filePath, setFilePath] = useState<string>(), [kind, setKind] = useState(AnchorKind.File), [side, setSide] = useState(ReviewSide.New);
@@ -36,7 +49,7 @@ function NewComment({ sessionId, diff, saved, close }: { sessionId: string; diff
 function CommentRow({ row, comment, sessionId, diff, selected, choose, refreshed, submitting }: { row: Resource; comment: Comment; sessionId: string; diff: Diff; selected?: Selected; choose: (value?: Selected) => void; refreshed: () => void; submitting: boolean }) {
   const [editing, setEditing] = useState(false), [body, setBody] = useState(comment.body), [revision, setRevision] = useState(row.revision);
   const edit = useRetainedMutation(`review:edit:${sessionId}:${row.id}`, SessionQuery.editLocalReviewComment, () => { setEditing(false); choose(); refreshed(); });
-  const remove = useRetainedMutation(`review:delete:${sessionId}:${row.id}`, SessionQuery.deleteLocalReviewComment, () => { choose(); refreshed(); });
+  const remove = useCommentDeletion(`review:delete:${sessionId}:${row.id}`, () => { choose(); refreshed(); });
   const blocked = submitting || edit.busy || edit.uncertain || remove.busy || remove.uncertain;
   const anchor = comment.anchor, staleEdit = revision !== row.revision;
   return <article className="local-review-comment" aria-label={`Review comment on ${anchor.selection.path}`}>
@@ -47,7 +60,7 @@ function CommentRow({ row, comment, sessionId, diff, selected, choose, refreshed
     {comment.last_submission_id ? <p>Last submitted content revision {comment.last_submitted_content_revision}{comment.last_submitted_content_revision !== comment.content_revision ? " · Edited since submission" : ""}</p> : null}
     {selected && selected.resource.revision !== row.revision ? <p role="alert">An earlier version is selected. Deselect and select this comment again after reviewing the change.</p> : null}
     {editing ? <form onSubmit={(e) => { e.preventDefault(); if (blocked || staleEdit || !body.trim()) return; void edit.send({ mutation: { id: row.id, expectedRevision: revision, requestId: newRequestId() }, sessionId, body }); }}><label>Edit review comment<textarea disabled={blocked} value={body} maxLength={8192} onChange={(e) => setBody(e.target.value)} /></label>{staleEdit ? <><p role="alert">The comment changed. Your edit is retained.</p><button type="button" disabled={blocked} onClick={() => setRevision(row.revision)}>Use latest comment revision with this edit</button></> : null}<button disabled={blocked || staleEdit || !body.trim()}>Save comment edit</button><button type="button" disabled={blocked} onClick={() => setEditing(false)}>Cancel comment edit</button></form> : <div className="actions"><button disabled={blocked} onClick={() => { setBody(comment.body); setRevision(row.revision); setEditing(true); }}>Edit comment</button><button disabled={blocked} onClick={() => void remove.send({ mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() }, sessionId })}>Delete comment</button></div>}
-    <Problem error={edit.error || remove.error} />{edit.uncertain ? <button disabled={edit.busy} onClick={edit.retry}>Retry original comment edit</button> : null}{remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>Retry original comment deletion</button> : null}
+    <Problem error={edit.error || (remove.uncertain ? undefined : remove.error)} />{edit.uncertain ? <button disabled={edit.busy} onClick={edit.retry}>Retry original comment edit</button> : null}
   </article>;
 }
 
@@ -58,11 +71,17 @@ export function LocalReviews({ sessionId, diff, reading }: { sessionId: string; 
   const refresh = () => { void list.refetch(); };
   const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? `Request changes queued as input ${r.change.input.id}.` : "Submission acknowledged. Inspect the session queue and review history."); refresh(); });
   const blocked = submit.busy || submit.uncertain;
+  const deletionPrefix = `review:delete:${sessionId}:`;
+  const deletions = useRetainedMutationIntents(deletionPrefix);
   const rows = list.data?.resources ?? [];
   const choose = (id: string, value?: Selected) => { if (blocked) return; if (value && selected.size >= 25 && !selected.has(id)) { setNotice("Select at most 25 comments for one request."); return; } setSelected((previous) => { const next = new Map(previous); if (value) next.set(id, value); else next.delete(id); return next; }); };
   return <section aria-label="Local agent review" className="local-reviews">
     <h3>Local agent review</h3><p>Save file or line comments, then send selected comments to this session's agent. Submission follows the session's input queue and does not resolve comments.</p>
     <div className="actions"><button disabled={reading || Boolean(authoring) || blocked} onClick={() => setAuthoring(diff)}>Add review comment</button><button disabled={list.isFetching} onClick={refresh}>Refresh reviews</button></div>
+    {deletions.length ? <section aria-label="Pending comment deletions"><h4>Pending comment deletions</h4>{deletions.map((intent) => {
+      const commentId = intent.key.slice(deletionPrefix.length);
+      return <PendingCommentDeletion key={intent.key} intent={intent} commentId={commentId} accepted={() => { choose(commentId); setNotice("Comment deletion acknowledged."); refresh(); }} />;
+    })}</section> : null}
     {authoring ? <NewComment sessionId={sessionId} diff={authoring} saved={(message) => { setNotice(message); refresh(); }} close={() => setAuthoring(undefined)} /> : null}
     {notice ? <p role="status">{notice}</p> : null}<Problem error={list.error} />{list.error && list.data ? <p role="alert">Review refresh failed. Retained records may be outdated.</p> : null}
     {list.isPending ? <p>Loading local reviews…</p> : rows.length ? rows.map((row) => {
