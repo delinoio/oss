@@ -151,9 +151,18 @@ cached executable as well as its on-disk reference; `AbandonProcessGroup=true`
 continues to protect independent executions. An inactive unverified loaded job
 or a changed native/definition identity remains an error.
 
-Only the actual replacement service may use the journal to load the last
-committed requested configuration before reading the candidate TOML. Its
-startup acceptance preserves durable Stop and pool/global pause decisions.
+The actual replacement service and a verified restart of the exact previous
+service invocation/version use the journal-owned snapshot to load the last
+committed requested configuration before reading the candidate TOML. Require
+matching journal platform, unit, configuration path and snapshot installation;
+an unavailable or mismatched snapshot fails before startup acceptance. Changed,
+malformed or relocated candidate TOML cannot authorize this startup. Both
+startup paths preserve durable Stop and pool/global pause decisions. The previous
+manager retains the handoff journal and receives no retirement authority; only
+replacement startup returns a retirement handle. The initiating CLI keeps its
+existing completion authority. Foreground runs and no-journal explicit Start
+retain ordinary candidate loading and completed-Stop recovery.
+
 Complete startup acceptance and session reset before exposing control; entering
 the manager loop must not overwrite a reload or Stop accepted after readiness.
 Independent executions, original generations, reservations, deadlines, image
