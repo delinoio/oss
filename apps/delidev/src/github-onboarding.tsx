@@ -90,8 +90,10 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
     }
   };
   const ownerValid = kind === GitHubTokenKind.FINE_GRAINED ? githubOwnerValid(owner) : !owner || githubOwnerValid(owner);
+  const nameBytes = new TextEncoder().encode(name).length;
+  const nameValid = Boolean(name.trim()) && nameBytes <= 160;
   const save = async (retry = false) => {
-    if (!active || working.current || (retry ? !originalSave.current : saveUncertain || !secret.current || !identity || !ownerValid || !name.trim() || new TextEncoder().encode(name).length > 160)) return;
+    if (!active || working.current || (retry ? !originalSave.current : saveUncertain || !secret.current || !identity || !ownerValid || !nameValid)) return;
     working.current = true; setBusy(true); setError(undefined); setMessage("");
     const original = ++epoch.current;
     const bytes = secret.current;
@@ -143,13 +145,14 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
       <p className="integration-verified">Authenticated as <strong>{identity?.login}</strong></p>
       <fieldset disabled={busy || saveUncertain}>
         <label>Profile name<input ref={nameInput} required maxLength={160} value={name} onChange={event => { nameEdited.current = true; setName(event.target.value); }} /></label><p>Filled from your GitHub username. You can change it.</p>
+        {nameBytes > 160 ? <p role="alert">This profile name is too long. Shorten it before saving.</p> : name && !name.trim() ? <p role="alert">Enter a nonblank profile name.</p> : null}
         <label>Token type<select value={kind} onChange={event => setKind(Number(event.target.value) as GitHubTokenKind)}><option value={GitHubTokenKind.FINE_GRAINED}>Fine-grained PAT (preferred)</option><option value={GitHubTokenKind.CLASSIC}>Classic PAT</option></select></label>
         <label>Resource owner<input required={kind === GitHubTokenKind.FINE_GRAINED} maxLength={100} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" placeholder="GitHub user or organization" value={owner} onChange={event => setOwner(event.target.value)} /></label><p>Enter the owner selected when you created this token. Token form settings carry into this field; you can change them.</p>
         <p>Use a separate fine-grained profile for each repository owner. Repositories explicitly select their profile.</p><p>Token type and owner cannot be changed after creation.</p>
       </fieldset>
       {busy ? <p role="status">Saving GitHub profile and connecting token…</p> : null}<Problem error={error} />
       {saveUncertain ? <p role="status">The profile save is uncertain. Retry only the original save; your token was cleared and must be reentered after reconciliation.</p> : null}
-      <div className="actions"><button className="primary" disabled={busy || saveUncertain || !ownerValid || !name.trim() || !secret.current}>Save and connect</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>Retry the same profile save</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>Back</button><button type="button" disabled={busy || saveUncertain} onClick={cancel}>Cancel</button></div>
+      <div className="actions"><button className="primary" disabled={busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>Save and connect</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>Retry the same profile save</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>Back</button><button type="button" disabled={busy || saveUncertain} onClick={cancel}>Cancel</button></div>
       <p className="integration-storage-note">Tokens are stored in the selected server’s OS credential store. Saved tokens cannot be displayed.</p>
     </form>}
     <p className="integration-access-note">Identity verification does not confirm repository access.</p>
