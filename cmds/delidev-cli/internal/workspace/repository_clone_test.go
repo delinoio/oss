@@ -35,8 +35,8 @@ func cloneFixture(t *testing.T) (Git, string, CloneRequest, string) {
 	marker := filepath.Join(t.TempDir(), "clone-invoked")
 	body := "#!/bin/sh\ncase \" $* \" in\n*' clone '*)\n"
 	body += "printf invoked >> " + quote(marker) + "\n"
-	body += "for operand do target=$operand; done\n"
-	body += quote(git) + " -c core.hooksPath=/dev/null clone --no-local -- " + quote(source) + " \"$target\" || exit 1\n"
+	body += "origin=\nfor operand do case \"$operand\" in --origin=*) origin=$operand ;; esac; target=$operand; done\n"
+	body += quote(git) + " -c core.hooksPath=/dev/null clone --no-local \"$origin\" -- " + quote(source) + " \"$target\" || exit 1\n"
 	body += quote(git) + " -C \"$target\" remote set-url origin https://github.com/fixture/repo.git\n;;\n*) exec " + quote(git) + " \"$@\" ;;\nesac\n"
 	if err := os.WriteFile(executable, []byte(body), 0700); err != nil {
 		t.Fatal(err)
@@ -47,6 +47,13 @@ func cloneFixture(t *testing.T) (Git, string, CloneRequest, string) {
 
 func TestRepositoryClonePublishesFullCheckoutOnce(t *testing.T) {
 	g, private, request, marker := cloneFixture(t)
+	// Ordinary Git credential configuration stays available, but its default
+	// remote name cannot replace the origin required for server registration.
+	config := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(config, []byte("[clone]\n\tdefaultRemoteName = upstream\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", config)
 	var logs bytes.Buffer
 	g.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	result, err := g.Clone(context.Background(), private, request)
@@ -156,7 +163,7 @@ func TestRepositoryCloneDoesNotAdoptReplacedCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed := strings.Replace(string(raw), "for operand do target=$operand; done", "for operand do target=$operand; done\nmv \"$target\" \"$target-original\"\nmkdir \"$target\"", 1)
+	changed := strings.Replace(string(raw), "target=$operand; done", "target=$operand; done\nmv \"$target\" \"$target-original\"\nmkdir \"$target\"", 1)
 	if err := os.WriteFile(g.Executable, []byte(changed), 0700); err != nil {
 		t.Fatal(err)
 	}

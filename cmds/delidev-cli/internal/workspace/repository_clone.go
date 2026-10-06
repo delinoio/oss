@@ -202,7 +202,7 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	if identity, err := directoryPathIdentity(staging); err != nil || identity != stagingIdentity {
 		return result, cloneRecoveryRequired()
 	}
-	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "clone", "--no-recurse-submodules", "--template=" + template, "--", request.URL, checkout}
+	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "clone", "--origin=origin", "--no-recurse-submodules", "--template=" + template, "--", request.URL, checkout}
 	if _, err := g.run(bounded, staging, args...); err != nil {
 		return result, err
 	}
