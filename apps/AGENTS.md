@@ -172,6 +172,7 @@
 - If `apps/devhud` changes, run `pnpm --filter devhud test` and `pnpm --filter devhud verify:pins`; run its platform smoke on a supported native production artifact when the host is available.
 - If `apps/public-docs/docs/binpm` or `apps/public-docs/docs/nodeup` changes, run `pnpm --filter public-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
+- Public-docs `build`, `build:frontend`, and `ci:routes` must hash all eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources through package-local external inputs. Preserve inherited build inputs, dependencies, outputs, and deterministic caching; installer changes must not invalidate unrelated workspace caches.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
 
 ### async-commit-hook
