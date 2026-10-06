@@ -123,6 +123,22 @@ test("discovery failures never start tests, even with partial output", async () 
   assert.equal(fixture.calls.length, 1);
 });
 
+test("selection failures write a failed timing report before propagating", async () => {
+  const reports = [];
+  const saveReport = (path, report) => reports.push({ path, report });
+  const invalidComparison = runner({ status: 0, stdout: inventory });
+  await assert.rejects(() => runGoTests(GoTestShard.All, { ...invalidComparison.options, mode: "affected", base: "--help", head: "b".repeat(40), saveReport }), /comparison requires/u);
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].report.exitCode, 1);
+  assert.deepEqual(reports[0].report.packages, []);
+
+  reports.length = 0;
+  const discoveryFailure = runner({ error: new Error("go list failed") });
+  await assert.rejects(() => runGoTests(GoTestShard.Core, { ...discoveryFailure.options, mode: "full", saveReport }), /go list failed/u);
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].report.exitCode, 1);
+});
+
 test("test failures, signals and spawn errors cannot become success", async () => {
   for (const failure of [{ status: 7 }, { status: null, signal: "SIGTERM" }]) {
     const fixture = runner({ status: 0, stdout: inventory }, failure);

@@ -41,11 +41,25 @@ test("failed and interrupted tests retain bounded diagnostics while successful t
   const { collector, output } = collect();
   for (const line of [
     event("run", { Test: "TestGood" }), event("output", { Test: "TestGood", Output: "successful detail\n" }), event("pass", { Test: "TestGood", Elapsed: 1 }),
-    event("run", { Test: "TestBad" }), event("output", { Test: "TestBad/child", Output: "assertion failed\n" }), event("fail", { Test: "TestBad", Elapsed: 2 }),
+    event("run", { Test: "TestBad" }), event("output", { Test: "TestBad/child", Output: "assertion failed\n" }),
+    event("output", { Test: "TestBad", Output: "FAIL crucial-context\n" }), event("output", { Test: "TestBad", Output: "ok user-diagnostic\n" }),
+    event("output", { Test: "TestBad", Output: "PASS useful-context\n" }),
+    event("output", { Test: "TestBad", Output: "--- FAIL: TestBad (0.01s)\n" }), event("output", { Test: "TestBad", Output: "FAIL\t${pkg}\t0.01s\n" }),
+    event("output", { Test: "TestBad", Output: "ok\t${pkg}\t(cached)\n" }),
+    event("fail", { Test: "TestBad", Elapsed: 2 }),
     event("run", { Test: "TestPanic" }), event("output", { Test: "TestPanic", Output: "panic detail\n" }), event("fail", { Elapsed: 3 }),
   ]) collector.line(line);
-  assert.equal(output.join(""), "assertion failed\npanic detail\n");
+  assert.equal(output.join(""), "assertion failed\nFAIL crucial-context\nok user-diagnostic\nPASS useful-context\npanic detail\n");
   assert.equal(collector.finish().packages[0].tests.at(-1).result, "incomplete");
+
+  const preserved = collect();
+  for (const line of [
+    event("run", { Test: "TestFailed" }), event("output", { Test: "TestFailed", Output: "failure detail\n" }), event("fail", { Test: "TestFailed", Elapsed: 1 }),
+    event("run", { Test: "TestLater" }), event("output", { Test: "TestLater", Output: "x".repeat(2 * 1024 * 1024) }), event("pass", { Test: "TestLater", Elapsed: 2 }),
+    event("fail", { Elapsed: 3 }),
+  ]) preserved.collector.line(line);
+  assert.equal(preserved.output.join(""), "failure detail\n");
+
   const bounded = collect();
   bounded.collector.line(event("run", { Test: "TestHuge" }));
   bounded.collector.line(event("output", { Test: "TestHuge", Output: "x".repeat(2 * 1024 * 1024) }));

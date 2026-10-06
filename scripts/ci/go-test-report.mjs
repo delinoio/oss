@@ -9,14 +9,30 @@ const outcomes = new Set(["pass", "fail", "skip"]);
 const diagnosticLimit = 1024 * 1024;
 const packageName = /^[A-Za-z0-9._~+/-]+$/u;
 const testName = /^(?:Test|Example|Fuzz)[A-Za-z0-9_]*$/u;
+const goHarnessOutput = /^(?:=== (?:RUN|PAUSE|CONT|NAME)\s+\S.*|--- (?:PASS|FAIL|SKIP):\s+\S+\s+\(\d+(?:\.\d+)?s\)|(?:ok|FAIL)\s+\S+\s+(?:\d+(?:\.\d+)?s|\(cached\))|(?:PASS|FAIL))\r?\n?$/u;
 
 export function testTimings({ log = console.log, output = (text) => process.stdout.write(text) } = {}) {
   const packages = new Map();
   const diagnostics = new Map();
   let invalid = false;
+  let diagnosticSequence = 0;
   const recordFor = (name) => {
     if (!packages.has(name)) packages.set(name, { package: name, result: "incomplete", elapsedSeconds: null, cached: false, tests: new Map() });
     return packages.get(name);
+  };
+  const diagnosticFor = (name, test) => {
+    const packageDiagnostics = diagnostics.get(name) ?? { buckets: new Map() };
+    const key = test ?? "";
+    const bucket = packageDiagnostics.buckets.get(key) ?? { entries: [], bytes: 0, truncated: false };
+    packageDiagnostics.buckets.set(key, bucket);
+    diagnostics.set(name, packageDiagnostics);
+    return { packageDiagnostics, bucket };
+  };
+  const discardDiagnostics = (name, test) => {
+    const packageDiagnostics = diagnostics.get(name);
+    if (!packageDiagnostics) return;
+    packageDiagnostics.buckets.delete(test ?? "");
+    if (packageDiagnostics.buckets.size === 0) diagnostics.delete(name);
   };
   return {
     line(line) {
@@ -36,18 +52,19 @@ export function testTimings({ log = console.log, output = (text) => process.stdo
         if (!event.Test && /^ok\s+\S+\s+\(cached\)/u.test(event.Output)) record.cached = true;
         // JSON enables verbose success output. Keep bounded failure diagnostics
         // in memory, but never persist raw output or dynamic subtest names.
-        if (/^\s*(?:=== (?:RUN|PAUSE|CONT|NAME)|--- (?:PASS|FAIL|SKIP):|ok\s|FAIL\s|PASS\s*$)/u.test(event.Output)) return;
-        const buffer = diagnostics.get(event.Package) ?? { entries: [], bytes: 0, truncated: false };
+        if (goHarnessOutput.test(event.Output)) return;
+        const current = topLevel ? record.tests.get(topLevel)?.result : null;
+        if (current === "pass" || current === "skip") return;
+        const { bucket } = diagnosticFor(event.Package, topLevel);
         const bytes = Buffer.from(event.Output);
         const text = bytes.subarray(Math.max(0, bytes.length - diagnosticLimit));
-        buffer.truncated ||= text.length < bytes.length;
-        buffer.entries.push({ test: topLevel, text });
-        buffer.bytes += text.length;
-        while (buffer.bytes > diagnosticLimit) {
-          buffer.bytes -= buffer.entries.shift().text.length;
-          buffer.truncated = true;
+        bucket.truncated ||= text.length < bytes.length;
+        bucket.entries.push({ test: topLevel, text, sequence: diagnosticSequence++ });
+        bucket.bytes += text.length;
+        while (bucket.bytes > diagnosticLimit) {
+          bucket.bytes -= bucket.entries.shift().text.length;
+          bucket.truncated = true;
         }
-        diagnostics.set(event.Package, buffer);
         return;
       }
       if (event.Test && (!testName.test(topLevel) || event.Test !== topLevel)) return;
@@ -60,14 +77,22 @@ export function testTimings({ log = console.log, output = (text) => process.stdo
       const elapsedSeconds = event.Elapsed ?? 0;
       if (topLevel) {
         record.tests.set(topLevel, { test: topLevel, result: event.Action, elapsedSeconds });
+        if (event.Action === "pass" || event.Action === "skip") discardDiagnostics(event.Package, topLevel);
       } else {
         record.result = event.Action;
         record.elapsedSeconds = elapsedSeconds;
         if (event.Action === "fail") {
-          if (diagnostics.get(event.Package)?.truncated) log(JSON.stringify({ event: "ci_go_test_diagnostics_truncated", package: event.Package, limitBytes: diagnosticLimit }));
-          for (const entry of diagnostics.get(event.Package)?.entries ?? []) {
-            const result = record.tests.get(entry.test)?.result;
-            if (!entry.test || result === "fail" || result === "incomplete") output(entry.text.toString("utf8"));
+          const packageDiagnostics = diagnostics.get(event.Package);
+          const entries = [...(packageDiagnostics?.buckets.values() ?? [])].flatMap((bucket) => bucket.entries)
+            .filter((entry) => {
+              const result = record.tests.get(entry.test)?.result;
+              return !entry.test || result === "fail" || result === "incomplete";
+            }).sort((a, b) => a.sequence - b.sequence);
+          if (entries.some((entry) => packageDiagnostics.buckets.get(entry.test ?? "").truncated)) {
+            log(JSON.stringify({ event: "ci_go_test_diagnostics_truncated", package: event.Package, limitBytes: diagnosticLimit }));
+          }
+          for (const entry of entries) {
+            output(entry.text.toString("utf8"));
           }
         }
         diagnostics.delete(event.Package);

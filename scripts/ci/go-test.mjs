@@ -48,27 +48,33 @@ export async function runGoTests(shard, { run = spawnSync, runTests = runTestJso
   let packages = ["./..."];
   const mode = options.mode ?? GoMode.Full;
   if (!Object.values(GoMode).includes(mode)) throw new Error("Unknown Go validation mode");
-  if (mode === GoMode.Affected) {
-    const selection = affectedGoPackages({ ...options, run(command, args, commandOptions) {
-      report.commands.push([command, ...args]);
-      return run(command, args, commandOptions);
-    }, log });
-    packages = selection.packages.filter((name) => shard === GoTestShard.All || shardForPackage(name) === shard);
-    if (packages.length === 0) {
-      log(JSON.stringify({ event: "ci_go_test_empty", shard, mode, packageCount: 0 }));
-      return finish(0);
+  try {
+    if (mode === GoMode.Affected) {
+      const selection = affectedGoPackages({ ...options, run(command, args, commandOptions) {
+        report.commands.push([command, ...args]);
+        return run(command, args, commandOptions);
+      }, log });
+      packages = selection.packages.filter((name) => shard === GoTestShard.All || shardForPackage(name) === shard);
+      if (packages.length === 0) {
+        log(JSON.stringify({ event: "ci_go_test_empty", shard, mode, packageCount: 0 }));
+        return finish(0);
+      }
+    } else if (shard !== GoTestShard.All) {
+      report.commands.push(["go", "list", "-f", "{{.ImportPath}}", "./..."]);
+      const discovery = run("go", ["list", "-f", "{{.ImportPath}}", "./..."], {
+        shell: false, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], maxBuffer: 8 * 1024 * 1024,
+      });
+      if (discovery.error) throw discovery.error;
+      if (discovery.status !== 0) {
+        log(JSON.stringify({ event: "ci_go_test_discovery_failed", shard, exitCode: discovery.status, signal: discovery.signal }));
+        return finish(discovery.status ?? 1, discovery.signal);
+      }
+      packages = selectPackages(discovery.stdout, shard);
     }
-  } else if (shard !== GoTestShard.All) {
-    report.commands.push(["go", "list", "-f", "{{.ImportPath}}", "./..."]);
-    const discovery = run("go", ["list", "-f", "{{.ImportPath}}", "./..."], {
-      shell: false, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], maxBuffer: 8 * 1024 * 1024,
-    });
-    if (discovery.error) { finish(1); throw discovery.error; }
-    if (discovery.status !== 0) {
-      log(JSON.stringify({ event: "ci_go_test_discovery_failed", shard, exitCode: discovery.status, signal: discovery.signal }));
-      return finish(discovery.status ?? 1, discovery.signal);
-    }
-    packages = selectPackages(discovery.stdout, shard);
+  } catch (error) {
+    log(JSON.stringify({ event: "ci_go_test_selection_failed", shard, mode, message: error.message }));
+    finish(1);
+    throw error;
   }
   log(JSON.stringify({ event: "ci_go_test_start", shard, packageCount: shard === GoTestShard.All ? null : packages.length, packages }));
   if (shard !== GoTestShard.All) {

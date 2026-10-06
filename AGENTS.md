@@ -400,7 +400,7 @@ Repository-wide quality CI is defined in `.github/workflows/CI.yml`. Go validati
 
 Coverage expectations:
 - `go-quality`: generates and validates the ignored administrator and ach UI bundles, then checks formatting without rewriting sources and runs `go vet` on the selected native packages on Ubuntu. Main/manual runs retain the full suite.
-- `go-test`: generates and validates the ignored administrator and ach UI bundles on every runner, then runs the selected native packages on `ubuntu-latest`, `macos-latest`, and four independent `windows-latest` shards through `scripts/ci/go-test.mjs`. Main/manual runs retain the full suite.
+- `go-test`: generates and validates the ignored administrator and ach UI bundles on every runner, then runs the selected native packages on `ubuntu-latest`, `macos-latest`, and five independent `windows-latest` shards through `scripts/ci/go-test.mjs`. Main/manual runs retain the full suite.
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: prepares the DeliDev typed client, frontend and Go sidecar plus WebKitGTK 4.1 development prerequisites, then runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: prepares the DeliDev typed client, frontend and Go sidecar plus WebKitGTK 4.1 development prerequisites, builds pnport and its injection companion with `cargo build --locked -p pnport -p pnport-preload`, then runs `cargo test --workspace --all-targets`.
