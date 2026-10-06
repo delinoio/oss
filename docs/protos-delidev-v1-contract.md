@@ -1,5 +1,30 @@
 # DeliDev v1 Connect contract
 
+## Agent Worker source-route reservations
+
+Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
+`AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
+is exclusive with the legacy singular model. Establish both ledger reservations
+on main before activation. Capability 35 keeps its known-subscription-model
+ownership. No active schema, generated output, advertisement or migration is
+introduced by this prerequisite.
+
+
+
+
+## Known subscription model reservations
+
+Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
+and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
+advisory subscription catalog. The closed catalog-source enum reserves
+UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
+reserves native ID/display name/order/minimum harness version/retirement date
+fields 1–5. The request reserves subscription service field 1; the response
+reserves subscription service/models/catalog version/updated at/source fields 1–5.
+Establish these allocations on main before dependent implementation. Reservations
+grant no catalog retrieval, authentication, account entitlement, native discovery
+or execution capability. No database migration is introduced.
 
 ## GitHub token-first onboarding reservations
 
@@ -17,14 +42,30 @@ before dependent implementation. This prerequisite introduces no active schema,
 generated binding, advertised support, credential lifetime, browser authority or
 database migration. Existing profile/revision-bound token forms remain unchanged.
 
-## Agent Worker wizard reservations
+## Agent Worker wizard
 
-The planned Agent Worker wizard uses main-first reservations under issue #964:
-System capability 33, list-only subscription-service selectors on resource and
-model pages, and typed `SaveAgentWorkerRequest` / `AgentWorkerModelSelection`.
-Reservation-only publication does not activate these declarations or operations.
-The existing configuration, CLI, native observation and migration boundaries
-remain authoritative until the complete feature is implemented.
+PR #1351 established the issue #964 allocations on main before implementation.
+System `AGENT_WORKER_WIZARD_V1 = 33` advertises source-scoped account/model lists
+and atomic `ConfigurationService.SaveAgentWorker`. `ListResourcesRequest` field
+4 and `SearchModelsRequest` field 7 select a closed subscription service. Reject
+unknown services, API/provider combinations and account selectors on other kinds.
+Filter in SQL before pagination and bind the source into each cursor. Unspecified
+selectors preserve legacy behavior; shared Filter, snapshots and events do not
+change.
+
+`SaveAgentWorkerRequest` carries mutation, document, typed model selection and
+schema version in fields 1–4. `AgentWorkerModelSelection` uses a oneof canonical
+model ID or exact executable/native ID, plus the canonical model's expected
+revision. A canonical selection requires a nonzero revision; a direct ID requires
+zero. The RPC reuses the existing `SaveConfigurationResponse` acknowledgement,
+with narrow Buf lint exceptions on the two save methods for this deliberate reuse.
+Existing RPCs, CLI operations and resource/storage schemas remain compatible.
+The new path requires at least one account and one common API provider or native
+subscription service. Fixed routing requires exactly one account. Go resolves or
+creates the model and saves the Worker in one receipt transaction. Saved harness
+compatibility is a configuration declaration, never native/account/platform proof.
+No database migration is added. Follow the [catalog contract](cmds-delidev-catalog-contract.md)
+and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
 ## Repository addition reservations
 

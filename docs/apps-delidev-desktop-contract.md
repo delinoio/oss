@@ -50,16 +50,16 @@ Every `input`, `textarea` and `select`, including checkboxes, radios and file pi
 
 ### Native Codex model observations (issue #1206)
 
-Models settings exposes an explicit native observation disclosure using generated
+The Agent Worker wizard Model step exposes an explicit native observation disclosure using generated
 `NativeModelQuery` bindings and the server capability. Select the Runner Device,
 connected account and hidden-model policy with their original revisions. Retain
 uncertain discovery/cancellation requests exactly, lock scope changes while they
 are unresolved, and inspect accepted jobs through read-only queries. Pages select
 one immutable observation; failed jobs can expose the separately labeled last
 success without claiming freshness. Render picker and executable IDs separately
-and metadata as inert advisory text. Register prepares the existing editor with
-the selected provider and executable ID, manual provenance and user-editable
-metadata; it never saves automatically. Keep managed-subscription unsupported and
+and metadata as inert advisory text. Use model prepares the executable ID for final Worker saving under its
+selected API-account source. It never saves automatically, and only selected
+accounts can supply the observation scope. Keep managed-subscription unsupported and
 follow the [native observation contract](cmds-delidev-native-models-contract.md).
 
 ### Execution-device terminology (issue #1136)
@@ -147,7 +147,7 @@ When Pull requests becomes inactive, cancel and remove its disposable GitHub obs
 Across all surfaces, distinguish first loading, successful empty pages, empty later pages, permission/authentication errors, connection failures and stale same-scope data. Never show old-scope rows as the new selection or claim a complete inventory from one bounded page. Navigation, filtering, collapse and paging remain read-only; existing explicit mutations keep their original revisions, authority and exact retry payloads. Native visual, focus and OS acceptance remains separate from component/browser evidence.
 
 ### Usage
-The Usage surface follows the [exact native usage contract](cmds-delidev-usage-contract.md) through direct generated Connect Query. It defaults to 30 server-relative days and supports local-time range, session/project/account/provider/model and General Chat filters with explicit Apply/reset. Keep drafts mounted across navigation. The summary shows arbitrary-precision known subtotals, per-counter unavailable responses, original identity groups with optional current labels, accepted executions missing telemetry, unavailable actual cost and separate currency-denominated historical estimate subtotals. Resume/legacy/child/unsupported telemetry cannot appear as zero or complete. Settings → Models → Token pricing reads current model/price revisions and creates an explicit source/date/currency/input-mode/rate/exclusion version. Nullable decimal fields preserve blank versus zero; stale drafts and exact uncertain requests remain retained. Source descriptions render as inert text. Historical Usage details expose retained price versions and priced/missing/unsupported category counts, with exact amount strings and no client-side recomputation. No complete-category count implies complete telemetry, verified spend or budget compliance. Refresh failures label cached values, and opening a session never starts execution.
+The Usage surface follows the [exact native usage contract](cmds-delidev-usage-contract.md) through direct generated Connect Query. It defaults to 30 server-relative days and supports local-time range, session/project/account/provider/model and General Chat filters with explicit Apply/reset. Keep drafts mounted across navigation. The summary shows arbitrary-precision known subtotals, per-counter unavailable responses, original identity groups with optional current labels, accepted executions missing telemetry, unavailable actual cost and separate currency-denominated historical estimate subtotals. Resume/legacy/child/unsupported telemetry cannot appear as zero or complete. Usage → Model details → Token pricing reads current model/price revisions and creates an explicit source/date/currency/input-mode/rate/exclusion version. Nullable decimal fields preserve blank versus zero; stale drafts and exact uncertain requests remain retained. Source descriptions render as inert text. Historical Usage details expose retained price versions and priced/missing/unsupported category counts, with exact amount strings and no client-side recomputation. No complete-category count implies complete telemetry, verified spend or budget compliance. Refresh failures label cached values, and opening a session never starts execution.
 
 Issue #1052 adds a visible **Token Usage** page while preserving the Usage navigation entry. It presents an overall known-total/input/output hierarchy, the remaining four token measures, explicit measured/unavailable response counts, incomplete-coverage evidence and unavailable actual cost above historical estimates. Filter drafts live in the Usage context pane, persist across navigation, and separate Apply/Reset from the displayed query. Datetime-local values use a frozen detected IANA zone for each applied request and calendar bucket; UTC is the explicit fallback. Applied timestamps are first server-retention times with an exclusive upper bound. The existing session table retains its grouping/order, full source identities, disclosures, and open-session navigation.
 
@@ -190,7 +190,7 @@ The sidecar shutdown deadline is 35 seconds from the native request, separate fr
 
 Structured logs distinguish request, restart suppression, joined server cleanup, force request and confirmed/unconfirmed process exit. Forced process exit does not prove native/session cleanup; original data, protected ownership and recovery state remain authoritative. Failure to force or observe exit retains original handles and reports uncertainty without a PID fallback. Actual macOS/Windows/Linux Quit and packaged CEF shutdown remain separate acceptance from controlled process fixtures and compilation. Record validation in PRs/issues and CI logs/artifacts, never repository evidence documents.
 
-The 17 Settings categories are retained; Diagnostics is displayed as **Connection & diagnostics**. Its labelled Connection subsection opens the same persistent native connection panel used before transport. Local lifecycle controls, registration inspection/recovery and Saved servers live there. The panel and connection-scoped Stop mutation registry stay mounted outside the disposable Settings visit, so original confirmations and uncertain request bytes survive hiding and category/navigation changes. Registration confirmation visibility follows the panel without discarding its identity. Native dialogs retain Escape, contained focus and opener restoration. Doctor has its own read-only diagnostics subsection; selecting it never repairs or mutates. Saved windows place their verification and Show local window controls in their own advanced panel and remain connect-only.
+The 16 Settings categories are retained; Diagnostics is displayed as **Connection & diagnostics**. Its labelled Connection subsection opens the same persistent native connection panel used before transport. Local lifecycle controls, registration inspection/recovery and Saved servers live there. The panel and connection-scoped Stop mutation registry stay mounted outside the disposable Settings visit, so original confirmations and uncertain request bytes survive hiding and category/navigation changes. Registration confirmation visibility follows the panel without discarding its identity. Native dialogs retain Escape, contained focus and opener restoration. Doctor has its own read-only diagnostics subsection; selecting it never repairs or mutates. Saved windows place their verification and Show local window controls in their own advanced panel and remain connect-only.
 
 No feature flag, persisted startup preference, migration, product RPC, new dependency, automatic revoked-client replacement, permission repair, reset, account login, Worker startup, Resume or harness activity is introduced. Logs contain bounded lifecycle phases and stable classifications, never credentials, child output or private paths. Record actual native/platform acceptance and unresolved gaps in issue #1137, its pull requests and CI logs/artifacts under the root DeliDev validation policy.
 
@@ -387,60 +387,85 @@ Each edit captures its original resource revision and full document. Server-owne
 
 ### Agent Worker core and optional presentation
 
-Issue #1158 owns only the shared Agent Worker create/edit form. The existing
-Settings shell, category copy, navigation and native geometry stay unchanged.
-The form follows the approved V1 text specification: left-aligned, at most720
-CSS px wide, with subordinate 16px/24px workflow/section headings and 14px/20px labels
-and explanations. Core settings uses flat groups, 16px field gaps, 40px controls
-and 8px control radii with the existing
-system font and light-neutral/blue tokens. Name occupies a full row, Harness and
-Model share equal columns, and permissions remain below their divider. Only Name
-and Model show required markers, retaining their accessible names and validation.
-The creation subtitle is “Configure the essentials, then customize only what you
-need.” Default permission guidance is “Uses the harness default. Review permissions
+Issue #1158 established the flat Worker form presentation. The four-step wizard
+below supersedes its single-form arrangement while retaining the existing shell,
+category copy, system font, semantic theme tokens and native geometry. The wizard
+body is left-aligned and at most 720 CSS px wide, with subordinate 16px/24px
+workflow/section headings, 14px/20px labels and explanations, 16px field gaps,
+40px controls and 8px control radii. Harness, Accounts and Model each have their
+own step. Configure retains the full-row Name and divided permission group.
+Default permission guidance remains “Uses the harness default. Review permissions
 before execution.” Native permission/incompatibility explanations and explicit
 clearing remain authoritative.
 
-Four native `details` disclosures start closed for both create and edit, may open
-independently and retain mounted controls and queries throughout the opening:
+Three native `details` disclosures in Configure start closed for both create and
+edit. They may open independently and retain mounted controls and queries:
 
 | Order | Section | Summary and retained fields |
 | --- | --- | --- |
 | 1 | Reasoning | Current `effort`, or Native default when absent/empty; no normalization |
-| 2 | Accounts & routing | Account count plus explicit routing or Server default when inherited; ordered weighted accounts and all add/move/remove operations |
-| 3 | Instructions | Template count; all ordered reference operations |
-| 4 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
+| 2 | Instructions | Template count; all ordered reference operations |
+| 3 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
 
-When accounts are empty, “Can be saved without accounts; execution requires an
-eligible account.” stays visible outside the closed disclosure. This is information,
-not an error or readiness grant. Unsupported selections remain explicit, harness
-switches preserve values, and all unknown document/link/option fields survive save.
+Reasoning effort and Subagent effort use the shared editable combobox in
+`apps/delidev/src/reasoning-effort-field.tsx` and its static stylesheet. These
+harness-level hints do not establish selected-model or execution support:
+
+| Harness | Reasoning effort hints | Subagent effort hints |
+| --- | --- | --- |
+| Codex | none, minimal, low, medium, high, xhigh, max, ultra, persistent | The same nine values |
+| Claude Code | low, medium, high, xhigh, max | None |
+| OpenCode / Grok Build | None | None |
+
+Focus or the list button opens the in-flow list, capped at 280px with scrolling.
+Filter hints by a case-insensitive prefix; trim only the search comparison, never
+the stored input. Use native default remains the first option and explicitly
+passes an empty string. Direct input remains editable, including unknown values;
+existing server validation and errors remain authoritative. Opening, closing or
+changing harness never writes an effort value or adds an omitted field. A harness
+change replaces hints and clears keyboard selection while retaining both drafts.
+
+Arrow keys move the active option and keep it visible. Enter selects that option;
+with no active option it closes the open list and retains direct input without
+submitting. Escape, Tab and focus departure close without selecting. Composition
+keys are left to the IME. Each input has a unique combobox/listbox identity,
+active-descendant and help association. Use the existing semantic themes, 40px
+controls, 8px corners and responsive form width, without extra panels or input
+focus rings. Preserve Codex child capability-disabled values and ancestor form
+locks for both the input and custom list actions. The component adds no query,
+RPC, discovery, persistence, public schema or native execution authority.
+
+Accounts & routing moves to Accounts, retaining ordered weighted links and all
+add/move/remove operations. The legacy configuration RPC and shared field seam
+still permit accountless Workers; existing records remain valid. The wizard
+requires at least one current same-source account before saving. A harness or
+source change clears incompatible model/account choices for explicit reselection;
+unrelated fields and unknown document/link/option fields survive save.
+
 Collapsed sections expose Needs attention for read or validation problems, while
 expanded selectors retain sanitized detailed diagnostics. Loading, successful
 empty current pages (including continuation), permission/authentication failure,
-connection failure and cached prior choices after failed refresh remain distinct;
-a failed read never becomes an empty inventory or a new verification.
+connection failure and cached prior choices after failed refresh remain distinct.
+A failed read never becomes an empty inventory or a new verification.
 
 Disclosures use native keyboard semantics and remove closed contents from the tab
 order without unmounting them. Invalid hidden inputs open their section before
-focus, preserving unrelated fields. Below 640 CSS px of available **form width**,
-Harness and Model use one column. Text, identifiers and action buttons wrap, focus
-outlines stay visible, and the Cancel edit / Save Agent Worker footer follows normal
-scrolling with Cancel before Save. The exact uncertain retry remains explicit.
-Existing locks, revision conflicts, accepted jobs, bounded selectors/provider gating,
-complete-document limits and byte-identical request retries remain unchanged.
+focus, preserving unrelated fields. Text, identifiers and action buttons wrap.
+Inputs/selects/textareas retain ordinary neutral boundaries without focus rings;
+buttons and other controls retain their applicable focus indicators. Footer actions
+follow normal scrolling, and exact uncertain retry remains explicit. Existing
+locks, revision conflicts, accepted jobs, bounded selectors/provider gating,
+complete-document limits and byte-identical request retries remain authoritative.
 
-Navigation away disposes the entire Settings
-visit under #1138/#1150/#1236; page-level Escape preserves it, with no abandoned request restoration/replay or late
-updates to replacement visits. Same-identity reconnect retains the active editor.
-This ordinary UI rollout has no API, schema, default, dependency, migration, backend
-deployment, polling, execution, logging or feature-flag change. Record component/browser
-checks separately from supported-platform native acceptance in issue #1158, its
-pull requests and CI runs.
+Navigation away disposes the entire Settings visit under #1138/#1150/#1236;
+page-level Escape preserves it, with no abandoned request restoration/replay or
+late updates to replacement visits. Same-identity reconnect retains the active
+editor. Record component/browser checks separately from supported-platform native
+acceptance in pull requests, issues and CI runs.
 
 ### Shared Settings body presentation (issue #1256)
 
-All 18 category bodies and their existing child workflows use the internal presentation-only helpers in `settings-presentation.tsx` and static `settings-presentation.css`. Existing category controllers retain RPC/query/mutation/authorization ownership, fields/help, exact revisions and retry bytes, polling/cursors, schemas, permission gates and the visit lifetime below. These shared rules supersede the earlier category-specific presentation exceptions, without changing native window or ordinary-page shell geometry.
+All 17 category bodies and their existing child workflows use the internal presentation-only helpers in `settings-presentation.tsx` and static `settings-presentation.css`. Existing category controllers retain RPC/query/mutation/authorization ownership, fields/help, exact revisions and retry bytes, polling/cursors, schemas, permission gates and the visit lifetime below. These shared rules supersede the earlier category-specific presentation exceptions, without changing native window or ordinary-page shell geometry.
 
 Every body shares one left anchor, `width: 100%` and `max-width: 1040px`, white/semantic-theme surface, 32px padding at viewport widths >=1100px, 24px at 760–1099px and 24px vertical/16px horizontal below 760px. The pane and main scroll independently. Category headings use one live-announced H1 at 26px/32px semibold, one purpose description when applicable and one scope line at 12px/18px. Section headings are 16px/24px; body text is 14px/20px. Toolbars move below titles below 1100px; row actions wrap below metadata. Settings-only controls retain at least 40px height, 8px corners, distinct AA control borders/focus tokens, 16px row padding and 24px section gaps. The application rail retains its 44px targets.
 
@@ -450,15 +475,27 @@ Forms share the category anchor and a 720px maximum, using two columns only at a
 
 Notifications renders saved Enabled/Disabled values as noninteractive label/value rows. Explicit Edit focuses the first checkbox; Save/Cancel return once to the enabled Edit action within the same active visit. A delayed refetch may postpone return, but deliberate focus transfer, another dialog/drawer, inactivity, window loss or departure discards that intent. Native status and server/client preferences remain independent, with visible Inbox/no-implicit-approval guidance and the full supplementary About notification delivery disclosure. Appearance/device controller and persistent Connection controls remain outside visit disposal. Backups retains semantic inventory, independently observed accepted jobs and manual history tabs, with short Refresh/Dismiss tracking text and full identity-specific accessible names. Diagnostics keeps its original 1100px/1200px viewport breakpoints, exact canonical BigInt values and independent caveats.
 
-Use existing semantic light/dark/System tokens and system font; no external assets/fonts/dependencies, inline styles, gradients, transparency, blur or CSP exceptions. Preserve full wrapping identities/names/bytes/timestamps and keyboard/focus semantics. Browser validation covers all 18 synthetic empty/populated categories at 1920×1080, 1440×1000, 1440×900, 1280×820, 960×640, 640×480 and effective 200% CSS layouts. Fixture/browser/build/package checks remain distinct from actual browser chrome zoom, packaged CEF, macOS/Windows/X11, screen-reader, real-account and OS banner acceptance. Record revision/commands/results/limits in PRs/issues/CI artifacts, never repository evidence documents.
+Use existing semantic light/dark/System tokens and system font; no external assets/fonts/dependencies, inline styles, gradients, transparency, blur or CSP exceptions. Preserve full wrapping identities/names/bytes/timestamps and keyboard/focus semantics. Presentation validation must cover all 17 synthetic empty/populated categories at 1920×1080, 1440×1000, 1440×900, 1280×820, 960×640, 640×480 and effective 200% CSS layouts. Fixture/browser/build/package checks remain distinct from actual browser chrome zoom, packaged CEF, macOS/Windows/X11, screen-reader, real-account and OS banner acceptance. Record revision/commands/results/limits in PRs/issues/CI artifacts, never repository evidence documents.
+
+### Settings task dialogs
+
+Settings keeps all 17 category lists and their owning controllers mounted when an operation opens. `settings-task.tsx`, `settings-task-context.ts` and `settings-task.css` add a Settings shell over the shared native `DialogSurface` in `ui.tsx`. Other dialogs retain their presentation. Appearance immediate choices, Import / Export, Connection & diagnostics, backup operation history and short Details disclosures stay in the category page. Search, page tokens, disclosures and scroll position survive opening and closing a task.
+
+Use the closed size enum: 480px confirmations for configuration deletion, account disconnect/logout, device revocation and network-profile/backup deletion; 768px forms for Project, Provider, Model, account preferences and GitHub-profile create/edit, pricing, routing preview and notification edits; 960px workflows for Agent Workers, Instructions, repository editing/registration, account creation/connection/management, SSH setup, Runner Device details, network settings, pairing documents and backup inspection. Width never exceeds viewport minus 32px; height never exceeds viewport minus 48px. Use 16px outer corners, 20px titles, 16px section titles, 14px body and 12px hints/scope, existing theme tokens and 40px controls with 8px corners. Header and action footer remain fixed; only the body scrolls. Narrow forms stack and wrap full identifiers/actions. These task rules supersede the ordinary-flow action and page-form geometry above only while a task is open.
+
+X, Escape and local Cancel dismiss presentation; backdrop clicks do not dismiss it. Before submission, dispose drafts and secret inputs. Pending or unconfirmed submissions instead hide the same mounted task controller, retain its original immutable request, receipt/job/operation identity and necessary transient authority within the current category, and expose a status plus View original operation in the list. Block replacement submissions; an uncertain write has only its existing exact original retry. Clear editable secret inputs on dismissal while preserving any credential bytes already owned by an authorized original request. Same-computer encrypted imports retain their exact ciphertext/digest for explicit retry; dismissal clears editable copies and cannot prepare a replacement protected recipient during uncertainty. SSH start keeps its original setup ID, blocks replacement host inspection and is never resubmitted after an ambiguous start. Dismissal never calls server/Worker cancellation or OAuth Cancel. Explicit business cancellation remains a separate operation. Confirmed saves use the existing completion and list refresh; accepted jobs retain their existing observation and Done flow. Late hidden results cannot reopen a dialog, navigate or take focus.
+
+Internal workflow and confirmation steps share one native modal surface, keeping their parent controllers mounted rather than stacking dialogs. The dialog has no separate Settings lifetime. Category departure and Settings exit retain the disposal rules below, including original native/account ownership and detached work. The native modal makes the background inert and contains Tab/Shift+Tab. Creation focuses its first input, long details focus their title and destructive confirmations focus the least destructive Cancel/Keep action. Restore focus only to a connected visible opener; otherwise use that category's primary action/title. Do not overwrite a deliberate focus transfer or restore a departed category. Closing a compact category drawer precedes opening its task. Follow the [W3C modal Dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
+
+Validation covers open/close/save/failure/denial, unchanged list position, discarded drafts/secrets, pending close, exact uncertain retry, duplicate blocking, hidden late results and departure, X/Escape/Tab/Shift+Tab/return focus, drawer handoff, Strict Mode and same-server reconnect. The frontend jsdom suite uses at most four workers to preserve timer responsiveness during concurrent native builds; test and product deadlines remain independent and unchanged. Raise concurrency only after verifying those suites under peak shared-host load. Browser fixtures cover light/dark at 1440×900, 1280×820, 960×640, 640×480 and effective 200% layouts. Keep those checks separate from actual packaged CEF keyboard/zoom and account/platform acceptance. Prepare required generated clients and hydrated LFS assets, run `pnpm test` in `apps/delidev`, and remove generated `dist` directories after validation. No RPC, schema, migration or dependency changes are required.
 
 ### Settings screen and visit lifetime (issue #1236)
 
 Settings selects the internal `Surface.Settings` destination and renders its category content inside `#main`. The bottom Settings rail item has `aria-current="page"`; all ordinary application navigation remains usable. Categories use the shared sidebar outlet and its 52px rail/288px context pane, contracting to 256px at widths up to and including 1100px. Below 760 CSS pixels, **Open settings categories** opens the existing shared navigation drawer. Settings has no outer dialog, modal header, Close action, Escape hint, backdrop, background inertness, focus trap or opener restoration. Escape does not leave this page; actual child dialogs and the compact drawer retain their own dismissal and focus behavior. No native window geometry changes.
 
-The 18 independent category screens appear in this order: AI (AI Subscription, AI API Keys, API Providers, Models, Agent Workers, Instructions), Coding (Projects, Repositories, Git Profiles, Git), Device management (Runner Devices, Paired devices), and System (Appearance, Server preferences, Connection & diagnostics, Notifications, Import / Export, Backups). All existing category IDs remain stable. Git Profiles renames the former Integrations presentation while retaining `integrations`; Git adds `git-workflow`. Each menu opens its own screen without a Git tab container. Git owns global Worktree fetch and PR remediation presentation; Server preferences retains account routing and the existing separately owned Network settings. Navigation appears once in the shared pane/drawer; there is no separate Settings sidebar or compact category select. Content uses the shared issue #1256 padding: 32px at >=1100px, 24px at 760–1099px and 24px vertical/16px horizontal below 760px. The shared pane and main scroll independently and reflow at 200% zoom without clipping controls or focus outlines. AI Subscription remains `subscription-accounts`, with the same label in navigation and heading.
+The 17 independent category screens appear in this order: AI (AI Subscription, AI API Keys, API Providers, Agent Workers, Instructions), Coding (Projects, Repositories, Git Profiles, Git), Device management (Runner Devices, Paired devices), and System (Appearance, Server preferences, Connection & diagnostics, Notifications, Import / Export, Backups). All existing category IDs remain stable. Git Profiles renames the former Integrations presentation while retaining `integrations`; Git adds `git-workflow`. Each menu opens its own screen without a Git tab container. Git owns global Worktree fetch and PR remediation presentation; Server preferences retains account routing and the existing separately owned Network settings. Navigation appears once in the shared pane/drawer; there is no separate Settings sidebar or compact category select. Content uses the shared issue #1256 padding: 32px at >=1100px, 24px at 760–1099px and 24px vertical/16px horizontal below 760px. The shared pane and main scroll independently and reflow at 200% zoom without clipping controls or focus outlines. AI Subscription remains `subscription-accounts`, with the same label in navigation and heading.
 
-Edit/account/delete/routing/Worker/device/pricing and child-workflow state never locks category navigation. Selecting another category disposes the previous category and opens the target with fresh presentation state. Same-category reselection preserves its current state. Operation-local validation, revision, busy and exact-retry guards remain authoritative. Category selection exposes current state and visible focus; the active category is announced. A visit is uninterrupted time on Settings. Reselecting its active rail item preserves the current visit, selected category and current workflow. Category changes, responsive changes and same-identity reconnect retain that visit. A fresh ordinary visit starts at AI Subscription. Home **New project** and **Create a project** enter Projects creation with once-only Name focus; Pull requests **Repository settings** enters Repositories. Prerequisite, New session guidance and tray entries continue to enter Settings. Entry focus transfers after destination commit/drawer close to visible main or the compact opener, with explicit Name focus remaining authoritative.
+Retained edit/account/delete/routing/Worker/device/pricing and child-workflow state does not lock category navigation after its task is hidden. An open native task temporarily makes the background inert. Selecting another category disposes the previous category and opens the target with fresh presentation state. Same-category reselection preserves its current state. Operation-local validation, revision, busy and exact-retry guards remain authoritative. Category selection exposes current state and visible focus; the active category is announced. A visit is uninterrupted time on Settings. Reselecting its active rail item preserves the current visit, selected category and current workflow. Category changes, responsive changes and same-identity reconnect retain that visit. A fresh ordinary visit starts at AI Subscription. Home **New project** and **Create a project** enter Projects creation with once-only Name focus; Pull requests **Repository settings** enters Repositories. Prerequisite, New session guidance and tray entries continue to enter Settings. Entry focus transfers after destination commit/drawer close to visible main or the compact opener, with explicit Name focus remaining authoritative.
 
 Issue #1236 changes navigation and supersedes the modality from #1045 while retaining the #1138 disposal safeguards. Changing categories unmounts the category-owned tree and discards filters/cursors, details, editors, wizard steps, drafts, confirmations, secrets/disclosures, pending category entry, pending client waits and uncertain retry presentation. Leaving Settings also discards category selection. It never restores a former modal opener. There is no discard confirmation, recovery banner, implicit save, abandoned replay, server/native cancellation or rollback. The device-owned Appearance controller remains above connection state; its committed selection and pending native saves survive Settings presentation disposal and connection changes. Persisted settings, accepted server/native effects and receipts, authorization, selected conversation/composer, New session drafts and sibling workflows remain authoritative and intact.
 
@@ -468,19 +505,62 @@ Menu selection lives outside the category lifetime. Only the selected category b
 
 Every category has one visible category title and its existing scope/help description above its content. Configuration list toolbars keep Refresh settings and any eligible existing New action together at the upper right; detailed editors retain their existing explicit save/cancel/back actions. Devices and Runner Devices do not gain a generic create action, and Server preferences remains a revision-bound singleton. API Providers keeps the capability-gated Custom provider action and its successful final-first-page custom-provider empty region. Initial loading and initial read errors do not render successful emptiness or grant new create eligibility. A cached result remains visible during refresh; a refresh error shows its sanitized correlated failure and a stale-results notice. Pagination is hidden only for a successful empty first page with no continuation token; an empty later page still offers First page. Query staleness alone is not a read failure.
 
-The Models list has one bounded, left-aligned column (100% width, maximum 1040 CSS pixels). Its single live-announced 26px semibold Models heading, “Saved on the selected server.” subtitle and capability-gated 40px New Model action share the header; the common category heading remains for editors/pricing and the other categories that use it; Diagnostics and Backups retain their own titles. The labeled active-provider search is at most 420px wide, at least 40px high and bounded to 256 characters. Provider groups preserve server order, semantic article rows, full model/native identity, CLI alias, NEW/Reviewed, Visible/Hidden, configured harnesses and both Edit model/Token pricing actions. Unsupported schema actions stay disabled. Names, identifiers and actions wrap; below 1100px row actions stack beneath metadata. Groups/empty regions use thin neutral rules and flat rows with no new assets or inline styles. The existing Settings padding and shared below-760px navigation drawer remain authoritative.
+The former Models Settings category and independent model editor are removed.
+The Agent Worker wizard owns model selection; Usage owns model details and Token
+pricing. CLI/RPC model configuration remains compatible. Internal canonical
+models retain their original IDs, discovery provenance, display settings and
+historical attribution. Source-scoped server catalog queries supply autocomplete.
 
-Only Models search/cursor state is lifted into the category-owned workspace. A search change resets its model cursor atomically; provider/model cursors remain independent. That state survives list/editor/pricing, responsive and same-identity reconnect transitions within the active category. Inactive list reads stay disabled. The existing visit disposal, mutation locks, exact uncertain writes and abort/late-result guards remain authoritative; leave/reenter never restores abandoned Models state or retries.
+### Agent Worker wizard
 
-Models uses the capability-backed enabled-provider inventory and generated SearchModels with enabled-providers-only, hidden entries included and pages of 50. Initial inventory/model loading is a status, capability absence is update-required, and sanitized correlated read failures remain distinct from successful emptiness. Successful empty states distinguish no enabled API providers (with API Providers guidance), unfiltered first-page “No models yet” with “Add models manually using New Model.”, searched first-page “No models match this search.” and later-page “No models on this page.” The unfiltered first-page panel is at least 160px high and grows with content. Only complete nonempty inventory with available account counts and an exact zero connected-account sum adds “You can add models without an API account.” and “Connect an account only for automatic model discovery.” Manual registration remains available under the existing capability gate.
+Creation and editing use the same four steps: Harness, Accounts, Model, Configure.
+Fill existing values on edit. Stage navigation never saves. Choose a supported
+harness, then one subscription service or API provider and at least one account.
+Multiple accounts must share that source. Keep their explicit order and relative
+weights (1–1,000), all six routing policies and the inherited server default.
+Fixed routing permits exactly one account. Source or harness changes clear
+incompatible account/model choices and require explicit selection; ordinary Back
+and disclosure changes retain values. Legacy accountless Workers remain readable
+through existing APIs, but need an account before wizard resaving. Retired models
+remain inert; affected Workers require explicit current account and model
+reconfiguration without rewriting historical executions.
 
-Same-query/page cached data remains visible during refresh; failed refresh shows separate inventory/model failures and a stale-results notice. Retained empty data keeps its original scope-specific panel/message and pagination alongside that notice; initial failures without retained data never render empty results. Each transient read failure exposes its own deliberate Retry, disabled while fetching, that refetches only the current read/query/cursor and cannot write, traverse pages or grant capability/permission eligibility. A new query/page never borrows old-scope rows. Pagination hides only after a successful empty first model page without continuation; an empty later page retains First page. Keep the existing First page/Load more behavior and the visible footnote “New model choices come only from enabled API providers. Existing disabled references stay attached to their original identities.” below results/pagination. No totals, sort/filter, discovery action or readiness inference is added.
+The Model step uses source-scoped server catalog autocomplete and permits exact
+native ID input after loading, empty, failed or unsupported discovery results.
+Typing never contacts a provider endpoint. Endpoint refresh uses the deliberate
+existing discovery RPC and original account revision. Codex native observation
+retains explicit selected-account/Runner Device/installation scope, accepted jobs,
+immutable pages and original uncertain retries. Subscription native model lookup
+remains unsupported. Connection and saved health observations remain separate
+from execution eligibility; mount, navigation and save never start login,
+connection, validation or inference. Saving declares configured harness/model
+compatibility; execution still rechecks current authority and native support.
+
+Configure retains name, permission, reasoning, instructions and native options,
+including mounted collapsed values, and shows the selected source/model/accounts.
+Submit only SaveAgentWorker under negotiated System capability 33; older servers
+show update guidance. Go validates source membership and atomically reuses/creates
+the internal model plus Worker under the original revision and UUID-v7 receipt.
+Keep exact uncertain request bytes, current-revision conflicts, visit disposal,
+late-response fencing and same-identity reconnect/Strict Mode behavior.
+
+Use the shared 1040px left column, 720px wizard body, flat rows/dividers, semantic
+themes, 40px controls and 8px corners. Input/select focus preserves ordinary
+boundaries; buttons/disclosures retain visible focus. The combobox supports
+Arrow Up/Down, Enter and Escape with active-descendant semantics. Stage changes
+focus their heading; invalid configuration returns to its stage and input. Narrow
+windows use one column and compact stage labels. Footer Cancel/Back/Next and the
+final Save remain in normal document flow. Verify 1280×800, 960×640, 640×480,
+effective zoom and light/dark browser fixtures separately from actual browser
+zoom, packaged native platforms and real-account acceptance. Usage model details
+provide current revision-bound Token pricing, including models without usage;
+retired historical model attribution remains read-only.
 
 Agent Workers uses the shared left-aligned `width: 100%`, `max-width: 1040px` column inside the shared 32px/24px/16px content padding. Its single 26px title is followed by the 14px summary **Reusable configurations for your agents.** and 12px scope **Saved on the selected server.** Keep Refresh settings and the single eligible **+ New Agent Worker** action together at the upper right in list mode, hiding that toolbar during existing parent workflows. Below 1100 CSS pixels, the Agent toolbar moves below the title; every category uses this shared toolbar breakpoint. A subtle divider ends the heading, with content 24px below it. Controls retain 40px minimum height, 8px corners and visible focus.
 
 After a successful empty first page without a continuation token, Agent Workers shows one semantic-themed region with thin neutral rules and 160px minimum height. Place a decorative, accessibility-hidden 32px outline icon at the left, with the 16px heading **No agent workers yet**, and 14px copy **Define a harness, model, accounts, and instructions, then reuse them in new sessions.** No second creation action appears in this panel. Loading, initial permission/read errors and failed cached-empty refreshes never satisfy that success-only predicate. Empty continuation or later pages say **No agent workers on this page.** and retain the original First/Next controls, kind, page size and opaque server tokens.
 
-Loaded Agent configurations occupy one flat list with divided rows. Preserve exact inert names and full IDs, with optional existing Harness/Status text only; no health or readiness is inferred. Unsupported schemas expose only inert name/alias text within the existing 256-byte UTF-8 Agent name limit and full identity; oversized projected names retain the Unnamed fallback, and all existing unsupported-schema action gates remain enforced. Check code-unit length before allocating a UTF-8 validation buffer. Visible actions appear in Edit, Preview routing, Delete order; each accessible action name includes the configuration name. Rows, long text and controls wrap without clipping. Reuse the existing editor, read-only routing and explicit revision-bound deletion confirmation, ordered account/template/options validation and exact uncertain requests. Reflow and same-identity reconnect retain these only within the same visit. The common #1138 disposal/default-category policy above remains authoritative for navigation away, including late outcomes and already accepted server effects.
+Loaded Agent configurations occupy one flat list with divided rows. Preserve exact inert names and full IDs, with optional existing Harness/Status text only; no health or readiness is inferred. Unsupported schemas expose only inert name/alias text within the existing 256-byte UTF-8 Agent name limit and full identity; oversized projected names retain the Unnamed fallback, and all existing unsupported-schema action gates remain enforced. Check code-unit length before allocating a UTF-8 validation buffer. Visible actions appear in Edit, Preview routing, Delete order; each accessible action name includes the configuration name. Rows, long text and controls wrap without clipping. Use the creation/edit wizard above, existing read-only routing and explicit revision-bound deletion confirmation, ordered account/template/options validation and exact uncertain requests. Reflow and same-identity reconnect retain these only within the same visit. The common #1138 disposal/default-category policy above remains authoritative for navigation away, including late outcomes and already accepted server effects.
 
 Git Profiles uses the approved issue #1147 content hierarchy within this shell. Its description is “Manage GitHub profiles for repository access. AI accounts are configured separately.” One left-aligned GitHub panel, at most 1040 CSS pixels wide, contains the provider heading, Refresh, bounded profile rows and exactly one New GitHub profile action. Keep that action in the category header; a successful empty first page without a continuation or read failure shows first-profile guidance with three static informational steps and no second action. Loading, initial failure, cached refresh/failure and empty continuation/later pages remain distinct; create keeps its original eligibility before read success and paging keeps its original opaque cursor and 50-resource size.
 
@@ -655,7 +735,7 @@ Settings lists paired devices with independent authorization, type, pairing/revo
 Issue #1239 defines the **Paired devices-only** compact list in
 `device-settings.tsx` / `device-settings.css` and the existing Settings workspace.
 Keep the shared native window and Settings application screen owned by #1236,
-its shared category context pane/drawer, all 18 category labels/order/IDs and
+its shared category context pane/drawer, all 17 category labels/order/IDs and
 the shared issue #1256 body rules. Left-align the category in a fluid 100%-width
 column with a 1040px maximum inside shared 32px/24px/16px responsive padding. The one
 26px semibold title precedes **Pair devices using a short-lived document.** (14px)
@@ -938,6 +1018,30 @@ Original Stop closures explain that the unanswered request was canceled after ve
 
 ## Security
 Only trusted app content receives native capabilities. Renderer/server calls require exact allowed origins and the explicitly selected connection. Account credentials and GitHub PATs must never enter read responses. Never expose a shell, arbitrary executable/file reader, network proxy, or secret-bearing diagnostic object to the renderer.
+
+### Development browser storage
+
+Only macOS native builds with `debug_assertions` select CEF `SecretStorage::Mock`.
+Every other native build selects `SecretStorage::System`. The mode is compiled,
+not selected by a renderer, environment variable or application argument.
+The embedded development launch enables `custom-protocol`; at the pinned Tauri
+revision that makes `Auto` select System even in a debug build, so both modes
+must be selected explicitly. Mock avoids Chromium Safe Storage Keychain prompts
+after ad-hoc rebuilds without an Apple developer account or signing certificate.
+It encrypts cookies with a public test key and provides no meaningful protection
+at rest. Emit one bounded development notice and the closed mode classification,
+never cookie bytes, URLs, native errors or private filesystem paths.
+
+The original `browser-data` remains the System CEF root. Development uses its
+owner-private `development` child for CEF and external request-context data.
+Shared tabs, profile-removal journals and forgotten-connection markers remain in
+their original locations. Neither mode copies or re-encrypts existing cookies;
+the first development launch uses a fresh cookie jar. Existing configuration,
+account identity, Go protected credentials and runtime pins remain unchanged.
+Follow the [browser contract](cmds-delidev-browser-contract.md) for exact
+mode-specific paths, the shared process lease and deletion of both copies.
+Development Mock is a contributor workflow exception; it does not satisfy
+production Keychain, responsive native shutdown or release acceptance.
 
 ## Logging
 Expose typed safe problems and correlation IDs, plus independent connection/retry state. Never log input, resource documents, tokens, native output or account locators. Native logs use stable operation/failure classifications.
@@ -1330,6 +1434,10 @@ could not bind the occupied default port, so it provides no new connected-server
 retention acceptance. Preserve the original pin and encryption; do not use a
 mock Keychain, force-exit success or unseen prompt handling as a fix.
 
+The development storage exception above does not resolve this production/native
+acceptance gap. Any new development observation must remain separate from that
+original System-storage evidence and its unresolved shutdown requirements.
+
 
 ### Combined desktop navigation and backup surfaces
 
@@ -1355,7 +1463,7 @@ entries through navigation. Each successful directly observed revision refreshes
 the image inventory; reads stop while hidden and uncertain acceptance retries
 still use only their original request.
 
-The **API Providers** and **Models** settings content follows [provider activation](cmds-delidev-provider-activation-contract.md). Validate all required inventory capabilities before enabling these workflows; render server-derived exact account counts and bounded results, and use active-only model queries for display and new selections. Zero accounts is a valid provider state: keep Add AI API key optional and show no account-required error or notice. Models allow manual registration without an account and explain that automatic discovery requires a connected entry in AI API Keys. Real request failures remain visible. Off references remain explicit and retained. Switches use exact revision-bound intents and resolve uncertain outcomes from the same request; no optimistic state is authority. This feature does not implement Settings shell geometry or the account wizard.
+The **API Providers** settings content follows [provider activation](cmds-delidev-provider-activation-contract.md). Require its existing inventory capabilities, preserve server-derived exact account counts and bounded pages, and keep zero-account providers valid. Explicit Off references retain their identities. Switches use exact revision-bound requests and original-request reconciliation after uncertainty. Agent Worker model selection follows the wizard contract; standalone Models settings is removed. This does not change API account creation, connection or validation authority.
 
 ## Preserved project-index implementation notes
 
@@ -1511,7 +1619,7 @@ AI Subscription uses System capability 17 and schema-v2 service-native accounts 
 
 ### Network routing settings
 
-Server preferences and each Runner Device inspection provide a collapsed Network settings workspace under the existing categories. Use authenticated generated Network/Resource queries, exact revision selection and explicit uncertainty controls for profile writes/deletion. Preserve write-only proxy credentials, profile pagination and the distinct desired/effective/native route states from the [network contract](cmds-delidev-network-contract.md). A current control generation never implies native use, inference or account readiness.
+Server preferences and each Runner Device inspection open a Network settings task dialog under the existing categories. Use authenticated generated Network/Resource queries, exact revision selection and explicit uncertainty controls for profile writes/deletion. Preserve write-only proxy credentials, profile pagination and the distinct desired/effective/native route states from the [network contract](cmds-delidev-network-contract.md). A current control generation never implies native use, inference or account readiness.
 
 Encrypted Worker export starts from its bounded original public recipient and separately displays authenticated ciphertext digest. Ciphertext is transient presentation, not persistent query state. Prepare/Import/Status on this computer reaches a closed trusted-window bridge for only its already registered matching Worker; Go performs protected storage and cryptography. Other Runner Devices use their equivalent CLI. Preparation/import does not register, start, stop or replace a Worker. All asynchronous file/native/RPC results belong to the current Settings opening; leaving disposes local presentation without replay or implicit native cancellation.
 

@@ -1,5 +1,32 @@
 # DeliDev source ownership and compatibility
 
+## Agent Worker source-route reservations
+
+Issue #964 reserves System capability `AGENT_WORKER_SOURCE_ROUTES_V1 = 36`
+and `SaveAgentWorkerRequest.route_models = 5`, reusing the existing typed model
+selection. Capability 35 remains owned by known subscription models. Establish
+this closure on main before dependent implementation. Reservations do not change
+active schemas, generated bindings, resource documents, SQLite migrations or
+runtime support. The planned feature uses ordered same-source account groups
+with source-specific models under one Harness, confirmed-quota-only fallback at
+first execution, and automatic preference for observed recovered quota. Existing
+sessions retain their selected account/model and immutable attribution.
+
+
+
+## Known subscription model reservations
+
+Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
+and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
+advisory subscription catalog. The closed catalog-source enum reserves
+UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
+reserves native ID/display name/order/minimum harness version/retirement date
+fields 1–5. The request reserves subscription service field 1; the response
+reserves subscription service/models/catalog version/updated at/source fields 1–5.
+Establish these allocations on main before dependent implementation. Reservations
+grant no catalog retrieval, authentication, account entitlement, native discovery
+or execution capability. No database migration is introduced.
+
 ## Scope
 
 The 2026-09-30 structural change preserves the main implementation while preparing
@@ -33,9 +60,10 @@ The Agent Worker wizard amendment under issue #964 reserves System capability
 `SaveAgentWorkerRequest` and `AgentWorkerModelSelection` declarations. The request
 reserves mutation/document/model/schema-version fields 1–4; model selection
 reserves canonical model ID/native ID/expected model revision fields 1–3.
-Establish this closure on main before implementing the source-scoped wizard and
-atomic model/Agent save. It changes no active schema, runtime capability or
-database migration, and grants no native execution or account authority.
+PR #1351 established this closure on main before the source-scoped wizard and
+atomic model/Agent save. The implementation reuses the existing acknowledgement
+and storage schemas without a database migration. Reservations alone still grant
+no runtime support, native execution or account authority.
 
 Keep package `delidev.v1`, Go import paths, RPC procedure names, existing field and
 enum numbers, JSON meanings and TypeScript exports stable. Service-specific schema

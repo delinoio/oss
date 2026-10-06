@@ -1,15 +1,18 @@
+- Agent Worker source routes reserve System capability 36 and SaveAgentWorkerRequest.route_models field 5 under issue #964. Establish both on main before activation; reuse AgentWorkerModelSelection and the save acknowledgement. Preserve the legacy single-model request and capability 35. Reservations add no migration or routing capability.
+
+- Known subscription model suggestions under issue #964 reserve System capability 35 and the new catalog-source enum/model/list declarations. Establish these allocations on main before dependent implementation. Reservations grant no known-model retrieval, native discovery, account entitlement or execution capability and add no migration. Follow the catalog, protocol and structure contracts.
+
 # DeliDev delidev ownership
 
 - GitHub token-first onboarding under issue #964 reserves System capability 34, the new `GitHubTokenKind` / `GitHubTokenIdentityState` enums and `InspectGitHubToken` / `PrepareGitHubTokenForm` request/response and identity declarations. Establish these reservations on main before dependent schemas or code. Reservations grant no token inspection, credential retention or browser authority and require no migration. Follow the integration and protocol contracts.
 
 - General API OAuth follows `docs/cmds-delidev-account-oauth-contract.md`. Establish issue #964's inventory capability 6, device method 4, closed flow enum, Google options and additive Start/Complete fields on main before use. Preserve OpenRouter capability 5 and existing wire assignments. Reservations grant no OAuth support; new providers require registered DeliDev public/native apps, real API compatibility and native/server support before advertisement.
 
-- Agent Worker wizard reservations under issue #964 own System capability 33,
-  `ListResourcesRequest.subscription_service = 4`,
-  `SearchModelsRequest.subscription_service = 7`, and the new
-  `SaveAgentWorkerRequest` / `AgentWorkerModelSelection` declarations. Establish
-  them on main before dependent implementation. Reservations grant no wizard,
-  source-filter or atomic-save support and require no database migration.
+- Agent Worker wizard allocations reached main in PR #1351 before activation.
+  Capability 33 owns list-only source filters and typed atomic SaveAgentWorker.
+  Keep source filters out of shared snapshots/events, bind them into cursors,
+  reuse the existing save acknowledgement and preserve legacy APIs/storage.
+  Configured compatibility grants no native/account readiness; no migration is added.
 
 - Repository addition under issue #964 reserves System capabilities 31/32 and Worker capability 18 plus the five new listing/clone messages in `allocations.json`. Establish reservations on main before active declarations or generated code. Reservations grant no GitHub read or filesystem write; preserve server-only PATs, Worker-owned Git authentication and existing Local checkout deletion ownership. Follow the structure and protocol contracts.
 

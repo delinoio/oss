@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1143 owns the compact AI Subscription presentation; #1235 composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 18 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to #1096/#1104; unsupported Claude/Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
+Issue #1143 owns the compact AI Subscription presentation; #1235 composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to #1096/#1104; unsupported Claude/Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
 
 ## Runtime and Language
 
@@ -48,9 +48,15 @@ checks; this presentation alone grants no login capability. It contains no Runne
 
 Each window preserves its ID, order, remaining fraction, observation time and reset time. Finite fractions within [0, 1] become percentages and native progress elements with text equivalents; zero is observed zero rather than unknown. Missing/invalid values and future observation times have no valid bar. Observations older than five minutes, future observation times or elapsed resets are stale. Unknown, stale, failed and unsupported remain distinct; retained last-success values can remain visible with stale/failed text. An elapsed reset never implies recovery. No provider/window values are pooled. Refresh failure presentation retains the original successful windows/time supplied by its owner. An active surface schedules one presentation-only expiry at the next known freshness/reset boundary, without network requests; hidden/disposed surfaces clear it.
 
+## Task dialogs
+
+Keep the subscription inventory, filters, quota observations and short Details mounted in their category page. Account creation, browser sign-in and management use the shared 960px Settings task shell; account preferences use 768px, and disconnect/logout confirmation uses a 480px step in the same native dialog. Preserve all fields, full identities, service capability, revision and original native/account checks. The [desktop Settings task contract](apps-delidev-desktop-contract.md#settings-task-dialogs) owns sizing, scrollable body, fixed header/footer, focus and responsive behavior.
+
+Closing pending or uncertain sign-in hides its existing controller without canceling login, disposing the live callback authority or replaying any request. Show the original operation's status and explicit opener in the retained list. Category departure still disposes local callback/listener presentation under the existing lifetime. Keep explicit Cancel login/logout operations separate from X/Escape/local Cancel. A hidden successful sign-in may advance its own retained stage, but cannot reopen the dialog, navigate or focus name entry. Name entry receives its once-only focus only when the original task is visible. Exact uncertain requests and accepted native cleanup remain independently owned; the dialog grants no native capability.
+
 ## Storage
 
-All presentation state belongs to the active Settings category. Filters, details, Advanced state, drafts, confirmations and retry presentation survive reflow, same-category reselection and same-identity reconnect, and are discarded on category departure or leaving Settings under the desktop contract. Accepted server/Worker effects continue; category disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
+All presentation state belongs to the active Settings category. Filters, details, Advanced state, drafts, confirmations and retry presentation survive reflow, same-category reselection and same-identity reconnect, ; idle task dismissal also discards its drafts/secrets, while submitted pending/unconfirmed task dismissal only hides its retained controller. They are discarded on category departure or leaving Settings under the desktop contract. Accepted server/Worker effects continue; category disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
 
 ## Security
 

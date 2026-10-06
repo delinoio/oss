@@ -1,3 +1,4 @@
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
 import { SettingsHeading } from "./settings-presentation";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -72,6 +73,7 @@ export function Backups({ active }: { active: boolean }) {
     }
   }, [selected]);
   const [created, setCreated] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<InspectBackupResponse>();
   const [creationPage, setCreationPage] = useState("");
   const creations = useQuery(SystemQuery.listBackupCreations, { pageSize: 20, pageToken: creationPage }, { enabled: active, retry: false, refetchInterval: active ? 2000 : false });
@@ -87,7 +89,7 @@ export function Backups({ active }: { active: boolean }) {
   const checked = inspection.data?.backup?.id === selected && !inspection.error && !inspection.isFetching ? inspection.data : undefined;
   const confirm = active && checked !== undefined && confirmation === checked;
   useEffect(() => {
-    if (!active || inspection.isFetching || (confirmation !== undefined && confirmation !== inspection.data)) setConfirmation(undefined);
+    if (!active || inspection.isFetching || (confirmation !== undefined && confirmation !== inspection.data)) { setConfirmation(undefined); if (inspection.isFetching) setDeleteOpen(false); }
   }, [active, inspection.data, inspection.isFetching, confirmation]);
   return <section className="backups-settings" aria-label="Managed database backups">
     <SettingsHeading title="Backups" description="Manage database backups and follow backup operations." actions={<>
@@ -125,7 +127,7 @@ export function Backups({ active }: { active: boolean }) {
         {!hidePager(page, inventory.data?.backups.length, inventory.data?.nextPageToken, inventory.error) ? <nav className="backups-actions" aria-label="Backup pages"><button disabled={!active || !page || inventory.isFetching} onClick={() => setPage("")}>First backup page</button><button disabled={!active || !inventory.data?.nextPageToken || inventory.isFetching || Boolean(inventory.error)} onClick={() => setPage(inventory.data!.nextPageToken)}>Next backup page</button></nav> : null}
       </footer>
     </section>
-    {selected ? <section className="backups-panel backups-inspection" aria-label="Backup integrity inspection">
+    {selected ? <SettingsTaskDialog key={selected} title="Backup integrity inspection" size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} retained={remove.busy || remove.uncertain} onDismiss={() => { setConfirmation(undefined); setDeleteOpen(false); }} close={() => { setSelected(""); setConfirmation(undefined); setDeleteOpen(false); }}><section className="backups-panel backups-inspection" aria-label="Backup integrity inspection">
       <h2 ref={inspectionHeading} tabIndex={-1}>Inspection: {selected}</h2>
       <Problem error={inspection.error} />
       {inspection.isFetching ? <p role="status">Checking the selected backup…</p> : null}
@@ -133,12 +135,14 @@ export function Backups({ active }: { active: boolean }) {
         <p role="status">Database integrity and original server identity verified.</p>
         <dl><div><dt>Backup ID</dt><dd><code>{checked.backup!.id}</code></dd></div><div><dt>Modified (UTC)</dt><dd><time dateTime={checked.backup!.modifiedAt}>{checked.backup!.modifiedAt}</time></dd></div><div><dt>Size</dt><dd>{bytes.format(checked.backup!.sizeBytes)} bytes</dd></div><div><dt>Schema</dt><dd>{checked.schemaVersion}</dd></div><div><dt>SHA-256</dt><dd><code>{checked.sha256}</code></dd></div></dl>
         <p>This observation does not restore data or prove that Worker files and credentials are recoverable.</p>
-        <fieldset className="backups-deletion"><legend>Permanent backup deletion</legend><p>The selected image will be deleted. Accepted deletion cannot be canceled or undone by restoring an older database.</p><label><input type="checkbox" checked={confirm} disabled={remove.busy || remove.uncertain} onChange={event => setConfirmation(event.target.checked ? checked : undefined)} />I confirm permanent deletion of backup {selected}</label><button className="backups-destructive" disabled={!active || !confirm || remove.busy || remove.uncertain || trackedDeletions.length >= maxTrackedJobs} onClick={() => { void remove.send({ requestId: newRequestId(), backup: checked.backup!, sha256: checked.sha256 }); }}>Permanently delete selected backup</button></fieldset>
+        <button type="button" className="backups-destructive" onClick={() => setDeleteOpen(true)}>Delete selected backup…</button>
+        {deleteOpen ? <SettingsTaskDialog title="Permanently delete backup" size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => { setDeleteOpen(false); setConfirmation(undefined); }}><fieldset className="backups-deletion"><legend>Permanent backup deletion</legend><p>The selected image will be deleted. Accepted deletion cannot be canceled or undone by restoring an older database.</p><label><input type="checkbox" checked={confirm} disabled={remove.busy || remove.uncertain} onChange={event => setConfirmation(event.target.checked ? checked : undefined)} />I confirm permanent deletion of backup {selected}</label><Problem error={remove.error} /><SettingsTaskActions><button className="backups-destructive" disabled={!active || !confirm || remove.busy || remove.uncertain || trackedDeletions.length >= maxTrackedJobs} onClick={() => { void remove.send({ requestId: newRequestId(), backup: checked.backup!, sha256: checked.sha256 }); }}>Permanently delete selected backup</button><button type="button" data-settings-task-cancel onClick={() => { setDeleteOpen(false); setConfirmation(undefined); }}>Keep backup</button>{remove.uncertain ? <button disabled={!active || remove.busy} onClick={remove.retry}>Retry the same backup deletion</button> : null}</SettingsTaskActions></fieldset></SettingsTaskDialog> : null}
       </> : null}
-      <div className="backups-actions"><button disabled={!active || inspection.isFetching} onClick={() => { setConfirmation(undefined); void inspection.refetch(); }}>Recheck selected backup</button><button onClick={() => { returnInspectionFocus.current = true; setSelected(""); setConfirmation(undefined); }}>Close backup inspection</button></div>
-    </section> : null}
-    <Problem error={remove.error} />
-    {remove.uncertain ? <button disabled={!active || remove.busy} onClick={remove.retry}>Retry the same backup deletion</button> : null}
+      <SettingsTaskActions className="backups-actions"><button disabled={!active || inspection.isFetching} onClick={() => { setConfirmation(undefined); void inspection.refetch(); }}>Recheck selected backup</button><button data-settings-task-cancel disabled={remove.busy || remove.uncertain} onClick={() => { returnInspectionFocus.current = true; setSelected(""); setConfirmation(undefined); }}>Close backup inspection</button></SettingsTaskActions>
+      <Problem error={remove.error} />{remove.uncertain ? <button disabled={!active || remove.busy} onClick={remove.retry}>Retry the same backup deletion</button> : null}
+    </section></SettingsTaskDialog> : null}
+    {!selected ? <Problem error={remove.error} /> : null}
+    {!selected && remove.uncertain ? <button disabled={!active || remove.busy} onClick={remove.retry}>Retry the same backup deletion</button> : null}
     {trackedCreations.length || trackedDeletions.length ? <section className="backups-panel backups-accepted" aria-label="Accepted backup operations"><h2>Accepted operations</h2><p>These jobs are observed directly, independently of the history pages below.</p>
       {trackedCreations.map(job => <BackupJob key={job.id} kind={BackupJobKind.Creation} accepted={job} active={active} completed={refresh} dismiss={() => setTrackedCreations(current => current.filter(item => item.id !== job.id))} />)}
       {trackedDeletions.map(job => <BackupJob key={job.id} kind={BackupJobKind.Deletion} accepted={job} active={active} completed={refresh} dismiss={() => setTrackedDeletions(current => current.filter(item => item.id !== job.id))} />)}

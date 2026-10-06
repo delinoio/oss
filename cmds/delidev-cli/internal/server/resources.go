@@ -99,6 +99,10 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 			return f, err
 		}
 	}
+	f.SubscriptionService = rpc.SubscriptionService(input.SubscriptionService)
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || input.AccountType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API) {
+		return f, domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
+	}
 	switch input.AccountType {
 	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED:
 	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API:
@@ -111,7 +115,7 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 	if f.AccountType == domain.SubscriptionAccount && f.ProviderID != "" {
 		return f, domain.Fail(domain.InvalidArgument, "Subscription account lists do not use providers.", "List subscription service accounts without a provider filter.")
 	}
-	if (f.AccountType != "" || f.ProviderID != "") && f.Kind != domain.AccountKind {
+	if (f.AccountType != "" || f.ProviderID != "" || f.SubscriptionService != "") && f.Kind != domain.AccountKind {
 		return f, domain.Fail(domain.InvalidArgument, "Account type filtering is supported only for account lists.", "Select account as the resource kind.")
 	}
 	if input.Filter.PageToken != "" {
