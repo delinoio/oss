@@ -35,16 +35,17 @@ const (
 )
 
 type cloneClaim struct {
-	Version         int         `json:"version"`
-	JobID           domain.ID   `json:"job_id"`
-	Digest          string      `json:"digest"`
-	Parent          string      `json:"parent"`
-	ParentIdentity  string      `json:"parent_identity"`
-	Staging         string      `json:"staging"`
-	StagingIdentity string      `json:"staging_identity"`
-	Final           string      `json:"final"`
-	Phase           clonePhase  `json:"phase"`
-	Output          *Inspection `json:"output,omitempty"`
+	Version          int         `json:"version"`
+	JobID            domain.ID   `json:"job_id"`
+	Digest           string      `json:"digest"`
+	Parent           string      `json:"parent"`
+	ParentIdentity   string      `json:"parent_identity"`
+	Staging          string      `json:"staging"`
+	StagingIdentity  string      `json:"staging_identity"`
+	CheckoutIdentity string      `json:"checkout_identity,omitempty"`
+	Final            string      `json:"final"`
+	Phase            clonePhase  `json:"phase"`
+	Output           *Inspection `json:"output,omitempty"`
 }
 
 func cloneRecoveryRequired() error {
@@ -66,6 +67,9 @@ func writeCloneClaim(path string, claim cloneClaim) error {
 // Final publication transfers the checkout to the user's Local ownership, so no
 // later failure or configuration deletion may remove it.
 func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest) (result Inspection, returned error) {
+	bounded, cancel := context.WithTimeout(ctx, RepositoryCloneTimeout)
+	defer cancel()
+	ctx = bounded
 	defer func() {
 		if returned != nil && g.Logger != nil {
 			g.Logger.WarnContext(ctx, "repository_clone_failed", "job_id", request.JobID, "code", domain.SafeError(returned).Code)
@@ -82,6 +86,9 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	}
 	if domain.Text(request.ParentPath, "clone parent path", 4096, true) != nil || !filepath.IsAbs(request.ParentPath) {
 		return result, domain.Fail(domain.InvalidArgument, "Choose an absolute parent folder on this computer.", "The parent folder must already exist.")
+	}
+	if err := ctx.Err(); err != nil {
+		return result, domain.SafeError(err)
 	}
 	parent, err := filepath.EvalSymlinks(request.ParentPath)
 	if err != nil {
@@ -100,6 +107,9 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 			return result, cloneConflict()
 		}
 		return result, cloneRecoveryRequired()
+	}
+	if err := ctx.Err(); err != nil {
+		return result, domain.SafeError(err)
 	}
 	claims := filepath.Join(privateRoot, "repository-clones")
 	if err := security.PrivateDir(claims); err != nil {
@@ -155,8 +165,9 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 			returned = cloneRecoveryRequired()
 		}
 	}()
-	bounded, cancel := context.WithTimeout(ctx, RepositoryCloneTimeout)
-	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return result, domain.SafeError(err)
+	}
 	if g.Logger != nil {
 		g.Logger.InfoContext(ctx, "repository_clone", "job_id", request.JobID, "phase", cloneCreated)
 	}
@@ -169,9 +180,36 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 		return result, domain.SafeError(err)
 	}
 	checkout := filepath.Join(staging, "checkout")
+	// Git accepts an existing empty staging checkout. Capture its inode before
+	// Git creates content so completion cannot adopt a replacement checkout.
+	if err := os.Mkdir(checkout, 0700); err != nil {
+		return result, domain.SafeError(err)
+	}
+	claim.CheckoutIdentity, err = directoryPathIdentity(checkout)
+	if err != nil {
+		return result, cloneRecoveryRequired()
+	}
+	if err := writeCloneClaim(claimPath, claim); err != nil {
+		return result, cloneRecoveryRequired()
+	}
+	if identity, err := directoryPathIdentity(parent); err != nil || identity != parentIdentity {
+		return result, cloneRecoveryRequired()
+	}
+	if identity, err := directoryPathIdentity(staging); err != nil || identity != stagingIdentity {
+		return result, cloneRecoveryRequired()
+	}
 	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "clone", "--no-recurse-submodules", "--template=" + g.HooksDir, "--", request.URL, checkout}
 	if _, err := g.run(bounded, staging, args...); err != nil {
 		return result, err
+	}
+	if identity, err := directoryPathIdentity(parent); err != nil || identity != parentIdentity {
+		return result, cloneRecoveryRequired()
+	}
+	if identity, err := directoryPathIdentity(staging); err != nil || identity != stagingIdentity {
+		return result, cloneRecoveryRequired()
+	}
+	if identity, err := directoryPathIdentity(checkout); err != nil || identity != claim.CheckoutIdentity {
+		return result, cloneRecoveryRequired()
 	}
 	g.readOnly = true
 	result, err = g.Inspect(bounded, checkout)
@@ -185,8 +223,8 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 		return Inspection{}, err
 	}
 	checkoutIdentity, err := directoryPathIdentity(checkout)
-	if err != nil {
-		return Inspection{}, err
+	if err != nil || checkoutIdentity != claim.CheckoutIdentity {
+		return Inspection{}, cloneRecoveryRequired()
 	}
 	claim.Phase = cloneValidated
 	if err := writeCloneClaim(claimPath, claim); err != nil {

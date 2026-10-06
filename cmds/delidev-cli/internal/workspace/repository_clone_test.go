@@ -148,3 +148,26 @@ func TestRepositoryCloneCleanupRejectsReplacedStaging(t *testing.T) {
 		t.Fatal("foreign staging removed")
 	}
 }
+
+func TestRepositoryCloneDoesNotAdoptReplacedCheckout(t *testing.T) {
+	g, private, request, _ := cloneFixture(t)
+	raw, err := os.ReadFile(g.Executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(raw), "for operand do target=$operand; done", "for operand do target=$operand; done\nmv \"$target\" \"$target-original\"\nmkdir \"$target\"", 1)
+	if err := os.WriteFile(g.Executable, []byte(changed), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Clone(context.Background(), private, request); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("replaced checkout accepted", err)
+	}
+	parent, _ := filepath.EvalSymlinks(request.ParentPath)
+	if _, err := os.Stat(filepath.Join(parent, request.DirectoryName)); !os.IsNotExist(err) {
+		t.Fatal("foreign checkout published")
+	}
+	staging := filepath.Join(parent, ".delidev-clone-"+string(request.JobID))
+	if _, err := os.Stat(filepath.Join(staging, "checkout", "tracked.txt")); err != nil {
+		t.Fatal("unproven replacement files were removed", err)
+	}
+}
