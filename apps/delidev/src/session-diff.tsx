@@ -6,13 +6,14 @@ import { encode } from "./documents";
 import { Comparison, readDiff } from "./session-diff-model";
 import { workspaceReadOptions } from "./session-files";
 import { Problem } from "./ui";
-import { LocalReviews } from "./local-reviews";
+import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 
 export function SessionDiff({ sessionId, worktree, close }: { sessionId: string; worktree: boolean; close: () => void }) {
   useLocale();
   const heading = useRef<HTMLHeadingElement>(null);
   const roots = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: "roots" }) }, workspaceReadOptions);
   const [repository, setRepository] = useState<string>();
+  const [acceptedDeletionId, setAcceptedDeletionId] = useState<string>();
   const available = roots.data?.roots.filter((root) => root.repository_id);
   const selected = repository ?? available?.find((root) => root.primary)?.repository_id ?? available?.[0]?.repository_id;
   useEffect(() => { heading.current?.focus(); }, []);
@@ -23,11 +24,12 @@ export function SessionDiff({ sessionId, worktree, close }: { sessionId: string;
     {roots.isPending ? <p role="status">{copy("session-diff.loadingWorkspaceRoots_0d8c0f")}</p> : null}
     {roots.error ? <button disabled={roots.isFetching} onClick={() => void roots.refetch()}>{copy("session-diff.retryWorkspaceRoots_6b5165")}</button> : null}
     {available?.length ? <label>{copy("session-diff.diffRepository_12d492")}<select value={selected} onChange={(event) => setRepository(event.target.value)}>{available.map((root) => <option key={root.repository_id} value={root.repository_id}>{root.name}{root.primary ? copy("session-diff.primary_b88564") : ""}</option>)}</select></label> : roots.data ? <p>{copy("session-diff.thisWorkspaceHasNoPreparedGit_9235fc")}</p> : null}
-    {selected ? <RepositoryDiff key={selected} sessionId={sessionId} repository={selected} worktree={worktree} /> : null}
+    <LocalReviewRecovery sessionId={sessionId} onAccepted={setAcceptedDeletionId} />
+    {selected ? <RepositoryDiff key={selected} sessionId={sessionId} repository={selected} worktree={worktree} acceptedDeletionId={acceptedDeletionId} /> : null}
   </aside>;
 }
 
-function RepositoryDiff({ sessionId, repository, worktree }: { sessionId: string; repository: string; worktree: boolean }) {
+function RepositoryDiff({ sessionId, repository, worktree, acceptedDeletionId }: { sessionId: string; repository: string; worktree: boolean; acceptedDeletionId?: string }) {
   useLocale();
   const [comparison, setComparison] = useState(worktree ? Comparison.Creation : Comparison.WorkingTree);
   const [path, setPath] = useState("."), [pathDraft, setPathDraft] = useState(".");
@@ -47,6 +49,6 @@ function RepositoryDiff({ sessionId, repository, worktree }: { sessionId: string
       {result.data.patch ? <pre tabIndex={0}>{result.data.patch}</pre> : <p>{copy("session-diff.noTrackedChangesInThisComparison_3c7169")}</p>}
       <h3>{copy("session-diff.untrackedFiles_be1f1a")}</h3>{result.data.untracked.length ? <ul>{result.data.untracked.map((file) => <li key={file}>{file}</li>)}</ul> : <p>{copy("session-diff.noUntrackedFilesInThisPath_bd7a62")}</p>}
     </section> : null}
-    {result.data ? <LocalReviews sessionId={sessionId} diff={result.data} reading={result.isFetching || Boolean(result.error)} /> : null}
+    {result.data ? <LocalReviews sessionId={sessionId} diff={result.data} reading={result.isFetching || Boolean(result.error)} acceptedDeletionId={acceptedDeletionId} /> : null}
   </>;
 }

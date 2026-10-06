@@ -1,15 +1,47 @@
 import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
-import { useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useEffect, useState } from "react";
+import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Mode, encode } from "./documents";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedMutationAccepted, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
 import { workspaceReadOptions } from "./session-files";
 import { type Diff } from "./session-diff-model";
 import { AnchorKind, ReviewContextError, ReviewSide, freshness, readComment, readSubmission, readReviewContext, selectedContext, type Comment, type Selection } from "./local-review-model";
 import { Problem } from "./ui";
 
 type Selected = { resource: Resource; comment: Comment };
+
+function useCommentDeletion(key: string, accepted?: () => void) {
+  return useRetainedMutation(key, SessionQuery.deleteLocalReviewComment, accepted, (result, request) =>
+    Boolean(request.mutation?.id && request.mutation.requestId && result.id === request.mutation.id && result.requestId === request.mutation.requestId), true);
+}
+
+function PendingCommentDeletion({ intent, commentId, accepted }: { intent: RetainedMutationIntent; commentId: string; accepted: () => void }) {
+  const mutation = useCommentDeletion(intent.key);
+  useRetainedMutationAccepted(intent.key, accepted);
+  return <article aria-label={copy("local-reviews.pendingCommentDeletion", { v0: commentId })}>
+    <p>{copy("local-reviews.commentDeletion", { v0: commentId })}</p><p role="status">{intent.busy ? copy("local-reviews.waitingForCommentDeletionAcknowledgement") : copy("local-reviews.commentDeletionAcknowledgementIsUncertain")}</p>
+    <Problem error={mutation.error} />{intent.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("local-reviews.retryOriginalCommentDeletion_db3527")}</button> : null}
+  </article>;
+}
+
+export function LocalReviewRecovery({ sessionId, onAccepted }: { sessionId: string; onAccepted?: (commentId: string) => void }) {
+  useLocale();
+  const client = useQueryClient();
+  const transport = useTransport();
+  const deletionPrefix = `review:delete:${sessionId}:`;
+  const reviewListQueryKey = createConnectQueryKey({ schema: ResourceQuery.listResources, transport, cardinality: "finite", input: { filter: { kind: EntityKind.REVIEW, sessionId } } });
+  const deletions = useRetainedMutationIntents(deletionPrefix);
+  if (!deletions.length) return null;
+  return <section aria-label={copy("local-reviews.pendingCommentDeletions")}><h3>{copy("local-reviews.pendingCommentDeletions")}</h3>{deletions.map((intent) => {
+    const commentId = intent.key.slice(deletionPrefix.length);
+    return <PendingCommentDeletion key={intent.key} intent={intent} commentId={commentId} accepted={() => {
+      onAccepted?.(commentId);
+      void client.invalidateQueries({ queryKey: reviewListQueryKey, refetchType: "active" });
+    }} />;
+  })}</section>;
+}
 
 function NewComment({ sessionId, diff, saved, close }: { sessionId: string; diff: Diff; saved: (message: string) => void; close: () => void }) {
   useLocale();
@@ -39,7 +71,7 @@ function CommentRow({ row, comment, sessionId, diff, selected, choose, refreshed
   useLocale();
   const [editing, setEditing] = useState(false), [body, setBody] = useState(comment.body), [revision, setRevision] = useState(row.revision);
   const edit = useRetainedMutation(`review:edit:${sessionId}:${row.id}`, SessionQuery.editLocalReviewComment, () => { setEditing(false); choose(); refreshed(); });
-  const remove = useRetainedMutation(`review:delete:${sessionId}:${row.id}`, SessionQuery.deleteLocalReviewComment, () => { choose(); refreshed(); });
+  const remove = useCommentDeletion(`review:delete:${sessionId}:${row.id}`, () => { choose(); refreshed(); });
   const blocked = submitting || edit.busy || edit.uncertain || remove.busy || remove.uncertain;
   const anchor = comment.anchor, staleEdit = revision !== row.revision;
   return <article className="local-review-comment" aria-label={copy("local-reviews.reviewCommentOn_429062", { v0: anchor.selection.path })}>
@@ -50,14 +82,23 @@ function CommentRow({ row, comment, sessionId, diff, selected, choose, refreshed
     {comment.last_submission_id ? <p><LocalizedText id="local-reviews.lastSubmittedContentRevision_d86b30" components={{ s0: <>{comment.last_submitted_content_revision}</>, s1: <>{comment.last_submitted_content_revision !== comment.content_revision ? copy("local-reviews.editedSinceSubmission_2161ce") : ""}</> }} /></p> : null}
     {selected && selected.resource.revision !== row.revision ? <p role="alert">{copy("local-reviews.anEarlierVersionIsSelectedDeselect_d7387d")}</p> : null}
     {editing ? <form onSubmit={(e) => { e.preventDefault(); if (blocked || staleEdit || !body.trim()) return; void edit.send({ mutation: { id: row.id, expectedRevision: revision, requestId: newRequestId() }, sessionId, body }); }}><label>{copy("local-reviews.editReviewComment_ca032a")}<textarea disabled={blocked} value={body} maxLength={8192} onChange={(e) => setBody(e.target.value)} /></label>{staleEdit ? <><p role="alert">{copy("local-reviews.theCommentChangedYourEditIs_fb9219")}</p><button type="button" disabled={blocked} onClick={() => setRevision(row.revision)}>{copy("local-reviews.useLatestCommentRevisionWithThis_b1c152")}</button></> : null}<button disabled={blocked || staleEdit || !body.trim()}>{copy("local-reviews.saveCommentEdit_6b39cb")}</button><button type="button" disabled={blocked} onClick={() => setEditing(false)}>{copy("local-reviews.cancelCommentEdit_d38b3c")}</button></form> : <div className="actions"><button disabled={blocked} onClick={() => { setBody(comment.body); setRevision(row.revision); setEditing(true); }}>{copy("local-reviews.editComment_4f346f")}</button><button disabled={blocked} onClick={() => void remove.send({ mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() }, sessionId })}>{copy("local-reviews.deleteComment_e43811")}</button></div>}
-    <Problem error={edit.error || remove.error} />{edit.uncertain ? <button disabled={edit.busy} onClick={edit.retry}>{copy("local-reviews.retryOriginalCommentEdit_f362b6")}</button> : null}{remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>{copy("local-reviews.retryOriginalCommentDeletion_db3527")}</button> : null}
+    <Problem error={edit.error || (remove.uncertain ? undefined : remove.error)} />{edit.uncertain ? <button disabled={edit.busy} onClick={edit.retry}>{copy("local-reviews.retryOriginalCommentEdit_f362b6")}</button> : null}
   </article>;
 }
 
-export function LocalReviews({ sessionId, diff, reading }: { sessionId: string; diff: Diff; reading: boolean }) {
+export function LocalReviews({ sessionId, diff, reading, acceptedDeletionId }: { sessionId: string; diff: Diff; reading: boolean; acceptedDeletionId?: string }) {
   useLocale();
   const [page, setPage] = useState(""), [authoring, setAuthoring] = useState<Diff>(), [notice, setNotice] = useProductMessage("");
   const [selected, setSelected] = useState<Map<string, Selected>>(() => new Map()), [mode, setMode] = useState(Mode.Execute), [allowStale, setAllowStale] = useState(false);
+  useEffect(() => {
+    if (!acceptedDeletionId) return;
+    setSelected((previous) => {
+      if (!previous.has(acceptedDeletionId)) return previous;
+      const next = new Map(previous);
+      next.delete(acceptedDeletionId);
+      return next;
+    });
+  }, [acceptedDeletionId]);
   const list = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.REVIEW, sessionId, pageToken: page, pageSize: 50 } }, { staleTime: 0, gcTime: 0, refetchOnWindowFocus: false, retry: false });
   const refresh = () => { void list.refetch(); };
   const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? ownedMessage("local-reviews.sentence.72171603f37d", { v0: r.change.input.id }) : ownedMessage("local-reviews.extra.68459ebcb74e")); refresh(); });
