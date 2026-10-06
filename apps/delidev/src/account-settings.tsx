@@ -1,7 +1,7 @@
 import { useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask, useSettingsTaskDismiss, useSettingsTaskVisible } from "./settings-task-context";
 import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
 import { ProviderGuidance } from "./provider-guidance";
-import { OpenRouterOAuth, useOpenRouterOAuth, type OpenRouterOAuthFlow } from "./account-oauth";
+import { AccountOAuth, useAccountOAuth, type AccountOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode, useId } from "react";
 import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
@@ -59,7 +59,7 @@ export interface AccountProviderPicker {
 
 export interface AccountSettingsProps {
   openUsage?: (entry: UsageEntry) => void;
-  oauth?: OpenRouterOAuthFlow;
+  oauth?: AccountOAuthFlow;
   section: AccountSettingsSection;
   active: boolean;
   accountTypeFilteringReady: boolean;
@@ -143,7 +143,7 @@ function AccountCreationWizard({
   openManage,
   saved,
 }: {
-  oauth?: OpenRouterOAuthFlow;
+  oauth?: AccountOAuthFlow;
   openEdit: (resource: Resource) => void;
   active: boolean;
   accountTypeFilteringReady: boolean;
@@ -157,7 +157,7 @@ function AccountCreationWizard({
   saved: (resource: Resource) => void;
 }) {
   const taskFormId = useId(), taskVisible = useSettingsTaskVisible(), inTask = useInSettingsTask(), closeTask = useCloseSettingsTask(close);
-  const localOAuth = useOpenRouterOAuth();
+  const localOAuth = useAccountOAuth();
   const oauth = suppliedOAuth ?? localOAuth;
   const [step, setStep] = useState(initialProvider ? WizardStep.Account : WizardStep.Provider);
   const [providerId, setProviderId] = useState(initialProvider?.providerId ?? "");
@@ -384,7 +384,7 @@ function AccountCreationWizard({
     setAutoConnect(undefined);
     setStep(WizardStep.Account);
     setFocusTarget(WizardFocus.Account);
-    if (provider.oauthAvailable && oauth.available) oauth.start(provider);
+    if (oauth.supports(provider)) oauth.start(provider);
   };
   const returnToProviders = () => {
     if (providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain) return;
@@ -509,7 +509,7 @@ function AccountCreationWizard({
     </section>;
   }
 
-  if (oauth.view) return <OpenRouterOAuth flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} edit={resource => { saved(resource); openEdit(resource); }} manage={resource => { saved(resource); openManage(resource); }} done={() => { if (oauth.view?.account) saved(oauth.view.account); close(); }} />;
+  if (oauth.view) return <AccountOAuth flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} edit={resource => { saved(resource); openEdit(resource); }} manage={resource => { saved(resource); openManage(resource); }} done={() => { if (oauth.view?.account) saved(oauth.view.account); close(); }} />;
 
   return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to AI API Keys</button>
@@ -525,7 +525,7 @@ function AccountCreationWizard({
       {picker.loaded && (!accountTypeFilteringReady || !picker.ready) ? <p role="status">Provider choices are unavailable because this server does not report the required provider inventory and account-type filtering capabilities. Update the server before continuing.</p> : null}
       {accountTypeFilteringReady && picker.ready ? <>
         <div className="account-provider-choices">{options.map((provider) => <button type="button" className="account-provider-action" key={provider.providerId} ref={(button) => { if (button) providerButtons.current.set(provider.providerId, button); else providerButtons.current.delete(provider.providerId); }} onClick={() => pickProvider(provider)}>
-          <span><strong>{provider.displayName}</strong><span className="account-provider-method">{provider.oauthAvailable && oauth.available ? "Browser sign-in" : document(provider.provider).authentication === Authentication.Keyless ? "Local endpoint" : "API key"}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
+          <span><strong>{provider.displayName}</strong><span className="account-provider-method">{oauth.supports(provider) ? "Browser sign-in" : document(provider.provider).authentication === Authentication.Keyless ? "Local endpoint" : "API key"}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
         </button>)}</div>
         {options.length === 0 && !picker.fetching && !picker.error ? !picker.pageToken && !picker.nextPageToken ? <div><p>Enable an API provider to add an entry.</p><button type="button" onClick={openProviders}>Open API Providers</button></div> : <p>No enabled API providers on this page.</p> : null}
       </> : null}

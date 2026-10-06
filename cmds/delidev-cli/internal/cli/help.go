@@ -61,8 +61,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account logout --id ID --revision N --machine-id ID
   account validate --id ID --revision N
   account status --id ID
-  account oauth start --provider-id ID --revision N
-  account oauth complete --attempt-id ID --revision N --code-stdin
+  account oauth start --provider-id ID --revision N [--callback-url URL] [--google-project-id ID]
+  account oauth complete --attempt-id ID --revision N (--code-stdin | --callback-stdin)
   --request-id ORIGINAL_ID account oauth complete --attempt-id ID --revision ORIGINAL_N --recover
   account oauth status --attempt-id ID
   account oauth cancel --attempt-id ID --revision N
