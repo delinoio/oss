@@ -365,6 +365,72 @@ func TestServiceReloadInterruptedNativeOutcomesAreRecoverable(t *testing.T) {
 	}
 }
 
+func TestServiceReloadContinuesAfterPreviousManagerRestart(t *testing.T) {
+	f := newReloadFixture(t, "linux")
+	f.onCommand = func(command string) error {
+		if strings.Contains(command, " daemon-reload") {
+			return errors.New("interrupted before restart")
+		}
+		return nil
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("interrupted replacement unexpectedly succeeded")
+	}
+	j, err := readReloadJournal(f.r.Unit)
+	if err != nil || j == nil || j.Stage != reloadPublished {
+		t.Fatalf("published recovery intent was not retained: %v", err)
+	}
+
+	// The service manager restarted the previous binary before the kill
+	// boundary. Its PID changed, but its exact invocation and live version
+	// still authorize the pending replacement.
+	f.onCommand = nil
+	f.pid = 404
+	f.peer = 404
+	f.version = j.PreviousVersion
+	f.args[f.pid] = f.args[101]
+	if err := f.reload(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readReloadJournal(f.r.Unit); err != nil || got != nil {
+		t.Fatalf("journal was not completed after previous manager restart: %v", err)
+	}
+}
+
+func TestServiceReloadPreviousManagerStartsFromCommittedConfiguration(t *testing.T) {
+	f := newReloadFixture(t, "linux")
+	f.onCommand = func(command string) error {
+		if strings.Contains(command, " daemon-reload") {
+			return errors.New("retain handoff intent")
+		}
+		return nil
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("interrupted replacement unexpectedly succeeded")
+	}
+	j, err := readReloadJournal(f.r.Unit)
+	if err != nil || j == nil {
+		t.Fatalf("recovery intent was not retained: %v", err)
+	}
+
+	// Simulate launchd/systemd starting the previous binary. It must run its
+	// committed configuration and leave the replacement journal for the newer
+	// CLI to recover.
+	f.onCommand = nil
+	f.pid = os.Getpid()
+	f.peer = f.pid
+	f.version = j.PreviousVersion
+	f.args[f.pid] = f.args[101]
+	f.r.Version = j.PreviousVersion
+	_, preserve, recovery, err := f.r.startup(context.Background(), f.path, f.c)
+	if err != nil || preserve || recovery != nil {
+		t.Fatalf("previous manager was not allowed to start normally: preserve=%t recovery=%v err=%v", preserve, recovery != nil, err)
+	}
+	if got, err := readReloadJournal(f.r.Unit); err != nil || got == nil {
+		t.Fatalf("previous manager consumed recovery intent: %v", err)
+	}
+}
+
 func TestServiceReloadJournalDefersToForegroundPeer(t *testing.T) {
 	for _, platform := range []string{"linux", "darwin"} {
 		t.Run(platform, func(t *testing.T) {
@@ -408,6 +474,47 @@ func TestServiceReloadJournalDefersToForegroundPeer(t *testing.T) {
 				t.Fatalf("foreground reload consumed service recovery intent: %v", err)
 			}
 		})
+	}
+}
+
+func TestServiceReloadRechecksPeerAfterLock(t *testing.T) {
+	f := newReloadFixture(t, "linux")
+	f.onCommand = func(command string) error {
+		if strings.Contains(command, " daemon-reload") {
+			return errors.New("retain recovery intent")
+		}
+		return nil
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("interrupted replacement unexpectedly succeeded")
+	}
+	f.onCommand = nil
+	f.commands = nil
+	f.actions = nil
+	statusCalls := 0
+	f.r.Control = func(ctx context.Context, c Config, req ControlRequest, expected int) (ControlResponse, int, error) {
+		if req.Action == "status" {
+			statusCalls++
+			if statusCalls == 2 {
+				// The service stopped after the initial probe and a foreground
+				// manager acquired the socket while reload waited for the lock.
+				f.pid = 0
+				f.peer = 404
+			}
+		}
+		return f.control(ctx, c, req, expected)
+	}
+	if err := f.reload(); err != nil {
+		t.Fatal(err)
+	}
+	if statusCalls != 2 || f.mutated() {
+		t.Fatal("reload resumed native recovery after the peer changed")
+	}
+	if len(f.actions) == 0 || f.actions[len(f.actions)-1] != "reload" {
+		t.Fatal("foreground manager did not receive ordinary reload")
+	}
+	if j, err := readReloadJournal(f.r.Unit); err != nil || j == nil {
+		t.Fatalf("foreground reload consumed service recovery intent: %v", err)
 	}
 }
 
@@ -495,22 +602,31 @@ func TestServiceReloadStartupUsesCommittedConfigAndPreservesStop(t *testing.T) {
 	f.pid = os.Getpid()
 	f.args[f.pid] = f.args[303]
 	f.c.Pools[0].Labels = append(f.c.Pools[0].Labels, "unaccepted-candidate")
-	committed, preserve, err := f.r.startup(context.Background(), f.path, f.c)
+	committed, preserve, recovery, err := f.r.startup(context.Background(), f.path, f.c)
 	if err != nil || !preserve || fingerprint(committed) != fingerprint(f.m.Store.View().Requested) {
 		t.Fatal("startup accepted the candidate")
 	}
+	if recovery == nil {
+		t.Fatal("startup did not return the recovery journal")
+	}
+	f.m.PreserveStop = preserve
 	if err := f.m.Stop(false); err != nil {
 		t.Fatal(err)
 	}
-	f.m.PreserveStop = preserve
-	if err := f.m.activate(committed); err != nil {
+	if err := f.m.initializeRun(committed); err != nil {
 		t.Fatal(err)
 	}
 	if !f.m.Store.View().Stopping {
 		t.Fatal("restart undid Stop")
 	}
+	if err := f.r.retire(recovery); err != nil {
+		t.Fatal(err)
+	}
+	if journal, err := readReloadJournal(f.r.Unit); err != nil || journal != nil {
+		t.Fatalf("committed startup did not retire recovery intent: %v", err)
+	}
 	f.pid = 404
-	_, preserve, err = f.r.startup(context.Background(), f.path, f.c)
+	_, preserve, _, err = f.r.startup(context.Background(), f.path, f.c)
 	if err != nil || preserve {
 		t.Fatal("foreground run consumed service recovery")
 	}

@@ -263,20 +263,53 @@ func (r *serviceReloader) invocation(pid int, expected []string) error {
 	return nil
 }
 
-func (r *serviceReloader) originalProcess(ctx context.Context, j *serviceReloadJournal) error {
-	pid, _, err := r.nativePID(ctx)
-	if err != nil || pid != j.PID {
+func (r *serviceReloader) originalInvocation(j *serviceReloadJournal) error {
+	args, err := reloadArguments(r.Platform, j.Original)
+	if err != nil {
+		return err
+	}
+	if err := r.invocation(os.Getpid(), args); err != nil {
+		return err
+	}
+	current, err := serviceVersion(r.Version)
+	if err != nil {
+		return err
+	}
+	previous, err := serviceVersion(j.PreviousVersion)
+	if err != nil || current != previous {
 		return reloadFailure()
 	}
-	start, err := r.ProcessStart(pid)
-	if err != nil || start != j.ProcessStart {
+	return nil
+}
+
+func (r *serviceReloader) originalProcess(ctx context.Context, c Config, j *serviceReloadJournal) error {
+	pid, _, err := r.nativePID(ctx)
+	if err != nil || pid <= 0 {
 		return reloadFailure()
 	}
 	args, err := reloadArguments(r.Platform, j.Original)
 	if err != nil {
 		return err
 	}
-	return r.invocation(pid, args)
+	if err := r.invocation(pid, args); err != nil {
+		return err
+	}
+	if pid == j.PID {
+		start, err := r.ProcessStart(pid)
+		if err != nil || start != j.ProcessStart {
+			return reloadFailure()
+		}
+		return nil
+	}
+	// Before the replacement signal is committed, the service manager may have
+	// restarted the previous binary from the unchanged definition. Exact
+	// invocation plus the live manager version authorizes that same old manager;
+	// the journal remains the authority for the later replacement.
+	response, peer, err := r.Control(ctx, c, ControlRequest{Action: "status"}, pid)
+	if err != nil || peer != pid || response.Status == nil || !response.Status.Running || response.Status.Version != j.PreviousVersion {
+		return reloadFailure()
+	}
+	return nil
 }
 
 func (r *serviceReloader) definition(path string, j *serviceReloadJournal) (bool, error) {
@@ -334,6 +367,21 @@ func (r *serviceReloader) publish(path string, j *serviceReloadJournal) error {
 	return syncPrivateDir(filepath.Dir(r.Unit))
 }
 
+func (r *serviceReloader) retire(j *serviceReloadJournal) error {
+	body, err := json.Marshal(j)
+	if err != nil {
+		return reloadFailure()
+	}
+	actual, err := readPrivate(reloadJournalPath(r.Unit), reloadJournalLimit)
+	if err != nil || !bytes.Equal(actual, body) {
+		return reloadFailure()
+	}
+	if err := os.Remove(reloadJournalPath(r.Unit)); err != nil {
+		return reloadFailure()
+	}
+	return syncPrivateDir(filepath.Dir(r.Unit))
+}
+
 func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (result error) {
 	j, err := readReloadJournal(r.Unit)
 	if err != nil {
@@ -383,6 +431,22 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 	j, err = readReloadJournal(r.Unit)
 	if err != nil {
 		return err
+	}
+	if j != nil {
+		// Repeat the peer check after taking the lock. A foreground manager can
+		// start between the initial probe and lock acquisition; its socket owns
+		// reload even when the old service journal is still present.
+		_, peer, controlErr = r.Control(ctx, c, ControlRequest{Action: "status"}, 0)
+		if controlErr == nil {
+			pid, _, e := r.nativePID(ctx)
+			if e != nil {
+				return e
+			}
+			if pid != peer {
+				_, _, e = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
+				return e
+			}
+		}
 	}
 	previousVersion, targetVersion := "", ""
 	defer func() {
@@ -461,7 +525,7 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 		if err := requireServiceDefinitionUnchanged(r.Platform, r.Unit, path, snapshot); err != nil {
 			return err
 		}
-		if err := r.originalProcess(ctx, j); err != nil {
+		if err := r.originalProcess(ctx, c, j); err != nil {
 			return err
 		}
 		if err := writePrivateExclusive(reloadTargetPath(j), j.Target); err != nil {
@@ -564,7 +628,7 @@ func (r *serviceReloader) replaceLinux(ctx context.Context, path string, c Confi
 	if err != nil {
 		return err
 	}
-	if pid != j.PID {
+	if pid != j.PID && j.Stage != reloadPrepared && j.Stage != reloadPublished {
 		// Once replacement was requested, zero or a new matching process is
 		// an outcome to observe, never authority to kill another generation.
 		if j.Stage == reloadRestartPending || j.Stage == reloadRunning {
@@ -572,7 +636,7 @@ func (r *serviceReloader) replaceLinux(ctx context.Context, path string, c Confi
 		}
 		return reloadFailure()
 	}
-	if err := r.originalProcess(ctx, j); err != nil {
+	if err := r.originalProcess(ctx, c, j); err != nil {
 		return err
 	}
 	if err := r.stopping(c, j); err != nil {
@@ -591,7 +655,7 @@ func (r *serviceReloader) replaceLinux(ctx context.Context, path string, c Confi
 	if err != nil || !target {
 		return reloadFailure()
 	}
-	if err := r.originalProcess(ctx, j); err != nil {
+	if err := r.originalProcess(ctx, c, j); err != nil {
 		return err
 	}
 	if err := r.stopping(c, j); err != nil {
@@ -610,8 +674,8 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 	if err != nil {
 		return err
 	}
-	if loaded && pid == j.PID {
-		if err := r.originalProcess(ctx, j); err != nil {
+	if loaded && (pid == j.PID || j.Stage == reloadPrepared) {
+		if err := r.originalProcess(ctx, c, j); err != nil {
 			return err
 		}
 		if err := r.stopping(c, j); err != nil {
@@ -626,7 +690,7 @@ func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Con
 		if err := r.command(ctx, "launchctl", "debug", target, "--program", j.Binary, "--", j.Binary, "__service-reload-handoff", reloadJournalPath(r.Unit), j.Token); err != nil {
 			return err
 		}
-		if err := r.originalProcess(ctx, j); err != nil {
+		if err := r.originalProcess(ctx, c, j); err != nil {
 			return err
 		}
 		if err := r.stopping(c, j); err != nil {
@@ -721,36 +785,46 @@ func waitServiceReloadHandoff(ctx context.Context, journal, token string) int {
 }
 
 // Only the actual replacement service can consume the startup boundary. A
-// foreground run beside an interrupted journal retains normal Start behavior.
-func (r *serviceReloader) startup(ctx context.Context, path string, c Config) (Config, bool, error) {
+// foreground or previous-version run beside an interrupted journal retains
+// normal Start behavior.
+func (r *serviceReloader) startup(ctx context.Context, path string, c Config) (Config, bool, *serviceReloadJournal, error) {
 	j, err := readReloadJournal(r.Unit)
 	if err != nil {
-		return c, false, err
+		return c, false, nil, err
 	}
 	if j == nil {
-		return c, false, nil
+		return c, false, nil, nil
 	}
 	pid, _, err := r.nativePID(ctx)
 	if err != nil {
-		return c, false, err
+		return c, false, nil, err
 	}
 	if pid != os.Getpid() {
-		return c, false, nil
+		return c, false, nil, nil
 	}
-	if j.Platform != r.Platform || j.Unit != r.Unit || j.ConfigPath != path || j.Binary != r.Binary || j.Version != r.Version {
-		return c, false, reloadFailure()
+	if j.Platform != r.Platform || j.Unit != r.Unit || j.ConfigPath != path {
+		return c, false, nil, reloadFailure()
+	}
+	if j.Binary != r.Binary || j.Version != r.Version {
+		// The original service definition can restart the old manager before the
+		// replacement reaches its restart boundary. Let that manager run from its
+		// committed configuration and leave the handoff journal untouched.
+		if err := r.originalInvocation(j); err != nil {
+			return c, false, nil, err
+		}
+		return c, false, nil, nil
 	}
 	target, err := r.definition(path, j)
 	if err != nil || !target {
-		return c, false, reloadFailure()
+		return c, false, nil, reloadFailure()
 	}
 	args, err := reloadArguments(r.Platform, j.Target)
 	if err != nil || r.invocation(pid, args) != nil {
-		return c, false, reloadFailure()
+		return c, false, nil, reloadFailure()
 	}
 	s, err := ReadSnapshot(Config{Storage: j.Storage})
 	if err != nil || s.Installation != j.Installation {
-		return c, false, reloadFailure()
+		return c, false, nil, reloadFailure()
 	}
-	return s.Requested, true, nil
+	return s.Requested, true, j, nil
 }

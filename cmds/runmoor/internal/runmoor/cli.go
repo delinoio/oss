@@ -194,7 +194,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	useCommitted := false
 	if command == "run" {
 		startup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		c, useCommitted, e = newServiceReloader(errOut).startup(startup, path, c)
+		c, useCommitted, _, e = newServiceReloader(errOut).startup(startup, path, c)
 		cancel()
 	}
 	if e == nil && !useCommitted {
@@ -376,7 +376,8 @@ func runForegroundReady(ctx context.Context, path string, c Config, out io.Write
 		}
 	}()
 	startup, startupCancel := context.WithTimeout(ctx, 10*time.Second)
-	committed, preserveStop, e := newServiceReloader(out).startup(startup, path, c)
+	reloader := newServiceReloader(out)
+	committed, preserveStop, recovery, e := reloader.startup(startup, path, c)
 	startupCancel()
 	if e != nil {
 		return e
@@ -423,6 +424,11 @@ func runForegroundReady(ctx context.Context, path string, c Config, out io.Write
 		return e
 	}
 	defer server.Close()
+	if recovery != nil {
+		if e = reloader.retire(recovery); e != nil {
+			return e
+		}
+	}
 	if ready != nil {
 		ready <- nil
 		announced = true
