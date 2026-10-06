@@ -54,7 +54,7 @@ func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink func() 
 	disposition := dispositionInformation{Flags: windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK | windows.FILE_DISPOSITION_POSIX_SEMANTICS | windows.FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE}
 	err = windows.SetFileInformationByHandle(
 		handle,
-		windows.FileDispositionInformationEx,
+		windows.FileDispositionInfoEx,
 		(*byte)(unsafe.Pointer(&disposition)),
 		uint32(unsafe.Sizeof(disposition)),
 	)
