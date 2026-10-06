@@ -1,5 +1,7 @@
 package domain
 
+import "golang.org/x/mod/semver"
+
 type NativeProtocol string
 
 const (
@@ -9,11 +11,20 @@ const (
 	GrokACP          NativeProtocol = "grok-acp"
 )
 const (
-	CodexProtocolVersion    = "0.151.0"
+	CodexMinimumVersion = "0.151.0"
+	// CodexProtocolVersion retains the historical fixture baseline. Runtime
+	// admission uses CodexVersionAllowed and records the installed version.
+	CodexProtocolVersion    = CodexMinimumVersion
 	ClaudeProtocolVersion   = "2.1.236"
 	GrokProtocolVersion     = "1.0.41"
 	OpenCodeProtocolVersion = "1.18.32"
 )
+
+// CodexVersionAllowed permits an actual native attempt, not inferred protocol
+// readiness. Every accepted installation still requires its native handshake.
+func CodexVersionAllowed(version string) bool {
+	return ValidInstallationVersion(version) && semver.IsValid("v"+version) && semver.Compare("v"+version, "v"+CodexMinimumVersion) >= 0
+}
 
 type ProtocolState string
 
@@ -24,9 +35,10 @@ const (
 )
 
 type ProtocolObservation struct {
-	Protocol NativeProtocol `json:"protocol"`
-	State    ProtocolState  `json:"state"`
-	Problem  *Error         `json:"problem,omitempty"`
+	Protocol   NativeProtocol   `json:"protocol"`
+	State      ProtocolState    `json:"state"`
+	Problem    *Error           `json:"problem,omitempty"`
+	Diagnostic *CodexDiagnostic `json:"diagnostic,omitempty"`
 }
 
 func ProtocolFor(harness Harness) NativeProtocol {
@@ -65,8 +77,8 @@ func (i *Installation) validateProtocol(requested bool) error {
 	}
 	switch i.Protocol.State {
 	case ProtocolVerified:
-		supported := (i.Harness == Codex && i.Version == CodexProtocolVersion) || (i.Harness == ClaudeCode && i.Version == ClaudeProtocolVersion) || (i.Harness == GrokBuild && i.Version == GrokProtocolVersion) || (i.Harness == OpenCode && i.Version == OpenCodeProtocolVersion)
-		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil {
+		supported := (i.Harness == Codex && CodexVersionAllowed(i.Version)) || (i.Harness == ClaudeCode && i.Version == ClaudeProtocolVersion) || (i.Harness == GrokBuild && i.Version == GrokProtocolVersion) || (i.Harness == OpenCode && i.Version == OpenCodeProtocolVersion)
+		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil || i.Protocol.Diagnostic != nil {
 			return Fail(InvalidArgument, "The reported native profile is not validated.", "Use a supported protocol profile; version detection alone cannot grant capabilities.")
 		}
 	case ProtocolFailed, ProtocolUnsupported:
@@ -75,6 +87,11 @@ func (i *Installation) validateProtocol(requested bool) error {
 		}
 	default:
 		return Fail(InvalidArgument, "Unknown native protocol state.", "Report a supported protocol outcome.")
+	}
+	if d := i.Protocol.Diagnostic; d != nil {
+		if i.Harness != Codex || d.Validate() != nil || d.DetectedVersion != i.Version || i.Protocol.State == ProtocolVerified {
+			return Fail(InvalidArgument, "Invalid native failure attribution.", "Refresh discovery without raw error metadata.")
+		}
 	}
 	i.Protocol.Problem = ProtocolProblem(i.Protocol.State)
 	return nil

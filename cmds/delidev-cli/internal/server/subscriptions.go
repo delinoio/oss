@@ -112,7 +112,7 @@ func subscriptionInstallation(tx *store.Tx, machineID domain.ID) (domain.Install
 			selected = &machine.Installations[i]
 		}
 	}
-	if selected != nil && selected.Version == domain.CodexProtocolVersion && selected.State == domain.InstallationDetected && selected.ProtocolVerified && selected.ResolvedPath != "" && selected.Problem == nil && selected.Protocol != nil && selected.Protocol.Protocol == domain.ProtocolFor(domain.Codex) && selected.Protocol.State == domain.ProtocolVerified && selected.Protocol.Problem == nil && selected.ObservedAt != nil && !selected.ObservedAt.IsZero() && !selected.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
+	if selected != nil && domain.CodexVersionAllowed(selected.Version) && selected.State == domain.InstallationDetected && selected.ProtocolVerified && selected.ResolvedPath != "" && selected.Problem == nil && selected.Protocol != nil && selected.Protocol.Protocol == domain.ProtocolFor(domain.Codex) && selected.Protocol.State == domain.ProtocolVerified && selected.Protocol.Problem == nil && selected.ObservedAt != nil && !selected.ObservedAt.IsZero() && !selected.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
 		return *selected, nil
 	}
 	return domain.Installation{}, domain.Fail(domain.Unsupported, "Managed subscriptions require installed Codex 0.151.0.", "Discover and verify that exact native installation on the explicitly selected Runner Device.")

@@ -290,6 +290,7 @@ func (c *Client) acquireControl(ctx context.Context) error {
 	}
 }
 func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, settings ThreadSettings, method threadMethod) (result ThreadResult, returned error) {
+	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result.RequestID = requestID
 	if c.sidechat != "" && !sidechatSettings(settings) {
 		return result, sidechatUnavailable()
@@ -397,7 +398,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 		return result, problem
 	}
-	thread, effective, err := decodeBoundThread(response.Result, settings, threadID, method)
+	thread, effective, err := decodeBoundThread(response.Result, settings, threadID, method, c.version)
 	result.Thread, result.Effective = thread, effective
 	if threadID != "" {
 		// A mismatched native response cannot replace the resumed identity's
@@ -428,7 +429,8 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 
 // ReadThread inspects metadata only. It neither resumes nor hydrates a complete
 // transcript, and cannot clear uncertainty or authorize another native send.
-func (c *Client) ReadThread(ctx context.Context, requestID, threadID domain.ID) (Thread, error) {
+func (c *Client) ReadThread(ctx context.Context, requestID, threadID domain.ID) (diagnosticResult Thread, returned error) {
+	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
 	if c.mode != ThreadProtocol {
 		return Thread{}, unsupportedSettings()
 	}
@@ -466,7 +468,7 @@ func (c *Client) readThreadLocked(ctx context.Context, requestID, threadID domai
 	if domain.Decode(response.Result, &result) != nil {
 		return threadWire{}, incompatible()
 	}
-	wire, err := decodeThread(result.Thread)
+	wire, err := decodeThread(result.Thread, c.version)
 	if err != nil || wire.ID != threadID {
 		return threadWire{}, incompatible()
 	}

@@ -20,7 +20,8 @@ func (c *Client) ModelList(ctx context.Context, hidden bool) ([]domain.NativeMod
 // Execution uses this bounded read only for explicitly requested child model
 // or effort compatibility. It performs no remote model registration, inference
 // or account selection and cannot widen the server's immutable model grant.
-func (c *Client) readModelList(ctx context.Context, hidden bool) ([]domain.NativeModel, error) {
+func (c *Client) readModelList(ctx context.Context, hidden bool) (diagnosticResult []domain.NativeModel, returned error) {
+	defer c.recordFailure(ctx, domain.CodexModels, &returned)
 	var cursor *string
 	cursors := map[string]bool{}
 	identities := map[string]bool{}

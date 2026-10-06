@@ -8,7 +8,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 )
 
-func codexApprovalRequest(native *codex.ApprovalRequest) (*domain.ApprovalRequest, error) {
+func codexApprovalRequest(native *codex.ApprovalRequest, version string) (*domain.ApprovalRequest, error) {
 	if native == nil {
 		return nil, publicationUncertain()
 	}
@@ -49,7 +49,7 @@ func codexApprovalRequest(native *codex.ApprovalRequest) (*domain.ApprovalReques
 	if n := native.Permissions; n != nil {
 		a.Permissions = &domain.CodexPermissionsApprovalRequest{EnvironmentID: n.EnvironmentID, Cwd: n.Cwd, Reason: n.Reason, Permissions: *codexApprovalPermissions(&n.Permissions)}
 	}
-	result := &domain.ApprovalRequest{Harness: domain.Codex, Version: codex.SupportedVersion, Codex: a}
+	result := &domain.ApprovalRequest{Harness: domain.Codex, Version: version, Codex: a}
 	if err := result.Validate(); err != nil {
 		return nil, err
 	}

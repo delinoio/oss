@@ -98,24 +98,32 @@ func machineCapability(resource *pb.Resource, capability domain.WorkerCapability
 	return slices.Contains(machine.WorkerCapabilities, capability)
 }
 
-func codexTitleExecutable(resource *pb.Resource) string {
+func codexTitleInstallation(resource *pb.Resource) *domain.Installation {
 	if resource == nil || resource.Kind != pb.EntityKind_ENTITY_KIND_MACHINE || resource.SchemaVersion != 1 {
-		return ""
+		return nil
 	}
 	var machine domain.Machine
 	if domain.Decode(resource.DocumentJson, &machine) != nil || machine.Validate() != nil {
-		return ""
+		return nil
 	}
 	for _, installation := range machine.Installations {
 		if installation.Harness != domain.Codex {
 			continue
 		}
-		if installation.State != domain.InstallationDetected || installation.Version != domain.CodexProtocolVersion || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.CodexAppServer || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || !filepath.IsAbs(installation.ResolvedPath) {
-			return ""
+		if installation.State != domain.InstallationDetected || !domain.CodexVersionAllowed(installation.Version) || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.CodexAppServer || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || !filepath.IsAbs(installation.ResolvedPath) {
+			return nil
 		}
-		return installation.ResolvedPath
+		return &installation
 	}
-	return ""
+	return nil
+}
+
+func codexTitleExecutable(resource *pb.Resource) string {
+	installation := codexTitleInstallation(resource)
+	if installation == nil {
+		return ""
+	}
+	return installation.ResolvedPath
 }
 
 func workerOpenCodeCompactionInstallation(resource *pb.Resource) bool {
@@ -253,7 +261,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
 			}
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
-			executable := codexTitleExecutable(attached.Msg.Machine)
+			installation := codexTitleInstallation(attached.Msg.Machine)
+			executable, version := "", ""
+			if installation != nil {
+				executable, version = installation.ResolvedPath, installation.Version
+			}
 			// Adapter support is independent of the current installation inventory.
 			// Admission still requires the parent's exact verified pinned native
 			// installation; discovery must not require a process reconnect merely
@@ -263,7 +275,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if executable != "" {
 				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
 				var probeErr error
-				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, config.Logger)
+				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, version, config.Logger)
 				stopProbe()
 				if probeErr != nil {
 					if fatal := fatalTitleProfileProbeError(probeErr); fatal != nil {
@@ -274,7 +286,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if executable != "" {
 				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
-				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable)
+				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable, version)
 				stopProbe()
 				if err != nil {
 					if domain.SafeError(err).Code == domain.RecoveryRequired {
@@ -285,7 +297,10 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				}
 			}
 			titleCapabilityExpected = verifiedTitleProfile
-			profile := executable
+			profile := executable + "\x00" + version
+			if installation != nil {
+				profile += "\x00" + installation.ExecutableSHA256
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}

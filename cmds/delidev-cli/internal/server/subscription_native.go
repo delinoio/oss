@@ -23,6 +23,7 @@ import (
 )
 
 type serverSubscriptionNative interface {
+	Version() string
 	StartManagedLogin(context.Context, bool) (codex.ManagedLoginProgress, error)
 	WaitManagedLogin(context.Context, string) error
 	CancelManagedLogin(context.Context, string) error
@@ -44,6 +45,8 @@ type serverCodexRuntime struct {
 }
 
 func openServerSubscription(ctx context.Context, root string, owner domain.ID, bundle []byte, logger *slog.Logger) (returned serverSubscriptionNative, err error) {
+	version, phase := "", domain.CodexRuntime
+	defer func() { err = domain.WithCodexDiagnostic(version, phase, err) }()
 	runtimeRoot := filepath.Join(root, "subscription-runtime")
 	home := filepath.Join(runtimeRoot, "auth", string(owner))
 	if _, e := os.Lstat(home); !errors.Is(e, os.ErrNotExist) {
@@ -60,17 +63,33 @@ func openServerSubscription(ctx context.Context, root string, owner domain.ID, b
 	defer func() {
 		if err != nil && domain.SafeError(err).Code != domain.RecoveryRequired {
 			if subscription.CleanupRuntime(home, info) != nil {
-				err = subscriptionDenied()
+				err = domain.CodexRecoveryFailure(version, phase, err, subscriptionDenied())
 			}
 		}
 	}()
+	phase = domain.CodexDiscovery
 	installation, e := harness.DiscoverCodex(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger})
 	if e != nil {
 		return nil, e
 	}
-	if installation.State != domain.InstallationDetected || installation.Version != codex.SupportedVersion || !installation.ProtocolVerified || installation.ExecutableSHA256 == "" {
-		return nil, domain.Fail(domain.Unsupported, "Browser sign-in is unavailable on this server.", "Install the supported Codex version on the server and start a new explicit login.")
+	version = installation.Version
+	if installation.State != domain.InstallationDetected {
+		if installation.State == domain.InstallationIncompatible || installation.State == domain.InstallationFailed {
+			phase = domain.CodexVersion
+		}
+		return nil, domain.InstallationProblem(installation.State)
 	}
+	if !domain.CodexVersionAllowed(version) {
+		return nil, domain.CodexVersionFailure(version)
+	}
+	if !installation.ProtocolVerified || installation.ExecutableSHA256 == "" {
+		if installation.Protocol != nil && installation.Protocol.Diagnostic != nil {
+			return nil, domain.RestoreCodexDiagnostic(*installation.Protocol.Diagnostic)
+		}
+		phase = domain.CodexProfile
+		return nil, domain.Fail(domain.Unsupported, "The installed Codex protocol is unavailable.", "Refresh native discovery.")
+	}
+	phase = domain.CodexProfile
 	digest, e := harness.InspectExecutable(ctx, installation.ResolvedPath)
 	if e != nil || digest != installation.ExecutableSHA256 {
 		return nil, subscriptionDenied()

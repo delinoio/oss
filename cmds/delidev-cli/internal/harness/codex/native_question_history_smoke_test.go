@@ -50,7 +50,7 @@ func TestManualNativeQuestionHistory(t *testing.T) {
 			if domain.Decode(started.Result, &bound) != nil {
 				t.Fatal("native history binding shape changed")
 			}
-			thread, err := decodeThread(bound.Thread)
+			thread, err := decodeThread(bound.Thread, cfg.Version)
 			if err != nil || thread.HistoryMode != history || thread.SessionID != thread.ID || thread.Status.Type != ThreadIdle || bound.Model != settings.Model || bound.ModelProvider != settings.Provider || !nativePathEqual(bound.Cwd, settings.Cwd) || bound.ApprovalPolicy != ApprovalOnRequest || bound.Sandbox.Type != ReadOnly || bound.ApprovalsReviewer != "user" || bound.ReasoningEffort == nil || *bound.ReasoningEffort != settings.Effort {
 				t.Fatal("native history settings changed")
 			}

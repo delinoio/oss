@@ -174,9 +174,9 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 		}
 	}
 	if err != nil {
-		s.logger.WarnContext(ctx, "server_subscription_callback_unconfirmed", "account_id", account, "operation_id", operation)
+		s.logger.WarnContext(ctx, "server_subscription_callback_unconfirmed", "operation_id", operation)
 		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "Callback delivery was not confirmed.", "Inspect the original login. The callback is never sent again."), c)
 	}
-	s.logger.InfoContext(ctx, "server_subscription_callback_forwarded", "account_id", account, "operation_id", operation)
+	s.logger.InfoContext(ctx, "server_subscription_callback_forwarded", "operation_id", operation)
 	return connect.NewResponse(&pb.ForwardSubscriptionCallbackResponse{Accepted: true}), nil
 }

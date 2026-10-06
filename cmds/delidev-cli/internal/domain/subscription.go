@@ -121,6 +121,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		if (o.Action != SubscriptionLogin && o.Action != SubscriptionRefresh && o.Action != SubscriptionLogout) || !o.State.Valid() || o.StartedAt.IsZero() || !o.ExpiresAt.After(o.StartedAt) || (o.Actor.Type != OwnerDevice && o.Actor.Type != ClientDevice) || o.Actor.Type == ClientDevice && o.Actor.DeviceID.Validate() != nil {
 			return invalid()
 		}
+		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
+			return invalid()
+		}
 		if o.NativeStarted && (s.Lease != nil || s.Pending == nil || s.Pending.ID != o.ID || s.Pending.Phase != SubscriptionClaimed || s.Pending.MachineID != "" || o.Generation != s.Generation) {
 			return invalid()
 		}
@@ -145,6 +148,7 @@ type ServerSubscriptionOperation struct {
 	CallbackForwarded bool                   `json:"callback_forwarded"`
 	StartedAt         time.Time              `json:"started_at"`
 	ExpiresAt         time.Time              `json:"expires_at"`
+	Diagnostic        *CodexDiagnostic       `json:"diagnostic,omitempty"`
 }
 type SubscriptionLoginState string
 

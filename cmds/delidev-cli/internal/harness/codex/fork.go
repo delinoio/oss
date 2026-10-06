@@ -35,7 +35,8 @@ func unsupportedFork() error {
 // InspectForkSource performs only read operations. It cannot Resume, clear a
 // goal, approve a request or consume a source queue. The caller independently
 // holds the original closed workspace/process lease and account authority.
-func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationCheckpoint) (*ForkSource, error) {
+func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationCheckpoint) (diagnosticResult *ForkSource, returned error) {
+	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
 	if c.mode != ThreadProtocol || checkpoint.validate(ContinueAfterSuccess) != nil || checkpoint.Status != TurnCompleted {
 		return nil, unsupportedFork()
 	}
@@ -202,6 +203,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 // The caller synchronizes the operation claim first. Unknown outcomes latch
 // reconciliation and never permit another creation on this connection.
 func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *ForkSource, settings ThreadSettings) (result ThreadResult, returned error) {
+	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result.RequestID = requestID
 	defer func() {
 		if c.logger != nil {
@@ -273,7 +275,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		}
 		return result, c.problem
 	}
-	thread, effective, err := decodeBoundThread(response.Result, settings, "", forkThread)
+	thread, effective, err := decodeBoundThread(response.Result, settings, "", forkThread, c.version)
 	result.Thread, result.Effective = thread, effective
 	if thread != nil {
 		c.thread = thread.ID
@@ -281,7 +283,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 	var bound boundThreadWire
 	var wire threadWire
 	if domain.Decode(response.Result, &bound) == nil {
-		wire, _ = decodeThread(bound.Thread)
+		wire, _ = decodeThread(bound.Thread, c.version)
 	}
 	if err != nil || thread == nil || effective == nil || thread.ID == source.checkpoint.ThreadID || thread.SessionID != thread.ID || thread.Status.Type != ThreadIdle || wire.ForkedFromID == nil || *wire.ForkedFromID != source.checkpoint.ThreadID || !c.forkDefaults(source.checkpoint.Effective, *effective) {
 		c.problem = threadUncertain()

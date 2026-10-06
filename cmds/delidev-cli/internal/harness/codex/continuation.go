@@ -70,6 +70,7 @@ func (p ContinuationCheckpoint) validate(intent ContinuationIntent) error {
 // as new events or clear prior protocol uncertainty. The legacy profile supports
 // turn pagination even though its separate item-pagination API is unsupported.
 func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, checkpoint ContinuationCheckpoint, intent ContinuationIntent) (result Turn, returned error) {
+	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
 	if err := requestID.Validate(); err != nil {
 		return result, err
 	}

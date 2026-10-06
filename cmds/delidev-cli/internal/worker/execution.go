@@ -69,7 +69,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Configuration.Harness == domain.GrokBuild {
 		return executeGrokSession(ctx, config, owner, input, logger)
 	}
-	if input.Configuration.Harness != domain.Codex || input.Installation.Version != codex.SupportedVersion {
+	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) {
 		return nil, domain.Fail(domain.Unsupported, "This native execution profile is not implemented.", "Select a verified installed Codex profile; no fallback harness is used.")
 	}
 	var preparation workspace.PrepareRequest

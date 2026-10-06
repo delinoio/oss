@@ -123,3 +123,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - EntityKind update and ssh_setup are installation metadata owned by Go InstallationService. Worker version admission requires the original compiled-authority release and exact registration; reservations alone never advertise installation support.
 
 - Subscription server_operation is optional server-owned closed metadata. A machine-less pending claim is valid only for its exact server operation/actor; native_started requires no Worker lease and the original generation. Active/recovery ownership retains pending authority. Terminal metadata grants no credential use. Keep APIs, immutable historical service attribution and real migrations unchanged.
+
+- Codex diagnostics are optional bounded existing-document metadata with closed phases/codes and locally reconstructed safe text. Validate actual version attribution and original operation correlation; no diagnostic grants native/account authority or requires a SQLite migration.

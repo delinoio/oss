@@ -110,7 +110,8 @@ type Event struct {
 // NextEvent preserves wire order even with concurrent consumers. If cancellation
 // occurs after reading but before acquiring control, retain that exact event for
 // the next reader rather than dropping a terminal or acceptance observation.
-func (c *Client) NextEvent(ctx context.Context) (Event, error) {
+func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returned error) {
+	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	select {
 	case c.eventGate <- struct{}{}:
 	case <-ctx.Done():

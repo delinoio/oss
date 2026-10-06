@@ -35,7 +35,8 @@ func (c *Client) managedCall(ctx context.Context, method string, input any, outp
 	return nil
 }
 
-func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) error {
+func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned error) {
+	defer c.recordFailure(ctx, domain.CodexProfile, &returned)
 	var result struct {
 		Config  map[string]json.RawMessage `json:"config"`
 		Origins json.RawMessage            `json:"origins"`
@@ -70,7 +71,8 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) error {
 	return nil
 }
 
-func (c *Client) StartManagedLogin(ctx context.Context, device bool) (ManagedLoginProgress, error) {
+func (c *Client) StartManagedLogin(ctx context.Context, device bool) (diagnosticResult ManagedLoginProgress, returned error) {
+	defer c.recordFailure(ctx, domain.CodexLogin, &returned)
 	var p ManagedLoginProgress
 	if c.mode != SubscriptionProtocol {
 		return p, incompatible()
@@ -116,7 +118,8 @@ type managedOnboardingEntrypoint string
 
 const managedLifeSciencesOnboarding managedOnboardingEntrypoint = "life_sciences"
 
-func (c *Client) WaitManagedLogin(ctx context.Context, loginID string) error {
+func (c *Client) WaitManagedLogin(ctx context.Context, loginID string) (returned error) {
+	defer c.recordFailure(ctx, domain.CodexLogin, &returned)
 	if c.mode != SubscriptionProtocol || !nativeLoginID.MatchString(loginID) {
 		return incompatible()
 	}
@@ -150,7 +153,8 @@ func (c *Client) WaitManagedLogin(ctx context.Context, loginID string) error {
 	}
 }
 
-func (c *Client) CancelManagedLogin(ctx context.Context, loginID string) error {
+func (c *Client) CancelManagedLogin(ctx context.Context, loginID string) (returned error) {
+	defer c.recordFailure(ctx, domain.CodexCleanup, &returned)
 	var result struct {
 		Status string `json:"status"`
 	}
@@ -163,7 +167,8 @@ func (c *Client) CancelManagedLogin(ctx context.Context, loginID string) error {
 	return nil
 }
 
-func (c *Client) ManagedBundle(ctx context.Context, refresh bool) ([]byte, error) {
+func (c *Client) ManagedBundle(ctx context.Context, refresh bool) (diagnosticResult []byte, returned error) {
+	defer c.recordFailure(ctx, domain.CodexLogin, &returned)
 	var before []byte
 	if refresh {
 		var err error
@@ -211,7 +216,8 @@ func (c *Client) ManagedBundle(ctx context.Context, refresh bool) ([]byte, error
 
 // Logout proves native local removal only. Upstream revocation is best-effort
 // and no RPC acknowledgment establishes revocation of every provider session.
-func (c *Client) LogoutManaged(ctx context.Context) error {
+func (c *Client) LogoutManaged(ctx context.Context) (returned error) {
+	defer c.recordFailure(ctx, domain.CodexLogin, &returned)
 	var result struct{}
 	if err := c.managedCall(ctx, "account/logout", nativewire.OmittedParams{}, &result); err != nil {
 		return err

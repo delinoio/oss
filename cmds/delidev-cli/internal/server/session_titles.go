@@ -43,7 +43,7 @@ func titleProfileAvailable(tx *store.Tx, input domain.ExecutionJobInput) (domain
 	if err != nil {
 		return domain.Provider{}, false, err
 	}
-	if input.Configuration.Harness != domain.Codex || input.Installation.Version != domain.CodexProtocolVersion || !input.Installation.ProtocolVerified || input.Installation.Protocol == nil || input.Installation.Protocol.State != domain.ProtocolVerified || input.Installation.Protocol.Protocol != domain.CodexAppServer || !hasTitleCapability(machine.WorkerCapabilities) {
+	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || !input.Installation.ProtocolVerified || input.Installation.Protocol == nil || input.Installation.Protocol.State != domain.ProtocolVerified || input.Installation.Protocol.Protocol != domain.CodexAppServer || !hasTitleCapability(machine.WorkerCapabilities) {
 		return domain.Provider{}, false, nil
 	}
 	record, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
@@ -97,7 +97,7 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 	if !available {
 		session.TitleState = domain.TitleUnsupported
 		session.TitleReason = domain.TitleReasonUnsupportedAgent
-		if input.Configuration.Harness == domain.Codex && input.Installation.Version == domain.CodexProtocolVersion {
+		if input.Configuration.Harness == domain.Codex && domain.CodexVersionAllowed(input.Installation.Version) {
 			session.TitleReason = domain.TitleReasonCapabilityAbsent
 		}
 		return nil

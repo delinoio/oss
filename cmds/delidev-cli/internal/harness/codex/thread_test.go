@@ -95,7 +95,7 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		}
 		threadID = domain.ID(params["threadId"].(string))
 	}
-	f.thread = map[string]any{"id": threadID, "sessionId": threadID, "cliVersion": SupportedVersion, "cwd": params["cwd"], "modelProvider": params["modelProvider"], "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
+	f.thread = map[string]any{"id": threadID, "sessionId": threadID, "cliVersion": fixtureVersion(), "cwd": params["cwd"], "modelProvider": params["modelProvider"], "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
 	f.thread["historyMode"] = "legacy"
 	f.thread["extra"] = nil
 	f.thread["canAcceptDirectInput"] = true
@@ -358,7 +358,7 @@ func TestThreadLateAcknowledgmentRetainsOriginalIdentityWithoutRetry(t *testing.
 		if string(event.ID) != `"`+string(id)+`"` {
 			t.Fatal("late response identity changed")
 		}
-		thread, _, err := decodeBoundThread(event.Response.Result, settings, "", startThread)
+		thread, _, err := decodeBoundThread(event.Response.Result, settings, "", startThread, SupportedVersion)
 		if err != nil || thread == nil {
 			t.Fatalf("late response lost state: %v", err)
 		}
@@ -496,5 +496,28 @@ func TestSelectionValidationDoesNotReadCoordinatorFilesystem(t *testing.T) {
 	settings.Options.ApprovalReviewModel = "unsupported"
 	if err := ValidateSelection(settings); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("coordinator accepted unsupported native settings", err)
+	}
+}
+
+func TestNewerThreadAndHistoryKeepExactNativeVersion(t *testing.T) {
+	cfg := fixtureConfig(t, "thread-ready")
+	cfg.Mode, cfg.Version = ThreadProtocol, "0.159.2"
+	cfg.Process.Env = append(cfg.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE="+cfg.Version)
+	c, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	result, err := c.StartThread(context.Background(), domain.NewID(), threadSettings(t))
+	if err != nil || result.Thread == nil {
+		t.Fatal(err)
+	}
+	thread, err := c.ReadThread(context.Background(), domain.NewID(), result.Thread.ID)
+	if err != nil || thread.ID != result.Thread.ID || c.Version() != cfg.Version {
+		t.Fatal("higher native history changed attribution", err)
+	}
+	raw, _ := json.Marshal(threadWire{ID: domain.NewID(), SessionID: domain.NewID(), CLIVersion: SupportedVersion, Status: ThreadStatus{Type: ThreadIdle}})
+	if _, err := decodeThread(raw, cfg.Version); err == nil {
+		t.Fatal("minimum substituted for exact historical native version")
 	}
 }

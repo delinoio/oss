@@ -10,7 +10,7 @@ import (
 // proof. Generic completion, repeated callbacks and remembered policies cannot
 // satisfy this pinned, original-response-specific evidence profile.
 func publishSingleUseApprovalExecution(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, actor domain.ID, progress *domain.ExecutionProgress, event domain.ExecutionEvent) error {
-	if event.Kind != domain.ExecutionToolCompleted || input.Configuration.Harness != domain.Codex || input.Installation.Version != domain.CodexProtocolVersion || event.Tool.Snapshot.Status != domain.ToolCompleted {
+	if event.Kind != domain.ExecutionToolCompleted || input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || event.Tool.Snapshot.Status != domain.ToolCompleted {
 		return nil
 	}
 	ids, err := tx.ExecutionItemInteractions(input.ExecutionID, event.NativeThreadID, event.NativeTurnID, event.Tool.NativeID)
@@ -29,7 +29,7 @@ func publishSingleUseApprovalExecution(tx *store.Tx, job store.Record, input dom
 		return err
 	}
 	response := value.ApprovalResponse
-	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != event.Tool.NativeID || value.Type != domain.NativeApprovalInteraction || value.Closure != domain.InteractionNativeClosed || value.Approval == nil || value.Approval.Harness != domain.Codex || value.Approval.Version != domain.CodexProtocolVersion || value.Approval.Codex == nil || response == nil || response.Input.Decision == nil || response.Input.Decision.Kind != domain.CodexApprovalAccept || response.Input.Validate(value.Approval) != nil || response.Claim == nil || response.Delivery == nil || response.Acceptance != nil || (response.State != domain.ApprovalResponseTransmitted && response.State != domain.ApprovalResponseUncertain) || (response.Delivery.State != domain.ApprovalTransmitted && response.Delivery.State != domain.ApprovalDeliveryUncertain) || response.Delivery.Sequence >= event.Sequence || value.LastSequence >= event.Sequence {
+	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != event.Tool.NativeID || value.Type != domain.NativeApprovalInteraction || value.Closure != domain.InteractionNativeClosed || value.Approval == nil || value.Approval.Harness != domain.Codex || value.Approval.Version != input.Installation.Version || value.Approval.Codex == nil || response == nil || response.Input.Decision == nil || response.Input.Decision.Kind != domain.CodexApprovalAccept || response.Input.Validate(value.Approval) != nil || response.Claim == nil || response.Delivery == nil || response.Acceptance != nil || (response.State != domain.ApprovalResponseTransmitted && response.State != domain.ApprovalResponseUncertain) || (response.Delivery.State != domain.ApprovalTransmitted && response.Delivery.State != domain.ApprovalDeliveryUncertain) || response.Delivery.Sequence >= event.Sequence || value.LastSequence >= event.Sequence {
 		return nil
 	}
 	tool, approval := event.Tool.Snapshot, value.Approval.Codex

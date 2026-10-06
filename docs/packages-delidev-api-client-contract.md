@@ -233,3 +233,7 @@ Worker bootstrap export uses generated mutation results with bounded ciphertext 
 OpenCode General Chat Fork uses existing generated `SessionQuery` ForkSession and GetSessionFork with independently negotiated System 26 / Worker 15. The Unix pinned profile retains exact source revision/native turn, paused independent child identity, and explicit inherited-message provenance with no input or accounting authority. Native agent/model absence remains preparation state until the first real child input; clients cannot infer selection or broaden the Go-owned plain-text eligibility boundary.
 
 Independent server subscription login exports capability 30, the closed SubscriptionLoginState and ForwardSubscriptionCallback from reconciled schemas. Keep progress URLs, transient suggested names and write-only callback bytes outside shared query caches. Original operation/generation checks precede name entry; exact request retries cannot grant callback replay. Explicit-machine Worker methods, API accounts and quota ownership retain their contracts.
+
+## Codex login diagnostic client
+
+Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.

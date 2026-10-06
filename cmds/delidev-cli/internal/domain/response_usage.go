@@ -101,7 +101,7 @@ func (u ResponseUsageRecord) Validate() error {
 	} else if u.SubscriptionService != SubscriptionChatGPT || u.ProviderID != "" || u.Purpose == SessionTitleUsage {
 		return invalidObservation()
 	}
-	if (u.Purpose != "" && u.Purpose != ConversationUsage && u.Purpose != SessionTitleUsage) || (u.ProjectID != "" && u.ProjectID.Validate() != nil) || u.Harness != Codex || u.Version != CodexProtocolVersion || ID(u.ThreadID).Validate() != nil || (u.CompactionSourceTurn == "" && ID(u.TurnID).Validate() != nil) || u.Sequence == 0 || u.Sequence > MaxExecutionEvents {
+	if (u.Purpose != "" && u.Purpose != ConversationUsage && u.Purpose != SessionTitleUsage) || (u.ProjectID != "" && u.ProjectID.Validate() != nil) || u.Harness != Codex || !CodexVersionAllowed(u.Version) || ID(u.ThreadID).Validate() != nil || (u.CompactionSourceTurn == "" && ID(u.TurnID).Validate() != nil) || u.Sequence == 0 || u.Sequence > MaxExecutionEvents {
 		return invalidObservation()
 	}
 	if (u.CompactionSourceTurn != "") != (u.Usage.Source == CompactionHTTPResponse) {

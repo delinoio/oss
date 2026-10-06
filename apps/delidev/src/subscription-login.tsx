@@ -2,14 +2,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
-import { ConfigurationService, ResourceService, SubscriptionService, EntityKind, SubscriptionAction, SubscriptionLoginState, SubscriptionServiceId, FailureCode, clientFailure, isEntityId, newRequestId, subscriptionServiceNames, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, ResourceService, SubscriptionService, EntityKind, SubscriptionAction, SubscriptionLoginState, SubscriptionServiceId, FailureCode, clientFailure, isEntityId, newRequestId, subscriptionServiceNames, type Resource, type CodexDiagnostic } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document, encode, object, text } from "./documents";
 import { serviceAccount, subscriptionAliasDocument } from "./subscription-resource";
 import { SubscriptionOnboarding, SubscriptionOnboardingStage as Stage, subscriptionNameValid } from "./subscription-onboarding";
 
-interface View { service: SubscriptionServiceId; stage: Stage; name: string; suggested: boolean; busy: boolean; problem?: string; browserReady: boolean }
+interface View { service: SubscriptionServiceId; stage: Stage; name: string; suggested: boolean; busy: boolean; problem?: string; diagnostic?: CodexDiagnostic; browserReady: boolean }
 interface Pending {
   service: SubscriptionServiceId; opening: string; generation: string; account?: Resource; operation: string; url: string;
   bound: boolean; callbackDispatched: boolean; disposed: boolean; polling: boolean; busy: boolean; named: boolean; terminal: boolean;
@@ -112,8 +112,9 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
           const suggested = subscriptionNameValid(progress.suggestedName) ? progress.suggestedName : subscriptionServiceNames[p.service];
           update(p, { stage, name: suggested, suggested: Boolean(progress.suggestedName) }); changed(); return;
         }
-        update(p, { stage });
-        if (![Stage.Preparing, Stage.Waiting].includes(stage)) {
+        const terminal = ![Stage.Preparing, Stage.Waiting].includes(stage);
+        update(p, { stage, diagnostic: progress.diagnostic, ...(terminal ? { problem: undefined } : {}) });
+        if (terminal) {
           p.terminal = true; p.url = "";
           void native!(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(() => undefined);
         }
@@ -202,6 +203,6 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     }, "The account name could not be saved. Your edit is kept; check the current account and save again.");
   };
   const p = pending.current;
-  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={view.problem} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? "The original request could not be confirmed."); }}>Retry original request</button> : null}</> : null;
+  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={view.problem} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? "The original request could not be confirmed."); }}>Retry original request</button> : null}</> : null;
   return { begin, body, workflow: Boolean(view), available: Boolean(native), leave };
 }

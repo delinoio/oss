@@ -61,7 +61,7 @@ func init() {
 				family = "windows"
 			}
 			home := os.Getenv("CODEX_HOME")
-			version := SupportedVersion
+			version := fixtureVersion()
 			switch mode {
 			case "home":
 				home = filepath.Join(home, "foreign")
@@ -173,7 +173,7 @@ func TestCodexUnknownVersionAndForeignHomeNeverLaunch(t *testing.T) {
 		config := fixtureConfig(t, "ready")
 		switch change {
 		case "version":
-			config.Version = "0.152.0"
+			config.Version = "0.150.9"
 		case "home":
 			config.Process.Env = []string{"CODEX_HOME=" + t.TempDir()}
 		case "duplicate":
@@ -186,5 +186,40 @@ func TestCodexUnknownVersionAndForeignHomeNeverLaunch(t *testing.T) {
 		if _, err := os.Stat(config.Process.Directory); !os.IsNotExist(err) {
 			t.Fatal("invalid profile started a native process")
 		}
+	}
+}
+
+func fixtureVersion() string {
+	if v := os.Getenv("DELIDEV_CODEX_VERSION_FIXTURE"); v != "" {
+		return v
+	}
+	return SupportedVersion
+}
+
+func TestCodexNewerVersionsAttemptNativeProtocol(t *testing.T) {
+	for _, version := range []string{"0.151.0", "0.159.2", "1.0.0", "1.0.0-beta.1+build.7"} {
+		t.Run(version, func(t *testing.T) {
+			cfg := fixtureConfig(t, "ready")
+			cfg.Version = version
+			cfg.Process.Env = append(cfg.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE="+version)
+			c, err := Open(context.Background(), cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.Version() != version {
+				t.Fatal("actual version was replaced")
+			}
+			if err := c.Close(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	cfg := fixtureConfig(t, "unknown-field")
+	cfg.Version = "0.159.2"
+	cfg.Process.Env = append(cfg.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.159.2")
+	_, err := Open(context.Background(), cfg)
+	d := domain.CodexErrorDiagnostic(err)
+	if d == nil || d.DetectedVersion != cfg.Version || d.Phase != domain.CodexInitialize || d.Code != domain.Unsupported {
+		t.Fatalf("newer protocol failure lost its actual diagnostic: %v", err)
 	}
 }

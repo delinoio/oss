@@ -182,7 +182,7 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	// Registration durably claims this single title attempt before verification
 	// launches even the native version or app-server probe.
 	verificationStarted = true
-	verified, err := harness.VerifyCodexTitleProfile(ctx, config.Root, jobID, input.Executable, config.Logger)
+	verified, err := harness.VerifyCodexTitleProfile(ctx, config.Root, jobID, input.Executable, input.NativeVersion, config.Logger)
 	if err != nil {
 		return nil, err
 	}
