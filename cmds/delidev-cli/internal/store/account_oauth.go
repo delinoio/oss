@@ -59,6 +59,10 @@ func (t *Tx) PutAccountOAuth(a domain.AccountOAuthAttempt, expected uint64) erro
 	return nil
 }
 func (t *Tx) AccountOAuthPending() (int, error) {
+	var tokens int
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM account_oauth_credentials WHERE json_extract(body,'$.refresh_state') IN ('claimed','recovery-required') OR json_array_length(json_extract(body,'$.cleanup'))>0`).Scan(&tokens); err != nil {
+		return 0, storageError(err)
+	}
 	var n int
 	err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM account_oauth_attempts WHERE state IN ('exchanging','saving','recovery-required') OR json_extract(body,'$.cleanup_pending')=1`).Scan(&n)
 	if err != nil {
@@ -95,7 +99,7 @@ func (t *Tx) AccountOAuthPending() (int, error) {
 			n++
 		}
 	}
-	return n, nil
+	return n + tokens, nil
 }
 
 // A new lifetime cannot recover an old verifier or send a claimed exchange.
