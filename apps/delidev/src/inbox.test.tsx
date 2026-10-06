@@ -135,3 +135,21 @@ it("does not render a current source joined to a foreign session", async () => {
   expect(value.setRead).not.toHaveBeenCalled();
   expect(value.answer).not.toHaveBeenCalled();
 });
+
+
+it("renders account quota recovery with no terminal or session authority", async()=>{
+ const value=fixture(),account=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.ACCOUNT,schemaVersion:2,revision:1n,documentJson:encode({alias:"Recovered subscription",type:"subscription",subscription_service:"chatgpt"})});
+ const observed="2026-10-04T01:23:45Z";
+ const entry=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.INBOX,schemaVersion:1,revision:1n,documentJson:encode({source:"subscription-recovery",source_id:newRequestId(),read_state:"unread",recovery:{account_id:account.id,connection_id:newRequestId(),observed_at:observed}})});
+ const view=create(InboxViewSchema,{entry,account});
+ value.list.mockReturnValue({entries:[view],nextPageToken:""});
+ value.get.mockResolvedValue({view});
+ render(value.renderInbox());
+ fireEvent.click(await screen.findByRole("button",{name:/Subscription quota recovered, Recovered subscription, Unread/}));
+ await screen.findByRole("heading",{name:"Subscription quota recovery"});
+ expect(screen.getByText("Account: Recovered subscription")).toBeTruthy();
+ expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
+ expect(screen.queryByText("Original terminal observation")).toBeNull();
+ expect((screen.getByRole("button",{name:"Open session"}) as HTMLButtonElement).disabled).toBe(true);
+ expect(value.answer).not.toHaveBeenCalled(); expect(value.setRead).not.toHaveBeenCalled();
+});

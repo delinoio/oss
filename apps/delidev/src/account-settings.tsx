@@ -1,6 +1,11 @@
+import { ProviderGuidance } from "./provider-guidance";
+import { OpenRouterOAuth, useOpenRouterOAuth, type OpenRouterOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { ApiEntryRow } from "./api-entry-row";
+import type { UsageEntry } from "./usage-entry";
 import {
   AccountQuery,
   AccountTypeFilter,
@@ -9,6 +14,7 @@ import {
   ConfigurationQuery,
   EntityKind,
   ResourceQuery,
+  UsageQuery,
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
@@ -18,7 +24,7 @@ import { Authentication } from "./configuration-fields";
 import { document, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
-import { QuotaObservationState, SubscriptionConnectionState, SubscriptionReadState, SubscriptionSettingsView, type SubscriptionAccountRow } from "./subscription-settings";
+import { SubscriptionAccounts } from "./subscription-accounts";
 
 export enum AccountSettingsSection {
   Api = "api",
@@ -32,6 +38,9 @@ export interface AccountProviderSummary {
   provider: Resource;
   keyGuidance: string;
   documentationUrl: string;
+  presetId?: string;
+  keyCreationUrl?: string;
+  oauthAvailable?: boolean;
 }
 
 export interface AccountProviderPicker {
@@ -47,6 +56,8 @@ export interface AccountProviderPicker {
 }
 
 export interface AccountSettingsProps {
+  openUsage?: (entry: UsageEntry) => void;
+  oauth?: OpenRouterOAuthFlow;
   section: AccountSettingsSection;
   active: boolean;
   accountTypeFilteringReady: boolean;
@@ -117,6 +128,8 @@ function sameProviderContract(left: ReturnType<typeof providerContract> | undefi
 }
 
 function AccountCreationWizard({
+  oauth: suppliedOAuth,
+  openEdit,
   active,
   accountTypeFilteringReady,
   initialProvider,
@@ -128,6 +141,8 @@ function AccountCreationWizard({
   openManage,
   saved,
 }: {
+  oauth?: OpenRouterOAuthFlow;
+  openEdit: (resource: Resource) => void;
   active: boolean;
   accountTypeFilteringReady: boolean;
   initialProvider?: AccountProviderSummary;
@@ -139,6 +154,8 @@ function AccountCreationWizard({
   openManage: (resource: Resource) => void;
   saved: (resource: Resource) => void;
 }) {
+  const localOAuth = useOpenRouterOAuth();
+  const oauth = suppliedOAuth ?? localOAuth;
   const [step, setStep] = useState(initialProvider ? WizardStep.Account : WizardStep.Provider);
   const [providerId, setProviderId] = useState(initialProvider?.providerId ?? "");
   // Keep the clicked contract authoritative when independent inventory pages retain different snapshots.
@@ -354,6 +371,7 @@ function AccountCreationWizard({
     setAutoConnect(undefined);
     setStep(WizardStep.Account);
     setFocusTarget(WizardFocus.Account);
+    if (provider.oauthAvailable && oauth.available) oauth.start(provider);
   };
   const returnToProviders = () => {
     if (providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain) return;
@@ -478,6 +496,8 @@ function AccountCreationWizard({
     </section>;
   }
 
+  if (oauth.view) return <OpenRouterOAuth flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} edit={resource => { saved(resource); openEdit(resource); }} manage={resource => { saved(resource); openManage(resource); }} done={() => { if (oauth.view?.account) saved(oauth.view.account); close(); }} />;
+
   return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>Back to AI API Keys</button>
     <SettingsHeading title="AI API Keys" /><h2 id="api-account-wizard-title">Add AI API key</h2>
@@ -492,7 +512,7 @@ function AccountCreationWizard({
       {picker.loaded && (!accountTypeFilteringReady || !picker.ready) ? <p role="status">Provider choices are unavailable because this server does not report the required provider inventory and account-type filtering capabilities. Update the server before continuing.</p> : null}
       {accountTypeFilteringReady && picker.ready ? <>
         <div className="account-provider-choices">{options.map((provider) => <button type="button" className="account-provider-action" key={provider.providerId} ref={(button) => { if (button) providerButtons.current.set(provider.providerId, button); else providerButtons.current.delete(provider.providerId); }} onClick={() => pickProvider(provider)}>
-          <span><strong>{provider.displayName}</strong><span className="account-provider-method">{document(provider.provider).authentication === Authentication.Keyless ? "Local endpoint" : "API key"}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
+          <span><strong>{provider.displayName}</strong><span className="account-provider-method">{provider.oauthAvailable && oauth.available ? "Browser sign-in" : document(provider.provider).authentication === Authentication.Keyless ? "Local endpoint" : "API key"}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
         </button>)}</div>
         {options.length === 0 && !picker.fetching && !picker.error ? !picker.pageToken && !picker.nextPageToken ? <div><p>Enable an API provider to add an entry.</p><button type="button" onClick={openProviders}>Open API Providers</button></div> : <p>No enabled API providers on this page.</p> : null}
       </> : null}
@@ -512,7 +532,7 @@ function AccountCreationWizard({
           {keyless ? <p>Connect to this local endpoint on the selected server.</p> : <>
             <label>API key<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={apiKey} aria-invalid={(attempted || apiKey.length > 0) && !apiKeyValid} onChange={(event) => setApiKey(event.target.value)} /></label>
             {!providerChecking && !create.busy && !create.uncertain && (attempted || apiKey.length > 0) && !apiKeyValid ? <p role="alert">Enter 1–8192 printable ASCII bytes without whitespace.</p> : null}
-            <details><summary>Where to get an API key</summary><p>{selectedProvider?.keyGuidance || "Use the provider's documented API key flow."}</p>{selectedProvider?.documentationUrl ? <p>Provider documentation: <code>{selectedProvider.documentationUrl}</code></p> : null}</details>
+            <details><summary>Where to get an API key</summary><p>{selectedProvider?.keyGuidance || "Use the provider's documented API key flow."}</p>{selectedProvider ? <ProviderGuidance preset={selectedProvider.presetId} documentation={selectedProvider.documentationUrl} keyCreation={selectedProvider.keyCreationUrl} /> : null}</details>
           </>}
           <p>Use a separate entry for each API key.</p><p>Stored securely on the selected server.</p>
           <details open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}><summary>Advanced preferences</summary>
@@ -535,7 +555,13 @@ function AccountCreationWizard({
   </section>;
 }
 
-export function AccountSettings({
+export function AccountSettings(props: AccountSettingsProps) {
+  return props.section === AccountSettingsSection.Subscription ? <SubscriptionAccounts active={props.active} editAccount={props.editAccount} deleteAccount={props.deleteAccount} onWorkflowReadyChange={props.onWorkflowReadyChange} /> : <ApiAccountSettings {...props} />;
+}
+
+function ApiAccountSettings({
+  openUsage,
+  oauth,
   section,
   active,
   accountTypeFilteringReady,
@@ -565,15 +591,15 @@ export function AccountSettings({
   startApiWizard,
   providerHint,
 }: AccountSettingsProps) {
+  const client = useQueryClient();
+  const transport = useTransport();
+  const usageKey = createConnectQueryKey({ schema: UsageQuery.getUsageSummary, transport, cardinality: "finite" });
+  const usageFetching = useIsFetching({ queryKey: usageKey });
   const [page, setPage] = useState<{ section: AccountSettingsSection; providerId: string; token: string }>({ section, providerId: "", token: "" });
   const [wizard, setWizard] = useState(false);
   const [wizardProvider, setWizardProvider] = useState<AccountProviderSummary>();
   const [pauseWorkflowLock, setPauseWorkflowLock] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Resource>();
-  const [subscriptionProviderId, setSubscriptionProviderId] = useState("");
-  const [subscriptionAlias, setSubscriptionAlias] = useState("");
-  const [createdSubscription, setCreatedSubscription] = useState<Resource>();
-  const [subscriptionCreateProblem, setSubscriptionCreateProblem] = useState(false);
   const lastWizardRequest = useRef("");
   const providerSummaries = useMemo(() => {
     const result = [...providers];
@@ -583,45 +609,18 @@ export function AccountSettings({
     return result;
   }, [providerHint, providers, startApiWizard]);
   const pageToken = page.section === section && page.providerId === providerIdFilter ? page.token : "";
-  const accountType = section === AccountSettingsSection.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION;
+  const accountType = AccountTypeFilter.API;
   const rows = useQuery(ResourceQuery.listResources, {
     filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken },
     providerId: providerIdFilter,
     accountType,
-  }, { enabled: active && accountTypeFilteringReady && !wizard && !selectedAccount && !createdSubscription });
+  }, { enabled: active && accountTypeFilteringReady && !wizard && !selectedAccount });
   const providersById = useMemo(() => {
     const values = new Map<string, { displayName: string; enabled: boolean }>();
     for (const provider of providerSummaries) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled });
-    for (const resource of subscriptionProviderResources) {
-      const data = document(resource);
-      values.set(resource.id, { displayName: resourceName(resource), enabled: data.enabled !== false });
-    }
     return values;
-  }, [providerSummaries, subscriptionProviderResources]);
-  const subscriptionProviders = useMemo(() => subscriptionProviderResources.filter((provider) =>
-    document(provider).protocol === "native-subscription" && document(provider).authentication === Authentication.Subscription &&
-    text(document(provider).endpoint) === "" && resourceName(provider).toLowerCase().includes(providerSearch.toLowerCase())), [providerSearch, subscriptionProviderResources]);
-  const subscriptionProvider = subscriptionProviders.find((provider) => provider.id === subscriptionProviderId);
-  const subscriptionAliasValid = subscriptionAlias.trim().length > 0 && !subscriptionAlias.includes(String.fromCharCode(0)) && new TextEncoder().encode(subscriptionAlias).byteLength <= 256;
-  const subscriptionCreate = useRetainedMutation("subscription-account-configuration:create", ConfigurationQuery.saveConfiguration, (result, request) => {
-    let expected: { providerId: string; alias: string } | undefined;
-    try {
-      const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(request.documentJson)) as Record<string, unknown>;
-      expected = { providerId: text(body.provider_id), alias: text(body.alias) };
-    } catch { /* Malformed request data cannot authorize a follow-up navigation. */ }
-    const resource = result.resource;
-    if (request.kind !== EntityKind.ACCOUNT || !request.mutation || result.requestId !== request.mutation.requestId ||
-      !expected || !resource || resource.kind !== EntityKind.ACCOUNT || resource.schemaVersion !== 1 || resource.revision < 1n ||
-      document(resource).type !== "subscription" || document(resource).provider_id !== expected.providerId ||
-      document(resource).alias !== expected.alias) {
-      setSubscriptionCreateProblem(true);
-      return;
-    }
-    setSubscriptionProviderId("");
-    setSubscriptionAlias("");
-    setCreatedSubscription(resource);
-  });
-  const workflowActive = (wizard && !pauseWorkflowLock) || Boolean(selectedAccount || createdSubscription) || Boolean(subscriptionProviderId || subscriptionAlias) || subscriptionCreate.busy || subscriptionCreate.uncertain;
+  }, [providerSummaries]);
+  const workflowActive = (wizard && !pauseWorkflowLock) || Boolean(selectedAccount);
   useEffect(() => {
     onWorkflowReadyChange?.(workflowActive);
     return () => onWorkflowReadyChange?.(false);
@@ -639,38 +638,6 @@ export function AccountSettings({
     onWorkflowReadyChange?.(true);
     setWizard(true);
   }, [onWorkflowReadyChange, providers, startApiWizard]);
-  useEffect(() => {
-    if (!subscriptionCreate.input || (!subscriptionCreate.busy && !subscriptionCreate.uncertain)) return;
-    const retained = subscriptionCreate.input as { kind?: EntityKind; documentJson?: Uint8Array };
-    if (retained.kind !== EntityKind.ACCOUNT || !retained.documentJson?.byteLength) return;
-    try {
-      const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(retained.documentJson)) as Record<string, unknown>;
-      if (text(body.type) !== "subscription") return;
-      if (!subscriptionProviderId) setSubscriptionProviderId(text(body.provider_id));
-      if (!subscriptionAlias) setSubscriptionAlias(text(body.alias));
-    } catch { /* The exact retained request remains available for inspection and retry. */ }
-  }, [subscriptionAlias, subscriptionCreate.busy, subscriptionCreate.input, subscriptionCreate.uncertain, subscriptionProviderId]);
-
-  const createSubscriptionConfiguration = () => {
-    if (!accountTypeFilteringReady || !subscriptionProvider || !subscriptionAliasValid || subscriptionCreate.busy || subscriptionCreate.uncertain) return;
-    setSubscriptionCreateProblem(false);
-    void subscriptionCreate.send({
-      mutation: { id: "", expectedRevision: 0n, requestId: newRequestId() },
-      kind: EntityKind.ACCOUNT,
-      schemaVersion: 1,
-      documentJson: new TextEncoder().encode(JSON.stringify({
-        alias: subscriptionAlias,
-        provider_id: subscriptionProvider.id,
-        type: "subscription",
-        enabled: true,
-        exclude_automatic: false,
-        recovery_notifications: true,
-        health: "disconnected",
-        quota: [],
-        confirmed_exhausted: false,
-      })),
-    });
-  };
   const browseApiProviders = () => {
     if (!wizard || pauseWorkflowLock) return;
     onWorkflowReadyChange?.(false);
@@ -680,67 +647,14 @@ export function AccountSettings({
 
   if (selectedAccount && section === AccountSettingsSection.Api) return <><SettingsHeading title="AI API Keys" /><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></>;
 
-  if (wizard) return <AccountCreationWizard active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
-
-  if (section === AccountSettingsSection.Subscription) {
-    const readProblem = accountTypeFilteringProblem || rows.error;
-    const failure = readProblem ? clientFailure(readProblem).code : undefined;
-    const state = failure === FailureCode.PermissionDenied ? SubscriptionReadState.PermissionDenied
-      : failure === FailureCode.Unauthenticated ? SubscriptionReadState.AuthenticationExpired
-      : readProblem ? SubscriptionReadState.Failed
-      : accountTypeFilteringLoading || (accountTypeFilteringReady && !rows.data) ? SubscriptionReadState.Loading
-      : !accountTypeFilteringReady ? SubscriptionReadState.Unsupported : SubscriptionReadState.Ready;
-    const accounts: SubscriptionAccountRow[] = (rows.data?.resources ?? []).map((row) => {
-      const data = document(row), provider = providersById.get(text(data.provider_id));
-      const quota = Array.isArray(data.quota) ? data.quota : [];
-      return {
-        id: row.id, alias: resourceName(row), providerName: provider?.displayName ?? "Provider unavailable · " + text(data.provider_id),
-        // The current generated account contract has no native brand or masked
-        // identity. Never derive either from an editable alias/provider name.
-        connection: text(object(data.removal).request_id) ? SubscriptionConnectionState.CleanupPending
-          : text(object(data.connection).id) ? SubscriptionConnectionState.Connected : SubscriptionConnectionState.Disconnected,
-        health: text(data.health), enabled: data.enabled === true,
-        providerState: provider ? provider.enabled ? "Enabled" : "Off" : "Unavailable",
-        confirmedExhausted: data.confirmed_exhausted === true,
-        windows: quota.map((entry) => {
-          const window = object(entry);
-          const state = Object.values(QuotaObservationState).find((value) => value === window.state) ?? QuotaObservationState.Unknown;
-          return { id: text(window.id), state, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) };
-        }),
-        metadataAvailable: row.schemaVersion === 1,
-        details: () => { onWorkflowReadyChange?.(true); setSelectedAccount(row); },
-        edit: () => editAccount(row), delete: () => deleteAccount(row),
-      };
-    });
-    return <><div hidden={Boolean(selectedAccount || createdSubscription)}><SubscriptionSettingsView accounts={accounts} active={active && !selectedAccount && !createdSubscription} state={state} problem={<Problem error={readProblem} />}
-      retryRead={() => { if (accountTypeFilteringProblem || !accountTypeFilteringReady) retryAccountCapabilities?.(); else void rows.refetch(); }}
-      activeFilter={providerIdFilter ? providersById.get(providerIdFilter)?.displayName || providerIdFilter : undefined}
-      clearFilter={() => { setPage({ section, providerId: "", token: "" }); clearProviderFilter(); }}
-      pagination={pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label="Account pages"><button type="button" disabled={!pageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button></nav> : null}
-      advanced={<>
-      <div className="account-provider-filter"><label>Search providers<input type="search" value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} /></label><label>Filter accounts by provider<select value={providerIdFilter} onChange={(event) => {
-        const provider = providerSummaries.find((candidate) => candidate.providerId === event.target.value);
-        setPage({ section, providerId: event.target.value, token: "" });
-        setProviderFilter(event.target.value, provider);
-      }}><option value="">All providers</option>{providerSummaries.map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.displayName}{provider.enabled ? " · On" : " · Off"}</option>)}{providerIdFilter && !providerSummaries.some((provider) => provider.providerId === providerIdFilter) ? <option value={providerIdFilter}>Selected provider · {providerIdFilter}</option> : null}</select></label><button type="button" disabled={!providerFilterHasMore || providerSearchLoading} onClick={loadMoreProviderFilters}>More provider filters</button></div>
-        <Problem error={providerSearchError} />
-      <section className="subscription-account-create"><h3>Add subscription configuration</h3><p>This saves disconnected metadata only. Subscription login and system credential reuse are not available.</p>
-        {subscriptionProviders.length > 0 ? <fieldset disabled={!accountTypeFilteringReady || subscriptionCreate.busy || subscriptionCreate.uncertain}><label>Subscription provider<select value={subscriptionProviderId} onChange={(event) => setSubscriptionProviderId(event.target.value)}><option value="">Select a subscription provider</option>{subscriptionProviders.map((provider) => <option key={provider.id} value={provider.id}>{resourceName(provider)}</option>)}</select></label><label>Account name<input autoComplete="off" maxLength={256} value={subscriptionAlias} aria-invalid={subscriptionAlias.length > 0 && !subscriptionAliasValid} onChange={(event) => setSubscriptionAlias(event.target.value)} /></label>{subscriptionAlias.length > 0 && !subscriptionAliasValid ? <p role="alert">Enter a non-empty account name no longer than 256 UTF-8 bytes.</p> : null}<button type="button" disabled={!accountTypeFilteringReady || !subscriptionProvider || !subscriptionAliasValid} onClick={createSubscriptionConfiguration}>Add subscription configuration</button></fieldset> : <p>No subscription provider configuration is available. Expand Subscription provider configurations below to add one.</p>}
-        <Problem error={subscriptionCreate.error} />{subscriptionCreate.uncertain ? <button type="button" disabled={subscriptionCreate.busy} onClick={subscriptionCreate.retry}>Retry the same subscription configuration</button> : null}{subscriptionCreateProblem ? <p role="alert">The server acknowledged the request without a matching subscription account. Inspect the original request before retrying.</p> : null}
-      </section>
-        <details><summary>Subscription provider configurations</summary>{subscriptionProviderManagement}</details>
-      </>} /></div>
-      {selectedAccount ? <AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} />
-        : createdSubscription ? <section><p role="status">Subscription configuration saved. Subscription login is not available yet; this account remains disconnected.</p><AccountConnection initial={createdSubscription} active={active} close={() => { setCreatedSubscription(undefined); void rows.refetch(); }} /></section> : null}
-    </>;
-  }
+  if (wizard) return <AccountCreationWizard oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} />;
 
   const inventoryProblem = accountTypeFilteringProblem || providerSearchError;
   const readProblem = inventoryProblem || rows.error;
   const readDenied = readProblem && clientFailure(readProblem).code === FailureCode.PermissionDenied;
   const successfulEmpty = accountTypeFilteringReady && rows.data?.resources.length === 0 && !readProblem;
   const finalFirstPage = !pageToken && !rows.data?.nextPageToken;
-  return <section className="account-settings api-keys-view" aria-label="AI API Keys settings">
+  return <section className="account-settings api-keys-view api-usage-list" aria-label="AI API Keys settings">
     <SettingsHeading title="AI API Keys" description="Manage AI API keys and keyless local connections. Connection and health are separate states." actions={<>
       <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); onWorkflowReadyChange?.(true); setWizard(true); }}>Add AI API key</button>
     </>} />
@@ -755,27 +669,12 @@ export function AccountSettings({
       {rows.error ? <button type="button" disabled={rows.isFetching} onClick={() => { void rows.refetch(); }}>Retry entries</button> : null}
       {readProblem && rows.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded entries.</p> : null}
       {rows.isFetching && !rows.data ? <SettingsLoading label="Loading entries…" /> : null}
-      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map((row) => {
-        const data = document(row);
-        const provider = providersById.get(text(data.provider_id));
-        const quotaCount = Array.isArray(data.quota) ? data.quota.length : 0;
-        return <article className="api-entry-row" key={row.id}>
-          <h2>{resourceName(row)}</h2>
-          {row.schemaVersion !== 1 ? <p className="api-entry-provider-name">{row.id}</p> : null}
-          <p className="api-entry-provider-name">{provider?.displayName ?? "Provider unavailable · " + text(data.provider_id)}</p>
-          <dl>
-            <div><dt>Connection:</dt><dd>{text(object(data.removal).request_id) ? "Credential cleanup pending" : text(object(data.connection).id) ? "Credential connected" : "Disconnected"}</dd></div>
-            <div><dt>Health:</dt><dd>{text(data.health) || "Unknown"}</dd></div>
-            <div><dt>Entry:</dt><dd>{data.enabled === true ? "Enabled" : "Disabled"}</dd></div>
-            <div><dt>Provider status:</dt><dd>{provider ? provider.enabled ? "Enabled" : "Off" : "Unavailable"}</dd></div>
-            <div><dt>Quota:</dt><dd>{data.confirmed_exhausted === true ? "Confirmed exhausted" : quotaCount ? `${quotaCount} observations` : "No quota observation"}</dd></div>
-          </dl>
-          <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} onClick={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }}>Manage connection</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => editAccount(row)}>Edit preferences</button><button className="api-entry-delete" type="button" disabled={row.schemaVersion !== 1} onClick={() => deleteAccount(row)}>Delete entry</button></div>
-        </article>;
-      })}</div> : null}
+      <div className="api-usage-list-heading"><div><h2>Your API keys</h2><p>DeliDev usage · Last 30 days</p></div><button type="button" disabled={!active || rows.isFetching || usageFetching > 0} onClick={() => { void rows.refetch(); void client.refetchQueries({ queryKey: usageKey, type: "active" }); }}><span aria-hidden="true">↻</span> Refresh usage</button></div>
+      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map(row => <ApiEntryRow key={row.id} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div> : null}
       {successfulEmpty ? finalFirstPage && !providerIdFilter ? <SettingsEmpty title="No AI API key entries"><p>Add an entry for an enabled API provider.</p><p>Keyless local providers do not require a key.</p></SettingsEmpty> : <p className="api-entry-page-empty">{finalFirstPage && providerIdFilter ? "No entries for this provider." : "No entries on this page."}</p> : null}
       {pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label="Entry pages">{pageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>First page</button> : null}{rows.data?.nextPageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>Next page</button> : null}</nav> : null}
     </> : null}
+    {accountTypeFilteringReady ? <p className="api-entry-storage-note">Known usage may be incomplete. Estimates are not billed amounts.</p> : null}
     <p className="api-entry-storage-note">Credentials are stored securely on the selected server.</p>
   </section>;
 }

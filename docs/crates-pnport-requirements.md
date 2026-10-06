@@ -1,6 +1,32 @@
 # pnport 0.1 requirements
 
-Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete.
+## Owner-authorized 0.1.0 publication amendment (2026-10-04)
+
+The [project amendment](project-pnport.md#owner-authorized-010-publication-amendment-2026-10-04)
+permits exactly 0.1.0 publication after the retained final four-native candidate
+gates. The owner deferred the recorded macOS initialization/SIGHUP failure
+investigations, separate root clibox watch failure and full-acceptance review.
+Keep those limits visible; this exception does not establish a fix or passing
+skipped checks. Require `pnportReleaseReady: true` and exact
+`pnportReleaseVersion: "0.1.0"`, preserve signing/integrity and immutable retries,
+and keep #958 and the complete Windows 0.2.0 requirements open. This amendment
+takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
+
+Stable 0.1.0 is published for all four macOS/glibc Linux targets. The retained
+final native candidate gates passed; publication does not complete the deferred
+acceptance or resolve the recorded failures. Keep the immutable preview and
+Windows 0.2.0 requirements separate from stable availability.
+
+## Owner-authorized 0.1.2 repair release (2026-10-05)
+
+The [project repair amendment](project-pnport.md#owner-authorized-012-repair-release-2026-10-05)
+authorizes exactly 0.1.2 after all retained final-tag and fresh publication gates.
+Stable 0.1.2 is published on the same four targets, with the previously disclosed
+initialization/cancellation and full-acceptance limits retained. The failed 0.1.1
+tag and earlier published bytes remain immutable. Keep #958 open and preserve
+the complete Windows 0.2.0 requirements.
+
+Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete. The owner-approved 2026-10-03 amendment raises the macOS support floor to 15; both native CI architectures must execute on that supported floor.
 
 ## Summary
 
@@ -39,7 +65,7 @@ Support x64 and arm64 on:
 
 | Platform | Minimum supported environment |
 |---|---|
-| macOS | macOS 13+ |
+| macOS | macOS 15+ |
 | Windows (planned for 0.2.0) | Windows 10 22H2+, native MSVC targets |
 | Linux | Ubuntu 22.04-equivalent glibc and kernel capabilities |
 
@@ -98,7 +124,9 @@ Implement and test:
 
 Dependency views and managed package contents are read-only. Writes through those views fail with appropriate filesystem errors. Ordinary project-source and output paths retain native write behavior.
 
-If a physical `node_modules` conflicts with a virtual directory, report the conflict and stop without modifying or deleting it. Detect conflicts encountered after startup as well.
+Writable SOFT project/workspace roots may contain an empty physical `node_modules` or hidden tool-cache entries. Hidden entries exclude `.bin`, `.`/`..`, and declared dependency/fallback names. Cache reads and writes use native storage; dependency content remains virtual and read-only. Allow structural cache-container creation, but reject removal, rename and metadata mutations of the merged root. Directory listings combine native caches with virtual dependencies. HARD package roots remain read-only.
+
+If any other physical `node_modules` entry conflicts with a virtual directory, report the conflict and stop without modifying or deleting it. Files and symlinked namespace roots are conflicts. Detect conflicts encountered after startup as well.
 
 The filesystem follows the PnP dependency graph, but does not promise the Yarn JavaScript loader’s complete import-boundary enforcement for arbitrary tools. Each tool remains responsible for its language-specific resolution semantics.
 

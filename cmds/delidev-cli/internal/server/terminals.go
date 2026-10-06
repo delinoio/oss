@@ -98,6 +98,9 @@ func (s *Service) CreateTerminal(ctx context.Context, req *connect.Request[pb.Cr
 		if err != nil {
 			return nil, err
 		}
+		if session.IsSidechat() {
+			return nil, domain.SidechatUnavailable()
+		}
 		if sr.Revision != meta.ExpectedRevision || session.Archive != domain.NotArchived {
 			return nil, domain.Fail(domain.Conflict, "The session changed or is archiving.", "Reload the active session before creating a terminal.")
 		}
@@ -403,6 +406,11 @@ func (s *Service) ClaimTerminal(ctx context.Context, req *connect.Request[pb.Cla
 		if value.CloseRequestID == domain.ID(req.Msg.OperationId) {
 			value.InstanceID, value.DeviceID = instance, actor.DeviceID
 		} else {
+			if value.Pending != nil && value.Pending.Action == domain.TerminalCreate {
+				if err := tx.WorkerUpdateAdmission(machine); err != nil {
+					return nil, err
+				}
+			}
 			_, session, err := sessionRecord(tx, r.SessionID)
 			if err != nil {
 				return nil, err

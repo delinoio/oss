@@ -680,7 +680,8 @@ fn yaml_shares_long_shadowed_merge_chains_with_bounded_memory() {
     let dir = tempfile::tempdir().unwrap();
     let mut source = "<<:\n  payload:\n    - &a0 {k0: 0}\n".to_owned();
     for i in 1usize..5000 {
-        // Repeated and nearly identical operands must retain structural sharing.
+        // Repeated and nearly identical operands must retain structural
+        // sharing.
         source.push_str(&format!(
             "    - &a{i} {{<<: [*a{}, *a{}], k{i}: 0}}\n",
             i - 1,
@@ -997,8 +998,9 @@ fn concurrent_authorized_replacements_produce_one_complete_result() {
                 // Windows sharing can reject concurrent inspection/publication.
                 // Unix inspection can observe a zero-link destination handle
                 // after the other writer replaces it and must fail closed.
-                // A failed writer must not overwrite a successful writer's result;
-                // no locks or automatic retries are promised.
+                // A failed writer must not overwrite a successful writer's
+                // result; no locks or automatic retries are
+                // promised.
                 assert_eq!(output.status.code(), Some(1), "{diagnostic}");
                 #[cfg(unix)]
                 assert!(
@@ -1027,7 +1029,8 @@ fn concurrent_authorized_replacements_produce_one_complete_result() {
             payloads.iter().position(|payload| payload == &result)
         );
         no_temps(dir.path());
-        // A replacement started after both have finished deterministically wins.
+        // A replacement started after both have finished deterministically
+        // wins.
         assert!(run(
             dir.path(),
             &["dotenv", "merge", "-", "--output", "out", "--force"],

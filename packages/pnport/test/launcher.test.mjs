@@ -22,7 +22,7 @@ for (const version of ["0.1.0", "0.1.0-next.1"]) test(`manifests pin four exact 
     assert.equal(manifest.optionalDependencies[native.name], native.version);
     assert.deepEqual(native.os, [target.os]);
     assert.deepEqual(native.cpu, [target.cpu]);
-    assert.equal(selectTarget(target.os, target.cpu, target.libc), target);
+    assert.equal(selectTarget(target.os, target.cpu, target.libc, "24.0.0"), target);
   }
   assert.equal(selectTarget("linux", "x64", "musl"), undefined);
   assert.equal(selectTarget("darwin", "ia32"), undefined);
@@ -31,6 +31,18 @@ for (const version of ["0.1.0", "0.1.0-next.1"]) test(`manifests pin four exact 
   assert.throws(() => nativeManifest("win32-x64-msvc", "0.1.0", revision));
   assert.throws(() => nativeManifest("win32-arm64-msvc", "0.1.0", revision));
   assert.throws(() => nativeManifest("linux-x64-musl", "0.1.0", revision));
+});
+
+test("macOS 15 is the minimum and older or unknown hosts cannot select a native package", () => {
+  for (const cpu of ["x64", "arm64"]) {
+    for (const release of ["22.6.0", "23.6.0", "", "unknown", "24", "24.0.0extra"]) {
+      const target = selectTarget("darwin", cpu, undefined, release);
+      assert.equal(target, undefined);
+      assert.throws(() => resolveBinary("/nonexistent/pnport/package.json", target ?? null), error => error.code === Failure.Unsupported && error.message.includes("macOS 15+"));
+    }
+    assert.equal(selectTarget("darwin", cpu, undefined, "24.0.0")?.cpu, cpu);
+    assert.equal(selectTarget("darwin", cpu, undefined, "25.1.0")?.cpu, cpu);
+  }
 });
 
 test("unsupported targets fail before reading or launching an installed package", () => {

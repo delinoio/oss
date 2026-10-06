@@ -1,4 +1,4 @@
-# DeliDev same-account Codex session forks
+# DeliDev same-account native session forks
 
 ## Scope
 
@@ -7,7 +7,7 @@ workspace owners. Issue #964 and the existing session, harness and workspace
 contracts remain normative. Fork does not imply Sidechat, account switching,
 transcript replay or support for unknown native history.
 
-Canonical owners are `cmds/delidev-cli/internal/{server,worker,workspace,harness/codex,cli}`, additive `protos/delidev/v1` and generated clients, with presentation in `apps/delidev`.
+Canonical owners are `cmds/delidev-cli/internal/{server,worker,workspace,harness/{codex,opencode},cli}`, additive `protos/delidev/v1` and generated clients, with presentation in `apps/delidev`.
 
 ## Runtime and Language
 
@@ -243,7 +243,94 @@ RPC changes. Keep desktop contracts/AGENTS synchronized with presentation change
 - [Issue #1092](https://github.com/delinoio/oss/issues/1092)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 
-Workspace storage and fork ownership compose at the original source boundary. Fork
-acceptance, claim and publication require a present workspace, with no pending or
-uncertain storage operation. Storage admission waits for unresolved fork jobs to
-settle; a stored workspace must be explicitly restored before it can be forked.
+Workspace storage and fork ownership compose at the original source boundary. When
+workspace storage is supported, fork acceptance, claim and publication require a
+present workspace without a pending or uncertain storage operation. Storage
+admission waits for unresolved fork jobs to settle; a stored workspace must be
+explicitly restored before it can be forked.
+
+## Bounded OpenCode General Chat fork (#1210)
+
+The independent System 26 / Worker 15 profile uses pinned OpenCode `1.18.32`
+(commit `545f51d26cc39a907d2867492d498d9607ea5fa4`) and the existing authenticated
+ForkSession/CLI/desktop job. Only existing Unix non-VCS General Chat Build/Execute
+sources qualify: latest successful accepted v2 completion, joined cleanup,
+original API account/Worker/model/configuration, and complete plain user/assistant
+text with step-start/finish. Reject Plan, reasoning, tools, snapshots, media,
+compaction, children, remembered permissions, native workspace routing and
+already-forked sources. Recheck current authority at acceptance, claim,
+publication and child execution; reserve the source against dispatch, file
+writers, Stop, Archive and cleanup throughout capture. Original queued input
+remains on its source.
+
+Copy all regular General Chat files, including hidden/ignored files and executable
+modes, into an exclusively created independent sibling. Bound this profile to
+8,192 entries / 256 MiB, compare complete source inventories before/after native
+creation, reject links/special entries/private overlap/active owned writers,
+and retain cleanup only for the new job-owned artifacts. These checks detect
+same-user changes without claiming to prevent every external filesystem writer.
+
+The preparation runtime stages only independently verified native SQLite/WAL/SHM,
+regenerates isolated configuration/instructions and uses fresh authenticated
+loopback control plus a correctly formatted fresh execution nonce that is never
+registered with the relay. Preparation has no protected-key or upstream authority;
+an attempted inference fails relay authority before key retrieval. Ordinary
+execution still requires registration. No synthetic or replayed prompt establishes
+fork metadata.
+
+Read the copied original source session and full ordered history before one
+synchronized native `POST /session/{sourceID}/fork` with empty body and no
+messageID. Source-directory routing is intentional. Independently prove a unique
+new root and complete order-preserving message/part ID replacement, child-local
+session references and remapped assistant parent IDs. Every other supported field
+is unchanged; historical assistant paths are provenance only.
+
+After that proof, claim once and call authenticated native
+`POST /experimental/control-plane/move-session` with the exact child ID,
+`destination.directory` and explicit `moveChanges=false`. Both directories must
+have the original global native project identity. Independently re-read the
+session/history/status/interactions and permit only documented directory/path
+and native update-time changes. Never capture/apply/discard Git changes, rewrite
+database rows or substitute path aliases. Native child agent/model absence is a
+closed preparation state, never an effective selection observation.
+
+Require child permission absence before the once-claimed native PATCH, preserve
+closed original unrelated metadata, set the fork request marker and explicit
+empty permission array, then independently read both back. Prove no parentID or
+foreign child references before deleting only the copied original source session
+through its once-claimed native DELETE. Require original-source not-found,
+sole-child inventory, unchanged child history and no pending work. The original
+runtime/checkpoint/files remain untouched.
+
+Join the preparation native process before synchronized private checkpoint
+publication. Retain complete source lineage/ID map/history digests, relocated
+child/root, independent file inventory, exact configuration and absent-versus-
+observed native selection. The first real child input restores this child profile,
+uses explicit immutable agent/provider/model/variant and independently observes
+native selection/acceptance. Later ordinary checkpoints preserve inherited history
+without adding its usage. Publish child, cloned canonical transcript and source
+link atomically after native/files/cleanup proof, with empty paused queue.
+
+Lost fork acknowledgment may reconcile only a unique complete new root in the
+original owned runtime, using complete source/history comparison and durable
+intent; never resend. Move/PATCH/delete uncertainty likewise reconciles only their
+exact observed state. Partial/multiple children, changed history or unproved
+cleanup remain recovery-required and block child input. Retry the original product
+receipt after server/Worker replacement without native replay. Keep native fixtures,
+real accounts and platform/package acceptance distinct in PR/issue/CI records.
+
+The desktop checks the complete retained OpenCode transcript before presenting
+Fork. Its cancellable authenticated Resource RPC read is keyed to the original
+session revision and native thread, spans at most 10,000 records/8 MiB and
+rejects repeated/incomplete pages, tool/artifact content and non-empty changes.
+An original-revision read before and after pagination detects changed sources.
+Submit refreshes the profile and does not use stale success after read failure.
+These reads grant no child/native authority: Go independently validates complete
+canonical history at acceptance/publication, and the Worker verifies complete
+native history before exposing the child.
+
+OpenCode source and child checkpoint readers use the strict 9 MiB private checkpoint ceiling while retaining canonical and native identity verification. Before copying the workspace or claiming any native mutation, the Worker verifies the complete source identity inventory and reserves the full serialized result, including a 64 KiB closed General Chat manifest envelope, under the existing 1 MiB job output limit. Sources whose complete mappings do not fit return ResourceExhausted with the original session preserved. The native history inspection maxima do not waive this publication bound; mappings are never truncated.
+
+Permanent deletion reads original OpenCode fork-completion metadata with the strict 9 MiB checkpoint decoder and the legacy Codex profile with its declared decoder bound. The original digest, canonical bytes and job/runtime/session/machine bindings remain required; larger valid private checkpoints do not strand deletion and replacements grant no cleanup authority.
+
+The same pre-copy eligibility reserves the complete child native checkpoint under its 8 MiB ceiling: original histories, two cloned-history copies, the complete message/part identity proof, metadata bounds and every original file descriptor. The fresh copied SQLite runtime has a separate 64 KiB serialized file-inventory profile. Capacity rejection preserves the source before workspace copying, runtime creation or native claims. Unexpected native auxiliary growth remains unsupported uncertainty and cannot enlarge this admitted profile.

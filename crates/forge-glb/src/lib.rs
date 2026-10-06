@@ -222,8 +222,9 @@ impl Writer<'_> {
                 }
                 self.meshes.push(mesh);
                 if skin.is_some() {
-                    // glTF ignores a skinned mesh node's transform. Bind matrices
-                    // already contain its authored mesh-to-world rest transform.
+                    // glTF ignores a skinned mesh node's transform. Bind
+                    // matrices already contain its authored
+                    // mesh-to-world rest transform.
                     for key in ["translation", "rotation", "scale"] {
                         value.as_object_mut().unwrap().remove(key);
                     }

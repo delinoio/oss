@@ -18,8 +18,10 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 )
 
-// The Worker must register Token against its durable execution before opening
-// this private runtime. Format validation here cannot establish registration or
+// Ordinary execution must register Token against its durable execution before
+// opening this private runtime. The bounded fork-preparation path instead uses
+// a fresh nonce that is never registered and grants no inference authority.
+// Format validation here cannot establish registration or
 // selected-account readiness. Root comes from independent Worker Git /
 // General Chat workspace inspection, never from a native message's own path.
 type apiSessionConfig struct {
@@ -32,6 +34,7 @@ type apiSessionConfig struct {
 	Token        string                                    `json:"-"`
 	Settings     SessionSettings                           `json:"-"`
 	Instructions string                                    `json:"-"`
+	Prune        bool                                      `json:"-"`
 	ContextLimit int64                                     `json:"-"`
 	OutputLimit  int64                                     `json:"-"`
 	Rejection    RejectionPolicy                           `json:"-"`
@@ -98,7 +101,7 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	origin.Path = apiproxy.Prefix
 	settings := config.Settings
 	settings.Permission = slices.Clone(settings.Permission)
-	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection, Instructions: config.Instructions}
+	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, Prune: config.Prune, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection, Instructions: config.Instructions}
 	profile.ProjectConfig = projectConfig
 	profile.WorkspaceRoot = &scope
 	profile.References = slices.Clone(config.References)

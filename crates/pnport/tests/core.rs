@@ -268,7 +268,8 @@ fn directory_eligibility_matches_lookup_without_materializing() {
             .unwrap();
         assert!(retained.readonly);
         assert_eq!(fs::read(retained.physical).unwrap(), b"native directory");
-        fs::create_dir(root_path.join("packages/app/node_modules")).unwrap();
+        fs::create_dir_all(root_path.join("packages/app/node_modules/conflicting-package"))
+            .unwrap();
         assert_eq!(
             view.virtual_directory_entry(&root_path.join("packages/app"))
                 .unwrap_err()
@@ -366,7 +367,8 @@ fn native_parent_listings_match_virtual_lookup_and_stream_lifecycle() {
                 );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            fs::create_dir(conflict_root.join("packages/app/node_modules")).unwrap();
+            fs::create_dir_all(conflict_root.join("packages/app/node_modules/conflicting-package"))
+                .unwrap();
             fs::write(conflict_root.join("conflict-created"), b"").unwrap();
         });
         let conflict = run(&executable, &["conflict"]);
@@ -419,6 +421,108 @@ fn inline_and_split_load_without_executing_javascript() {
         split.unchanged().unwrap_err().code,
         Code::PnportGraphChanged
     );
+}
+
+#[test]
+fn optional_node_esm_loader_is_data_only_and_revision_bound() {
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let manifest = root.path().join(".pnp.cjs");
+        let loader = root.path().join(".pnp.loader.mjs");
+        let without = Graph::load(&manifest).unwrap();
+        assert!(!pnport::node::Loader::from_snapshot(&without.snapshot).has_esm());
+        fs::write(&loader, "throw Error('must never execute');").unwrap();
+        let graph = Graph::load(&manifest).unwrap();
+        assert!(pnport::node::Loader::from_snapshot(&graph.snapshot).has_esm());
+        assert_eq!(graph.snapshot.inputs.len(), if split { 3 } else { 2 });
+        graph.unchanged().unwrap();
+        fs::write(&loader, "throw Error('replacement must never execute');").unwrap();
+        assert_eq!(
+            graph.unchanged().unwrap_err().code,
+            Code::PnportGraphChanged
+        );
+        let replacement = Graph::load(&manifest).unwrap();
+        fs::remove_file(&loader).unwrap();
+        assert_eq!(
+            replacement.unchanged().unwrap_err().code,
+            Code::PnportGraphChanged
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_execveat_restores_node_options_in_replacement_environments() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let source = root.path().join("node-environment.c");
+    let executable = root.path().join("node-environment");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc == 3) {
+        const char *options = getenv("NODE_OPTIONS");
+        char cwd[4096], expected[8192];
+        if (!getcwd(cwd, sizeof(cwd))) return 40;
+        snprintf(expected, sizeof(expected), "--require \"%s/.pnp.cjs\"%s",
+            cwd, argv[2][0] == '1' ? " --no-warnings" : "");
+        if (!options || strcmp(options, expected)) return 41;
+        puts("node-options-restored");
+        return 0;
+    }
+    if (argc != 2) return 42;
+    char mode[2] = { argv[1][1], 0 };
+    char *args[] = { argv[0], "child", mode, NULL };
+    char *env[] = { "NODE_OPTIONS=--no-warnings", NULL };
+    int fd = AT_FDCWD, flags = 0;
+    const char *path = argv[0];
+    if (argv[1][0] == '1') {
+        fd = open(path, O_PATH | O_CLOEXEC);
+        if (fd < 0) return 43;
+        path = "";
+        flags = AT_EMPTY_PATH;
+    }
+    syscall(SYS_execveat, fd, path, args, mode[0] == '1' ? env : NULL, flags);
+    return 44;
+}
+"#,
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .arg(&source)
+        .arg("-o")
+        .arg(&executable)
+        .status()
+        .unwrap()
+        .success());
+    for mode in ["00", "01", "10", "11"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .env_remove("NODE_OPTIONS")
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(mode)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "mode={mode} stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"node-options-restored\n");
+    }
 }
 #[test]
 fn malformed_graphs_fail_without_panic_or_input_disclosure() {
@@ -483,7 +587,7 @@ fn view_reads_zip_scopes_aliases_and_preserves_project_writes() {
             .readonly
     );
     assert!(!root_path.join("node_modules").exists());
-    fs::create_dir(root_path.join("node_modules")).unwrap();
+    fs::create_dir_all(root_path.join("node_modules/conflicting-package")).unwrap();
     assert_eq!(
         view.translate(&root_path.join("node_modules/dep/file.txt"))
             .unwrap_err()
@@ -493,6 +597,40 @@ fn view_reads_zip_scopes_aliases_and_preserves_project_writes() {
 }
 #[test]
 fn leases_survive_cleanup_and_cache_corruption_is_not_reused() {
+    const SCENARIO: &str = "PNPORT_CACHE_LEASE_SCENARIO";
+    if std::env::var_os(SCENARIO).is_none() {
+        // Lease locks belong to open file descriptions and survive fork until
+        // every inherited descriptor closes. Other parallel scenarios spawn
+        // native processes, so isolate this immediate lease-release assertion
+        // without serializing the overall Cargo runner or weakening cleanup.
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "leases_survive_cleanup_and_cache_corruption_is_not_reused",
+            ])
+            .env(SCENARIO, "1")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("isolated cache lease scenario timed out");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Cache lease scenario: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
     let root = fixture();
     let cache_root = tempfile::tempdir().unwrap();
     let cache = Cache::open(cache_root.path().join("cache")).unwrap();
@@ -526,12 +664,54 @@ fn leases_survive_cleanup_and_cache_corruption_is_not_reused() {
         cache.entries(Operation::Clean).unwrap()[0].state,
         State::Active
     ));
+    #[cfg(unix)]
+    let (inherited_child, release) = {
+        let mut pipe = [0; 2];
+        // SAFETY: The child performs only async-signal-safe native calls before
+        // _exit. The parent owns and reaps this exact child; the pipe provides
+        // deterministic release, without a scheduling sleep or PID inventory.
+        unsafe {
+            assert_eq!(libc::pipe(pipe.as_mut_ptr()), 0);
+            let child = libc::fork();
+            assert!(child >= 0);
+            if child == 0 {
+                libc::close(pipe[1]);
+                let mut byte = 0u8;
+                let received = libc::read(pipe[0], (&raw mut byte).cast(), 1);
+                libc::_exit(if received == 1 { 0 } else { 1 });
+            }
+            libc::close(pipe[0]);
+            (child, pipe[1])
+        }
+    };
     drop(second);
     drop(lease);
-    assert!(matches!(
-        cache.entries(Operation::Prune).unwrap()[0].state,
-        State::Corrupt
-    ));
+    #[cfg(unix)]
+    {
+        let inherited = cache.entries(Operation::Prune).unwrap();
+        assert!(
+            matches!(inherited[0].state, State::Active),
+            "Inherited lease: {inherited:?}"
+        );
+        // SAFETY: Release and reap the direct child before asserting that all
+        // copies of the lease descriptor have closed.
+        unsafe {
+            assert_eq!(libc::write(release, b"1".as_ptr().cast(), 1), 1);
+            assert_eq!(libc::close(release), 0);
+            let mut status = 0;
+            assert_eq!(
+                libc::waitpid(inherited_child, &raw mut status, 0),
+                inherited_child
+            );
+            assert!(libc::WIFEXITED(status));
+            assert_eq!(libc::WEXITSTATUS(status), 0);
+        }
+    }
+    let entries = cache.entries(Operation::Prune).unwrap();
+    assert!(
+        matches!(entries[0].state, State::Corrupt),
+        "Released corruption classification: {entries:?}"
+    );
     assert!(matches!(
         cache.entries(Operation::Clean).unwrap()[0].state,
         State::Removed
@@ -4463,6 +4643,94 @@ fn linux_doctor_rejects_an_incompatible_companion_architecture() {
     assert_eq!(injection["code"], "PNPORT_INJECTION_FAILED");
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_rejects_mismatched_companions_before_user_launch() {
+    use std::process::Command;
+    #[derive(Clone, Copy, Debug)]
+    enum Mismatch {
+        Abi,
+        Cpu,
+        FileType,
+        Magic,
+    }
+    let root = fixture();
+    let native = Path::new(env!("CARGO_BIN_EXE_pnport"));
+    let executable = root.path().join("pnport");
+    fs::copy(native, &executable).unwrap();
+    let bytes = fs::read(native.parent().unwrap().join("libfspy_preload_unix.dylib")).unwrap();
+    let current = b"PNPORT_PRELOAD_0.1.0_FORMAT_3_READY";
+    let offset = bytes
+        .windows(current.len())
+        .position(|window| window == current)
+        .unwrap();
+    let source = root.path().join("launch.c");
+    let probe = root.path().join("launch");
+    fs::write(
+        &source,
+        "#include <stdio.h>\nint main(void) { FILE *f=fopen(\"launched\",\"w\"); if (!f) return \
+         1; fclose(f); return 0; }\n",
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .arg(&source)
+        .arg("-o")
+        .arg(&probe)
+        .status()
+        .unwrap()
+        .success());
+    for mismatch in [
+        Mismatch::Abi,
+        Mismatch::Cpu,
+        Mismatch::FileType,
+        Mismatch::Magic,
+    ] {
+        let mut companion = bytes.clone();
+        match mismatch {
+            Mismatch::Abi => companion[offset..offset + current.len()]
+                .copy_from_slice(b"PNPORT_PRELOAD_0.1.0_FORMAT_2_READY"),
+            Mismatch::Cpu => {
+                let other_cpu: u32 = if cfg!(target_arch = "aarch64") {
+                    0x0100_0007
+                } else {
+                    0x0100_000c
+                };
+                companion[4..8].copy_from_slice(&other_cpu.to_le_bytes());
+            }
+            Mismatch::FileType => companion[12..16].copy_from_slice(&2u32.to_le_bytes()),
+            Mismatch::Magic => companion[..4].copy_from_slice(b"bad!"),
+        }
+        fs::write(root.path().join("libpnport_preload.dylib"), companion).unwrap();
+        let result = Command::new(&executable)
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(root.path().join("companion-store"))
+            .args(["doctor", "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(125), "{mismatch:?}");
+        let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["schemaVersion"], 1);
+        let injection = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == "injection")
+            .unwrap();
+        assert_eq!(injection["code"], "PNPORT_INJECTION_FAILED", "{mismatch:?}");
+        let result = Command::new(&executable)
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(root.path().join("companion-store"))
+            .args(["run", "--"])
+            .arg(&probe)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(125), "{mismatch:?}");
+        assert!(!root.path().join("launched").exists(), "{mismatch:?}");
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn linux_cache_lock_wait_observes_signal_and_graph_change() {
@@ -4633,7 +4901,9 @@ fn linux_graph_conflict_and_injection_failures_reap_detached_descendants() {
         let child: i32 = fs::read_to_string(marker).unwrap().trim().parse().unwrap();
         match mode {
             "graph" => fs::write(root.path().join(".pnp.cjs"), "changed").unwrap(),
-            "conflict" => fs::create_dir(root.path().join("node_modules")).unwrap(),
+            "conflict" => {
+                fs::create_dir_all(root.path().join("node_modules/conflicting-package")).unwrap()
+            }
             "failure" => {}
             "cancel" => {
                 assert_eq!(unsafe { libc::kill(process.id() as i32, libc::SIGINT) }, 0);
@@ -5313,7 +5583,8 @@ int main(int argc, char **argv) {
             let namespace = root.path().join(issuer).join("node_modules");
             let lookup = namespace.join("dep/package.json");
             // The parent creates conflicts outside interception, after child
-            // readiness when testing runtime admission, and removes only its fixture.
+            // readiness when testing runtime admission, and removes only its
+            // fixture.
             for late in [false, true] {
                 let create_conflict = || {
                     fs::create_dir(&namespace).unwrap();
@@ -5358,6 +5629,452 @@ int main(int argc, char **argv) {
                 for marker in ["ready", "go"] {
                     let _ = fs::remove_file(root.path().join(marker));
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn writable_cache_namespaces_preserve_graph_and_conflict_boundaries() {
+    use pnport::view::PathKind;
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let canonical = fs::canonicalize(root.path()).unwrap();
+        let graph = Graph::load(&canonical.join(".pnp.cjs")).unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let mut view = View::new(
+            graph,
+            Cache::open(cache.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        );
+        for issuer in [canonical.clone(), canonical.join("packages/app")] {
+            let namespace = issuer.join("node_modules");
+            assert_eq!(
+                view.translate(&namespace).unwrap().kind,
+                PathKind::CacheContainer
+            );
+            assert!(
+                !namespace.exists(),
+                "Reading must not create the native cache container"
+            );
+            fs::create_dir(&namespace).unwrap();
+            view.graph.check_conflicts().unwrap();
+            for name in [
+                ".vite",
+                ".cache",
+                ".vitest",
+                ".vitest-cache",
+                ".future-tool",
+            ] {
+                fs::create_dir(namespace.join(name)).unwrap();
+                let translated = view
+                    .translate(&namespace.join(name).join("missing-cache-file"))
+                    .unwrap();
+                assert!(!translated.readonly);
+                assert_eq!(translated.kind, PathKind::ToolCache);
+            }
+            fs::write(namespace.join(".cache-metadata"), b"native").unwrap();
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::ffi::OsStringExt;
+                let name = std::ffi::OsString::from_vec(vec![b'.', 0xff]);
+                fs::write(namespace.join(&name), b"native non-UTF8 name").unwrap();
+                assert_eq!(
+                    view.translate(&namespace.join(name)).unwrap().kind,
+                    PathKind::ToolCache
+                );
+            }
+            view.graph.check_conflicts().unwrap();
+            let entries = view.directory_entries(&namespace, &namespace).unwrap();
+            if issuer == canonical {
+                assert_eq!(
+                    entries
+                        .iter()
+                        .map(|entry| entry.name.as_str())
+                        .collect::<Vec<_>>(),
+                    ["@scope", "dep", "one", "two", "workspace"]
+                );
+                assert!(
+                    view.translate(&namespace.join("dep/file.txt"))
+                        .unwrap()
+                        .readonly
+                );
+                let backing = view
+                    .dependency_link_backing(&namespace.join("dep"))
+                    .unwrap();
+                assert!(fs::symlink_metadata(backing)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink());
+                assert!(
+                    !namespace.join("dep").exists(),
+                    "Link backing must stay private"
+                );
+            }
+            for name in ["dep", "unknown", "@scope", ".bin"] {
+                fs::create_dir(namespace.join(name)).unwrap();
+                assert_eq!(
+                    view.graph.check_conflicts().unwrap_err().code,
+                    Code::PnportFilesystemConflict
+                );
+                assert_eq!(
+                    view.translate(&namespace).unwrap_err().code,
+                    Code::PnportFilesystemConflict
+                );
+                fs::remove_dir(namespace.join(name)).unwrap();
+            }
+            fs::remove_dir_all(&namespace).unwrap();
+            fs::write(&namespace, b"not a directory").unwrap();
+            assert_eq!(
+                view.graph.check_conflicts().unwrap_err().code,
+                Code::PnportFilesystemConflict
+            );
+            fs::remove_file(&namespace).unwrap();
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(&issuer, &namespace).unwrap();
+                assert_eq!(
+                    view.graph.check_conflicts().unwrap_err().code,
+                    Code::PnportFilesystemConflict
+                );
+                fs::remove_file(namespace).unwrap();
+            }
+        }
+        let mut data = view.graph.snapshot.data.clone();
+        for index in [0, 1] {
+            data["packageRegistryData"][index][1][0][1]["packageDependencies"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!([".reserved", null]));
+        }
+        data["enableTopLevelFallback"] = json!(true);
+        data["fallbackPool"] = json!([[".fallback-cache", ["dep", "npm:1"]]]);
+        data["packageRegistryData"].as_array_mut().unwrap().push(json!(
+            ["unplugged", [["npm:1", {"packageLocation":"./.yarn/unplugged/cachedep/node_modules/cachedep/","packageDependencies":[],"linkType":"HARD"}]]]
+        ));
+        if split {
+            fs::write(
+                canonical.join(".pnp.data.json"),
+                serde_json::to_vec(&data).unwrap(),
+            )
+            .unwrap();
+        } else {
+            inline(&canonical, &data);
+        }
+        let graph = Graph::load(&canonical.join(".pnp.cjs")).unwrap();
+        let namespace = canonical.join("node_modules");
+        fs::create_dir(&namespace).unwrap();
+        for name in [".reserved", ".fallback-cache"] {
+            assert!(!graph.cache_entry(&canonical, std::ffi::OsStr::new(name)));
+            fs::write(namespace.join(name), b"must not shadow dependency").unwrap();
+            assert_eq!(
+                graph.check_conflicts().unwrap_err().code,
+                Code::PnportFilesystemConflict
+            );
+            fs::remove_file(namespace.join(name)).unwrap();
+        }
+        let hard = canonical.join(".yarn/unplugged/cachedep/node_modules/cachedep");
+        fs::create_dir_all(hard.join("node_modules/.cache")).unwrap();
+        assert!(!graph.cache_container(&hard));
+        assert!(!graph.cache_entry(&hard, std::ffi::OsStr::new(".cache")));
+        assert_eq!(
+            graph.check_conflicts().unwrap_err().code,
+            Code::PnportFilesystemConflict
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_parent_lookup_precedes_later_namespace_conflict() {
+    use pnport_core::native_path::{resolved_lookup, Lookup};
+    for split in [false, true] {
+        for conflict in [
+            "unexpected-package",
+            ".bin",
+            "namespace-file",
+            "namespace-link",
+        ] {
+            let root = directory_fixture(split);
+            let canonical = fs::canonicalize(root.path()).unwrap();
+            let graph = Graph::load(&canonical.join(".pnp.cjs")).unwrap();
+            let cache = tempfile::tempdir().unwrap();
+            let session = tempfile::tempdir().unwrap();
+            let mut view = View::new(
+                graph,
+                Cache::open(cache.path().join("cache")).unwrap(),
+                session.path().to_owned(),
+            );
+            fs::write(canonical.join("file-prefix"), b"ordinary file").unwrap();
+            std::os::unix::fs::symlink("missing", canonical.join("missing-parent-link")).unwrap();
+            let namespace = canonical.join("node_modules");
+            match conflict {
+                "namespace-file" => fs::write(&namespace, b"ordinary file").unwrap(),
+                "namespace-link" => {
+                    std::os::unix::fs::symlink("packages/app", &namespace).unwrap();
+                }
+                name => fs::create_dir_all(namespace.join(name)).unwrap(),
+            }
+            for prefix in ["missing", "missing-parent-link"] {
+                let path = canonical.join(format!("{prefix}/../node_modules/dep/file.txt"));
+                view.graph.check_path_conflicts(&path).unwrap();
+                let lookup = resolved_lookup(&path, true, &view.graph).unwrap();
+                let checked = lookup
+                    .validate_parents(|parent| view.translate(parent))
+                    .unwrap();
+                assert!(
+                    matches!(
+                        checked,
+                        Lookup::NativeFailure {
+                            errno: libc::ENOENT,
+                            ..
+                        }
+                    ),
+                    "split={split} conflict={conflict} prefix={prefix}: expected ENOENT"
+                );
+            }
+            let file_path = canonical.join("file-prefix/../node_modules/dep/file.txt");
+            view.graph.check_path_conflicts(&file_path).unwrap();
+            assert!(resolved_lookup(&file_path, true, &view.graph).is_none());
+            let reachable = canonical.join("packages/../node_modules/dep/file.txt");
+            let lookup = resolved_lookup(&reachable, true, &view.graph).unwrap();
+            assert_eq!(
+                lookup
+                    .validate_parents(|parent| view.translate(parent))
+                    .err()
+                    .unwrap()
+                    .code,
+                Code::PnportFilesystemConflict
+            );
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn native_tool_caches_coexist_with_dependencies_and_directory_lifetimes() {
+    use std::process::Command;
+    for split in [false, true] {
+        let root = directory_fixture(split);
+        let mut data = Graph::load(&root.path().join(".pnp.cjs"))
+            .unwrap()
+            .snapshot
+            .data;
+        for index in [0, 1] {
+            data["packageRegistryData"][index][1][0][1]["packageDependencies"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(["unplugged", "npm:1"]));
+        }
+        data["packageRegistryData"].as_array_mut().unwrap().push(json!(
+            ["unplugged", [["npm:1", {"packageLocation":"./.yarn/unplugged/cachedep/node_modules/cachedep/","packageDependencies":[],"linkType":"HARD"}]]]
+        ));
+        if split {
+            fs::write(
+                root.path().join(".pnp.data.json"),
+                serde_json::to_vec(&data).unwrap(),
+            )
+            .unwrap();
+        } else {
+            inline(root.path(), &data);
+        }
+        let unplugged = root
+            .path()
+            .join(".yarn/unplugged/cachedep/node_modules/cachedep");
+        fs::create_dir_all(&unplugged).unwrap();
+        fs::write(unplugged.join("file.txt"), b"unplugged bytes").unwrap();
+        std::os::unix::fs::symlink("packages/app", root.path().join("workspace-alias")).unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let executable = root.path().join("cache-probe");
+        for static_binary in [false, true] {
+            if static_binary && cfg!(target_os = "macos") {
+                continue;
+            }
+            let mut compiler = Command::new("cc");
+            compiler
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/tests/cache-conformance.c"
+                ))
+                .args(["-Wall", "-Wextra", "-Wno-deprecated-declarations", "-o"])
+                .arg(&executable);
+            if cfg!(target_os = "macos") {
+                compiler.arg("-fblocks");
+            }
+            if static_binary {
+                compiler.arg("-static");
+            }
+            assert!(compiler.status().unwrap().success());
+            #[cfg(target_os = "macos")]
+            let clone_control = {
+                let result = Command::new(&executable)
+                    .current_dir(root.path())
+                    .arg("clone-control")
+                    .output()
+                    .unwrap();
+                assert!(result.status.success(), "{result:?}");
+                let expected = String::from_utf8(result.stdout).unwrap();
+                let expected = expected.trim().to_owned();
+                assert!(expected == "0" || expected == libc::EINVAL.to_string());
+                expected
+            };
+            // Existing virtual-root aliases must not materialize cache
+            // storage, including for the Linux static child on rerun.
+            let namespace = root.path().join("node_modules");
+            let saved = root.path().join("saved-cache");
+            let retained_cache = namespace.exists();
+            if retained_cache {
+                fs::rename(&namespace, &saved).unwrap();
+            }
+            let alias_result = Command::new(
+                std::env::var_os("PNPORT_TEST_BINARY")
+                    .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
+            )
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg("mkdir-alias")
+            .output()
+            .unwrap();
+            assert!(alias_result.status.success(), "{alias_result:?}");
+            assert_eq!(alias_result.stdout, b"cache-mkdir-alias-ok\n");
+            assert!(!namespace.exists(), "Alias mkdir created the cache root");
+            if retained_cache {
+                fs::rename(&saved, &namespace).unwrap();
+            }
+            for _ in 0..2 {
+                let mut command = Command::new(
+                    std::env::var_os("PNPORT_TEST_BINARY")
+                        .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
+                );
+                command
+                    .current_dir(root.path())
+                    .arg("--cache-dir")
+                    .arg(cache.path().join("cache"))
+                    .args(["run", "--"])
+                    .arg(&executable)
+                    .arg(cache.path().join("cache"));
+                #[cfg(target_os = "macos")]
+                command.arg(&clone_control);
+                let result = command.output().unwrap();
+                assert_eq!(
+                    result.status.code(),
+                    Some(0),
+                    "split={split} static={static_binary}: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert_eq!(result.stdout, b"cache-conformance-ok\n");
+                assert_eq!(
+                    fs::read(root.path().join("node_modules/.vite/results.json")).unwrap(),
+                    b"cache"
+                );
+                let doctor = Command::new(
+                    std::env::var_os("PNPORT_TEST_BINARY")
+                        .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
+                )
+                .current_dir(root.path())
+                .arg("--cache-dir")
+                .arg(cache.path().join("cache"))
+                .args(["doctor", "--json"])
+                .output()
+                .unwrap();
+                assert!(doctor.status.success());
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&doctor.stdout).unwrap()["ready"],
+                    true
+                );
+            }
+        }
+        for name in [
+            "unexpected-package",
+            ".bin",
+            "namespace-file",
+            "namespace-link",
+        ] {
+            use std::time::{Duration, Instant};
+            let mut child = Command::new(
+                std::env::var_os("PNPORT_TEST_BINARY")
+                    .unwrap_or_else(|| env!("CARGO_BIN_EXE_pnport").into()),
+            )
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg("conflict")
+            .arg("workspace-alias/../../node_modules/dep/file.txt")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !root.path().join("entered").exists() {
+                if child.try_wait().unwrap().is_some() || Instant::now() >= deadline {
+                    let _ = child.kill();
+                    panic!(
+                        "Cache conflict probe did not enter: {:?}",
+                        child.wait_with_output().unwrap()
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let namespace = root.path().join("node_modules");
+            let saved = root.path().join("saved-modules");
+            let conflict = namespace.join(name);
+            match name {
+                "namespace-file" => {
+                    fs::rename(&namespace, &saved).unwrap();
+                    fs::write(&namespace, b"user cache must survive").unwrap();
+                }
+                "namespace-link" => {
+                    fs::rename(&namespace, &saved).unwrap();
+                    std::os::unix::fs::symlink("saved-modules", &namespace).unwrap();
+                }
+                _ => {
+                    fs::create_dir(&conflict).unwrap();
+                    fs::write(conflict.join("keep"), b"user cache must survive").unwrap();
+                }
+            }
+            fs::write(root.path().join("go"), b"continue").unwrap();
+            let result = child.wait_with_output().unwrap();
+            assert_eq!(
+                result.status.code(),
+                Some(125),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_FILESYSTEM_CONFLICT"));
+            assert!(result.stdout.is_empty());
+            match name {
+                "namespace-file" | "namespace-link" => {
+                    if name == "namespace-file" {
+                        assert_eq!(fs::read(&namespace).unwrap(), b"user cache must survive");
+                    } else {
+                        assert_eq!(
+                            fs::read_link(&namespace).unwrap(),
+                            Path::new("saved-modules")
+                        );
+                    }
+                    assert_eq!(
+                        fs::read(saved.join(".vite/results.json")).unwrap(),
+                        b"cache"
+                    );
+                    fs::remove_file(&namespace).unwrap();
+                    fs::rename(&saved, &namespace).unwrap();
+                }
+                _ => {
+                    assert_eq!(
+                        fs::read(conflict.join("keep")).unwrap(),
+                        b"user cache must survive"
+                    );
+                    fs::remove_dir_all(conflict).unwrap();
+                }
+            }
+            for marker in ["entered", "go"] {
+                fs::remove_file(root.path().join(marker)).unwrap();
             }
         }
     }

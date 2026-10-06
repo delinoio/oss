@@ -92,7 +92,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.blocked || !c.finished || c.completion == nil {
+	if c.blocked || !c.finished || c.completion == nil || len(c.children) != 0 {
 		return "", executionCheckpointUncertain()
 	}
 	b := c.text.binding
@@ -138,6 +138,12 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 			return fail(executionCheckpointUncertain())
 		}
 		ref.HistoryExecutionID, ref.CreationRequestID = input.Continuation.HistoryExecutionID, b.predecessor.NativeReference.CreationRequestID
+	}
+	if input.Fork != nil {
+		if b.fork == nil || b.predecessor != nil {
+			return fail(executionCheckpointUncertain())
+		}
+		ref.HistoryExecutionID, ref.CreationRequestID = input.Fork.RuntimeID, b.fork.NativeReference.CreationRequestID
 	}
 	if ref.validate() != nil {
 		return fail(executionCheckpointUncertain())
@@ -210,7 +216,7 @@ func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openC
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
 	var value openCodeExecutionCheckpoint
-	if domain.Decode(raw, &value) != nil || !value.matches(ref) {
+	if domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || !value.matches(ref) {
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
 	canonical, err := json.Marshal(value)
@@ -227,6 +233,17 @@ func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openC
 // RetainCompletion binds only a newly retained eligible native checkpoint to
 // version 2. Historical version-1 server reports are never rewritten.
 func (c *OpenCodeEventPublisher) RetainCompletion(ctx context.Context) (domain.ExecutionCompletion, error) {
+	c.mu.Lock()
+	if len(c.children) != 0 {
+		if c.completion == nil || c.blocked || !c.children.Closed() {
+			c.mu.Unlock()
+			return domain.ExecutionCompletion{}, executionCheckpointUncertain()
+		}
+		completion := *c.completion
+		c.mu.Unlock()
+		return completion, nil
+	}
+	c.mu.Unlock()
 	if _, err := c.RetainCheckpoint(ctx); err != nil {
 		return domain.ExecutionCompletion{}, err
 	}

@@ -88,7 +88,8 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
                     .and_then(|t| t.available_width)
                 else {
                     // Export remains safe without a provable source width; omit
-                    // geometry so measurement returns InvalidTarget, not a fake box.
+                    // geometry so measurement returns InvalidTarget, not a fake
+                    // box.
                     continue;
                 };
                 forge_docx::measure_blocks(

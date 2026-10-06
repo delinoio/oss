@@ -9489,7 +9489,7 @@ fn decode_utf16_profile(
             message: "UTF-16 profile has an odd byte length".to_string(),
         });
     }
-    let units = bytes.chunks_exact(2).map(|chunk| match encoding {
+    let units = bytes.as_chunks::<2>().0.iter().map(|chunk| match encoding {
         ProfileEncoding::Utf16Le => u16::from_le_bytes([chunk[0], chunk[1]]),
         ProfileEncoding::Utf16Be => u16::from_be_bytes([chunk[0], chunk[1]]),
         ProfileEncoding::Utf8 => unreachable!("UTF-8 profiles are decoded separately"),

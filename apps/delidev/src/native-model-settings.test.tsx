@@ -5,12 +5,12 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, NativeModelService, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type DiscoverNativeModelsRequest } from "@delinoio/delidev-api-client";
+import { EntityKind, NativeModelService, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type DiscoverNativeModelsRequest, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { NativeModelSettings } from "./native-model-settings";
 
-function fixture(loseFirst = false) {
+function fixture(loseFirst = false, scoped = false) {
   const provider = newRequestId();
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Runner fixture" }) });
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 8n, schemaVersion: 1, documentJson: encode({ alias: "Account fixture", provider_id: provider, connection: { id: newRequestId() } }) });
@@ -32,17 +32,18 @@ function fixture(loseFirst = false) {
     });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NativeModelSettings active createModel={createModel} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  const view = (selectedAccounts?: Resource[]) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NativeModelSettings active createModel={createModel} selectedAccounts={selectedAccounts} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const rendered = render(view(scoped ? [account] : undefined));
   const details = screen.getByText("Native Codex model observations").parentElement as HTMLDetailsElement;
   details.open = true; fireEvent(details, new Event("toggle"));
-  return { machine, account, provider, discover, requests, createModel };
+  return { machine, account, provider, discover, requests, createModel, scoped, selectAccounts: (rows: Resource[]) => rendered.rerender(view(rows)) };
 }
 
 async function choose(value: ReturnType<typeof fixture>) {
   await screen.findByRole("option", { name: "Runner fixture" });
   await screen.findByRole("option", { name: /^Account fixture/ });
   fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: value.machine.id } });
-  fireEvent.change(screen.getByLabelText("Connected account"), { target: { value: value.account.id } });
+  fireEvent.change(screen.getByLabelText(value.scoped ? "Connected selected account" : "Connected account"), { target: { value: value.account.id } });
   fireEvent.click(screen.getByRole("button", { name: "Observe models" }));
 }
 
@@ -55,6 +56,17 @@ it("observes exact revisions and prepares registration with the executable ID on
   expect(value.requests[0]).toMatchObject({ mutation: { id: value.machine.id, expectedRevision: 7n }, accountId: value.account.id, accountRevision: 8n, includeHidden: false });
   fireEvent.click(register);
   expect(value.createModel).toHaveBeenCalledWith(expect.objectContaining({ provider_id: value.provider, native_id: "executable-only", manual: true, harnesses: ["codex"], metadata_source: "unknown" }));
+});
+
+it("blocks a new native observation and model choice after its account leaves the Worker selection", async () => {
+  const value = fixture(false, true);
+  await choose(value);
+  await screen.findByRole("button", { name: "Use model Fixture model…" });
+  value.selectAccounts([]);
+  expect((screen.getByRole("button", { name: "Observe models" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Use model Fixture model…" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(value.discover).toHaveBeenCalledTimes(1);
+  expect(value.createModel).not.toHaveBeenCalled();
 });
 
 it("retains the exact discovery receipt after a lost response and blocks a replacement selection", async () => {

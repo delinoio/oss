@@ -25,9 +25,21 @@ type threadFixture struct {
 	history                json.RawMessage
 	historyChangeAfterRead bool
 	historyNotification    *fixtureHistoryNotification
+	sidechatDrift          string
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleSidechatCompaction(id, method, raw, write) {
+		return true
+	}
+	if method == "model/list" {
+		entries := []any{}
+		for _, name := range []string{"child-model", "fixture-model"} {
+			entries = append(entries, map[string]any{"id": name, "model": name, "displayName": name, "description": "Controlled model compatibility", "hidden": false, "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium", "description": "Moderate"}, map[string]any{"reasoningEffort": "high", "description": "High"}}, "defaultReasoningEffort": "medium", "inputModalities": []string{"text"}, "serviceTiers": []any{}, "defaultServiceTier": nil, "multiAgentVersion": "v1"})
+		}
+		write(id, map[string]any{"data": entries, "nextCursor": nil})
+		return true
+	}
 	if f.handleSubagentRead(id, method, raw, write) {
 		return true
 	}
@@ -83,7 +95,7 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		}
 		threadID = domain.ID(params["threadId"].(string))
 	}
-	f.thread = map[string]any{"id": threadID, "sessionId": threadID, "cliVersion": SupportedVersion, "cwd": params["cwd"], "modelProvider": params["modelProvider"], "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
+	f.thread = map[string]any{"id": threadID, "sessionId": threadID, "cliVersion": fixtureVersion(), "cwd": params["cwd"], "modelProvider": params["modelProvider"], "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
 	f.thread["historyMode"] = "legacy"
 	f.thread["extra"] = nil
 	f.thread["canAcceptDirectInput"] = true
@@ -178,6 +190,9 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	t.Helper()
 	config := fixtureConfig(t, mode)
 	config.Mode = ThreadProtocol
+	if mode == "thread-continuation-sidechat" {
+		config.Sidechat = ReadOnlySidechatV1
+	}
 	capture := filepath.Join(t.TempDir(), "requests.jsonl")
 	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_CAPTURE="+capture)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -281,7 +296,7 @@ func TestThreadNativeDefaultsAreObservableWithoutInventingThem(t *testing.T) {
 func TestThreadInvalidSettingsDoNotConsumeRequestIdentity(t *testing.T) {
 	changes := []func(*ThreadSettings){
 		func(s *ThreadSettings) { s.Options.ClaudePermission = domain.ClaudePermissionDefault },
-		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentModel = "other" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "high" }, func(s *ThreadSettings) { s.Options.MaxConcurrency = 3 }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invented" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
+		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "invented" }, func(s *ThreadSettings) { s.Options.MaxConcurrency = 65 }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invented" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
 	}
 	client, capture := openThreadFixture(t, "thread-ready")
 	settings := threadSettings(t)
@@ -343,7 +358,7 @@ func TestThreadLateAcknowledgmentRetainsOriginalIdentityWithoutRetry(t *testing.
 		if string(event.ID) != `"`+string(id)+`"` {
 			t.Fatal("late response identity changed")
 		}
-		thread, _, err := decodeBoundThread(event.Response.Result, settings, "", startThread)
+		thread, _, err := decodeBoundThread(event.Response.Result, settings, "", startThread, SupportedVersion)
 		if err != nil || thread == nil {
 			t.Fatalf("late response lost state: %v", err)
 		}
@@ -478,8 +493,31 @@ func TestSelectionValidationDoesNotReadCoordinatorFilesystem(t *testing.T) {
 	if err := ValidateThreadSettings(settings); err == nil {
 		t.Fatal("owning native validation skipped filesystem readiness")
 	}
-	settings.Options.MaxConcurrency = 2
+	settings.Options.ApprovalReviewModel = "unsupported"
 	if err := ValidateSelection(settings); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("coordinator accepted unsupported native settings", err)
+	}
+}
+
+func TestNewerThreadAndHistoryKeepExactNativeVersion(t *testing.T) {
+	cfg := fixtureConfig(t, "thread-ready")
+	cfg.Mode, cfg.Version = ThreadProtocol, "0.159.2"
+	cfg.Process.Env = append(cfg.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE="+cfg.Version)
+	c, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	result, err := c.StartThread(context.Background(), domain.NewID(), threadSettings(t))
+	if err != nil || result.Thread == nil {
+		t.Fatal(err)
+	}
+	thread, err := c.ReadThread(context.Background(), domain.NewID(), result.Thread.ID)
+	if err != nil || thread.ID != result.Thread.ID || c.Version() != cfg.Version {
+		t.Fatal("higher native history changed attribution", err)
+	}
+	raw, _ := json.Marshal(threadWire{ID: domain.NewID(), SessionID: domain.NewID(), CLIVersion: SupportedVersion, Status: ThreadStatus{Type: ThreadIdle}})
+	if _, err := decodeThread(raw, cfg.Version); err == nil {
+		t.Fatal("minimum substituted for exact historical native version")
 	}
 }

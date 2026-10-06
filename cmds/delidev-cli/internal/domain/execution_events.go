@@ -465,49 +465,61 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
-	Subagents              SubagentState               `json:"subagents,omitempty"`
-	GrokCurrentMode        GrokMode                    `json:"grok_current_mode,omitempty"`
-	GrokLastNativeEvent    string                      `json:"grok_last_native_event,omitempty"`
-	GrokToolObservations   uint32                      `json:"grok_tool_observations,omitempty"`
-	NativeHistory          NativeHistoryMode           `json:"native_history,omitempty"`
-	GrokUserMessageID      ID                          `json:"grok_user_message_id,omitempty"`
-	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
-	GrokToolsTerminal      *GrokToolsTerminal          `json:"grok_tools_terminal,omitempty"`
-	GrokResponseTotals     *GrokResponseCounts         `json:"grok_response_totals,omitempty"`
-	GrokTerminal           *GrokTextTerminal           `json:"grok_terminal,omitempty"`
-	GrokContent            *GrokContentState           `json:"grok_content,omitempty"`
-	ClaudeCompaction       *ClaudeCompactionState      `json:"claude_compaction,omitempty"`
-	ClaudeDenial           *ClaudeDenialCompletion     `json:"claude_denial,omitempty"`
-	ClaudeStop             *ClaudeStopObservation      `json:"claude_stop,omitempty"`
-	ClaudeTerminal         *ClaudeTerminalObservation  `json:"claude_terminal,omitempty"`
-	ClaudeTasks            *ClaudeTasksState           `json:"claude_tasks,omitempty"`
-	ClaudeProgress         *ClaudeProgressState        `json:"claude_progress,omitempty"`
-	ClaudeInterruption     *ClaudeInterruptionProgress `json:"claude_interruption,omitempty"`
-	OpenCodeStop           *OpenCodeStopObservation    `json:"opencode_stop,omitempty"`
-	JobID                  ID                          `json:"job_id"`
-	ExecutionID            ID                          `json:"execution_id"`
-	InputID                ID                          `json:"input_id"`
-	AcceptedInputs         []ExecutionInputBinding     `json:"accepted_inputs,omitempty"`
-	SteerAttempts          uint32                      `json:"steer_attempts,omitempty"`
-	LastSequence           uint64                      `json:"last_sequence"`
-	NativeThreadID         string                      `json:"native_thread_id"`
-	NativeTurnID           string                      `json:"native_turn_id,omitempty"`
-	Observed               ObservedExecutionSettings   `json:"observed"`
-	Outcome                ExecutionOutcome            `json:"outcome"`
-	LatestWorkspaceEventID ID                          `json:"latest_workspace_event_id,omitempty"`
-	LatestTodoID           ID                          `json:"latest_todo_id,omitempty"`
-	LatestPlanID           ID                          `json:"latest_plan_id,omitempty"`
-	LatestDiffID           ID                          `json:"latest_diff_id,omitempty"`
-	LatestUsageID          ID                          `json:"latest_usage_id,omitempty"`
-	LatestResponseUsageID  ID                          `json:"latest_response_usage_id,omitempty"`
-	NoticeCount            uint64                      `json:"notice_count,omitempty"`
-	LastNotice             NativeNotice                `json:"last_notice,omitempty"`
-	CleanupVerified        bool                        `json:"cleanup_verified,omitempty"`
-	Waiting                NativeWaiting               `json:"waiting"`
-	UnconfirmedResponses   uint32                      `json:"unconfirmed_responses,omitempty"`
+	NativeCompactions        NativeCompactionState       `json:"native_compactions,omitempty"`
+	LatestNativeCompactionID ID                          `json:"latest_native_compaction_id,omitempty"`
+	Subagents                SubagentState               `json:"subagents,omitempty"`
+	GrokCurrentMode          GrokMode                    `json:"grok_current_mode,omitempty"`
+	GrokLastNativeEvent      string                      `json:"grok_last_native_event,omitempty"`
+	GrokToolObservations     uint32                      `json:"grok_tool_observations,omitempty"`
+	NativeHistory            NativeHistoryMode           `json:"native_history,omitempty"`
+	GrokUserMessageID        ID                          `json:"grok_user_message_id,omitempty"`
+	GrokStop                 *GrokStopObservation        `json:"grok_stop,omitempty"`
+	GrokToolsTerminal        *GrokToolsTerminal          `json:"grok_tools_terminal,omitempty"`
+	GrokResponseTotals       *GrokResponseCounts         `json:"grok_response_totals,omitempty"`
+	GrokTerminal             *GrokTextTerminal           `json:"grok_terminal,omitempty"`
+	GrokContent              *GrokContentState           `json:"grok_content,omitempty"`
+	ClaudeCompaction         *ClaudeCompactionState      `json:"claude_compaction,omitempty"`
+	ClaudeDenial             *ClaudeDenialCompletion     `json:"claude_denial,omitempty"`
+	ClaudeStop               *ClaudeStopObservation      `json:"claude_stop,omitempty"`
+	ClaudeTerminal           *ClaudeTerminalObservation  `json:"claude_terminal,omitempty"`
+	ClaudeTasks              *ClaudeTasksState           `json:"claude_tasks,omitempty"`
+	ClaudeProgress           *ClaudeProgressState        `json:"claude_progress,omitempty"`
+	ClaudeInterruption       *ClaudeInterruptionProgress `json:"claude_interruption,omitempty"`
+	OpenCodeStop             *OpenCodeStopObservation    `json:"opencode_stop,omitempty"`
+	JobID                    ID                          `json:"job_id"`
+	ExecutionID              ID                          `json:"execution_id"`
+	InputID                  ID                          `json:"input_id"`
+	AcceptedInputs           []ExecutionInputBinding     `json:"accepted_inputs,omitempty"`
+	SteerAttempts            uint32                      `json:"steer_attempts,omitempty"`
+	LastSequence             uint64                      `json:"last_sequence"`
+	NativeThreadID           string                      `json:"native_thread_id"`
+	NativeTurnID             string                      `json:"native_turn_id,omitempty"`
+	Observed                 ObservedExecutionSettings   `json:"observed"`
+	Outcome                  ExecutionOutcome            `json:"outcome"`
+	LatestWorkspaceEventID   ID                          `json:"latest_workspace_event_id,omitempty"`
+	LatestTodoID             ID                          `json:"latest_todo_id,omitempty"`
+	LatestPlanID             ID                          `json:"latest_plan_id,omitempty"`
+	LatestDiffID             ID                          `json:"latest_diff_id,omitempty"`
+	LatestUsageID            ID                          `json:"latest_usage_id,omitempty"`
+	LatestResponseUsageID    ID                          `json:"latest_response_usage_id,omitempty"`
+	NoticeCount              uint64                      `json:"notice_count,omitempty"`
+	LastNotice               NativeNotice                `json:"last_notice,omitempty"`
+	CleanupVerified          bool                        `json:"cleanup_verified,omitempty"`
+	Waiting                  NativeWaiting               `json:"waiting"`
+	UnconfirmedResponses     uint32                      `json:"unconfirmed_responses,omitempty"`
+}
+
+type ForkMessageOrigin struct {
+	SessionID     ID     `json:"session_id"`
+	MessageID     ID     `json:"message_id"`
+	ExecutionID   ID     `json:"execution_id"`
+	InputID       ID     `json:"input_id,omitempty"`
+	FirstSequence uint64 `json:"first_sequence"`
+	LastSequence  uint64 `json:"last_sequence"`
 }
 
 type ExecutionMessage struct {
+	Inherited          *ForkMessageOrigin         `json:"inherited,omitempty"`
 	GrokTool           *GrokToolEvent             `json:"grok_tool,omitempty"`
 	GrokUser           *GrokUserHistory           `json:"grok_user,omitempty"`
 	GrokText           *GrokTextContent           `json:"grok_text,omitempty"`

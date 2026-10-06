@@ -26,8 +26,9 @@ impl Cancellation {
         // The common 130/143 contract changes only SIGINT and SIGTERM.
         for (signal, exit) in [(libc::SIGINT, 130), (libc::SIGTERM, 143), (libc::SIGHUP, 1)] {
             let state = token.0.clone();
-            // Record only the first cancellation reason. Cleanup and publication
-            // stay on the supervisor; handlers perform no I/O or allocation.
+            // Record only the first cancellation reason. Cleanup and
+            // publication stay on the supervisor; handlers perform
+            // no I/O or allocation.
             unsafe {
                 signal_hook::low_level::register(signal, move || {
                     let _ = state.compare_exchange(0, exit, Ordering::SeqCst, Ordering::SeqCst);

@@ -9,9 +9,12 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "github-presentation",
+    "account-oauth",
+    "provider-guidance",
     "device-appearance",
     "browser-presentation",
-    "repository-folder"
+    "repository-folder",
+    "worker-network"
   ],
   "webviews": [
     "main"

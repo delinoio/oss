@@ -58,7 +58,7 @@ func validateConfig(config Config) (net.IP, error) {
 	return ip, nil
 }
 
-func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
+func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result error) {
 	if config.Listen == "" {
 		config.Listen = DefaultListen
 	}
@@ -103,7 +103,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err != nil {
 		return err
 	}
-	defer state.Close()
+	defer func() { result = errors.Join(result, state.Close()) }()
 	if config.StartupID == "" {
 		if _, err := WriteRunning(config.DataDir, config); err != nil {
 			return err
@@ -141,8 +141,14 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	child, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &Service{userServiceBackend: config.userServiceBackend, userServiceOptions: userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins}, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins}, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
+		return err
+	}
+	if err := service.initializeServerSubscriptions(child); err != nil {
+		return err
+	}
+	if err := service.initializeOAuth(child); err != nil {
 		return err
 	}
 	defer service.closeAccountSecrets()
@@ -167,6 +173,22 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	lifecycleLock = nil
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
+	subscriptionCtx, stopSubscription := context.WithCancel(child)
+	subscriptionDone := make(chan struct{})
+	go func() { defer close(subscriptionDone); service.runServerSubscriptions(subscriptionCtx) }()
+	defer func() { stopSubscription(); <-subscriptionDone }()
+	sshCtx, stopSSH := context.WithCancel(child)
+	sshDone := make(chan struct{})
+	go func() { defer close(sshDone); service.runSSHSetups(sshCtx) }()
+	defer func() { stopSSH(); <-sshDone }()
+	updateCtx, stopUpdates := context.WithCancel(child)
+	updateDone := make(chan struct{})
+	go func() { defer close(updateDone); service.runWorkerUpdateMaintenance(updateCtx) }()
+	defer func() { stopUpdates(); <-updateDone }()
+	quotaCtx, stopQuota := context.WithCancel(child)
+	quotaDone := make(chan struct{})
+	go func() { defer close(quotaDone); service.runSubscriptionQuotaMaintenance(quotaCtx) }()
+	defer func() { stopQuota(); <-quotaDone }()
 	catalogCtx, stopCatalog := context.WithCancel(child)
 	catalogDone := make(chan struct{})
 	go func() {

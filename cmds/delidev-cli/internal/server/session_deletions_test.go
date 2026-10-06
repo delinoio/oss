@@ -6,16 +6,70 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestSessionDeletionRPCTransportsMaximumUnpublishedSidechatInventory(t *testing.T) {
+	f := newAccountFixture(t)
+	selection, identity := sessionSelection(t, f)
+	_, target := createSessionFixture(t, f, selection)
+	ctx, worker, instance, stream := workspaceStream(t, f, identity, selection.MachineID)
+	if !stream.Receive() || stream.Msg().Job == nil {
+		t.Fatal("missing original assignment", stream.Err())
+	}
+	current := currentCatalogResource(t, f, target.Session)
+	if _, err := sessionClient(f).DeleteSession(ctx, ownerRequest(f.identity, &pb.DeleteSessionRequest{Mutation: acctMutation(current, domain.NewID())})); err != nil {
+		t.Fatal(err)
+	}
+	// This fixture expands an accepted private ownership journal, not native
+	// cleanup evidence. Exercise the actual strict disk read and authenticated
+	// Connect response at the full immutable 4,096-copy envelope capacity.
+	path := filepath.Join(f.root, "session-deletions", target.Session.Id+".json")
+	raw, err := security.ReadPrivate(path, domain.MaxSessionDeletionBytes)
+	var plan store.SessionDeletion
+	if err != nil || domain.DecodeWithLimit(raw, &plan, domain.MaxSessionDeletionBytes) != nil || len(plan.Workers) != 1 {
+		t.Fatal("original private deletion plan", err)
+	}
+	w := &plan.Workers[0].Work
+	for len(w.Copies) < 4096 {
+		w.Copies = append(w.Copies, domain.SessionDeletionCopy{JobID: domain.NewID(), Type: domain.ForkSessionJob, Revision: 2, InstanceID: domain.ID(instance), Digest: strings.Repeat("a", 64), ExecutionID: domain.NewID(), UnpublishedSidechatID: domain.NewID()})
+	}
+	raw, err = json.Marshal(plan)
+	if err != nil || len(raw) <= 1<<20 || len(raw) > domain.MaxSessionDeletionBytes || w.Validate() != nil {
+		t.Fatal("fixture did not exercise the bounded large envelope", len(raw), err)
+	}
+	if err := security.WriteAtomic(path, raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, original := range []bool{false, true} {
+		req := &pb.ListSessionDeletionWorkRequest{MachineId: string(selection.MachineID), InstanceId: instance}
+		if original {
+			req.OriginalSessionId, req.OriginalJobId = target.Session.Id, string(w.Copies[0].JobID)
+		}
+		r, err := worker.ListSessionDeletionWork(ctx, ownerRequest(identity, req))
+		if err != nil || len(r.Msg.WorkJson) != 1 || r.Msg.NextSessionId != "" {
+			t.Fatal("maximum work was stranded", original, err)
+		}
+		var decoded domain.SessionDeletionWork
+		if domain.DecodeWithLimit(r.Msg.WorkJson[0], &decoded, domain.MaxSessionDeletionBytes) != nil || decoded.Validate() != nil || decoded.Digest() != w.Digest() || len(decoded.Copies) != 4096 {
+			t.Fatal("transport truncated or changed original ownership")
+		}
+		if _, err := worker.ListSessionDeletionWork(ctx, ownerRequest(f.identity, req)); connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Fatal("owner obtained Worker-only work", err)
+		}
+	}
+}
 
 func TestSessionDeletionRPCRevisionAuthorizationCompletionAndRetry(t *testing.T) {
 	f := newAccountFixture(t)

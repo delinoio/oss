@@ -67,6 +67,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	command := remaining[0]
 	rest := remaining[1:]
+	if command == "server" && len(rest) > 0 && rest[0] == "desktop-host" {
+		return runDesktopHostCommand(ctx, o, rest[1:], streams)
+	}
 	if command == "service-run" {
 		value, err := runService(ctx, o, rest, streams)
 		return emit(value, err)
@@ -85,6 +88,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run" || rest[0] == "ensure" || rest[0] == "desktop-launch" || rest[0] == "desktop-status" || rest[0] == "desktop-retry") {
 		value, err := start(ctx, o, rest, streams)
+		return emit(value, err)
+	}
+	if command == "update" && len(rest) > 0 && strings.HasPrefix(rest[0], "native-") {
+		value, err := nativeDesktopUpdate(ctx, o, rest)
 		return emit(value, err)
 	}
 	if command == "browser-storage" {
@@ -137,6 +144,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		limit := 30 * time.Second
 		// Network credential work and backup inspection/replacement own bounded
 		// 30-second server work. Allow its typed outcome to arrive first.
+		if command == "machine" && len(rest) > 0 && rest[0] == "ssh" {
+			limit = 35 * time.Second
+			c.transport.ResponseHeaderTimeout = limit
+		}
 		if command == "network" || command == "backup" && len(rest) > 0 && (rest[0] == "restore" || rest[0] == "inspect") {
 			limit = 35 * time.Second
 			c.transport.ResponseHeaderTimeout = limit
@@ -157,10 +168,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		if command == "session" && len(rest) > 0 {
 			switch rest[0] {
-			case "fork":
-				// Fork copies every repository under a two-minute Worker bound.
-				// A command timeout retains the accepted job for observation.
-				limit = 145 * time.Second
+			case "fork", "sidechat":
+				// Native creation has a two-minute Worker bound and retained wait.
+				// Findings submission is an immediate operation with the usual bound.
+				if rest[0] != "sidechat" || len(rest) < 2 || rest[1] != "send" {
+					limit = 145 * time.Second
+				}
 			case "pr":
 				// Linking refreshes GitHub identities before committing metadata.
 				limit = 45 * time.Second
@@ -182,6 +195,15 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "snapshot":
+		if len(rest) > 0 && rest[0] == "list" {
+			value, err := snapshotListCommand(ctx, c, rest[1:])
+			return emit(value, err)
+		}
+
+	case "update":
+		value, err := updateCommand(ctx, c, o, rest)
+		return emit(value, err)
 	case "storage":
 		if code, handled := dispatchStorage(ctx, c, o, rest, streams); handled {
 			return code
@@ -366,7 +388,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(nil, err)
 		}
 		ensureRequest(&o)
-		response, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, Kind: rpc.WireKind(kind), SchemaVersion: 1, DocumentJson: body}))
+		response, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, Kind: rpc.WireKind(kind), SchemaVersion: rpc.ResourceSchemaVersion(kind, body), DocumentJson: body}))
 		if err != nil {
 			return emit(nil, rpc.ClientError(err))
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -118,10 +119,16 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	verificationStarted := false
 	processRoot := filepath.Join(config.Root, "processes")
 	var client *codex.Client
+	var proxy *nativeproxy.Proxy
 	defer func() {
 		if client != nil {
 			if err := client.Close(); err != nil && returned == nil {
 				output, returned = nil, domain.Fail(domain.RecoveryRequired, "The private Codex title runtime could not be closed cleanly.", "Retain its journal and reconcile owned native processes before retrying.")
+			}
+		}
+		if proxy != nil {
+			if err := proxy.Close(); err != nil {
+				output, returned = nil, err
 			}
 		}
 		if verificationStarted {
@@ -175,18 +182,27 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	// Registration durably claims this single title attempt before verification
 	// launches even the native version or app-server probe.
 	verificationStarted = true
-	verified, err := harness.VerifyCodexTitleProfile(ctx, config.Root, jobID, input.Executable, config.Logger)
+	verified, err := harness.VerifyCodexTitleProfile(ctx, config.Root, jobID, input.Executable, input.NativeVersion, config.Logger)
 	if err != nil {
 		return nil, err
 	}
 	if !verified {
 		return nil, domain.Fail(domain.Unsupported, "The frozen Codex title profile is no longer installed and verified.", "Keep the placeholder; no other harness, executable or provider profile may replace it.")
 	}
-	client, err = codex.Open(ctx, codex.Config{
+	nativeConfig := codex.Config{
 		Mode: codex.ThreadProtocol, Version: input.NativeVersion, Home: filepath.Join(home, "codex"),
 		API:     &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token, TitleProfile: true},
 		Process: process.Config{Directory: processRoot, OwnerID: jobID, Executable: resolved, Cwd: workdir, Env: env, Logger: config.Logger},
-	})
+	}
+	proxy, err = openCodexNativeProxy(ctx, config, input.OriginalExecutionID)
+	if err != nil {
+		return nil, err
+	}
+	if proxy != nil {
+		nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
+		nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
+	}
+	client, err = codex.Open(ctx, nativeConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -329,6 +345,11 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		return nil, domain.Fail(domain.RecoveryRequired, "The automatic title app-server could not be closed cleanly.", "Retain its private runtime and reconcile owned processes before reporting the operation.")
 	}
 	client = nil
+	if proxy != nil {
+		if err := proxy.Close(); err != nil {
+			return nil, err
+		}
+	}
 	if err := process.ReconcileOwner(processRoot, jobID); err != nil {
 		return nil, err
 	}

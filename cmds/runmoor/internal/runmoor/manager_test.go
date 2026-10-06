@@ -257,6 +257,36 @@ func TestReloadGenerationsPreserveExistingJob(t *testing.T) {
 		}
 	}
 }
+
+func TestManagerPublishesRunnerOnlyDinDCPUReservations(t *testing.T) {
+	m, _, _, _, pool := testManager(t)
+	if err := m.Store.Update(func(s *Snapshot) error {
+		s.Config.Host.CPU, s.Config.Host.MemoryMiB, s.Config.Host.MaxRunners = 32, 524288, 15
+		s.Config.DockerBudget = Resources{32, 524288}
+		p := &s.Pools[pool].Spec
+		p.Mode, p.DaemonImage = DinD, p.Image
+		p.Resources, p.DaemonResources = Resources{2, 16384}, Resources{2, 2048}
+		p.MinIdle, p.MaxRunners = 12, 15
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.step(); err != nil {
+		t.Fatal(err)
+	}
+	s := m.Store.View()
+	if len(s.Runners) != 12 {
+		t.Fatalf("published %d runners, want 12", len(s.Runners))
+	}
+	for _, r := range s.Runners {
+		if r.Resources != (Resources{2, 18432}) {
+			t.Fatal("published runner reservation included daemon CPU", r)
+		}
+	}
+	if got := statusOf(s, true).Reserved; got != (Resources{24, 221184}) {
+		t.Fatalf("minimum-idle reservation: %+v", got)
+	}
+}
 func TestRepeatedPreparationFailureSuspendsOnlyPool(t *testing.T) {
 	m, _, _, _, pool := testManager(t)
 	for i := 0; i < 3; i++ {
@@ -364,7 +394,7 @@ func TestListenerRespectsPhysicalCapacity(t *testing.T) {
 	}{
 		{name: "engine CPU", budget: Resources{4, 32768}, wantPoll: 2, want: 2},
 		{name: "engine memory", budget: Resources{16, 8192}, wantPoll: 2, want: 2},
-		{name: "DinD CPU", budget: Resources{4, 32768}, daemon: Resources{1, 1024}, wantPoll: 1, want: 1},
+		{name: "DinD CPU", budget: Resources{4, 32768}, daemon: Resources{1, 1024}, wantPoll: 2, want: 2},
 		{name: "DinD memory", budget: Resources{16, 8192}, daemon: Resources{1, 1024}, wantPoll: 1, want: 1},
 		{name: "host ceiling", budget: Resources{32, 65536}, wantPoll: 8, want: 8},
 		{name: "Tart ignores engine ceiling", backend: Tart, budget: Resources{1, 1024}, wantPoll: 2, want: 2},

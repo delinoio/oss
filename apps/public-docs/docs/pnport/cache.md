@@ -1,6 +1,6 @@
 # Cache management
 
-**pnport 0.1.0 is not released.** The CLI cache commands are present in development source; their behavior below is the release contract and is not an installation recommendation.
+**pnport 0.1.2 is available.** The cache commands below apply to the published CLI. Check [installation and known limits](/pnport/installation) before use.
 
 pnport lazily places required package content in a private per-user cache. The cache backs native access without creating a project `node_modules` tree. Completed entries are retained until explicit cleanup: there is no automatic expiry, eviction, or product-imposed total-size quota. Disk exhaustion, permission errors, and failed publication are explicit failures.
 

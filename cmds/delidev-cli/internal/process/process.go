@@ -39,16 +39,18 @@ func (s TerminalSize) Validate() error {
 }
 
 type Config struct {
-	Terminal   *TerminalSize
-	Directory  string
-	OwnerID    domain.ID
-	Executable string
-	Args       []string
-	Env        []string
-	Cwd        string
-	Stdout     io.Writer
-	Stderr     io.Writer
-	Logger     *slog.Logger
+	// Transient native-output guards, never journal or launch metadata.
+	ProtectedValues []string
+	Terminal        *TerminalSize
+	Directory       string
+	OwnerID         domain.ID
+	Executable      string
+	Args            []string
+	Env             []string
+	Cwd             string
+	Stdout          io.Writer
+	Stderr          io.Writer
+	Logger          *slog.Logger
 }
 type Handle struct {
 	native     *managedProcess

@@ -1090,7 +1090,12 @@ fn streaming_stdout_can_be_partial_before_decode_failure() {
     drop(stdin);
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.chunks_exact(3).all(|chunk| chunk == b"foo"));
+    assert!(output
+        .stdout
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .all(|chunk| chunk == b"foo"));
 }
 
 #[test]
@@ -1147,7 +1152,8 @@ fn macos_extended_acl_survives_replacement() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("acl");
         fs::write(&path, b"before").unwrap();
-        // chmod is only a fixture setup tool, never a clibox runtime dependency.
+        // chmod is only a fixture setup tool, never a clibox runtime
+        // dependency.
         assert!(Command::new("/bin/chmod")
             .args([
                 "+a",

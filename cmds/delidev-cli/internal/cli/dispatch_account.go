@@ -7,6 +7,15 @@ import (
 
 func dispatchAccount(ctx context.Context, c client, o options, rest []string, streams IO) (int, bool) {
 	emit := func(value any, err error) int { return emitResult(streams, o, value, err) }
+	if len(rest) > 0 && rest[0] == "oauth" {
+		value, err := accountOAuthCommand(ctx, c, o, rest[1:], streams)
+		return emit(value, err), true
+	}
+	if len(rest) > 0 && (rest[0] == "refresh-quota" || rest[0] == "refresh-all-quotas" || rest[0] == "consume-reset-credit" || rest[0] == "reconcile-reset-credit") {
+		ensureRequest(&o)
+		value, err := subscriptionObservationCommand(ctx, c, o, rest)
+		return emit(value, err), true
+	}
 	if len(rest) > 0 && (rest[0] == "connect" || rest[0] == "disconnect" || rest[0] == "status" || rest[0] == "validate" || rest[0] == "login" || rest[0] == "logout" || rest[0] == "refresh" || rest[0] == "cancel-login" || rest[0] == "login-progress") {
 		if rest[0] != "status" && rest[0] != "login-progress" {
 			ensureRequest(&o)

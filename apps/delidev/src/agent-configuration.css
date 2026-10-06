@@ -8,7 +8,7 @@
 .agent-configuration label { font-size: .875rem; gap: .5rem; margin: 0; min-width: 0; }
 .agent-configuration input, .agent-configuration select { min-height: 40px; border-radius: 8px; min-width: 0; width: 100%; }
 .agent-configuration button { min-height: 40px; border-radius: 8px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-.agent-configuration:is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.agent-configuration:is(button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .agent-core { padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); display: grid; gap: 16px; }
 .agent-core header p { margin: .375rem 0 0; }
 .agent-core-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }

@@ -5,7 +5,7 @@ import { TransportProvider, useQuery } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationQuery, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceQuery, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
+import { SystemService, SystemCapability, ConfigurationQuery, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceQuery, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { SettingsOpening } from "./settings-lifetime";
 import { MutationIntents, useRetainedMutation } from "./mutation";
@@ -22,17 +22,19 @@ function fixture() {
   const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const resources = [create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Sibling project" }) })];
   const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Provider", enabled: true }) });
-  const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Model", provider_id: provider.id }) });
-  resources.push(provider, model);
+  const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Model", native_id: "fixture-native", provider_id: provider.id }) });
+  const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Fixture account", type: "api", provider_id: provider.id, enabled: true, health: "disconnected" }) });
+  resources.push(provider, model, account);
   const save = vi.fn((request: { kind: EntityKind; documentJson: Uint8Array }) => {
     const resource = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson });
     resources.push(resource);
     return { resource };
   });
   const base = createRouterTransport((router) => {
-    router.service(ProviderService, { listProviderInventory: () => ({ entries: [], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: [model], providers: [provider] }) });
-    router.service(ResourceService, { listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
-    router.service(ConfigurationService, { saveConfiguration: save });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.AGENT_WORKER_WIZARD_V1] }) });
+    router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, displayName: "Fixture Provider", enabled: true }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: [model], providers: [provider] }) });
+    router.service(ResourceService, { getResource: request => ({ resource: resources.find(row => row.id === request.id) }), listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
+    router.service(ConfigurationService, { saveConfiguration: save, saveAgentWorker: request => ({ ...save({ kind: EntityKind.AGENT, documentJson: request.documentJson }), requestId: request.mutation!.requestId }) });
   });
   const waiting: { method: string; signal: AbortSignal; gate: ReturnType<typeof deferred> }[] = [];
   let delay: string | undefined, failure: Code | undefined;
@@ -50,7 +52,7 @@ function fixture() {
   } };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
   const view = (visible: boolean, upstream = transport, controlLocalWorker?: ControlLocalWorker) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><Sibling /><Settings visible={visible} controlLocalWorker={controlLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
-  return { client, save, waiting, transport, view, delay: (method?: string, code?: Code) => { delay = method; failure = code; } };
+  return { provider, client, save, waiting, transport, view, delay: (method?: string, code?: Code) => { delay = method; failure = code; } };
 }
 
 function Sibling() {
@@ -59,6 +61,77 @@ function Sibling() {
   const [composer, setComposer] = useState("");
   return <section><label>Sibling composer<textarea value={composer} onChange={(event) => setComposer(event.target.value)} /></label><span>{query.data ? "Sibling ready" : "Sibling loading"}</span><button onClick={() => void mutation.send({ kind: EntityKind.PROJECT, mutation: { requestId: newRequestId() }, documentJson: encode({ name: "Sibling write" }) })}>Sibling save</button>{mutation.uncertain ? <button onClick={mutation.retry}>Sibling retry</button> : null}</section>;
 }
+
+it.each(["", "Unsaved instructions"])("discards an Instructions form on category departure: %s", async (name) => {
+  const value = fixture();
+  render(value.view(true));
+  await screen.findByText("Sibling ready");
+  fireEvent.change(screen.getByRole("textbox", { name: "Sibling composer" }), { target: { value: "Keep sibling input" } });
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  const input = screen.getByRole("textbox", { name: "Name" });
+  fireEvent.change(input, { target: { value: name } });
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(input);
+  fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(screen.getByRole("button", { name: "New Instructions" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+  expect((screen.getByRole("textbox", { name: "Sibling composer" }) as HTMLTextAreaElement).value).toBe("Keep sibling input");
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([undefined, Code.Unavailable, Code.Canceled])("disposes a category write before its late outcome without replay: %s", async (code) => {
+  const value = fixture();
+  render(value.view(true));
+  await screen.findByText("Sibling ready");
+  const sibling = value.client.getQueryCache().getAll()[0];
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Committed after departure" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), { target: { value: "Committed content" } });
+  value.delay("SaveConfiguration", code);
+  fireEvent.click(screen.getByRole("button", { name: "Save Instructions" }));
+  await waitFor(() => expect(value.waiting).toHaveLength(1));
+  const pending = value.waiting[0];
+  const oldQueries = value.client.getQueryCache().getAll().filter(query => query !== sibling);
+  fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+  expect(pending.signal.aborted).toBe(true);
+  expect(value.client.getQueryCache().getAll()).toContain(sibling);
+  expect(value.client.getQueryCache().getAll().some(query => oldQueries.includes(query))).toBe(false);
+  expect(value.client.getMutationCache().getAll()).toHaveLength(0);
+  const focus = screen.getByRole("button", { name: "Projects" });
+  focus.focus();
+  value.delay();
+  await act(async () => pending.gate.resolve());
+  expect(document.activeElement).toBe(focus);
+  expect(screen.getByRole("heading", { level: 1, name: "Projects" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(await screen.findByRole("heading", { name: "Committed after departure" })).toBeTruthy();
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
+
+it("discards an uncertain write on category departure without a replacement mutation", async () => {
+  const value = fixture();
+  render(value.view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Original uncertain write" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), { target: { value: "Original bytes" } });
+  value.delay("SaveConfiguration", Code.Unavailable);
+  fireEvent.click(screen.getByRole("button", { name: "Save Instructions" }));
+  await waitFor(() => expect(value.waiting).toHaveLength(1));
+  await act(async () => value.waiting[0].gate.resolve());
+  await screen.findByRole("button", { name: "Retry the same configuration" });
+  fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  await screen.findByRole("heading", { name: "Original uncertain write" });
+  expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
 
 it.each([["navigation", "Instructions"], ["Escape then navigation", "Instructions"], ["navigation", "Agent Workers"], ["Escape then navigation", "Agent Workers"]])("starts at the first category after leaving via %s an unsaved %s editor", async (route, category) => {
   const value = fixture();
@@ -73,7 +146,7 @@ it.each([["navigation", "Instructions"], ["Escape then navigation", "Instruction
   expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   fireEvent.click(screen.getByRole("button", { name: category }));
   fireEvent.click(await screen.findByRole("button", { name: category === "Agent Workers" ? "New Agent Worker" : "New Instructions" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned draft" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Abandoned draft" } });
   if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("region", { name: "Settings content" })).toBeTruthy(); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   expect(document.activeElement).not.toBe(opener);
@@ -122,7 +195,7 @@ it("aborts Settings reads without evicting sibling queries or accumulating openi
   const sibling = value.client.getQueryCache().getAll()[0];
   for (let cycle = 0; cycle < 4; cycle++) {
     const before = value.waiting.length;
-    value.delay("ListProviderInventory");
+    value.delay("GetStatus");
     view.rerender(value.view(true));
     await waitFor(() => expect(value.waiting.length).toBeGreaterThan(before));
     const reads = value.waiting.filter((entry) => !entry.signal.aborted);
@@ -142,10 +215,14 @@ it.each([undefined, Code.Unavailable, Code.Canceled])("disposes an Agent opening
   const siblingQuery = value.client.getQueryCache().getAll()[0];
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Agent Worker" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
+  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" })); next();
+  await screen.findByRole("option", { name: "Fixture Provider" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ })); next();
+  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "fixture-native" } }); next();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Committed Agent" } });
-  const model = await screen.findByRole("option", { name: "Fixture Model" }) as HTMLOptionElement;
-  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: model.value } });
-  value.delay("SaveConfiguration", code);
+  value.delay("SaveAgentWorker", code);
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.waiting).toHaveLength(1));
   const pending = value.waiting[0];

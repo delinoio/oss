@@ -89,8 +89,9 @@ fn prepare_with_translation_in_context(
         let argument = fields.next().map(str::trim).filter(|s| !s.is_empty());
         let mut interpreter_args = Vec::new();
         path = if interpreter == "/usr/bin/env" {
-            // env in a shebang declares PATH-based interpreter selection. Resolve
-            // that declaration directly; never execute or replace protected env.
+            // env in a shebang declares PATH-based interpreter selection.
+            // Resolve that declaration directly; never execute or
+            // replace protected env.
             let argument = argument.ok_or_else(invalid)?;
             let words: Vec<_> = if let Some(split) = argument.strip_prefix("-S ") {
                 shell_words::split(split).map_err(|_| invalid())?
@@ -400,6 +401,7 @@ fn protected() -> Error {
         "This executable or interpreter cannot be safely injected by this build; use a compatible \
          native executable. System executables are never replaced.",
     )
+    .with_exec_failure(ExecFailureKind::UnsupportedImage)
 }
 #[cfg(target_os = "macos")]
 fn check_signature(bytes: &[u8]) -> Result<()> {

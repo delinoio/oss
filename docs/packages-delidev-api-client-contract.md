@@ -1,5 +1,12 @@
 # DeliDev TypeScript client
 
+Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAccountOAuth, CancelAccountOAuth and GetAccountOAuthStatus, with exact bigint revisions and closed OAuth state/connection-method enums. Authorization URL exists only in original live Start; status carries metadata only. Completion code is a write-only bounded byte array: use a direct authenticated RPC without query/mutation-cache retention, clear transient buffers, and recover only the original completion identity without code. No client-side retry may repeat an exchange. Preserve all four existing account-flow gates independently of capability 5 under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
+
+## Request diagnostic client
+
+Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the issue #1103 metadata read. Preserve native-input versus proxy-HTTP enum provenance, optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
+
+
 Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to reproduce historical module and
 Connect Query import paths. Package-root exports and existing `./gen/*` consumers
@@ -216,3 +223,27 @@ Generated messages, the `ForkWorkspace`/server capability enums and the existing
 logic in Go. Preserve exact uncertain requests; observe accepted operations by
 job ID instead of issuing another mutation. Desktop connection memory retains
 its controller through navigation and separates acceptance from child publication.
+
+## Service-native schema families
+
+`configuration-identity.ts` owns bounded schema-v2 read negotiation for closed service-native Account/native Model, reconfiguration-required Agent and inert retired wrappers. It preserves API-only v1 reads, refuses mixed Provider/service identity and maps generated closed service enums independently from JSON service strings. The helper grants no mutation/native authority and never unwraps a retired document into a live configuration. Synchronization accepts those owning families without changing exact revisions or snapshot/event atomicity. Portable UI preserves original v2 or API-only v1 document/preview bytes; service-native v1 graphs are unsupported.
+
+Worker bootstrap export uses generated mutation results with bounded ciphertext and its separately displayed authenticated digest. Status retains exact desired/effective/native generation strings and closed route states; current control readiness cannot manufacture native route use or provider success. Ciphertext is not persistent query state, and private recipient keys/decrypted derivatives never cross the client boundary.
+
+OpenCode General Chat Fork uses existing generated `SessionQuery` ForkSession and GetSessionFork with independently negotiated System 26 / Worker 15. The Unix pinned profile retains exact source revision/native turn, paused independent child identity, and explicit inherited-message provenance with no input or accounting authority. Native agent/model absence remains preparation state until the first real child input; clients cannot infer selection or broaden the Go-owned plain-text eligibility boundary.
+
+Independent server subscription login exports capability 30, the closed SubscriptionLoginState and ForwardSubscriptionCallback from reconciled schemas. Keep progress URLs, transient suggested names and write-only callback bytes outside shared query caches. Original operation/generation checks precede name entry; exact request retries cannot grant callback replay. Explicit-machine Worker methods, API accounts and quota ownership retain their contracts.
+
+## Codex login diagnostic client
+
+Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
+
+## Agent Worker wizard bindings
+
+Generate ConfigurationQuery.saveAgentWorker, typed model-selection oneof and
+System capability 33 from their canonical schemas. Source-scoped account/model
+queries use the closed service enum and server pagination; keys retain each exact
+source/cursor. Keep original uint64 model/Worker revisions and exact uncertain
+wire requests. The canonical model resource remains an internal identity used by
+existing APIs, Usage and historical snapshots. Configured compatibility and
+catalog results grant no execution readiness. Follow the desktop/catalog contracts.

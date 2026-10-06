@@ -1,18 +1,18 @@
 # Getting started
 
-**pnport 0.1.0 is unreleased; the commands below describe the CLI interface.** Check [installation and availability](/pnport/installation) before using an experimental preview. Prepare an installed Yarn 4 Plug'n'Play project first. The project must have `.pnp.cjs`; inline and split PnP data are part of the release contract.
+**pnport 0.1.2 is available.** Check [installation and known limits](/pnport/installation), then prepare an installed Yarn 4 Plug'n'Play project. The project must have `.pnp.cjs`; pnport supports inline and split PnP data.
 
 For a walkthrough using the published preview with Turbopack and TypeScript 7, see [preview testing](/pnport/preview-testing).
 
 ## Check the project
 
-From the directory where a future subprocess should run, `pnport doctor` checks the selected PnP project, platform, injection artifact, and cache. `pnport doctor --json` provides the same checks as one machine-readable object. A non-ready report exits with status 125. Doctor readiness does not certify a particular child executable; `run` checks its own admission requirements.
+From the directory where the subprocess should run, `pnport doctor` checks the selected PnP project, platform, injection artifact, and cache. `pnport doctor --json` provides the same checks as one machine-readable object. A non-ready report exits with status 125. Doctor readiness does not certify a particular child executable; `run` checks its own admission requirements.
 
 Without `--project`, pnport searches upward from the current directory for the nearest `.pnp.cjs`. Use `--project` to choose another project directory or its `.pnp.cjs` file. Project selection does not change the child's working directory.
 
 ## Run a command
 
-After installing the experimental preview or a future stable release, the invocation shape is:
+After installing the stable release or an experimental preview, the invocation shape is:
 
 ```text
 pnport run -- <command> [args...]

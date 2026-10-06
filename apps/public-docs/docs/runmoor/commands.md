@@ -59,3 +59,16 @@ All commands accept `--config PATH` and `--no-color`. Commands and flags are cas
 | `image list` | Optional `--json`; includes preparation/sealed revisions and problems |
 
 Image commands print structured revision data. Image changes require a running manager; `image list` also works offline. See [Tart image preparation](./tart) for starting without any pools. CPU values are whole cores and memory values are MiB. Use `--help` to list commands. Read [operations and recovery](./operations) before force-stop or image removal.
+
+## Host selection and control
+
+The unreleased [macOS host backend](./host) is selected explicitly with
+`runmoor init --backend host`. New workflows route with
+`runs-on: [runmoor-macos-host, macOS, ARM64]`. The existing status, doctor,
+runner update, reload, pause, resume, drain, stop, scoped force-stop and launchd
+service commands apply to host pools. Image commands remain Tart-only.
+
+Host work shares global admission budgets, but CPU/memory reservations do not
+enforce process usage limits. Force-stop retains uncertain ownership and cleanup;
+it never signals unrelated account processes or deletes replaced directories.
+Actual host execution, unsigned Xcode builds and live GitHub jobs are unvalidated.

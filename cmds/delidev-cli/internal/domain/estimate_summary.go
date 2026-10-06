@@ -7,12 +7,13 @@ import (
 )
 
 type PricingVersion struct {
-	ID         ID           `json:"id"`
-	ModelID    ID           `json:"model_id"`
-	ProviderID ID           `json:"provider_id"`
-	Revision   uint64       `json:"revision"`
-	CreatedAt  time.Time    `json:"created_at"`
-	Basis      TokenPricing `json:"basis"`
+	ID                  ID                  `json:"id"`
+	ModelID             ID                  `json:"model_id"`
+	ProviderID          ID                  `json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
+	Revision            uint64              `json:"revision"`
+	CreatedAt           time.Time           `json:"created_at"`
+	Basis               TokenPricing        `json:"basis"`
 }
 
 type CurrencyEstimate struct {
@@ -115,4 +116,11 @@ func (p *PricingUsage) Add(value ResponseEstimate) {
 	p.Input.Add(value.Input)
 	p.CachedInput.Add(value.CachedInput)
 	p.Output.Add(value.Output)
+}
+
+func (p PricingVersion) ValidIdentity() bool {
+	if p.SubscriptionService != "" {
+		return p.SubscriptionService.Valid() && p.ProviderID == ""
+	}
+	return p.ProviderID.Validate() == nil
 }

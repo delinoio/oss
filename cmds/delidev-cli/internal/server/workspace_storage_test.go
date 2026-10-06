@@ -3,7 +3,9 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -105,6 +107,12 @@ func (f *storageFixture) claim(job *pb.Resource) *pb.Resource {
 		}
 		j.State = domain.JobClaimed
 		j.InstanceID = f.instance
+		digest := sha256.Sum256([]byte(f.workerIdentity.Token))
+		actor, err := tx.Authenticate(digest[:])
+		if err != nil {
+			return nil, err
+		}
+		j.AssignedDeviceID = actor.DeviceID
 		// Paired worker report authorization still independently checks its machine
 		// and current instance through the real authenticated Connect handler.
 		claimed, err = tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, j)
@@ -131,9 +139,13 @@ func (f *storageFixture) execute(job *pb.Resource) workspace.StorageResult {
 		f.t.Fatal(err)
 	}
 	raw, _ := json.Marshal(output)
-	_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), OutputJson: raw}))
+	reported, err := f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), OutputJson: raw}))
 	if err != nil {
 		f.t.Fatal(err)
+	}
+	var final domain.Job
+	if domain.Decode(reported.Msg.Job.DocumentJson, &final) != nil || final.State != domain.JobSucceeded {
+		f.t.Fatal("native storage result did not settle accepted job", final.State)
 	}
 	return output
 }
@@ -347,39 +359,274 @@ func TestWorkspaceStorageFailedCleanupRecoveryCannotInventStoredCopy(t *testing.
 	}
 }
 
-func TestWorkspaceStorageCanceledRecoveryRestoresPredecessor(t *testing.T) {
+func TestWorkspaceStorageUnsuccessfulRecoveryRestoresPredecessor(t *testing.T) {
+	for _, outcome := range []string{"queued-canceled", "claimed-canceled", "claimed-failed", "nested-queued-canceled", "nested-claimed-canceled", "nested-claimed-failed"} {
+		t.Run(outcome, func(t *testing.T) {
+			f := newStorageFixture(t)
+			preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.execute(preview.Msg.Job)
+			cleanup, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", preview.Msg.Job.Id, "")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			claimed := f.claim(cleanup.Msg.Job)
+			_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.RecoveryRequired)}}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.HasPrefix(outcome, "nested-") {
+				intermediate := f.claim(recovery.Msg.Job)
+				if _, err := f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: intermediate.Id, ExpectedRevision: intermediate.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.RecoveryRequired)}})); err != nil {
+					t.Fatal(err)
+				}
+				claimed = intermediate
+				recovery, err = f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				outcome = strings.TrimPrefix(outcome, "nested-")
+			}
+			if outcome == "queued-canceled" {
+				cancel, err := f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: recovery.Msg.Job.Id, ExpectedRevision: recovery.Msg.Job.Revision}}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var canceled domain.Job
+				if domain.Decode(cancel.Msg.Job.DocumentJson, &canceled) != nil || canceled.State != domain.JobCanceled {
+					t.Fatal("queued recovery was not canceled")
+				}
+			} else {
+				assigned := f.claim(recovery.Msg.Job)
+				code := domain.ResourceExhausted
+				if outcome == "claimed-canceled" {
+					code = domain.Canceled
+				}
+				if _, err := f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: assigned.Id, ExpectedRevision: assigned.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(code)}})); err != nil {
+					t.Fatal(err)
+				}
+			}
+			state, err := store.Decode[domain.Session](f.sessionRecord())
+			if err != nil || state.Storage.State != domain.WorkspaceStorageUncertain || state.Storage.JobID != domain.ID(claimed.Id) {
+				t.Fatal("unsuccessful recovery did not restore uncertain predecessor", err)
+			}
+			if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id))); err != nil {
+				t.Fatal("predecessor could not be recovered after unsuccessful recovery", err)
+			}
+
+		})
+	}
+}
+
+func TestWorkspaceStorageAdmissionReservesPermanentDeletionJobCapacity(t *testing.T) {
 	f := newStorageFixture(t)
-	preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.execute(preview.Msg.Job)
-	cleanup, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", preview.Msg.Job.Id, "")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	claimed := f.claim(cleanup.Msg.Job)
-	_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.RecoveryRequired)}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cancel, err := f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: recovery.Msg.Job.Id, ExpectedRevision: recovery.Msg.Job.Revision}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var canceled domain.Job
-	if domain.Decode(cancel.Msg.Job.DocumentJson, &canceled) != nil || canceled.State != domain.JobCanceled {
-		t.Fatal("queued recovery was not canceled")
-	}
 	state, err := store.Decode[domain.Session](f.sessionRecord())
-	if err != nil || state.Storage.State != domain.WorkspaceStorageUncertain || state.Storage.JobID != domain.ID(claimed.Id) {
-		t.Fatal("canceled recovery did not restore uncertain predecessor", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id))); err != nil {
-		t.Fatal("predecessor could not be recovered after canceling queued recovery", err)
+	_, err = f.service.Store.Mutate(f.ownerContext, domain.NewID(), "storage.capacity.fixture", nil, func(tx *store.Tx) (any, error) {
+		original, err := tx.Get(domain.JobKind, state.Preparation.JobID)
+		if err != nil {
+			return nil, err
+		}
+		job, err := store.Decode[domain.Job](original)
+		if err != nil {
+			return nil, err
+		}
+		// The existing preparation plus these records leave one complete recovery lineage.
+		for i := 0; i < 4086; i++ {
+			if _, err := tx.PutJob(domain.NewID(), 0, f.session, "", job); err != nil {
+				return nil, err
+			}
+		}
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
+	if err != nil {
+		t.Fatal("final deletion-plan slot was not usable", err)
+	}
+	if _, err := f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: accepted.Msg.Job.Id, ExpectedRevision: accepted.Msg.Job.Revision}})); err != nil {
+		t.Fatal(err)
+	}
+	before := f.sessionRecord().Revision
+	if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", ""))); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatal("admission exceeded permanent-deletion inventory", err)
+	}
+	if f.sessionRecord().Revision != before {
+		t.Fatal("rejected storage changed the session")
+	}
+}
+
+func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
+	for _, variant := range []struct {
+		existing int
+		failure  string
+	}{{4078, ""}, {4078, "queued-canceled"}, {4078, "claimed-failed"}, {4079, ""}} {
+		existing := variant.existing
+		t.Run(fmt.Sprint(existing, "/", variant.failure), func(t *testing.T) {
+			f := newStorageFixture(t)
+			preview, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.execute(preview.Msg.Job)
+			state, err := store.Decode[domain.Session](f.sessionRecord())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = f.service.Store.Mutate(f.ownerContext, domain.NewID(), "storage.restore.capacity.fixture", nil, func(tx *store.Tx) (any, error) {
+				record, err := tx.Get(domain.JobKind, state.Preparation.JobID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](record)
+				if err != nil {
+					return nil, err
+				}
+				for i := 2; i < existing; i++ {
+					if _, err := tx.PutJob(domain.NewID(), 0, f.session, "", job); err != nil {
+						return nil, err
+					}
+				}
+				return true, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := f.sessionRecord().Revision
+			cleanup, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", preview.Msg.Job.Id, "")))
+			if existing == 4079 {
+				if connect.CodeOf(err) != connect.CodeResourceExhausted || f.sessionRecord().Revision != before {
+					t.Fatal("cleanup consumed the final restore slot", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Lose the original and seven recovery reports. The eighth recovery
+			// settles the same native operation at the exact inventory bound.
+			settleAfterLostReports := func(resource *pb.Resource) workspace.StorageResult {
+				attempts := workspace.MaxStorageRecoveryClaims
+				if variant.failure != "" {
+					attempts--
+				}
+				for attempt := 0; attempt < attempts; attempt++ {
+					assigned := f.claim(resource)
+					var original domain.Job
+					var input workspace.StorageRequest
+					if domain.Decode(assigned.DocumentJson, &original) != nil || workspace.DecodeStorageRequest(original.Input, &input) != nil {
+						t.Fatal("invalid lost-report assignment")
+					}
+					if _, err := f.manager.Storage(context.Background(), input); err != nil {
+						t.Fatal(err)
+					}
+					_, err := f.service.Store.Mutate(f.ownerContext, domain.NewID(), "fixture.storage.expired-worker", nil, func(tx *store.Tx) (any, error) {
+						return nil, tx.SetWorkerInstance(f.machine, f.instance, time.Now().UTC().Add(-2*workerLease))
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					f.instance = domain.NewID()
+					if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
+						t.Fatal(err)
+					}
+					recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", assigned.Id)))
+					if err != nil {
+						t.Fatal("reserved recovery lineage exhausted early", attempt, err)
+					}
+					if attempt == 0 && variant.failure != "" {
+						if variant.failure == "queued-canceled" {
+							_, err = f.client.CancelWorkspaceStorageOperation(context.Background(), ownerRequest(f.service.Identity, &pb.CancelWorkspaceStorageOperationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: recovery.Msg.Job.Id, ExpectedRevision: recovery.Msg.Job.Revision}}))
+						} else {
+							failed := f.claim(recovery.Msg.Job)
+							_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: failed.Id, ExpectedRevision: failed.Revision}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.ResourceExhausted)}}))
+						}
+						if err != nil {
+							t.Fatal(err)
+						}
+						recovery, err = f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", assigned.Id)))
+						if err != nil {
+							t.Fatal("terminal recovery consumed reserved successor", err)
+						}
+					}
+					resource = recovery.Msg.Job
+				}
+				return f.execute(resource)
+			}
+			output := settleAfterLostReports(cleanup.Msg.Job)
+			if output.WorkspaceState != domain.WorkspaceStored {
+				t.Fatal("fixture cleanup did not store workspace")
+			}
+			inspect, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_INSPECT, string(output.Snapshot.ID), "", "")))
+			if connect.CodeOf(err) != connect.CodeResourceExhausted || inspect != nil {
+				t.Fatal("inspection consumed reserved restore lineage", err)
+			}
+			restore, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RESTORE, string(output.Snapshot.ID), "", "")))
+			if err != nil {
+				t.Fatal("stored workspace lost its full restore lineage", err)
+			}
+			restored := settleAfterLostReports(restore.Msg.Job)
+			if restored.WorkspaceState != domain.WorkspacePresent || !restored.CleanupVerified {
+				t.Fatal("last-slot restore did not complete")
+			}
+		})
+	}
+}
+
+func TestWorkspaceStorageSurvivingBytesAndCleanupPreviewAreBound(t *testing.T) {
+	for _, action := range []workspace.StorageAction{workspace.StorageCreate, workspace.StorageCleanup, workspace.StorageInspect, workspace.StorageRestore} {
+		for _, recovering := range []bool{false, true} {
+			t.Run(fmt.Sprint(action, recovering), func(t *testing.T) {
+				snapshot := &workspace.SnapshotMetadata{ID: domain.NewID(), SessionID: domain.NewID(), MachineID: domain.NewID(), SHA256: strings.Repeat("a", 64), SizeBytes: 123, CreatedAt: time.Now().UTC()}
+				input := workspace.StorageRequest{OperationID: domain.NewID(), Action: action, PreviousState: domain.WorkspacePresent, SnapshotID: snapshot.ID, PreviewDigest: strings.Repeat("b", 64), Preparation: workspace.PrepareRequest{SessionID: snapshot.SessionID, MachineID: snapshot.MachineID}}
+				output := workspace.StorageResult{Version: 1, OperationID: input.OperationID, Action: action, SessionID: snapshot.SessionID, MachineID: snapshot.MachineID, Snapshot: snapshot, CleanupVerified: true, WorkspaceState: domain.WorkspacePresent, RetainedSnapshotBytes: 123, PreviewDigest: input.PreviewDigest}
+				if action == workspace.StorageCleanup {
+					output.WorkspaceState = domain.WorkspaceStored
+					output.SourceBytes = 7
+					output.RemovedSourceBytes = 7
+				}
+				if recovering {
+					original := input
+					input.OperationID = domain.NewID()
+					input.Action = workspace.StorageRecover
+					input.Recovery = &workspace.StorageRecovery{Original: original}
+					output.OperationID = input.OperationID
+					output.Action = workspace.StorageRecover
+					output.RecoveredJobID = original.OperationID
+					output.RecoveredJobState = domain.JobSucceeded
+				}
+				check := func(v workspace.StorageResult) error {
+					raw, _ := json.Marshal(v)
+					return validateWorkspaceStorageResult(input, raw)
+				}
+				if err := check(output); err != nil {
+					t.Fatal("valid retained result", err)
+				}
+				bad := output
+				bad.RetainedSnapshotBytes = 122
+				if check(bad) == nil {
+					t.Fatal("underreported retained snapshot accepted")
+				}
+				if action == workspace.StorageCleanup {
+					for _, digest := range []string{"", strings.Repeat("c", 64), strings.ToUpper(input.PreviewDigest)} {
+						bad = output
+						bad.PreviewDigest = digest
+						if check(bad) == nil {
+							t.Fatal("unbound cleanup preview accepted", digest)
+						}
+					}
+				}
+			})
+		}
 	}
 }

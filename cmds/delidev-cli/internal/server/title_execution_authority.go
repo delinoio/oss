@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"slices"
 	"time"
 
@@ -107,44 +106,9 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 	if err != nil || model.ProviderID != input.ProviderID || model.NativeID != input.NativeModel || !slices.Contains(model.Harnesses, domain.Codex) {
 		return denied()
 	}
-	scope := apiproxy.Scope{ExecutionID: input.OriginalExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.ProviderID, ModelID: input.ModelID, NativeModel: input.NativeModel, Purpose: domain.SessionTitleUsage, TitlePrompt: input.Prompt, Effort: input.Effort, ServiceTier: input.ServiceTier, Provider: provider, Operations: []apiproxy.Operation{apiproxy.ResponseCreate}}
+	scope := apiproxy.Scope{ExecutionID: input.OriginalExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.ProviderID, ModelID: input.ModelID, NativeModel: input.NativeModel, Harness: domain.Codex, Purpose: domain.SessionTitleUsage, TitlePrompt: input.Prompt, Effort: input.Effort, ServiceTier: input.ServiceTier, Provider: provider, Operations: []apiproxy.Operation{apiproxy.ResponseCreate}}
 	if err := scope.Validate(); err != nil {
 		return denied()
 	}
 	return scope, nil
-}
-
-func (a *executionAuthority) claimTitleHTTPRequest(ctx context.Context, grant store.ExecutionGrant, operation apiproxy.Operation) error {
-	if operation != apiproxy.ResponseCreate {
-		return executionDenied()
-	}
-	_, err := a.service.Store.Mutate(ctx, domain.NewID(), "execution.title-request.claim", struct {
-		JobID    domain.ID
-		Instance domain.ID
-		Epoch    domain.ID
-	}{grant.JobID, grant.InstanceID, grant.ServerEpoch}, func(tx *store.Tx) (any, error) {
-		record, err := tx.Get(domain.JobKind, grant.JobID)
-		if err != nil {
-			return nil, err
-		}
-		job, err := store.Decode[domain.Job](record)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := a.titleScope(tx, grant, record, job); err != nil {
-			return nil, err
-		}
-		claimed, err := tx.ClaimTitleHTTPRequest(grant.JobID)
-		if err != nil {
-			return nil, err
-		}
-		if !claimed {
-			return nil, executionDenied()
-		}
-		return struct{ JobID domain.ID }{grant.JobID}, nil
-	})
-	if err != nil {
-		return executionDenied()
-	}
-	return nil
 }

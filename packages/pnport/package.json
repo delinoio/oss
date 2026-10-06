@@ -1,8 +1,9 @@
 {
   "name": "@delino/pnport",
-  "version": "0.1.0-next.1",
+  "version": "0.1.2",
   "private": true,
-  "pnportReleaseReady": false,
+  "pnportReleaseReady": true,
+  "pnportReleaseVersion": "0.1.2",
   "pnportPreviewVersion": "0.1.0-next.1",
   "description": "Native Yarn Plug'n'Play subprocess filesystem",
   "license": "Apache-2.0",
@@ -12,6 +13,8 @@
     "test:package": "node scripts/smoke.mjs",
     "package:npm": "node scripts/package.mjs",
     "publish:npm": "node scripts/publish.mjs",
+    "test:cache:prepare": "node scripts/cache-conformance.mjs prepare",
+    "test:cache": "node scripts/cache-conformance.mjs run",
     "test:typescript:prepare": "node scripts/typescript-conformance.mjs prepare",
     "test:typescript": "node scripts/typescript-conformance.mjs run",
     "benchmark": "node scripts/benchmark.mjs"

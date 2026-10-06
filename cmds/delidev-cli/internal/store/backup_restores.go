@@ -602,6 +602,7 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		}
 		var blocked bool
 		err := tx.tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entities WHERE
+		 (kind IN ('ssh_setup','update') AND (json_extract(body,'$.state') NOT IN ('OBSERVED','SUCCEEDED','FAILED','CANCELED') OR COALESCE(json_extract(body,'$.reconcile_requested'),0)=1 OR (COALESCE(json_extract(body,'$.cancellation_requested'),0)=1 AND COALESCE(json_extract(body,'$.credential_removed'),0)=0))) OR
 		 (kind='job' AND json_extract(body,'$.state') IN ('claimed','uncertain')) OR
 		 (kind='session' AND (COALESCE(json_extract(body,'$.active_execution_id'),'')<>'' OR
 		 json_extract(body,'$.outcome')='running' OR json_extract(body,'$.recovery') IN ('required','reconciling') OR
@@ -621,7 +622,11 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		if err := tx.tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM jobs WHERE state IN ('claimed','uncertain'))").Scan(&claimed); err != nil {
 			return storageError(err)
 		}
-		blocked = blocked || claimed
+		oauth, err := tx.AccountOAuthPending()
+		if err != nil {
+			return err
+		}
+		blocked = blocked || claimed || oauth != 0
 		if blocked {
 			return domain.Fail(domain.RecoveryRequired, "Restore requires independently settled execution, forwarding and credential ownership.", "Stop and reconcile original work, forwards and credential operations first; restore never terminates them.")
 		}

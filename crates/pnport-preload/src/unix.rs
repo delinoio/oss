@@ -1,9 +1,9 @@
 use std::{
     cell::Cell,
     collections::HashMap,
-    ffi::{CStr, CString, OsStr},
+    ffi::{CStr, CString, OsStr, OsString},
     fs,
-    os::unix::ffi::OsStrExt,
+    os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
     sync::{
@@ -247,6 +247,21 @@ unsafe extern "C" fn initialize() {
         let snapshot: Snapshot =
             serde_json::from_slice(&fs::read(session.join("graph.json")).ok()?).ok()?;
         let graph = Graph::from_snapshot(snapshot).ok()?;
+        let loader = pnport_core::node::Loader::from_snapshot(&graph.snapshot);
+        let inherited = std::env::var_os("NODE_OPTIONS");
+        let cwd = std::env::current_dir().ok();
+        let options = loader
+            .options_in(inherited.as_deref(), cwd.as_deref())
+            .ok()?;
+        if inherited.as_deref() != Some(options.as_os_str()) {
+            // The new image knows the final cwd after opaque spawn actions;
+            // normalize before Node consumes its environment at startup.
+            let value = CString::new(options.as_os_str().as_bytes()).ok()?;
+            if libc::setenv(c"NODE_OPTIONS".as_ptr(), value.as_ptr(), 1) != 0 {
+                return None;
+            }
+        }
+        NODE_LOADER.set(loader).ok();
         let cache = Cache::open(PathBuf::from(std::env::var_os("PNPORT_CACHE")?)).ok()?;
         let view = View::new(graph, cache, session.clone());
         RUNTIME
@@ -272,7 +287,7 @@ static INITIALIZER: unsafe extern "C" fn() = initialize;
 
 unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -308,7 +323,7 @@ const _: () = {
 #[export_name = "open"]
 unsafe extern "C" fn linux_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -321,7 +336,7 @@ unsafe extern "C" fn pnport_openat(
     mut args: ...
 ) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -362,7 +377,7 @@ unsafe extern "C" fn linux_openat(
     mut args: ...
 ) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -524,14 +539,23 @@ hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
 });
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
+static NODE_LOADER: OnceLock<pnport_core::node::Loader> = OnceLock::new();
 unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CString>, c_int> {
     if envp.is_null() {
         return Err(EFAULT);
     }
     let mut result = Vec::new();
+    let mut node_options = None;
     let mut i = 0;
     while !(*envp.add(i)).is_null() {
         let value = CStr::from_ptr(*envp.add(i));
+        if let Some(options) = value.to_bytes().strip_prefix(b"NODE_OPTIONS=") {
+            if node_options.is_none() {
+                node_options = Some(OsString::from_vec(options.to_vec()));
+            }
+            i += 1;
+            continue;
+        }
         if ![
             b"PNPORT_SESSION=".as_slice(),
             b"PNPORT_CACHE=",
@@ -550,6 +574,14 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
     } else {
         return Err(EIO);
     }
+    let options = NODE_LOADER
+        .get()
+        .ok_or(EIO)?
+        .options(node_options.as_deref())
+        .map_err(|_| EINVAL)?;
+    let mut entry = b"NODE_OPTIONS=".to_vec();
+    entry.extend_from_slice(options.as_os_str().as_bytes());
+    result.push(CString::new(entry).map_err(|_| EINVAL)?);
     Ok(result)
 }
 hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*const *const c_char)->c_int,{

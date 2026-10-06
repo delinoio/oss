@@ -223,3 +223,26 @@ Diagnostics are local, sanitized structured metadata bounded by **seven days and
 Report reproducible issues through [GitHub Issues](https://github.com/delinoio/oss/issues). Include version, platform, safe error code and relevant sanitized status. Do not include credentials, JIT data, raw workflow logs, or private VM contents. The [Runmoor documentation site](./) covers the same supported workflows.
 
 See [installation and signature verification](./install) before any manual update or rollback.
+
+## macOS host operations
+
+The unreleased [host backend](./host) uses the same launchd and pool control
+operations. Run the manager and trusted jobs under a dedicated CI account. PATH
+and DEVELOPER_DIR are inherited when set; execution HOME and temporary paths are
+disposable. Other manager variables and management credentials are excluded from
+job launch configuration. Separate directories do not prevent account-wide file
+or Keychain access. Operators own tools, shared caches, signing, Simulators, GUI
+sessions, global tool settings and any daemon that escapes the managed group.
+
+A manager-only restart reconciles verified surviving work. Completion,
+cancellation and timeout terminate only the verified execution group and children.
+Missing supervisors, changed process identities or directories and uncertain
+termination retain capacity, state and resources. Preserve those resources and
+inspect the safe status/doctor error; restore a matching paired state/data backup
+when available. Never repair markers or delete by name. Drain/stop before upgrades
+or rollback and use a compatible binary with its paired backup. Older binaries
+must not open newer state. Raw workflow output and runner logs are not retained
+in manager diagnostics.
+
+Actual host execution, unsigned Xcode builds and live GitHub jobs have not been
+validated. Host documentation does not expand Docker/Tart or package acceptance.

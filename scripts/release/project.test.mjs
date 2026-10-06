@@ -117,6 +117,24 @@ test("pnport next preparation retains exact authorization, source identity, and 
   assert.throws(() => bumpVersion("0.0.0", Bump.Next), /stable version bump/u);
 });
 
+test("pnport preview promotion preserves exact stable authority without granting a later version", () => {
+  const preview = versionChanges(Project.Pnport, Bump.Next, read);
+  const updated = (file) => preview.changes[file] ?? read(file);
+  const authorized = (file) => file === "packages/pnport/package.json"
+    ? JSON.stringify({ ...JSON.parse(updated(file)), pnportReleaseReady: true, pnportReleaseVersion: "0.1.0" }, null, 2) + "\n"
+    : updated(file);
+  const stable = versionChanges(Project.Pnport, Bump.Minor, authorized);
+  const manifest = JSON.parse(stable.changes["packages/pnport/package.json"]);
+  assert.equal(manifest.version, "0.1.0");
+  assert.equal(manifest.pnportReleaseReady, true);
+  assert.equal(manifest.pnportReleaseVersion, "0.1.0");
+  assert.equal(manifest.pnportPreviewVersion, "0.1.0-next.1");
+  const next = versionChanges(Project.Pnport, Bump.Patch, (file) => stable.changes[file] ?? authorized(file));
+  const future = JSON.parse(next.changes["packages/pnport/package.json"]);
+  assert.equal(future.version, "0.1.1");
+  assert.equal(future.pnportReleaseVersion, "0.1.0");
+});
+
 test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockstep versions", () => {
   const plan = versionChanges(Project.Pnport, Bump.Minor, read);
   assert.equal(plan.previous_version, "0.0.0");

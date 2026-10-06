@@ -48,6 +48,11 @@ type SessionSettings struct {
 type SessionMutation string
 
 const (
+	ForkSessionMutation           SessionMutation = "fork-session"
+	MoveForkMutation              SessionMutation = "move-fork"
+	MarkForkMutation              SessionMutation = "mark-fork"
+	DeleteForkSourceMutation      SessionMutation = "delete-fork-source"
+	CompactSessionMutation        SessionMutation = "compact-session"
 	CreateSessionMutation         SessionMutation = "create-session"
 	ResumeSessionMutation         SessionMutation = "resume-session"
 	SubmitInputMutation           SessionMutation = "submit-input"
@@ -99,48 +104,57 @@ type SessionReceipt struct {
 // providers/context and original server ownership. Discovery cannot create one
 // or expose session mutations. Durable Worker/account integration is separate.
 type sessionAPI struct {
-	client              *http.Client
-	origin              string
-	password            string
-	cwd                 string
-	claim               func(context.Context, SessionClaim) error
-	alive               func() error
-	closeOwned          func(context.Context) error
-	reconcileOwned      func(context.Context) error
-	logger              *slog.Logger
-	owner               domain.ID
-	gate                chan struct{}
-	creation            *sessionCreation
-	input               *sessionInput
-	problem             *domain.Error
-	events              *eventStream
-	eventAttempt        bool
-	observer            *inputObserver
-	replyAttempt        *interactionHTTPAttempt
-	abortAttempt        bool
-	rejectionPolicy     RejectionPolicy
-	apiProfile          *nativeAPIProfile
-	apiVerified         bool
-	runtimeRead         bool
-	runtimeRoot         string
-	runtimeHome         string
-	checkpointProcess   process.Config
-	creationLookup      bool
-	creationCandidate   string
-	historyRead         *historyPageRead
-	projectRead         bool
-	projectProfile      bool
-	projectSourceDigest string
-	projectAdoption     *checkpointProjectAdoption
-	checkpointRead      bool
-	predecessor         *nativeCheckpoint
-	predecessorDigest   string
-	resumeRequest       domain.ID
-	sessionAgent        PrimaryAgent
-	sessionPermissions  []PermissionRule
-	restoredAlways      uint32
-	permissionRestore   *interactionHTTPAttempt
-	todoRead            bool
+	forkAttempt            *nativeForkAttempt
+	forkOrigin             *nativeCheckpointFork
+	forkSelectionPending   bool
+	compactionAttempt      *nativeCompactionAttempt
+	children               map[string]*foregroundChild
+	earlyChildren          map[string][]NativeEvent
+	earlyChildBytes        int
+	client                 *http.Client
+	origin                 string
+	password               string
+	cwd                    string
+	claim                  func(context.Context, SessionClaim) error
+	alive                  func() error
+	closeOwned             func(context.Context) error
+	reconcileOwned         func(context.Context) error
+	logger                 *slog.Logger
+	owner                  domain.ID
+	gate                   chan struct{}
+	creation               *sessionCreation
+	input                  *sessionInput
+	problem                *domain.Error
+	events                 *eventStream
+	eventAttempt           bool
+	observer               *inputObserver
+	replyAttempt           *interactionHTTPAttempt
+	abortAttempt           bool
+	rejectionPolicy        RejectionPolicy
+	apiProfile             *nativeAPIProfile
+	apiVerified            bool
+	runtimeRead            bool
+	runtimeRoot            string
+	runtimeHome            string
+	checkpointProcess      process.Config
+	creationLookup         bool
+	creationCandidate      string
+	historyRead            *historyPageRead
+	childInventoryVerified bool
+	childInventoryFacts    []domain.SubagentObservation
+	projectRead            bool
+	projectProfile         bool
+	projectSourceDigest    string
+	projectAdoption        *checkpointProjectAdoption
+	checkpointRead         bool
+	predecessor            *nativeCheckpoint
+	predecessorDigest      string
+	resumeRequest          domain.ID
+	sessionAgent           PrimaryAgent
+	sessionPermissions     []PermissionRule
+	restoredAlways         uint32
+	permissionRestore      *interactionHTTPAttempt
+	todoRead               bool
 
 	reconciliation          ReconciliationState
 	reconciliationMu        sync.Mutex
@@ -342,7 +356,7 @@ func (s *sessionAPI) readSession(ctx context.Context) (string, error) {
 		return "", err
 	}
 	creation := s.sessionMetadataCreation()
-	identity, err := validateSession(raw, s.cwd, &creation, false)
+	identity, err := s.validateOriginalSession(raw, &creation)
 	if err != nil && s.input != nil && creation.settings.Agent != s.creation.settings.Agent {
 		// Native createUserMessage updates session metadata before storing the
 		// new user message. Permit that one original-input-owned transition,
@@ -497,6 +511,11 @@ func (s *sessionAPI) readStoredInput(ctx context.Context) (InputReceipt, error) 
 		s.sessionAgent = s.creation.settings.Agent
 		if _, err := s.readSession(ctx); err != nil {
 			return receipt, err
+		}
+	}
+	if s.forkSelectionPending {
+		if _, err := s.readSession(ctx); err != nil || s.forkSelectionPending {
+			return receipt, sessionUncertain()
 		}
 	}
 	s.input.receipt.Recorded = true

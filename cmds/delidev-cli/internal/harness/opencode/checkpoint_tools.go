@@ -247,7 +247,7 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 				continue
 			}
 			observed := o.parts[part.ID]
-			if observed == nil || mutationDigest(observed.raw) != part.Digest || !checkpointInlineTool(observed.value.Tool) {
+			if observed == nil || mutationDigest(observed.raw) != part.Digest || !checkpointContextInlineTool(value, observed.value) {
 				return nil
 			}
 			retained := checkpointToolPart{ID: part.ID, Name: checkpointToolName(observed.value.Tool.Name), Digest: part.Digest, Failed: checkpointRejectedTool(observed.value.Tool), InstructionsLoaded: checkpointLoadedInstructions(observed.value.Tool)}
@@ -354,4 +354,29 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 	default:
 		return false
 	}
+}
+
+// Native pruning changes only the completed timestamp marker. Its separately
+// retained proof must exist before the original inline tool profile is reused.
+func checkpointContextInlineTool(c nativeCheckpoint, p NativePart) bool {
+	if p.Tool == nil || p.Tool.Timing == nil || p.Tool.Timing.Compacted == nil {
+		return checkpointInlineTool(p.Tool)
+	}
+	if c.Context == nil {
+		return false
+	}
+	proven := false
+	for _, proof := range c.Context.Pruned {
+		if proof.ID == p.ID && proof.MessageID == p.MessageID && proof.Compacted == *p.Tool.Timing.Compacted {
+			proven = true
+		}
+	}
+	if !proven {
+		return false
+	}
+	tool := *p.Tool
+	timing := *tool.Timing
+	timing.Compacted = nil
+	tool.Timing = &timing
+	return checkpointInlineTool(&tool)
 }

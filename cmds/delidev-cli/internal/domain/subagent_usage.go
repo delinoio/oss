@@ -59,6 +59,8 @@ func (u SubagentUsage) validateNative(source SubagentSource) error {
 		if u.Scope != SubagentCumulativeUsage || decodeUsageObject(raw, &report) != nil || (NativeTokenUsage{Total: report.Total.normalized(), Last: report.Last.normalized(), ContextWindow: report.Window}).Validate() != nil || !sameSubagentCount(u.Total, report.Total.Total) || !sameSubagentCount(u.Input, report.Total.Input) || !sameSubagentCount(u.Output, report.Total.Output) {
 			return invalidSubagent()
 		}
+	case OpenCodeChildContentSource, OpenCodeChildHistorySource, OpenCodeChildCleanupSource:
+		return validateOpenCodeChildUsage(u)
 	case ClaudeTaskSource:
 		var report struct {
 			Tokens   *uint64 `json:"total_tokens"`

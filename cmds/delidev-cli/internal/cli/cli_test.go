@@ -72,7 +72,7 @@ func TestVersionedCLIMutationRevisionAndMissingInput(t *testing.T) {
 		t.Fatalf("stale revision accepted: %d %+v", code, value)
 	}
 	code, value = cliRun(t, root, []string{"provider", "list"}, "")
-	if code != 0 || len(value["result"].(map[string]any)["resources"].([]any)) != 7 {
+	if code != 0 || len(value["result"].(map[string]any)["resources"].([]any)) != 33 {
 		t.Fatalf("list failed: %d %+v", code, value)
 	}
 	code, value = cliRun(t, root, []string{"provider", "edit", "--id", id}, input)
@@ -80,7 +80,7 @@ func TestVersionedCLIMutationRevisionAndMissingInput(t *testing.T) {
 		t.Fatalf("missing revision accepted: %d %+v", code, value)
 	}
 	code, value = cliRun(t, root, []string{"provider", "presets"}, "")
-	if code != 0 || len(value["result"].(map[string]any)["presets"].([]any)) != 9 {
+	if code != 0 || len(value["result"].(map[string]any)["presets"].([]any)) != 35 {
 		t.Fatalf("preset listing failed: %d %+v", code, value)
 	}
 	code, value = cliRun(t, root, []string{"provider", "create", "--preset", "openrouter", "--request-id", string(domain.NewID())}, "")

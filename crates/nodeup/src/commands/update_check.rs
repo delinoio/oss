@@ -350,13 +350,14 @@ fn parse_update_selector(
 ) -> Result<RuntimeSelector> {
     match RuntimeSelector::parse(selector) {
         Ok(parsed) => Ok(parsed),
-        Err(error)
+        Err(_error)
             if allow_legacy_stored_linked_names
                 && is_case_variant_of_reserved_channel_selector(selector.trim()) =>
         {
-            // Tracked selectors can come from settings written before reserved-case linked
-            // names were rejected. Keep no-arg update compatible while explicit
-            // CLI args stay strict.
+            // Tracked selectors can come from settings written before
+            // reserved-case linked names were rejected. Keep no-arg
+            // update compatible while explicit CLI args stay
+            // strict.
             Ok(RuntimeSelector::LinkedName(selector.trim().to_string()))
         }
         Err(error) => Err(error),

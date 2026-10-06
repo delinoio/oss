@@ -247,8 +247,8 @@ impl Job {
 
 pub fn execute(command: Configuration) -> ! {
     // Configuration cancellation returns a numeric status after temporary-file
-    // cleanup; utility commands instead retain OS/child signal semantics. Install
-    // only the selected command family's handlers for each process.
+    // cleanup; utility commands instead retain OS/child signal semantics.
+    // Install only the selected command family's handlers for each process.
     let job = match Job::new(command) {
         Ok(job) => job,
         Err(error) => {
@@ -277,7 +277,8 @@ pub fn execute(command: Configuration) -> ! {
             }
         }
     };
-    // Explicit exit does not wait for a blocked stdin/stdout worker. Publication
-    // locals have already dropped, so no unpublished file is abandoned.
+    // Explicit exit does not wait for a blocked stdin/stdout worker.
+    // Publication locals have already dropped, so no unpublished file is
+    // abandoned.
     std::process::exit(code);
 }

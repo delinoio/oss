@@ -5,6 +5,31 @@
 import { SubscriptionService } from "./subscription_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SubscriptionService.RequestSubscriptionObservation
+ */
+export const requestSubscriptionObservation = SubscriptionService.method.requestSubscriptionObservation;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.RefreshAllSubscriptionQuotas
+ */
+export const refreshAllSubscriptionQuotas = SubscriptionService.method.refreshAllSubscriptionQuotas;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.ReconcileSubscriptionCredit
+ */
+export const reconcileSubscriptionCredit = SubscriptionService.method.reconcileSubscriptionCredit;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.ClaimSubscriptionObservation
+ */
+export const claimSubscriptionObservation = SubscriptionService.method.claimSubscriptionObservation;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.PublishSubscriptionObservation
+ */
+export const publishSubscriptionObservation = SubscriptionService.method.publishSubscriptionObservation;
+
+/**
  * @generated from rpc delidev.v1.SubscriptionService.RequestSubscription
  */
 export const requestSubscription = SubscriptionService.method.requestSubscription;
@@ -18,6 +43,11 @@ export const cancelSubscription = SubscriptionService.method.cancelSubscription;
  * @generated from rpc delidev.v1.SubscriptionService.GetSubscriptionProgress
  */
 export const getSubscriptionProgress = SubscriptionService.method.getSubscriptionProgress;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.ForwardSubscriptionCallback
+ */
+export const forwardSubscriptionCallback = SubscriptionService.method.forwardSubscriptionCallback;
 
 /**
  * @generated from rpc delidev.v1.SubscriptionService.TakeSubscription

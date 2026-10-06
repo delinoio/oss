@@ -165,7 +165,8 @@ fn persist_durable(
         })?;
     }
     // File fsync alone does not persist the renamed directory entry. Flush
-    // publication of state pointers and exported files before reporting success.
+    // publication of state pointers and exported files before reporting
+    // success.
     File::open(parent)
         .and_then(|directory| directory.sync_all())
         .map_err(io_error)
@@ -300,7 +301,8 @@ impl Store {
     }
 
     // Earlier builds could leave this journal around a source-replacing export.
-    // Production only recovers it; tests still construct those interrupted states.
+    // Production only recovers it; tests still construct those interrupted
+    // states.
     #[cfg(test)]
     fn prepare_legacy_source_export(&self, state: &State, bytes: &[u8]) -> Result<()> {
         let pending = PendingExport {
@@ -357,7 +359,8 @@ impl Store {
             );
         }
         // A crash can occur before publication or after either atomic commit.
-        // Accept only the journal's original bytes or this exact managed revision.
+        // Accept only the journal's original bytes or this exact managed
+        // revision.
         fs::remove_file(journal).map_err(io_error)?;
         tracing::info!(
             operation = "export",

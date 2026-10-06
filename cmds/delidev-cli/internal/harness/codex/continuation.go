@@ -29,6 +29,7 @@ type HistoricalInput struct {
 // adapter does not prove account authority, cleanup, interaction acceptance or
 // the user's explicit Resume; those remain the coordinator's responsibility.
 type ContinuationCheckpoint struct {
+	Context   *ContinuationContextCheckpoint `json:",omitempty"`
 	ThreadID  domain.ID
 	SessionID domain.ID
 	TurnID    domain.ID
@@ -69,6 +70,7 @@ func (p ContinuationCheckpoint) validate(intent ContinuationIntent) error {
 // as new events or clear prior protocol uncertainty. The legacy profile supports
 // turn pagination even though its separate item-pagination API is unsupported.
 func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, checkpoint ContinuationCheckpoint, intent ContinuationIntent) (result Turn, returned error) {
+	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
 	if err := requestID.Validate(); err != nil {
 		return result, err
 	}
@@ -109,6 +111,12 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
 		return result, err
 	}
+	if checkpoint.Context != nil {
+		turns, err := c.compactionTurnsLocked(ctx)
+		if err != nil || contextMatchesHistory(*checkpoint.Context, turns) != nil {
+			return mismatch()
+		}
+	}
 	response, err := c.wire.Call(ctx, requestID, "thread/turns/list", struct {
 		ThreadID      domain.ID `json:"threadId"`
 		Limit         int       `json:"limit"`
@@ -140,6 +148,7 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	}
 	state.turns[turn.ID] = retained
 	state.continuationPending, state.paused = false, false
+	state.contextBase = cloneContinuationContext(checkpoint.Context)
 	return turn, nil
 }
 

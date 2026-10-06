@@ -23,6 +23,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   connection list
   connection worker-register|worker-inspect|worker-status|worker-start --id UUID
   connection worker-stop --id UUID --generation UUID
+  connection worker-network-prepare|worker-network-status --id UUID
+  connection worker-network-import --id UUID --expected-ciphertext-digest SHA256 < ciphertext
   connection pair --id UUID --name NAME --code-stdin
   connection inspect|verify|retry --id UUID
   device create-pairing --type worker|client --name NAME
@@ -34,11 +36,21 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   device revoke --id ID --revision N
   worker pair --worker-dir PATH --name NAME --code-stdin
   worker pair-local --worker-dir PATH
+  worker network prepare --worker-dir PATH [--name NAME --code-stdin]
+  worker network import --worker-dir PATH --input ENCRYPTED_FILE --expected-ciphertext-digest HEX
+  worker network status --worker-dir PATH
   worker inspect --worker-dir PATH
   worker status --worker-dir PATH
   worker stop --worker-dir PATH --generation UUID-V7
   worker start --worker-dir PATH [--detach]
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
+  update check --component desktop|worker --target TARGET --current-version VERSION [--machine-id ID --machine-revision N]
+  update get --id ID
+  update worker-request|cancel --id ID --revision N
+  machine ssh inspect --host HOST --port PORT --user USER
+  machine ssh start --id ID --revision N --name NAME --confirm-host-key SHA256:FINGERPRINT --credential-stdin
+  machine ssh get --id ID
+  machine ssh cancel|reconcile --id ID --revision N
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
   account connect --id ID --revision N (--key-stdin | --keyless)
   account disconnect --id ID --revision N
@@ -49,10 +61,19 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account logout --id ID --revision N --machine-id ID
   account validate --id ID --revision N
   account status --id ID
+  account oauth start --provider-id ID --revision N
+  account oauth complete --attempt-id ID --revision N --code-stdin
+  --request-id ORIGINAL_ID account oauth complete --attempt-id ID --revision ORIGINAL_N --recover
+  account oauth status --attempt-id ID
+  account oauth cancel --attempt-id ID --revision N
   browser-profile capabilities | status --id PROFILE | account-status --account-id ACCOUNT
   browser-profile list [--page-size N --page-token TOKEN]
   browser-profile register --id SESSION --revision N --account-id ACCOUNT
   browser-profile confirm-removal --id PROFILE --revision N --deletion-request-id REQUEST
+  account refresh-quota --id ID --revision N --machine-id ID --connection-id ID --generation-id ID
+  account refresh-all-quotas
+  account consume-reset-credit --id ID --revision N --machine-id ID --connection-id ID --generation-id ID --credits-observation-id ID (--credit-id ID | --next-credit) --confirm
+  account reconcile-reset-credit --id ID --revision N --operation-id ORIGINAL_ID --connection-id ID --generation-id ID --confirm
   account list [--provider-id ID] [--account-type api|subscription] [--limit N] [--page-token TOKEN]
   integration create --input FILE|-
   integration edit --id ID --revision N --input FILE|-
@@ -63,6 +84,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   network select [--id ROUTE_ID --revision N] [--machine-id ID] [--profile-id ID --profile-revision N]
   network status [--machine-id ID]
   network export-metadata --machine-id ID --revision DESIRED_GENERATION
+  network export-bundle --recipient-input FILE --output ENCRYPTED_FILE [--id ROUTE_ID --revision N] [--profile-id ID --profile-revision N]
+  network worker-status --machine-id ID
   integration list|get|snapshot [--id ID]
   integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
   integration inspect-repository --repository-id ID
@@ -90,6 +113,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   model native-cancel --id JOB_ID --revision N
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session forward start|status|stop|reconcile --session-id ID [--id ID] [--revision N] [--machine-id ID --worker-port N --local-port N]
+  session diagnostics --id ID [--execution-id ID] [--page-size 50] [--page-token TOKEN]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
   session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
   session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
@@ -97,6 +121,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session pr link --id SESSION --repository-id ID --number N
   session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]
   session terminal create|list|inspect|input|resize|output|reattach|close --id ID
+  session fork --id ID --revision N --turn-id TURN --name NAME [--workspace worktree|general-chat|local] [--wait]
+  session sidechat --id ID --revision N --turn-id TURN --name NAME [--wait]
+  session sidechat send --id ID --revision N --parent-id ID --parent-revision N --messages ID:REV,ID:REV
   session create --input FILE|- [--wait]
   session delete --id ID --revision REV --confirm [--wait]
   session deletion --id ID
@@ -112,9 +139,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session context --id ID
   session switch-account --id ID --revision N --account-id ID
   session rename --id ID --revision N --name NAME
+  snapshot list --session-id ID [--limit N] [--page-token TOKEN]
   storage preview|create --session-id ID --expected-revision N
   storage cleanup --session-id ID --expected-revision N --preview-job-id JOB --confirm
-  storage inspect|restore|delete --session-id ID --expected-revision N --snapshot-id ID [--confirm]
+  storage inspect|restore --session-id ID --expected-revision N --snapshot-id ID
+  storage delete --session-id ID --expected-revision N --snapshot-id ID --confirm
   storage recover --session-id ID --expected-revision N --recovery-job-id JOB
   storage operation --id JOB
   storage cancel --id JOB --expected-revision N

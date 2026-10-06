@@ -230,6 +230,9 @@ func (s *Service) PrepareSessionWorkspace(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
+		if session.IsSidechat() {
+			return nil, domain.SidechatUnavailable()
+		}
 		if r.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload its current preparation state before retrying.")
 		}

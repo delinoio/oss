@@ -1,14 +1,17 @@
+import { OAuthNativeProvider, type OAuthNativeControl } from "./account-oauth";
 import { ServerPresentationKind } from "./server-presentation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type Transport } from "@connectrpc/connect";
 import { createDeliDevTransport } from "@delinoio/delidev-api-client";
+import { Updates, type DesktopUpdateControls } from "./updates";
 import { App } from "./App";
 import { Modal, Problem } from "./ui";
 import { SavedConnections, SavedConnectionProblem, type SavedConnection, type SavedConnectionActions } from "./saved-connections";
 import { LocalServerControls, LocalServerState, LocalServerStatusText, type LocalServerStatus } from "./local-server";
 import type { ControlLocalWorker, LocalWorkerStatus } from "./local-worker-controls";
+import { WorkerNetworkControlProvider, type ControlWorkerNetwork } from "./worker-network-native";
 import { verifyLocalServer } from "./connection";
 
 import { LocalRegistrationRecovery, localPermissionProblem, type NativeConnection } from "./local-registration";
@@ -97,6 +100,12 @@ function LocalDesktop() {
     if (!selected || previous.current !== selected || proof.endpoint !== selected.endpoint || proof.server_id !== selected.server_id) throw new Error("Local Worker authority changed");
     return { machineId: proof.machine_id, token: proof.token };
   };
+  const controlWorkerNetwork: ControlWorkerNetwork = async (machine, action, ciphertext, digest) => {
+    const selected = previous.current;
+    const result = await invoke<unknown>("worker_network_control", { machine, action, ciphertext: Array.from(ciphertext), digest });
+    if (!selected || previous.current !== selected) throw new Error("Worker network connection changed");
+    return result;
+  };
   const controlLocalWorker: ControlLocalWorker = async (action, generation) => {
     const selected = previous.current;
     const value = await invoke<LocalWorkerStatus>("local_worker_control", { action, generation });
@@ -105,8 +114,17 @@ function LocalDesktop() {
   };
   const problem = typeof error === "string" && Object.hasOwn(nativeProblems, error) ? <p role="alert">{nativeProblems[error]}</p> : <Problem error={error} />;
   const connectionSettings = <button onClick={() => setShowConnection(true)}>Connection controls</button>;
-  const controls = <LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} />;
-  return <>{transport ? <App serverPresentation={{ kind: ServerPresentationKind.Local }} pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} connectionSettings={connectionSettings} connectionTarget={connectionTarget ?? undefined} localServer={controls} /> : <main className="connect-page"><h1>DeliDev</h1>{isTauri() ? <><p role="status">{busy ? "Starting DeliDev…" : "DeliDev could not connect."}</p>{error ? <><p role="alert">{error === "stopped" ? "DeliDev is disconnected on this computer. Open Troubleshooting to start it when you are ready." : "DeliDev could not finish starting. Retry or open Troubleshooting for help."}</p><button className="primary" disabled={busy || error === "stopped"} onClick={() => void connect("retry_local")}>Retry</button></> : null}<button onClick={() => setShowConnection(true)}>Troubleshooting</button></> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}</main>}
+  const updateControls = useMemo<DesktopUpdateControls>(() => ({ readContext: () => invoke("desktop_update_context"), control: async (action, id, revision) => {
+    const selected = previous.current;
+    if (!selected) throw "invalid-evidence";
+    const result = await invoke<import("./updates").NativeUpdateResult>("desktop_update_native", { server: selected.server_id, id, revision: revision.toString(), action });
+    if (previous.current !== selected) throw "invalid-evidence";
+    return result;
+  } }), []);
+  const controls = <><LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} /><Updates active={showConnection} controls={updateControls} /></>;
+  const oauthServer = previous.current?.server_id ?? "";
+  const controlOAuth = useCallback<OAuthNativeControl>((opening, action, generation, attempt, authorization) => invoke("account_oauth_native", { server: oauthServer, opening, action, generation, attempt, authorization }), [oauthServer]);
+  return <>{transport ? <OAuthNativeProvider control={controlOAuth}><WorkerNetworkControlProvider control={controlWorkerNetwork}><App serverPresentation={{ kind: ServerPresentationKind.Local }} pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} connectionSettings={connectionSettings} connectionTarget={connectionTarget ?? undefined} localServer={controls} /></WorkerNetworkControlProvider></OAuthNativeProvider> : <main className="connect-page"><h1>DeliDev</h1>{isTauri() ? <><p role="status">{busy ? "Starting DeliDev…" : "DeliDev could not connect."}</p>{error ? <><p role="alert">{error === "stopped" ? "DeliDev is disconnected on this computer. Open Troubleshooting to start it when you are ready." : "DeliDev could not finish starting. Retry or open Troubleshooting for help."}</p><button className="primary" disabled={busy || error === "stopped"} onClick={() => void connect("retry_local")}>Retry</button></> : null}<button onClick={() => setShowConnection(true)}>Troubleshooting</button></> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}</main>}
     <Modal title="Connection & diagnostics" visible={showConnection} close={() => setShowConnection(false)}>
       <section aria-label="Connection"><h3>Connection on this computer</h3><div ref={setConnectionTarget} />{!transport ? <><LocalServerStatusText status={status} /><button disabled={busy} onClick={() => void connect()}>Start local server</button>{problem}</> : null}
         <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptConnection} active={showConnection} />
@@ -129,6 +147,7 @@ const savedActions: SavedConnectionActions = {
 };
 function SavedDesktop({ profile }: { profile: SavedConnection }) {
   const [showConnection, setShowConnection] = useState(false);
+  const [connectionTarget, setConnectionTarget] = useState<HTMLDivElement | null>(null);
   const [transport, setTransport] = useState<Transport>();
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
@@ -162,15 +181,30 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
     if (!selected || previous.current !== selected || proof.endpoint !== selected.endpoint || proof.server_id !== selected.server_id) throw new Error("Saved Worker authority changed");
     return { machineId: proof.machine_id, token: proof.token };
   };
+  const controlWorkerNetwork: ControlWorkerNetwork = async (machine, action, ciphertext, digest) => {
+    const selected = previous.current;
+    const result = await invoke<unknown>("worker_network_control", { machine, action, ciphertext: Array.from(ciphertext), digest });
+    if (!selected || previous.current !== selected) throw new Error("Worker network connection changed");
+    return result;
+  };
   const controlLocalWorker: ControlLocalWorker = async (action, generation) => {
     const selected = previous.current;
     const value = await invoke<LocalWorkerStatus>("saved_worker_control", { action, generation });
     if (!selected || previous.current !== selected) throw new Error("Saved Worker connection changed");
     return value;
   };
-  const controls = <><p>{profile.name}</p><small>{profile.endpoint}</small><button disabled={busy} onClick={() => void connect()}>Verify saved connection</button><button onClick={() => void invoke("show_connection_manager").catch(setError)}>Show local window</button><SavedConnectionProblem error={error} /></>;
-  return <>{transport ? <App serverPresentation={{ kind: ServerPresentationKind.Saved, name: profile.name }} pairingAuthority={{ endpoint: profile.endpoint, serverId: profile.server_id }} transport={transport} readLocalWorker={readLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} controlLocalWorker={controlLocalWorker} currentDeviceId={profile.device_id} connectionEpoch={epoch} connectionSettings={<button onClick={() => setShowConnection(true)}>Connection controls</button>} /> : <main className="connect-page"><h1>DeliDev</h1><p role="status">{busy ? "Connecting…" : "DeliDev could not connect."}</p>{error ? <p role="alert">DeliDev could not verify this connection. Retry or open Troubleshooting for help.</p> : null}<button disabled={busy} onClick={() => void connect()}>Retry</button><button onClick={() => setShowConnection(true)}>Troubleshooting</button></main>}
-    <Modal title="Connection & diagnostics" visible={showConnection} close={() => setShowConnection(false)}><section aria-label="Saved connection"><h3>Saved connection</h3>{controls}</section></Modal>
+  const updateControls = useMemo<DesktopUpdateControls>(() => ({ readContext: () => invoke("desktop_update_context"), control: async (action, id, revision) => {
+    const selected = previous.current;
+    if (!selected) throw "invalid-evidence";
+    const result = await invoke<import("./updates").NativeUpdateResult>("desktop_update_native", { server: selected.server_id, id, revision: revision.toString(), action });
+    if (previous.current !== selected) throw "invalid-evidence";
+    return result;
+  } }), []);
+  const controls = <><p>{profile.name}</p><small>{profile.endpoint}</small><button disabled={busy} onClick={() => void connect()}>Verify saved connection</button><button onClick={() => void invoke("show_connection_manager").catch(setError)}>Show local window</button><SavedConnectionProblem error={error} /><Updates active={showConnection} controls={updateControls} /></>;
+  const oauthServer = profile.server_id;
+  const controlOAuth = useCallback<OAuthNativeControl>((opening, action, generation, attempt, authorization) => invoke("account_oauth_native", { server: oauthServer, opening, action, generation, attempt, authorization }), [oauthServer]);
+  return <>{transport ? <OAuthNativeProvider control={controlOAuth}><WorkerNetworkControlProvider control={controlWorkerNetwork}><App localServer={controls} connectionTarget={connectionTarget ?? undefined} serverPresentation={{ kind: ServerPresentationKind.Saved, name: profile.name }} pairingAuthority={{ endpoint: profile.endpoint, serverId: profile.server_id }} transport={transport} readLocalWorker={readLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} controlLocalWorker={controlLocalWorker} currentDeviceId={profile.device_id} connectionEpoch={epoch} connectionSettings={<button onClick={() => setShowConnection(true)}>Connection controls</button>} /></WorkerNetworkControlProvider></OAuthNativeProvider> : <main className="connect-page"><h1>DeliDev</h1><p role="status">{busy ? "Connecting…" : "DeliDev could not connect."}</p>{error ? <p role="alert">DeliDev could not verify this connection. Retry or open Troubleshooting for help.</p> : null}<button disabled={busy} onClick={() => void connect()}>Retry</button><button onClick={() => setShowConnection(true)}>Troubleshooting</button></main>}
+    <Modal title="Connection & diagnostics" visible={showConnection} close={() => setShowConnection(false)}><section aria-label="Saved connection"><h3>Saved connection</h3><div ref={setConnectionTarget} />{!transport ? <SavedConnectionProblem error={error} /> : null}</section></Modal>
   </>;
 
 }

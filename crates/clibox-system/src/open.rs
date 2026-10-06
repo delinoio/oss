@@ -201,8 +201,9 @@ impl Backend for Native {
                 ))
             };
         };
-        // macOS open -W is a waiter, not the application. Cancelling may terminate
-        // that helper only; direct application processes are always left running.
+        // macOS open -W is a waiter, not the application. Cancelling may
+        // terminate that helper only; direct application processes are
+        // always left running.
         let status = runtime::wait_child(child, mode == Mode::MacApplication)?;
         if status.success() {
             Ok(())

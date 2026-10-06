@@ -3,8 +3,17 @@
 pnport is being developed to run subprocesses in an installed Yarn 4 Plug'n'Play
 project without generating a physical `node_modules` tree.
 
-**Stable 0.1.0 has not met its release acceptance gates.** Do not treat the presence of launcher
-source as evidence that all four initial native targets work.
+**Version 0.1.2 retains known limitations.** Check that the exact
+version is published before installing:
+
+```sh
+npm view @delino/pnport@0.1.2 version && npm install --global --ignore-scripts @delino/pnport@0.1.2
+```
+
+Intermittent macOS initialization failures and cancellation returning exit 125
+instead of the signal-derived status remain unresolved. Compatibility is not verified for every filesystem and process workflow.
+Source availability does not establish published package availability. Report
+reproducible failures with the exact version and sanitized diagnostics.
 
 Experimental `0.1.0-next.N` npm next previews are intended for external
 testing. Check registry availability before installing:
@@ -37,7 +46,7 @@ and `--color=never` or `NO_COLOR` to disable color. Diagnostics go to stderr;
 child standard streams are inherited. `doctor --json` emits one ANSI-free JSON
 object with schemaVersion 1, ready, and typed checks.
 
-Version 0.1.0 targets macOS 13+ and Ubuntu 22.04-equivalent glibc, each on
+The 0.1.x release line targets macOS 15+ and Ubuntu 22.04-equivalent glibc, each on
 x64 and arm64. Windows 10 22H2+ MSVC on x64 and arm64 is planned for 0.2.0;
 this release rejects Windows execution and installation. Musl and mixed architectures are
 excluded. Universal executable compatibility is not claimed.

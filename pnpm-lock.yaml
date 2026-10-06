@@ -15,10 +15,10 @@ overrides:
   esbuild: 0.28.2
   express: 4.22.3
   fast-uri: 3.1.8
-  follow-redirects: 1.16.0
+  follow-redirects: 1.16.1
   form-data: 4.0.6
   http-proxy-agent>@tootallnate/once: 3.0.1
-  ip-address: 10.7.1
+  ip-address: 10.7.3
   js-yaml: 4.3.2
   lodash: 4.18.1
   path-to-regexp: 0.1.13
@@ -1939,8 +1939,8 @@ packages:
   inline-style-parser@0.2.7:
     resolution: {integrity: sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA==}
 
-  ip-address@10.7.1:
-    resolution: {integrity: sha512-4OUAqU9Z1i3vCnS05hzGiFnEMDpQ+62pAD/MVQOp83fYyNC8GleCqaS0QikQBmcWCrKFiUs/B8ztRRiYOAXuCA==}
+  ip-address@10.7.3:
+    resolution: {integrity: sha512-A1kdq/tSb5QjvKvAMgIoEvDBIgL7qaqVP/jkvSwYYRZ9iEzvPpopxp2wQfu3SuZRHtpHNxMn8Fs0bS+gf5Xmwg==}
     engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
@@ -4416,7 +4416,7 @@ snapshots:
     dependencies:
       debug: 4.4.3
       express: 4.22.3
-      ip-address: 10.7.1
+      ip-address: 10.7.3
     transitivePeerDependencies:
       - supports-color
 
@@ -4714,7 +4714,7 @@ snapshots:
 
   inline-style-parser@0.2.7: {}
 
-  ip-address@10.7.1: {}
+  ip-address@10.7.3: {}
 
   ipaddr.js@1.9.1: {}
 

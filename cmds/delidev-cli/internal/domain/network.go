@@ -38,10 +38,11 @@ type NetworkProfile struct {
 // A selection freezes one revision, including its protected credential
 // reference. Editing a profile never changes an already selected generation.
 type NetworkRoute struct {
-	MachineID       ID             `json:"machine_id,omitempty"`
-	ProfileID       ID             `json:"profile_id,omitempty"`
-	ProfileRevision uint64         `json:"profile_revision,omitempty"`
-	Profile         NetworkProfile `json:"profile"`
+	Binding         *WorkerNetworkBinding `json:"binding,omitempty"`
+	MachineID       ID                    `json:"machine_id,omitempty"`
+	ProfileID       ID                    `json:"profile_id,omitempty"`
+	ProfileRevision uint64                `json:"profile_revision,omitempty"`
+	Profile         NetworkProfile        `json:"profile"`
 }
 type ProxyCredential struct {
 	Username string `json:"username"`
@@ -122,6 +123,9 @@ func (p NetworkProfile) Validate() error {
 	return nil
 }
 func (r NetworkRoute) Validate() error {
+	if r.Binding != nil && (r.MachineID == "" || r.Binding.Validate() != nil) {
+		return proxyInvalid()
+	}
 	if r.MachineID != "" && r.MachineID.Validate() != nil {
 		return proxyInvalid()
 	}

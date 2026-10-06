@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -39,6 +40,8 @@ func (a StorageAction) Valid() bool {
 }
 
 type StorageRequest struct {
+	SidechatDependents []domain.ID                  `json:"sidechat_dependents,omitempty"`
+	SidechatActor      *domain.Principal            `json:"sidechat_actor,omitempty"`
 	PreviousSnapshotID domain.ID                    `json:"previous_snapshot_id,omitempty"`
 	PreviousState      domain.WorkspaceStorageState `json:"previous_state"`
 	SnapshotMetadata   *SnapshotMetadata            `json:"snapshot_metadata,omitempty"`
@@ -54,6 +57,12 @@ type StorageRequest struct {
 }
 
 func (r StorageRequest) Validate() error {
+	if len(r.SidechatDependents) != 0 || r.SidechatActor != nil {
+		if r.Action != StorageCleanup || len(r.SidechatDependents) == 0 || len(r.SidechatDependents) > 256 || r.SidechatActor == nil || (r.SidechatActor.Type != domain.OwnerDevice && r.SidechatActor.Type != domain.ClientDevice) || r.SidechatActor.MachineID != "" || r.SidechatActor.Type == domain.ClientDevice && r.SidechatActor.DeviceID.Validate() != nil || domain.UniqueIDs(append([]domain.ID{r.Preparation.SessionID, r.OperationID}, r.SidechatDependents...)) != nil {
+			return ResultUncertain()
+		}
+	}
+
 	if r.Version != 1 || r.OperationID.Validate() != nil || !r.Action.Valid() || r.Preparation.validateStructure() != nil {
 		return ResultUncertain()
 	}
@@ -67,7 +76,7 @@ func (r StorageRequest) Validate() error {
 		if r.Recovery == nil || r.Recovery.Original.Action == StorageRecover || r.Recovery.Original.Validate() != nil || r.Recovery.InstanceID.Validate() != nil || r.Recovery.Revision == 0 || !digestValid(r.Recovery.AssignmentDigest) || r.Recovery.Original.Preparation.SessionID != r.Preparation.SessionID || r.SnapshotID != r.Recovery.Original.SnapshotID {
 			return ResultUncertain()
 		}
-		if len(r.Recovery.Claims) < 1 || len(r.Recovery.Claims) > 8 {
+		if len(r.Recovery.Claims) < 1 || len(r.Recovery.Claims) > MaxStorageRecoveryClaims {
 			return ResultUncertain()
 		}
 		first := r.Recovery.Claims[0]
@@ -154,17 +163,18 @@ type StorageResult struct {
 	CleanupVerified       bool                         `json:"cleanup_verified"`
 }
 type snapshotManifest struct {
-	SourceInventory  snapshotInventory `json:"source_inventory"`
-	SourceBytes      uint64            `json:"source_bytes,string"`
-	SourceDigest     string            `json:"source_digest"`
-	Version          uint32            `json:"version"`
-	ID               domain.ID         `json:"id"`
-	OperationID      domain.ID         `json:"operation_id"`
-	Workspace        Manifest          `json:"workspace"`
-	Preparation      PrepareRequest    `json:"preparation"`
-	OriginalIdentity string            `json:"original_identity"`
-	Inventory        snapshotInventory `json:"inventory"`
-	CreatedAt        time.Time         `json:"created_at"`
+	SourceDirectoryIdentity string            `json:"source_directory_identity,omitempty"`
+	SourceInventory         snapshotInventory `json:"source_inventory"`
+	SourceBytes             uint64            `json:"source_bytes,string"`
+	SourceDigest            string            `json:"source_digest"`
+	Version                 uint32            `json:"version"`
+	ID                      domain.ID         `json:"id"`
+	OperationID             domain.ID         `json:"operation_id"`
+	Workspace               Manifest          `json:"workspace"`
+	Preparation             PrepareRequest    `json:"preparation"`
+	OriginalIdentity        string            `json:"original_identity"`
+	Inventory               snapshotInventory `json:"inventory"`
+	CreatedAt               time.Time         `json:"created_at"`
 }
 type restoreBinding struct {
 	DirectoryIdentity string    `json:"directory_identity,omitempty"`
@@ -191,6 +201,9 @@ func (m *Manager) restoreBindingPath(id domain.ID) string {
 }
 
 func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result StorageResult, returned error) {
+	if r.Preparation.SidechatSource != nil || r.Manifest.Reference != nil {
+		return result, domain.Fail(domain.PermissionDenied, "Sidechat cannot mutate or snapshot the referenced workspace.", "Use the original parent session's workspace controls.")
+	}
 	if err := r.Validate(); err != nil {
 		return result, err
 	}
@@ -214,6 +227,16 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		return result, err
 	}
 	defer observationLock.Close()
+	publication, err := m.lockSnapshotNamespace()
+	if err != nil {
+		return result, err
+	}
+	defer publication.Close()
+	if r.Action == StorageCleanup || r.Action == StorageRecover {
+		if err := m.requireNoSidechatReferences(ctx, r.Preparation.SessionID); err != nil {
+			return result, err
+		}
+	}
 	var restoreStaging string
 	defer func() {
 		if returned != nil {
@@ -231,7 +254,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			// Publication is already a native side effect, even before source
 			// removal. Preserve recovery ownership so cancellation/failure cannot
 			// orphan the verified snapshot outside server metadata.
-			if r.Action == StorageCleanup && result.Snapshot != nil {
+			if (r.Action == StorageCreate || r.Action == StorageCleanup) && result.Snapshot != nil {
 				returned = ResultUncertain()
 			}
 			if storageFull(returned) {
@@ -295,7 +318,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		}
 		result.SourceBytes = observation.Whole.Bytes
 		result.PreviewDigest = observation.Digest
-		retained, err := m.snapshotBytes(ctx, r.Preparation.SessionID)
+		retained, err := m.snapshotBytesLocked(ctx, r.Preparation.SessionID)
 		if err != nil {
 			return result, err
 		}
@@ -361,9 +384,11 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 				return result, err
 			}
 			if err := renameStorage(root, removal); err != nil {
+				m.logStorageClaimFailure(ctx, r, "source-rename", err)
 				return result, err
 			}
 			if err := m.confirmRemoval(ctx, r, removal, false); err != nil {
+				m.logStorageClaimFailure(ctx, r, "claim-verification", err)
 				// No unlink occurred. Preserve raced user bytes at their original
 				// name when possible; a foreign replacement keeps the claim private.
 				if restoreErr := renameStorage(removal, root); restoreErr != nil {
@@ -419,7 +444,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			// Pending comparison metadata grants no publication authority. Invalidate
 			// an earlier restore before claiming this operation's destination.
 			raw, _ := json.Marshal(binding)
-			if err := security.WriteAtomic(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
+			if err := security.WriteAtomicOwned(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
 				return result, err
 			}
 			if err := ctx.Err(); err != nil {
@@ -448,7 +473,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			}
 			binding.Published = true
 			raw, _ = json.Marshal(binding)
-			if err := security.WriteAtomic(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
+			if err := security.WriteAtomicOwned(m.restoreBindingPath(r.Preparation.SessionID), raw); err != nil {
 				m.Logger.Warn("restore_publication_proof_pending", "operation_id", r.OperationID, "code", domain.SafeError(err).Code)
 				return result, ResultUncertain()
 			}
@@ -467,9 +492,11 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 				return result, err
 			}
 			if err := renameStorage(m.snapshotPath(r.SnapshotID), removal); err != nil {
+				m.logStorageClaimFailure(ctx, r, "snapshot-rename", err)
 				return result, err
 			}
 			if err := m.confirmRemoval(ctx, r, removal, false); err != nil {
+				m.logStorageClaimFailure(ctx, r, "claim-verification", err)
 				return result, ResultUncertain()
 			}
 			if err := m.removeClaimedSnapshotTree(ctx, r, removal, false); err != nil {
@@ -478,7 +505,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			metadata.Deleted = true
 			result.Snapshot = &metadata
 		}
-		retained, err := m.snapshotBytes(ctx, r.Preparation.SessionID)
+		retained, err := m.snapshotBytesLocked(ctx, r.Preparation.SessionID)
 		if err != nil {
 			// Delete or restore may already have committed native effects. A
 			// missing inventory cannot become a successful zero-cost result.
@@ -492,6 +519,12 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 	return result, nil
 }
 func validateStorageRoot(root string, manifest Manifest) error {
+	// The managed root has a fixed private writable mode. Reject a changed root
+	// before capture or rename; a snapshot cannot authorize a foreign mode.
+	info, err := os.Lstat(root)
+	if err != nil || info.Mode() != removalWritableDirectoryMode() || security.CheckPrivateDir(root) != nil {
+		return ResultUncertain()
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return err
@@ -527,4 +560,12 @@ func renameStorage(from, to string) error {
 		return ResultUncertain()
 	}
 	return nil
+}
+
+// Native errno is bounded troubleshooting metadata. Error strings can include
+// private paths, so only the stable product code and numeric OS code are logged.
+func (m *Manager) logStorageClaimFailure(ctx context.Context, r StorageRequest, stage string, err error) {
+	var native syscall.Errno
+	errors.As(err, &native)
+	m.Logger.WarnContext(ctx, "workspace_storage_claim_failed", "operation_id", r.OperationID, "action", r.Action, "stage", stage, "code", domain.SafeError(err).Code, "native_errno", uint64(native))
 }

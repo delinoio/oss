@@ -211,7 +211,7 @@ enum HttpMethod {
     Head,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum HttpProbeError {
     NotReady,
     AttemptTimeout,
@@ -1121,13 +1121,24 @@ fn http_attempt(
         .timeout(budget)
         .send()
         .map_err(|error| {
-            if error.is_timeout() {
+            let classification = if has_terminal_connect_failure(&error) {
+                HttpProbeError::Terminal
+            } else if error.is_timeout() {
                 HttpProbeError::AttemptTimeout
-            } else if error.is_connect() && !has_terminal_connect_failure(&error) {
+            } else if error.is_connect() || contains_transient_http_failure(&error) {
                 HttpProbeError::NotReady
             } else {
                 HttpProbeError::Terminal
-            }
+            };
+            tracing::debug!(
+                operation = "run-with-service",
+                stage = "http_probe_failed",
+                ?classification,
+                connect = error.is_connect(),
+                timeout = error.is_timeout(),
+                "run_readiness"
+            );
+            classification
         })?;
     let observed = response.status().as_u16();
     if expected_status
@@ -1138,6 +1149,39 @@ fn http_attempt(
     } else {
         Err(HttpProbeError::NotReady)
     }
+}
+
+fn contains_transient_http_failure(error: &(dyn std::error::Error + 'static)) -> bool {
+    if let Some(error) = error.downcast_ref::<hyper::Error>() {
+        if error.is_incomplete_message() || error.is_closed() || error.is_canceled() {
+            return true;
+        }
+    }
+    if let Some(error) = error.downcast_ref::<io::Error>() {
+        if matches!(
+            error.kind(),
+            io::ErrorKind::ConnectionReset
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::NotConnected
+                | io::ErrorKind::AddrNotAvailable
+                | io::ErrorKind::BrokenPipe
+                | io::ErrorKind::WouldBlock
+                | io::ErrorKind::Interrupted
+                | io::ErrorKind::UnexpectedEof
+                | io::ErrorKind::NetworkUnreachable
+                | io::ErrorKind::HostUnreachable
+                | io::ErrorKind::NetworkDown
+        ) {
+            return true;
+        }
+        if error
+            .get_ref()
+            .is_some_and(|source| contains_transient_http_failure(source))
+        {
+            return true;
+        }
+    }
+    error.source().is_some_and(contains_transient_http_failure)
 }
 
 fn has_terminal_connect_failure(error: &reqwest::Error) -> bool {
@@ -1190,11 +1234,11 @@ fn contains_local_resource_failure(error: &(dyn std::error::Error + 'static)) ->
 
 fn is_local_resource_error(error: i32) -> bool {
     #[cfg(unix)]
-    if matches!(
-        error,
-        libc::EMFILE | libc::ENFILE | libc::ENOBUFS | libc::ENOMEM
-    ) {
-        return true;
+    {
+        matches!(
+            error,
+            libc::EMFILE | libc::ENFILE | libc::ENOBUFS | libc::ENOMEM
+        )
     }
     #[cfg(windows)]
     {
@@ -1203,15 +1247,11 @@ fn is_local_resource_error(error: i32) -> bool {
             Networking::WinSock::{WSAEMFILE, WSAENOBUFS},
         };
 
-        if error == ERROR_NOT_ENOUGH_MEMORY as i32
+        error == ERROR_NOT_ENOUGH_MEMORY as i32
             || error == ERROR_TOO_MANY_OPEN_FILES as i32
             || error == WSAEMFILE
             || error == WSAENOBUFS
-        {
-            return true;
-        }
     }
-    false
 }
 
 fn service_http_client(
@@ -1248,7 +1288,8 @@ fn native_service_tls_blocking() -> Result<rustls::ClientConfig> {
     // supported platforms. Service probes promise OS trust only, so scope the
     // workaround to root loading. An unfinished worker never permits a child
     // spawn, and process exit ends it after cancellation or readiness timeout.
-    // Remove this workaround once the loader offers an explicit native-only API.
+    // Remove this workaround once the loader offers an explicit native-only
+    // API.
     let _overrides = NativeRootOverrides::without_custom_ca();
     let loaded = rustls_native_certs::load_native_certs();
     let mut roots = rustls::RootCertStore::empty();
@@ -2190,11 +2231,13 @@ fn forward(
                     }
                     Ok(count) => count,
                 };
-                // A successful read is workload activity even when a slow consumer
-                // blocks forwarding these bytes for longer than the idle limit.
-                // Retain the most recent read timestamp rather than a bounded
-                // notification. Output can outpace supervisor polls, and a stale
-                // earlier event must not make a later read look idle.
+                // A successful read is workload activity even when a slow
+                // consumer blocks forwarding these bytes for
+                // longer than the idle limit. Retain the most
+                // recent read timestamp rather than a bounded
+                // notification. Output can outpace supervisor polls, and a
+                // stale earlier event must not make a later
+                // read look idle.
                 if let Some(activity) = &activity {
                     activity.observe();
                 }
@@ -5502,6 +5545,49 @@ mod lifecycle_tests {
             ),
             Err(HttpProbeError::OverallTimeout)
         ));
+    }
+
+    #[test]
+    fn readiness_retries_a_closed_connection_but_rejects_invalid_http() {
+        for response in [None, Some(b"NOT HTTP\r\n\r\n".as_slice())] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/health", listener.local_addr().unwrap());
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                    assert!(request.len() < 4096);
+                }
+                if let Some(response) = response {
+                    stream.write_all(response).unwrap();
+                }
+            });
+            let result = http_attempt(
+                service_http_client(false, None).unwrap(),
+                url.parse().unwrap(),
+                reqwest::Method::GET,
+                None,
+                Duration::from_secs(2),
+            );
+            server.join().unwrap();
+            if response.is_none() {
+                assert!(
+                    matches!(result, Err(HttpProbeError::NotReady)),
+                    "{result:?}"
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(HttpProbeError::Terminal)),
+                    "{result:?}"
+                );
+            }
+        }
     }
 
     #[test]

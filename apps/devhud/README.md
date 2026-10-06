@@ -36,8 +36,16 @@ AAB artifact verification requires `--bundletool-jar` pointing to the exact chec
 
 Widgets are opt-in per Deck. The app shows the English/Korean private-title exposure warning before it copies the selected Deck configuration, bounded 100-result cache, and only that Deck's local PAT into the isolated widget boundary. WidgetKit and AppWidgetProvider render stored data immediately and request network refresh through OS-managed background work, show total plus Open/Draft/Merged/Closed counts and the first three GitHub-ordered PRs, mark data stale after 60 minutes, preserve last-success time across offline/rate/error or incomplete-search failures, and open `devhud://deck/<deck-id>`. Configuration changes invalidate mismatched snapshots, PAT replacement updates every enabled Deck using that profile and API-origin scope, and Deck removal commits synchronized settings before retryable native cleanup. Restore without a widget secret shows setup required and never chooses another profile.
 
-Development binds only `127.0.0.1:46305` and fails if the port is occupied. Desktop platform smoke requires a native production artifact and certifies only macOS 13+, Windows 10 22H2+, or Ubuntu 22.04+ X11 on the matching architecture. On Linux, pass `-- --artifact /usr/bin/devhud` for an installed package or an equivalent root-prepared layout; the CEF SUID sandbox must be owned by `root:root` with mode `4755`. XWayland is best effort; native Wayland is unsupported.
+Development binds only `127.0.0.1:46305` and fails if the port is occupied. Desktop platform smoke requires a native production artifact and certifies only macOS 13+, Windows 10 22H2+, or Ubuntu 24.04+ X11 on the matching architecture. On Linux, pass `-- --artifact /usr/bin/devhud` for an installed package or an equivalent root-prepared layout; the CEF SUID sandbox must be owned by `root:root` with mode `4755`. XWayland is best effort; native Wayland is unsupported.
 
 See [`docs/apps-devhud-foundation.md`](../../docs/apps-devhud-foundation.md) for the full contract and current limitations.
 
 Public user guidance is available at the stable `/devhud`, `/devhud/privacy`, `/devhud/security`, and `/devhud/support` routes of the configured public documentation site.
+
+## Desktop platform limitation
+
+Windows desktop runs Chromium without its process sandbox because the current upstream CEF runtime does not support an executable-host sandbox broker. This is an explicit platform exception; native IPC restrictions and private browser-profile storage still apply. macOS and Linux require the Chromium process sandbox. Linux file selection requires an XDG desktop portal and portal backend; confirmation dialogs require `zenity`.
+
+Maintainer builds download and verify the pinned Tauri CLI automatically. Use `node scripts/tauri-cli.mjs --source --print-path` from the repository root only when explicitly choosing a local source build; CI always requires the published binary.
+
+Linux desktop builds require Ubuntu 24.04 or newer. AppImage users need an XDG desktop portal service and implementation plus `zenity` for file and confirmation dialogs. On Ubuntu, install them with `sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk zenity`. Debian packages declare these dialog dependencies.

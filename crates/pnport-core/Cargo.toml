@@ -1,6 +1,6 @@
 [package]
 name = "pnport-core"
-version = "0.1.0-next.1"
+version = "0.1.2"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["Delino"]
@@ -19,9 +19,11 @@ sha2 = "0.10"
 shell-words = "1.1"
 tempfile = "3.25"
 tracing = "0.1.44"
+url = "=2.5.8"
 zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+ed25519-dalek = "=2.2.0"
 core-foundation = "0.10.1"
 security-framework = "=3.7.0"
 plist = "1"

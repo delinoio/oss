@@ -81,7 +81,7 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.problem != nil || boundary == completedHistoryBoundary && o.stop != nil || boundary == stoppedHistoryBoundary && !o.stoppedHistoryReady() || !o.progress.SettledObserved || o.progress.NeedsRecovery || o.creation.request != s.creation.request || o.creation.identity != s.creation.identity || !equalSessionSettings(o.creation.settings, s.creation.settings) || !slices.Equal(o.sessionPermissions, s.sessionPermissions) || o.cwd != s.cwd || o.input.digest != s.input.digest || o.progress.RequestID != s.input.receipt.RequestID || o.progress.SessionID != s.input.receipt.SessionID || len(o.messageOrder) < 2 || len(o.messageOrder) != len(o.messages) || o.messageOrder[0] != s.input.receipt.MessageID || o.messageOrder[len(o.messageOrder)-1] != o.progress.AssistantID {
+	if o.problem != nil || boundary == completedHistoryBoundary && o.stop != nil || boundary == stoppedHistoryBoundary && !o.stoppedHistoryReady() || !o.progress.SettledObserved || o.progress.NeedsRecovery || o.creation.request != s.creation.request || o.creation.identity != s.creation.identity || !equalSessionSettings(o.creation.settings, s.creation.settings) || !slices.Equal(o.sessionPermissions, s.sessionPermissions) || o.cwd != s.cwd || o.input.digest != s.input.digest || o.progress.RequestID != s.input.receipt.RequestID || o.progress.SessionID != s.input.receipt.SessionID || len(o.messageOrder) < 2 || len(o.messageOrder) != len(o.messages) || o.contextManual == "" && o.messageOrder[0] != s.input.receipt.MessageID || o.messageOrder[len(o.messageOrder)-1] != o.progress.AssistantID {
 		return result, sessionUncertain()
 	}
 	idle := func() error {
@@ -119,6 +119,10 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 		return fail(err)
 	}
 	result = HistoryObservation{RequestID: receipt.RequestID, SessionID: receipt.SessionID, InputID: receipt.MessageID, AssistantID: o.progress.AssistantID, Messages: make([]HistoryMessage, len(o.messageOrder))}
+	if o.contextManual != "" {
+		result.RequestID = o.contextManual
+		result.InputID = o.messageOrder[0]
+	}
 	base := "/session/" + receipt.SessionID + "/message?limit=1"
 	path, bytesRead, partsRead := base, 0, 0
 	seen := map[string]bool{}
@@ -136,21 +140,36 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 		}
 		var page []json.RawMessage
 		if domain.Decode(raw, &page) != nil || len(page) != 1 {
+			if s.logger != nil {
+				s.logger.WarnContext(ctx, "opencode_history_page_rejected", "owner_id", s.owner, "position", index, "page_count", len(page))
+			}
 			return fail(observerProblem())
 		}
 		fields, err := shape(page[0], []string{"info", "parts"}, nil)
 		original := o.messages[o.messageOrder[index]]
+		if err == nil && original != nil && !bytes.Equal(canonicalNative(fields["info"]), original.raw) {
+			o.readContextUserSummary(original, fields["info"])
+		}
 		if err != nil || original == nil || original.value.Assistant != nil && !original.finalized || !bytes.Equal(canonicalNative(fields["info"]), original.raw) {
+			if s.logger != nil {
+				s.logger.WarnContext(ctx, "opencode_history_message_rejected", "owner_id", s.owner, "position", index, "original_present", original != nil, "shape_valid", err == nil, "info_matches", original != nil && bytes.Equal(canonicalNative(fields["info"]), original.raw), "changed_fields", historyChangedFields(original, fields["info"]))
+			}
 			return fail(observerProblem())
 		}
 		var parts []json.RawMessage
 		if domain.Decode(fields["parts"], &parts) != nil || parts == nil || len(parts) != len(original.parts) {
+			if s.logger != nil {
+				s.logger.WarnContext(ctx, "opencode_history_part_inventory_rejected", "owner_id", s.owner, "position", index, "original_count", len(original.parts), "stored_count", len(parts))
+			}
 			return fail(observerProblem())
 		}
 		message := HistoryMessage{ID: original.value.ID, Role: original.value.Role, Digest: mutationDigest(original.raw), Parts: make([]HistoryPart, len(parts))}
 		for partIndex, raw := range parts {
 			part := o.parts[original.parts[partIndex]]
 			if part == nil || part.value.MessageID != message.ID || !bytes.Equal(canonicalNative(raw), part.raw) || part.value.Text != nil && part.text != part.value.Text.Text {
+				if s.logger != nil {
+					s.logger.WarnContext(ctx, "opencode_history_part_rejected", "owner_id", s.owner, "position", index, "part_position", partIndex, "original_present", part != nil, "bytes_match", part != nil && bytes.Equal(canonicalNative(raw), part.raw))
+				}
 				return fail(observerProblem())
 			}
 			message.Parts[partIndex] = HistoryPart{ID: part.value.ID, Kind: part.value.Kind, Digest: mutationDigest(part.raw)}
@@ -168,7 +187,30 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 				}
 				seen[cursor] = true
 				s.historyRead = nil
-				if err := s.readCheckpointMessages(ctx, *s.predecessor, cursor, bytesRead, seen); err != nil {
+				prior := *s.predecessor
+				inventory := checkpointInventory(prior)
+				priorPruned := []NativePrunedPart{}
+				for _, p := range o.contextPruned {
+					for _, m := range inventory {
+						if m.ID == p.MessageID {
+							priorPruned = append(priorPruned, p)
+						}
+					}
+				}
+				if !applyContextPruning(inventory, priorPruned) {
+					return fail(observerProblem())
+				}
+				if len(priorPruned) > 0 {
+					if prior.Context == nil {
+						prior.Context = &nativeCheckpointContext{Version: 1, Records: []NativeContextRecord{}, Pruned: []NativePrunedPart{}, Inventory: inventory}
+					} else {
+						copy := *prior.Context
+						prior.Context = &copy
+						prior.Context.Inventory = inventory
+					}
+					prior.Context.Pruned = append(slices.Clone(prior.Context.Pruned), priorPruned...)
+				}
+				if err := s.readCheckpointMessages(ctx, prior, cursor, bytesRead, seen); err != nil {
 					return fail(err)
 				}
 			}
@@ -239,4 +281,19 @@ func (s *sessionAPI) historyIdle(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func historyChangedFields(original *observedMessage, raw []byte) []string {
+	result := []string{}
+	if original == nil {
+		return result
+	}
+	a, _ := object(original.raw)
+	b, _ := object(raw)
+	for _, field := range []string{"id", "sessionID", "role", "time", "agent", "mode", "model", "modelID", "providerID", "parentID", "summary", "tokens", "cost", "finish", "error", "path", "variant"} {
+		if !bytes.Equal(canonicalNative(a[field]), canonicalNative(b[field])) {
+			result = append(result, field)
+		}
+	}
+	return result
 }

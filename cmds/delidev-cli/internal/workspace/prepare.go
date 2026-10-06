@@ -32,8 +32,10 @@ type RepositorySpec struct {
 	AutoFetch              bool                `json:"auto_fetch"`
 }
 type PrepareRequest struct {
+	SidechatSource *SidechatSource `json:"sidechat_source,omitempty"`
 	// ForkSourceID is an immutable Worker-owned copy profile. Ordinary creation
 	// never accepts it; the fork coordinator binds the original source manifest.
+	ForkProfile       ForkProfile          `json:"fork_profile,omitempty"`
 	ForkSourceID      domain.ID            `json:"fork_source_id,omitempty"`
 	ForkSourcePath    string               `json:"fork_source_path,omitempty"`
 	SessionID         domain.ID            `json:"session_id"`
@@ -73,6 +75,7 @@ const (
 )
 
 type Manifest struct {
+	Reference    *SidechatReference   `json:"reference,omitempty"`
 	Version      int                  `json:"version"`
 	SessionID    domain.ID            `json:"session_id"`
 	MachineID    domain.ID            `json:"machine_id"`
@@ -84,23 +87,23 @@ type Manifest struct {
 	CreatedAt    time.Time            `json:"created_at"`
 }
 type Manager struct {
-	mu                           sync.Mutex
-	initialized                  bool
-	storageCopyFault             func(string) error
-	storageScratchCleanupFault   func(string) error
-	storageRestoreCopyFault      func(string) error
-	storageBeforeRestorePublish  func(string)
-	storageBeforeSnapshotPublish func(string)
-	storageAfterRootValidation   func()
-	storageBeforeRemovalClaim    func()
-	storageBeforeRemovalUnlink   func(string)
-	storageAfterRemovalProof     func(string)
-	storageAfterRemovalRootCheck func()
-	storageAfterRemovalClaim     func(string)
-	storageAfterSnapshot         func()
-	Root                         string
-	Git                          Git
-	Logger                       *slog.Logger
+	mu                            sync.Mutex
+	initialized                   bool
+	storageCopyFault              func(string) error
+	storageScratchCleanupFault    func(string) error
+	storageRestoreCopyFault       func(string) error
+	storageBeforeRestorePublish   func(string)
+	storageBeforeSnapshotPublish  func(string)
+	storageAfterRootValidation    func()
+	storageBeforeRemovalClaim     func()
+	storageBeforeRemovalUnlink    func(string)
+	storageAfterRemovalClaim      func(string)
+	storageAfterSnapshot          func()
+	sidechatBeforeMetadataPublish func()
+	sidechatAfterMetadataPublish  func()
+	Root                          string
+	Git                           Git
+	Logger                        *slog.Logger
 }
 
 func (m *Manager) initialize() error {
@@ -119,7 +122,7 @@ func (m *Manager) initialize() error {
 		return err
 	}
 	m.Root = canonical
-	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes", "execution-claims", "execution-history", "pr-startup"} {
+	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes", "execution-claims", "execution-history", "pr-startup", "sidechat-preparations"} {
 		if err := security.PrivateDir(filepath.Join(m.Root, name)); err != nil {
 			return err
 		}
@@ -148,6 +151,12 @@ func (r PrepareRequest) validate() error {
 // Server-side evidence validation cannot interpret a remote Worker's paths
 // with the server host OS. ValidateResult checks them against the Worker OS.
 func (r PrepareRequest) validateStructure() error {
+	if r.ForkProfile == CodexSidechatReferenceV1 || r.SidechatSource != nil {
+		return validateSidechatPreparation(r)
+	}
+	if r.ForkProfile != "" && (r.ForkProfile != OpenCodeGeneralChatForkV1 || r.Type != domain.GeneralChat || r.ForkSourceID == "" || r.ForkSourcePath == "" || len(r.Repositories) != 0) {
+		return ResultUncertain()
+	}
 	if r.ForkSourceID != "" && (r.ForkSourceID.Validate() != nil || r.ForkSourceID == r.SessionID) {
 		return ResultUncertain()
 	}
@@ -209,6 +218,9 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 }
 
 func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnapshot *ForkSnapshot) (Manifest, error) {
+	if request.SidechatSource != nil || request.ForkProfile == CodexSidechatReferenceV1 {
+		return Manifest{}, domain.Fail(domain.PermissionDenied, "Sidechat workspace references cannot prepare or copy files.", "Use the original Worker-owned reference coordinator.")
+	}
 	if err := request.validate(); err != nil {
 		return Manifest{}, err
 	}
@@ -316,7 +328,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			return failed(domain.SafeError(err))
 		}
 		if request.ForkSourceID != "" {
-			copy, err := copyForkTree(ctx, request.ForkSourcePath, manifest.PrimaryPath, false)
+			copy, err := copyForkTreeBounded(ctx, request.ForkSourcePath, manifest.PrimaryPath, false, request.forkEntryLimit())
 			if err != nil {
 				return failed(err)
 			}
@@ -508,6 +520,9 @@ func (m *Manager) verify(manifest Manifest) error {
 	return nil
 }
 func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) error {
+	if err := m.requireNoSidechatReferences(ctx, manifest.SessionID); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(root); err == nil {
 		if err := security.CheckPrivateDir(root); err != nil {
 			return ResultUncertain()
@@ -519,6 +534,9 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 	git.OwnerID = manifest.SessionID
 	if err := process.ReconcileOwnerContext(ctx, git.ProcessRoot, manifest.SessionID); err != nil {
 		return err
+	}
+	if manifest.Reference != nil {
+		return m.removeSidechatMetadata(ctx, root, manifest)
 	}
 	for i := len(manifest.Repositories) - 1; i >= 0; i-- {
 		repo := manifest.Repositories[i]

@@ -12,6 +12,51 @@ read-only repository access and uploads revision-bound verified workflow artifac
 only; it does not sign with production keys, notarize, publish releases or install
 updates. Native runtime acceptance remains separate from package verification.
 
+The optional boolean `workspace_fixture_only` manual input defaults to false.
+Enabling it skips package planning and assembly and runs only the Windows
+these seven closed regressions, using isolated temporary directories:
+
+- `TestClaimedRemovalPreservesUncapturedWritesDuringUnlink`
+- `TestSnapshotMaximumInventoryRemainsDeletable`
+- `TestSnapshotCreatePublicationFailureRetainsOriginalRecovery`
+- `TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart`
+- `TestSnapshotObservationSharesBudgetBeforeHashing`
+- `TestSnapshotObservationStopsAtAggregateGitInventory`
+- `TestSnapshotAdmissionReservesPrivatePathHeadroom`
+
+ Failure output retains structured closed-stage diagnostics.
+Investigation and packaging use separate per-ref concurrency groups and neither
+cancels an active run.
+This bounded investigation mode preserves read-only access and is separate from
+complete required CI, packaging and installed-platform acceptance.
+
+## Renovate scheduling
+
+Root `renovate.json` extends `github>delinoio/renovate-config` and defines this
+repository's scheduling policy through local overrides. Ordinary branch
+creation and existing branch updates are allowed on Mondays from 00:00 inclusive
+to 04:00 exclusive in `Asia/Seoul`, using `schedule: ["* 0-3 * * 1"]` and
+`updateNotScheduled: false`. Lock file maintenance uses the same explicit
+schedule while retaining its inherited enablement and automerge rules.
+
+Vulnerability-fix updates remain enabled and bypass the ordinary schedule.
+Preserve the inherited security labels, immediate PR creation, automerge and
+vulnerability-fix strategy, plus ordinary release-age and automerge rules.
+The schedule limits branch work; it does not control the hosted Renovate
+service's scan cadence or GitHub's already queued automatic merges.
+See the official [schedule](https://docs.renovatebot.com/configuration-options/#schedule),
+[existing branch update](https://docs.renovatebot.com/configuration-options/#updatenotscheduled)
+and [vulnerability alert](https://docs.renovatebot.com/configuration-options/#vulnerabilityalerts)
+contracts.
+
+Validate configuration changes with
+`npx --yes --package renovate -- renovate-config-validator --strict --no-global renovate.json`.
+Inspect resolved presets to confirm that ordinary and lock file maintenance
+work share the weekly window and security updates remain exempt. Check the
+Monday 00:00 and 03:59 allowed boundaries, Monday 04:00 rejection and rejection
+on other weekdays. Configuration validation is not evidence of a hosted bot
+run; record that distinction in change summaries.
+
 ## Continuous integration
 
 ### Git LFS assets
@@ -57,7 +102,7 @@ Forge uses `forge-test` on Linux, macOS, and Windows for its three private Rust 
 
 Both Forge jobs are selected for root `rust-toolchain` changes on pull requests and main pushes. The alternate `rust-toolchain.toml` filename remains covered for a future toolchain configuration migration.
 
-The `go-test` matrix has one Linux runner, one macOS runner, and four independent Windows runners. `scripts/ci/go-test.mjs --shard all` preserves `go test -timeout=20m ./...` on Linux/macOS. Each Windows runner discovers its native `go list ./...` inventory and passes its selected package paths to `go test -p=1`; the `worker` shard uses a 45-minute watchdog for durable workspace fixtures and `core`, `server` and `harness` use 20 minutes. All runners hydrate LFS assets and generate the real administrator and ach UI embeds before testing. The matrix retains `fail-fast: false`, the existing affected selection, and the required `CI Result` aggregate.
+The `go-test` matrix has one Linux runner, one macOS runner, and four independent Windows runners. `scripts/ci/go-test.mjs --shard all` preserves `go test -timeout=20m ./...` on Linux/macOS. Each Windows runner discovers its native `go list ./...` inventory and passes its selected package paths to `go test -p=1` with a 20-minute package watchdog for `core`, `server` and `harness`, and a 45-minute package watchdog for `worker`. All runners hydrate LFS assets and generate the real administrator and ach UI embeds before testing. The matrix retains `fail-fast: false`, the existing affected selection, and the required `CI Result` aggregate.
 
 | Windows shard | Package ownership |
 | --- | --- |
@@ -68,9 +113,11 @@ The `go-test` matrix has one Linux runner, one macOS runner, and four independen
 
 Partition rules match full path segments, so similarly named siblings cannot be mistaken for owned descendants. The four sets cover the discovered inventory exactly once; newly added and Windows-only packages require no allowlist update. Invalid selectors, empty inventories, empty shards, discovery errors, compilation errors and test failures fail validation. The runner uses literal argument arrays without a shell, preserves Go output and nonzero statuses, and logs shard membership, package counts, compile time, serial test time and total elapsed seconds.
 
-Windows first runs `go test -c -o NUL` for the selected packages at Go's default compiler parallelism, populating the build cache without executing any test binary or `TestMain`. The null output avoids collisions between packages with identical names and retains no generated test executables. Only after that phase succeeds does the complete serial test run begin: `go test -p=1 -timeout=45m` for `worker`, and `go test -p=1 -timeout=20m` for the other shards. Compiler work and test fixtures never overlap across these phases. This keeps cold-cache compilation out of the serial test bottleneck without changing native test scheduling. Remove precompilation if native cold-cache measurements show no net saving.
+Windows first runs `go test -c -o NUL` for the selected packages at Go's default compiler parallelism, populating the build cache without executing any test binary or `TestMain`. The null output avoids collisions between packages with identical names and retains no generated test executables. Only after that phase succeeds does the complete `go test -p=1` run begin with its shard-owned package watchdog. Compiler work and test fixtures never overlap across these phases. This keeps cold-cache compilation out of the serial test bottleneck without changing native test scheduling. Remove precompilation if native cold-cache measurements show no net saving.
 
 Native Git/PowerShell and durable SQLite fixtures on hosted Windows outgrew Go's default 10-minute package budget, and concurrent package suites starved bounded Worker and harness protocols. Independent runners shorten the critical path while retaining serial package execution within each Windows runner and each package's normal test parallelism. Remove `-p=1` only when full native Windows evidence supports concurrent package suites. This scheduling and bounded watchdog do not introduce a timeout for `ach` commands or change product concurrency limits. Bulk scheduler-only queue setup uses one durable transaction so it measures the worker scenario instead of thousands of independent disk flushes.
+
+The Worker shard includes maximum-inventory workspace cleanup regressions with thousands of actual durable claims and multiple fresh recovery owners. Its 45-minute package watchdog covers the aggregate fixture runtime; every original or recovery operation retains the production five-minute deadline and the bounded recovery-attempt limit. The explicit Windows workspace investigation uses the same 45-minute package watchdog within a 60-minute job. Reassess these larger fixture budgets after native timing evidence permits reduction.
 
 The September 30 baseline [main run 36677902250](https://github.com/delinoio/oss/actions/runs/36677902250/job/109767014132) spent 27m57s in Windows Go tests and 29m52s in that job; [PR run 36678529123](https://github.com/delinoio/oss/actions/runs/36678529123/job/109768905387) spent 26m53s and 29m45s respectively. Both restored Go caches. Four-shard validation targets a longest Windows job of at most 15 minutes, including setup; this is a target, not measured improvement. Compare two native runs, cache hits and restored keys, the slowest shard, summed Windows runner minutes and cache storage before claiming the target is met.
 
@@ -185,3 +232,5 @@ repository assets listed above.
 The centrally planned `react-forge` job runs on affected pull requests and main pushes and is required by `CI Result`. Its ordinary four-host/Node 24 boundary follows `docs/packages-react-forge-contract.md`: package-owned uncached native build and integration, installed CLI, native/legacy Forge regressions, test-only LibreOffice/Poppler rendering and benchmarks on Windows/Linux x64/arm64. Manual CI adds both Darwin hosts. It retains evidence for seven days and removes generated package dist. Shared `forge-package` changes also select existing Forge validation/render jobs. PR CI verifies installed packages on each selected host without transferring native tarballs or assembling a complete release candidate. Seven external `0.0.1` npm name reservations preceded the first source release. `release-react-forge.yml` uses the same host validation command on all six native hosts, including mandatory Darwin rendering and benchmarks, and assembles the complete seven-package candidate on exact tags. Release Project prepared `0.1.0`, whose publish job failed before registry writes. The next patch tag, `0.1.1`, carried the publisher fix and became the first functional npm release through seven configured Trusted Publishers with OIDC; all seven registry versions, integrities, provenance markers and `latest` tags were confirmed.
 
 The React Forge host job runs non-scene native, package, installed-consumer and document-render regressions on its selected matrix. It skips the React scene test suite and excludes the scene engines from targeted native gates. Generic workspace Rust test and Clippy jobs exclude `forge-scene`, `forge-glb`, and `forge-fbx`. Scene preparation, Khronos/ufbx interoperability, Blender imports, and product renders remain local acceptance evidence; CI does not schedule scene-specific test/render jobs or retain scene artifacts.
+
+Native Tauri consumers restore/verify the immutable execution-host CLI through `.github/actions/setup-prebuilt`, including iOS/Android generation and credential-free DeliDev packaging. CLI keys bind release, host and both SHA-256 digests; successful main jobs alone save these caches. App Cargo caches remain separate. Root and native-package compilation use `nightly-2026-09-28`. Linux CEF jobs install GTK4, XDG portal/GTK portal and `zenity` alongside existing package prerequisites. Follow [prebuilt dependencies](repository-prebuilt-dependencies-contract.md).

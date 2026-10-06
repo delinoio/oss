@@ -11,7 +11,9 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -27,7 +29,10 @@ import (
 )
 
 type Config struct {
+	network            *workerNetworkRuntime
+	observations       *managedObservationRegistry
 	inspectionMetadata bool
+	updatesEnabled     bool
 	terminals          *terminalManager
 	Root               string
 	StartupID          domain.ID
@@ -93,24 +98,48 @@ func machineCapability(resource *pb.Resource, capability domain.WorkerCapability
 	return slices.Contains(machine.WorkerCapabilities, capability)
 }
 
-func codexTitleExecutable(resource *pb.Resource) string {
+func codexTitleInstallation(resource *pb.Resource) *domain.Installation {
 	if resource == nil || resource.Kind != pb.EntityKind_ENTITY_KIND_MACHINE || resource.SchemaVersion != 1 {
-		return ""
+		return nil
 	}
 	var machine domain.Machine
 	if domain.Decode(resource.DocumentJson, &machine) != nil || machine.Validate() != nil {
-		return ""
+		return nil
 	}
 	for _, installation := range machine.Installations {
 		if installation.Harness != domain.Codex {
 			continue
 		}
-		if installation.State != domain.InstallationDetected || installation.Version != domain.CodexProtocolVersion || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.CodexAppServer || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || !filepath.IsAbs(installation.ResolvedPath) {
-			return ""
+		if installation.State != domain.InstallationDetected || !domain.CodexVersionAllowed(installation.Version) || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.CodexAppServer || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || !filepath.IsAbs(installation.ResolvedPath) {
+			return nil
 		}
-		return installation.ResolvedPath
+		return &installation
 	}
-	return ""
+	return nil
+}
+
+func codexTitleExecutable(resource *pb.Resource) string {
+	installation := codexTitleInstallation(resource)
+	if installation == nil {
+		return ""
+	}
+	return installation.ResolvedPath
+}
+
+func workerOpenCodeCompactionInstallation(resource *pb.Resource) bool {
+	if resource == nil || resource.Kind != pb.EntityKind_ENTITY_KIND_MACHINE || resource.SchemaVersion != 1 {
+		return false
+	}
+	var machine domain.Machine
+	if domain.Decode(resource.DocumentJson, &machine) != nil || machine.Validate() != nil {
+		return false
+	}
+	for _, installation := range machine.Installations {
+		if installation.Harness == domain.OpenCode && installation.State == domain.InstallationDetected && installation.Version == domain.OpenCodeProtocolVersion && installation.ProtocolVerified && installation.Protocol != nil && installation.Protocol.Protocol == domain.OpenCodeHTTP && installation.Protocol.State == domain.ProtocolVerified && installation.Protocol.Problem == nil && filepath.IsAbs(installation.ResolvedPath) {
+			return true
+		}
+	}
+	return false
 }
 
 func fatalTitleProfileProbeError(err error) error {
@@ -121,6 +150,7 @@ func fatalTitleProfileProbeError(err error) error {
 }
 
 func Run(ctx context.Context, config Config) (resultErr error) {
+	config.observations = &managedObservationRegistry{}
 	credential, err := LoadCredential(config.Root)
 	if err != nil {
 		return err
@@ -160,7 +190,10 @@ func Run(ctx context.Context, config Config) (resultErr error) {
 		if err := setPhase(config.Root, credential, lifecycle.Generation, RuntimeExited); err != nil {
 			resultErr = err
 		}
-		if resultErr != nil {
+		var handoff *UpdateHandoff
+		if errors.As(resultErr, &handoff) {
+			config.Logger.Info("worker controller drained for replacement", "operation_id", handoff.ID, "generation", lifecycle.Generation)
+		} else if resultErr != nil {
 			config.Logger.Warn("worker controller exited", "machine_id", credential.MachineID, "generation", lifecycle.Generation, "code", domain.SafeError(resultErr).Code)
 		} else {
 			config.Logger.Info("worker controller exited", "machine_id", credential.MachineID, "generation", lifecycle.Generation)
@@ -186,13 +219,18 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			return err
 		}
 	}
-	httpClient, transport := rpc.HTTPClient()
+	httpClient, transport, err := networkHTTPClient(ctx, config.Root, credential)
+	if err != nil {
+		return err
+	}
+	config.network = transport.runtime
 	defer transport.CloseIdleConnections()
-	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
+	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2*workspace.MaxStorageRecoveryJobBytes), connect.WithSendMaxBytes(2<<20))
 	if err := retireStorageReports(ctx, config); err != nil {
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -203,7 +241,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
 		// Terminal support belongs to this process, independently of the slower
 		// title probe. Reconnect must preserve existing shells' capability gates.
-		attached, err := client.AttachWorker(attempt, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}))
+		attached, err := client.AttachWorker(attempt, authenticated(credential, initialAttach))
 		cancel()
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
@@ -212,13 +250,32 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
 		if err == nil {
+			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && workerOpenCodeCompactionInstallation(attached.Msg.Machine)
+			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1) && workerOpenCodeCompactionInstallation(attached.Msg.Machine)
+			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
+			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
+			subagentExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
+			openCodeChildExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1)
+			proxyExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1)
+			if config.network != nil && (!networkExpected || !proxyExpected) {
+				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
+			}
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
-			executable := codexTitleExecutable(attached.Msg.Machine)
+			installation := codexTitleInstallation(attached.Msg.Machine)
+			executable, version := "", ""
+			if installation != nil {
+				executable, version = installation.ResolvedPath, installation.Version
+			}
+			// Adapter support is independent of the current installation inventory.
+			// Admission still requires the parent's exact verified pinned native
+			// installation; discovery must not require a process reconnect merely
+			// to advertise code that this Worker already implements.
+			sidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
 			verifiedTitleProfile := false
 			if executable != "" {
 				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
 				var probeErr error
-				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, config.Logger)
+				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, version, config.Logger)
 				stopProbe()
 				if probeErr != nil {
 					if fatal := fatalTitleProfileProbeError(probeErr); fatal != nil {
@@ -229,7 +286,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if executable != "" {
 				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
-				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable)
+				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable, version)
 				stopProbe()
 				if err != nil {
 					if domain.SafeError(err).Code == domain.RecoveryRequired {
@@ -240,7 +297,22 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				}
 			}
 			titleCapabilityExpected = verifiedTitleProfile
-			profile := executable
+			profile := executable + "\x00" + version
+			if installation != nil {
+				profile += "\x00" + installation.ExecutableSHA256
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
+				profile += "\x00signed-worker-updates-v1"
+			}
+			if compactionExpected && executable != "" {
+				profile += "\x00codex-session-compaction-v1"
+			}
+			if subagentExpected {
+				profile += "\x00codex-subagent-configuration-v1"
+			}
+			if openCodeChildExpected {
+				profile += "\x00opencode-foreground-subagents-v1"
+			}
 			if managedCapabilityExpected {
 				profile += "\x00managed"
 			}
@@ -252,12 +324,61 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if metadataExpected {
 				profile += "\x00inspection-metadata-v1"
 			}
+			if networkExpected {
+				profile += "\x00network-bootstrap-v1"
+			}
+			if proxyExpected {
+				profile += "\x00codex-api-proxy-v1"
+			}
+			if config.network != nil {
+				current := config.network.current()
+				profile += "\x00network-generation-" + strconv.FormatUint(current.metadata.Generation, 10) + "-" + string(current.metadata.RouteID)
+			}
+			if sidechatExpected {
+				profile += "\x00codex-read-only-sidechat-v1"
+			}
+			if openCodeForkExpected {
+				profile += "\x00opencode-general-chat-fork-v1"
+			}
+			if openCodeCompactionExpected {
+				profile += "\x00opencode-compaction-v1"
+			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
+			}
+			if sidechatExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
+			}
+			if openCodeForkExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
+			}
+			if compactionExpected && executable != "" {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
+			}
+			if openCodeCompactionExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
+				if !compactionExpected || executable == "" {
+					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1)
+				}
+			}
+			if openCodeChildExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1)
+			}
+			if subagentExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
+			}
+			if networkExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
+			}
+			if proxyExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1)
+			}
 			if managedCapabilityExpected {
-				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1)
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1)
 			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
@@ -266,7 +387,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			}
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
-			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, &pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}))
+			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}, config)))
 			stopNegotiation()
 			err = negotiateErr
 			if err == nil && negotiated.Msg.ServerId != string(credential.ServerID) {
@@ -276,8 +397,22 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				attached = negotiated
 			}
 		}
+		if err == nil && config.network != nil {
+			bounded, stop := context.WithTimeout(ctx, 30*time.Second)
+			err = config.network.sync(bounded, client, credential, instance)
+			stop()
+		}
+		if err == nil && config.network == nil {
+			var network domain.WorkerNetworkStatus
+			if len(attached.Msg.NetworkStatusJson) != 0 && (domain.Decode(attached.Msg.NetworkStatusJson, &network) != nil || network.ControlState != domain.WorkerRouteObserved) {
+				return domain.Fail(domain.RecoveryRequired, "The server requires current protected Worker network configuration.", "Prepare the original recipient, export/import its encrypted generation and reconnect before execution.")
+			}
+		}
 		if err == nil {
 			if err := replayPendingStorageReports(ctx, config, client, credential); err != nil {
+				return err
+			}
+			if err := settleUpdateOnAttach(ctx, config.Root, credential, instance); err != nil {
 				return err
 			}
 			if !ready {
@@ -292,11 +427,16 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if titleCapabilityExpected && !auxiliary {
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
+			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
 			err = watchAttached(ctx, config, client, credential, instance, auxiliary, managedCapabilityExpected && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}
+		}
+		var handoff *UpdateHandoff
+		if errors.As(err, &handoff) {
+			return handoff
 		}
 		if ctx.Err() != nil {
 			return nil
@@ -331,9 +471,17 @@ func watchAttached(ctx context.Context, config Config, client delidevv1connect.W
 		watchSessionDeletions(watchCtx, config, client, credential, instance)
 	}()
 	defer func() { cancel(); <-deletionsDone }()
-	results := make(chan error, 3)
+	results := make(chan error, 5)
 	go func() { results <- watch(watchCtx, config, client, credential, instance) }()
 	count := 1
+	if config.updatesEnabled {
+		count++
+		go func() { results <- watchUpdates(watchCtx, config, credential, instance) }()
+	}
+	if config.network != nil {
+		count++
+		go func() { results <- maintainWorkerNetwork(watchCtx, config, client, credential, instance) }()
+	}
 	if auxiliary {
 		count++
 		go func() { results <- watchAuxiliary(watchCtx, config, client, credential, instance) }()
@@ -562,7 +710,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			jobContext, stopJob := context.WithCancel(ctx)
 			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), approvals: make(chan *pb.ApprovalResponseControl, domain.MaxOpenInteractions), approvalIDs: map[domain.ID]responseControlIdentity{}, responses: map[domain.ID]responseControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}}
 			var envelope domain.Job
-			if domain.Decode(resource.DocumentJson, &envelope) != nil {
+			if decodeAssignedJob(resource.DocumentJson, &envelope) != nil {
 				stopJob()
 				cancel(publicationUncertain())
 				return
@@ -600,7 +748,12 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		}
 	}()
 	forwardsDone := make(chan struct{})
-	go func() { defer close(forwardsDone); watchForwards(ctx, config, credential, instance) }()
+	go func() {
+		defer close(forwardsDone)
+		if err := watchForwards(ctx, config, credential, instance); err != nil {
+			cancel(err)
+		}
+	}()
 	readsDone := make(chan struct{})
 	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
 	defer func() {
@@ -630,7 +783,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			return err
 		}
 		var job domain.Job
-		if err := domain.Decode(resource.DocumentJson, &job); err != nil {
+		if err := decodeAssignedJob(resource.DocumentJson, &job); err != nil {
 			return err
 		}
 		if err := job.Validate(); err != nil {
@@ -642,6 +795,14 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		err := runAndReportJob(ctx, config, client, credential, instance, work, resource, job)
 		active.Delete(resource.Id)
 		if err != nil {
+			// Deletion can fence native publication before cancellation arrives.
+			// Release the original assignment only after authenticated inspection
+			// proves its exact immutable retirement work. This is not completion
+			// or cleanup proof; the independent deletion lane still joins owners.
+			if ctx.Err() == nil && retiringAssignment(ctx, config, client, credential, instance, resource) {
+				config.Logger.InfoContext(ctx, "worker_assignment_retiring", "job_id", resource.Id, "session_id", resource.SessionId)
+				continue
+			}
 			return err
 		}
 	}
@@ -726,13 +887,13 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	}
 	if job.Type == domain.WorkspaceStorageJob {
 		var input workspace.StorageRequest
-		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.OperationID != domain.ID(resource.Id) || input.Preparation.SessionID != domain.ID(resource.SessionId) || input.Preparation.MachineID != job.MachineID {
+		if workspace.DecodeStorageRequest(job.Input, &input) != nil || input.Validate() != nil || input.OperationID != domain.ID(resource.Id) || input.Preparation.SessionID != domain.ID(resource.SessionId) || input.Preparation.MachineID != job.MachineID {
 			return journal{}, workspace.ResultUncertain()
 		}
 	}
 	if job.Type == domain.CompactSessionJob {
 		var input domain.SessionCompactionInput
-		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
+		if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
 			return journal{}, domain.CompactionUncertain()
 		}
 	}
@@ -844,7 +1005,7 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		return recoverExecution(ctx, config, job)
 	case domain.WorkspaceStorageJob:
 		var input workspace.StorageRequest
-		if err := domain.Decode(job.Input, &input); err != nil {
+		if err := workspace.DecodeStorageRequest(job.Input, &input); err != nil {
 			return nil, err
 		}
 		if input.Action == workspace.StorageRecover {

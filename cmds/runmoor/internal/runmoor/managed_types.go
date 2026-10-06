@@ -99,11 +99,12 @@ type ManagedImageBuilder struct {
 	Store  *Store
 	Images *ImageManager
 	Client *http.Client
+	Host   HostNative
 	Log    *slog.Logger
 }
 
 func managesRunner(p Pool) bool {
-	return p.RunnerVersion == LatestRunner || p.Image == "" || p.ImageSource != nil
+	return p.Backend == Host || p.RunnerVersion == LatestRunner || p.Image == "" || p.ImageSource != nil
 }
 func requestedPool(c Config, name string) (Pool, bool) {
 	for _, p := range c.Pools {

@@ -2,9 +2,9 @@
 
 ## Scope
 
-Issue #1095 implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. The explicitly selected paired Worker owns installed native Codex processes and private authentication files. The complete product requirements remain in [issue #964's snapshot](cmds-delidev-requirements.md).
+Issue #1095 implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. An explicitly selected paired Worker owns execution processes and its private authentication files. The independently negotiated server login lane owns browser login, authentication refresh and logout without a Worker. The complete product requirements remain in [issue #964's snapshot](cmds-delidev-requirements.md).
 
-Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens`, Claude subscriptions and concurrent use of one managed bundle are excluded. Desktop login controls, full native recovery, quota observation and real-account/platform acceptance remain separate work. This implementation does not complete issue #964 or claim a release.
+Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens`, Claude subscriptions and concurrent use of one managed bundle are excluded. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
 
 ## Runtime and Language
 
@@ -12,17 +12,19 @@ Go owns server and Worker business logic. The native profile pins installed Code
 
 ## Users and Operators
 
-The server owner or an authorized paired client initiates lifecycle operations. A paired Worker advertises `managed-codex-subscriptions-v1` only after an empty-home native configuration handshake and owned cleanup; the server echoes this closed capability. Each operation selects an explicit execution machine. Workers cannot initiate owner lifecycle operations or read another machine's bundle.
+The server owner or an authorized paired client initiates lifecycle operations. A paired Worker advertises `managed-codex-subscriptions-v1` only after an empty-home native configuration handshake and owned cleanup; the server echoes this closed capability. Execution and explicit-machine lifecycle operations select an execution machine. Independent server lifecycle operations omit that selection. Workers cannot initiate owner lifecycle operations or read another machine's bundle.
 
 Execution admission requires that selected Worker's negotiated managed capability before claiming a session or consuming queued input. Ordinary native installation discovery alone cannot admit subscription execution; an unsupported Worker leaves the original input queued without selecting a fallback.
 
 ## Interfaces and Contracts
 
-Native subscription providers opt into the closed `subscription_harness: "codex"` field, retain `native-subscription` protocol and `subscription` authentication, and have an empty endpoint. Legacy providers without this selector remain metadata-only until explicitly configured; names never infer authentication authority. Accounts retain their independent enablement configuration.
+Subscription accounts use schema 2 with required closed `subscription_service: "chatgpt" | "claude" | "grok"` and no `provider_id`. Native models use schema 2 with `source_kind: "subscription"`, the same service and no API Provider. Services map exactly to Codex, Claude Code and Grok Build; a model's single compatible harness must match its service. API accounts/models keep their existing schema-1 provider identity and forbid subscription fields. Neither service metadata nor model registration grants native login, quota or execution support.
 
-Configure the provider selector before creating account references. Like endpoint, protocol and authentication changes, changing this selector requires removing the provider's account references first; configuration cannot replace an active account's authority.
+The historical provider-bound shape used `native-subscription`, `subscription` authentication, an empty endpoint and optional `subscription_harness: "codex"`. Migration 28 retires every legacy subscription account and those providers/models without inferring a service from any field or display name. That shape is retained only as read-only historical metadata under the [storage contract](cmds-delidev-storage-contract.md#subscription-retirement-issue-1235). New native-subscription Providers and edits that replace service/account/model identity are rejected.
 
-`SubscriptionService.RequestSubscription` accepts login, refresh and logout with a UUID-v7 mutation receipt, current account revision and selected machine. `CancelSubscription` cancels the original pending login. `GetSubscriptionProgress` returns short-lived browser/device presentation data only to the original initiating principal. CLI equivalents are:
+Managed Codex lifecycle and execution select an independent ChatGPT account. Go rechecks its original generation/connection/lease and matching immutable service model at every authority boundary without loading an API Provider. Publication-only registrations expose no API relay path; independent service identity does not grant an upstream API operation. Immutable snapshots and new native response/diagnostic records carry the selected service instead of a fabricated Provider ID. Historical provider-bound snapshots and usage retain original bytes and attribution; retired selections cannot resume or silently reroute.
+
+`SubscriptionService.RequestSubscription` accepts login, refresh and logout with a UUID-v7 mutation receipt and current account revision. An explicit machine preserves the original Worker lane; omitted `machine_id` selects the independently negotiated server lane. `CancelSubscription` cancels the original pending login. `GetSubscriptionProgress` returns short-lived browser/device presentation data only to the original initiating principal. CLI equivalents are:
 
 ```sh
 delidev account login --id ID --revision N --machine-id ID --device-code
@@ -54,11 +56,28 @@ Successful `account/read` does not prove refresh. Both Worker and server require
 
 The pinned native login-completed envelope includes nullable `onboardingEntrypoint` metadata. Accept null or the pinned closed `life_sciences` value without launching another onboarding flow or treating presentation metadata as authentication evidence; reject unknown values while still requiring the original login identity and successful completion.
 
+
+## Server browser login and account naming
+
+System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by PR #1332. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude Code and Grok remain unsupported. API authentication, execution selection and existing quota authority do not change.
+
+Go records the original actor, operation, server epoch, bounded lifetime, finish identity and closed progress state in optional server-owned `server_operation` metadata. Accepted request replay returns the original receipt without another native launch. Claiming requires the original queued pending operation and no Worker credential lease; `native_started` is an exclusive credential fence. An existing execution lease retains ownership while queued refresh/logout waits. Cancellation is serialized with final publication. Successful native completion, joined process closure, final-file comparison, private-runtime removal, vault staging and old-reference cleanup precede confirmed success. Uncertain cleanup and previous-epoch operations retain recovery ownership and cannot relaunch or redistribute credentials. Optional JSON metadata requires no database migration and does not alter migrations 26–30.
+
+Browser login uses the ordinary `account/login/start` ChatGPT profile, never automatic device-code fallback. The pinned app-server disables its own browser opening; the trusted native desktop opens the returned original address once. Exact native binding replay cannot open another browser. Deliberate reopening uses only that same operation/address. Local desktop login retains the original installed Codex callback. Remote desktop login binds its registered loopback callback on both address families and forwards one bounded code/state/scope query through authenticated `ForwardSubscriptionCallback` to the original server's Codex callback. The callback requires the original state, actor, current server epoch, operation and trusted window/opening lifetime. Duplicate, foreign, expired, canceled and late callbacks are refused. Go durably claims forwarding before HTTP, inherits no proxy, follows no redirects and never resends uncertain delivery or performs another exchange.
+
+Browser callbacks accept exactly `http://localhost:1457/auth/callback` (Codex 0.151.0) or `http://127.0.0.1:1457/auth/callback` (Codex 0.159.2). Preserve the original URL, state and callback authority through browser binding and forwarding; the two spellings cannot replace one another within an accepted operation. Forward only to fixed IPv4 loopback and retain the original callback HTTP Host. Remote native receivers retain both loopback listeners and require that original Host. Other hosts, numeric IPv4 spellings, ports, paths and duplicate query fields are rejected. URL rejection logs contain only the fixed failure classification and original operation reference. This compatibility rule does not recover prior failed accounts or establish actual account/platform acceptance.
+
+Codex 0.151.0 can send `/cancel` to an occupied preferred port 1455 before using its registered fallback 1457. The server first owns a private 1455 listener, refuses a conflict, and retains it through joined native closure. This prevents cancellation of another login and lets the original Codex listener choose its registered 1457 callback. A fallback conflict fails explicitly. Remove this bounded workaround only when the pinned native protocol provides an exclusively owned callback port without foreign cancellation. The remote desktop never remaps its callback or substitutes device authentication.
+
+Typed progress separates preparing, waiting, succeeded, canceled, expired, unsupported, failed and recovery-required. Successful login exposes its exact current generation and one transient name suggestion, chosen from email, provided display name, then ChatGPT within the existing 256-byte UTF-8 alias bound. Native login success remains the authentication evidence; JWT identity claims only project consistent identity. Suggestions belong to the original actor/operation/generation, expire with its lifetime and remain only in memory until the user explicitly saves a name. They never enter resources, receipts or logs. Refresh/logout cannot suggest names.
+
+Settings Add account is an explicit event that creates a default service-named account and immediately requests browser login. Mount, Strict Mode, polling and reconnect cannot repeat creation/login. Only confirmed original success advances to editable name entry. Save uses the current revision and changes only the alias while preserving server-owned bytes; a conflict retains the draft for a fresh explicit save. Later and navigation retain accepted default-name metadata and authentication. Navigation discards the Settings presentation/native callback receiver and rejects late continuations without business cancellation. Only Cancel login requests cancellation.
+
 ## Storage
 
 Optional server-owned `Account.subscription` JSON preserves historical account bytes when absent and adds no destructive schema migration. It retains only generation references, keyed identity commitments, pending-operation metadata, original actor and lease fences. Configuration writes cannot manufacture or change this state. Unresolved ownership prevents configuration deletion. Managed database restore also refuses pending, leased or recovery-required ownership. Restored subscription references remain disconnected and recovery-required; historical generations and claims remain evidence, while the external vault is unchanged and supplies no restored authority. Clear an allocated subscription state with no generation, identity, pending operation, lease or recovery fence; settled logout or failed login owns no external reference to quarantine.
 
-The existing OS-backed [credential vault](cmds-delidev-credentials-contract.md) stores bundles with `account-login` purpose and immutable UUID-v7 references. Native plaintext exists only in the leased Worker's private runtime; it is removed after owned process closure. Execution installs credential cleanup at the owned auth-file write boundary, before publisher setup and registration, for both current and predecessor runtime selections. Failures before native ownership remove and synchronize the original auth file; a failed native Open permits removal only when its process cleanup is independently confirmed. Uncertain native ownership retains the protected lease and cannot authorize optimistic deletion. Execution retains original history and checks its bounded remaining files for credential remnants. Worker journals contain only original claim/completion identities and cleanup outcomes, never bundle bytes or token digests. Temporary login presentation lives only in server memory.
+The existing OS-backed [credential vault](cmds-delidev-credentials-contract.md) stores bundles with `account-login` purpose and immutable UUID-v7 references. Native plaintext exists only in the exclusive server or Worker private runtime; it is removed after owned process closure. Execution installs credential cleanup at the owned auth-file write boundary, before publisher setup and registration, for both current and predecessor runtime selections. Failures before native ownership remove and synchronize the original auth file; a failed native Open permits removal only when its process cleanup is independently confirmed. Uncertain native ownership retains the protected lease and cannot authorize optimistic deletion. Execution retains original history and checks its bounded remaining files for credential remnants. Worker journals contain only original claim/completion identities and cleanup outcomes, never bundle bytes or token digests. Temporary login presentation lives only in server memory.
 
 Uncertain delivery or completion closes the Worker subscription lane and joins its children so the server records lost ownership. An acknowledged failed operation retains its confirmed completion and leaves unrelated accounts on that lane active. Missing refresh write-back, unconfirmed cleanup, Worker loss/replacement or server restart retains the original lease as recovery-required. The old generation cannot be redistributed. Recovery publication purges the in-memory login presentation under the account gate while retaining the original lease and pending operation. Progress reads reject recovery-required or previous-epoch ownership, and the lost Worker cannot republish a URL or device code. These lifecycle commands neither erase recovery evidence nor clear an uncertain lease; independent native recovery remains a separate product boundary.
 
@@ -69,6 +88,8 @@ Uncertain protected execution completion escapes ordinary job-error reporting an
 Once subscription ownership is recovery-required, every new Finish is denied before vault staging or deletion and again at its final transaction. Only an already accepted receipt may replay through this handler; that read-only replay preserves any later retained lease, pending operation and recovery fence. A late background completion cannot replace the independent recovery path.
 
 Remote transport retains authenticated TLS; loopback development retains the existing protected local RPC boundary. Authorization is rechecked after vault I/O and at publication, including the original initiating client's revocation. Managed login starts with no existing authentication file and requires the original native login-completed observation. Bundle validation rejects API keys, external auth modes, unknown credential fields, foreign identities, symlinks and oversized files. JWT claim comparisons are identity consistency checks, not signature verification or substitutes for native OAuth completion.
+
+Login confirmation, refresh and logout share one strict native `account/read` response profile. Codex 0.159.2 serializes the known optional `workspaceRouting` field even with `experimentalApi: false`. Omission and null remain valid for earlier/native disconnected responses. A present object requires the exact original bundle's `chatgptAccountId`, a nonempty account ID of at most 24 KiB without credential-field whitespace/control separators, an HTTPS origin of at most 8,192 bytes without user information, path, query or fragment, and the closed `accountRoutingOverride` enum `NO_CONSTRAINT`, `us` or `us_cr`. An explicit origin port must be nonempty decimal in the unsigned 16-bit range. Discard this metadata after validation; it cannot select Go endpoints, supply credentials, grant authentication or enter resources, receipts or logs. Continue rejecting unknown and duplicate fields at every object depth. Logout requires explicit `account: null`, required OpenAI authentication, absent/null routing and independently absent native `auth.json`. The original native login completion and independently changed file/token evidence for refresh remain mandatory; compatibility never clears an existing recovery fence.
 
 The merged native configuration must retain file storage, ChatGPT login and the built-in OpenAI provider without inherited endpoint, command authentication, bearer, query or header overrides. Native execution never inherits unrelated system logins. Private files do not promise an OS sandbox against unrestricted same-user access. Managed execution nevertheless requires an explicit native read-only or workspace-write permission, keeps the fresh `CODEX_HOME` outside every accepted workspace root after canonical-path checks, and refuses default/full-access or overlapping/aliased paths before writing `auth.json`; this bounds native tool access without claiming unrestricted same-user isolation. All tests use isolated temporary state and synthetic credentials.
 
@@ -84,11 +105,15 @@ Credential cleanup scans retained native files for raw token material and padded
 
 Use structured `slog` events for accepted operations, grants, completion, capability availability and recovery failures. Log only opaque account/operation/lease/machine identities, closed action, cleanup classification and stable error code. Native protocol messages, token bundles, JWT identities, URLs, device codes and filesystem paths never enter these logs.
 
+Managed native failure logs additionally retain the closed internal `stage`: `login-start`, `login-completion`, `login-cancel`, `account-read`, `bundle-validation` or `local-logout`. The stage identifies the first failed check within its existing safe phase and original operation correlation. It does not change public diagnostic schemas, retain native field values or authorize retry.
+
 ## Build and Test
 
 Run `go test -race ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`, `pnpm proto:check`, and the API client's tests/typecheck. Generate bindings through pinned root Buf tooling. Controlled native-process fixtures cover browser/device progress, completion, cancellation, file rotation, unchanged refresh evidence, logout and symlink refusal. Real loopback Connect/SQLite fixtures cover lease races, protected-channel authorization, generation fencing, lost write-back, cancellation, identity uniqueness, independent accounts, API relay denial and secret-free outputs/database files.
 
 These fixtures do not authenticate real accounts, execute hosted inference or establish installed-Codex/desktop/Windows/Linux/release acceptance. Record actual executed checks, source revisions and unresolved limits in issue #1095, its pull requests and CI logs/artifacts.
+
+Account-response fixtures cover omitted/null/validated routing across browser/device completion, refresh and logout, malformed/foreign metadata, unknown/duplicate fields and secret-free stage logs. The explicit `DELIDEV_NATIVE_INITIALIZE_EXECUTABLE` empty-home logout smoke exercises an installed Codex's actual `account/read` response and joined process/private-runtime cleanup without opening a browser, authenticating a user or invoking inference. This check cannot establish real OAuth completion or packaged-platform acceptance.
 
 ## Dependencies and Integrations
 
@@ -109,3 +134,79 @@ Update the account/harness/session/protocol/client contracts and affected scoped
 - [Wire contract](protos-delidev-v1-contract.md)
 - [Pinned official account protocol](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/app-server-protocol/src/protocol/v2/account.rs)
 - [Pinned native authentication storage](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/login/src/auth/storage.rs)
+- [Codex 0.159.2 account response profile](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/src/protocol/v2/account.rs)
+
+
+## Native quota and reset credits — issues #1096 and #1104
+
+System capabilities 18 (`SUBSCRIPTION_QUOTA_V1`) and 19
+(`SUBSCRIPTION_RESET_CREDITS_V1`) negotiate the two product operations separately.
+Worker capability 8 requires the verified managed Codex 0.151.0 profile. The
+pinned upstream source is commit `78c290807ce710180111df227df3b7a4fe845452`.
+`account/rateLimits/read` omits its unit parameters; the native wire encoder's
+explicit `OmittedParams` profile preserves the ordinary structured-parameter
+requirement and common bounds. No inference or billing probe supplies quota.
+
+Go queues one bounded five-minute observation per supported connected account,
+using the last original native owner's machine. Individual and whole-inventory
+refreshes are authenticated SubscriptionService operations with UUID-v7 receipts;
+refresh-all derives its complete account set on the server, independent of client
+pagination. An idle read takes a short exclusive credential lease. An active
+execution uses its registered original Codex process and lease; it cannot create
+a second credential writer. Original native rate-limit updates pass the same
+bounded projection. Failed observations preserve the last successful timestamp,
+values and exhaustion state. Sparse null fields retain original values, window
+identities and individual observation times. Comparable windows use their minimum
+remaining fraction; elapsed resets cannot establish recovery.
+
+The server-owned optional subscription observation records retain exact account,
+connection, credential generation, machine, actor and original operation identity.
+A durable send claim precedes every explicit native request. Claim replay never
+grants another send. Queued operations become stale on credential generation
+replacement, rather than silently inheriting a new generation. Stop, revocation,
+pending lifecycle cleanup and lost native ownership retain their original fences.
+Only confirmed native/file cleanup releases an idle credential lease.
+
+Reset-credit inventory preserves the authoritative signed-64-bit count separately
+from a bounded detail list. Null details mean unavailable; an empty list is an
+observed empty list. Native credit IDs, reset type/status and grant/expiry times
+are metadata; native titles, descriptions, balances, account identities and token
+reflection never enter resources, receipts, logs or history. The desktop requires
+explicit confirmation tied to the displayed account revision, connection,
+generation and inventory identity. The CLI requires `--confirm`, with either the
+returned credit ID or explicit native next-credit selection when only the count
+is available. Configuration saves cannot manufacture observations.
+
+The accepted UUID-v7 operation is the official `idempotencyKey` for
+`account/rateLimitResetCredit/consume`. Uncertain consumption never automatically
+requeues or receives a replacement key. Explicit generation-checked
+`ReconcileSubscriptionCredit` preserves that original key and selected credit.
+Closed outcomes retain `reset`, `alreadyRedeemed`, `nothingToReset` and `noCredit`.
+The latter two describe truthful non-reset outcomes. Every attempted consumption
+performs a separate quota read afterward; failure retains previous quota and
+cannot manufacture a recovery notification.
+
+Recovery notification preferences default to false. Only a fresh observed
+transition from confirmed exhaustion to positive usable quota creates an Inbox
+entry, atomically with account publication. The original observation source index
+deduplicates it across receipts. Recovery Inbox records have account/connection
+scope and no session, interaction or execution authority. Existing independent
+read-state and once-only notification presentation claims apply. Native delivery
+accepts only the opaque original claim/inbox IDs and a closed recovery kind; its
+fixed title/body reveal no account alias, provider identity, quota value or secret.
+Presentation is available only while the trusted desktop process runs.
+
+Validation must distinguish isolated native/provider processes, SQLite and
+response-loss fixtures from installed real-account credit consumption, quota
+recovery and platform notification acceptance. Keep the issues open until their
+remaining real-environment acceptance is satisfied.
+
+Quota maintenance performs a read-only due check and transactional eligibility recheck, publishing a durable receipt only for a changed batch. Account deletion transactionally removes its account-scoped recovery Inbox entries through ordinary event/tombstone publication. Idle quota/reset-credit publication uncertainty remains an original-operation problem when the unchanged valid bundle and independent native/file cleanup are confirmed; finish the credential lease without fabricating quota recovery, then permit only explicit same-key credit reconciliation. Failed credential capture or unconfirmed cleanup still fences the native owner.
+
+Unpublished quota reads become failed after independently joined successful native credential/process/file cleanup. Preserve the last good quota values and allow a new explicit or scheduled read; consumption uncertainty remains reserved for reset-credit operations with the original official key. Migration 28 bounds relevant configuration/device metadata and checks affected original session/job references in SQLite without loading unrelated retained history.
+
+### Native version and failure diagnostics
+
+Codex sign-in attempts share the harness contract's minimum SemVer `0.151.0`, with no upper bound. Discovery of an executable, verified initialization and actual account login remain separate. Server operations retain optional safe `diagnostic` metadata in their existing versioned document; no SQLite migration is needed. Progress publishes it only to the authenticated original initiator. Retain the actual detected version, minimum, closed discovery/version/profile/runtime/launch/initialize/confirm/login/models/execution/history/cleanup phase, stable error code, locally reconstructed reason/guidance and original operation correlation ID. Validate closed metadata rather than retaining arbitrary Worker/native error strings.
+
+Missing executables report discovery with no detected version. Invalid or lower versions report version validation; newer versions run actual initialization. Keep the first native failure when cancellation, process cleanup or protected-file cleanup subsequently fails; the independent recovery state and cleanup result remain authoritative. A cleanup-only failure uses cleanup phase. Persist metadata through restart and transient presentation disposal without login URLs, device codes, credentials, identity, paths or raw output. Success clears failure metadata. Logs retain bounded version/phase/code/operation correlation and separate original outcome from cleanup/recovery, without account identifiers. No diagnostic may trigger login replay, callback resend or automatic retry.

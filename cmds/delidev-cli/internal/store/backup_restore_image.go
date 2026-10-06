@@ -25,7 +25,7 @@ func migrateRestoreImage(ctx context.Context, path, root string) error {
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL"); err != nil {
 		return storageError(err)
 	}
-	return migrate(ctx, db, root)
+	return migrate(context.WithValue(ctx, historicalSubscriptionRetirement{}, true), db, root)
 }
 
 // Only the private candidate is writable. The synchronized current snapshot is
@@ -57,8 +57,26 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	if conflicting {
 		return backupUnavailable()
 	}
+	// Only a current, still-connected original OAuth result retains vault
+	// authority across restore. Neither an older account image nor a disconnected
+	// current descriptor can recover an old credential generation.
+	const connectedOAuthAccounts = `SELECT e.id FROM current_state.entities e JOIN current_state.account_oauth_attempts a ON e.id=json_extract(a.body,'$.account_id') WHERE e.kind='account' AND a.state='connected' AND json_extract(e.body,'$.connection.id')=json_extract(a.body,'$.connect_request_id')`
 	queries := []string{
+		// A historical image cannot replace current once-only OAuth dispatch or
+		// cleanup evidence. Eligibility already excludes every unresolved attempt.
+		// Installation state is current once-only authority, never historical configuration.
+		"DELETE FROM entities WHERE kind IN ('ssh_setup','update')",
+		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind IN ('ssh_setup','update')",
+		"DELETE FROM account_oauth_attempts",
+		"INSERT INTO account_oauth_attempts SELECT * FROM current_state.account_oauth_attempts",
+		// Preserve the coupled account/provider from the current safety image;
+		// it was explicitly connected after the historical backup was taken.
+		"DELETE FROM entities WHERE id IN (" + connectedOAuthAccounts + ")",
+		"INSERT INTO entities SELECT * FROM current_state.entities WHERE id IN (" + connectedOAuthAccounts + ")",
+		"DELETE FROM entities WHERE id IN (SELECT json_extract(body,'$.provider_id') FROM current_state.entities WHERE id IN (" + connectedOAuthAccounts + "))",
+		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind='provider' AND id IN (SELECT json_extract(body,'$.provider_id') FROM current_state.entities WHERE id IN (" + connectedOAuthAccounts + "))",
 		"INSERT OR REPLACE INTO tombstones SELECT * FROM current_state.tombstones",
+		"INSERT OR REPLACE INTO retired_configurations SELECT * FROM current_state.retired_configurations",
 		// Old grants and pairing codes never acquire fresh authority.
 		"DELETE FROM credential_verifiers",
 		"DELETE FROM pairing_verifiers",
@@ -111,6 +129,28 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			return storageError(err)
 		}
 	}
+	retainedOAuth := map[domain.ID]bool{}
+	oauthRows, err := tx.QueryContext(ctx, connectedOAuthAccounts)
+	if err != nil {
+		return storageError(err)
+	}
+	for oauthRows.Next() {
+		var id domain.ID
+		if err := oauthRows.Scan(&id); err != nil {
+			oauthRows.Close()
+			return storageError(err)
+		}
+		retainedOAuth[id] = true
+		if len(retainedOAuth) > 100000 {
+			oauthRows.Close()
+			return backupUnavailable()
+		}
+	}
+	if err := oauthRows.Err(); err != nil {
+		oauthRows.Close()
+		return storageError(err)
+	}
+	oauthRows.Close()
 	// Retain closed domain models and historical claims. Changing execution
 	// bookkeeping alone never proves native cleanup or allows Resume/recovery.
 	rows, err := tx.QueryContext(ctx, "SELECT id,kind,body FROM entities WHERE kind IN ('session','job','schedule','account','integration','forward') ORDER BY id")
@@ -176,6 +216,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			v.Problem = restoreQuarantined().(*domain.Error)
 			value = v
 		case domain.AccountKind:
+			if retainedOAuth[id] {
+				continue
+			}
 			var v domain.Account
 			if err := domain.Decode(raw, &v); err != nil {
 				rows.Close()

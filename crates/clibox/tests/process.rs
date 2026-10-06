@@ -206,7 +206,8 @@ fn environment_inherits_streams_cwd_and_literal_arguments() {
 fn environment_preserves_command_boundaries_with_and_without_separator() {
     let directory = tempfile::tempdir().unwrap();
     // An assignment-shaped executable catches a consumed leading separator:
-    // without restoring it, environment planning would treat the path as a setter.
+    // without restoring it, environment planning would treat the path as a
+    // setter.
     let assignment_shaped = directory
         .path()
         .join(format!("COMMAND=value{}", std::env::consts::EXE_SUFFIX));
@@ -359,8 +360,9 @@ fn ports_find_test_owned_tcp_udp_ipv4_ipv6_and_kill_once() {
         .iter()
         .all(|r| r["protocol"] == "tcp"));
     // Never let a test terminate an unrelated or unverifiable owner. Restricted
-    // hosts still exercise real enumeration and the mocked partial-kill contract;
-    // isolated Linux CI additionally exercises the complete CLI kill boundary.
+    // hosts still exercise real enumeration and the mocked partial-kill
+    // contract; isolated Linux CI additionally exercises the complete CLI
+    // kill boundary.
     if !report["errors"].as_array().unwrap().is_empty()
         || report["results"]
             .as_array()

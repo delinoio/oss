@@ -83,7 +83,8 @@ impl Connector {
             self.run(&["worker".into(), "pair-local".into()])?;
         }
         // Fixed Go-owned scope only. Reuse the independent same-server check;
-        // no renderer-selected machine, path, endpoint or credential is accepted.
+        // no renderer-selected machine, path, endpoint or credential is
+        // accepted.
         let proof = self.local_worker_proof_inner()?;
         if proof.endpoint != client.endpoint || proof.server_id != client.server_id {
             return Err(NativeFailure::InvalidEvidence);
@@ -110,8 +111,9 @@ impl Connector {
         )
     }
 
-    // Retained Workers have independent authority after the client is forgotten.
-    // Return only lifecycle metadata; this boundary never reads/delivers a token.
+    // Retained Workers have independent authority after the client is
+    // forgotten. Return only lifecycle metadata; this boundary never
+    // reads/delivers a token.
     pub fn retained_worker(
         &self,
         id: &str,
@@ -194,7 +196,10 @@ impl Connector {
         self.saved_worker_proof_inner(expected)
     }
 
-    fn saved_worker_proof_inner(&self, expected: &SavedConnection) -> Result<LocalWorkerProof> {
+    pub(crate) fn saved_worker_proof_inner(
+        &self,
+        expected: &SavedConnection,
+    ) -> Result<LocalWorkerProof> {
         self.check_saved_profile(expected)?;
         let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
             "connection".into(),

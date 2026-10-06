@@ -131,17 +131,19 @@ impl SpyImpl {
         let mut child = command.spawn().map_err(SpawnError::OsSpawn)?;
 
         let preparation = (|| {
-            // Duplicate the process handle before the child is moved into the background
-            // task so it stays valid after Tokio closes its copy when the process exits.
-            // SAFETY: the child owns this handle and is not waited on during this borrow.
+            // Duplicate the process handle before the child is moved into the
+            // background task so it stays valid after Tokio closes
+            // its copy when the process exits. SAFETY: the child
+            // owns this handle and is not waited on during this borrow.
             let process = unsafe { BorrowedHandle::borrow_raw(child.raw_handle().unwrap()) };
             let process_handle = process.try_clone_to_owned().map_err(SpawnError::OsSpawn)?;
             let raw_process = process_handle
                 .as_raw_handle()
                 .cast::<winapi::ctypes::c_void>();
             let mut dll_paths = ansi_dll_path_with_nul.as_ptr().cast::<c_char>();
-            // SAFETY: raw_process is a valid handle to the suspended child process,
-            // dll_paths points to a valid null-terminated ANSI string.
+            // SAFETY: raw_process is a valid handle to the suspended child
+            // process, dll_paths points to a valid null-terminated
+            // ANSI string.
             let success = unsafe { DetourUpdateProcessWithDll(raw_process, &raw mut dll_paths, 1) };
             if success != TRUE {
                 let error = io::Error::last_os_error();
@@ -186,14 +188,15 @@ impl SpyImpl {
                 }
             }
 
-            // Resume using the process handle, without the nightly main-thread handle API.
-            // SAFETY: raw_process is a valid child process handle with
-            // PROCESS_SUSPEND_RESUME access.
+            // Resume using the process handle, without the nightly main-thread
+            // handle API. SAFETY: raw_process is a valid child
+            // process handle with PROCESS_SUSPEND_RESUME access.
             let status = unsafe { NtResumeProcess(raw_process) };
             if !NT_SUCCESS(status) {
                 eprintln!("fspy injection: stage=process_resume ntstatus={status}");
-                // SAFETY: RtlNtStatusToDosError accepts any NTSTATUS value. Native APIs
-                // return their status directly; GetLastError would report a stale error.
+                // SAFETY: RtlNtStatusToDosError accepts any NTSTATUS value.
+                // Native APIs return their status directly;
+                // GetLastError would report a stale error.
                 let error = unsafe { RtlNtStatusToDosError(status) };
                 return Err(SpawnError::Injection(io::Error::from_raw_os_error(
                     error.cast_signed(),
@@ -204,7 +207,8 @@ impl SpyImpl {
         })();
 
         let process_handle = preparation.inspect_err(|_| {
-            // Do not leave a suspended process behind if tracking initialization fails.
+            // Do not leave a suspended process behind if tracking
+            // initialization fails.
             let _ = child.start_kill();
         })?;
 
@@ -228,8 +232,8 @@ impl SpyImpl {
                     }
                 };
                 // Close the ipc channel after the child has exited.
-                // We are not interested in path accesses from descendants after the main child
-                // has exited.
+                // We are not interested in path accesses from descendants after
+                // the main child has exited.
                 let path_accesses =
                     ChannelAccesses::try_from(receiver).map(|ipc_accesses| PathAccessIterable {
                         ipc_accesses,

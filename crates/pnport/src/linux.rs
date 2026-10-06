@@ -15,7 +15,10 @@ use std::{
     mem,
     os::{
         fd::{AsRawFd, FromRawFd, OwnedFd},
-        unix::{ffi::OsStrExt, process::CommandExt},
+        unix::{
+            ffi::{OsStrExt, OsStringExt},
+            process::CommandExt,
+        },
     },
     path::{Component, Path, PathBuf},
     process::{Child, Command},
@@ -27,8 +30,9 @@ use libc::{self, c_void};
 use pnport::{
     diagnostic::{Code, Error, ExecFailureKind, Result},
     executable::Prepared,
-    graph::{Graph, Input},
-    view::{Translation, View},
+    graph::Input,
+    native_path::{resolved_lookup as resolved_caller_lookup, Lookup as NativeLookup},
+    view::{DirectoryEntry, PathKind, Translation, View},
 };
 
 use crate::input_watch::InputWatch;
@@ -135,85 +139,13 @@ fn escapes_beneath(path: &Path) -> bool {
     false
 }
 
-fn resolved_caller_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<PathBuf> {
-    let mut remaining: VecDeque<OsString> = path
-        .components()
-        .map(|part| part.as_os_str().to_os_string())
-        .collect();
-    let mut resolved = PathBuf::new();
-    let mut archive_root: Option<PathBuf> = None;
-    let mut followed = 0;
-    while let Some(part) = remaining.pop_front() {
-        match Path::new(&part).components().next()? {
-            Component::RootDir => {
-                resolved = PathBuf::from("/");
-                archive_root = None;
-            }
-            Component::CurDir => {}
-            Component::ParentDir => {
-                resolved.pop();
-                if archive_root
-                    .as_ref()
-                    .is_some_and(|archive| !resolved.starts_with(archive))
-                {
-                    archive_root = None;
-                }
-            }
-            Component::Normal(name) => {
-                let candidate = resolved.join(name);
-                match fs::symlink_metadata(&candidate) {
-                    Ok(metadata)
-                        if metadata.file_type().is_symlink()
-                            && (follow_last || !remaining.is_empty()) =>
-                    {
-                        followed += 1;
-                        if followed > 40 {
-                            return None;
-                        }
-                        let target = fs::read_link(&candidate).ok()?;
-                        let mut expanded: VecDeque<OsString> = target
-                            .components()
-                            .map(|part| part.as_os_str().to_os_string())
-                            .collect();
-                        expanded.append(&mut remaining);
-                        remaining = expanded;
-                    }
-                    Ok(metadata) => {
-                        let archive_boundary = metadata.is_file()
-                            && candidate.extension() == Some(OsStr::new("zip"))
-                            && graph.is_location_ancestor(&candidate);
-                        // Yarn's registered archive is a regular host file,
-                        // while its children belong to the PnP virtual view.
-                        // Only a graph-owned ZIP boundary may cross that
-                        // otherwise native ENOTDIR result.
-                        if !remaining.is_empty() && !metadata.is_dir() && !archive_boundary {
-                            return None;
-                        }
-                        resolved = candidate;
-                        if archive_boundary {
-                            archive_root = Some(resolved.clone());
-                        }
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        // A virtual node_modules component has no physical
-                        // directory; the PnP view resolves it after this walk.
-                        resolved = candidate;
-                    }
-                    Err(error)
-                        if error.raw_os_error() == Some(libc::ENOTDIR)
-                            && archive_root.is_some() =>
-                    {
-                        // The host reports ENOTDIR below the ZIP file; the
-                        // view resolves these components after this walk.
-                        resolved = candidate;
-                    }
-                    Err(_) => return None,
-                }
-            }
-            Component::Prefix(_) => return None,
+fn preserve_terminal_directory(lookup: &Path, translation: &mut Translation, required: bool) {
+    if required {
+        translation.virtual_link = false;
+        if lookup != translation.physical {
+            translation.physical.push(".");
         }
     }
-    Some(resolved)
 }
 
 fn follows_final_component(
@@ -1060,8 +992,8 @@ fn read_pointer_vector(pid: i32, address: u64) -> Result<ChildRead<Vec<u64>>> {
         if bytes.len() < mem::size_of::<u64>() || bytes.len() % mem::size_of::<u64>() != 0 {
             return Ok(ChildRead::Fault);
         }
-        for chunk in bytes.chunks_exact(mem::size_of::<u64>()) {
-            let pointer = u64::from_ne_bytes(chunk.try_into().map_err(|_| injection_failed())?);
+        for chunk in bytes.as_chunks::<{ mem::size_of::<u64>() }>().0 {
+            let pointer = u64::from_ne_bytes(*chunk);
             if pointer == 0 {
                 return Ok(ChildRead::Value(values));
             }
@@ -1115,6 +1047,31 @@ fn child_search_path(pid: i32, envp: u64) -> Result<ChildRead<Option<OsString>>>
         }
     }
     Ok(ChildRead::Value(None))
+}
+
+fn read_exec_string(pid: i32, address: u64) -> Result<ChildRead<Vec<u8>>> {
+    let mut result = Vec::new();
+    while result.len() < EXEC_BYTES_LIMIT {
+        let bytes = match read_exec_memory(
+            pid,
+            address + result.len() as u64,
+            (EXEC_BYTES_LIMIT - result.len()).min(256),
+        )? {
+            ChildRead::Value(bytes) => bytes,
+            ChildRead::Fault => return Ok(ChildRead::Fault),
+        };
+        if let Some(end) = bytes.iter().position(|byte| *byte == 0) {
+            result.extend_from_slice(&bytes[..end]);
+            return Ok(ChildRead::Value(result));
+        }
+        if bytes.is_empty() {
+            return Ok(ChildRead::Fault);
+        }
+        result.extend_from_slice(&bytes);
+    }
+    Err(unsupported(
+        "A child environment entry exceeded Linux's argument byte limit.",
+    ))
 }
 fn write_remote(pid: i32, address: u64, bytes: &[u8]) -> Result<()> {
     let local = libc::iovec {
@@ -1236,8 +1193,10 @@ fn resume(pid: i32, syscall_exit: bool, signal: i32) -> Result<()> {
 
 #[derive(Default)]
 struct DirectoryOffset {
-    emitted: Cell<bool>,
+    position: Cell<usize>,
     virtual_end: Cell<bool>,
+    native_position: Cell<i64>,
+    native_end: Cell<Option<i64>>,
 }
 
 #[derive(Clone)]
@@ -1257,7 +1216,8 @@ enum Pending {
     },
     DirectorySeek {
         fd: i32,
-        end: bool,
+        position: Option<usize>,
+        cookie: i64,
     },
     DirectoryEnd,
     ChangeDirectory(Option<PathBuf>),
@@ -1331,6 +1291,89 @@ struct Trace<'a> {
 }
 
 impl Trace<'_> {
+    fn prepare_node_environment(&mut self, pid: i32, regs: &mut Registers) -> Result<bool> {
+        let call = number(regs);
+        let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
+        let env_arg = argv_arg + 1;
+        let original = match read_pointer_vector(pid, argument(regs, env_arg))? {
+            ChildRead::Value(pointers) => pointers,
+            // Preserve kernel error precedence for native execs. Translated
+            // scripts already retain the explicit unreadable-vector control.
+            ChildRead::Fault => return Ok(false),
+        };
+        let mut pointers = Vec::with_capacity(original.len() + 2);
+        let mut options = None;
+        let mut count = 0;
+        for pointer in original {
+            let prefix = match read_exec_memory(pid, pointer, b"NODE_OPTIONS=".len())? {
+                ChildRead::Value(prefix) => prefix,
+                ChildRead::Fault => return Ok(false),
+            };
+            if prefix.starts_with(b"NODE_OPTIONS=") {
+                count += 1;
+                if options.is_none() {
+                    let bytes =
+                        match read_exec_string(pid, pointer + b"NODE_OPTIONS=".len() as u64)? {
+                            ChildRead::Value(bytes) => bytes,
+                            ChildRead::Fault => return Ok(false),
+                        };
+                    options = Some(OsString::from_vec(bytes));
+                }
+            } else {
+                if prefix.len() < b"NODE_OPTIONS=".len() && !prefix.contains(&0) {
+                    return Ok(false);
+                }
+                pointers.push(pointer);
+            }
+        }
+        let loader = pnport::node::Loader::from_snapshot(&self.view.graph.snapshot);
+        let cwd = self
+            .cwd
+            .get(&Self::group(pid))
+            .cloned()
+            .or_else(|| fs::read_link(format!("/proc/{pid}/cwd")).ok());
+        let effective = loader.options_in(options.as_deref(), cwd.as_deref())?;
+        if count == 1 && options.as_deref() == Some(effective.as_os_str()) {
+            return Ok(false);
+        }
+        let mut entry = b"NODE_OPTIONS=".to_vec();
+        entry.extend_from_slice(effective.as_os_str().as_bytes());
+        entry.push(0);
+        let base = self.scratch_base(pid)?;
+        let top = base + SCRATCH_SIZE as u64;
+        let argv = argument(regs, argv_arg);
+        // Script argv rewrites occupy the high end of this task's mapping.
+        // Their pointer array is the lowest byte of that allocation. Keep
+        // environment storage below it; native argv lives outside scratch.
+        let limit = if (base..top).contains(&argv) {
+            argv
+        } else {
+            top - (2 * PATH_LIMIT + 256) as u64
+        };
+        let vector = (base + entry.len() as u64 + 15) & !15;
+        let end = vector + ((pointers.len() + 2) * mem::size_of::<u64>()) as u64;
+        if end > limit {
+            return Err(unsupported(
+                "A child environment vector exceeded its scratch mapping.",
+            ));
+        }
+        pointers.push(base);
+        pointers.push(0);
+        let raw: Vec<u8> = pointers
+            .iter()
+            .flat_map(|pointer| pointer.to_ne_bytes())
+            .collect();
+        write_remote(pid, base, &entry)?;
+        write_remote(pid, vector, &raw)?;
+        set_argument(regs, env_arg, vector);
+        set_registers(pid, regs)?;
+        tracing::debug!(
+            action = "node_runtime_restored",
+            "Restored selected Yarn loaders for descendant execution"
+        );
+        Ok(true)
+    }
+
     fn resume_cwd_waiter(&mut self, pid: i32) -> Result<()> {
         if self.pending.contains_key(&pid) {
             resume(pid, true, 0)
@@ -1443,7 +1486,8 @@ impl Trace<'_> {
         if !target.is_absolute()
             || !(target.starts_with(&self.view.cache.root)
                 || target.starts_with(self.view.session.join("views"))
-                || self.view.graph.managed(&target))
+                || self.view.graph.managed(&target)
+                || self.view.graph.cache_container_path(&target))
         {
             return None;
         }
@@ -1452,6 +1496,7 @@ impl Trace<'_> {
             physical: target,
             readonly: true,
             virtual_link: false,
+            kind: PathKind::Dependency,
         })
     }
 
@@ -1468,23 +1513,17 @@ impl Trace<'_> {
         fs::read_link(live).ok()
     }
 
-    fn directory_state(&mut self, pid: i32, fd: i32) -> Result<Option<Rc<DirectoryOffset>>> {
+    fn directory_entries(&self, pid: i32, fd: i32) -> Result<Vec<DirectoryEntry>> {
         let Some(parent) = self.directory_parent(pid, fd) else {
-            return Ok(None);
+            return Ok(vec![]);
         };
-        if self.view.virtual_directory_entry(&parent)?.is_none() {
+        self.view
+            .directory_entries(&parent, Path::new(&format!("/proc/{pid}/fd/{fd}")))
+    }
+
+    fn directory_state(&mut self, pid: i32, fd: i32) -> Result<Option<Rc<DirectoryOffset>>> {
+        if self.directory_entries(pid, fd)?.is_empty() {
             return Ok(None);
-        }
-        match fs::symlink_metadata(format!("/proc/{pid}/fd/{fd}/node_modules")) {
-            Ok(metadata) if metadata.is_dir() => return Ok(None),
-            Ok(_) => {
-                return Err(Error::new(
-                    Code::PnportFilesystemConflict,
-                    "A backing entry conflicts with the virtual dependency directory.",
-                ))
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(_) => return Err(injection_failed()),
         }
         Ok(Some(
             self.directories
@@ -1509,19 +1548,22 @@ impl Trace<'_> {
         if returned < 0 {
             return Ok(());
         }
+        let entries = self.directory_entries(pid, fd)?;
         let Some(state) = self.directory_state(pid, fd)? else {
             return Ok(());
         };
         if returned > 0 {
             // Kernel records have a u16 length. Read one at a time so a large
-            // caller buffer cannot cause an equally large supervisor allocation.
+            // caller buffer cannot cause an equally large supervisor
+            // allocation.
             let mut offset = 0usize;
             while offset < returned as usize {
                 let header = read_remote(pid, output + offset as u64, 19)?;
                 if header.len() != 19 {
                     return Err(injection_failed());
                 }
-                if i64::from_ne_bytes(header[8..16].try_into().unwrap()) == DIRECTORY_END {
+                let cookie = i64::from_ne_bytes(header[8..16].try_into().unwrap());
+                if cookie > DIRECTORY_END - entries.len() as i64 && cookie <= DIRECTORY_END {
                     return Err(unsupported(
                         "A native directory cookie conflicts with the virtual end position.",
                     ));
@@ -1531,39 +1573,46 @@ impl Trace<'_> {
                 if len <= name_start || offset + len > returned as usize {
                     return Err(injection_failed());
                 }
-                let record = read_remote(pid, output + offset as u64, len)?;
-                if record.get(name_start..name_start + 13) == Some(b"node_modules\0") {
-                    state.emitted.set(true);
-                }
                 offset += len;
+                state.native_position.set(cookie);
             }
             return Ok(());
         }
-        if state.emitted.get() {
+        state.native_end.set(Some(state.native_position.get()));
+        let Some(entry) = entries.get(state.position.get()) else {
             return Ok(());
-        }
-        let mut record = [0u8; 32];
-        record[..8].copy_from_slice(&1u64.to_ne_bytes());
-        record[8..16].copy_from_slice(&DIRECTORY_END.to_ne_bytes());
-        record[16..18].copy_from_slice(&32u16.to_ne_bytes());
-        let name_start = if legacy {
-            record[31] = libc::DT_DIR;
-            18
-        } else {
-            record[18] = libc::DT_DIR;
-            19
         };
-        record[name_start..name_start + 13].copy_from_slice(b"node_modules\0");
+        let name = entry.name.as_bytes();
+        if name.len() > 255 {
+            return Err(unsupported("A virtual directory name exceeds NAME_MAX."));
+        }
+        let name_start = if legacy { 18 } else { 19 };
+        let length = (name_start + name.len() + 1 + usize::from(legacy)).next_multiple_of(8);
+        let mut record = vec![0u8; length];
+        record[..8].copy_from_slice(&1u64.to_ne_bytes());
+        let position = state.position.get() + 1;
+        let cookie = DIRECTORY_END - entries.len() as i64 + position as i64;
+        record[8..16].copy_from_slice(&cookie.to_ne_bytes());
+        record[16..18].copy_from_slice(&(length as u16).to_ne_bytes());
+        let kind = if entry.directory {
+            libc::DT_DIR
+        } else {
+            libc::DT_LNK
+        };
+        if legacy {
+            record[length - 1] = kind;
+        } else {
+            record[18] = kind;
+        }
+        record[name_start..name_start + name.len()].copy_from_slice(name);
         if capacity < record.len() {
             set_result(regs, -(libc::EINVAL as i64));
         } else if write_remote_or_fault(pid, output, &record)? {
-            state.emitted.set(true);
-            state.virtual_end.set(true);
+            state.position.set(position);
+            state.virtual_end.set(position == entries.len());
             set_result(regs, record.len() as i64);
             tracing::trace!(
                 action = "linux_directory_overlay",
-                pid,
-                fd,
                 "Emitted a virtual directory entry"
             );
         } else {
@@ -1590,7 +1639,8 @@ impl Trace<'_> {
             if !target.is_absolute()
                 || !(target.starts_with(&cache_root)
                     || target.starts_with(session_root.join("views"))
-                    || self.view.graph.managed(&target))
+                    || self.view.graph.managed(&target)
+                    || self.view.graph.cache_container_path(&target))
             {
                 continue;
             }
@@ -1619,6 +1669,7 @@ impl Trace<'_> {
                     physical: target,
                     readonly: true,
                     virtual_link: false,
+                    kind: PathKind::Dependency,
                 },
             );
         }
@@ -1647,19 +1698,12 @@ impl Trace<'_> {
             let Some(parent) = self.directory_parent(pid, fd) else {
                 continue;
             };
-            if self.view.virtual_directory_entry(&parent)?.is_none() {
+            if self
+                .view
+                .directory_entries(&parent, &entry.path())?
+                .is_empty()
+            {
                 continue;
-            }
-            match fs::symlink_metadata(format!("/proc/{pid}/fd/{fd}/node_modules")) {
-                Ok(metadata) if metadata.is_dir() => continue,
-                Ok(_) => {
-                    return Err(Error::new(
-                        Code::PnportFilesystemConflict,
-                        "A backing entry conflicts with the virtual dependency directory.",
-                    ))
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(_) => return Err(injection_failed()),
             }
             eligible.push(fd);
         }
@@ -1928,6 +1972,13 @@ impl Trace<'_> {
         })
     }
 
+    fn resolved_lookup(&mut self, path: &Path, follow_last: bool) -> Result<Option<NativeLookup>> {
+        self.view.graph.check_path_conflicts(path)?;
+        resolved_caller_lookup(path, follow_last, &self.view.graph)
+            .map(|lookup| lookup.validate_parents(|parent| self.translate(parent)))
+            .transpose()
+    }
+
     fn source_path(&self, pid: i32, dirfd: i32, path: &Path) -> Result<PathBuf> {
         let absolute = self.base(pid, dirfd, path)?;
         Ok(self.proc_root(pid, &absolute)?.unwrap_or(absolute))
@@ -1963,17 +2014,8 @@ impl Trace<'_> {
         Ok(libc::ENOENT)
     }
 
-    fn virtual_link_backing(
-        &mut self,
-        pid: i32,
-        dirfd: i32,
-        original: &Path,
-    ) -> Result<(PathBuf, PathBuf)> {
-        let logical = pnport::graph::normalize(&self.base(pid, dirfd, original)?);
-        let parent = self.translate_view(logical.parent().ok_or_else(injection_failed)?)?;
-        let link = parent
-            .physical
-            .join(logical.file_name().ok_or_else(injection_failed)?);
+    fn virtual_link_backing(&mut self, logical: &Path) -> Result<(PathBuf, PathBuf)> {
+        let link = self.view.dependency_link_backing(logical)?;
         if !fs::symlink_metadata(&link)
             .map_err(|_| injection_failed())?
             .file_type()
@@ -1981,7 +2023,7 @@ impl Trace<'_> {
         {
             return Err(injection_failed());
         }
-        Ok((logical, link))
+        Ok((logical.to_owned(), link))
     }
 
     fn proc_root(&self, pid: i32, path: &Path) -> Result<Option<PathBuf>> {
@@ -2527,11 +2569,18 @@ impl Trace<'_> {
                         }
                     }
                     let source = self.source_path(pid, target_fd, target)?;
-                    let Some(lookup) = resolved_caller_lookup(&source, false, &self.view.graph)
-                    else {
-                        return Ok(false);
+                    let (lookup, requires_directory) = match self.resolved_lookup(&source, false)? {
+                        Some(NativeLookup::Resolved {
+                            path,
+                            requires_directory,
+                        }) => (path, requires_directory),
+                        Some(NativeLookup::NativeFailure { errno, .. }) => {
+                            self.force_error(pid, &mut regs, target_arg, errno)?;
+                            return Ok(true);
+                        }
+                        None => return Ok(false),
                     };
-                    let translated = match self.translate(&lookup) {
+                    let mut translated = match self.translate(&lookup) {
                         Ok(value) => value,
                         Err(error) if error.code == Code::PnportResolutionFailed => {
                             self.force_error(pid, &mut regs, target_arg, libc::ENOENT)?;
@@ -2539,6 +2588,7 @@ impl Trace<'_> {
                         }
                         Err(error) => return Err(error),
                     };
+                    preserve_terminal_directory(&lookup, &mut translated, requires_directory);
                     if translated.readonly {
                         self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
                         return Ok(true);
@@ -2633,7 +2683,7 @@ impl Trace<'_> {
                 );
                 return Ok(true);
             }
-            if writing && descriptor.readonly {
+            if writing && descriptor.readonly && exact_fd {
                 self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                 return Ok(true);
             }
@@ -2645,8 +2695,9 @@ impl Trace<'_> {
                     return Ok(true);
                 }
                 if is_open {
-                    // The kernel follows /proc/self/fd to the materialized file.
-                    // Retain the logical ownership on the newly opened descriptor.
+                    // The kernel follows /proc/self/fd to the materialized
+                    // file. Retain the logical ownership on
+                    // the newly opened descriptor.
                     self.pending.insert(pid, Pending::Open(descriptor));
                     return Ok(true);
                 }
@@ -2685,18 +2736,25 @@ impl Trace<'_> {
         } else {
             self.source_path(pid, dirfd, &original)?
         };
-        let Some(lookup) = resolved_caller_lookup(
+        let (lookup, requires_directory) = match self.resolved_lookup(
             &source,
             follows_final_component(call, &regs, path_arg, open_flags),
-            &self.view.graph,
-        ) else {
-            return Ok(false);
+        )? {
+            Some(NativeLookup::Resolved {
+                path,
+                requires_directory,
+            }) => (path, requires_directory),
+            Some(NativeLookup::NativeFailure { errno, .. }) => {
+                self.force_error(pid, &mut regs, path_arg, errno)?;
+                return Ok(true);
+            }
+            None => return Ok(false),
         };
         let mutating = writing
             && call != libc::SYS_faccessat
             && call != libc::SYS_faccessat2
             && call != SYS_ACCESS;
-        let translation = match self.translate(&lookup) {
+        let mut translation = match self.translate(&lookup) {
             Ok(value) => value,
             Err(error) if error.code == Code::PnportResolutionFailed => {
                 let errno = self.missing_path_errno(&lookup, mutating)?;
@@ -2705,6 +2763,21 @@ impl Trace<'_> {
             }
             Err(error) => return Err(error),
         };
+        preserve_terminal_directory(&lookup, &mut translation, requires_directory);
+        #[cfg(target_arch = "x86_64")]
+        let creates_directory = call == libc::SYS_mkdirat || call == libc::SYS_mkdir;
+        #[cfg(target_arch = "aarch64")]
+        let creates_directory = call == libc::SYS_mkdirat;
+        if creates_directory && translation.kind == PathKind::CacheContainer {
+            if !pnport::native_path::structural_cache_root(&source, &self.view.graph) {
+                // Only a literal namespace leaf can create cache storage.
+                // Resolved '..', '.' and symlink aliases already exist.
+                self.force_error(pid, &mut regs, path_arg, libc::EEXIST)?;
+                return Ok(true);
+            }
+            translation.physical = translation.logical.clone();
+            translation.readonly = false;
+        }
         if call == libc::SYS_execve || call == libc::SYS_execveat {
             let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
             if self.prepare_script_exec(pid, &mut regs, &translation, path_arg, argv_arg, false)? {
@@ -2723,7 +2796,7 @@ impl Trace<'_> {
                         "Constrained openat2 cannot open a virtual link without following it.",
                     ));
                 }
-                let (logical, link) = self.virtual_link_backing(pid, dirfd, &original)?;
+                let (logical, link) = self.virtual_link_backing(&lookup)?;
                 self.rewrite_path(pid, &mut regs, path_arg, &link)?;
                 self.pending.insert(
                     pid,
@@ -2732,6 +2805,7 @@ impl Trace<'_> {
                         physical: link,
                         readonly: true,
                         virtual_link: true,
+                        kind: PathKind::Dependency,
                     }),
                 );
                 return Ok(true);
@@ -2741,7 +2815,7 @@ impl Trace<'_> {
             && translation.virtual_link
             && argument(&regs, 2) as u32 & libc::IN_DONT_FOLLOW != 0
         {
-            let (_, link) = self.virtual_link_backing(pid, dirfd, &original)?;
+            let (_, link) = self.virtual_link_backing(&lookup)?;
             self.rewrite_path(pid, &mut regs, path_arg, &link)?;
             self.pending.insert(pid, Pending::Ordinary);
             return Ok(true);
@@ -2750,42 +2824,51 @@ impl Trace<'_> {
             self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
             return Ok(true);
         }
-        let second_translation =
-            if let Some(((other_arg, other_fd), other)) = second.zip(second_original) {
-                if !other.is_absolute() && other_fd != libc::AT_FDCWD {
-                    let descriptor = format!("/proc/{pid}/fd/{other_fd}");
-                    let error = match fs::metadata(descriptor) {
-                        Ok(metadata) if !metadata.is_dir() => Some(libc::ENOTDIR),
-                        Err(_) => Some(libc::EBADF),
-                        _ => None,
-                    };
-                    if let Some(error) = error {
-                        self.force_error(pid, &mut regs, path_arg, error)?;
-                        return Ok(true);
-                    }
-                }
-                let source = self.source_path(pid, other_fd, &other)?;
-                let Some(other_lookup) = resolved_caller_lookup(&source, false, &self.view.graph)
-                else {
-                    return Ok(false);
+        let second_translation = if let Some(((other_arg, other_fd), other)) =
+            second.zip(second_original)
+        {
+            if !other.is_absolute() && other_fd != libc::AT_FDCWD {
+                let descriptor = format!("/proc/{pid}/fd/{other_fd}");
+                let error = match fs::metadata(descriptor) {
+                    Ok(metadata) if !metadata.is_dir() => Some(libc::ENOTDIR),
+                    Err(_) => Some(libc::EBADF),
+                    _ => None,
                 };
-                let translated = match self.translate(&other_lookup) {
-                    Ok(value) => value,
-                    Err(error) if error.code == Code::PnportResolutionFailed => {
-                        let errno = self.missing_path_errno(&other_lookup, true)?;
-                        self.force_error(pid, &mut regs, path_arg, errno)?;
-                        return Ok(true);
-                    }
-                    Err(error) => return Err(error),
-                };
-                if translated.readonly {
-                    self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                if let Some(error) = error {
+                    self.force_error(pid, &mut regs, path_arg, error)?;
                     return Ok(true);
                 }
-                Some((other_arg, other_lookup, translated))
-            } else {
-                None
+            }
+            let source = self.source_path(pid, other_fd, &other)?;
+            let (other_lookup, requires_directory) = match self.resolved_lookup(&source, false)? {
+                Some(NativeLookup::Resolved {
+                    path,
+                    requires_directory,
+                }) => (path, requires_directory),
+                Some(NativeLookup::NativeFailure { errno, .. }) => {
+                    self.force_error(pid, &mut regs, other_arg, errno)?;
+                    return Ok(true);
+                }
+                None => return Ok(false),
             };
+            let mut translated = match self.translate(&other_lookup) {
+                Ok(value) => value,
+                Err(error) if error.code == Code::PnportResolutionFailed => {
+                    let errno = self.missing_path_errno(&other_lookup, true)?;
+                    self.force_error(pid, &mut regs, path_arg, errno)?;
+                    return Ok(true);
+                }
+                Err(error) => return Err(error),
+            };
+            preserve_terminal_directory(&other_lookup, &mut translated, requires_directory);
+            if translated.readonly {
+                self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                return Ok(true);
+            }
+            Some((other_arg, other_lookup, translated))
+        } else {
+            None
+        };
         let changed = if openat2_resolve != 0 {
             // openat2's resolve flags apply to the path relative to its real
             // dirfd. Keep that spelling when it already names the translated
@@ -2937,16 +3020,41 @@ impl Trace<'_> {
         if call == libc::SYS_lseek {
             let fd = argument(&regs, 0) as i32;
             if let Some(state) = self.directory_state(pid, fd)? {
-                let current_end = state.virtual_end.get()
-                    && argument(&regs, 1) == 0
-                    && argument(&regs, 2) as i32 == libc::SEEK_CUR;
-                let end = current_end
-                    || argument(&regs, 1) as i64 == DIRECTORY_END
-                        && argument(&regs, 2) as i32 == libc::SEEK_SET;
-                if end {
-                    deny_syscall(pid, &mut regs)?;
+                let count = self.directory_entries(pid, fd)?.len();
+                let requested = argument(&regs, 1) as i64;
+                let whence = argument(&regs, 2) as i32;
+                let cookie =
+                    if state.position.get() > 0 && requested == 0 && whence == libc::SEEK_CUR {
+                        DIRECTORY_END - count as i64 + state.position.get() as i64
+                    } else {
+                        requested
+                    };
+                let position = ((whence == libc::SEEK_SET
+                    || whence == libc::SEEK_CUR && requested == 0)
+                    && cookie > DIRECTORY_END - count as i64
+                    && cookie <= DIRECTORY_END)
+                    .then(|| (cookie - (DIRECTORY_END - count as i64)) as usize);
+                if position.is_some() {
+                    let Some(native_end) = state.native_end.get() else {
+                        deny_syscall(pid, &mut regs)?;
+                        self.pending.insert(pid, Pending::ForcedError(libc::EINVAL));
+                        return resume(pid, true, 0);
+                    };
+                    // Restore the real open description to its observed EOF;
+                    // suppressing lseek would replay cache entries after
+                    // rewind.
+                    set_argument(&mut regs, 1, native_end as u64);
+                    set_argument(&mut regs, 2, libc::SEEK_SET as u64);
+                    set_registers(pid, &regs)?;
                 }
-                self.pending.insert(pid, Pending::DirectorySeek { fd, end });
+                self.pending.insert(
+                    pid,
+                    Pending::DirectorySeek {
+                        fd,
+                        position,
+                        cookie,
+                    },
+                );
                 return resume(pid, true, 0);
             }
             return self.resume_fd_sensitive(pid);
@@ -3120,7 +3228,7 @@ impl Trace<'_> {
             }
             return self.resume_fd_sensitive(pid);
         }
-        if self.path_call(pid, regs).inspect_err(|error| {
+        let path_handled = self.path_call(pid, regs).inspect_err(|error| {
             tracing::debug!(
                 action = "linux_path_failure",
                 pid,
@@ -3128,15 +3236,26 @@ impl Trace<'_> {
                 code = error.code.as_str(),
                 "Owned child path mediation failed"
             );
-        })? {
+        })?;
+        let mut environment_handled = false;
+        if (call == libc::SYS_execve || call == libc::SYS_execveat)
+            && !matches!(self.pending.get(&pid), Some(Pending::ForcedError(_)))
+        {
+            let mut current = registers(pid)?;
+            environment_handled = self.prepare_node_environment(pid, &mut current)?;
+            if environment_handled {
+                self.pending.entry(pid).or_insert(Pending::Ordinary);
+            }
+        }
+        if path_handled || environment_handled {
             let tracked_open = match self.pending.get(&pid) {
                 Some(Pending::Open(translation)) => {
                     translation.readonly
                         || (translation.physical.is_dir()
-                            && self
+                            && !self
                                 .view
-                                .virtual_directory_entry(&translation.logical)?
-                                .is_some())
+                                .directory_entries(&translation.logical, &translation.physical)?
+                                .is_empty())
                 }
                 _ => false,
             };
@@ -3375,13 +3494,20 @@ impl Trace<'_> {
                 set_result(&mut regs, 0);
                 set_registers(pid, &regs)?;
             }
-            Pending::DirectorySeek { fd, end } if returned >= 0 || end => {
+            Pending::DirectorySeek {
+                fd,
+                position,
+                cookie,
+            } if returned >= 0 => {
                 if let Some(state) = self.directory_state(pid, fd)? {
-                    state.emitted.set(end);
-                    state.virtual_end.set(end);
+                    state.native_position.set(returned);
+                    state.position.set(position.unwrap_or(0));
+                    state
+                        .virtual_end
+                        .set(position == Some(self.directory_entries(pid, fd)?.len()));
                 }
-                if end {
-                    set_result(&mut regs, DIRECTORY_END);
+                if position.is_some() {
+                    set_result(&mut regs, cookie);
                     set_registers(pid, &regs)?;
                 }
             }
@@ -3898,10 +4024,11 @@ impl Trace<'_> {
     }
 }
 
-pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
+pub fn run_traced(view: &mut View, prepared: &Prepared, node_options: &OsStr) -> Result<i32> {
     probe()?;
     // Adopt descendants after their direct parent exits so the supervisor
-    // can reap detached children instead of leaving zombies with container PID 1.
+    // can reap detached children instead of leaving zombies with container PID
+    // 1.
     if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
         return Err(unsupported("Linux child subreaper support is unavailable."));
     }
@@ -3919,6 +4046,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         .arg(LAUNCH_ARG)
         .arg(&prepared.program)
         .args(&prepared.args)
+        .env("NODE_OPTIONS", node_options)
         .env("PNPORT_SESSION", &view.session);
     let (child, owner) = spawn_owned_helper(&mut command)?;
     let pid = child.id() as i32;

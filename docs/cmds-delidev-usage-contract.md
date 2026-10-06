@@ -37,6 +37,9 @@ Daily buckets contain the original `UsageTotals`. Model groups retain original p
 
 The Usage page freezes a detected IANA zone into each applied query and query key; if the runtime cannot identify one it uses UTC consistently. Datetime-local input is converted explicitly for that zone and rejects nonexistent local times. Filters stay mounted and preserve drafts, including unapplied edits, while analytics loads; a newly applied but pending range remains identified instead of showing old-scope data. Daily and model charts use bounded integer-ratio SVG geometry, exact values in tooltips and equivalent full data tables with all six measures and their measured/unavailable counts. Data disclosures support chart keyboard navigation and keyboard-scrollable wide tables, and distinguish no-record/unavailable/measured-zero states. If an older server omits analytics, the existing summary, sessions and price evidence remain usable with explicit server-update guidance.
 
+### API Keys summary presentation
+AI API Keys reuses account-scoped generated GetUsageSummary reads for the current bounded Account page and the server-default last 30 days. It requests the independent native accounting profile without daily analytics. Summary rows consume server-derived subtotals without aggregation, currency conversion, repricing or accounting-unit merging. Missing and measured-zero totals remain distinct; unavailable Claude totals are not derived. Confirmed quota exhaustion and saved quota observations come from the separate Account resource, never from the usage ledger or billing APIs. Explicit Refresh usage rereads the current page and active summaries without native/provider effects or polling. Failures retain stale same-account evidence and an explicit read retry. The Settings opening disposes its queries independently of the Usage dashboard. Explicit View usage carries the exact original account and returned half-open bounds through a once-consumed in-memory event; dashboard drafts survive later navigation/reconnect without event replay. No RPC, storage schema or telemetry source changes.
+
 ### Immutable token-price estimates
 `UsageService.GetModelPricing`, `GetPricingVersion` and `SetModelPricing` are owner/client-only. Current-price reads require an existing model and may return an absent basis; immutable version reads preserve historical access after configuration deletion. Writes bind the model UUID and configuration revision, independent expected pricing revision (zero initially), original actor and complete basis to an exact request receipt. A retry returns the originally accepted immutable version, without replacing a newer active basis. Each write and its model metadata event commit atomically without changing the model configuration revision. Read and write authorization is rechecked in SQLite, including after revocation; Worker access is denied. Settings → Models → Token pricing provides current basis reads and staged version creation. The form captures both model and pricing revisions, keeps nullable rates as text, preserves drafts and original uncertain requests across hide/reopen, refuses new stale writes and allows only an explicit exact retry after uncertainty. Polling refreshes reads only. Historical Usage details show source/date/rates/exclusions and category coverage without recomputing amounts in JavaScript. A basis retains its source description, `YYYY-MM-DD` as-of date, explicit three-uppercase-letter currency denomination, input pricing mode, nullable input/cached-input/output rates per million and bounded exclusions. Rates are nonnegative decimal strings with at most 18 integer and nine fractional digits. Missing rates remain unavailable. No source URL is fetched, verified or converted into an actual-billing claim automatically.
 
@@ -190,3 +193,69 @@ response echo and displays a separate Grok summary with exact daily/model/sessio
 semantic tables and original attribution. An older server retains the existing
 response views and receives explicit update guidance; the renderer never computes
 or prices native aggregates.
+
+### Claude and OpenCode input accounting (#1098, #1099)
+
+Schema 26 composes the priced input ledger with schema 25 without rewriting any
+Grok body or repricing retained observations. It rebuilds the shared table to
+retain immutable source, assignment and original price-version references. The
+original receipt transaction alone publishes a Claude main-loop result or an
+OpenCode step-finish part; source replay, assistant summaries, cumulative model
+snapshots and inherited history cannot publish another unit. No historical raw
+observation is backfilled. The migration and all derived writes are atomic after
+the synchronized backup; session deletion cascades the derived rows and lifetime
+native estimate totals.
+
+`NATIVE_INPUT_ACCOUNTING_V1` capability 8 extends negotiated `NATIVE_UNITS_V1`
+reads with independent `native_accounting` summaries for `ClaudeMainLoopInput`
+and `OpenCodeStep`. Existing response-only fields and the Grok total keep their
+original meanings. Each summary contains original attribution, daily buckets,
+complete model groups, original price versions and category coverage. The shared
+25,000-unit and 500-group/model/pricing-basis bounds apply to the combined inventory, with the existing
+authorized snapshot, two-second deadline and binary/JSON size limits. CLI JSON
+and desktop semantic tables expose the same server-owned values; each historical category amount carries its original currency. Shared pricing IDs count once across source families without merging their separate category projections; missing support
+receives explicit server-update guidance. Native-profile CLI reads require exactly one Claude and one OpenCode summary with no duplicate or unknown families; a profile echo from an older Codex/Grok-only server is insufficient.
+
+Claude input is the arbitrary-precision sum of its three measured disjoint input
+categories. Missing primitives remain null, explicit zero stays measured and
+thinking remains included in output. Native cumulative monetary amounts cannot
+become actual charges. Uniform input pricing prices the combined input once;
+cached-discount pricing prices uncached/read independently and marks cache write
+unpriced because the current price schema supplies no creation rate.
+
+OpenCode retains raw normalized zero in the original observation, but treats
+zero categories as unavailable accounting evidence. Positive safe integers remain
+known. Uncached/read/write input and nonreasoning/reasoning output are disjoint;
+combined input/output require all their categories, while an independently
+reported total (including zero) is preserved without deriving it. Pricing prices
+each known category once, retains incomplete subtotals and excludes assistant
+repeats. At uniform $1/M input and $2/M output, the specified two-step example
+retains $0.000055 with incomplete category coverage.
+
+Lifetime budget evidence combines known amounts across response and native-input
+ledgers in the selected currency while retaining separate complete, partial,
+unavailable, unpriced and other-currency unit counts. Response writes never absorb
+native subtotals. Budget gates use this combined immutable evidence and retain
+all existing queue, accepted-work and explicit Resume behavior. Reads and complete
+price categories still cannot establish actual billing or full native telemetry.
+
+Manual Codex context actions retain Go-relay `compaction-http` response provenance
+under the original action ID and immutable account/model. The native source turn
+is explicit; an unobserved action turn is absent. Nullable HTTP response counters
+and hashed original response identity are independent of cumulative native usage.
+Ordinary Worker response publications reject this relay-only source. Existing
+response deduplication and immutable pricing apply before native action completion;
+an uncertain/failed compaction cannot erase an already observed response. A
+separate `accepted_compactions_without_response` coverage count exposes missing
+telemetry independently of ordinary accepted executions and never asserts zero
+usage. Existing conversation SQL purpose and historical rows remain unchanged;
+this adds no migration or fabricated native input.
+
+OpenCode automatic context summaries retain genuine new native step-finish
+identities under the original accepted execution. Their finalized-assistant
+snapshots overlap those steps and never add a charge. Native continuation users,
+retained summaries, inherited context and pruning timestamps cannot create
+another accounting source. Context metadata carries no current token count or
+exact cost claim; missing native categories retain the existing unavailable
+normalization. The private manual summarize adapter alone grants no public
+accounting or product-action capability.

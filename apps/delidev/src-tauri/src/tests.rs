@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn sidecar_lookup_preserves_absolute_paths_without_relative_fallback() {
+    let temporary = tempfile::tempdir().unwrap();
+    let selected = temporary.path().join("native-bin");
+    let input = std::env::join_paths([
+        PathBuf::from("relative"),
+        selected.clone(),
+        PathBuf::new(),
+        selected.clone(),
+    ])
+    .unwrap();
+    let result = sidecar_lookup_path(Some(&input));
+    let paths: Vec<_> = std::env::split_paths(&result).collect();
+    assert!(paths.iter().all(|path| path.is_absolute()));
+    assert_eq!(paths.iter().filter(|path| *path == &selected).count(), 1);
+    #[cfg(target_os = "macos")]
+    for required in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        assert!(paths.contains(&PathBuf::from(required)));
+    }
+    let oversized = OsString::from("x".repeat(32769));
+    assert_eq!(
+        sidecar_lookup_path(Some(&oversized)),
+        sidecar_lookup_path(None)
+    );
+}
+
+#[test]
 #[cfg(unix)]
 fn github_presentation_uses_closed_sidecar_and_checks_acknowledgment() {
     use std::os::unix::fs::PermissionsExt;
@@ -101,26 +127,44 @@ fn advanced_start_preserves_native_service_ownership_before_pairing() {
     let executable = temporary.path().join("sidecar");
     // Model the Go admission boundary: desktop Start preserves a registration;
     // ordinary explicit CLI Start has independent, unchanged semantics.
-    fs::write(
-        &executable,
-        r#"#!/bin/sh
+    let script = r#"#!/bin/sh
 case "$3:$4" in
-  server:desktop-launch)
+  server:desktop-host)
     printf '%s' '{"version":1,"result":{"state":"service-managed"}}' ;;
   server:start)
     printf '%s' 'spawned' > "$2/competitor"
     printf '%s' '{"version":1,"error":{"code":"unavailable"}}' ;;
   *) exit 2 ;;
 esac
-"#,
-    )
-    .unwrap();
+"#;
+    // A concurrent fork can retain a parent-authored script's writable file
+    // description even after fs::write returns, causing Linux ETXTBSY at exec.
+    // Keep the writer in a joined child whose descriptors cannot reach sibling
+    // fixture children. Remove this isolation only with another lifetime proof.
+    let written = Command::new("/bin/sh")
+        .env_clear()
+        .args([
+            "-c",
+            r#"umask 077; printf '%s' "$2" > "$1""#,
+            "sidecar-fixture",
+        ])
+        .arg(&executable)
+        .arg(script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(
+        written.success(),
+        "sidecar fixture writer failed: {written}"
+    );
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
     let connector = Connector::new(executable, root.clone()).unwrap();
-    assert!(matches!(
-        connector.connect(),
-        Err(NativeFailure::ServiceManaged)
-    ));
+    assert_eq!(
+        connector.connect().err(),
+        Some(NativeFailure::ServiceManaged)
+    );
     assert!(!root.join("competitor").exists());
     assert!(!root.join("desktop-client").exists());
     assert_eq!(
@@ -139,7 +183,8 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     connector.listen = listener.local_addr().unwrap().to_string();
     drop(listener);
-    // Always stop this private fixture server, including after assertion failure.
+    // Always stop this private fixture server, including after assertion
+    // failure.
     struct Stop<'a>(&'a Connector);
     impl Drop for Stop<'_> {
         fn drop(&mut self) {
@@ -263,7 +308,7 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
 
 #[test]
 #[ignore = "requires an explicitly built Go sidecar; kills only its own temporary foreground server"]
-fn real_supervisor_recovers_crash_respects_stop_and_exits_without_stopping_server() {
+fn real_supervisor_recovers_crash_respects_stop_and_quit_joins_owned_server() {
     let binary =
         PathBuf::from(std::env::var_os("DELIDEV_TEST_SIDECAR").expect("explicit sidecar required"));
     let temporary = tempfile::tempdir().unwrap();
@@ -343,13 +388,16 @@ fn real_supervisor_recovers_crash_respects_stop_and_exits_without_stopping_serve
         thread::sleep(Duration::from_millis(25));
     }
     assert_eq!(connector.ensure().unwrap(), LocalServerState::Stopped);
-    // Explicit restart is a different operation. Exiting supervision must keep
-    // that new server alive and leave its client identity intact.
+    // Stopping observation alone leaves the admitted process alive. Normal
+    // native Quit additionally joins only this connector's original children.
     connector.connect().unwrap();
     let started = Instant::now();
     drop(supervision);
     assert!(started.elapsed() < Duration::from_secs(2));
     assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
+    connector.shutdown_owned().unwrap();
+    assert!(cleanup.run(&["server".into(), "status".into()]).is_err());
+    assert!(cleanup.root.join("desktop-client/device.json").exists());
 }
 
 #[test]
@@ -728,8 +776,8 @@ fn host_launch_is_once_joined_and_never_publishes_ready_after_stop() {
     let executable = temporary.path().join("sidecar");
     let script = format!(
         r#"#!/bin/sh
-printf '%s:%s\n' "$3" "$4" >> "$2/operations"
-if [ "$3:$4" = server:desktop-launch ]; then
+printf '%s:%s:%s\n' "$3" "$4" "${{10}}" >> "$2/operations"
+if [ "$3:$4:${{10}}" = server:desktop-host:launch ]; then
   while [ ! -f "$2/release" ]; do /bin/sleep .01; done
 fi
 if [ "$3" = server ]; then
@@ -789,21 +837,21 @@ fi
     assert_eq!(
         actions
             .lines()
-            .filter(|v| *v == "server:desktop-launch")
+            .filter(|v| *v == "server:desktop-host:launch")
             .count(),
         1
     );
     assert_eq!(
         actions
             .lines()
-            .filter(|v| *v == "device:pair-local")
+            .filter(|v| *v == "device:pair-local:")
             .count(),
         1
     );
     assert!(
-        !actions
-            .lines()
-            .any(|v| v == "server:start" || v == "server:stop" || v == "server:desktop-retry")
+        !actions.lines().any(|v| v == "server:start:"
+            || v == "server:stop:"
+            || v == "server:desktop-host:retry")
     );
 }
 
@@ -838,7 +886,7 @@ fn missing_bundled_sidecar_is_a_retained_launch_failure() {
 
 #[test]
 #[ignore = "requires an explicitly built Go sidecar; auto-launches only temporary private scopes"]
-fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetime() {
+fn real_fresh_hosts_share_identity_and_quit_only_their_owned_server() {
     use std::sync::Arc;
     let binary =
         PathBuf::from(std::env::var_os("DELIDEV_TEST_SIDECAR").expect("explicit sidecar required"));
@@ -862,7 +910,6 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
     }
     let _stop = Stop(&cleanup);
     let first_host = Supervision::new(Arc::clone(&first));
-    let second_host = Supervision::new(second);
     fn ready(runtime: &Supervision) -> Connection {
         // Bootstrap owns three bounded commands; readers do not replay them.
         let deadline = Instant::now() + COMMAND_TIMEOUT * 3 + Duration::from_secs(5);
@@ -882,6 +929,9 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
     }
     let original = ready(&first_host);
     eprintln!("fixture phase: first host authenticated");
+    // Establish the original owner before testing borrowed-host Quit. With
+    // simultaneous launch either admitted host may legitimately own the child.
+    let second_host = Supervision::new(Arc::clone(&second));
     let concurrent = ready(&second_host);
     eprintln!("fixture phase: concurrent host authenticated");
     assert_eq!(original.server_id, concurrent.server_id);
@@ -891,6 +941,7 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
         assert_eq!(ready(&first_host).device_id, original.device_id);
     }
     second_host.stop();
+    second.shutdown_owned().unwrap();
     eprintln!("fixture phase: second host joined");
     assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
     cleanup.run(&["server".into(), "stop".into()]).unwrap();
@@ -903,6 +954,7 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
         Err(NativeFailure::Stopped)
     ));
     first_host.stop();
+    first.shutdown_owned().unwrap();
     eprintln!("fixture phase: stopped host joined");
     let deadline = Instant::now() + Duration::from_secs(10);
     while root.join("server.json").exists() {
@@ -911,9 +963,52 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
     }
     let mut fresh = Connector::new(first.executable.clone(), root).unwrap();
     fresh.listen = address;
-    let fresh_host = Supervision::new(Arc::new(fresh));
+    let fresh = Arc::new(fresh);
+    let fresh_host = Supervision::new(Arc::clone(&fresh));
     assert_eq!(ready(&fresh_host).server_id, original.server_id);
     eprintln!("fixture phase: fresh host reopened original server");
     fresh_host.stop();
-    assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
+    fresh.shutdown_owned().unwrap();
+    assert!(cleanup.run(&["server".into(), "status".into()]).is_err());
+    for name in ["owner.json", "state.sqlite", "desktop-client/device.json"] {
+        assert!(cleanup.root.join(name).exists());
+    }
+}
+
+#[test]
+fn oauth_polling_uses_original_verified_descriptor_without_sidecar_or_command_gate() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    fs::create_dir_all(root.join("desktop-client")).unwrap();
+    let path = root.join("desktop-client/device.json");
+    let original = metadata();
+    fs::write(&path, document(&original)).unwrap();
+    let connector = Connector::new(temporary.path().join("missing-sidecar"), root).unwrap();
+    assert_eq!(
+        connector.oauth_server_identity(),
+        Err(NativeFailure::CredentialUnavailable)
+    );
+    *connector.oauth_identity.lock().unwrap() = Some(original.clone());
+    let _unrelated_command = connector.gate.lock().unwrap();
+    for _ in 0..20 {
+        assert_eq!(
+            connector.oauth_server_identity().unwrap(),
+            original.server_id
+        );
+    }
+    fs::write(&path, document(&metadata())).unwrap();
+    assert_eq!(
+        connector.oauth_server_identity(),
+        Err(NativeFailure::InvalidEvidence)
+    );
+    fs::write(&path, document(&original)).unwrap();
+    assert_eq!(
+        connector.oauth_server_identity().unwrap(),
+        original.server_id
+    );
+    connector.exiting.store(true, Ordering::Release);
+    assert_eq!(
+        connector.oauth_server_identity(),
+        Err(NativeFailure::Stopped)
+    );
 }

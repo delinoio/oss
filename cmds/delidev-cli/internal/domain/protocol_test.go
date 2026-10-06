@@ -53,7 +53,7 @@ func TestNativeProtocolObservationIsSeparateFromExecutionReadiness(t *testing.T)
 			case "foreign-protocol":
 				output.Installations[0].Protocol.Protocol = GrokACP
 			case "unverified-version":
-				output.Installations[0].Version = "0.152.0"
+				output.Installations[0].Version = "0.150.9"
 			case "unverified-claude-version":
 				output.Installations[1].Version = "2.1.237"
 			case "unverified-grok-version":

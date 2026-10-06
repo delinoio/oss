@@ -148,9 +148,11 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
                     };
                     let Some(notify) = notify else { break };
                     let _span = span!(Level::TRACE, "notify loop tick");
-                    // Errors on the supervisor side could be caused by a target process aborting.
-                    // Continue the syscall even when recording fails, but preserve that
-                    // failure so the caller cannot use an incomplete trace as complete.
+                    // Errors on the supervisor side could be caused by a target
+                    // process aborting. Continue the
+                    // syscall even when recording fails, but preserve that
+                    // failure so the caller cannot use an incomplete trace as
+                    // complete.
                     let handle_result = handler.handle_notify(notify);
                     let req_id = notify.id;
                     listener.send_continue(req_id, &mut resp_buf)?;

@@ -5,6 +5,7 @@ package security
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"syscall"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -95,3 +96,10 @@ func tryLock(path string, create bool) (*Lock, error) {
 	return &Lock{f: f}, nil
 }
 func (l *Lock) Close() error { return l.f.Close() }
+
+func publishImmutable(from, to string) error {
+	if err := os.Link(from, to); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(to))
+}

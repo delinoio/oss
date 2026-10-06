@@ -1,23 +1,86 @@
 # DeliDev v1 Connect contract
 
+
+## GitHub token-first onboarding reservations
+
+Issue #964 reserves `SystemCapability.GITHUB_TOKEN_ONBOARDING_V1 = 34` for
+profile-independent token identity inspection and official token-form preparation.
+`GitHubTokenKind` reserves UNSPECIFIED 0, FINE_GRAINED 1 and CLASSIC 2.
+`GitHubTokenIdentityState` reserves UNSPECIFIED 0, VERIFIED 1, INVALID_TOKEN 2,
+ACCESS_RESTRICTED 3, SSO_REQUIRED 4, RATE_LIMITED 5 and UNAVAILABLE 6.
+The five new message declarations and their fields are recorded with exclusive
+ownership in `allocations.json`: token inspection request ID/token 1–2, response
+request ID/state/identity/problem JSON 1–4, public identity ID/node ID/login 1–3,
+form request request ID/token kind/resource owner/access 1–4 and form response
+request ID/token kind/resource owner/access/URL 1–5. Establish this closure on main
+before dependent implementation. This prerequisite introduces no active schema,
+generated binding, advertised support, credential lifetime, browser authority or
+database migration. Existing profile/revision-bound token forms remain unchanged.
+
+## Agent Worker wizard
+
+PR #1351 established the issue #964 allocations on main before implementation.
+System `AGENT_WORKER_WIZARD_V1 = 33` advertises source-scoped account/model lists
+and atomic `ConfigurationService.SaveAgentWorker`. `ListResourcesRequest` field
+4 and `SearchModelsRequest` field 7 select a closed subscription service. Reject
+unknown services, API/provider combinations and account selectors on other kinds.
+Filter in SQL before pagination and bind the source into each cursor. Unspecified
+selectors preserve legacy behavior; shared Filter, snapshots and events do not
+change.
+
+`SaveAgentWorkerRequest` carries mutation, document, typed model selection and
+schema version in fields 1–4. `AgentWorkerModelSelection` uses a oneof canonical
+model ID or exact executable/native ID, plus the canonical model's expected
+revision. A canonical selection requires a nonzero revision; a direct ID requires
+zero. The RPC reuses the existing `SaveConfigurationResponse` acknowledgement,
+with narrow Buf lint exceptions on the two save methods for this deliberate reuse.
+Existing RPCs, CLI operations and resource/storage schemas remain compatible.
+The new path requires at least one account and one common API provider or native
+subscription service. Fixed routing requires exactly one account. Go resolves or
+creates the model and saves the Worker in one receipt transaction. Saved harness
+compatibility is a configuration declaration, never native/account/platform proof.
+No database migration is added. Follow the [catalog contract](cmds-delidev-catalog-contract.md)
+and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
+
+## Repository addition reservations
+
+Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
+`GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
+`ListGitHubRepositoriesRequest`/`Response`, `RepositoryCloneGitHubSelection`,
+`CloneRepositoryRequest`/`Response` fields in the allocation ledger. These
+reservations must reach main before active declarations, generated bindings or
+capability advertisements. Listing will be an explicit revision-bound
+owner/client profile read. Clone will be a durable originating-Worker operation
+using existing job receipts; its proof token is transient and PAT bytes never
+enter its assignment. Reservations alone grant no support or Git authority.
+
+## Metadata-only request diagnostics
+
+Issue #1103 adds owner/paired-client `SessionService.ListRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1`, with additive generated Go/TypeScript/Connect Query bindings. Typed source/state/operation enums distinguish native input publications from individual proxy HTTP send claims. Optional settings, latency, HTTP status/attempt and completion time preserve unavailable versus measured zero/false. Exact uint64 revisions/durations remain precise. Original opaque IDs are bounded validated projections, never arbitrary native JSON. Signed pages bind session, optional exact execution and page size (default 50, maximum 100). Worker credentials cannot read this product surface. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for immutable attribution, publication, secret filtering, retention and evidence limits; this is not another usage source.
+
+
 Source schemas are service-specific under `protos/delidev/v1`; shared types have
 one common owner. The historical `delidev.proto` forwards imports. Existing wire
 names and numbers remain unchanged. `protos/delidev/allocations.json` records main
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
-Issue #1146's [planned OpenRouter OAuth contract](cmds-delidev-account-oauth-contract.md)
+Issue #1146's [OpenRouter OAuth contract](cmds-delidev-account-oauth-contract.md)
 reserves inventory capability `OPENROUTER_OAUTH_PKCE_V1 = 5` independently of the
 four existing account-flow gates, and `ProviderInventoryEntry.connection_method = 9`.
-The new closed `ProviderConnectionMethod` enum reserves UNSPECIFIED 0,
-API_KEY 1, OAUTH_PKCE 2 and KEYLESS 3. `AccountOAuthState` reserves UNSPECIFIED 0,
+The new closed `ProviderConnectionMethod` enum declares UNSPECIFIED 0,
+API_KEY 1, OAUTH_PKCE 2 and KEYLESS 3. `AccountOAuthState` declares UNSPECIFIED 0,
 AWAITING_AUTHORIZATION 1, EXCHANGING 2, SAVING 3, CONNECTED 4, CANCELED 5, EXPIRED 6,
 FAILED 7, INTERRUPTED 8 and RECOVERY_REQUIRED 9. Each new-enum member uses explicit
 declaration provenance in the allocation ledger without entering the active
 baseline. Establish these reservations and migration 29 on main before dependent
-implementation. The prerequisite adds no active schema, RPC, generated binding
-or capability advertisement; complete owner/client RPC and CLI support remains
-required before activation. Older servers satisfying the four existing gates
+implementation, except the owner-approved single integrated PR. The reconciled
+AccountService schema defines owner/client Start/Complete/Cancel/Status, each
+with its own standard-named response, and generates both languages from their
+source. Value-local Buf acronym-prefix comments preserve the reserved OAuth
+enum spelling; they grant no broader lint exception. Reservations alone grant no exchange
+or capability authority. Complete product support remains required before
+advertisement. Older servers satisfying the four existing gates
 retain manual connection without an OAuth badge.
 
 The [planned shared compaction contract](cmds-delidev-compaction-contract.md)
@@ -36,6 +99,33 @@ retain original assignment/device/instance ownership. Generic public job resourc
 omit executable paths and full observations. Generate service-specific Go and
 Connect Query bindings plus historical facades; subscription support remains typed
 unsupported until #1095 supplies its protected lifecycle.
+
+## Server-owned subscription login reservations
+
+The Codex forward-version amendment reserves
+`GetSubscriptionProgressResponse.diagnostic = 7`, the new `CodexDiagnostic`
+message fields detected version 1, minimum version 2, phase 3, stable error code
+4, safe message 5, guidance 6 and correlation ID 7 under issue #964.
+`CodexDiagnosticPhase` reserves UNSPECIFIED 0, DISCOVERY 1, VERSION 2, PROFILE 3,
+RUNTIME 4, LAUNCH 5, INITIALIZE 6, CONFIRM 7, LOGIN 8, MODELS 9, EXECUTION 10,
+HISTORY 11 and CLEANUP 12. Establish these ledger-only reservations on main
+before dependent implementation. They grant no Codex version, native operation,
+diagnostic response or capability support and add no migration. Diagnostics
+must exclude paths, credentials, login URLs, identities and raw native content.
+
+The owner-approved login-first amendment reserves independent System capability
+`SERVER_SUBSCRIPTION_LOGIN_V1 = 30` under issue #964. Progress fields 4–6 reserve
+`state`, `suggested_name` and `generation`. The closed `SubscriptionLoginState`
+enum reserves UNSPECIFIED 0, PREPARING 1, WAITING 2, SUCCEEDED 3, CANCELED 4,
+EXPIRED 5, UNSUPPORTED 6, RECOVERY_REQUIRED 7 and FAILED 8.
+`ForwardSubscriptionCallbackRequest` reserves account ID 1, original operation
+ID 2 and write-only callback query 3; its response reserves accepted 1.
+All new declarations have explicit ledger ownership. Establish these allocations
+on main before dependent schemas or code. This reservation changes no active
+schema, binding, endpoint, capability advertisement or migration. Omitted
+`RequestSubscription.machine_id` remains unsupported until the complete
+server-owned boundary activates; existing machine-bound requests retain their
+original Worker authority.
 
 ## Scope
 
@@ -542,3 +632,52 @@ the original job and optional published child; an accepted job is not a child.
 remain excluded from these product methods and complete their original job via
 existing authenticated `WatchWork`/`ReportWork`. See the
 [fork contract](cmds-delidev-forks-contract.md). No destructive migration occurs.
+
+Native input accounting activates original capability 8, coverage 2, summary field
+13 and the reserved native budget coverage fields. AccountingUnitKind 3 and 4 are
+Claude main-loop input and OpenCode step, respectively. Negotiated native-units-v1
+returns their independent repeated summaries, retaining all existing response and
+Grok meanings. See the usage contract for source-specific counts and pricing.
+
+## Independent subscription service identity
+
+Activate the main-reserved `SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` only with real storage migration 28 after 26/27 and complete service-native configuration authority. The closed `SubscriptionServiceIdentity` enum preserves independent ChatGPT/Claude/Grok values; it is separate from the existing `SubscriptionService` RPC declaration. Reserved additive usage selection/group/model/pricing and request diagnostic fields retain the service without a fabricated provider. API-only documents remain schema 1; subscription Account/native Model and retired metadata projections use schema 2. Older clients receive explicit schema/support guidance. Bindings regenerate from the reconciled service-specific schemas.
+
+Issue #1208 activates the previously reserved `SystemCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 23` and `WorkerCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 12`. The existing ordered publication and session-owned resource/CLI/client boundary carries closed original task/child proof. Generated bindings come from the reconciled schema. The capability grants no child input/control, continuation or cleanup shortcut.
+
+## OpenCode native context profile
+
+The integrated #1203 implementation activates independent System capability 25,
+Worker capability 14 and SessionContext capabilities 5/6 using their original
+allocation-ledger reservations. Common compaction support does not imply an
+OpenCode installation or send authority. Existing CompactSession/GetSessionContext
+RPCs, exact mutation revisions and durable receipt identities carry closed
+version-3 OpenCode action/result JSON. Legacy Claude and Codex versions remain
+unchanged. Generated Go and TypeScript bindings come from the reconciled schema.
+The compaction contract owns original native/source/claim/report/cleanup proof.
+
+## OpenCode General Chat fork reservation (#1210)
+
+System capability 26 and Worker capability 15 independently activate the
+Unix plain-text General Chat profile through existing authenticated `ForkSession`,
+CLI and desktop surfaces. Codex capability 13 cannot imply OpenCode support.
+Every operation requires full original source, relocation, history, workspace
+and cleanup proof under the fork contract. Copied canonical messages carry
+explicit original provenance without input/accounting authority; absent native
+agent/model remains private until the first real input independently proves
+selection. No migration is allocated.
+
+Worker-only permanent-deletion ownership JSON retains its closed version-1 shape
+with an optional original unpublished Sidechat child ID on Fork copies. Keep the
+4,096-copy bound, strict 4 MiB envelope/page limit and 20-envelope pagination bound;
+native clients allow 8 MiB response transport overhead for JSON/base64. Ordinary
+public command JSON retains its 1 MiB bound. These metadata IDs grant no native
+replay or filesystem authority.
+
+## Independent server subscription login
+
+Main-established capability 30 and PR #1332's reserved declarations activate the independent server lifecycle. Omitted `RequestSubscription.machine_id` selects this capability; explicit machine requests retain original Worker authority. `GetSubscriptionProgressResponse` adds typed state 4, transient suggested_name 5 and original successful generation 6. The closed SubscriptionLoginState values 0–8 separate all native outcomes; unknown values grant no UI transition. `ForwardSubscriptionCallback` carries account_id 1, operation_id 2 and write-only bounded callback_query bytes 3, returning accepted 1. Only the authenticated original owner/client may claim one original state-bound native callback; no Worker, receipt replay or uncertain delivery grants another send. Callback bytes, authorization URLs and unsaved suggestions never enter persisted records or logs. Follow the subscription contract; regenerate Go, TypeScript and Connect Query outputs together.
+
+### Codex diagnostic activation
+
+PR #1336 established the diagnostic allocations on main at `82d8859e98485458ccf8708225c0c6694d9cfab5`. The optional `GetSubscriptionProgressResponse.diagnostic` field 7 now uses those exact declarations: detected version 1, minimum version 2, closed phase 3, stable code 4, safe message 5, guidance 6 and correlation ID 7. An empty detected version means no verified version; absent diagnostic means the server did not report metadata. Native failure attribution never grants account, callback or retry authority. Preserve original actor/operation ownership and terminal read authorization; older clients can ignore the additive field. Regenerate Go and TypeScript bindings from the reconciled schema. No migration or capability number is added.

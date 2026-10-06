@@ -1,6 +1,7 @@
 package runmoor
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/url"
@@ -95,8 +96,8 @@ func OpenStore(c Config) (*Store, error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return failed(problem(ErrState, "Cannot read SQLite state version.", "Restore a compatible state backup."))
 	}
-	if version != 0 && version != 1 && version != 2 && version != 3 {
-		return failed(problem(ErrStateVersion, "This binary supports SQLite schema versions 1 through 3 only.", "Use the matching binary or restore its matching backup; do not downgrade the database."))
+	if version != 0 && version != 1 && version != 2 && version != 3 && version != 4 {
+		return failed(problem(ErrStateVersion, "This binary supports SQLite schema versions 1 through 4 only.", "Use the matching binary or restore its matching backup; do not downgrade the database."))
 	}
 	if version == 0 {
 		var tables int
@@ -110,11 +111,11 @@ func OpenStore(c Config) (*Store, error) {
 	s := &Store{db: db, lock: lock}
 	relocated := false
 	if version == 0 {
-		s.state = Snapshot{SchemaVersion: 3, Requested: c, Managed: map[string]*ManagedPool{}, Artifacts: map[string]*RunnerArtifact{}, Installation: newID(), Pools: map[string]*PoolState{}, Runners: map[string]*Runner{}, Images: map[string]*Image{}, ImageTartPIDs: map[string]int{}, Generations: map[string]Config{}, Config: c}
+		s.state = Snapshot{SchemaVersion: 4, HostDirectories: map[string]*HostDirectory{}, HostExecutions: map[string]*HostExecution{}, Requested: c, Managed: map[string]*ManagedPool{}, Artifacts: map[string]*RunnerArtifact{}, Installation: newID(), Pools: map[string]*PoolState{}, Runners: map[string]*Runner{}, Images: map[string]*Image{}, ImageTartPIDs: map[string]int{}, Generations: map[string]Config{}, Config: c}
 		b, _ := json.Marshal(s.state)
 		tx, e := db.Begin()
 		if e == nil {
-			_, e = tx.Exec("CREATE TABLE snapshot (id INTEGER PRIMARY KEY CHECK(id=1), body BLOB NOT NULL); PRAGMA user_version=3;")
+			_, e = tx.Exec("CREATE TABLE snapshot (id INTEGER PRIMARY KEY CHECK(id=1), body BLOB NOT NULL); PRAGMA user_version=4;")
 			if e == nil {
 				_, e = tx.Exec("INSERT INTO snapshot(id,body) VALUES(1,?)", b)
 			}
@@ -187,6 +188,35 @@ func OpenStore(c Config) (*Store, error) {
 				return failed(problem(ErrState, "Cannot atomically migrate SQLite v2 to v3.", "Restore storage access and retry with this binary."))
 			}
 		}
+		if version == 2 {
+			version = 3
+		}
+		if version == 3 {
+			// Add host ownership journals without changing existing identities,
+			// generations, reservations, or unresolved Docker/Tart cleanup.
+			s.state.SchemaVersion = 4
+			s.state.HostDirectories = map[string]*HostDirectory{}
+			s.state.HostExecutions = map[string]*HostExecution{}
+			body, e := json.Marshal(s.state)
+			if e != nil {
+				return failed(problem(ErrState, "Cannot migrate host ownership state.", "Preserve a complete state/data backup."))
+			}
+			tx, e := db.Begin()
+			if e == nil {
+				_, e = tx.Exec("UPDATE snapshot SET body=? WHERE id=1", body)
+				if e == nil {
+					_, e = tx.Exec("PRAGMA user_version=4")
+				}
+				if e == nil {
+					e = tx.Commit()
+				} else {
+					tx.Rollback()
+				}
+			}
+			if e != nil {
+				return failed(problem(ErrState, "Cannot atomically migrate SQLite v3 to v4.", "Restore storage access and retry with this binary."))
+			}
+		}
 		if s.state.Managed == nil || s.state.Artifacts == nil {
 			return failed(problem(ErrState, "Managed state is missing.", "Restore a compatible complete backup."))
 		}
@@ -215,6 +245,16 @@ func OpenStore(c Config) (*Store, error) {
 				return failed(problem(ErrPermission, "Cannot restrict SQLite files.", "Use an owner-controlled state directory."))
 			}
 		}
+	}
+	// Rebind copied distribution identities only under the exclusive manager lock
+	// at a completed stop or explicit storage relocation. Live restart never does.
+	if len(s.state.HostDirectories) > 0 && (relocated || s.state.Stopping) && hostRestoreBoundary(s.state) {
+		if err := rebindHostDistributions(context.Background(), s, c); err != nil {
+			db.Close()
+			return fail(err)
+		}
+	} else if relocated && len(s.state.HostDirectories) > 0 {
+		return failed(problem(ErrConfig, "Storage relocation requires completed host execution cleanup.", "Restore the original storage locations and finish host cleanup before copying the paired backup."))
 	}
 	if relocated {
 		if err := s.Update(func(v *Snapshot) error {
@@ -270,6 +310,7 @@ func (s *Store) Prune(now time.Time) error {
 			if r.Phase == Completed && !r.CompletedAt.IsZero() && now.Sub(r.CompletedAt) > 7*24*time.Hour {
 				delete(v.Runners, id)
 				delete(v.RunnerTartStarts, id)
+				delete(v.HostExecutions, id)
 			}
 		}
 		for id, p := range v.Pools {
@@ -322,7 +363,7 @@ func ReadSnapshot(c Config) (Snapshot, error) {
 	}
 	defer db.Close()
 	var version int
-	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || (version != 1 && version != 2 && version != 3) {
+	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || (version != 1 && version != 2 && version != 3 && version != 4) {
 		return s, problem(ErrStateVersion, "Unsupported state version.", "Use a compatible Runmoor binary.")
 	}
 	var body []byte

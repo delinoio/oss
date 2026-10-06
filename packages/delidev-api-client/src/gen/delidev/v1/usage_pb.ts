@@ -4,7 +4,7 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Mutation, UsageCoverage } from "./common_pb.js";
+import type { Mutation, SubscriptionServiceIdentity, UsageCoverage } from "./common_pb.js";
 import { file_delidev_v1_common } from "./common_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/usage.proto.
  */
 export const file_delidev_v1_usage: GenFile = /*@__PURE__*/
-  fileDesc("ChZkZWxpZGV2L3YxL3VzYWdlLnByb3RvEgpkZWxpZGV2LnYxIsgCChZHZXRVc2FnZVN1bW1hcnlSZXF1ZXN0EhQKDGZyb21fdW5peF9tcxgBIAEoAxIVCg11bnRpbF91bml4X21zGAIgASgDEhIKCnNlc3Npb25faWQYAyABKAkSEgoKcHJvamVjdF9pZBgEIAEoCRISCgphY2NvdW50X2lkGAUgASgJEhMKC3Byb3ZpZGVyX2lkGAYgASgJEhAKCG1vZGVsX2lkGAcgASgJEhQKDGdlbmVyYWxfY2hhdBgIIAEoCBI1CgtncmFudWxhcml0eRgJIAEoDjIgLmRlbGlkZXYudjEuVXNhZ2VUaW1lR3JhbnVsYXJpdHkSEQoJdGltZV96b25lGAogASgJEj4KEmFjY291bnRpbmdfcHJvZmlsZRgLIAEoDjIiLmRlbGlkZXYudjEuVXNhZ2VBY2NvdW50aW5nUHJvZmlsZSL8AQoQQWNjb3VudGluZ1RvdGFscxIsCgRraW5kGAEgASgOMh4uZGVsaWRldi52MS5BY2NvdW50aW5nVW5pdEtpbmQSDQoFdW5pdHMYAiABKA0SEwoLa25vd25fdG90YWwYAyABKAkSFgoObWVhc3VyZWRfdW5pdHMYBCABKA0SGQoRdW5hdmFpbGFibGVfdW5pdHMYBSABKA0SLwoLYWN0dWFsX2Nvc3QYBiABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlEjIKDmVzdGltYXRlZF9jb3N0GAcgASgOMhouZGVsaWRldi52MS5Vc2FnZUNvc3RTdGF0ZSJeCgxVc2FnZU1lYXN1cmUSEwoLa25vd25fdG90YWwYASABKAkSGgoSbWVhc3VyZWRfcmVzcG9uc2VzGAIgASgNEh0KFXVuYXZhaWxhYmxlX3Jlc3BvbnNlcxgDIAEoDSLnAgoLVXNhZ2VUb3RhbHMSEQoJcmVzcG9uc2VzGAEgASgNEicKBWlucHV0GAIgASgLMhguZGVsaWRldi52MS5Vc2FnZU1lYXN1cmUSLgoMY2FjaGVkX2lucHV0GAMgASgLMhguZGVsaWRldi52MS5Vc2FnZU1lYXN1cmUSMwoRY2FjaGVfd3JpdGVfaW5wdXQYBCABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIoCgZvdXRwdXQYBSABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIyChByZWFzb25pbmdfb3V0cHV0GAYgASgLMhguZGVsaWRldi52MS5Vc2FnZU1lYXN1cmUSJwoFdG90YWwYByABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIwCgphY2NvdW50aW5nGAggAygLMhwuZGVsaWRldi52MS5BY2NvdW50aW5nVG90YWxzImkKEVVzYWdlQW5hbHl0aWNzRGF5EhQKDGZyb21fdW5peF9tcxgBIAEoAxIVCg11bnRpbF91bml4X21zGAIgASgDEicKBnRvdGFscxgDIAEoCzIXLmRlbGlkZXYudjEuVXNhZ2VUb3RhbHMikAEKE1VzYWdlQW5hbHl0aWNzTW9kZWwSEwoLcHJvdmlkZXJfaWQYASABKAkSEAoIbW9kZWxfaWQYAiABKAkSFQoNcHJvdmlkZXJfbmFtZRgDIAEoCRISCgptb2RlbF9uYW1lGAQgASgJEicKBnRvdGFscxgFIAEoCzIXLmRlbGlkZXYudjEuVXNhZ2VUb3RhbHMiUAoQVXNhZ2VPdGhlck1vZGVscxITCgttb2RlbF9jb3VudBgBIAEoDRInCgZ0b3RhbHMYAiABKAsyFy5kZWxpZGV2LnYxLlVzYWdlVG90YWxzIuwBCg5Vc2FnZUFuYWx5dGljcxI1CgtncmFudWxhcml0eRgBIAEoDjIgLmRlbGlkZXYudjEuVXNhZ2VUaW1lR3JhbnVsYXJpdHkSEQoJdGltZV96b25lGAIgASgJEisKBGRheXMYAyADKAsyHS5kZWxpZGV2LnYxLlVzYWdlQW5hbHl0aWNzRGF5Ei8KBm1vZGVscxgEIAMoCzIfLmRlbGlkZXYudjEuVXNhZ2VBbmFseXRpY3NNb2RlbBIyCgxvdGhlcl9tb2RlbHMYBSABKAsyHC5kZWxpZGV2LnYxLlVzYWdlT3RoZXJNb2RlbHMitAIKClVzYWdlR3JvdXASEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEhIKCmFjY291bnRfaWQYAyABKAkSEwoLcHJvdmlkZXJfaWQYBCABKAkSEAoIbW9kZWxfaWQYBSABKAkSJwoGdG90YWxzGAYgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscxIUCgxzZXNzaW9uX25hbWUYByABKAkSFAoMcHJvamVjdF9uYW1lGAggASgJEhQKDGFjY291bnRfbmFtZRgJIAEoCRIVCg1wcm92aWRlcl9uYW1lGAogASgJEhIKCm1vZGVsX25hbWUYCyABKAkSLQoJZXN0aW1hdGVzGAwgASgLMhouZGVsaWRldi52MS5Fc3RpbWF0ZVRvdGFscyKgBAoXR2V0VXNhZ2VTdW1tYXJ5UmVzcG9uc2USFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSJwoGdG90YWxzGAMgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscxImCgZncm91cHMYBCADKAsyFi5kZWxpZGV2LnYxLlVzYWdlR3JvdXASKwoIY292ZXJhZ2UYBSABKA4yGS5kZWxpZGV2LnYxLlVzYWdlQ292ZXJhZ2USLwoLYWN0dWFsX2Nvc3QYBiABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlEjIKDmVzdGltYXRlZF9jb3N0GAcgASgOMhouZGVsaWRldi52MS5Vc2FnZUNvc3RTdGF0ZRIsCiRhY2NlcHRlZF9leGVjdXRpb25zX3dpdGhvdXRfcmVzcG9uc2UYCCABKA0SLQoJZXN0aW1hdGVzGAkgASgLMhouZGVsaWRldi52MS5Fc3RpbWF0ZVRvdGFscxIpCgdwcmljaW5nGAogAygLMhguZGVsaWRldi52MS5QcmljaW5nVXNhZ2USLQoJYW5hbHl0aWNzGAsgASgLMhouZGVsaWRldi52MS5Vc2FnZUFuYWx5dGljcxI+ChJhY2NvdW50aW5nX3Byb2ZpbGUYDCABKA4yIi5kZWxpZGV2LnYxLlVzYWdlQWNjb3VudGluZ1Byb2ZpbGUitwIKDFRva2VuUHJpY2luZxIQCghjdXJyZW5jeRgBIAEoCRIOCgZzb3VyY2UYAiABKAkSDQoFYXNfb2YYAyABKAkSMAoKaW5wdXRfbW9kZRgEIAEoDjIcLmRlbGlkZXYudjEuSW5wdXRQcmljaW5nTW9kZRIeChFpbnB1dF9wZXJfbWlsbGlvbhgFIAEoCUgAiAEBEiUKGGNhY2hlZF9pbnB1dF9wZXJfbWlsbGlvbhgGIAEoCUgBiAEBEh8KEm91dHB1dF9wZXJfbWlsbGlvbhgHIAEoCUgCiAEBEhIKCmV4Y2x1c2lvbnMYCCADKAlCFAoSX2lucHV0X3Blcl9taWxsaW9uQhsKGV9jYWNoZWRfaW5wdXRfcGVyX21pbGxpb25CFQoTX291dHB1dF9wZXJfbWlsbGlvbiKaAQoOUHJpY2luZ1ZlcnNpb24SCgoCaWQYASABKAkSEAoIbW9kZWxfaWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSEAoIcmV2aXNpb24YBCABKAQSGgoSY3JlYXRlZF9hdF91bml4X21zGAUgASgDEicKBWJhc2lzGAYgASgLMhguZGVsaWRldi52MS5Ub2tlblByaWNpbmciKgoWR2V0TW9kZWxQcmljaW5nUmVxdWVzdBIQCghtb2RlbF9pZBgBIAEoCSJeChdHZXRNb2RlbFByaWNpbmdSZXNwb25zZRIWCg5tb2RlbF9yZXZpc2lvbhgCIAEoBBIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbiImChhHZXRQcmljaW5nVmVyc2lvblJlcXVlc3QSCgoCaWQYASABKAkiSAoZR2V0UHJpY2luZ1ZlcnNpb25SZXNwb25zZRIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbiKKAQoWU2V0TW9kZWxQcmljaW5nUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SJwoFYmFzaXMYAiABKAsyGC5kZWxpZGV2LnYxLlRva2VuUHJpY2luZxIfChdleHBlY3RlZF9tb2RlbF9yZXZpc2lvbhgDIAEoBCJsChdTZXRNb2RlbFByaWNpbmdSZXNwb25zZRIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbhISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIpABChBDdXJyZW5jeUVzdGltYXRlEhAKCGN1cnJlbmN5GAEgASgJEhQKDGtub3duX2Ftb3VudBgCIAEoCRIaChJjb21wbGV0ZV9yZXNwb25zZXMYAyABKA0SGQoRcGFydGlhbF9yZXNwb25zZXMYBCABKA0SHQoVdW5hdmFpbGFibGVfcmVzcG9uc2VzGAUgASgNIl4KDkVzdGltYXRlVG90YWxzEjAKCmN1cnJlbmNpZXMYASADKAsyHC5kZWxpZGV2LnYxLkN1cnJlbmN5RXN0aW1hdGUSGgoSdW5wcmljZWRfcmVzcG9uc2VzGAIgASgNIuQBCg9Fc3RpbWF0ZU1lYXN1cmUSFAoMa25vd25fYW1vdW50GAEgASgJEhQKDGtub3duX3Rva2VucxgCIAEoCRIYChBwcmljZWRfcmVzcG9uc2VzGAMgASgNEh8KF21pc3NpbmdfdXNhZ2VfcmVzcG9uc2VzGAQgASgNEh8KF21pc3NpbmdfcHJpY2VfcmVzcG9uc2VzGAUgASgNEicKH3Vuc3VwcG9ydGVkX2JyZWFrZG93bl9yZXNwb25zZXMYBiABKA0SIAoYbm90X2FwcGxpY2FibGVfcmVzcG9uc2VzGAcgASgNIvUBCgxQcmljaW5nVXNhZ2USKwoHcHJpY2luZxgBIAEoCzIaLmRlbGlkZXYudjEuUHJpY2luZ1ZlcnNpb24SLAoGdG90YWxzGAIgASgLMhwuZGVsaWRldi52MS5DdXJyZW5jeUVzdGltYXRlEioKBWlucHV0GAMgASgLMhsuZGVsaWRldi52MS5Fc3RpbWF0ZU1lYXN1cmUSMQoMY2FjaGVkX2lucHV0GAQgASgLMhsuZGVsaWRldi52MS5Fc3RpbWF0ZU1lYXN1cmUSKwoGb3V0cHV0GAUgASgLMhsuZGVsaWRldi52MS5Fc3RpbWF0ZU1lYXN1cmUqXgoUVXNhZ2VUaW1lR3JhbnVsYXJpdHkSJgoiVVNBR0VfVElNRV9HUkFOVUxBUklUWV9VTlNQRUNJRklFRBAAEh4KGlVTQUdFX1RJTUVfR1JBTlVMQVJJVFlfREFZEAEqcAoWVXNhZ2VBY2NvdW50aW5nUHJvZmlsZRIoCiRVU0FHRV9BQ0NPVU5USU5HX1BST0ZJTEVfVU5TUEVDSUZJRUQQABIsCihVU0FHRV9BQ0NPVU5USU5HX1BST0ZJTEVfTkFUSVZFX1VOSVRTX1YxEAEqjwEKEkFjY291bnRpbmdVbml0S2luZBIkCiBBQ0NPVU5USU5HX1VOSVRfS0lORF9VTlNQRUNJRklFRBAAEicKI0FDQ09VTlRJTkdfVU5JVF9LSU5EX0NPREVYX1JFU1BPTlNFEAESKgomQUNDT1VOVElOR19VTklUX0tJTkRfR1JPS19DTE9TRURfSU5QVVQQAip5Cg5Vc2FnZUNvc3RTdGF0ZRIgChxVU0FHRV9DT1NUX1NUQVRFX1VOU1BFQ0lGSUVEEAASIAocVVNBR0VfQ09TVF9TVEFURV9VTkFWQUlMQUJMRRABEiMKH1VTQUdFX0NPU1RfU1RBVEVfS05PV05fU1VCVE9UQUwQAip+ChBJbnB1dFByaWNpbmdNb2RlEiIKHklOUFVUX1BSSUNJTkdfTU9ERV9VTlNQRUNJRklFRBAAEh4KGklOUFVUX1BSSUNJTkdfTU9ERV9VTklGT1JNEAESJgoiSU5QVVRfUFJJQ0lOR19NT0RFX0NBQ0hFRF9ESVNDT1VOVBACMoQDCgxVc2FnZVNlcnZpY2USWgoPR2V0VXNhZ2VTdW1tYXJ5EiIuZGVsaWRldi52MS5HZXRVc2FnZVN1bW1hcnlSZXF1ZXN0GiMuZGVsaWRldi52MS5HZXRVc2FnZVN1bW1hcnlSZXNwb25zZRJaCg9HZXRNb2RlbFByaWNpbmcSIi5kZWxpZGV2LnYxLkdldE1vZGVsUHJpY2luZ1JlcXVlc3QaIy5kZWxpZGV2LnYxLkdldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEmAKEUdldFByaWNpbmdWZXJzaW9uEiQuZGVsaWRldi52MS5HZXRQcmljaW5nVmVyc2lvblJlcXVlc3QaJS5kZWxpZGV2LnYxLkdldFByaWNpbmdWZXJzaW9uUmVzcG9uc2USWgoPU2V0TW9kZWxQcmljaW5nEiIuZGVsaWRldi52MS5TZXRNb2RlbFByaWNpbmdSZXF1ZXN0GiMuZGVsaWRldi52MS5TZXRNb2RlbFByaWNpbmdSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
+  fileDesc("ChZkZWxpZGV2L3YxL3VzYWdlLnByb3RvEgpkZWxpZGV2LnYxIo8DChZHZXRVc2FnZVN1bW1hcnlSZXF1ZXN0EhQKDGZyb21fdW5peF9tcxgBIAEoAxIVCg11bnRpbF91bml4X21zGAIgASgDEhIKCnNlc3Npb25faWQYAyABKAkSEgoKcHJvamVjdF9pZBgEIAEoCRISCgphY2NvdW50X2lkGAUgASgJEhMKC3Byb3ZpZGVyX2lkGAYgASgJEhAKCG1vZGVsX2lkGAcgASgJEhQKDGdlbmVyYWxfY2hhdBgIIAEoCBI1CgtncmFudWxhcml0eRgJIAEoDjIgLmRlbGlkZXYudjEuVXNhZ2VUaW1lR3JhbnVsYXJpdHkSEQoJdGltZV96b25lGAogASgJEj4KEmFjY291bnRpbmdfcHJvZmlsZRgLIAEoDjIiLmRlbGlkZXYudjEuVXNhZ2VBY2NvdW50aW5nUHJvZmlsZRJFChRzdWJzY3JpcHRpb25fc2VydmljZRgMIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5IvwBChBBY2NvdW50aW5nVG90YWxzEiwKBGtpbmQYASABKA4yHi5kZWxpZGV2LnYxLkFjY291bnRpbmdVbml0S2luZBINCgV1bml0cxgCIAEoDRITCgtrbm93bl90b3RhbBgDIAEoCRIWCg5tZWFzdXJlZF91bml0cxgEIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgFIAEoDRIvCgthY3R1YWxfY29zdBgGIAEoDjIaLmRlbGlkZXYudjEuVXNhZ2VDb3N0U3RhdGUSMgoOZXN0aW1hdGVkX2Nvc3QYByABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlIl4KDFVzYWdlTWVhc3VyZRITCgtrbm93bl90b3RhbBgBIAEoCRIaChJtZWFzdXJlZF9yZXNwb25zZXMYAiABKA0SHQoVdW5hdmFpbGFibGVfcmVzcG9uc2VzGAMgASgNIucCCgtVc2FnZVRvdGFscxIRCglyZXNwb25zZXMYASABKA0SJwoFaW5wdXQYAiABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIuCgxjYWNoZWRfaW5wdXQYAyABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIzChFjYWNoZV93cml0ZV9pbnB1dBgEIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEigKBm91dHB1dBgFIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEjIKEHJlYXNvbmluZ19vdXRwdXQYBiABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRInCgV0b3RhbBgHIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEjAKCmFjY291bnRpbmcYCCADKAsyHC5kZWxpZGV2LnYxLkFjY291bnRpbmdUb3RhbHMiaQoRVXNhZ2VBbmFseXRpY3NEYXkSFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSJwoGdG90YWxzGAMgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscyLXAQoTVXNhZ2VBbmFseXRpY3NNb2RlbBITCgtwcm92aWRlcl9pZBgBIAEoCRIQCghtb2RlbF9pZBgCIAEoCRIVCg1wcm92aWRlcl9uYW1lGAMgASgJEhIKCm1vZGVsX25hbWUYBCABKAkSJwoGdG90YWxzGAUgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscxJFChRzdWJzY3JpcHRpb25fc2VydmljZRgGIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5IlAKEFVzYWdlT3RoZXJNb2RlbHMSEwoLbW9kZWxfY291bnQYASABKA0SJwoGdG90YWxzGAIgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscyLsAQoOVXNhZ2VBbmFseXRpY3MSNQoLZ3JhbnVsYXJpdHkYASABKA4yIC5kZWxpZGV2LnYxLlVzYWdlVGltZUdyYW51bGFyaXR5EhEKCXRpbWVfem9uZRgCIAEoCRIrCgRkYXlzGAMgAygLMh0uZGVsaWRldi52MS5Vc2FnZUFuYWx5dGljc0RheRIvCgZtb2RlbHMYBCADKAsyHy5kZWxpZGV2LnYxLlVzYWdlQW5hbHl0aWNzTW9kZWwSMgoMb3RoZXJfbW9kZWxzGAUgASgLMhwuZGVsaWRldi52MS5Vc2FnZU90aGVyTW9kZWxzIvsCCgpVc2FnZUdyb3VwEhIKCnNlc3Npb25faWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhAKCG1vZGVsX2lkGAUgASgJEicKBnRvdGFscxgGIAEoCzIXLmRlbGlkZXYudjEuVXNhZ2VUb3RhbHMSFAoMc2Vzc2lvbl9uYW1lGAcgASgJEhQKDHByb2plY3RfbmFtZRgIIAEoCRIUCgxhY2NvdW50X25hbWUYCSABKAkSFQoNcHJvdmlkZXJfbmFtZRgKIAEoCRISCgptb2RlbF9uYW1lGAsgASgJEi0KCWVzdGltYXRlcxgMIAEoCzIaLmRlbGlkZXYudjEuRXN0aW1hdGVUb3RhbHMSRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYDSABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eSKPBQoXR2V0VXNhZ2VTdW1tYXJ5UmVzcG9uc2USFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSJwoGdG90YWxzGAMgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscxImCgZncm91cHMYBCADKAsyFi5kZWxpZGV2LnYxLlVzYWdlR3JvdXASKwoIY292ZXJhZ2UYBSABKA4yGS5kZWxpZGV2LnYxLlVzYWdlQ292ZXJhZ2USLwoLYWN0dWFsX2Nvc3QYBiABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlEjIKDmVzdGltYXRlZF9jb3N0GAcgASgOMhouZGVsaWRldi52MS5Vc2FnZUNvc3RTdGF0ZRIsCiRhY2NlcHRlZF9leGVjdXRpb25zX3dpdGhvdXRfcmVzcG9uc2UYCCABKA0SLQoJZXN0aW1hdGVzGAkgASgLMhouZGVsaWRldi52MS5Fc3RpbWF0ZVRvdGFscxIpCgdwcmljaW5nGAogAygLMhguZGVsaWRldi52MS5QcmljaW5nVXNhZ2USLQoJYW5hbHl0aWNzGAsgASgLMhouZGVsaWRldi52MS5Vc2FnZUFuYWx5dGljcxI+ChJhY2NvdW50aW5nX3Byb2ZpbGUYDCABKA4yIi5kZWxpZGV2LnYxLlVzYWdlQWNjb3VudGluZ1Byb2ZpbGUSPgoRbmF0aXZlX2FjY291bnRpbmcYDSADKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdTdW1tYXJ5Ei0KJWFjY2VwdGVkX2NvbXBhY3Rpb25zX3dpdGhvdXRfcmVzcG9uc2UYDiABKA0itwIKDFRva2VuUHJpY2luZxIQCghjdXJyZW5jeRgBIAEoCRIOCgZzb3VyY2UYAiABKAkSDQoFYXNfb2YYAyABKAkSMAoKaW5wdXRfbW9kZRgEIAEoDjIcLmRlbGlkZXYudjEuSW5wdXRQcmljaW5nTW9kZRIeChFpbnB1dF9wZXJfbWlsbGlvbhgFIAEoCUgAiAEBEiUKGGNhY2hlZF9pbnB1dF9wZXJfbWlsbGlvbhgGIAEoCUgBiAEBEh8KEm91dHB1dF9wZXJfbWlsbGlvbhgHIAEoCUgCiAEBEhIKCmV4Y2x1c2lvbnMYCCADKAlCFAoSX2lucHV0X3Blcl9taWxsaW9uQhsKGV9jYWNoZWRfaW5wdXRfcGVyX21pbGxpb25CFQoTX291dHB1dF9wZXJfbWlsbGlvbiLhAQoOUHJpY2luZ1ZlcnNpb24SCgoCaWQYASABKAkSEAoIbW9kZWxfaWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSEAoIcmV2aXNpb24YBCABKAQSGgoSY3JlYXRlZF9hdF91bml4X21zGAUgASgDEicKBWJhc2lzGAYgASgLMhguZGVsaWRldi52MS5Ub2tlblByaWNpbmcSRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYByABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eSIqChZHZXRNb2RlbFByaWNpbmdSZXF1ZXN0EhAKCG1vZGVsX2lkGAEgASgJIl4KF0dldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEhYKDm1vZGVsX3JldmlzaW9uGAIgASgEEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uIiYKGEdldFByaWNpbmdWZXJzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJIChlHZXRQcmljaW5nVmVyc2lvblJlc3BvbnNlEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uIooBChZTZXRNb2RlbFByaWNpbmdSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhInCgViYXNpcxgCIAEoCzIYLmRlbGlkZXYudjEuVG9rZW5QcmljaW5nEh8KF2V4cGVjdGVkX21vZGVsX3JldmlzaW9uGAMgASgEImwKF1NldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgikAEKEEN1cnJlbmN5RXN0aW1hdGUSEAoIY3VycmVuY3kYASABKAkSFAoMa25vd25fYW1vdW50GAIgASgJEhoKEmNvbXBsZXRlX3Jlc3BvbnNlcxgDIAEoDRIZChFwYXJ0aWFsX3Jlc3BvbnNlcxgEIAEoDRIdChV1bmF2YWlsYWJsZV9yZXNwb25zZXMYBSABKA0iXgoORXN0aW1hdGVUb3RhbHMSMAoKY3VycmVuY2llcxgBIAMoCzIcLmRlbGlkZXYudjEuQ3VycmVuY3lFc3RpbWF0ZRIaChJ1bnByaWNlZF9yZXNwb25zZXMYAiABKA0i5AEKD0VzdGltYXRlTWVhc3VyZRIUCgxrbm93bl9hbW91bnQYASABKAkSFAoMa25vd25fdG9rZW5zGAIgASgJEhgKEHByaWNlZF9yZXNwb25zZXMYAyABKA0SHwoXbWlzc2luZ191c2FnZV9yZXNwb25zZXMYBCABKA0SHwoXbWlzc2luZ19wcmljZV9yZXNwb25zZXMYBSABKA0SJwofdW5zdXBwb3J0ZWRfYnJlYWtkb3duX3Jlc3BvbnNlcxgGIAEoDRIgChhub3RfYXBwbGljYWJsZV9yZXNwb25zZXMYByABKA0i9QEKDFByaWNpbmdVc2FnZRIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbhIsCgZ0b3RhbHMYAiABKAsyHC5kZWxpZGV2LnYxLkN1cnJlbmN5RXN0aW1hdGUSKgoFaW5wdXQYAyABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZRIxCgxjYWNoZWRfaW5wdXQYBCABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZRIrCgZvdXRwdXQYBSABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZSJhChdOYXRpdmVBY2NvdW50aW5nTWVhc3VyZRITCgtrbm93bl90b3RhbBgBIAEoCRIWCg5tZWFzdXJlZF91bml0cxgCIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgDIAEoDSKKAQoWTmF0aXZlQ3VycmVuY3lFc3RpbWF0ZRIQCghjdXJyZW5jeRgBIAEoCRIUCgxrbm93bl9hbW91bnQYAiABKAkSFgoOY29tcGxldGVfdW5pdHMYAyABKA0SFQoNcGFydGlhbF91bml0cxgEIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgFIAEoDSLsAwoWTmF0aXZlQWNjb3VudGluZ1RvdGFscxIsCgRraW5kGAEgASgOMh4uZGVsaWRldi52MS5BY2NvdW50aW5nVW5pdEtpbmQSDQoFdW5pdHMYAiABKA0SMgoFaW5wdXQYAyABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjcKCmNhY2hlX3JlYWQYBCABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjgKC2NhY2hlX3dyaXRlGAUgASgLMiMuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nTWVhc3VyZRIzCgZvdXRwdXQYBiABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjUKCHRoaW5raW5nGAcgASgLMiMuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nTWVhc3VyZRIyCgV0b3RhbBgIIAEoCzIjLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ01lYXN1cmUSNgoKY3VycmVuY2llcxgJIAMoCzIiLmRlbGlkZXYudjEuTmF0aXZlQ3VycmVuY3lFc3RpbWF0ZRIWCg51bnByaWNlZF91bml0cxgKIAEoDSL1AQoVTmF0aXZlQWNjb3VudGluZ0dyb3VwEhIKCnNlc3Npb25faWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhAKCG1vZGVsX2lkGAUgASgJEjIKBnRvdGFscxgGIAEoCzIiLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ1RvdGFscxJFChRzdWJzY3JpcHRpb25fc2VydmljZRgHIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5InYKE05hdGl2ZUFjY291bnRpbmdEYXkSFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSMgoGdG90YWxzGAMgASgLMiIuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nVG90YWxzIrEBChVOYXRpdmVFc3RpbWF0ZU1lYXN1cmUSFAoMa25vd25fYW1vdW50GAEgASgJEhQKDGtub3duX3Rva2VucxgCIAEoCRIUCgxwcmljZWRfdW5pdHMYAyABKA0SGwoTbWlzc2luZ191c2FnZV91bml0cxgEIAEoDRIbChNtaXNzaW5nX3ByaWNlX3VuaXRzGAUgASgNEhwKFG5vdF9hcHBsaWNhYmxlX3VuaXRzGAYgASgNIoQDChdOYXRpdmVBY2NvdW50aW5nUHJpY2luZxIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbhIyCgZ0b3RhbHMYAiABKAsyIi5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdUb3RhbHMSMAoFaW5wdXQYAyABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRI1CgpjYWNoZV9yZWFkGAQgASgLMiEuZGVsaWRldi52MS5OYXRpdmVFc3RpbWF0ZU1lYXN1cmUSNgoLY2FjaGVfd3JpdGUYBSABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRIxCgZvdXRwdXQYBiABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRI0CglyZWFzb25pbmcYByABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZSL2AgoXTmF0aXZlQWNjb3VudGluZ1N1bW1hcnkSMgoGdG90YWxzGAEgASgLMiIuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nVG90YWxzEjEKBmdyb3VwcxgCIAMoCzIhLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ0dyb3VwEi0KBGRheXMYAyADKAsyHy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdEYXkSMQoGbW9kZWxzGAQgAygLMiEuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nR3JvdXASNAoHcHJpY2luZxgFIAMoCzIjLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ1ByaWNpbmcSKwoIY292ZXJhZ2UYBiABKA4yGS5kZWxpZGV2LnYxLlVzYWdlQ292ZXJhZ2USLwoLYWN0dWFsX2Nvc3QYByABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlKl4KFFVzYWdlVGltZUdyYW51bGFyaXR5EiYKIlVTQUdFX1RJTUVfR1JBTlVMQVJJVFlfVU5TUEVDSUZJRUQQABIeChpVU0FHRV9USU1FX0dSQU5VTEFSSVRZX0RBWRABKnAKFlVzYWdlQWNjb3VudGluZ1Byb2ZpbGUSKAokVVNBR0VfQUNDT1VOVElOR19QUk9GSUxFX1VOU1BFQ0lGSUVEEAASLAooVVNBR0VfQUNDT1VOVElOR19QUk9GSUxFX05BVElWRV9VTklUU19WMRABKugBChJBY2NvdW50aW5nVW5pdEtpbmQSJAogQUNDT1VOVElOR19VTklUX0tJTkRfVU5TUEVDSUZJRUQQABInCiNBQ0NPVU5USU5HX1VOSVRfS0lORF9DT0RFWF9SRVNQT05TRRABEioKJkFDQ09VTlRJTkdfVU5JVF9LSU5EX0dST0tfQ0xPU0VEX0lOUFVUEAISLworQUNDT1VOVElOR19VTklUX0tJTkRfQ0xBVURFX01BSU5fTE9PUF9JTlBVVBADEiYKIkFDQ09VTlRJTkdfVU5JVF9LSU5EX09QRU5DT0RFX1NURVAQBCp5Cg5Vc2FnZUNvc3RTdGF0ZRIgChxVU0FHRV9DT1NUX1NUQVRFX1VOU1BFQ0lGSUVEEAASIAocVVNBR0VfQ09TVF9TVEFURV9VTkFWQUlMQUJMRRABEiMKH1VTQUdFX0NPU1RfU1RBVEVfS05PV05fU1VCVE9UQUwQAip+ChBJbnB1dFByaWNpbmdNb2RlEiIKHklOUFVUX1BSSUNJTkdfTU9ERV9VTlNQRUNJRklFRBAAEh4KGklOUFVUX1BSSUNJTkdfTU9ERV9VTklGT1JNEAESJgoiSU5QVVRfUFJJQ0lOR19NT0RFX0NBQ0hFRF9ESVNDT1VOVBACMoQDCgxVc2FnZVNlcnZpY2USWgoPR2V0VXNhZ2VTdW1tYXJ5EiIuZGVsaWRldi52MS5HZXRVc2FnZVN1bW1hcnlSZXF1ZXN0GiMuZGVsaWRldi52MS5HZXRVc2FnZVN1bW1hcnlSZXNwb25zZRJaCg9HZXRNb2RlbFByaWNpbmcSIi5kZWxpZGV2LnYxLkdldE1vZGVsUHJpY2luZ1JlcXVlc3QaIy5kZWxpZGV2LnYxLkdldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEmAKEUdldFByaWNpbmdWZXJzaW9uEiQuZGVsaWRldi52MS5HZXRQcmljaW5nVmVyc2lvblJlcXVlc3QaJS5kZWxpZGV2LnYxLkdldFByaWNpbmdWZXJzaW9uUmVzcG9uc2USWgoPU2V0TW9kZWxQcmljaW5nEiIuZGVsaWRldi52MS5TZXRNb2RlbFByaWNpbmdSZXF1ZXN0GiMuZGVsaWRldi52MS5TZXRNb2RlbFByaWNpbmdSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.GetUsageSummaryRequest
@@ -74,6 +74,11 @@ export type GetUsageSummaryRequest = Message<"delidev.v1.GetUsageSummaryRequest"
    * @generated from field: delidev.v1.UsageAccountingProfile accounting_profile = 11;
    */
   accountingProfile: UsageAccountingProfile;
+
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 12;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
 };
 
 /**
@@ -273,6 +278,11 @@ export type UsageAnalyticsModel = Message<"delidev.v1.UsageAnalyticsModel"> & {
    * @generated from field: delidev.v1.UsageTotals totals = 5;
    */
   totals?: UsageTotals | undefined;
+
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 6;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
 };
 
 /**
@@ -409,6 +419,11 @@ export type UsageGroup = Message<"delidev.v1.UsageGroup"> & {
    * @generated from field: delidev.v1.EstimateTotals estimates = 12;
    */
   estimates?: EstimateTotals | undefined;
+
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 13;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
 };
 
 /**
@@ -484,6 +499,21 @@ export type GetUsageSummaryResponse = Message<"delidev.v1.GetUsageSummaryRespons
    * @generated from field: delidev.v1.UsageAccountingProfile accounting_profile = 12;
    */
   accountingProfile: UsageAccountingProfile;
+
+  /**
+   * Independent summaries preserve each native accounting unit kind.
+   *
+   * @generated from field: repeated delidev.v1.NativeAccountingSummary native_accounting = 13;
+   */
+  nativeAccounting: NativeAccountingSummary[];
+
+  /**
+   * Accepted native context actions with no exact response retained in the range.
+   * Separate from ordinary executions; unavailable does not establish zero usage.
+   *
+   * @generated from field: uint32 accepted_compactions_without_response = 14;
+   */
+  acceptedCompactionsWithoutResponse: number;
 };
 
 /**
@@ -581,6 +611,11 @@ export type PricingVersion = Message<"delidev.v1.PricingVersion"> & {
    * @generated from field: delidev.v1.TokenPricing basis = 6;
    */
   basis?: TokenPricing | undefined;
+
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 7;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
 };
 
 /**
@@ -871,6 +906,350 @@ export const PricingUsageSchema: GenMessage<PricingUsage> = /*@__PURE__*/
   messageDesc(file_delidev_v1_usage, 21);
 
 /**
+ * @generated from message delidev.v1.NativeAccountingMeasure
+ */
+export type NativeAccountingMeasure = Message<"delidev.v1.NativeAccountingMeasure"> & {
+  /**
+   * Exact decimal integer; empty is unavailable and "0" is measured zero.
+   *
+   * @generated from field: string known_total = 1;
+   */
+  knownTotal: string;
+
+  /**
+   * @generated from field: uint32 measured_units = 2;
+   */
+  measuredUnits: number;
+
+  /**
+   * @generated from field: uint32 unavailable_units = 3;
+   */
+  unavailableUnits: number;
+};
+
+/**
+ * Describes the message delidev.v1.NativeAccountingMeasure.
+ * Use `create(NativeAccountingMeasureSchema)` to create a new message.
+ */
+export const NativeAccountingMeasureSchema: GenMessage<NativeAccountingMeasure> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 22);
+
+/**
+ * @generated from message delidev.v1.NativeCurrencyEstimate
+ */
+export type NativeCurrencyEstimate = Message<"delidev.v1.NativeCurrencyEstimate"> & {
+  /**
+   * @generated from field: string currency = 1;
+   */
+  currency: string;
+
+  /**
+   * @generated from field: string known_amount = 2;
+   */
+  knownAmount: string;
+
+  /**
+   * @generated from field: uint32 complete_units = 3;
+   */
+  completeUnits: number;
+
+  /**
+   * @generated from field: uint32 partial_units = 4;
+   */
+  partialUnits: number;
+
+  /**
+   * @generated from field: uint32 unavailable_units = 5;
+   */
+  unavailableUnits: number;
+};
+
+/**
+ * Describes the message delidev.v1.NativeCurrencyEstimate.
+ * Use `create(NativeCurrencyEstimateSchema)` to create a new message.
+ */
+export const NativeCurrencyEstimateSchema: GenMessage<NativeCurrencyEstimate> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 23);
+
+/**
+ * @generated from message delidev.v1.NativeAccountingTotals
+ */
+export type NativeAccountingTotals = Message<"delidev.v1.NativeAccountingTotals"> & {
+  /**
+   * @generated from field: delidev.v1.AccountingUnitKind kind = 1;
+   */
+  kind: AccountingUnitKind;
+
+  /**
+   * @generated from field: uint32 units = 2;
+   */
+  units: number;
+
+  /**
+   * @generated from field: delidev.v1.NativeAccountingMeasure input = 3;
+   */
+  input?: NativeAccountingMeasure | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeAccountingMeasure cache_read = 4;
+   */
+  cacheRead?: NativeAccountingMeasure | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeAccountingMeasure cache_write = 5;
+   */
+  cacheWrite?: NativeAccountingMeasure | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeAccountingMeasure output = 6;
+   */
+  output?: NativeAccountingMeasure | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeAccountingMeasure thinking = 7;
+   */
+  thinking?: NativeAccountingMeasure | undefined;
+
+  /**
+   * Claude does not report a main-loop total. Never derive it from categories.
+   *
+   * @generated from field: delidev.v1.NativeAccountingMeasure total = 8;
+   */
+  total?: NativeAccountingMeasure | undefined;
+
+  /**
+   * @generated from field: repeated delidev.v1.NativeCurrencyEstimate currencies = 9;
+   */
+  currencies: NativeCurrencyEstimate[];
+
+  /**
+   * @generated from field: uint32 unpriced_units = 10;
+   */
+  unpricedUnits: number;
+};
+
+/**
+ * Describes the message delidev.v1.NativeAccountingTotals.
+ * Use `create(NativeAccountingTotalsSchema)` to create a new message.
+ */
+export const NativeAccountingTotalsSchema: GenMessage<NativeAccountingTotals> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 24);
+
+/**
+ * @generated from message delidev.v1.NativeAccountingGroup
+ */
+export type NativeAccountingGroup = Message<"delidev.v1.NativeAccountingGroup"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string project_id = 2;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string account_id = 3;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string provider_id = 4;
+   */
+  providerId: string;
+
+  /**
+   * @generated from field: string model_id = 5;
+   */
+  modelId: string;
+
+  /**
+   * @generated from field: delidev.v1.NativeAccountingTotals totals = 6;
+   */
+  totals?: NativeAccountingTotals | undefined;
+
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 7;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
+};
+
+/**
+ * Describes the message delidev.v1.NativeAccountingGroup.
+ * Use `create(NativeAccountingGroupSchema)` to create a new message.
+ */
+export const NativeAccountingGroupSchema: GenMessage<NativeAccountingGroup> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 25);
+
+/**
+ * @generated from message delidev.v1.NativeAccountingDay
+ */
+export type NativeAccountingDay = Message<"delidev.v1.NativeAccountingDay"> & {
+  /**
+   * @generated from field: int64 from_unix_ms = 1;
+   */
+  fromUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 until_unix_ms = 2;
+   */
+  untilUnixMs: bigint;
+
+  /**
+   * @generated from field: delidev.v1.NativeAccountingTotals totals = 3;
+   */
+  totals?: NativeAccountingTotals | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.NativeAccountingDay.
+ * Use `create(NativeAccountingDaySchema)` to create a new message.
+ */
+export const NativeAccountingDaySchema: GenMessage<NativeAccountingDay> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 26);
+
+/**
+ * @generated from message delidev.v1.NativeEstimateMeasure
+ */
+export type NativeEstimateMeasure = Message<"delidev.v1.NativeEstimateMeasure"> & {
+  /**
+   * @generated from field: string known_amount = 1;
+   */
+  knownAmount: string;
+
+  /**
+   * @generated from field: string known_tokens = 2;
+   */
+  knownTokens: string;
+
+  /**
+   * @generated from field: uint32 priced_units = 3;
+   */
+  pricedUnits: number;
+
+  /**
+   * @generated from field: uint32 missing_usage_units = 4;
+   */
+  missingUsageUnits: number;
+
+  /**
+   * @generated from field: uint32 missing_price_units = 5;
+   */
+  missingPriceUnits: number;
+
+  /**
+   * @generated from field: uint32 not_applicable_units = 6;
+   */
+  notApplicableUnits: number;
+};
+
+/**
+ * Describes the message delidev.v1.NativeEstimateMeasure.
+ * Use `create(NativeEstimateMeasureSchema)` to create a new message.
+ */
+export const NativeEstimateMeasureSchema: GenMessage<NativeEstimateMeasure> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 27);
+
+/**
+ * @generated from message delidev.v1.NativeAccountingPricing
+ */
+export type NativeAccountingPricing = Message<"delidev.v1.NativeAccountingPricing"> & {
+  /**
+   * @generated from field: delidev.v1.PricingVersion pricing = 1;
+   */
+  pricing?: PricingVersion | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeAccountingTotals totals = 2;
+   */
+  totals?: NativeAccountingTotals | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeEstimateMeasure input = 3;
+   */
+  input?: NativeEstimateMeasure | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeEstimateMeasure cache_read = 4;
+   */
+  cacheRead?: NativeEstimateMeasure | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeEstimateMeasure cache_write = 5;
+   */
+  cacheWrite?: NativeEstimateMeasure | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeEstimateMeasure output = 6;
+   */
+  output?: NativeEstimateMeasure | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeEstimateMeasure reasoning = 7;
+   */
+  reasoning?: NativeEstimateMeasure | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.NativeAccountingPricing.
+ * Use `create(NativeAccountingPricingSchema)` to create a new message.
+ */
+export const NativeAccountingPricingSchema: GenMessage<NativeAccountingPricing> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 28);
+
+/**
+ * @generated from message delidev.v1.NativeAccountingSummary
+ */
+export type NativeAccountingSummary = Message<"delidev.v1.NativeAccountingSummary"> & {
+  /**
+   * @generated from field: delidev.v1.NativeAccountingTotals totals = 1;
+   */
+  totals?: NativeAccountingTotals | undefined;
+
+  /**
+   * @generated from field: repeated delidev.v1.NativeAccountingGroup groups = 2;
+   */
+  groups: NativeAccountingGroup[];
+
+  /**
+   * Same explicit timezone and half-open day boundaries as response analytics.
+   *
+   * @generated from field: repeated delidev.v1.NativeAccountingDay days = 3;
+   */
+  days: NativeAccountingDay[];
+
+  /**
+   * Full bounded model inventory; original IDs, without inferred total ranking.
+   *
+   * @generated from field: repeated delidev.v1.NativeAccountingGroup models = 4;
+   */
+  models: NativeAccountingGroup[];
+
+  /**
+   * @generated from field: repeated delidev.v1.NativeAccountingPricing pricing = 5;
+   */
+  pricing: NativeAccountingPricing[];
+
+  /**
+   * @generated from field: delidev.v1.UsageCoverage coverage = 6;
+   */
+  coverage: UsageCoverage;
+
+  /**
+   * @generated from field: delidev.v1.UsageCostState actual_cost = 7;
+   */
+  actualCost: UsageCostState;
+};
+
+/**
+ * Describes the message delidev.v1.NativeAccountingSummary.
+ * Use `create(NativeAccountingSummarySchema)` to create a new message.
+ */
+export const NativeAccountingSummarySchema: GenMessage<NativeAccountingSummary> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 29);
+
+/**
  * @generated from enum delidev.v1.UsageTimeGranularity
  */
 export enum UsageTimeGranularity {
@@ -932,6 +1311,16 @@ export enum AccountingUnitKind {
    * @generated from enum value: ACCOUNTING_UNIT_KIND_GROK_CLOSED_INPUT = 2;
    */
   GROK_CLOSED_INPUT = 2,
+
+  /**
+   * @generated from enum value: ACCOUNTING_UNIT_KIND_CLAUDE_MAIN_LOOP_INPUT = 3;
+   */
+  CLAUDE_MAIN_LOOP_INPUT = 3,
+
+  /**
+   * @generated from enum value: ACCOUNTING_UNIT_KIND_OPENCODE_STEP = 4;
+   */
+  OPENCODE_STEP = 4,
 }
 
 /**

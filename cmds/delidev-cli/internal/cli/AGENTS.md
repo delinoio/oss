@@ -1,5 +1,8 @@
+- Normal desktop Quit follows `docs/apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown` and the CLI contract: `server desktop-host --mode launch|retry|ensure` shares Go admission and runs newly admitted servers in their original child. Retain native child handles/control pipes before readiness, fence starts on Quit, join final browser discovery before Stop, then allow 35 seconds before original-child force and observed exit. Preserve close-to-tray, borrowed CLI/service/remote servers, independent Workers and crash/forced-desktop sidecar survival. EOF grants no Stop; handle closed stdout/stderr SIGPIPE only in the host command so lost desktop delivery cannot terminate an admitted server. Original-generation suppression and forced-exit/native-cleanup uncertainty remain separate. Keep the complete Quit operation off the UI loop and record native/platform evidence separately.
+
 # DeliDev cli ownership
 
+- `session sidechat` requires independent server support before purpose submission, preserves original parent workspace and accepts no Local override. `session sidechat send` freezes exact selected reply and parent revisions under one request; receipt retry never infers or automatically Steers. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - `activity list` exposes typed PR metadata and capability names from the authenticated ActivityService response. Preserve exact original revisions, numeric identity strings and outcome enums without additional mutations or handling inference; follow the activity contract.
@@ -58,3 +61,27 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Manual remediation capabilities/fix commands use generated authenticated PullRequestFixService with the same closed original selection and receipt semantics as desktop. Preserve exact revisions/request IDs; reject foreign acknowledgments and avoid authentication/document stdin sharing. Never publish with the server lookup PAT or silently select another harness.
 
 - `server desktop-launch` is the fresh-main-host intentional Start boundary; desktop-retry cannot clear stopped intent and desktop-status is read-only readiness. Hold native-service control admission before startup/lifecycle/store locks through detached spawn, and recheck before intent publication and spawn. Automatic/desktop modes share a 35-second aggregate admission/controller/ownership/readiness deadline below the native 40-second envelope; check cancellation before admission and side effects, retaining truthful uncertainty after publication. Registered scopes may provide compatible live reuse but cannot admit a detached competitor or service mutation. Preserve malformed/private evidence and prior cleanup barriers.
+
+- `session diagnostics` uses authenticated SessionService with exact session/execution IDs and bounded original page cursors. Preserve unavailable metadata and precise counters without native side effects or implicit retry.
+
+- Generic JSON configuration selects schema 2 only for service-native subscription accounts/models or retired Agent repair, preserving API schema 1 and the version-1 result envelope. Subscription list requests never combine a Provider selector. Follow the independent subscription identity and portable bundle contracts.
+
+- Worker network prepare/import and owner export/status preserve the original protected recipient scope. Bound public recipient input and encrypted transfers; require separately supplied ciphertext digest, private atomic output and original exact route revision. No stdin secret, decrypted derivative, private key or proxy credential may enter ordinary JSON output or logs.
+
+- Saved Worker network commands derive the exact private root and original credential from the saved connection. Ciphertext may enter bounded stdin independently of its authenticated digest, never alongside token/pairing input. Import output contains only public original IDs, exact decimal generation and ciphertext digest; omit vault references and reject future/malformed status shapes.
+- `snapshot list --session-id ID [--limit N] [--page-token TOKEN]` negotiates workspace-storage support and uses authenticated Resource pagination. Preserve original opaque tokens, exact metadata revisions and explicit older-server guidance.
+
+- Explicit `account oauth start|complete|status|cancel` follows the OAuth contract. Start defaults to headless mode; completion accepts exact bounded code stdin only, without trimming or secret argv. Code-free `--recover` requires the original completion request/revision and never exchanges. CLI product operations never implicitly start a server.
+
+
+- `snapshot list --session-id ID [--limit N] [--page-token TOKEN]` negotiates workspace-storage support and uses authenticated Resource pagination. Preserve original opaque tokens, exact metadata revisions and explicit older-server guidance.
+
+- Sidechat creation and observation retain the native fork 145-second command deadline; selected findings submission retains the immediate ordinary deadline. A bounded wait failure returns the original accepted job identity.
+
+- machine ssh uses authenticated InstallationService and write-only bounded stdin. The native-only worker ssh-setup helper verifies the signed artifact identity, journals original pairing/start admission and never repeats missing progress or replaces registration/workspaces.
+
+- Authenticated update check/get/worker-request/cancel preserve original request/revision receipts and capability negotiation. Closed native update helpers select only fixed paired scopes and original server/window generations, independently verify signed bytes and persist offline installation outcomes. Worker replacement helpers retain both binaries and exact lifecycle proof, never a generic executable or shell capability.
+
+- Explicit detached starts select and independently verify the signed installed Worker controller before native version admission. A stale bundled CLI must not reserve its version and spawn a different version. Preserve the original registration and generation-bound Stop; ambiguous outcomes remain inspect-only.
+
+- Subscription login/refresh/logout may omit --machine-id only after capability 30 negotiation. Explicit machine selection retains the Worker lane; no CLI account command implicitly starts server/Worker. Device-code auth remains an explicit CLI alternative, never browser fallback. Dedicated original login-progress output may show transient original state/name/generation; operational logs must not contain it.

@@ -20,7 +20,8 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	until := f.String("until", "", "exclusive RFC3339 timestamp (default: server now)")
 	granularity := f.String("granularity", "", "analytics granularity (day)")
 	timezone := f.String("timezone", "", "explicit IANA timezone for daily analytics")
-	profile := f.String("accounting-profile", "", "native-units-v1 for distinct Codex responses and verified Grok closed inputs")
+	service := f.String("subscription-service", "", "event-time native service: chatgpt, claude or grok")
+	profile := f.String("accounting-profile", "", "native-units-v1 for distinct Codex responses, Grok closed inputs, Claude main-loop inputs and OpenCode steps")
 	requestBody := &pb.GetUsageSummaryRequest{}
 	f.StringVar(&requestBody.SessionId, "session-id", "", "original session filter")
 	f.StringVar(&requestBody.ProjectId, "project-id", "", "original project filter")
@@ -30,6 +31,26 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	f.BoolVar(&requestBody.GeneralChat, "general-chat", false, "projectless General Chat only")
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err
+	}
+	if *service != "" {
+		identity := domain.SubscriptionService(*service)
+		if !identity.Valid() || requestBody.ProviderId != "" {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid usage service filter.", "Select chatgpt, claude or grok without --provider-id.")
+		}
+		status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		capable := false
+		for _, capability := range status.Msg.Capabilities {
+			if capability == pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 {
+				capable = true
+			}
+		}
+		if !capable {
+			return nil, domain.Fail(domain.Unsupported, "This server does not support independent subscription identity.", "Update the selected server before filtering subscription service usage.")
+		}
+		requestBody.SubscriptionService = rpc.WireSubscriptionService(identity)
 	}
 	if *profile != "" {
 		if *profile != "native-units-v1" {
@@ -70,9 +91,25 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	if requestBody.AccountingProfile != response.Msg.AccountingProfile {
 		return nil, domain.Fail(domain.Unsupported, "The server did not negotiate native accounting.", "Update the server or omit the accounting profile for response-only reads.")
 	}
+	if requestBody.AccountingProfile == pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1 {
+		seen := make(map[pb.AccountingUnitKind]bool, 2)
+		for _, summary := range response.Msg.NativeAccounting {
+			if summary == nil || summary.Totals == nil || seen[summary.Totals.Kind] || (summary.Totals.Kind != pb.AccountingUnitKind_ACCOUNTING_UNIT_KIND_CLAUDE_MAIN_LOOP_INPUT && summary.Totals.Kind != pb.AccountingUnitKind_ACCOUNTING_UNIT_KIND_OPENCODE_STEP) {
+				return nil, nativeAccountingUnavailable()
+			}
+			seen[summary.Totals.Kind] = true
+		}
+		if len(seen) != 2 {
+			return nil, nativeAccountingUnavailable()
+		}
+	}
 	raw, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(response.Msg)
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}
 	return json.RawMessage(raw), nil
+}
+
+func nativeAccountingUnavailable() error {
+	return domain.Fail(domain.Unsupported, "The server did not return complete native input accounting support.", "Update the server to support Claude and OpenCode input accounting, or omit the accounting profile for response-only reads.")
 }

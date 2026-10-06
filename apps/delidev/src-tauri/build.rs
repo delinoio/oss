@@ -6,10 +6,12 @@ fn main() {
     #[cfg(feature = "desktop-host")]
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "account_oauth_native",
             "choose_repository_folder",
             "read_appearance",
             "update_appearance",
             "open_github",
+            "open_provider_guidance",
             "connect_local",
             "launch_local",
             "retry_local",
@@ -18,6 +20,7 @@ fn main() {
             "local_server_status",
             "local_worker_proof",
             "local_worker_control",
+            "worker_network_control",
             "connection_context",
             "saved_connections",
             "removed_connections",

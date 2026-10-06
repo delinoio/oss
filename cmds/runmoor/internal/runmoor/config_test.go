@@ -57,11 +57,14 @@ func requireCode(t *testing.T, err error, code ErrorCode) {
 
 func TestConfigRejectsUnsafeOrImpossibleSettings(t *testing.T) {
 	for name, change := range map[string]func(*Config){
-		"schema": func(c *Config) { c.SchemaVersion = 2 }, "emulation": func(c *Config) { c.Pools[0].Arch = "mips" }, "remote engine": func(c *Config) { c.DockerSocket = "tcp://localhost:2375" }, "host budget": func(c *Config) { c.Host.CPU = 0 }, "floating image": func(c *Config) { c.Pools[0].Image = "runner:latest" }, "ambiguous credential": func(c *Config) { c.Connections[0].Credential.File = "/private/key" }, "plain daemon": func(c *Config) { c.Pools[0].DaemonResources = Resources{1, 10} }, "dind budget": func(c *Config) {
+		"schema": func(c *Config) { c.SchemaVersion = 2 }, "emulation": func(c *Config) { c.Pools[0].Arch = "mips" }, "remote engine": func(c *Config) { c.DockerSocket = "tcp://localhost:2375" }, "host budget": func(c *Config) { c.Host.CPU = 0 }, "floating image": func(c *Config) { c.Pools[0].Image = "runner:latest" }, "ambiguous credential": func(c *Config) { c.Connections[0].Credential.File = "/private/key" }, "plain daemon": func(c *Config) { c.Pools[0].DaemonResources = Resources{1, 10} }, "dind memory budget": func(c *Config) {
 			p := &c.Pools[0]
 			p.Mode = DinD
 			p.DaemonImage = p.Image
-			p.DaemonResources = Resources{8, 128}
+			p.DaemonResources = Resources{8, c.Host.MemoryMiB}
+		}, "zero daemon CPU": func(c *Config) {
+			p := &c.Pools[0]
+			p.Mode, p.DaemonImage, p.DaemonResources = DinD, p.Image, Resources{0, 128}
 		}, "minimum idle": func(c *Config) { c.Host.MaxRunners = 1; c.Pools[0].MinIdle = 2 }, "duplicate target": func(c *Config) { p := c.Pools[0]; p.Name = "other"; c.Pools = append(c.Pools, p) }, "repository group": func(c *Config) { c.Pools[0].RunnerGroup = "engineering" }, "credential URL": func(c *Config) { c.Connections[0].Target = "https://secret@github.com/example/repo" }, "reserved label": func(c *Config) { c.Pools[0].Labels = []string{"runmoor-owner-foreign"} }, "negative timeout": func(c *Config) { c.Timeouts.Job = "-1s" },
 	} {
 		t.Run(name, func(t *testing.T) {

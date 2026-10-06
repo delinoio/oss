@@ -14,6 +14,14 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
+### Codex version admission and attribution
+
+The minimum applies to discovery, initialization, authentication, model observation, execution, continuation, Fork, Sidechat, compaction and automatic titles. Attempt eligibility is distinct from protocol, account and platform acceptance. Other harness version policies retain their exact pins. Historical schema/evidence references below describe their original baseline rather than an upper version limit.
+
+Carry the detected version through immutable assignments, native children, checkpoints, approvals and usage; never substitute the minimum or rewrite historical records. Continuations, approvals and history still match the original executable and exact recorded native version. Private title and managed-auth capability probes use that same current inventory version and reject changed installation identity.
+
+Native errors preserve bounded version, minimum, a closed failure phase and stable safe code. Locally authored explanations exclude provider error text, URLs, secrets, account identity and user paths. Keep the first failure separate from later cleanup/recovery; recovery never authorizes another send.
+
 ### Codex model observation profile
 
 The [native model contract](cmds-delidev-native-models-contract.md) owns the separate
@@ -29,7 +37,7 @@ login, execution grant, provider endpoint, thread creation or inference is used.
 Managed subscriptions remain unsupported until their protected lifecycle exists.
 
 ### Codex automatic title profile
-Automatic titles use only explicitly verified Codex `0.151.0` with the native Responses profile. Worker startup probes the exact installed binary/version and app-server protocol in a fresh private home without login or inference. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
+Automatic titles use an explicitly verified Codex version at or above `0.151.0` with the native Responses profile. Worker startup probes the exact installed binary/version and app-server protocol in a fresh private home without login or inference. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
 
 ### Codex JSON-RPC stdio transport
 The internal `nativewire` connection consumes newline-delimited JSON-RPC on distinct native stdout and stdin streams and discards raw stderr. It validates UTF-8, unique JSON keys, required envelope discrimination, request identity type and protocol version, and preserves byte-fragmented Unicode. Codex's optional bounded `emittedAtMs` notification field is retained as provenance, not an ordering or deduplication identity. Unknown envelope shapes fail instead of being silently interpreted.
@@ -41,7 +49,7 @@ Callers allocate and durably record UUID-v7 operation identities before side-eff
 Server requests carry a per-arrival token in addition to their native numeric/string identity. Exactly one concurrent reply may claim that outstanding request, and replaced/already-claimed interactions fail. The adapter must validate answers against the original typed request and current authorization before replying. Successful pipe delivery proves only transmission; native acknowledgment/state must establish semantic acceptance. The transport now exposes exact-arrival request retirement for native cancellation/resolution: it writes no response, cannot remove a replacement arrival and refuses in-flight response ownership. An already absent request is not semantic acceptance. The adapter must establish native ownership before invoking this primitive. Notifications and late replies use the bounded event path; no automatic answer, approval or prompt is synthesized.
 
 ### Codex app-server profile
-The initial profile is Codex `0.151.0`, checked against that installed binary's generated schemas and a real macOS handshake. Unknown versions remain explicitly unsupported until their native contract is validated. This is not evidence of other operating systems, account combinations, or execution features.
+The initial schema and native evidence baseline is Codex `0.151.0`. Codex admission uses common SemVer ordering with minimum `0.151.0` and no upper bound, including prerelease ordering and ignored build metadata for comparison. Older or invalid versions fail explicitly; newer versions attempt their actual native protocol and may fail its existing strict schema, effective configuration or ownership checks. This is not evidence of other operating systems, account combinations, or execution features.
 
 The adapter starts owned `codex app-server` over stdio with a private `CODEX_HOME`, ephemeral native authentication, automatic update checks disabled and analytics/feedback disabled. Initialization identifies DeliDev, stays on the stable API, validates the returned native version/platform/private home, sends `initialized`, and confirms readiness with a bounded `thread/loaded/list`. A probe must have no loaded native threads or further cursor. It performs no login, account/model refresh, thread creation or inference. Unknown response fields, foreign homes/platforms, changed versions and nonempty loaded state fail explicitly. Failed validation closes and reconciles the process; uncertain cleanup retains the runtime.
 
@@ -1740,3 +1748,21 @@ requests and CI runs.
 ## Managed Codex subscription profile
 
 The separate managed profile pins installed Codex 0.151.0, fresh private file-backed authentication and the built-in OpenAI provider. It composes original browser/device login completion, cancellation, account/file identity comparison, refresh metadata and local logout with server-owned exclusive leases under [the subscription contract](cmds-delidev-subscription-contract.md). API/discovery profiles remain ephemeral. Controlled native fixtures establish protocol/process boundaries; real account and platform acceptance remain unperformed.
+
+Codex child model, reasoning effort and numeric concurrency configuration follows the [subagent configuration contract](cmds-delidev-subagents-contract.md#codex-child-configuration). The pinned native thread start/resume/Fork receives only those exact supported keys; independent root observation and same-account model authority remain mandatory.
+
+OpenCode foreground children now follow issue #1208 and `cmds-delidev-subagents-contract.md`: original root task plus independently read child parent proof, one-level same-model foreground execution, separate response telemetry, no child control, complete inventory/owned cleanup and paused child-bearing completion. Root configuration fixes the pinned native depth at one; experimental background support remains disabled.
+
+### OpenCode native context lineage (#1203)
+
+Automatic compaction uses the independently owned input observer and complete
+native history/checkpoint profile in `cmds-delidev-compaction-contract.md`.
+Compaction users, native summaries and marked native continuation users are
+context records; ordinary successor text remains canonical assistant content.
+Original step-finish accounting is retained independently without adding
+assistant snapshots. Immutable optional `opencode_context` retains the selected
+model limit and known/user-declared provenance; omitted older configurations
+remain unknown. Context transport gaps cannot manufacture completion. The
+private once-only summarize controller preserves original provider/model,
+independent HTTP/lifecycle/history/cleanup and repeated fresh-process lineage;
+manual product capability remains gated on its complete business integration.

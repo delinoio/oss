@@ -8,9 +8,11 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"log/slog"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +21,8 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
+	releaseVerifier           func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory            func() (releaseClient, error)
 	userServiceBackend        userservice.Backend
 	StartupID                 domain.ID
 	DataDir                   string
@@ -42,6 +46,9 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	releaseVerifier func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory  func() (releaseClient, error)
+	delidevv1connect.UnimplementedInstallationServiceHandler
 	delidevv1connect.UnimplementedWorkspaceStorageServiceHandler
 	userServiceOptions userservice.ServerOptions
 	userServiceBackend userservice.Backend
@@ -58,44 +65,49 @@ type Service struct {
 	delidevv1connect.UnimplementedProviderServiceHandler
 	delidevv1connect.UnimplementedNetworkServiceHandler
 	delidevv1connect.UnimplementedIntegrationServiceHandler
-	integrationOnce      sync.Once
-	integrationGate      chan struct{}
-	integrationChecks    map[domain.ID]*integrationCheck
-	integrationSecrets   integrationSecrets
-	ownedPAT             *credentials.PATStore
-	github               githubIdentity
-	githubAccess         githubRepositoryAccess
-	githubQueries        githubRepositoryQueries
-	terminalOutputMu     sync.Mutex
-	terminalOutputs      map[domain.ID]*terminalOutputRing
-	terminalOutputOrder  list.List
-	prFixRequests        prFixRequestTracker
-	subscriptionOnce     sync.Once
-	subscriptionEpoch    domain.ID
-	subscriptionProgress map[domain.ID]subscriptionProgress
-	accountOnce          sync.Once
-	accountGate          chan struct{}
-	accountChecks        map[domain.ID]map[domain.ID]accountCheck
-	accountSecrets       accountSecrets
-	ownedVault           *credentials.Vault
-	Store                *store.Store
-	Identity             security.Identity
-	Endpoint             Endpoint
-	logger               *slog.Logger
-	stop                 context.CancelFunc
-	stopping             atomic.Bool
-	connectionsMu        sync.Mutex
-	connections          map[domain.ID]map[domain.ID]context.CancelFunc
-	pairAttempts         map[string]attemptWindow
-	workerStreams        map[domain.ID]workerStream
-	auxiliaryStreams     map[domain.ID]workerStream
-	forwardsOnce         sync.Once
-	forwardEpoch         domain.ID
-	forwardsMu           sync.Mutex
-	forwardRelays        map[domain.ID]*forwardRelay
-	forwardLanes         map[domain.ID]*forwardLane
-	workspaceReadsMu     sync.Mutex
-	workspaceReaders     map[domain.ID]*workspaceReader
-	executionOnce        sync.Once
-	executionAuthority   *executionAuthority
+	integrationOnce               sync.Once
+	integrationGate               chan struct{}
+	integrationChecks             map[domain.ID]*integrationCheck
+	integrationSecrets            integrationSecrets
+	ownedPAT                      *credentials.PATStore
+	github                        githubIdentity
+	githubAccess                  githubRepositoryAccess
+	githubQueries                 githubRepositoryQueries
+	terminalOutputMu              sync.Mutex
+	terminalOutputs               map[domain.ID]*terminalOutputRing
+	terminalOutputOrder           list.List
+	prFixRequests                 prFixRequestTracker
+	subscriptionOpen              serverSubscriptionOpener
+	subscriptionCallbackTransport http.RoundTripper
+	subscriptionOnce              sync.Once
+	subscriptionEpoch             domain.ID
+	subscriptionProgress          map[domain.ID]subscriptionProgress
+	accountOnce                   sync.Once
+	accountGate                   chan struct{}
+	oauthGeneration               domain.ID
+	oauthLive                     map[domain.ID]*oauthLive
+	oauthExchange                 oauthExchange
+	accountChecks                 map[domain.ID]map[domain.ID]accountCheck
+	accountSecrets                accountSecrets
+	ownedVault                    *credentials.Vault
+	Store                         *store.Store
+	Identity                      security.Identity
+	Endpoint                      Endpoint
+	logger                        *slog.Logger
+	stop                          context.CancelFunc
+	stopping                      atomic.Bool
+	connectionsMu                 sync.Mutex
+	connections                   map[domain.ID]map[domain.ID]context.CancelFunc
+	pairAttempts                  map[string]attemptWindow
+	workerStreams                 map[domain.ID]workerStream
+	auxiliaryStreams              map[domain.ID]workerStream
+	forwardsOnce                  sync.Once
+	forwardEpoch                  domain.ID
+	forwardsMu                    sync.Mutex
+	forwardRelays                 map[domain.ID]*forwardRelay
+	forwardLanes                  map[domain.ID]*forwardLane
+	workspaceReadsMu              sync.Mutex
+	workspaceReaders              map[domain.ID]*workspaceReader
+	executionOnce                 sync.Once
+	executionAuthority            *executionAuthority
 }

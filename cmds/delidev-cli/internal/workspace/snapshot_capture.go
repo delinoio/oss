@@ -20,15 +20,7 @@ import (
 
 func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity string, sources snapshotInventory, expectedDigest string) (metadata SnapshotMetadata, returned error) {
 	var empty SnapshotMetadata
-	// Session locks alone cannot reserve a Worker-wide publication slot. Hold
-	// this fail-fast cross-process gate from admission through durable publication
-	// so concurrent sessions cannot both consume the final slot.
-	publication, err := security.TryLock(filepath.Join(m.Root, "locks", "snapshot-publication.lock"))
-	if err != nil {
-		return empty, err
-	}
-	defer publication.Close()
-	_, count, err := m.snapshotInventoryBytes(ctx, r.Preparation.SessionID)
+	_, count, err := m.snapshotInventoryBytesLocked(ctx, r.Preparation.SessionID)
 	if err != nil {
 		return empty, err
 	}
@@ -56,6 +48,10 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 		}
 	}()
 	root := filepath.Join(m.Root, "workspaces", string(r.Preparation.SessionID))
+	sourceDirectories, err := sourceWorkspaceDirectoryIdentity(root, r.Manifest)
+	if err != nil {
+		return empty, err
+	}
 	skip := func(path string) bool {
 		for _, repo := range r.Manifest.Repositories {
 			if path == string(repo.ID)+"/.git" || strings.HasPrefix(path, string(repo.ID)+"/.git/") {
@@ -67,7 +63,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	// Reserve bounded manifest and config-rewrite headroom before writing any
 	// payload. Git config can add core.worktree/core.bare in two copied files;
 	// 256 bytes per repository bounds those additions without touching sources.
-	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256*uint64(len(r.Manifest.Repositories)), entries: MaxSnapshotEntries}
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256*uint64(len(r.Manifest.Repositories)), entries: MaxSnapshotEntries, privatePathLimit: snapshotPrivatePathLimit(m.Root)}
 	copied, err := walkSnapshotBudget(ctx, root, filepath.Join(staging, "workspace"), skip, MaxSnapshotEntries, &budget)
 	if err != nil {
 		return empty, err
@@ -96,7 +92,11 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	if err != nil || observation.Digest != expectedDigest {
 		return empty, ResultUncertain()
 	}
-	snapshot := snapshotManifest{SourceBytes: observation.Whole.Bytes, SourceDigest: observation.Digest, SourceInventory: observation.Whole, Version: 1, ID: r.SnapshotID, OperationID: r.OperationID, Workspace: r.Manifest, Preparation: r.Preparation, OriginalIdentity: identity, Inventory: inventory, CreatedAt: time.Now().UTC()}
+	currentDirectories, err := sourceWorkspaceDirectoryIdentity(root, r.Manifest)
+	if err != nil || currentDirectories != sourceDirectories {
+		return empty, ResultUncertain()
+	}
+	snapshot := snapshotManifest{SourceDirectoryIdentity: sourceDirectories, SourceBytes: observation.Whole.Bytes, SourceDigest: observation.Digest, SourceInventory: observation.Whole, Version: 1, ID: r.SnapshotID, OperationID: r.OperationID, Workspace: r.Manifest, Preparation: r.Preparation, OriginalIdentity: identity, Inventory: inventory, CreatedAt: time.Now().UTC()}
 	raw, err := json.Marshal(snapshot)
 	if err != nil {
 		return empty, err
@@ -131,7 +131,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 }
 
 func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo PreparedRepository, target string) error {
-	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256, entries: MaxSnapshotEntries}
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256, entries: MaxSnapshotEntries, privatePathLimit: snapshotPrivatePathLimit(m.Root)}
 	return m.copySnapshotGitBudget(ctx, session, repo, target, &budget)
 }
 
@@ -145,6 +145,9 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	git.OwnerID = session
 	git.readOnly = true
 	git.offline = true
+	if err := validateSnapshotGitEntry(repo.Path); err != nil {
+		return err
+	}
 	fields, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
 	if err != nil {
 		return err
@@ -339,7 +342,7 @@ func (m *Manager) inspectSnapshotContent(ctx context.Context, id domain.ID) (sna
 	if err != nil {
 		return snapshot, metadata, err
 	}
-	if domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != id || snapshot.OperationID.Validate() != nil || snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !digestValid(snapshot.OriginalIdentity) || snapshot.CreatedAt.IsZero() {
+	if domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != id || snapshot.OperationID.Validate() != nil || snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !digestValid(snapshot.OriginalIdentity) || snapshot.SourceDirectoryIdentity != "" && !digestValid(snapshot.SourceDirectoryIdentity) || snapshot.CreatedAt.IsZero() {
 		return snapshot, metadata, ResultUncertain()
 	}
 	inventory, err := walkSnapshot(ctx, filepath.Join(root, "workspace"), "", nil)
@@ -355,12 +358,27 @@ func (m *Manager) inspectSnapshotContent(ctx context.Context, id domain.ID) (sna
 	metadata = SnapshotMetadata{ID: id, SessionID: snapshot.Workspace.SessionID, MachineID: snapshot.Workspace.MachineID, SHA256: hex.EncodeToString(sum[:]), SizeBytes: inventory.Bytes + uint64(len(raw)), CreatedAt: snapshot.CreatedAt, RepositoryCount: uint32(len(snapshot.Workspace.Repositories))}
 	return snapshot, metadata, nil
 }
-func (m *Manager) snapshotBytes(ctx context.Context, session domain.ID) (uint64, error) {
-	bytes, _, err := m.snapshotInventoryBytes(ctx, session)
+func (m *Manager) snapshotBytesLocked(ctx context.Context, session domain.ID) (uint64, error) {
+	bytes, _, err := m.snapshotInventoryBytesLocked(ctx, session)
 	return bytes, err
 }
 
+func (m *Manager) lockSnapshotNamespace() (*security.Lock, error) {
+	return security.TryLock(filepath.Join(m.Root, "locks", "snapshot-publication.lock"))
+}
+
 func (m *Manager) snapshotInventoryBytes(ctx context.Context, session domain.ID) (uint64, int, error) {
+	gate, err := m.lockSnapshotNamespace()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer gate.Close()
+	return m.snapshotInventoryBytesLocked(ctx, session)
+}
+
+// The caller holds the cross-process snapshot namespace gate through both
+// native publication/removal and this observation of every retained snapshot.
+func (m *Manager) snapshotInventoryBytesLocked(ctx context.Context, session domain.ID) (uint64, int, error) {
 	root := filepath.Join(m.Root, "snapshots")
 	dir, err := os.Open(root)
 	if err != nil {
@@ -424,7 +442,8 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	if err != nil {
 		return storageObservationResult{}, err
 	}
-	whole, err := walkSnapshot(ctx, root, "", nil)
+	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes, entries: MaxSnapshotEntries, privatePathLimit: snapshotPrivatePathLimit(m.Root)}
+	whole, err := walkSnapshotBudget(ctx, root, "", nil, MaxSnapshotEntries, &budget)
 	if err != nil {
 		return storageObservationResult{}, err
 	}
@@ -434,6 +453,9 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	git.readOnly = true
 	git.offline = true
 	for _, repo := range r.Manifest.Repositories {
+		if err := validateSnapshotGitEntry(repo.Path); err != nil {
+			return storageObservationResult{}, err
+		}
 		fields, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
 		if err != nil {
 			return storageObservationResult{}, err
@@ -442,7 +464,17 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 			if i == 1 && sameNativePath(path, fields[0]) {
 				continue
 			}
-			inventory, err := walkSnapshot(ctx, path, "", func(path string) bool { return path == "worktrees" || strings.HasPrefix(path, "worktrees/") })
+			// Restored repositories keep their independent Git store inside the
+			// workspace. The complete root inventory already covers its bytes,
+			// entries and digest; only external original stores need another walk.
+			external, err := snapshotExternalGitStore(root, path)
+			if err != nil {
+				return storageObservationResult{}, err
+			}
+			if !external {
+				continue
+			}
+			inventory, err := walkSnapshotBudget(ctx, path, "", func(path string) bool { return path == "worktrees" || strings.HasPrefix(path, "worktrees/") }, MaxSnapshotEntries, &budget)
 			if err != nil {
 				return storageObservationResult{}, err
 			}
@@ -455,6 +487,24 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	}
 	sum := sha256.Sum256(raw)
 	return storageObservationResult{Data: data, Whole: whole, Digest: hex.EncodeToString(sum[:])}, nil
+}
+
+// Inspect the original entry before Git resolves its administrative paths.
+// A linked worktree's regular pointer file is supported; a symlink is not.
+func validateSnapshotGitEntry(repository string) error {
+	root, err := os.OpenRoot(repository)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	info, err := root.Lstat(".git")
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+		return snapshotUnsupported()
+	}
+	return nil
 }
 
 // Git follows links inside its administration directories. Such links cannot
@@ -492,4 +542,18 @@ func validateSnapshotGitConfig(ctx context.Context, git Git, path, admin string)
 		}
 	}
 	return nil
+}
+
+// Rel cannot compare Windows paths on different volumes. Only that closed case
+// denotes an external store; other relative-path failures remain errors.
+func snapshotExternalGitStore(root, path string) (bool, error) {
+	rootVolume, pathVolume := filepath.VolumeName(root), filepath.VolumeName(path)
+	if runtime.GOOS == "windows" && rootVolume != "" && pathVolume != "" && !strings.EqualFold(rootVolume, pathVolume) {
+		return true, nil
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return false, err
+	}
+	return !filepath.IsLocal(relative), nil
 }

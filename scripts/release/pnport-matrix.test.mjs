@@ -15,7 +15,7 @@ const release = load(read(".github/workflows/release-pnport.yml"));
 test("CI and exact-tag release use the package-owned four native hosts", () => {
   assert.deepEqual(targets.map(({ suffix }) => suffix), ["darwin-x64", "darwin-arm64", "linux-x64-gnu", "linux-arm64-gnu"]);
   assert.deepEqual(nativeMatrix.include.map(({ target, suffix }) => ({ target, suffix })), targets.map(({ rust, suffix }) => ({ target: rust, suffix })));
-  assert.deepEqual(nativeMatrix.include.map(({ runner }) => runner), ["macos-15-intel", "macos-14", "ubuntu-22.04", "ubuntu-22.04-arm"]);
+  assert.deepEqual(nativeMatrix.include.map(({ runner }) => runner), ["macos-15-intel", "macos-15", "ubuntu-22.04", "ubuntu-22.04-arm"]);
   for (const event of Object.values(Event)) assert.deepEqual(matricesForEvent(event).pnportMatrix, nativeMatrix);
   assert.equal(ci.jobs.changes.outputs.pnport_matrix, "${{ steps.plan.outputs.pnport_matrix }}");
   assert.equal(ci.jobs["pnport-native"].strategy.matrix, "${{ fromJSON(needs.changes.outputs.pnport_matrix) }}");
@@ -23,13 +23,13 @@ test("CI and exact-tag release use the package-owned four native hosts", () => {
   assert.equal(release.jobs.build.strategy.matrix, "${{ fromJSON(needs.prepare.outputs.matrix) }}");
   const source = release.jobs.prepare.steps.find(({ id }) => id === "source").run;
   assert.match(source, /matrix: JSON\.stringify\(nativeMatrix\)/u);
-  assert.ok(source.includes("if (source.dry_run !== 'true') requirePublicationReady();"));
+  assert.ok(source.includes("requirePublicationReady();"));
   assert.ok(release.jobs.homebrew.if.includes("needs.prepare.outputs.channel == 'latest'"));
   for (const workflow of [ci, release]) {
     const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
-    assert.equal(job.env.MACOSX_DEPLOYMENT_TARGET, "13.0");
+    assert.equal(job.env.MACOSX_DEPLOYMENT_TARGET, "15.0");
     const commands = job.steps.map(({ run }) => run ?? "").join("\n");
-    for (const gate of ["cargo test --locked -p pnport", "test:package", "test:typescript", "install-smoke.mjs"]) assert.ok(commands.includes(gate), gate);
+    for (const gate of ["cargo test --locked -p pnport", "test:package", "test:typescript", "test:cache:prepare", "test:cache", "install-smoke.mjs"]) assert.ok(commands.includes(gate), gate);
     assert.ok(commands.includes("-p pnport-core -p pnport-preload"));
     assert.ok(commands.includes('cargo build --locked -p pnport-preload --target "$PNPORT_TARGET"'));
     assert.ok(commands.includes("cargo test --locked -p fspy_preload_unix --features fspy_preload_unix/pnport"));
@@ -63,24 +63,65 @@ test("native CI and candidates require repeated benchmarks and publish only nume
   }
 });
 
-test("native CI and candidates verify process ownership against the packaged binary before acceptance", () => {
-  const invocation = 'PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test process_lifecycle --target "$PNPORT_TARGET"';
+test("native CI and candidates verify process and filesystem conformance against the packaged binary before acceptance", () => {
+  const invocations = ["process_lifecycle", "native_conformance"].map((suite) => `PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test ${suite} --target "$PNPORT_TARGET"`);
   for (const workflow of [ci, release]) {
     const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
     const steps = job.steps.map(({ run }) => run ?? "");
-    const lifecycle = steps.findIndex((run) => run.includes(invocation));
+    const lifecycle = steps.findIndex((run) => run.includes(invocations[0]));
     assert(lifecycle >= 0);
-    for (const prerequisite of ["scripts/install-smoke.mjs", "scripts/package.mjs binary"]) {
-      const position = steps[lifecycle].indexOf(prerequisite);
-      assert(position >= 0 && position < steps[lifecycle].indexOf(invocation));
-    }
-    assert(!job.steps[lifecycle]["continue-on-error"] && !job.steps[lifecycle].if);
-    assert(lifecycle < steps.findIndex((run) => run.includes("scripts/benchmark.mjs")));
-    const evidence = steps.findIndex((run) => run.includes("scripts/evidence.mjs record"));
-    if (evidence >= 0) {
-      assert.equal(evidence, lifecycle);
-      assert(steps[evidence].indexOf(invocation) < steps[evidence].indexOf("scripts/evidence.mjs record"));
+    for (const invocation of invocations) {
+      assert(steps[lifecycle].includes(invocation));
+      for (const prerequisite of ["scripts/install-smoke.mjs", "scripts/package.mjs binary"]) {
+        const position = steps[lifecycle].indexOf(prerequisite);
+        assert(position >= 0 && position < steps[lifecycle].indexOf(invocation));
+      }
+      assert(!job.steps[lifecycle]["continue-on-error"] && !job.steps[lifecycle].if);
+      assert(lifecycle < steps.findIndex((run) => run.includes("scripts/benchmark.mjs")));
+      const evidence = steps.findIndex((run) => run.includes("scripts/evidence.mjs record"));
+      if (evidence >= 0) {
+        assert.equal(evidence, lifecycle);
+        assert(steps[evidence].indexOf(invocation) < steps[evidence].indexOf("scripts/evidence.mjs record"));
+      }
     }
     assert(!steps[lifecycle].includes("--test-threads=1"));
+  }
+});
+
+
+test("tag pushes validate without publishing and public jobs require an explicit exact-tag dispatch", () => {
+  const source = release.jobs.prepare.steps.find(({ id }) => id === "source").run;
+  assert.ok(source.includes("if (process.env.GITHUB_EVENT_NAME === 'push') source.dry_run = 'true';"));
+  assert(source.indexOf("source.dry_run = 'true'") < source.indexOf("requirePublicationReady();"));
+  for (const name of ["publish-npm", "publish-release", "homebrew"]) {
+    const job = release.jobs[name];
+    for (const gate of ["needs.prepare.outputs.dry_run == 'false'", "github.event_name == 'workflow_dispatch'", "github.repository == 'delinoio/oss'", "refs/tags/pnport@v"]) assert.ok(job.if.includes(gate), `${name}: ${gate}`);
+  }
+  assert.equal(release.permissions["contents"], "read");
+  assert(!release.permissions["id-token"]);
+  for (const name of ["prepare", "build", "package"]) assert(!release.jobs[name].permissions?.["id-token"]);
+});
+
+
+test("publication proves the successful exact-tag nonpublishing run before write authority", () => {
+  const prepare = release.jobs.prepare;
+  assert.deepEqual(prepare.permissions, { contents: "read", actions: "read" });
+  const source = prepare.steps.find(({ id }) => id === "source").run;
+  assert.ok(source.includes("await requireTagDryRun({ tag: source.tag, revision }, actionsRead)"));
+  assert(source.indexOf("await requireTagDryRun") < source.indexOf("appendFileSync(process.env.GITHUB_OUTPUT"));
+});
+
+
+test("installed tool-cache and offline default Vitest conformance precede native evidence", () => {
+  for (const workflow of [ci, release]) {
+    const job = workflow.jobs["pnport-native"] ?? workflow.jobs.build;
+    const run = job.steps.find(({ run }) => run?.includes("native_tool_caches_coexist_with_dependencies_and_directory_lifetimes")).run;
+    const install = run.indexOf("scripts/install-smoke.mjs");
+    const native = run.indexOf("--test core native_tool_caches_coexist_with_dependencies_and_directory_lifetimes");
+    const prepare = run.indexOf("test:cache:prepare");
+    const offline = run.indexOf('test:cache "$cache_fixture" "$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport"');
+    assert(install >= 0 && native > install && prepare > native && offline > prepare);
+    const evidence = run.indexOf("scripts/evidence.mjs record");
+    if (evidence >= 0) assert(evidence > offline);
   }
 });

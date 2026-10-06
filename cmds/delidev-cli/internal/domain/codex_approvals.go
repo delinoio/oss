@@ -19,7 +19,7 @@ func invalidCodexApproval() error {
 }
 
 func (a ApprovalRequest) Validate() error {
-	if a.Harness != Codex || a.Version != CodexProtocolVersion || a.Codex == nil {
+	if a.Harness != Codex || !CodexVersionAllowed(a.Version) || a.Codex == nil {
 		return invalidCodexApproval()
 	}
 	return a.Codex.Validate()

@@ -64,6 +64,9 @@ func (s *Service) closeAccountSecrets() error {
 		return err
 	}
 	defer unlock()
+	for id := range s.oauthLive {
+		s.clearOAuthLive(id)
+	}
 	if s.ownedVault == nil {
 		return nil
 	}
@@ -177,6 +180,25 @@ func (s *Service) accountRecord(ctx context.Context, id domain.ID) (store.Record
 	err := s.Store.Read(ctx, func(tx *store.Tx) error { var err error; record, _, err = accountFromTx(tx, id, 0); return err })
 	return record, err
 }
+
+// Callers hold accountGate and perform protected staging before this shared
+// transaction helper. OAuth uses the same connection semantics and receipt.
+func commitAccountConnection(tx *store.Tx, input connectAccountInput, requestID domain.ID) (any, error) {
+	account, provider, err := accountConnectPreflight(tx, input)
+	if err != nil {
+		return nil, err
+	}
+	account.Connection = &domain.AccountConnection{ID: requestID, Authentication: provider.Authentication, ConnectedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	account.Health = domain.AccountUnverified
+	account.Validation = nil
+	account.Catalog = nil
+	account.Quota = nil
+	account.ConfirmedExhausted = false
+	if _, err = tx.Put(domain.AccountKind, input.ID, input.Revision, "", "", account); err != nil {
+		return nil, err
+	}
+	return accountReceipt{ID: input.ID}, nil
+}
 func (s *Service) ConnectAccount(ctx context.Context, req *connect.Request[pb.ConnectAccountRequest]) (*connect.Response[pb.ConnectAccountResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	// Clear the decoded RPC input on every exit; no receipt/log captures this struct.
@@ -217,20 +239,7 @@ func (s *Service) ConnectAccount(ctx context.Context, req *connect.Request[pb.Co
 			}
 		}
 		result, err = s.Store.Mutate(ctx, domain.ID(meta.RequestId), "account.connect", input, func(tx *store.Tx) (any, error) {
-			account, provider, err := accountConnectPreflight(tx, input)
-			if err != nil {
-				return nil, err
-			}
-			account.Connection = &domain.AccountConnection{ID: domain.ID(meta.RequestId), Authentication: provider.Authentication, ConnectedAt: time.Now().UTC().Truncate(time.Millisecond)}
-			account.Health = domain.AccountUnverified
-			account.Validation = nil
-			account.Catalog = nil
-			account.Quota = nil
-			account.ConfirmedExhausted = false
-			if _, err = tx.Put(domain.AccountKind, input.ID, input.Revision, "", "", account); err != nil {
-				return nil, err
-			}
-			return accountReceipt{ID: input.ID}, nil
+			return commitAccountConnection(tx, input, domain.ID(meta.RequestId))
 		})
 		// Never remove the staged reference here. Commit errors/cancellation can be
 		// uncertain; an explicit disconnect reconciles all of this owner's intents.

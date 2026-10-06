@@ -164,9 +164,13 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 	base, _ := url.Parse(provider.Endpoint)
 	base.Path = strings.TrimSuffix(base.Path, "/")
 	profile := endpointProfile(*base, provider)
+	if profile >= geminiModels {
+		return inspectHosted(ctx, client, provider, key, profile, *base)
+	}
 	if provider.Authentication == domain.KeylessAuth {
 		o.Authentication = KeylessEndpoint
 	}
+	remaining := 4 * maxBody
 	if profile == openRouter || profile == vercelGateway {
 		path := "key"
 		if profile == vercelGateway {
@@ -177,6 +181,7 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 			return failure.withTime(o.ObservedAt)
 		}
 		valid := validGatewayCredential(raw, profile)
+		remaining -= len(raw)
 		clear(raw)
 		if !valid {
 			o.Failure = InvalidResponse
@@ -187,7 +192,6 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 	models := []Model{}
 	seen := map[string]bool{}
 	after := ""
-	remaining := 4 * maxBody
 	for page := 0; page < maxPages; page++ {
 		query := url.Values{}
 		if profile == openRouter {
@@ -266,6 +270,19 @@ const (
 	authenticatedModels
 	openRouter
 	vercelGateway
+	geminiModels
+	mistralModels
+	togetherModels
+	fireworksModels
+	cohereModels
+	qianfanModels
+	siliconFlowModels
+	alibabaModels
+	basetenModels
+	novitaModels
+	deepInfraModels
+	huggingFaceModels
+	veniceModels
 )
 
 func endpointProfile(base url.URL, p domain.Provider) profile {
@@ -273,6 +290,14 @@ func endpointProfile(base url.URL, p domain.Provider) profile {
 		return custom
 	}
 	host := strings.ToLower(base.Hostname())
+	if p.Authentication == domain.BearerAuth && p.Protocol == domain.OpenAIChat {
+		for _, preset := range additionalHostedPresets() {
+			canonical, _ := url.Parse(preset.Provider.Endpoint)
+			if host == canonical.Hostname() && base.Path == canonical.Path {
+				return hostedProfile(preset.ID)
+			}
+		}
+	}
 	if p.Authentication == domain.BearerAuth && (p.Protocol == domain.OpenAIChat || p.Protocol == domain.OpenAIResponses) {
 		switch {
 		case host == "openrouter.ai" && base.Path == "/api/v1":
@@ -294,9 +319,20 @@ func endpointProfile(base url.URL, p domain.Provider) profile {
 }
 
 func get(ctx context.Context, client *http.Client, p domain.Provider, key []byte, base url.URL, path string, query url.Values) ([]byte, Observation) {
-	failure := Observation{Authentication: AuthenticationUnknown}
 	base.Path += "/" + path
 	base.RawQuery = query.Encode()
+	return getURL(ctx, client, p, key, base, standardHeader)
+}
+
+type inspectionHeader uint8
+
+const (
+	standardHeader inspectionHeader = iota
+	geminiHeader
+)
+
+func getURL(ctx context.Context, client *http.Client, p domain.Provider, key []byte, base url.URL, header inspectionHeader) ([]byte, Observation) {
+	failure := Observation{Authentication: AuthenticationUnknown}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String(), nil)
 	if err != nil {
 		failure.Failure = InvalidResponse
@@ -308,14 +344,19 @@ func get(ctx context.Context, client *http.Client, p domain.Provider, key []byte
 	if p.Protocol == domain.AnthropicMessages {
 		req.Header.Set("anthropic-version", "2023-06-01")
 	}
-	switch p.Authentication {
-	case domain.BearerAuth:
-		req.Header.Set("Authorization", "Bearer "+string(key))
-	case domain.APIKeyAuth:
-		req.Header.Set("x-api-key", string(key))
+	if header == geminiHeader {
+		req.Header.Set("x-goog-api-key", string(key))
+	} else {
+		switch p.Authentication {
+		case domain.BearerAuth:
+			req.Header.Set("Authorization", "Bearer "+string(key))
+		case domain.APIKeyAuth:
+			req.Header.Set("x-api-key", string(key))
+		}
 	}
 	defer req.Header.Del("Authorization")
 	defer req.Header.Del("x-api-key")
+	defer req.Header.Del("x-goog-api-key")
 	response, err := client.Do(req)
 	if err != nil {
 		failure.Failure = networkFailure(err)
@@ -453,32 +494,12 @@ func parseModels(raw []byte, protocol domain.APIProtocol, key []byte) ([]Model, 
 		if err != nil {
 			return nil, "", err
 		}
-		var model Model
-		if json.Unmarshal(item["id"], &model.ID) != nil || !modelID(model.ID) || containsKey(model.ID, key) {
-			return nil, "", errors.New("invalid model identity")
-		}
-		model.Name = model.ID
-		nameField := "name"
+		nameField, contextField := "name", "context_length"
 		if protocol == domain.AnthropicMessages {
-			nameField = "display_name"
+			nameField, contextField = "display_name", "max_input_tokens"
 		}
-		if len(item[nameField]) != 0 && string(item[nameField]) != "null" {
-			if json.Unmarshal(item[nameField], &model.Name) != nil || !displayName(model.Name) || containsKey(model.Name, key) {
-				return nil, "", errors.New("invalid model name")
-			}
-		}
-		contextField := "context_length"
-		if protocol == domain.AnthropicMessages {
-			contextField = "max_input_tokens"
-		}
-		if len(item[contextField]) > 0 && string(item[contextField]) != "null" {
-			var limit uint64
-			if json.Unmarshal(item[contextField], &limit) != nil || limit == 0 || containsKey(strconv.FormatUint(limit, 10), key) {
-				return nil, "", errors.New("invalid context limit")
-			}
-			model.ContextLimit = &limit
-		}
-		if err := advisoryMetadata(item, key, &model); err != nil {
+		model, err := normalizeModel(item, "id", nameField, contextField, key)
+		if err != nil {
 			return nil, "", err
 		}
 		models = append(models, model)
@@ -590,4 +611,28 @@ func uniqueValue(d *json.Decoder, depth int) error {
 	}
 	_, err = d.Token()
 	return err
+}
+
+func normalizeModel(item map[string]json.RawMessage, idField, nameField, contextField string, key []byte) (Model, error) {
+	var model Model
+	if json.Unmarshal(item[idField], &model.ID) != nil || !modelID(model.ID) || containsKey(model.ID, key) {
+		return Model{}, errors.New("invalid model identity")
+	}
+	model.Name = model.ID
+	if len(item[nameField]) != 0 && string(item[nameField]) != "null" {
+		if json.Unmarshal(item[nameField], &model.Name) != nil || !displayName(model.Name) || containsKey(model.Name, key) {
+			return Model{}, errors.New("invalid model name")
+		}
+	}
+	if len(item[contextField]) > 0 && string(item[contextField]) != "null" {
+		var limit uint64
+		if json.Unmarshal(item[contextField], &limit) != nil || limit == 0 || containsKey(strconv.FormatUint(limit, 10), key) {
+			return Model{}, errors.New("invalid context limit")
+		}
+		model.ContextLimit = &limit
+	}
+	if err := advisoryMetadata(item, key, &model); err != nil {
+		return Model{}, err
+	}
+	return model, nil
 }

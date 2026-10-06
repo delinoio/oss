@@ -69,7 +69,7 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		write(id, map[string]string{"status": "canceled"})
 	case "account/read":
 		if _, err := os.Lstat(filepath.Join(home, "auth.json")); os.IsNotExist(err) {
-			write(id, map[string]any{"account": nil, "requiresOpenaiAuth": true})
+			managedFixtureAccountRead(id, nil, write)
 			return true
 		}
 		var input struct {
@@ -81,7 +81,32 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 				os.Exit(42)
 			}
 		}
-		write(id, map[string]any{"account": map[string]any{"type": "chatgpt", "email": "fixture@example.invalid", "planType": "plus"}, "requiresOpenaiAuth": true})
+		managedFixtureAccountRead(id, map[string]any{"type": "chatgpt", "email": "fixture@example.invalid", "planType": "plus"}, write)
+	case "account/rateLimits/read":
+		write(id, map[string]any{"rateLimits": map[string]any{"limitId": "codex", "primary": map[string]any{"usedPercent": 80, "windowDurationMins": 300, "resetsAt": 1900000000}, "secondary": map[string]any{"usedPercent": 20, "windowDurationMins": 10080, "resetsAt": 1900000000}}, "rateLimitsByLimitId": nil, "rateLimitResetCredits": map[string]any{"availableCount": 2, "credits": []any{map[string]any{"id": "credit_1", "resetType": "codexRateLimits", "status": "available", "grantedAt": 1700000000, "expiresAt": nil, "title": "not public", "description": "not public"}}}})
+	case "account/rateLimitResetCredit/consume":
+		var input struct {
+			Key    string  `json:"idempotencyKey"`
+			Credit *string `json:"creditId"`
+		}
+		if domain.Decode(params, &input) != nil || domain.ID(input.Key).Validate() != nil {
+			os.Exit(43)
+		}
+		keyPath := filepath.Join(home, "credit-key")
+		if old, err := os.ReadFile(keyPath); err == nil {
+			if string(old) != input.Key {
+				os.Exit(44)
+			}
+			write(id, map[string]any{"outcome": "alreadyRedeemed"})
+		} else {
+			if security.WriteAtomic(keyPath, []byte(input.Key)) != nil {
+				os.Exit(45)
+			}
+			if mode == "managed-quota-lost-response" {
+				return true
+			}
+			write(id, map[string]any{"outcome": "reset"})
+		}
 	case "account/logout":
 		_ = os.Remove(filepath.Join(home, "auth.json"))
 		write(id, struct{}{})
@@ -89,6 +114,21 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		return false
 	}
 	return true
+}
+
+func managedFixtureAccountRead(id json.RawMessage, account any, write func(json.RawMessage, any)) {
+	if raw := os.Getenv("DELIDEV_CODEX_ACCOUNT_READ"); raw != "" {
+		write(id, json.RawMessage(raw))
+		return
+	}
+	response := map[string]any{"account": account, "requiresOpenaiAuth": true}
+	if routing, present := os.LookupEnv("DELIDEV_CODEX_ROUTING"); present {
+		response["workspaceRouting"] = nil
+		if account != nil {
+			response["workspaceRouting"] = json.RawMessage(routing)
+		}
+	}
+	write(id, response)
 }
 
 func TestManagedCodexThreadRechecksWorkspaceProviderAuthority(t *testing.T) {

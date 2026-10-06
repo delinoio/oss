@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs,
     path::{Path, PathBuf},
 };
@@ -9,7 +9,7 @@ use pnp::fs::{VPath, VPathInfo};
 use crate::{
     cache::{Cache, Lease},
     diagnostic::{cache_error, Code, Error, Result},
-    graph::{check_conflict, digest, normalize, Graph},
+    graph::{digest, normalize, Graph},
 };
 
 pub struct View {
@@ -24,6 +24,22 @@ pub struct Translation {
     pub physical: PathBuf,
     pub readonly: bool,
     pub virtual_link: bool,
+    pub kind: PathKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PathKind {
+    Native,
+    ToolCache,
+    Dependency,
+    DependencyDirectory,
+    CacheContainer,
+}
+
+#[derive(Clone, Debug)]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub directory: bool,
 }
 
 /// A directory added to its parent's native listing, without creating backing
@@ -35,6 +51,11 @@ pub struct VirtualDirectoryEntry {
 
 enum Lookup {
     Backing(PathBuf),
+    ToolCache(PathBuf),
+    Reserved {
+        issuer: PathBuf,
+        suffix: PathBuf,
+    },
     Directory {
         issuer: PathBuf,
         scope: Option<String>,
@@ -47,6 +68,10 @@ enum Lookup {
 
 impl View {
     pub fn new(graph: Graph, cache: Cache, session: PathBuf) -> Self {
+        // Runtime sessions already exist and must match native descriptor
+        // spelling, including Darwin's /var alias. Data-only fixtures may
+        // reserve a session path before creating it.
+        let session = fs::canonicalize(&session).unwrap_or(session);
         Self {
             graph,
             cache,
@@ -59,6 +84,12 @@ impl View {
         self.translate_with_wait(path, &mut || Ok(()))
     }
 
+    /// A dependency alias is a link even when it is an intermediate component.
+    /// This query performs no archive extraction or backing publication.
+    pub fn contains_dependency_alias(&self, path: &Path) -> Result<bool> {
+        Ok(matches!(self.lookup(path)?, Lookup::Dependency { .. }))
+    }
+
     pub fn translate_with_wait(
         &mut self,
         path: &Path,
@@ -66,6 +97,20 @@ impl View {
     ) -> Result<Translation> {
         match self.lookup(path)? {
             Lookup::Backing(path) => self.backing(path, false, false, wait),
+            Lookup::ToolCache(path) => {
+                let mut translation = self.backing(path, false, false, wait)?;
+                if !translation.readonly {
+                    translation.kind = PathKind::ToolCache;
+                }
+                Ok(translation)
+            }
+            Lookup::Reserved { issuer, suffix } => {
+                let mut translation = self.directory(&issuer, None)?;
+                translation.logical.push(&suffix);
+                translation.physical.push(suffix);
+                translation.kind = PathKind::Dependency;
+                Ok(translation)
+            }
             Lookup::Directory { issuer, scope } => self.directory(&issuer, scope.as_deref()),
             Lookup::Dependency {
                 target,
@@ -73,6 +118,7 @@ impl View {
             } => {
                 let mut translated = self.translate_with_wait(&target, wait)?;
                 translated.readonly = true;
+                translated.kind = PathKind::Dependency;
                 // Preserve a terminal dependency alias encountered while
                 // recursively translating a nested dependency path.
                 translated.virtual_link |= virtual_link;
@@ -98,6 +144,75 @@ impl View {
                 Err(error) if error.code == Code::PnportResolutionFailed => return Ok(None),
                 Err(error) => return Err(error),
                 _ => return Ok(None),
+            }
+        }
+    }
+
+    /// Return only entries absent from the live native backing. Directory
+    /// adapters retain native ordering and append these without extracting
+    /// ZIPs.
+    pub fn directory_entries(&self, parent: &Path, physical: &Path) -> Result<Vec<DirectoryEntry>> {
+        let mut entries = BTreeMap::new();
+        if self.virtual_directory_entry(parent)?.is_some() {
+            entries.insert("node_modules".to_owned(), true);
+        }
+        if let Lookup::Directory {
+            issuer,
+            scope: None,
+        } = self.lookup(parent)?
+        {
+            if self.graph.cache_container(&issuer) {
+                for name in self.graph.dependency_names(&issuer) {
+                    if let Some((scope, _)) = name.split_once('/') {
+                        entries.insert(scope.to_owned(), true);
+                    } else {
+                        entries.insert(name, false);
+                    }
+                }
+            }
+        }
+        let mut pending = Vec::new();
+        for (name, directory) in entries {
+            match fs::symlink_metadata(physical.join(&name)) {
+                Ok(metadata)
+                    if (directory && metadata.is_dir())
+                        || (!directory && metadata.file_type().is_symlink()) => {}
+                Ok(_) => {
+                    return Err(Error::new(
+                        Code::PnportFilesystemConflict,
+                        "A backing entry conflicts with the virtual dependency directory.",
+                    ))
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    pending.push(DirectoryEntry { name, directory });
+                }
+                Err(_) => return Err(cache_error()),
+            }
+        }
+        Ok(pending)
+    }
+
+    /// Descriptor-only link opens need a real protected link even when the
+    /// parent directory is a native cache container. Keep it in the private
+    /// view rather than publishing dependency links into the caller's cache.
+    pub fn dependency_link_backing(&mut self, path: &Path) -> Result<PathBuf> {
+        let name = path.file_name().ok_or_else(cache_error)?;
+        let mut parent = path.parent().ok_or_else(cache_error)?.to_owned();
+        loop {
+            match self.lookup(&parent)? {
+                Lookup::Dependency { target, .. } => parent = target,
+                Lookup::Directory { issuer, scope } => {
+                    return Ok(self
+                        .directory_backing(&issuer, scope.as_deref())?
+                        .physical
+                        .join(name));
+                }
+                _ => {
+                    return Err(Error::new(
+                        Code::PnportResolutionFailed,
+                        "A virtual link requires a dependency directory.",
+                    ))
+                }
             }
         }
     }
@@ -145,9 +260,9 @@ impl View {
             // Only the locator root owns a virtual dependency namespace.
             // Native resolvers ascend from source subdirectories to that root;
             // inventing node_modules in every descendant makes recursive tool
-            // discovery enter synthetic trees and makes output cleanup read-only.
-            // Continue walking into later locator roots, retaining peer context
-            // and normal conflict checks.
+            // discovery enter synthetic trees and makes output cleanup
+            // read-only. Continue walking into later locator roots,
+            // retaining peer context and normal conflict checks.
             if part.as_os_str() != "node_modules"
                 || self.graph.is_location_ancestor(&prefix.join(part))
                 || self
@@ -167,7 +282,7 @@ impl View {
                 }
             }
             if matches!(VPath::from(&prefix), Ok(VPath::Native(_))) {
-                check_conflict(&prefix.join("node_modules"))?;
+                self.graph.check_dependency_directory(&prefix)?;
             }
             let remaining = &components[i + 1..];
             if remaining.is_empty() {
@@ -176,10 +291,19 @@ impl View {
                     scope: None,
                 });
             }
+            if self.graph.cache_entry(&prefix, remaining[0].as_os_str()) {
+                return Ok(Lookup::ToolCache(path));
+            }
             let first = remaining[0]
                 .as_os_str()
                 .to_str()
                 .ok_or_else(|| Error::new(Code::PnportResolutionFailed, "Invalid package name."))?;
+            if first == ".bin" {
+                return Ok(Lookup::Reserved {
+                    issuer: prefix,
+                    suffix: remaining.iter().collect(),
+                });
+            }
             let (name, consumed) = if first.starts_with('@') {
                 if remaining.len() == 1 {
                     return Ok(Lookup::Directory {
@@ -255,10 +379,31 @@ impl View {
             physical,
             readonly: readonly || managed,
             virtual_link,
+            kind: if readonly || managed {
+                PathKind::Dependency
+            } else {
+                PathKind::Native
+            },
         })
     }
 
     fn directory(&mut self, issuer: &Path, scope: Option<&str>) -> Result<Translation> {
+        if scope.is_none()
+            && self.graph.cache_container(issuer)
+            && issuer.join("node_modules").is_dir()
+        {
+            return Ok(Translation {
+                logical: issuer.join("node_modules"),
+                physical: issuer.join("node_modules"),
+                readonly: true,
+                virtual_link: false,
+                kind: PathKind::CacheContainer,
+            });
+        }
+        self.directory_backing(issuer, scope)
+    }
+
+    fn directory_backing(&mut self, issuer: &Path, scope: Option<&str>) -> Result<Translation> {
         let names = self.graph.dependency_names(issuer);
         let base = self
             .session
@@ -301,6 +446,11 @@ impl View {
             physical,
             readonly: true,
             virtual_link: false,
+            kind: if scope.is_none() && self.graph.cache_container(issuer) {
+                PathKind::CacheContainer
+            } else {
+                PathKind::DependencyDirectory
+            },
         })
     }
 }

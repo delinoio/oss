@@ -36,7 +36,7 @@ Strict UTF-8/1 MiB and legacy/future/malformed handling remain unchanged. Legacy
 
 Validate canonical decimal-string uint64 values and format through BigInt. Preserve measured zero and exact large values; missing/null/numeric/noncanonical/overflow bytes are Unavailable, invalid resource counts Unknown. No floating-point conversion, sums, ratios, percentages or reclaimable estimates.
 
-Native `details/summary` controls are keyboard operable with visible focus. State follows server identity, machine identity and account/connection identity, never array position. Missing identities receive response-scoped keys; changed identities and another connection cannot inherit open state. Category navigation and responsive changes retain state within one visit. Pass actual Settings visibility to the local reset boundary; category inactivity alone is not departure. Navigation away clears all disclosures; page-level Escape preserves them; the merged issue #1138 visit disposal is authoritative and ordinary reopening starts at AI Subscription. Disposing disclosures saves/replays nothing and introduces no server/native cancellation. State remains memory-only.
+Native `details/summary` controls are keyboard operable with visible focus. State follows server identity, machine identity and account/connection identity, never array position. Missing identities receive response-scoped keys; changed identities and another connection cannot inherit open state. Responsive changes, same-category reselection and same-identity reconnect retain state within the active category. Category departure unmounts Doctor and clears all disclosures; leaving Settings also clears them; page-level Escape preserves them; the merged issue #1138 visit disposal is authoritative and ordinary reopening starts at AI Subscription. Disposing disclosures saves/replays nothing and introduces no server/native cancellation. State remains memory-only.
 
 ### Styling and responsive behavior
 
@@ -46,7 +46,7 @@ Summary cards use three columns at CSS viewport widths of at least 1100px, one b
 
 ## Storage
 
-Disclosures are native memory-only presentation state within the original connection and Settings visit. There is no Web Storage, persisted settings, file output or new query cache. Exact server-returned values remain observations under the existing query owner.
+Disclosures are native memory-only presentation state within the original connection and active Settings category. There is no Web Storage, persisted settings, file output or new query cache. Exact server-returned values remain observations under the existing query owner.
 
 ## Security
 
@@ -66,7 +66,7 @@ Reuse React, Connect Query, the existing shared QueryClient and native `details/
 
 ## Change Triggers
 
-No API/schema/generated binding, backend, persistence, authorization, credential access, migration, feature flag, dependency or release/deployment behavior changes. Do not log report content, identity or endpoint. Preserve AI Subscription, Backups, child-dialog/drawer focus containment and opener restoration, category locks with global navigation available and underlying session/composer behavior.
+No API/schema/generated binding, backend, persistence, authorization, credential access, migration, feature flag, dependency or release/deployment behavior changes. Do not log report content, identity or endpoint. Preserve AI Subscription, Backups, child-dialog/drawer focus containment and opener restoration, unrestricted category and global navigation and underlying session/composer behavior.
 
 Update this presentation contract, the desktop/diagnostics links and scoped frontend AGENTS when hierarchy, lifecycle, bounds or styling guarantees change. Update the project index for domain ownership/catalog changes and record validation independently.
 
@@ -79,3 +79,5 @@ Update this presentation contract, the desktop/diagnostics links and scoped fron
 - [Issue #1144](https://github.com/delinoio/oss/issues/1144)
 
 The first-session prerequisite validator accepts all 29 current stored resource kinds, including `subagent` and `forward`, with an allowlist-derived maximum and exact uint64 count strings. Unknown kinds, duplicate kind rows and invalid counts still make that strict enclosing report unavailable; retained resources never grant execution readiness.
+
+Title requests commit their once-only HTTP send claim and diagnostic send revision in one Go-owned transaction. A failed diagnostic publication rolls back the claim. A committed claim still does not prove provider acceptance. Stream frames with a present malformed or null response ID invalidate the response identity and effective settings; absent ID fields do not change the retained identity.

@@ -39,6 +39,13 @@ type Manager struct {
 func NewManager(store *Store, path string, l *slog.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, remoteKeys: map[string]string{}, ctx: ctx, cancel: cancel}
+	m.Drivers = func(kind Backend) (Driver, error) {
+		d, err := defaultDriver(kind)
+		if h, ok := d.(*HostDriver); ok {
+			h.Store = store
+		}
+		return d, err
+	}
 	m.ResolveCapacity = resolveDockerCapacity
 	m.ReleaseClient = defaultReleaseClient()
 	m.RunnerBuilder = &ManagedImageBuilder{Store: store, Images: m.Images, Client: m.ReleaseClient, Log: l}
@@ -240,6 +247,8 @@ func suspensionCorrected(old PoolState, next Pool, conn Connection, oldConfig, n
 		switch oldPool.Backend {
 		case Docker:
 			return oldConfig.DockerSocket != newConfig.DockerSocket || oldConfig.Timeouts.DockerPreparation != newConfig.Timeouts.DockerPreparation
+		case Host:
+			return oldConfig.Timeouts.HostPreparation != newConfig.Timeouts.HostPreparation
 		case Tart:
 			return oldConfig.TartExecutable != newConfig.TartExecutable || oldConfig.Timeouts.TartPreparation != newConfig.Timeouts.TartPreparation
 		}

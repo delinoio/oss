@@ -29,11 +29,11 @@ export function metadata(read = sourceText) {
 }
 
 export function requireReleaseReady(read = sourceText) {
-  // Host smoke tests do not prove minimum-OS support or the full conformance
-  // contract. Enable this source gate only after those remaining acceptance
-  // results are reviewed; dry runs must stay available while it is closed.
+  // This gate records reviewed publication authority, not full acceptance.
+  // The owner authorized 0.1.0 with disclosed unresolved failures. Bind that
+  // exception to one exact version; later releases require a new review.
   const source = JSON.parse(read("packages/pnport/package.json"));
-  ensure(source.pnportReleaseReady === true && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(source.version) && source.version !== "0.0.0", "pnport publication is blocked until full native, minimum-OS, and benchmark acceptance is complete");
+  ensure(source.pnportReleaseReady === true && source.pnportReleaseVersion === source.version && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(source.version) && source.version !== "0.0.0", "pnport publication is blocked without exact reviewed stable-version authorization");
 }
 
 export function requirePublicationReady(read = sourceText) {

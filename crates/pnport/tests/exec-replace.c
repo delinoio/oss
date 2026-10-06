@@ -9,6 +9,7 @@
 #include <unistd.h>
 #ifdef __APPLE__
 #include <crt_externs.h>
+#include <spawn.h>
 #else
 extern char **environ;
 #endif
@@ -87,17 +88,31 @@ int main(int argc, char **argv) {
     }
     int result = dependency();
     if (result) return result;
+#ifdef __APPLE__
+    if (strcmp(mode, "protected-spawn") == 0 || strcmp(mode, "protected-spawnp") == 0) {
+        pid_t child = -1;
+        char *arguments[] = {"true", NULL};
+        if (setenv("PATH", "/usr/bin", 1)) return 57;
+        int error = strcmp(mode, "protected-spawn") == 0
+            ? posix_spawn(&child, "/usr/bin/true", NULL, NULL, arguments, *_NSGetEnviron())
+            : posix_spawnp(&child, "true", NULL, NULL, arguments, *_NSGetEnviron());
+        if (error != ENOTSUP || child != -1) return 58;
+        return dependency() == 0 ? 23 : 56;
+    }
+#endif
     if (strcmp(mode, "protected") == 0) {
-        replace("execle", "/usr/bin/true", "leaf");
-        return 55;
+        errno = 0;
+        if (replace("execle", "/usr/bin/true", "leaf") != -1 || errno != ENOTSUP) return 55;
+        return dependency() == 0 ? 23 : 56;
     }
     if (strcmp(mode, "privileged") == 0) {
         replace("execvp-privileged", "tree", "leaf");
         return 55;
     }
     if (strcmp(mode, "shell-fallback") == 0) {
-        replace("execvp", "./bad-format", "leaf");
-        return 55;
+        errno = 0;
+        if (replace("execvp", "./bad-format", "leaf") != -1 || errno != ENOTSUP) return 55;
+        return dependency() == 0 ? 23 : 56;
     }
     if (strcmp(role, "leaf") == 0) return 23;
     pid_t child = fork();

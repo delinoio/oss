@@ -48,8 +48,9 @@ fn validate_format(format: &str, input: bool) -> Result<Vec<Item<'_>>> {
     }) {
         return Err(Error::argument(Code::InvalidFormat));
     }
-    // Chrono's permissive offset is parsing-only. Reject it rather than allowing
-    // the formatter's internal panic path to render a dependency error.
+    // Chrono's permissive offset is parsing-only. Reject it rather than
+    // allowing the formatter's internal panic path to render a dependency
+    // error.
     if !input
         && items.iter().any(|item| {
             *item

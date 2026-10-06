@@ -7,17 +7,22 @@ import (
 	"encoding/json"
 )
 
+// MaxSessionDeletionBytes admits all 4,096 original ownership copies while
+// bounding both the synchronized private plan and one Worker page.
+const MaxSessionDeletionBytes = 4 << 20
+
 // Deletion work contains only immutable ownership references. Native paths,
 // prompts, credentials and transcript content never cross this boundary.
 type SessionDeletionCopy struct {
-	JobID       ID      `json:"job_id"`
-	Type        JobType `json:"type"`
-	Revision    uint64  `json:"revision,string"`
-	Digest      string  `json:"digest"`
-	InstanceID  ID      `json:"instance_id"`
-	ExecutionID ID      `json:"execution_id,omitempty"`
-	SnapshotID  ID      `json:"snapshot_id,omitempty"`
-	ActionID    ID      `json:"action_id,omitempty"`
+	JobID                 ID      `json:"job_id"`
+	UnpublishedSidechatID ID      `json:"unpublished_sidechat_id,omitempty"`
+	Type                  JobType `json:"type"`
+	Revision              uint64  `json:"revision,string"`
+	Digest                string  `json:"digest"`
+	InstanceID            ID      `json:"instance_id"`
+	ExecutionID           ID      `json:"execution_id,omitempty"`
+	SnapshotID            ID      `json:"snapshot_id,omitempty"`
+	ActionID              ID      `json:"action_id,omitempty"`
 }
 
 type SessionDeletionFork struct {
@@ -66,6 +71,9 @@ func (w SessionDeletionWork) Validate() error {
 				return SessionDeletionPending()
 			}
 		default:
+			return SessionDeletionPending()
+		}
+		if c.UnpublishedSidechatID != "" && (c.Type != ForkSessionJob || c.UnpublishedSidechatID.Validate() != nil || c.UnpublishedSidechatID == w.SessionID) {
 			return SessionDeletionPending()
 		}
 		if c.SnapshotID != "" && (c.Type != WorkspaceStorageJob || c.SnapshotID.Validate() != nil) {

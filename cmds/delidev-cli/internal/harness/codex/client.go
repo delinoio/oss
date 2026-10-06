@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"runtime"
@@ -20,6 +21,8 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
+	Sidechat         SidechatProfile
+	QuotaObserver    func(context.Context, domain.SubscriptionQuotaObservation)
 	ModelObservation bool
 	Process          process.Config
 	Version          string
@@ -30,6 +33,8 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	sidechat         SidechatProfile
+	quotaObserver    func(context.Context, domain.SubscriptionQuotaObservation)
 	subagents        map[string]domain.SubagentObservation
 	subagentTurn     domain.ID
 	modelObservation string
@@ -81,12 +86,15 @@ func incompatible() *domain.Error {
 func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	phase := profilePhase
 	defer func() {
+		if returned != nil {
+			returned = domain.WithCodexDiagnostic(config.Version, domain.CodexPhase(phase), returned)
+		}
 		if returned != nil && config.Process.Logger != nil {
-			config.Process.Logger.WarnContext(ctx, "Codex native handshake failed", "owner_id", config.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
+			config.Process.Logger.WarnContext(ctx, "Codex native handshake failed", "owner_id", config.Process.OwnerID, "phase", domain.CodexErrorDiagnostic(returned).Phase, "version", domain.CodexErrorDiagnostic(returned).DetectedVersion, "minimum_version", domain.CodexMinimumVersion, "code", domain.CodexErrorDiagnostic(returned).Code, "recovery_code", domain.SafeError(returned).Code, "correlation_id", config.Process.OwnerID)
 		}
 	}()
-	if config.Version != SupportedVersion {
-		return nil, incompatible()
+	if !domain.CodexVersionAllowed(config.Version) {
+		return nil, domain.CodexVersionFailure(config.Version)
 	}
 	if config.Mode == "" {
 		config.Mode = ProbeProtocol
@@ -132,6 +140,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := configureSidechat(&config); err != nil {
+		return nil, err
+	}
 	config.Process.Args = append(config.Process.Args, "app-server")
 	phase = launchPhase
 	wire, err := nativewire.Start(ctx, config.Process)
@@ -141,7 +152,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	defer func() {
 		if returned != nil {
 			if err := wire.Close(); err != nil {
-				returned = domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying.")
+				returned = domain.CodexRecoveryFailure(config.Version, domain.CodexPhase(phase), returned, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
 			}
 		}
 	}()
@@ -199,14 +210,19 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation}
+	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	phase = profilePhase
 	if config.ManagedAuthentication {
 		client.managedHome = home
+		client.quotaObserver = config.QuotaObserver
 		if err := client.verifyManagedConfig(ctx, config.Process.Cwd); err != nil {
 			return nil, err
 		}
 	}
 	if err := client.verifyAPI(ctx, config.Process.Cwd); err != nil {
+		return nil, err
+	}
+	if err := client.verifySidechat(ctx, config.Process.Cwd, ""); err != nil {
 		return nil, err
 	}
 	if err := client.verifyModelObservation(ctx); err != nil {
@@ -223,7 +239,28 @@ func handshakeError(wire *nativewire.Connection, err error) error {
 	}
 	// A handshake has no product side effect. Once Close proves native cleanup,
 	// its missing acknowledgment is a failed probe, not an uncertain execution.
-	return domain.Fail(domain.Unavailable, "Codex app-server did not complete its native handshake.", "Check the installed executable and refresh protocol discovery.")
+	failure := domain.Fail(domain.Unavailable, "Codex app-server did not complete its native handshake.", "Check the installed executable and refresh protocol discovery.")
+	if errors.Is(err, context.DeadlineExceeded) {
+		failure.Cause = "timeout"
+	}
+	return failure
 }
-func (c *Client) Close() error    { return c.wire.Close() }
+func (c *Client) Close() error {
+	return domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.Close())
+}
 func (c *Client) Version() string { return c.version }
+
+func (c *Client) recordFailure(ctx context.Context, phase domain.CodexPhase, returned *error) {
+	c.recordFailureAtStage(ctx, phase, "", returned)
+}
+
+func (c *Client) recordFailureAtStage(ctx context.Context, phase domain.CodexPhase, stage managedFailureStage, returned *error) {
+	*returned = domain.WithCodexDiagnostic(c.version, phase, *returned)
+	if d := domain.CodexErrorDiagnostic(*returned); d != nil && c.logger != nil {
+		attributes := []any{"version", d.DetectedVersion, "minimum_version", d.MinimumVersion, "phase", d.Phase, "code", d.Code, "correlation_id", c.ownerID, "recovery_code", domain.SafeError(*returned).Code}
+		if stage != "" {
+			attributes = append(attributes, "stage", stage)
+		}
+		c.logger.WarnContext(ctx, "codex_native_operation_failed", attributes...)
+	}
+}

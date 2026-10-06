@@ -35,7 +35,8 @@ impl Default for TextMeasurer {
     fn default() -> Self {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        // A system-installed namesake must not override the source-pinned default.
+        // A system-installed namesake must not override the source-pinned
+        // default.
         let duplicates: Vec<_> = db
             .faces()
             .filter(|f| f.families.iter().any(|(name, _)| name == "Noto Sans KR"))

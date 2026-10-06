@@ -160,11 +160,11 @@ pub fn execute(command: Command) -> Result<u8> {
         .map_err(|_| Error::runtime(Code::Runtime))?;
 
     // The supervisor alone owns the temporary path and publication authority.
-    // It never joins a blocked stdin/stdout/regex worker on cancellation. Returning
-    // from main terminates those threads and closes their handles; Windows temp
-    // handles permit delete sharing, so cleanup also works while a write is
-    // pending. The bounded channel limits streaming memory without imposing an
-    // input limit.
+    // It never joins a blocked stdin/stdout/regex worker on cancellation.
+    // Returning from main terminates those threads and closes their
+    // handles; Windows temp handles permit delete sharing, so cleanup also
+    // works while a write is pending. The bounded channel limits streaming
+    // memory without imposing an input limit.
     let mut processed = None;
     let mut written = false;
     loop {

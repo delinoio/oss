@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use tauri_runtime_cef::WebviewCefExt;
+
 mod bridge;
 #[cfg(desktop)]
 mod capture;
@@ -207,8 +209,8 @@ pub(crate) fn reset_diagnostic_logs() -> Result<(), String> {
 
 #[derive(Clone)]
 struct TrayMenuItems {
-    show: MenuItem<tauri::Cef>,
-    quit: MenuItem<tauri::Cef>,
+    show: MenuItem<tauri_runtime_cef::CefRuntime>,
+    quit: MenuItem<tauri_runtime_cef::CefRuntime>,
 }
 
 fn tray_labels(language: &str) -> (&'static str, &'static str) {
@@ -459,7 +461,7 @@ pub(crate) fn restore_single_instance<R: tauri::Runtime>(
     app.plugin(single_instance_plugin())
 }
 
-fn create_tray(app: &tauri::AppHandle<tauri::Cef>) -> tauri::Result<()> {
+fn create_tray(app: &tauri::AppHandle<tauri_runtime_cef::CefRuntime>) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show DevHUD", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit DevHUD", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
@@ -631,7 +633,7 @@ fn is_allowed_navigation(url: &tauri::Url) -> bool {
 
 #[tauri::command]
 fn frontend_ready(
-    webview: tauri::WebviewWindow<tauri::Cef>,
+    webview: tauri::WebviewWindow<tauri_runtime_cef::CefRuntime>,
     readiness: tauri::State<'_, FrontendReadiness>,
 ) {
     if readiness.complete.swap(true, Ordering::SeqCst) {
@@ -689,7 +691,6 @@ fn missing_resource_reason(resource: &str) -> &'static str {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 fn should_observe_renderer_crashes(development: bool) -> bool {
     !development
 }
@@ -741,13 +742,14 @@ fn validate_host(smoke_mode: Option<SmokeMode>) -> Result<(), HostValidationFail
     info!(
         event = "cef_resources_verified",
         count = layout.required_relative_paths().count(),
-        sandbox = true
+        chromium_sandbox_required = !cfg!(windows),
+        windows_unsandboxed_exception = cfg!(windows)
     );
     Ok(())
 }
 
 fn start_renderer_crash_watchdog(
-    app_handle: tauri::AppHandle<tauri::Cef>,
+    app_handle: tauri::AppHandle<tauri_runtime_cef::CefRuntime>,
     renderer_crashed: Arc<AtomicBool>,
 ) {
     std::thread::spawn(move || {
@@ -787,7 +789,7 @@ fn wait_for_frontend_readiness_timeout(
 }
 
 fn start_frontend_readiness_watchdog(
-    app_handle: tauri::AppHandle<tauri::Cef>,
+    app_handle: tauri::AppHandle<tauri_runtime_cef::CefRuntime>,
     frontend_readiness_complete: Arc<AtomicBool>,
 ) {
     std::thread::spawn(move || {
@@ -800,8 +802,8 @@ fn start_frontend_readiness_watchdog(
 }
 
 fn handle_frontend_ready(
-    webview: &tauri::WebviewWindow<tauri::Cef>,
-    app_handle: &tauri::AppHandle<tauri::Cef>,
+    webview: &tauri::WebviewWindow<tauri_runtime_cef::CefRuntime>,
+    app_handle: &tauri::AppHandle<tauri_runtime_cef::CefRuntime>,
     smoke_mode: Option<SmokeMode>,
     origin: &str,
     renderer_crashed: Arc<AtomicBool>,
@@ -855,7 +857,7 @@ fn handle_frontend_ready(
     }
 }
 
-#[tauri::cef_entry_point]
+#[tauri_runtime_cef::cef_entry_point]
 fn main() {
     #[cfg(desktop)]
     if local_agents::serve_git_askpass() {
@@ -886,7 +888,7 @@ fn main() {
         complete: Arc::new(AtomicBool::new(false)),
         smoke_mode,
         renderer_crashed: Arc::new(AtomicBool::new(false)),
-        renderer_crash_listener_ready: Arc::new(AtomicBool::new(cfg!(target_os = "macos"))),
+        renderer_crash_listener_ready: Arc::new(AtomicBool::new(false)),
     };
     let bridge_state = bridge::NativeBridgeState::default();
     let session_network_policy = bridge_state.clone();
@@ -902,7 +904,21 @@ fn main() {
     // The installing process releases ownership immediately before spawning a
     // health-checked replacement, so that replacement must claim the normal
     // single-instance guard just like every other primary process.
-    let mut builder = tauri::Builder::<tauri::Cef>::default()
+    let mut runtime = tauri_runtime_cef::Cef::default()
+        // Windows lacks an upstream executable-host broker; this explicit
+        // exception expires when that broker is supported. Other hosts require
+        // Chromium sandboxing and all hosts retain OS-backed secret storage.
+        .sandbox(if cfg!(windows) {
+            tauri_runtime_cef::SandboxPolicy::Auto
+        } else {
+            tauri_runtime_cef::SandboxPolicy::Required
+        })
+        .secret_storage(tauri_runtime_cef::SecretStorage::System);
+    if let Some(cache_path) = std::env::var_os("DEVHUD_SMOKE_CACHE_DIR") {
+        runtime = runtime.root_cache_path(cache_path);
+    }
+    let mut builder = tauri::Builder::<tauri_runtime_cef::CefRuntime>::new()
+        .runtime(runtime)
         .plugin(single_instance_plugin())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(native_plugin::init())
@@ -975,17 +991,16 @@ fn main() {
                 }
             }
         });
-    if let Some(cache_path) = std::env::var_os("DEVHUD_SMOKE_CACHE_DIR") {
-        builder = builder.root_cache_path(cache_path);
-    }
 
-    #[cfg(target_os = "macos")]
-    {
+    if should_observe_renderer_crashes(tauri::is_dev()) {
         let renderer_crashed = frontend_readiness.renderer_crashed.clone();
-        builder = builder.on_web_content_process_terminate(move |_| {
+        builder = builder.on_web_content_process_terminate(move |_, _| {
             renderer_crashed.store(true, Ordering::SeqCst);
             error!(event = "renderer_terminated", source = "cef_callback");
         });
+        frontend_readiness
+            .renderer_crash_listener_ready
+            .store(true, Ordering::SeqCst);
     }
 
     let result = builder
@@ -1023,8 +1038,11 @@ fn main() {
                     }
                 }
             });
-            create_tray(&app.handle().clone())?;
-            let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
+            create_tray(&app.handle().clone()).inspect_err(|_| {
+                error!(event = "tray_initialization_failed");
+            })?;
+            info!(event = "desktop_tray_ready");
+            let webview = tauri::WebviewWindowBuilder::<tauri_runtime_cef::CefRuntime, _>::new(
                 app,
                 "main",
                 WebviewUrl::App("index.html".into()),
@@ -1062,35 +1080,6 @@ fn main() {
 
             start_frontend_readiness_watchdog(app.handle().clone(), readiness.complete.clone());
 
-            #[cfg(not(target_os = "macos"))]
-            if should_observe_renderer_crashes(tauri::is_dev()) {
-                let renderer_crashed_for_protocol = readiness.renderer_crashed.clone();
-                webview.on_dev_tools_protocol(move |message| {
-                    if let tauri::CefDevToolsProtocol::Event { method, .. } = message
-                        && method.contains("targetCrashed")
-                    {
-                        renderer_crashed_for_protocol.store(true, Ordering::SeqCst);
-                        error!(event = "renderer_terminated", source = "cdp");
-                    }
-                })?;
-                if webview
-                    .send_dev_tools_message(
-                        br#"{"id":9000,"method":"Inspector.enable","params":{}}"#,
-                    )
-                    .is_err()
-                {
-                    error!(event = "renderer_diagnostic_enable_failed");
-                    if smoke_mode == Some(SmokeMode::RendererCrash) {
-                        app.handle().exit(70);
-                    }
-                } else {
-                    readiness
-                        .renderer_crash_listener_ready
-                        .store(true, Ordering::SeqCst);
-                }
-            }
-
-            #[cfg(target_os = "macos")]
             drop(webview);
 
             if let Some(probe) = &update_health_probe {
@@ -1222,12 +1211,11 @@ mod tests {
     use tracing::{debug, error, info, warn};
     use tracing_subscriber::{Layer, layer::SubscriberExt};
 
-    #[cfg(not(target_os = "macos"))]
-    use super::should_observe_renderer_crashes;
     use super::{
         DiagnosticLogController, SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
         is_diagnostic_log_name, missing_resource_reason, remove_diagnostic_log_files,
-        wait_for_frontend_readiness_timeout, wait_for_renderer_crash_listener,
+        should_observe_renderer_crashes, wait_for_frontend_readiness_timeout,
+        wait_for_renderer_crash_listener,
     };
 
     #[test]
@@ -1257,7 +1245,6 @@ mod tests {
         assert!(waiter.join().expect("listener readiness waiter panicked"));
     }
 
-    #[cfg(not(target_os = "macos"))]
     #[test]
     fn renderer_crash_observation_is_enabled_only_for_packaged_launches() {
         assert!(should_observe_renderer_crashes(false));

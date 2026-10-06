@@ -1,6 +1,6 @@
 # Benchmarks
 
-**pnport 0.1.0 is unreleased, and stable release benchmark acceptance is incomplete.** Experimental preview candidate measurements do not establish stable performance. Reviewed performance numbers will accompany stable release acceptance after complete conformance on all four macOS and glibc Linux targets. Windows results are planned with its 0.2.0 support. Development measurements do not establish released performance. This page specifies how to make future results reproducible; it sets no numerical performance promise.
+**pnport 0.1.2 is available.** Publication does not establish complete benchmark acceptance or a performance promise. Release-build measurements ran on all four macOS and glibc Linux targets, but complete filesystem/process compatibility remains unverified. Experimental preview and development measurements do not establish stable performance. Windows results remain planned with 0.2.0 support. This page specifies a reproducible comparison method; check [installation and known limits](/pnport/installation) before use.
 
 ## Reproduction protocol
 

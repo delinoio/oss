@@ -15,7 +15,7 @@ func observationClient() (*Client, domain.ID) {
 	state := newExecutionState(Thread{ID: thread, SessionID: thread, History: LegacyHistory}, EffectiveSettings{Model: "fixture-model", Provider: "fixture-provider", Cwd: "/fixture", ApprovalPolicy: ApprovalOnRequest, ApprovalsReviewer: "user", Sandbox: Sandbox{Type: ReadOnly}})
 	state.active = turn
 	state.turns[turn] = trackedTurn{Turn: Turn{ID: turn, Status: TurnRunning}, Mode: domain.PlanMode}
-	return &Client{thread: thread, execution: state}, turn
+	return &Client{version: SupportedVersion, thread: thread, execution: state}, turn
 }
 
 func observeFixture(c *Client, method string, params any) (Event, error) {

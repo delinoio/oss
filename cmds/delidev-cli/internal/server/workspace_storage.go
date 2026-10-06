@@ -2,10 +2,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"reflect"
 	"time"
 
 	"connectrpc.com/connect"
@@ -48,7 +50,7 @@ func storageAction(a pb.WorkspaceStorageAction) (workspace.StorageAction, error)
 	}
 	return "", domain.Fail(domain.InvalidArgument, "Unknown workspace storage operation.", "Select preview, create, cleanup, inspect, restore, delete or recover.")
 }
-func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID) error {
+func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID, reserve int) error {
 	if s.Workspace == domain.Local {
 		return domain.Fail(domain.PermissionDenied, "Original Local checkouts cannot be cleaned.", "Use an independently owned backup workflow.")
 	}
@@ -105,7 +107,7 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 						return err
 					}
 					var operation workspace.StorageRequest
-					if domain.Decode(body.Input, &operation) != nil {
+					if workspace.DecodeStorageRequest(body.Input, &operation) != nil {
 						return workspace.ResultUncertain()
 					}
 					owned := false
@@ -122,6 +124,9 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 				}
 				return domain.Fail(domain.Conflict, "Dependent jobs have not confirmed cleanup.", "Settle every dependent job before parent storage operations.")
 			}
+		}
+		if inspected > 4096-reserve {
+			return domain.Fail(domain.ResourceExhausted, "Session ownership inventory exceeds its bound.", "Inspect retained work before storage cleanup.")
 		}
 		if len(jobs) < store.MaxPage {
 			return nil
@@ -155,10 +160,55 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
+		if session.IsSidechat() {
+			return nil, domain.SidechatUnavailable()
+		}
 		if sr.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before accepting storage work.")
 		}
-		if err := storageIdle(tx, sr.ID, session, domain.ID(req.Msg.RecoveryJobId)); err != nil {
+		// Reserve the entire bounded lost-report lineage before native admission.
+		// Stored operations also preserve a complete restore/recovery lineage.
+		reserve := 1 + workspace.MaxStorageRecoveryAttempts
+		if action == workspace.StorageCleanup || session.Storage != nil && session.Storage.State == domain.WorkspaceStored && action != workspace.StorageRestore && action != workspace.StorageRecover {
+			reserve *= 2
+		}
+		if action == workspace.StorageRecover {
+			original, err := tx.Get(domain.JobKind, domain.ID(req.Msg.RecoveryJobId))
+			if err != nil {
+				return nil, err
+			}
+			job, err := store.Decode[domain.Job](original)
+			if err != nil {
+				return nil, err
+			}
+			var request workspace.StorageRequest
+			if workspace.DecodeStorageRequest(job.Input, &request) != nil {
+				return nil, workspace.ResultUncertain()
+			}
+			claims := 0
+			if request.Action == workspace.StorageRecover {
+				if request.Recovery == nil {
+					return nil, workspace.ResultUncertain()
+				}
+				claims = len(request.Recovery.Claims)
+				request = request.Recovery.Original
+			}
+			if claims >= workspace.MaxStorageRecoveryClaims {
+				return nil, workspace.ResultUncertain()
+			}
+			attempts, err := storageRecoveryAttempts(tx, sr.ID, request.OperationID)
+			if err != nil {
+				return nil, err
+			}
+			if attempts >= workspace.MaxStorageRecoveryAttempts {
+				return nil, domain.Fail(domain.ResourceExhausted, "The bounded storage recovery attempts are exhausted.", "Inspect the original operation and retain its native evidence; replay original receipts without starting another recovery.")
+			}
+			reserve = workspace.MaxStorageRecoveryAttempts - attempts
+			if request.Action == workspace.StorageCleanup || request.PreviousState == domain.WorkspaceStored && request.Action != workspace.StorageRestore {
+				reserve += 1 + workspace.MaxStorageRecoveryAttempts
+			}
+		}
+		if err := storageIdle(tx, sr.ID, session, domain.ID(req.Msg.RecoveryJobId), reserve); err != nil {
 			return nil, err
 		}
 		if _, _, err := activeMachine(tx, session.MachineID); err != nil {
@@ -235,12 +285,26 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 				return nil, domain.Fail(domain.Conflict, "This snapshot is the workspace's only recoverable copy.", "Restore the workspace before permanently deleting its snapshot.")
 			}
 		}
+		if action == workspace.StorageCleanup {
+			ids, err := tx.SidechatDependents(sr.ID)
+			if err != nil {
+				return nil, err
+			}
+			if len(ids) != 0 {
+				input.SidechatDependents, input.SidechatActor = ids, &actor
+			}
+		}
 		raw, err := json.Marshal(input)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := tx.PutJob(input.OperationID, 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: session.MachineID, ParentID: domain.ID(req.Msg.RecoveryJobId), Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
 			return nil, err
+		}
+		if len(input.SidechatDependents) != 0 {
+			if err := tx.RegisterSidechatStorageRetirement(input.OperationID, sr.ID); err != nil {
+				return nil, err
+			}
 		}
 		snapshotID := domain.ID("")
 		if session.Storage != nil {
@@ -259,6 +323,9 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 	}
 	var receipt storageReceipt
 	if err := domain.Decode(result.Data, &receipt); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	if err := s.Store.BeginSidechatStorageRetirement(ctx, receipt.JobID, s.Identity.ServerID); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	record, err := s.storageOperation(ctx, receipt.JobID)
@@ -313,7 +380,7 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 		return workspace.ResultUncertain()
 	}
 	var input workspace.StorageRequest
-	if domain.Decode(job.Input, &input) != nil {
+	if workspace.DecodeStorageRequest(job.Input, &input) != nil {
 		return workspace.ResultUncertain()
 	}
 	// An accepted operation retains its original cleanup snapshot through failures.
@@ -322,11 +389,11 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 	if job.State == domain.JobUncertain || (input.Action == workspace.StorageRecover && job.State != domain.JobSucceeded) {
 		session.Storage.State = domain.WorkspaceStorageUncertain
 	}
-	if input.Action == workspace.StorageRecover && job.State == domain.JobCanceled {
-		if input.Recovery == nil || input.Recovery.Original.OperationID.Validate() != nil {
+	if input.Action == workspace.StorageRecover && (job.State == domain.JobCanceled || job.State == domain.JobFailed) {
+		if input.Recovery == nil || len(input.Recovery.Claims) == 0 || input.Recovery.Claims[0].JobID.Validate() != nil || input.Recovery.Claims[0].JobID != job.ParentID {
 			return workspace.ResultUncertain()
 		}
-		predecessorRecord, err := tx.Get(domain.JobKind, input.Recovery.Original.OperationID)
+		predecessorRecord, err := tx.Get(domain.JobKind, input.Recovery.Claims[0].JobID)
 		if err != nil {
 			return err
 		}
@@ -334,9 +401,9 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 		if err != nil || predecessor.Type != domain.WorkspaceStorageJob || predecessor.State != domain.JobUncertain || predecessorRecord.SessionID != sr.ID || predecessor.MachineID != session.MachineID {
 			return workspace.ResultUncertain()
 		}
-		// A queued recovery has no native side effects. Restore the predecessor
-		// as the retry anchor so canceling this recovery does not strand the
-		// session behind the canceled recovery job.
+		// A failed or canceled recovery has not settled the predecessor. Keep
+		// that uncertain job as the retry anchor rather than selecting a terminal
+		// recovery job, which cannot authorize another explicit recovery.
 		session.Storage.JobID = predecessorRecord.ID
 	}
 	if job.State == domain.JobSucceeded {
@@ -454,11 +521,21 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 		if snapshot == nil || snapshot.ID != input.SnapshotID || snapshot.SessionID != output.SessionID || snapshot.MachineID != output.MachineID || !storageDigestValid(snapshot.SHA256) || snapshot.SizeBytes > workspace.MaxSnapshotBytes || snapshot.CreatedAt.IsZero() || snapshot.RepositoryCount != uint32(len(input.Manifest.Repositories)) || snapshot.Deleted != (input.Action == workspace.StorageDelete) {
 			return workspace.ResultUncertain()
 		}
+		if !snapshot.Deleted && output.RetainedSnapshotBytes < snapshot.SizeBytes {
+			return workspace.ResultUncertain()
+		}
+		if pinned := input.SnapshotMetadata; pinned != nil {
+			// Observations preserve the accepted snapshot. Deletion changes only its
+			// tombstone, never size, age or ownership.
+			if snapshot.ID != pinned.ID || snapshot.SessionID != pinned.SessionID || snapshot.MachineID != pinned.MachineID || snapshot.SHA256 != pinned.SHA256 || snapshot.SizeBytes != pinned.SizeBytes || !snapshot.CreatedAt.Equal(pinned.CreatedAt) || snapshot.RepositoryCount != pinned.RepositoryCount {
+				return workspace.ResultUncertain()
+			}
+		}
 		if input.SnapshotDigest != "" && snapshot.SHA256 != input.SnapshotDigest {
 			return workspace.ResultUncertain()
 		}
 	}
-	if input.Action == workspace.StorageCleanup && output.RemovedSourceBytes != output.SourceBytes {
+	if input.Action == workspace.StorageCleanup && (output.RemovedSourceBytes != output.SourceBytes || !storageDigestValid(output.PreviewDigest) || output.PreviewDigest != input.PreviewDigest) {
 		return workspace.ResultUncertain()
 	}
 	return nil
@@ -490,7 +567,7 @@ func storageRecoveryInput(tx *store.Tx, sessionID domain.ID, session domain.Sess
 		return workspace.ResultUncertain()
 	}
 	var original workspace.StorageRequest
-	if domain.Decode(claim.Input, &original) != nil || original.OperationID != id {
+	if workspace.DecodeStorageRequest(claim.Input, &original) != nil || original.OperationID != id {
 		return workspace.ResultUncertain()
 	}
 	a, _ := json.Marshal(original.Manifest)
@@ -502,7 +579,7 @@ func storageRecoveryInput(tx *store.Tx, sessionID domain.ID, session domain.Sess
 	claimRef := workspace.StorageJournalClaim{JobID: id, InstanceID: claim.InstanceID, Revision: assigned.Revision, AssignmentDigest: hex.EncodeToString(sum[:])}
 	claims := []workspace.StorageJournalClaim{claimRef}
 	if original.Action == workspace.StorageRecover {
-		if original.Recovery == nil || len(original.Recovery.Claims) >= 8 {
+		if original.Recovery == nil || len(original.Recovery.Claims) >= workspace.MaxStorageRecoveryClaims {
 			return workspace.ResultUncertain()
 		}
 		claims = append(claims, original.Recovery.Claims...)
@@ -525,6 +602,7 @@ func finishStorageRecovery(tx *store.Tx, input workspace.StorageRequest, output 
 	}
 	now := time.Now().UTC()
 	job.State = output.RecoveredJobState
+	job.StorageReconciledBy = input.OperationID
 	job.FinishedAt = &now
 	job.Output = nil
 	job.Problem = domain.Fail(domain.Canceled, "The original storage operation was reconciled without repeating its side effects.", "Use its successful explicit recovery job to inspect the retained workspace/snapshot state.")
@@ -558,6 +636,7 @@ func finishStorageRecovery(tx *store.Tx, input workspace.StorageRequest, output 
 			return workspace.ResultUncertain()
 		}
 		j.State = domain.JobSucceeded
+		j.StorageReconciledBy = input.OperationID
 		j.Problem = nil
 		j.FinishedAt = &now
 		comparison := output
@@ -632,4 +711,88 @@ func (s *Service) CancelWorkspaceStorageOperation(ctx context.Context, req *conn
 	response := connect.NewResponse(&pb.CancelWorkspaceStorageOperationResponse{Job: rpc.Resource(record), Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+// This is only a read acknowledgement of a successful explicit recovery. It
+// retains the original report's receipt identity, never repeats its native work
+// and cannot turn an uncertain job into a settled job.
+func validateReconciledStorageReport(tx *store.Tx, record store.Record, job domain.Job, actor domain.Principal, machine, instance domain.ID, revision uint64) error {
+	if job.Type != domain.WorkspaceStorageJob || !job.State.Terminal() || job.StorageReconciledBy.Validate() != nil || job.MachineID != machine || job.InstanceID != instance || job.AssignedDeviceID == "" || job.AssignedDeviceID != actor.DeviceID {
+		return workspace.ResultUncertain()
+	}
+	assigned, err := tx.JobAssignment(record.ID)
+	if err != nil {
+		return err
+	}
+	claim, err := store.Decode[domain.Job](assigned)
+	if err != nil || assigned.Revision != revision || assigned.SessionID != record.SessionID || assigned.ProjectID != record.ProjectID || claim.State != domain.JobClaimed || claim.MachineID != machine || claim.InstanceID != instance || claim.AssignedDeviceID != actor.DeviceID || !bytes.Equal(claim.Input, job.Input) {
+		return workspace.ResultUncertain()
+	}
+	recovered, err := tx.Get(domain.JobKind, job.StorageReconciledBy)
+	if err != nil {
+		return err
+	}
+	recovery, err := store.Decode[domain.Job](recovered)
+	if err != nil || recovery.Type != domain.WorkspaceStorageJob || recovery.State != domain.JobSucceeded || recovery.MachineID != machine || recovery.AssignedDeviceID != actor.DeviceID || recovered.SessionID != record.SessionID || recovered.ProjectID != record.ProjectID {
+		return workspace.ResultUncertain()
+	}
+	var original, input workspace.StorageRequest
+	var output workspace.StorageResult
+	if workspace.DecodeStorageRequest(job.Input, &original) != nil || workspace.DecodeStorageRequest(recovery.Input, &input) != nil || domain.Decode(recovery.Output, &output) != nil || input.Action != workspace.StorageRecover || input.Recovery == nil || input.OperationID != recovered.ID || output.OperationID != recovered.ID || output.RecoveredJobID != input.Recovery.Original.OperationID || !output.CleanupVerified {
+		return workspace.ResultUncertain()
+	}
+	sum := sha256.Sum256(assigned.Data)
+	proven := false
+	for _, pin := range input.Recovery.Claims {
+		proven = proven || pin.JobID == record.ID && pin.InstanceID == instance && pin.Revision == revision && pin.AssignmentDigest == hex.EncodeToString(sum[:])
+	}
+	if !proven {
+		return workspace.ResultUncertain()
+	}
+	if original.Action == workspace.StorageRecover {
+		if original.Recovery == nil || !reflect.DeepEqual(original.Recovery.Original, input.Recovery.Original) {
+			return workspace.ResultUncertain()
+		}
+	} else if original.OperationID != record.ID || !reflect.DeepEqual(original, input.Recovery.Original) {
+		return workspace.ResultUncertain()
+	}
+	return nil
+}
+
+// Every accepted attempt retains a deletion obligation, including failed/canceled
+// recoveries. Count original-group attempts independently of uncertain native
+// claims so one terminal failure cannot strand its still-reserved successor.
+func storageRecoveryAttempts(tx *store.Tx, session, original domain.ID) (int, error) {
+	after := domain.ID("")
+	count, inspected := 0, 0
+	for {
+		jobs, err := tx.List(store.Filter{Kind: domain.JobKind, SessionID: session, After: after, Limit: store.MaxPage})
+		if err != nil {
+			return 0, err
+		}
+		for _, record := range jobs {
+			inspected++
+			if inspected > 4096 {
+				return 0, workspace.ResultUncertain()
+			}
+			after = record.ID
+			job, err := store.Decode[domain.Job](record)
+			if err != nil {
+				return 0, err
+			}
+			if job.Type != domain.WorkspaceStorageJob {
+				continue
+			}
+			var input workspace.StorageRequest
+			if workspace.DecodeStorageRequest(job.Input, &input) != nil {
+				return 0, workspace.ResultUncertain()
+			}
+			if input.Action == workspace.StorageRecover && input.Recovery != nil && input.Recovery.Original.OperationID == original {
+				count++
+			}
+		}
+		if len(jobs) < store.MaxPage {
+			return count, nil
+		}
+	}
 }

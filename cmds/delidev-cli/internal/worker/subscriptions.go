@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,7 @@ import (
 )
 
 type managedSubscriptionLease struct {
+	logger      *slog.Logger
 	client      delidevv1connect.SubscriptionServiceClient
 	credential  Credential
 	instance    domain.ID
@@ -52,9 +54,12 @@ type managedSubscriptionJournal struct {
 	Cleanup, Refresh, Success                               bool
 }
 
-func subscriptionRPC(credential Credential) (delidevv1connect.SubscriptionServiceClient, func()) {
-	httpClient, transport := rpc.HTTPClient()
-	return delidevv1connect.NewSubscriptionServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(128<<10), connect.WithSendMaxBytes(128<<10)), transport.CloseIdleConnections
+func subscriptionRPC(ctx context.Context, config Config, credential Credential) (delidevv1connect.SubscriptionServiceClient, func(), error) {
+	httpClient, closeHTTP, err := networkHTTPClientFor(ctx, config, credential)
+	if err != nil {
+		return nil, nil, err
+	}
+	return delidevv1connect.NewSubscriptionServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(128<<10), connect.WithSendMaxBytes(128<<10)), closeHTTP, nil
 }
 
 func takeManagedSubscription(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, instance, account, operation domain.ID, revision uint64, action pb.SubscriptionAction) (*managedSubscriptionLease, error) {
@@ -110,7 +115,7 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 		clear(response.Msg.Bundle)
 		return nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
-	return &managedSubscriptionLease{client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, nil
+	return &managedSubscriptionLease{logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, nil
 }
 
 func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, success bool) error {
@@ -152,7 +157,10 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 	// closes the server's ownership lane and triggers lost-lease reconciliation.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	client, closeRPC := subscriptionRPC(credential)
+	client, closeRPC, err := subscriptionRPC(ctx, config, credential)
+	if err != nil {
+		return err
+	}
 	defer closeRPC()
 	stream, err := client.WatchSubscription(ctx, authenticated(credential, &pb.WatchSubscriptionRequest{MachineId: string(credential.MachineID), InstanceId: string(instance)}))
 	if err != nil {
@@ -178,10 +186,19 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil {
 			return subscription.Invalid()
 		}
-		op := *account.Subscription.Pending
+		var op domain.SubscriptionOperation
+		var observation *domain.SubscriptionObservationOperation
+		if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
+			observation = account.Subscription.Observation
+			op = domain.SubscriptionOperation{ID: observation.ID, Action: observation.Action, MachineID: observation.MachineID, Actor: observation.Actor}
+		} else if account.Subscription.Pending != nil {
+			op = *account.Subscription.Pending
+		} else {
+			continue
+		}
 		mu.Lock()
 		if active[op.ID] || len(active) >= 4 {
 			mu.Unlock()
@@ -193,7 +210,17 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 		go func() {
 			defer wg.Done()
 			defer func() { mu.Lock(); delete(active, op.ID); mu.Unlock() }()
-			if err := runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op); err != nil {
+			run := func() error {
+				if observation != nil && account.Subscription.Lease != nil {
+					handled, err := config.observations.run(ctx, domain.ID(r.Id), *observation)
+					if !handled {
+						return nil
+					}
+					return err
+				}
+				return runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op)
+			}
+			if err := run(); err != nil {
 				if config.Logger != nil {
 					config.Logger.WarnContext(ctx, "managed_subscription_requires_reconciliation", "account_id", r.Id, "operation_id", op.ID, "action", op.Action, "code", domain.SafeError(err).Code)
 				}
@@ -216,10 +243,20 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	if op.Action == domain.SubscriptionRefresh {
 		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
 	}
+	if op.Action == domain.SubscriptionQuota {
+		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_QUOTA
+	}
+	if op.Action == domain.SubscriptionResetCredit {
+		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_RESET_CREDIT
+	}
 	if op.Action == domain.SubscriptionLogout {
 		action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	deadline := 15 * time.Minute
+	if op.Action == domain.SubscriptionQuota || op.Action == domain.SubscriptionResetCredit {
+		deadline = time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 	lease, err := takeManagedSubscription(ctx, config, client, credential, instance, account, op.ID, revision, action)
 	if err != nil {
@@ -237,7 +274,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 		clear(latest)
 	}()
 	var installation domain.Installation
-	if domain.Decode(lease.response.InstallationJson, &installation) != nil || installation.Harness != domain.Codex || installation.Version != codex.SupportedVersion {
+	if domain.Decode(lease.response.InstallationJson, &installation) != nil || installation.Harness != domain.Codex || !domain.CodexVersionAllowed(installation.Version) {
 		return subscription.Invalid()
 	}
 	executable, err := filepath.EvalSymlinks(installation.ResolvedPath)
@@ -295,6 +332,13 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 			returned = subscription.Invalid()
 		}
 	}()
+	var observationErr error
+	if op.Action == domain.SubscriptionQuota || op.Action == domain.SubscriptionResetCredit {
+		// Observation/publication uncertainty belongs to its original operation
+		// key. Still collect the unchanged credential bundle and join native/file
+		// cleanup before releasing this short idle credential lease.
+		observationErr = lease.observe(ctx, native, domain.SubscriptionObservationOperation{ID: op.ID, Action: op.Action})
+	}
 	if op.Action == domain.SubscriptionLogin {
 		progress, err := native.StartManagedLogin(ctx, op.DeviceCode)
 		if err != nil {
@@ -345,70 +389,11 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	}
 	refresh = op.Action == domain.SubscriptionRefresh
 	success = true
-	return nil
+	return observationErr
 }
 
 func cleanupManagedHome(home string, original os.FileInfo) error {
-	if err := security.CheckPrivateDir(home); err != nil {
-		return subscription.Invalid()
-	}
-	current, err := os.Stat(home)
-	if err != nil || !os.SameFile(current, original) {
-		return subscription.Invalid()
-	}
-	root, err := os.OpenRoot(home)
-	if err != nil {
-		return subscription.Invalid()
-	}
-	defer root.Close()
-	anchored, err := root.Stat(".")
-	if err != nil || !os.SameFile(anchored, original) {
-		return subscription.Invalid()
-	}
-	count, total := 0, int64(0)
-	if err := fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.Type()&os.ModeSymlink != 0 {
-			return subscription.Invalid()
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		count++
-		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() || count > 2048 {
-			return subscription.Invalid()
-		}
-		total += info.Size()
-		if total > 64<<20 {
-			return subscription.Invalid()
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	entries, err := fs.ReadDir(root.FS(), ".")
-	if err != nil {
-		return subscription.Invalid()
-	}
-	for _, entry := range entries {
-		if err := root.RemoveAll(entry.Name()); err != nil {
-			return subscription.Invalid()
-		}
-	}
-	current, err = os.Stat(home)
-	if err != nil || !os.SameFile(current, original) {
-		return subscription.Invalid()
-	}
-	if err := os.Remove(home); err != nil {
-		return subscription.Invalid()
-	}
-	if _, err := os.Lstat(home); !os.IsNotExist(err) {
-		return subscription.Invalid()
-	}
-	if err := security.SyncParent(home); err != nil {
-		return subscription.Invalid()
-	}
-	return nil
+	return subscription.CleanupRuntime(home, original)
 }
 
 // Only the caller's pre-native barrier permits an unpublished auth destination.
@@ -558,7 +543,7 @@ func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 
 // Capability probing is a read-only empty-home handshake. It neither starts a
 // login nor reads host credentials and does not establish real-account support.
-func verifyManagedSubscriptionProfile(ctx context.Context, config Config, executable string) (bool, error) {
+func verifyManagedSubscriptionProfile(ctx context.Context, config Config, executable, version string) (bool, error) {
 	root := filepath.Join(config.Root, "managed-auth")
 	if err := security.PrivateDir(root); err != nil {
 		return false, domain.SafeError(err)
@@ -575,7 +560,7 @@ func verifyManagedSubscriptionProfile(ctx context.Context, config Config, execut
 	if err != nil {
 		return false, subscription.Invalid()
 	}
-	client, err := codex.Open(ctx, codex.Config{Version: codex.SupportedVersion, Mode: codex.SubscriptionProtocol, ManagedAuthentication: true, Home: filepath.Join(home, "codex"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: executable, Cwd: home, Env: env, Logger: config.Logger}})
+	client, err := codex.Open(ctx, codex.Config{Version: version, Mode: codex.SubscriptionProtocol, ManagedAuthentication: true, Home: filepath.Join(home, "codex"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.NewID(), Executable: executable, Cwd: home, Env: env, Logger: config.Logger}})
 	if err != nil {
 		if domain.SafeError(err).Code != domain.RecoveryRequired {
 			_ = cleanupManagedHome(home, info)

@@ -129,7 +129,8 @@ impl Fbx<'_> {
         let id = self.next;
         *self.counts.entry(kind).or_default() += 1;
         // FBX object categories and name classes differ for animation objects
-        // (AnimationStack versus AnimStack). Blender validates this distinction.
+        // (AnimationStack versus AnimStack). Blender validates this
+        // distinction.
         let class = kind
             .strip_prefix("Animation")
             .map(|suffix| format!("Anim{suffix}"));

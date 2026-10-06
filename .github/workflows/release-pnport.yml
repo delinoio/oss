@@ -24,6 +24,9 @@ concurrency:
 
 jobs:
   prepare:
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-22.04
     outputs:
       version: ${{ steps.source.outputs.version }}
@@ -43,6 +46,7 @@ jobs:
       - name: Verify exact source and publication identity
         id: source
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_PROJECT: pnport
           REQUESTED_VERSION: ${{ inputs.version }}
           REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
@@ -54,12 +58,20 @@ jobs:
           import { nativeMatrix } from './packages/pnport/scripts/native-matrix.mjs';
           import { requirePublicationReady } from './packages/pnport/scripts/common.mjs';
           import { publicationChannel } from './packages/pnport/scripts/version.mjs';
+          import { actionsRead, requireTagDryRun } from './packages/pnport/scripts/release-dry-run.mjs';
           const source = sourceMetadata({ project: Project.Pnport, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, file => readFileSync(file, 'utf8'));
+          // A newly created tag first validates without publication.
+          // Publish only by an explicit exact-tag dispatch after that dry run.
+          if (process.env.GITHUB_EVENT_NAME === 'push') source.dry_run = 'true';
           const revision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
           const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
           if (revision !== process.env.GITHUB_SHA) throw new Error('Checkout revision mismatch');
           if (source.dry_run !== 'true' && (process.env.GITHUB_REPOSITORY !== 'delinoio/oss' || process.env.GITHUB_REF !== `refs/tags/${source.tag}`)) throw new Error('Publication requires exact first-party tag');
-          if (source.dry_run !== 'true') requirePublicationReady();
+          if (source.dry_run !== 'true') {
+            requirePublicationReady();
+            const runId = await requireTagDryRun({ tag: source.tag, revision }, actionsRead);
+            console.log(JSON.stringify({ event: 'pnport_tag_dry_run', tag: source.tag, revision, run_id: runId }));
+          }
           appendFileSync(process.env.GITHUB_OUTPUT, Object.entries({ ...source, ...publicationChannel(source.version), revision, tree, matrix: JSON.stringify(nativeMatrix) }).map(([key, value]) => `${key}=${value}\n`).join(''));
           JS
 
@@ -72,7 +84,7 @@ jobs:
     env:
       PNPORT_TARGET: ${{ matrix.target }}
       PNPORT_SUFFIX: ${{ matrix.suffix }}
-      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -87,7 +99,7 @@ jobs:
           version: 10.26.2
       - uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
           targets: ${{ matrix.target }}
       - name: Install locked tooling without lifecycle scripts
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -128,6 +140,11 @@ jobs:
           node packages/pnport/scripts/package.mjs binary --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
           PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test process_lifecycle --target "$PNPORT_TARGET"
+          PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test native_conformance --target "$PNPORT_TARGET"
+          PNPORT_TEST_BINARY="$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" cargo test --locked -p pnport --test core native_tool_caches_coexist_with_dependencies_and_directory_lifetimes --target "$PNPORT_TARGET"
+          cache_fixture="$RUNNER_TEMP/pnport-tool-cache"
+          pnpm --filter @delino/pnport test:cache:prepare "$cache_fixture"
+          pnpm --filter @delino/pnport test:cache "$cache_fixture" "$PWD/packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport"
           node packages/pnport/scripts/evidence.mjs record --target "$PNPORT_TARGET" --base "$PNPORT_REVISION" --tree "$PNPORT_TREE" --revision "$PNPORT_REVISION"
       - name: Measure identical cold and warm candidate workloads
         shell: bash
@@ -186,7 +203,7 @@ jobs:
 
   publish-npm:
     needs: [prepare, package]
-    if: needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
+    if: needs.prepare.outputs.dry_run == 'false' && github.event_name == 'workflow_dispatch' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -209,7 +226,7 @@ jobs:
 
   publish-release:
     needs: [prepare, package, publish-npm]
-    if: needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
+    if: needs.prepare.outputs.dry_run == 'false' && github.event_name == 'workflow_dispatch' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -234,7 +251,7 @@ jobs:
 
   homebrew:
     needs: [prepare, package, publish-release]
-    if: needs.prepare.outputs.dry_run == 'false' && needs.prepare.outputs.channel == 'latest' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
+    if: needs.prepare.outputs.dry_run == 'false' && github.event_name == 'workflow_dispatch' && needs.prepare.outputs.channel == 'latest' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/pnport@v')
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -288,7 +305,7 @@ jobs:
           const fs = require('node:fs');
           const jobs = JSON.parse(process.env.RESULTS);
           const lines = ['## pnport release', '', `Version: ${jobs.prepare.outputs.version || 'unresolved'}`, `Commit: ${jobs.prepare.outputs.revision || 'unresolved'}`, '', '| Phase | Result |', '| --- | --- |', ...Object.entries(jobs).map(([name, value]) => `| ${name} | ${value.result} |`), ''];
-          if (process.env.DRY_RUN === 'true') lines.push('Dry run: no publication was attempted.');
+          if (process.env.DRY_RUN === 'true') lines.push('Dry run: no publication was attempted. After success at the final tag, dispatch this workflow at that same tag with dry_run=false to publish.');
           if (jobs.build.result !== 'success' || jobs.package.result !== 'success') lines.push('Four-target execution or complete-set validation failed; publication is blocked.');
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
           JS

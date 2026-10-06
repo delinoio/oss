@@ -51,8 +51,9 @@ impl Publication {
         // Retain rename, ACL and cleanup authority before applying a DACL that
         // may deny new handles. The staging writer shares deletion access.
         // SetSecurityInfo inspects the file's current DACL while applying its
-        // inheritance state, so staging needs READ_CONTROL as well as WRITE_DAC.
-        // Keep both rights on this handle instead of reopening after DACL copying.
+        // inheritance state, so staging needs READ_CONTROL as well as
+        // WRITE_DAC. Keep both rights on this handle instead of
+        // reopening after DACL copying.
         let file = OpenOptions::new()
             .access_mode(
                 DELETE
@@ -98,7 +99,8 @@ impl Publication {
         let mut dacl = std::ptr::null_mut();
         let mut descriptor = std::ptr::null_mut();
         // SAFETY: source is a live validated destination handle; Windows owns
-        // the returned descriptor until LocalFree below. The DACL points into it.
+        // the returned descriptor until LocalFree below. The DACL points into
+        // it.
         let status = unsafe {
             GetSecurityInfo(
                 source.as_raw_handle(),
@@ -162,7 +164,8 @@ impl Publication {
             .checked_add(name.len().checked_mul(2).ok_or(Failure::Publish)?)
             .and_then(|size| u32::try_from(size).ok())
             .ok_or(Failure::Publish)?;
-        // usize storage retains pointer alignment for the variable-size SDK structure.
+        // usize storage retains pointer alignment for the variable-size SDK
+        // structure.
         let mut buffer = vec![0usize; (bytes as usize).div_ceil(std::mem::size_of::<usize>())];
         let information = buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
         // ReplaceFileW performs multiple namespace changes, which can interfere
@@ -213,7 +216,8 @@ impl Drop for Publication {
             return;
         }
         // The held DELETE right survives restrictive copied permissions. Mark
-        // only our unpublished staging object for removal when its handles close.
+        // only our unpublished staging object for removal when its handles
+        // close.
         let information = FILE_DISPOSITION_INFO { DeleteFile: true };
         if unsafe {
             SetFileInformationByHandle(
@@ -298,7 +302,8 @@ mod tests {
         std::fs::write(&path, b"unpublished fixture").unwrap();
         let publication = Publication::prepare(&path, true).unwrap();
         // Deny DELETE and WRITE_DAC on future handles while the existing handle
-        // retains both rights, as it does after copying restrictive permissions.
+        // retains both rights, as it does after copying restrictive
+        // permissions.
         let sddl: Vec<u16> = "D:P(D;;SDWD;;;WD)(A;;FA;;;OW)"
             .encode_utf16()
             .chain([0])

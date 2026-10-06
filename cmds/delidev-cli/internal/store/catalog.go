@@ -12,6 +12,10 @@ const recordColumns = "id,kind,revision,session_id,project_id,body,created_at,up
 func (t *Tx) ValidateModelIdentity(id domain.ID, model domain.Model) error {
 	query := "SELECT " + recordColumns + " FROM entities WHERE kind='model' AND id<>? AND ((json_extract(body,'$.provider_id')=? AND json_extract(body,'$.native_id')=?) OR (COALESCE(json_extract(body,'$.alias'),'')<>'' AND json_extract(body,'$.alias')=?)"
 	args := []any{id, model.ProviderID, model.NativeID, model.NativeID}
+	if model.SourceKind == domain.SubscriptionModel {
+		query = "SELECT " + recordColumns + " FROM entities WHERE kind='model' AND id<>? AND ((json_extract(body,'$.subscription_service')=? AND json_extract(body,'$.source_kind')='subscription' AND json_extract(body,'$.native_id')=?) OR (COALESCE(json_extract(body,'$.alias'),'')<>'' AND json_extract(body,'$.alias')=?)"
+		args[1] = model.SubscriptionService
+	}
 	if model.Alias != "" {
 		query += " OR id=? OR json_extract(body,'$.alias')=? OR json_extract(body,'$.native_id')=?"
 		args = append(args, model.Alias, model.Alias, model.Alias)
@@ -63,16 +67,20 @@ func (t *Tx) modelRecords(query string, args ...any) ([]Record, error) {
 }
 
 type ModelSearch struct {
-	Query                string    `json:"query"`
-	ProviderID           domain.ID `json:"provider_id,omitempty"`
-	IncludeHidden        bool      `json:"include_hidden"`
-	EnabledProvidersOnly bool      `json:"enabled_providers_only"`
-	Limit                int       `json:"-"`
-	After                domain.ID `json:"-"`
-	Epoch                uint64    `json:"-"`
+	SubscriptionService  domain.SubscriptionService `json:"subscription_service,omitempty"`
+	Query                string                     `json:"query"`
+	ProviderID           domain.ID                  `json:"provider_id,omitempty"`
+	IncludeHidden        bool                       `json:"include_hidden"`
+	EnabledProvidersOnly bool                       `json:"enabled_providers_only"`
+	Limit                int                        `json:"-"`
+	After                domain.ID                  `json:"-"`
+	Epoch                uint64                     `json:"-"`
 }
 
 func (f ModelSearch) Validate() error {
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "") {
+		return domain.Fail(domain.InvalidArgument, "Invalid subscription model filter.", "Select one subscription service without an API provider.")
+	}
 	if err := domain.Text(f.Query, "model search", 256, false); err != nil {
 		return err
 	}
@@ -111,11 +119,15 @@ func (s *Store) SearchModels(ctx context.Context, f ModelSearch) ([]Record, []Re
 		query := "SELECT " + recordColumns + " FROM entities WHERE kind='model'"
 		args := []any{}
 		if f.EnabledProvidersOnly {
-			query += " AND EXISTS(SELECT 1 FROM entities p WHERE p.kind='provider' AND p.id=json_extract(entities.body,'$.provider_id') AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription')"
+			query += " AND (json_extract(body,'$.source_kind')='subscription' OR EXISTS(SELECT 1 FROM entities p WHERE p.kind='provider' AND p.id=json_extract(entities.body,'$.provider_id') AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription'))"
 		}
 		if f.ProviderID != "" {
 			query += " AND json_extract(body,'$.provider_id')=?"
 			args = append(args, f.ProviderID)
+		}
+		if f.SubscriptionService != "" {
+			query += " AND json_extract(body,'$.source_kind')='subscription' AND json_extract(body,'$.subscription_service')=?"
+			args = append(args, f.SubscriptionService)
 		}
 		if !f.IncludeHidden {
 			query += " AND COALESCE(json_extract(body,'$.hidden'),0)=0"
@@ -124,7 +136,7 @@ func (s *Store) SearchModels(ctx context.Context, f ModelSearch) ([]Record, []Re
 			query += " AND (instr(lower(json_extract(body,'$.name')),lower(?))>0 OR instr(lower(json_extract(body,'$.native_id')),lower(?))>0 OR instr(lower(COALESCE(json_extract(body,'$.alias'),'')),lower(?))>0)"
 			args = append(args, f.Query, f.Query, f.Query)
 		}
-		const order = "json_extract(body,'$.provider_id'),COALESCE(json_extract(body,'$.order'),0),lower(json_extract(body,'$.name')),id"
+		const order = "COALESCE(json_extract(body,'$.provider_id'),json_extract(body,'$.subscription_service'),''),COALESCE(json_extract(body,'$.order'),0),lower(json_extract(body,'$.name')),id"
 		if f.After != "" {
 			if _, err := tx.Get(domain.ModelKind, f.After); err != nil {
 				return domain.Fail(domain.CursorExpired, "The model page anchor is no longer available.", "Restart model search.")
@@ -146,7 +158,7 @@ func (s *Store) SearchModels(ctx context.Context, f ModelSearch) ([]Record, []Re
 			if err != nil {
 				return err
 			}
-			if !seen[model.ProviderID] {
+			if model.SourceKind != domain.SubscriptionModel && !seen[model.ProviderID] {
 				provider, err := tx.Get(domain.ProviderKind, model.ProviderID)
 				if err != nil {
 					return err
@@ -232,4 +244,29 @@ ORDER BY a.id LIMIT ?`
 		return err
 	})
 	return result, err
+}
+
+// ModelBySourceNative resolves an exact executable identity inside the save
+// transaction. CLI aliases and other sources never participate in this lookup.
+func (t *Tx) ModelBySourceNative(provider domain.ID, service domain.SubscriptionService, native string) (Record, bool, error) {
+	query := "SELECT " + recordColumns + " FROM entities WHERE kind='model' AND json_extract(body,'$.native_id')=?"
+	args := []any{native}
+	if service != "" {
+		query += " AND json_extract(body,'$.source_kind')='subscription' AND json_extract(body,'$.subscription_service')=?"
+		args = append(args, service)
+	} else {
+		query += " AND json_extract(body,'$.provider_id')=? AND COALESCE(json_extract(body,'$.source_kind'),'')=''"
+		args = append(args, provider)
+	}
+	records, err := t.modelRecords(query+" LIMIT 2", args...)
+	if err != nil {
+		return Record{}, false, err
+	}
+	if len(records) > 1 {
+		return Record{}, false, domain.Fail(domain.Conflict, "The model identity is ambiguous.", "Repair the source catalog before saving.")
+	}
+	if len(records) == 0 {
+		return Record{}, false, nil
+	}
+	return records[0], true, nil
 }

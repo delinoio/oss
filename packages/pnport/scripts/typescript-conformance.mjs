@@ -8,12 +8,13 @@ import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
 import { version as osVersion } from "node:os";
 import { npm } from "./common.mjs";
+import { pnpApiConformance } from "./pnpapi-conformance.mjs";
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
 const fixture = fileURLToPath(new URL("../test/fixtures/typescript/", import.meta.url));
 const [mode, destination, suppliedBinary] = process.argv.slice(2);
 assert(["prepare", "run"].includes(mode) && destination, "Usage: typescript-conformance.mjs prepare|run <temporary-directory> [pnport-binary]");
-const directory = resolve(destination);
+let directory = resolve(destination);
 const formats = ["inline", "split"];
 const yarn = "4.18.0";
 const compiler = "7.1.0-dev.20260812.1";
@@ -34,10 +35,13 @@ function sha256(path) {
 if (mode === "prepare") {
   assert(!existsSync(directory), "Preparation requires a new directory to protect existing projects.");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
+  // Yarn resolves the project physically. Use the same cache base so aliases
+  // such as macOS /tmp do not produce locators outside the loaded graph.
+  directory = realpathSync(directory);
   for (const format of formats) {
     const root = join(directory, format);
     cpSync(fixture, root, { recursive: true, filter: (path) => !path.split(/[\\/]/).some((part) => [".yarn", "lib"].includes(part)) && !/\.pnp\.|\.tsbuildinfo$/.test(path) });
-    const settings = (inline) => `nodeLinker: pnp\nenableScripts: false\nenableGlobalCache: false\npnpEnableInlining: ${inline}\ncacheFolder: ${JSON.stringify(join(directory, "external-cache"))}\n`;
+    const settings = (inline) => `nodeLinker: pnp\nenableScripts: false\nenableGlobalCache: false\npnpEnableEsmLoader: true\npnpEnableInlining: ${inline}\ncacheFolder: ${JSON.stringify(join(directory, "external-cache"))}\n`;
     // Inspect generated data before inlining; never evaluate the project loader.
     writeFileSync(join(root, ".yarnrc.yml"), settings(false));
     npm(["exec", "--yes", "--package", `@yarnpkg/cli-dist@${yarn}`, "--", "yarn", "install", "--immutable"], { cwd: root, env });
@@ -64,7 +68,8 @@ if (mode === "prepare") {
       npm(["exec", "--yes", "--package", `@yarnpkg/cli-dist@${yarn}`, "--", "yarn", "install", "--immutable", "--immutable-cache"], { cwd: root, env });
     }
     writeFileSync(join(root, "peer-identities.json"), JSON.stringify({ manifestSha256: sha256(join(root, ".pnp.cjs")),
-      dataSha256: format === "split" ? sha256(join(root, ".pnp.data.json")) : null, peers }, null, 2));
+      dataSha256: format === "split" ? sha256(join(root, ".pnp.data.json")) : null,
+      esmLoaderSha256: sha256(join(root, ".pnp.loader.mjs")), peers }, null, 2));
     assert(!existsSync(join(root, "node_modules")));
   }
   writeFileSync(join(directory, "prepared.json"), JSON.stringify({ yarn, compiler, platform: process.platform, arch: process.arch }, null, 2));
@@ -111,6 +116,7 @@ if (mode === "prepare") {
     const peerIdentity = JSON.parse(readFileSync(join(root, "peer-identities.json"), "utf8"));
     assert.equal(peerIdentity.manifestSha256, sha256(join(root, ".pnp.cjs")));
     assert.equal(peerIdentity.dataSha256, format === "split" ? sha256(join(root, ".pnp.data.json")) : null);
+    assert.equal(peerIdentity.esmLoaderSha256, sha256(join(root, ".pnp.loader.mjs")));
     for (const workspace of ["core", "app", "peer-blue", "peer-red"]) {
       rmSync(join(root, "packages", workspace, "lib"), { recursive: true, force: true });
       rmSync(join(root, "packages", workspace, "tsconfig.tsbuildinfo"), { force: true });
@@ -158,8 +164,9 @@ if (mode === "prepare") {
     successful(run("tsc", "--noEmit", "-p", "packages/app"));
     assert(!existsSync(join(root, "node_modules")));
     assert.equal(sha256(native), originalDigest, "Never rewrite or re-sign the official compiler.");
+    const pnpApi = pnpApiConformance({ binary, root, cache, environment: env });
     successful(execute(binary, ["--cache-dir", cache, "cache", "clean"], root));
-    samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest,
+    samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest, pnpApi,
       peers: peerIdentity.peers.map(({ flavor, reference, provider, archiveSha256 }) => ({ flavor,
         locatorSha256: createHash("sha256").update(reference).digest("hex"),
         providerSha256: createHash("sha256").update(provider).digest("hex"), archiveSha256,

@@ -151,6 +151,12 @@ default to zero. Disk reserves default to 10240 MiB, or 20480 MiB with Tart.
 There is no automatic CPU/memory reserve for other applications; set a smaller
 `[host]` budget when sharing the computer with other work.
 
+Releases through 0.2.7 include daemon CPU in DinD reservations. The
+[unreleased DinD CPU admission change](./docker#dind-cpu-admission-unreleased)
+counts runner CPU only, keeps combined runner/daemon memory, and preserves the
+daemon container's CPU limit. Check the containing release before using that
+calculation; it is not available in 0.2.7.
+
 Omit `runner_version`, or set it to `"latest"`, for automatic management. An
 exact version keeps a pin. Docker image omission chooses the official minimal
 image. Explicit custom Docker images still require immutable digests; in latest
@@ -239,3 +245,23 @@ credential = { file = "REPLACE_WITH_ABSOLUTE_PRIVATE_PEM_FILE" }
 ```
 
 See [Docker execution](./docker) and [Tart images](./tart) for backend requirements.
+
+## Explicit macOS host pools
+
+Host execution is unreleased and requires macOS 14+ Apple Silicon. Select it with
+`runmoor init --backend host`; the macOS default remains Tart. Host-only
+configurations require no Docker, Tart or Guest Agent. New pools use `macos-host`,
+scale set `runmoor-macos-host`, and labels `runmoor-macos-host`, `macOS`, `ARM64`.
+Authored labels remain unchanged.
+
+Host pools use `backend = "host"` and plain mode. Omit image, image-source,
+runner-path and daemon fields; Runmoor owns each execution path. Image-only setup
+is incompatible. `timeouts.host_preparation` defaults to `5m`. Omitted resources
+use 2 CPUs/4096 MiB, shrinking to 1 CPU/1024 MiB. Explicit values are never reduced.
+Concurrency follows shared CPU/memory budgets without Tart's two-VM limit. These
+are admission reservations, not enforced usage limits. Warm capacity defaults to
+zero; disk reserve is 10240 MiB unless Tart requires its higher reserve.
+
+Read the [host guide](./host) for same-account trust, disposable directories,
+operator toolchains and recovery. Actual host execution, unsigned Xcode builds
+and live GitHub jobs have not been validated.

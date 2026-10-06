@@ -204,10 +204,11 @@ impl Cancellation {
         self.0.store(130, Ordering::Relaxed);
     }
 
-    // Blocking pipes/FIFOs cannot be polled portably with std::io. Keep only the
-    // I/O operation in a disposable worker; all temporary-file ownership stays
-    // with the main thread so cancellation still runs its cleanup destructors.
-    // A blocked worker owns no publication authority or application state.
+    // Blocking pipes/FIFOs cannot be polled portably with std::io. Keep only
+    // the I/O operation in a disposable worker; all temporary-file
+    // ownership stays with the main thread so cancellation still runs its
+    // cleanup destructors. A blocked worker owns no publication authority
+    // or application state.
     pub fn blocking<T: Send + 'static>(
         &self,
         operation: impl FnOnce() -> Result<T> + Send + 'static,

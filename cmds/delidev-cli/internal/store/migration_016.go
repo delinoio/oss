@@ -10,7 +10,7 @@ func migration016(ctx context.Context, tx *sql.Tx, original int) error {
 	if _, err := tx.ExecContext(ctx, budgetSchema); err != nil {
 		return storageError(err)
 	}
-	if err := (&Tx{tx: tx, ctx: ctx}).backfillSessionEstimates(); err != nil {
+	if err := (&Tx{tx: tx, ctx: ctx, historicalPricingV1: true}).backfillSessionEstimates(); err != nil {
 		return err
 	}
 	return nil

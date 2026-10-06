@@ -36,10 +36,11 @@ use libc::{
 };
 use pnport_core::{
     cache::Cache,
-    diagnostic::{Code, Error, ExecFailureKind},
+    diagnostic::{Code, Error, ExecFailureKind, InitializationStage, ProcessGroupOperation},
     executable::LaunchAdmission,
     graph::{Graph, Snapshot},
-    view::{Translation, View},
+    native_path::{Lookup as NativeLookup, SymlinkPolicy},
+    view::{DirectoryEntry, PathKind, Translation, View},
 };
 
 thread_local! { static INSIDE: Cell<bool> = const { Cell::new(false) }; }
@@ -107,8 +108,9 @@ struct Runtime {
 struct DirectoryStream {
     logical: PathBuf,
     physical: PathBuf,
-    emitted: bool,
+    position: usize,
     virtual_end: bool,
+    native_end: Option<libc::c_long>,
     entry: Box<dirent>,
 }
 
@@ -124,8 +126,9 @@ unsafe fn track_directory(dir: *mut DIR, translation: Translation) {
             Arc::new(Mutex::new(DirectoryStream {
                 logical: translation.logical,
                 physical: translation.physical,
-                emitted: false,
+                position: 0,
                 virtual_end: false,
+                native_end: None,
                 entry: Box::new(std::mem::zeroed()),
             })),
         );
@@ -142,47 +145,66 @@ fn directory_stream(dir: *mut DIR) -> Option<Arc<Mutex<DirectoryStream>>> {
         .cloned()
 }
 
-fn directory_eligible(stream: &DirectoryStream) -> std::result::Result<bool, c_int> {
+fn directory_entries(stream: &DirectoryStream) -> std::result::Result<Vec<DirectoryEntry>, c_int> {
     let runtime = RUNTIME.get().ok_or(EIO)?.lock().map_err(|_| EIO)?;
-    let eligible = runtime
+    runtime
         .view
-        .virtual_directory_entry(&stream.logical)
-        .map(|entry| entry.is_some())
-        .map_err(|error| fail(error.code))?;
-    drop(runtime);
-    if !eligible {
-        return Ok(false);
-    }
-    // ZIP package content may already contain this directory. Its native
-    // entry works at every native seek position and needs no appended entry.
-    match fs::symlink_metadata(stream.physical.join("node_modules")) {
-        Ok(metadata) if metadata.is_dir() => Ok(false),
-        Ok(_) => Err(fail(Code::PnportFilesystemConflict)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
-        Err(_) => Err(EIO),
-    }
+        .directory_entries(&stream.logical, &stream.physical)
+        .map_err(|error| fail(error.code))
 }
 
-fn directory_entry(stream: &mut DirectoryStream) -> *mut dirent {
-    let name = b"node_modules\0";
+fn directory_cookie(position: usize, count: usize) -> libc::c_long {
+    let count =
+        libc::c_long::try_from(count).expect("Allocated directory entries fit a native cookie");
+    let position =
+        libc::c_long::try_from(position).expect("Directory position fits a native cookie");
+    DIRECTORY_END - count + position
+}
+
+fn directory_entry(
+    stream: &mut DirectoryStream,
+    entries: &[DirectoryEntry],
+) -> std::result::Result<*mut dirent, c_int> {
+    let Some(entry) = entries.get(stream.position) else {
+        return Ok(ptr::null_mut());
+    };
+    let name = entry.name.as_bytes();
+    if name.len() >= stream.entry.d_name.len() {
+        return Err(ENAMETOOLONG);
+    }
     stream.entry.d_ino = 1;
-    stream.entry.d_seekoff = DIRECTORY_END as u64;
-    stream.entry.d_type = libc::DT_DIR;
-    stream.entry.d_namlen = 12;
+    stream.entry.d_seekoff =
+        u64::try_from(directory_cookie(stream.position + 1, entries.len())).map_err(|_| EIO)?;
+    stream.entry.d_type = if entry.directory {
+        libc::DT_DIR
+    } else {
+        libc::DT_LNK
+    };
+    stream.entry.d_namlen = u16::try_from(name.len()).map_err(|_| ENAMETOOLONG)?;
     stream.entry.d_reclen =
-        u16::try_from((std::mem::offset_of!(dirent, d_name) + name.len()).next_multiple_of(4))
-            .expect("The fixed virtual dirent fits its length field");
+        u16::try_from((std::mem::offset_of!(dirent, d_name) + name.len() + 1).next_multiple_of(4))
+            .map_err(|_| ENAMETOOLONG)?;
+    stream.entry.d_name.fill(0);
     for (slot, byte) in stream.entry.d_name.iter_mut().zip(name) {
         *slot = byte.cast_signed();
     }
-    stream.emitted = true;
-    stream.virtual_end = true;
-    &raw mut *stream.entry
+    stream.position += 1;
+    stream.virtual_end = stream.position == entries.len();
+    Ok(&raw mut *stream.entry)
 }
 static RUNTIME: OnceLock<Box<ForkMutex<Runtime>>> = OnceLock::new();
 static SESSION: OnceLock<PathBuf> = OnceLock::new();
+static OWNER_KEY: OnceLock<[u8; 32]> = OnceLock::new();
+static OWNED_GROUP: OnceLock<pid_t> = OnceLock::new();
 
 unsafe extern "C" fn before_fork() {
+    if RUNTIME.get().is_some() && register_owned_process(libc::getpid()).is_err() {
+        if let Some(session) = SESSION.get() {
+            record_initialization_failure(session, InitializationStage::OwnedGroup);
+            record_failure(session, Code::PnportInjectionFailed);
+        }
+        _exit(125);
+    }
     // Wait for all runtime operations to finish before libSystem copies the
     // address space. A plain Rust mutex can otherwise retain a vanished owner.
     if let Some(runtime) = RUNTIME.get()
@@ -219,11 +241,63 @@ fn record_failure(session: &Path, code: Code) {
     // The supervisor may read concurrently with any injected process. Publish
     // complete bytes once; truncation or collateral failures must not replace
     // the first diagnostic with an empty or different failure code.
-    if let Ok(mut stage) = tempfile::NamedTempFile::new_in(session)
-        && stage.write_all(code.as_str().as_bytes()).is_ok()
+    record_bytes(session, "failure", code.as_str().as_bytes());
+}
+
+fn record_bytes(session: &Path, name: &'static str, bytes: &[u8]) {
+    if let Ok(mut file) = tempfile::NamedTempFile::new_in(session)
+        && file.write_all(bytes).is_ok()
     {
-        let _ = stage.persist_noclobber(session.join("failure"));
+        let _ = file.persist_noclobber(session.join(name));
     }
+}
+
+fn record_initialization_failure(session: &Path, stage: InitializationStage) {
+    // The constructor cannot initialize a process-wide tracing subscriber in
+    // the user's executable. Publish only a closed enum for supervisor logs.
+    // Preserve the first observed stage atomically, like the failure code.
+    if let Ok(bytes) = serde_json::to_vec(&stage) {
+        record_bytes(session, "initialization-failure", &bytes);
+    }
+}
+
+fn register_owned_process(pid: pid_t) -> std::io::Result<()> {
+    register_owned_identity(pnport_core::macos_process::Identity::capture(pid)?)
+}
+
+fn register_owned_identity(identity: pnport_core::macos_process::Identity) -> std::io::Result<()> {
+    let _guard = Guard::enter();
+    let session = SESSION
+        .get()
+        .ok_or_else(|| std::io::Error::other("Native owner context is missing"))?;
+    let public = OWNER_KEY
+        .get()
+        .ok_or_else(|| std::io::Error::other("Native verification context is missing"))?;
+    pnport_core::macos_process::registration(session, identity, public)
+}
+
+fn admit_group_change(
+    pid: pid_t,
+    operation: ProcessGroupOperation,
+) -> std::result::Result<(), c_int> {
+    admit_group_identity(
+        pnport_core::macos_process::Identity::capture(pid),
+        operation,
+    )
+}
+
+fn admit_group_identity(
+    identity: std::io::Result<pnport_core::macos_process::Identity>,
+    operation: ProcessGroupOperation,
+) -> std::result::Result<(), c_int> {
+    identity.and_then(register_owned_identity).map_err(|_| {
+        if let Some(session) = SESSION.get()
+            && let Ok(bytes) = serde_json::to_vec(&operation)
+        {
+            record_bytes(session, "process-group-failure", &bytes);
+        }
+        fail(Code::PnportInjectionFailed)
+    })
 }
 
 #[cfg(test)]
@@ -378,6 +452,44 @@ unsafe fn live_directory_path(dirfd: c_int) -> std::result::Result<PathBuf, c_in
 unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c_int {
     let original = libc::fcntl as unsafe extern "C" fn(c_int, c_int, ...) -> c_int;
     let guard = Guard::enter();
+    let duplicate = matches!(command, libc::F_DUPFD | libc::F_DUPFD_CLOEXEC);
+    // F_TRANSFEREXTENTS takes the destination descriptor as an integer
+    // variadic argument, unlike the pointer-valued fcntl commands below.
+    // Decode it once so the secondary backing is admitted before native fcntl.
+    let transfer_descriptor =
+        (command == libc::F_TRANSFEREXTENTS).then(|| args.next_arg::<c_int>());
+    if let Some(transfer_fd) = transfer_descriptor.filter(|descriptor| *descriptor < 0) {
+        // A negative destination cannot mutate either operand. Native fcntl
+        // owns its validation order: EINVAL for a valid primary descriptor,
+        // while an invalid primary still returns its own native failure.
+        return original(fd, command, transfer_fd);
+    }
+    let mutation = matches!(
+        command,
+        libc::F_PREALLOCATE
+            | libc::F_PUNCHHOLE
+            | libc::F_TRIM_ACTIVE_FILE
+            | libc::F_TRANSFEREXTENTS
+    );
+    // Rejected/reentrant hooks still use the exact native ABI below without
+    // taking a runtime lock. Admitted duplication and metadata mutation share
+    // the descriptor lock through the kernel call and provenance publication.
+    let mut runtime = if guard.is_some() && (duplicate || mutation) {
+        let Ok(runtime) = RUNTIME.get().map(|runtime| runtime.lock()).transpose() else {
+            errno(fail(Code::PnportInjectionFailed));
+            return -1;
+        };
+        runtime
+    } else {
+        None
+    };
+    if mutation
+        && let Some(runtime) = runtime.as_mut()
+        && let Err(code) = validate_descriptor_mutation(fd, transfer_descriptor, runtime, original)
+    {
+        errno(code);
+        return -1;
+    }
 
     // Only duplication carries logical directory provenance. An inode lookup
     // cannot distinguish an fcntl duplicate from an independent open of shared
@@ -393,9 +505,10 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         | libc::F_THAW_FS
         | libc::F_GLOBAL_NOCACHE
         | libc::F_NODIRECT => {
-            let argument = args.arg::<c_int>();
+            let argument = args.next_arg::<c_int>();
             original(fd, command, argument)
         }
+        libc::F_TRANSFEREXTENTS => original(fd, command, transfer_descriptor.unwrap_or_default()),
         libc::F_GETLK
         | libc::F_SETLK
         | libc::F_SETLKW
@@ -407,9 +520,8 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         | libc::F_GETPATH_NOFIRMLINK
         | libc::F_PUNCHHOLE
         | libc::F_TRIM_ACTIVE_FILE
-        | libc::F_SPECULATIVE_READ
-        | libc::F_TRANSFEREXTENTS => {
-            let argument = args.arg::<*mut c_void>();
+        | libc::F_SPECULATIVE_READ => {
+            let argument = args.next_arg::<*mut c_void>();
             original(fd, command, argument)
         }
         libc::F_GETFD | libc::F_GETFL | libc::F_FULLFSYNC | libc::F_BARRIERFSYNC => {
@@ -417,7 +529,7 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         }
         // Keep the native ABI for future integer-valued Darwin commands until
         // libc exposes a typed constant for them.
-        _ => original(fd, command, args.arg::<c_int>()),
+        _ => original(fd, command, args.next_arg::<c_int>()),
     };
     // Reentry and early dyld calls still need the command's native variadic
     // ABI. Only bypass bookkeeping after forwarding; keep an admitted token
@@ -426,14 +538,55 @@ unsafe extern "C" fn pnport_fcntl(fd: c_int, command: c_int, mut args: ...) -> c
         return result;
     };
     if result >= 0
-        && matches!(command, libc::F_DUPFD | libc::F_DUPFD_CLOEXEC)
-        && let Some(runtime) = RUNTIME.get()
-        && let Ok(mut runtime) = runtime.lock()
-        && let Some(translation) = runtime.descriptors.get(&fd).cloned()
+        && duplicate
+        && let Some(runtime) = runtime.as_mut()
     {
-        runtime.descriptors.insert(result, translation);
+        let translation = runtime.descriptors.get(&fd).cloned();
+        runtime.descriptors.remove(&result);
+        if let Some(translation) = translation {
+            runtime.descriptors.insert(result, translation);
+        }
     }
     result
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn validate_descriptor_mutation(
+    fd: c_int,
+    transfer_descriptor: Option<c_int>,
+    runtime: &mut Runtime,
+    original: unsafe extern "C" fn(c_int, c_int, ...) -> c_int,
+) -> std::result::Result<(), c_int> {
+    // F_GETPATH is a backing-path probe, not a descriptor-validity check:
+    // it fails for pipes and invalid descriptors alike. Validate every
+    // operand first so native EBADF takes precedence over managed EROFS.
+    descriptor_valid(fd, original)?;
+    if let Some(transfer_fd) = transfer_descriptor {
+        descriptor_valid(transfer_fd, original)?;
+    }
+    let primary_readonly = descriptor_readonly(fd, runtime)?;
+    let transfer_readonly = match transfer_descriptor {
+        Some(transfer_fd) => descriptor_readonly(transfer_fd, runtime)?,
+        None => false,
+    };
+    if primary_readonly || transfer_readonly {
+        return Err(EROFS);
+    }
+    Ok(())
+}
+
+unsafe fn descriptor_valid(
+    fd: c_int,
+    original: unsafe extern "C" fn(c_int, c_int, ...) -> c_int,
+) -> std::result::Result<(), c_int> {
+    let saved_errno = *__error();
+    if original(fd, libc::F_GETFD) == -1 {
+        let error = *__error();
+        errno(saved_errno);
+        return Err(error);
+    }
+    errno(saved_errno);
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -451,15 +604,118 @@ unsafe fn translate(
     dirfd: c_int,
     write: bool,
 ) -> std::result::Result<(CString, Translation), c_int> {
+    translate_following(path, dirfd, write, true, SymlinkPolicy::Allow)
+}
+
+fn native_translation(logical: &Path, physical: PathBuf) -> Translation {
+    Translation {
+        logical: logical.to_owned(),
+        physical,
+        readonly: false,
+        virtual_link: false,
+        kind: PathKind::Native,
+    }
+}
+
+fn translate_lookup(
+    runtime: &mut Runtime,
+    path: &Path,
+    follow_last: bool,
+) -> pnport_core::diagnostic::Result<Translation> {
+    runtime.view.graph.check_path_conflicts(path)?;
+    let Some(lookup) =
+        pnport_core::native_path::resolved_lookup(path, follow_last, &runtime.view.graph)
+    else {
+        return Ok(native_translation(path, path.to_owned()));
+    };
+    let checked = lookup.validate_parents(|parent| runtime.view.translate(parent))?;
+    translate_checked_lookup(runtime, path, checked)
+}
+
+fn translate_checked_lookup(
+    runtime: &mut Runtime,
+    path: &Path,
+    lookup: NativeLookup,
+) -> pnport_core::diagnostic::Result<Translation> {
+    let (resolved, requires_directory) = match lookup {
+        pnport_core::native_path::Lookup::Resolved {
+            path,
+            requires_directory,
+        } => (path, requires_directory),
+        NativeLookup::NativeFailure { path: physical, .. } => {
+            return Ok(native_translation(path, physical));
+        }
+    };
+    let mut translation = runtime.view.translate(&resolved)?;
+    if requires_directory {
+        translation.virtual_link = false;
+        if translation.readonly {
+            translation.physical.push(".");
+        }
+    }
+    if !translation.readonly {
+        // Native lookup must keep the caller's symlink, '..', missing-parent
+        // and trailing-separator semantics. Only managed backing is rewritten.
+        path.clone_into(&mut translation.physical);
+    }
+    Ok(translation)
+}
+
+unsafe fn translate_following(
+    path: *const c_char,
+    dirfd: c_int,
+    write: bool,
+    follow_last: bool,
+    policy: SymlinkPolicy,
+) -> std::result::Result<(CString, Translation), c_int> {
     let Some(runtime) = RUNTIME.get() else {
         return Err(EIO);
     };
     let mut runtime = runtime.lock().map_err(|_| EIO)?;
     let path = path_from(path, dirfd, &runtime)?;
-    let translation = runtime
+    runtime
         .view
-        .translate(&path)
+        .graph
+        .check_path_conflicts(&path)
         .map_err(|error| fail(error.code))?;
+    let translation = if policy == SymlinkPolicy::Reject {
+        match pnport_core::native_path::resolved_lookup_with_policy(
+            &path,
+            follow_last,
+            &runtime.view.graph,
+            policy,
+        ) {
+            Some(lookup) => {
+                let mut virtual_alias = false;
+                let checked = lookup
+                    .validate_parents(|parent| {
+                        virtual_alias |= runtime.view.contains_dependency_alias(parent)?;
+                        runtime.view.translate(parent)
+                    })
+                    .map_err(|error| fail(error.code))?;
+                if virtual_alias {
+                    return Err(libc::ELOOP);
+                }
+                match &checked {
+                    NativeLookup::NativeFailure { errno, .. } => return Err(*errno),
+                    NativeLookup::Resolved { path, .. } => {
+                        if runtime
+                            .view
+                            .contains_dependency_alias(path)
+                            .map_err(|error| fail(error.code))?
+                        {
+                            return Err(libc::ELOOP);
+                        }
+                    }
+                }
+                translate_checked_lookup(&mut runtime, &path, checked)
+                    .map_err(|error| fail(error.code))?
+            }
+            None => native_translation(&path, path.clone()),
+        }
+    } else {
+        translate_lookup(&mut runtime, &path, follow_last).map_err(|error| fail(error.code))?
+    };
     if write && translation.readonly {
         return Err(EROFS);
     }
@@ -473,6 +729,63 @@ unsafe fn track(fd: c_int, translation: Translation) {
         && let Ok(mut runtime) = runtime.lock()
     {
         runtime.descriptors.insert(fd, translation);
+    }
+}
+
+unsafe fn descriptor_readonly(
+    fd: c_int,
+    runtime: &mut Runtime,
+) -> std::result::Result<bool, c_int> {
+    let saved_errno = *__error();
+    // Check live kernel backing as well as remembered provenance. This also
+    // covers an inherited read descriptor and the small open-to-track window;
+    // physical managed backing cannot become writable by omitting a mapping.
+    let mut path = [0u8; PATH_MAX as usize];
+    if libc::fcntl(fd, F_GETPATH, path.as_mut_ptr()) != 0 {
+        // Pipes, sockets and invalid descriptors retain the native operation's
+        // result. A closed descriptor must not inherit a stale EROFS denial.
+        errno(saved_errno);
+        return Ok(false);
+    }
+    let path = Path::new(OsStr::from_bytes(
+        CStr::from_ptr(path.as_ptr().cast()).to_bytes(),
+    ));
+    let readonly = if let Some(translation) = runtime.descriptors.get(&fd)
+        && translation.physical == path
+    {
+        translation.readonly
+    } else {
+        runtime
+            .view
+            .translate(path)
+            .map_err(|error| fail(error.code))?
+            .readonly
+    };
+    errno(saved_errno);
+    Ok(readonly)
+}
+
+unsafe fn mutate_descriptor(fd: c_int, native: impl FnOnce() -> c_int) -> c_int {
+    let Some(_guard) = Guard::enter() else {
+        return native();
+    };
+    let Some(runtime) = RUNTIME.get() else {
+        return native();
+    };
+    let Ok(mut runtime) = runtime.lock() else {
+        errno(fail(Code::PnportInjectionFailed));
+        return -1;
+    };
+    match descriptor_readonly(fd, &mut runtime) {
+        Ok(true) => {
+            errno(EROFS);
+            -1
+        }
+        Ok(false) => native(),
+        Err(code) => {
+            errno(code);
+            -1
+        }
     }
 }
 
@@ -517,7 +830,13 @@ macro_rules! original {
 }
 macro_rules! translated {
     ($path:ident, $dir:expr, $write:expr, $failure:expr) => {
-        match translate($path, $dir, $write) {
+        translated!($path, $dir, $write, true, $failure)
+    };
+    ($path:ident, $dir:expr, $write:expr, $follow:expr, $failure:expr) => {
+        translated!($path, $dir, $write, $follow, SymlinkPolicy::Allow, $failure)
+    };
+    ($path:ident, $dir:expr, $write:expr, $follow:expr, $policy:expr, $failure:expr) => {
+        match translate_following($path, $dir, $write, $follow, $policy) {
             Ok(value) => value,
             Err(error) => {
                 errno(error);
@@ -525,6 +844,47 @@ macro_rules! translated {
             }
         }
     };
+}
+
+fn initialize_owner() -> std::result::Result<(), InitializationStage> {
+    use InitializationStage as Stage;
+    let group = std::env::var("PNPORT_MACOS_GROUP")
+        .ok()
+        .and_then(|group| group.parse::<pid_t>().ok())
+        .filter(|group| *group > 0)
+        .ok_or(Stage::OwnedGroup)?;
+    OWNED_GROUP.set(group).map_err(|_| Stage::OwnedGroup)?;
+    let public = std::env::var("PNPORT_MACOS_OWNER_KEY").map_err(|_| Stage::OwnedGroup)?;
+    let public =
+        pnport_core::macos_process::decode_public_key(&public).map_err(|_| Stage::OwnedGroup)?;
+    OWNER_KEY.set(public).map_err(|_| Stage::OwnedGroup)?;
+    // SAFETY: getpid has no pointer or lifetime preconditions.
+    register_owned_process(unsafe { getpid() }).map_err(|_| Stage::OwnedGroup)
+}
+
+fn initialize_node_loader(snapshot: &Snapshot) -> std::result::Result<(), InitializationStage> {
+    use InitializationStage as Stage;
+    let loader = pnport_core::node::Loader::from_snapshot(snapshot);
+    let inherited = std::env::var_os("NODE_OPTIONS");
+    let cwd = std::env::current_dir().ok();
+    let options = loader
+        .options_in(inherited.as_deref(), cwd.as_deref())
+        .map_err(|_| Stage::InstallRuntime)?;
+    if inherited.as_deref() != Some(options.as_os_str()) {
+        // Spawn file actions are opaque in the parent. At image startup
+        // their final cwd is available, before Node reads NODE_OPTIONS.
+        // Bind selected relative loaders and remove the provisional copy
+        // without assuming that a parent's cwd is the child's cwd.
+        let value =
+            CString::new(options.as_os_str().as_bytes()).map_err(|_| Stage::InstallRuntime)?;
+        // SAFETY: both strings are NUL-terminated, and initialization runs
+        // before application threads or Node consume the environment.
+        if unsafe { libc::setenv(c"NODE_OPTIONS".as_ptr(), value.as_ptr(), 1) } != 0 {
+            return Err(Stage::InstallRuntime);
+        }
+    }
+    NODE_LOADER.set(loader).ok();
+    Ok(())
 }
 
 unsafe extern "C" fn initialize() {
@@ -541,6 +901,8 @@ unsafe extern "C" fn initialize() {
     for name in [
         "PNPORT_SESSION",
         "PNPORT_CACHE",
+        "PNPORT_MACOS_GROUP",
+        "PNPORT_MACOS_OWNER_KEY",
         "DYLD_INSERT_LIBRARIES",
         "LD_PRELOAD",
     ] {
@@ -554,15 +916,38 @@ unsafe extern "C" fn initialize() {
         }
     }
     INJECTION_ENV.set(injection_env).ok();
-    let result = (|| {
+    // Keep the lease outside the fallible setup closure. A failed constructor
+    // must publish its stage/code before process exit releases the lease.
+    let mut launch = None;
+    let result: std::result::Result<(), InitializationStage> = (|| {
+        use InitializationStage as Stage;
         // Acknowledge entry before graph/cache work that may legitimately wait
         // on another materializer. Only the later ready marker confirms setup.
-        fs::create_dir_all(session.join("starting")).ok()?;
-        fs::write(session.join("starting").join(getpid().to_string()), b"1").ok()?;
-        let snapshot: Snapshot =
-            serde_json::from_slice(&fs::read(session.join("graph.json")).ok()?).ok()?;
-        let graph = Graph::from_snapshot(snapshot).ok()?;
-        let cache = Cache::open(PathBuf::from(std::env::var_os("PNPORT_CACHE")?)).ok()?;
+        fs::create_dir_all(session.join("starting")).map_err(|_| Stage::AcknowledgeEntry)?;
+        fs::write(session.join("starting").join(getpid().to_string()), b"1")
+            .map_err(|_| Stage::AcknowledgeEntry)?;
+        launch = if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
+            let token = token.to_str().ok_or(Stage::LaunchToken)?;
+            if !pnport_core::launch::valid_token(token) {
+                return Err(Stage::LaunchToken);
+            }
+            // Link this exact pending inode before graph/cache coordination.
+            // A stale acknowledgement with a reused filename cannot exempt a
+            // different image from the missing-injection deadline.
+            Some(
+                pnport_core::launch::Entry::begin(&session, token)
+                    .map_err(|_| Stage::AcknowledgeLaunch)?,
+            )
+        } else {
+            None
+        };
+        let bytes = fs::read(session.join("graph.json")).map_err(|_| Stage::ReadGraph)?;
+        let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|_| Stage::DecodeGraph)?;
+        let graph = Graph::from_snapshot(snapshot).map_err(|_| Stage::HydrateGraph)?;
+        initialize_owner()?;
+        initialize_node_loader(&graph.snapshot)?;
+        let cache_path = std::env::var_os("PNPORT_CACHE").ok_or(Stage::CacheLocation)?;
+        let cache = Cache::open(PathBuf::from(cache_path)).map_err(|_| Stage::OpenCache)?;
         let view = View::new(graph, cache, session.clone());
         RUNTIME
             .set(
@@ -572,30 +957,112 @@ unsafe extern "C" fn initialize() {
                     cwd: None,
                     directories: HashMap::new(),
                 })
-                .ok()?,
+                .map_err(|_| Stage::RuntimeMutex)?,
             )
-            .ok()?;
+            .map_err(|_| Stage::InstallRuntime)?;
         if libc::pthread_atfork(Some(before_fork), Some(after_fork), Some(in_fork_child)) != 0 {
-            return None;
+            return Err(Stage::RegisterForkHandlers);
         }
-        fs::create_dir_all(session.join("ready")).ok()?;
-        fs::write(session.join("ready").join(getpid().to_string()), b"1").ok()?;
-        if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
-            let token = token.to_str()?;
-            if !token.starts_with("pnport-")
-                || !token
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-            {
-                return None;
-            }
-            fs::remove_file(session.join("pending").join(token)).ok()?;
+        fs::create_dir_all(session.join("ready")).map_err(|_| Stage::PublishReadiness)?;
+        fs::write(session.join("ready").join(getpid().to_string()), b"1")
+            .map_err(|_| Stage::PublishReadiness)?;
+        if let Some(launch) = &launch {
+            launch.acknowledge().map_err(|_| Stage::AcknowledgeLaunch)?;
         }
-        Some(())
+        Ok(())
     })();
-    if result.is_none() {
+    if let Err(stage) = result {
+        #[cfg(test)]
+        if launch.is_some() {
+            // The isolated native failure control reaches this exact ordering
+            // boundary, before publishing either diagnostic record.
+            let token = std::env::var_os("PNPORT_LAUNCH_TOKEN").unwrap();
+            let pending = fs::metadata(session.join("pending").join(&token)).unwrap();
+            assert!(
+                pnport_core::launch::entry_state(
+                    &session.join("launch-starting").join(token),
+                    &pending,
+                )
+                .unwrap()
+                    == pnport_core::launch::EntryState::Initializing
+            );
+        }
+        record_initialization_failure(&session, stage);
         record_failure(&session, Code::PnportInjectionFailed);
         _exit(125);
+    }
+}
+
+#[cfg(test)]
+mod initialization_tests {
+    use super::*;
+
+    #[test]
+    fn initializer_process() {
+        // Reached only if the native initializer did not reject the child.
+    }
+
+    #[test]
+    fn failed_native_initializers_record_the_stage_without_input_contents() {
+        for (bytes, token, expected) in [
+            (None, None, InitializationStage::ReadGraph),
+            (
+                Some(b"private-input-canary".as_slice()),
+                None,
+                InitializationStage::DecodeGraph,
+            ),
+            (None, Some("pnport-test"), InitializationStage::ReadGraph),
+            (
+                None,
+                Some("pnport-../outside"),
+                InitializationStage::LaunchToken,
+            ),
+        ] {
+            let session = tempfile::tempdir().unwrap();
+            if let Some(bytes) = bytes {
+                fs::write(session.path().join("graph.json"), bytes).unwrap();
+            }
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "pnport::initialization_tests::initializer_process",
+                    "--exact",
+                ])
+                .env("PNPORT_SESSION", session.path())
+                .env_remove("PNPORT_CACHE")
+                .env_remove("PNPORT_LAUNCH_TOKEN");
+            if let Some(token) = token {
+                command.env("PNPORT_LAUNCH_TOKEN", token);
+                if pnport_core::launch::valid_token(token) {
+                    fs::create_dir(session.path().join("pending")).unwrap();
+                    fs::write(session.path().join("pending").join(token), b"").unwrap();
+                }
+            }
+            let status = command.status().unwrap();
+            assert_eq!(status.code(), Some(125));
+            let record = fs::read(session.path().join("initialization-failure")).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<InitializationStage>(&record).unwrap(),
+                expected
+            );
+            assert_eq!(
+                fs::read(session.path().join("failure")).unwrap(),
+                Code::PnportInjectionFailed.as_str().as_bytes()
+            );
+            assert!(record.len() < 64);
+            assert!(session.path().join("starting").is_dir());
+            assert!(!session.path().join("ready").exists());
+            if token == Some("pnport-test") {
+                use std::os::unix::fs::MetadataExt;
+                let pending = fs::metadata(session.path().join("pending/pnport-test")).unwrap();
+                let entered =
+                    fs::metadata(session.path().join("launch-starting/pnport-test")).unwrap();
+                assert_eq!(
+                    (pending.dev(), pending.ino()),
+                    (entered.dev(), entered.ino())
+                );
+            }
+        }
     }
 }
 #[used]
@@ -603,9 +1070,39 @@ unsafe extern "C" fn initialize() {
 #[cfg_attr(target_os = "linux", unsafe(link_section = ".init_array"))]
 static INITIALIZER: unsafe extern "C" fn() = initialize;
 
+const fn open_follows_final_component(flags: c_int) -> bool {
+    #[cfg(target_os = "macos")]
+    let nofollow = libc::O_NOFOLLOW | libc::O_SYMLINK;
+    #[cfg(target_os = "linux")]
+    let nofollow = libc::O_NOFOLLOW;
+    flags & nofollow == 0 && flags & (O_CREAT | libc::O_EXCL) != (O_CREAT | libc::O_EXCL)
+}
+
+const fn open_symlink_policy(flags: c_int) -> SymlinkPolicy {
+    #[cfg(target_os = "macos")]
+    if flags & libc::O_NOFOLLOW_ANY != 0 {
+        return SymlinkPolicy::Reject;
+    }
+    let _ = flags;
+    SymlinkPolicy::Allow
+}
+
+const fn conflicting_open_flags(flags: c_int) -> bool {
+    // XNU rejects this pair before vnode lookup, so native forwarding cannot
+    // mutate managed backing and preserves the kernel's argument-error order.
+    #[cfg(target_os = "macos")]
+    return flags & (libc::O_NOFOLLOW_ANY | libc::O_NOFOLLOW)
+        == (libc::O_NOFOLLOW_ANY | libc::O_NOFOLLOW);
+    #[cfg(target_os = "linux")]
+    {
+        let _ = flags;
+        false
+    }
+}
+
 unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -613,6 +1110,9 @@ unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ..
         open,
         unsafe extern "C" fn(*const c_char, c_int, ...) -> c_int
     );
+    if conflicting_open_flags(flags) {
+        return original(path, flags, mode);
+    }
     let Some(_guard) = Guard::enter() else {
         return original(path, flags, mode);
     };
@@ -623,6 +1123,8 @@ unsafe extern "C" fn pnport_open(path: *const c_char, flags: c_int, mut args: ..
         path,
         AT_FDCWD,
         flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
+        open_follows_final_component(flags),
+        open_symlink_policy(flags),
         -1
     );
     let fd = original(path.as_ptr(), flags, mode);
@@ -642,7 +1144,7 @@ const _: () = {
 #[unsafe(export_name = "open")]
 unsafe extern "C" fn linux_open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -655,7 +1157,7 @@ unsafe extern "C" fn pnport_openat(
     mut args: ...
 ) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -663,6 +1165,9 @@ unsafe extern "C" fn pnport_openat(
         openat,
         unsafe extern "C" fn(c_int, *const c_char, c_int, ...) -> c_int
     );
+    if conflicting_open_flags(flags) {
+        return original(dirfd, path, flags, mode);
+    }
     let Some(_guard) = Guard::enter() else {
         return original(dirfd, path, flags, mode);
     };
@@ -673,6 +1178,8 @@ unsafe extern "C" fn pnport_openat(
         path,
         dirfd,
         flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND) != 0,
+        open_follows_final_component(flags),
+        open_symlink_policy(flags),
         -1
     );
     let fd = original(AT_FDCWD, path.as_ptr(), flags, mode);
@@ -697,7 +1204,7 @@ unsafe extern "C" fn linux_openat(
     mut args: ...
 ) -> c_int {
     let mode = if flags & O_CREAT != 0 {
-        args.arg::<c_int>()
+        args.next_arg::<c_int>()
     } else {
         0
     };
@@ -705,32 +1212,150 @@ unsafe extern "C" fn linux_openat(
 }
 
 macro_rules! path_hook {
-    ($name:ident, $wrapper:ident, ($path:ident: *const c_char $(,$arg:ident: $ty:ty)*) -> $ret:ty, $write:expr, $failure:expr) => {
+    ($name:ident, $wrapper:ident, ($path:ident: *const c_char $(,$arg:ident: $ty:ty)*) -> $ret:ty, $write:expr, $follow:expr, $failure:expr) => {
         hook!($name, $wrapper, ($path:*const c_char $(,$arg:$ty)*) -> $ret, {
             let original = original!($name, unsafe extern "C" fn(*const c_char $(,$ty)*) -> $ret);
             let Some(_guard) = Guard::enter() else { return original($path $(,$arg)*); };
             if RUNTIME.get().is_none() { return original($path $(,$arg)*); }
-            let (path, _) = translated!($path, AT_FDCWD, $write, $failure);
+            let (path, _) = translated!($path, AT_FDCWD, $write, $follow, $failure);
             original(path.as_ptr() $(,$arg)*)
         });
     };
 }
-path_hook!(stat, pnport_stat, (path:*const c_char, output:*mut stat) -> c_int, false, -1);
+path_hook!(stat, pnport_stat, (path:*const c_char, output:*mut stat) -> c_int, false, true, -1);
 
-path_hook!(access, pnport_access, (path:*const c_char, mode:c_int) -> c_int, mode & W_OK != 0, -1);
+path_hook!(access, pnport_access, (path:*const c_char, mode:c_int) -> c_int, mode & W_OK != 0, true, -1);
 
-path_hook!(unlink, pnport_unlink, (path:*const c_char) -> c_int, true, -1);
-path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, -1);
-path_hook!(mkdir, pnport_mkdir, (path:*const c_char, mode:mode_t) -> c_int, true, -1);
-path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true, -1);
-path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, -1);
+path_hook!(unlink, pnport_unlink, (path:*const c_char) -> c_int, true, false, -1);
+path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, false, -1);
+// Creating the native cache container is the sole writable operation on the
+// merged root. Dependency entries and destructive root operations stay
+// protected.
+unsafe fn mkdir_path(path: *const c_char, fd: c_int) -> std::result::Result<CString, c_int> {
+    let (_, translation) = translate_following(path, fd, false, false, SymlinkPolicy::Allow)?;
+    if translation.kind == PathKind::CacheContainer {
+        let runtime = RUNTIME.get().ok_or(EIO)?.lock().map_err(|_| EIO)?;
+        let source = path_from(path, fd, &runtime)?;
+        if !pnport_core::native_path::structural_cache_root(&source, &runtime.view.graph) {
+            // A scope/dependency '..', terminal '.' or followed symlink names
+            // an existing virtual directory, not a new namespace leaf.
+            return Err(EEXIST);
+        }
+        return CString::new(translation.logical.as_os_str().as_bytes()).map_err(|_| EINVAL);
+    }
+    if translation.readonly {
+        return Err(EROFS);
+    }
+    CString::new(translation.physical.as_os_str().as_bytes()).map_err(|_| EINVAL)
+}
+hook!(mkdir, pnport_mkdir, (path:*const c_char, mode:mode_t) -> c_int, {
+    let original=original!(mkdir,unsafe extern "C" fn(*const c_char,mode_t)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(path,mode);};
+    if RUNTIME.get().is_none() {return original(path,mode);}
+    let path=match mkdir_path(path,AT_FDCWD) {Ok(path)=>path,Err(code)=>{errno(code);return -1;}};
+    original(path.as_ptr(),mode)
+});
+hook!(mkdirat, pnport_mkdirat, (fd:c_int,path:*const c_char,mode:mode_t) -> c_int, {
+    let original=original!(mkdirat,unsafe extern "C" fn(c_int,*const c_char,mode_t)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(fd,path,mode);};
+    if RUNTIME.get().is_none() {return original(fd,path,mode);}
+    let path=match mkdir_path(path,fd) {Ok(path)=>path,Err(code)=>{errno(code);return -1;}};
+    original(AT_FDCWD,path.as_ptr(),mode)
+});
+path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true, true, -1);
+path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, true, -1);
+// pnport excludes fspy's generic mutation module. Every pathname mutation
+// variant must therefore apply this view's policy before entering libc.
+path_hook!(remove, pnport_remove, (path:*const c_char) -> c_int, true, false, -1);
+path_hook!(creat, pnport_creat, (path:*const c_char, mode:mode_t) -> c_int, true, true, -1);
+path_hook!(mkfifo, pnport_mkfifo, (path:*const c_char, mode:mode_t) -> c_int, true, false, -1);
+path_hook!(mknod, pnport_mknod, (path:*const c_char, mode:mode_t, device:libc::dev_t) -> c_int, true, false, -1);
+path_hook!(chown, pnport_chown, (path:*const c_char, owner:libc::uid_t, group:libc::gid_t) -> c_int, true, true, -1);
+path_hook!(lchown, pnport_lchown, (path:*const c_char, owner:libc::uid_t, group:libc::gid_t) -> c_int, true, false, -1);
+path_hook!(utime, pnport_utime, (path:*const c_char, times:*const libc::utimbuf) -> c_int, true, true, -1);
+path_hook!(utimes, pnport_utimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, true, -1);
+path_hook!(lutimes, pnport_lutimes, (path:*const c_char, times:*const libc::timeval) -> c_int, true, false, -1);
+path_hook!(chflags, pnport_chflags, (path:*const c_char, flags:libc::c_uint) -> c_int, true, true, -1);
+// Rust libc omits lchflags; retain Darwin's no-follow ABI explicitly.
+unsafe extern "C" fn pnport_lchflags(path: *const c_char, flags: u32) -> c_int {
+    let Some(_guard) = Guard::enter() else {
+        return crate::libc::lchflags(path, flags);
+    };
+    if RUNTIME.get().is_none() {
+        return crate::libc::lchflags(path, flags);
+    }
+    let (path, _) = translated!(path, AT_FDCWD, true, false, -1);
+    crate::libc::lchflags(path.as_ptr(), flags)
+}
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_lchflags as *const c_void,
+        _old: crate::libc::lchflags as *const c_void,
+    };
+};
+hook!(setxattr, pnport_setxattr, (path:*const c_char,name:*const c_char,value:*const c_void,size:size_t,position:u32,options:c_int) -> c_int, {
+    let original=original!(setxattr,unsafe extern "C" fn(*const c_char,*const c_char,*const c_void,size_t,u32,c_int)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(path,name,value,size,position,options);};
+    if RUNTIME.get().is_none() {return original(path,name,value,size,position,options);}
+    let (path,_)=translated!(path,AT_FDCWD,true,options & libc::XATTR_NOFOLLOW == 0,-1);
+    original(path.as_ptr(),name,value,size,position,options)
+});
+path_hook!(removexattr, pnport_removexattr, (path:*const c_char,name:*const c_char,options:c_int) -> c_int, true, options & libc::XATTR_NOFOLLOW == 0, -1);
+
+macro_rules! mutation_at_hook {
+    ($name:ident, $wrapper:ident, ($fd:ident:c_int,$path:ident:*const c_char $(,$arg:ident:$ty:ty)*), $follow:expr) => {
+        hook!($name, $wrapper, ($fd:c_int,$path:*const c_char $(,$arg:$ty)*) -> c_int, {
+            let original=original!($name,unsafe extern "C" fn(c_int,*const c_char $(,$ty)*)->c_int);
+            let Some(_guard)=Guard::enter() else {return original($fd,$path $(,$arg)*);};
+            if RUNTIME.get().is_none() {return original($fd,$path $(,$arg)*);}
+            let (path,_)=translated!($path,$fd,true,$follow,-1);
+            original(AT_FDCWD,path.as_ptr() $(,$arg)*)
+        });
+    };
+}
+mutation_at_hook!(fchmodat, pnport_fchmodat, (fd:c_int,path:*const c_char,mode:mode_t,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(fchownat, pnport_fchownat, (fd:c_int,path:*const c_char,owner:libc::uid_t,group:libc::gid_t,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(utimensat, pnport_utimensat, (fd:c_int,path:*const c_char,times:*const libc::timespec,flags:c_int), flags & AT_SYMLINK_NOFOLLOW == 0);
+mutation_at_hook!(mkfifoat, pnport_mkfifoat, (fd:c_int,path:*const c_char,mode:mode_t), false);
+mutation_at_hook!(mknodat, pnport_mknodat, (fd:c_int,path:*const c_char,mode:mode_t,device:libc::dev_t), false);
+hook!(fchmod, pnport_fchmod, (fd:c_int,mode:mode_t) -> c_int, {
+    mutate_descriptor(fd, || libc::fchmod(fd, mode))
+});
+hook!(fchown, pnport_fchown, (fd:c_int,owner:libc::uid_t,group:libc::gid_t) -> c_int, {
+    mutate_descriptor(fd, || libc::fchown(fd, owner, group))
+});
+hook!(ftruncate, pnport_ftruncate, (fd:c_int,length:off_t) -> c_int, {
+    mutate_descriptor(fd, || libc::ftruncate(fd, length))
+});
+hook!(futimes, pnport_futimes, (fd:c_int,times:*const libc::timeval) -> c_int, {
+    mutate_descriptor(fd, || libc::futimes(fd, times))
+});
+hook!(futimens, pnport_futimens, (fd:c_int,times:*const libc::timespec) -> c_int, {
+    mutate_descriptor(fd, || libc::futimens(fd, times))
+});
+hook!(fchflags, pnport_fchflags, (fd:c_int,flags:libc::c_uint) -> c_int, {
+    mutate_descriptor(fd, || libc::fchflags(fd, flags))
+});
+hook!(fsetxattr, pnport_fsetxattr, (fd:c_int,name:*const c_char,value:*const c_void,size:size_t,position:u32,options:c_int) -> c_int, {
+    mutate_descriptor(fd, || libc::fsetxattr(fd, name, value, size, position, options))
+});
+hook!(fremovexattr, pnport_fremovexattr, (fd:c_int,name:*const c_char,options:c_int) -> c_int, {
+    mutate_descriptor(fd, || libc::fremovexattr(fd, name, options))
+});
 hook!(dlopen, pnport_dlopen, (path:*const c_char,flags:c_int) -> *mut c_void, {
     let original = original!(dlopen, unsafe extern "C" fn(*const c_char,c_int)->*mut c_void);
     // NULL requests the process/global symbol namespace, not a filesystem path.
     if path.is_null() { return original(path,flags); }
-    let Some(_guard) = Guard::enter() else { return original(path,flags); };
+    let Some(guard) = Guard::enter() else { return original(path,flags); };
     if RUNTIME.get().is_none() { return original(path,flags); }
     let (path,_) = translated!(path,AT_FDCWD,false,ptr::null_mut());
+    // Translation has released the runtime lock. dyld now invokes arbitrary
+    // library constructors, including nested loads and fork callbacks. Keep
+    // their filesystem accesses virtualized instead of treating them as our
+    // backing I/O. Inner hooks still guard their own native/runtime operations.
+    drop(guard);
     original(path.as_ptr(),flags)
 });
 
@@ -746,7 +1371,7 @@ hook!(fstatat, pnport_fstatat, (dirfd:c_int,path:*const c_char,output:*mut stat,
     let original = original!(fstatat, unsafe extern "C" fn(c_int,*const c_char,*mut stat,c_int)->c_int);
     let Some(_guard) = Guard::enter() else { return original(dirfd,path,output,flags); };
     if RUNTIME.get().is_none() { return original(dirfd,path,output,flags); }
-    let (path,translation) = translated!(path,dirfd,false,-1);
+    let (path,translation) = translated!(path,dirfd,false,flags & AT_SYMLINK_NOFOLLOW == 0,-1);
     let result = original(AT_FDCWD,path.as_ptr(),output,flags);
     if result == 0 && flags & AT_SYMLINK_NOFOLLOW != 0 { virtual_link_metadata(output,&translation); }
     result
@@ -849,7 +1474,7 @@ hook!(readlink, pnport_readlink, (path:*const c_char, output:*mut c_char, size:s
         Ok(value) => value,
         Err(error) => { errno(error); return -1; }
     };
-    let (physical,translation) = translated!(path,AT_FDCWD,false,-1);
+    let (physical,translation) = translated!(path,AT_FDCWD,false,false,-1);
     if let Some(suffix) = terminal {
         let physical = match append_terminal_lookup(&physical, suffix) {
             Ok(value) => value,
@@ -869,7 +1494,7 @@ hook!(readlinkat, pnport_readlinkat, (dirfd:c_int, path:*const c_char, output:*m
         Ok(value) => value,
         Err(error) => { errno(error); return -1; }
     };
-    let (physical,translation) = translated!(path,dirfd,false,-1);
+    let (physical,translation) = translated!(path,dirfd,false,false,-1);
     if let Some(suffix) = terminal {
         let physical = match append_terminal_lookup(&physical, suffix) {
             Ok(value) => value,
@@ -899,12 +1524,69 @@ hook!(getcwd, pnport_getcwd, (buffer:*mut c_char,size:size_t) -> *mut c_char, {
     if buffer.is_null() {errno(ENOMEM);return buffer;}
     ptr::copy_nonoverlapping(bytes.as_ptr(),buffer.cast(),bytes.len());*buffer.add(bytes.len())=0;buffer
 });
-hook!(close, pnport_close, (fd:c_int) -> c_int, {
-    let original=original!(close,unsafe extern "C" fn(c_int)->c_int);
-    let Some(_guard)=Guard::enter() else {return original(fd);};
-    if let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {runtime.descriptors.remove(&fd);}
-    original(fd)
-});
+unsafe fn close_descriptor(fd: c_int, native: unsafe extern "C" fn(c_int) -> c_int) -> c_int {
+    let Some(guard) = Guard::enter() else {
+        return native(fd);
+    };
+    let Some(runtime) = RUNTIME.get() else {
+        return native(fd);
+    };
+    let Ok(mut runtime) = runtime.lock() else {
+        errno(fail(Code::PnportInjectionFailed));
+        return -1;
+    };
+
+    // Deferred pthread cancellation treats ordinary `close` as a cancellation
+    // point on macOS. Keep a pending cancellation from terminating this thread
+    // while it owns the runtime mutex; otherwise the process-wide lock would
+    // remain permanently held. The cancellation state is restored only after
+    // both the provenance update and the Rust guards have been released.
+    let mut previous_cancel_state = 0;
+    if set_cancel_state(libc::PTHREAD_CANCEL_DISABLE, &raw mut previous_cancel_state) != 0 {
+        errno(EIO);
+        return -1;
+    }
+    let result = native(fd);
+    if result == 0 {
+        runtime.descriptors.remove(&fd);
+    }
+    drop(runtime);
+    drop(guard);
+    // SAFETY: The state was disabled above on this thread. No runtime or
+    // recursion guard is held when a pending cancellation may be delivered.
+    if set_cancel_state(previous_cancel_state, ptr::null_mut()) != 0 {
+        errno(EIO);
+    }
+    result
+}
+unsafe extern "C" {
+    #[link_name = "pthread_setcancelstate"]
+    fn set_cancel_state(state: c_int, old_state: *mut c_int) -> c_int;
+    #[link_name = "close"]
+    fn native_close(fd: c_int) -> c_int;
+    #[link_name = "close$NOCANCEL"]
+    fn native_close_nocancel(fd: c_int) -> c_int;
+}
+unsafe extern "C" fn pnport_close(fd: c_int) -> c_int {
+    close_descriptor(fd, native_close)
+}
+unsafe extern "C" fn pnport_close_nocancel(fd: c_int) -> c_int {
+    close_descriptor(fd, native_close_nocancel)
+}
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut CLOSE: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_close as _,
+        _old: native_close as _,
+    };
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut NOCANCEL: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_close_nocancel as _,
+        _old: native_close_nocancel as _,
+    };
+};
 
 hook!(opendir, pnport_opendir, (path:*const c_char) -> *mut DIR, {
     let original=original!(opendir,unsafe extern "C" fn(*const c_char)->*mut DIR);
@@ -928,19 +1610,22 @@ hook!(readdir, pnport_readdir, (dir:*mut DIR) -> *mut dirent, {
     let Some(stream)=directory_stream(dir) else {return original(dir);};
     let saved=*__error();
     let Ok(mut stream)=stream.lock() else {errno(EIO);return ptr::null_mut();};
-    let eligible=match directory_eligible(&stream) {Ok(value)=>value,Err(code)=>{errno(code);return ptr::null_mut();}};
+    let entries=match directory_entries(&stream) {Ok(value)=>value,Err(code)=>{errno(code);return ptr::null_mut();}};
     if stream.virtual_end {errno(saved);return ptr::null_mut();}
     // Guard remains active while libc holds its stream lock. Any interposed
     // backing operations reenter only the original libc, never RUNTIME.
     errno(0);
     let entry=original(dir);
     if !entry.is_null() {
-        if eligible && CStr::from_ptr((*entry).d_name.as_ptr()).to_bytes()==b"node_modules" {stream.emitted=true;}
+
         errno(saved);return entry;
     }
     if *__error()!=0 {return entry;}
+    let native_end=libc::lseek(dirfd(dir),0,libc::SEEK_CUR);
+    if native_end<0 {return ptr::null_mut();}
+    stream.native_end=Some(native_end);
     errno(saved);
-    if eligible && !stream.emitted {directory_entry(&mut stream)} else {entry}
+    match directory_entry(&mut stream,&entries) {Ok(value)=>value,Err(code)=>{errno(code);ptr::null_mut()}}
 });
 
 hook!(readdir_r, pnport_readdir_r, (dir:*mut DIR,entry:*mut dirent,result:*mut *mut dirent) -> c_int, {
@@ -949,15 +1634,17 @@ hook!(readdir_r, pnport_readdir_r, (dir:*mut DIR,entry:*mut dirent,result:*mut *
     let Some(stream)=directory_stream(dir) else {return original(dir,entry,result);};
     let saved=*__error();
     let Ok(mut stream)=stream.lock() else {return EIO;};
-    let eligible=match directory_eligible(&stream) {Ok(value)=>value,Err(code)=>{errno(saved);return code;}};
+    let entries=match directory_entries(&stream) {Ok(value)=>value,Err(code)=>{errno(saved);return code;}};
     if stream.virtual_end {*result=ptr::null_mut();errno(saved);return 0;}
     let code=original(dir,entry,result);
-    if code==0 {
-        if !(*result).is_null() {
-            if eligible && CStr::from_ptr((*entry).d_name.as_ptr()).to_bytes()==b"node_modules" {stream.emitted=true;}
-        } else if eligible && !stream.emitted {
-            ptr::copy_nonoverlapping(directory_entry(&mut stream),entry,1);*result=entry;
-        }
+    if code==0 && (*result).is_null() {
+            let native_end=libc::lseek(dirfd(dir),0,libc::SEEK_CUR);
+            if native_end<0 {let code=*__error();errno(saved);return code;}
+            stream.native_end=Some(native_end);
+            match directory_entry(&mut stream,&entries) {
+                Ok(value) if !value.is_null()=>{ptr::copy_nonoverlapping(value,entry,1);*result=entry;},
+                Ok(_)=>{}, Err(code)=>{errno(saved);return code;}
+            }
     }
     errno(saved);code
 });
@@ -967,13 +1654,14 @@ hook!(rewinddir, pnport_rewinddir, (dir:*mut DIR) -> (), {
     let Some(_guard)=Guard::enter() else {return original(dir);};
     let stream=directory_stream(dir);
     let mut state=stream.as_ref().and_then(|stream|stream.lock().ok());
-    if let Some(state)=state.as_mut() {state.emitted=false;state.virtual_end=false;}
+    if let Some(state)=state.as_mut() {state.position=0;state.virtual_end=false;}
     original(dir);
 });
 hook!(telldir, pnport_telldir, (dir:*mut DIR) -> libc::c_long, {
     let original=original!(telldir,unsafe extern "C" fn(*mut DIR)->libc::c_long);
     let Some(_guard)=Guard::enter() else {return original(dir);};
-    if let Some(stream)=directory_stream(dir) && let Ok(stream)=stream.lock() && stream.virtual_end {return DIRECTORY_END;}
+    if let Some(stream)=directory_stream(dir) && let Ok(stream)=stream.lock() && stream.position>0
+        && let Ok(entries)=directory_entries(&stream) {return directory_cookie(stream.position,entries.len());}
     original(dir)
 });
 hook!(seekdir, pnport_seekdir, (dir:*mut DIR,position:libc::c_long) -> (), {
@@ -982,9 +1670,22 @@ hook!(seekdir, pnport_seekdir, (dir:*mut DIR,position:libc::c_long) -> (), {
     let stream=directory_stream(dir);
     let mut state=stream.as_ref().and_then(|stream|stream.lock().ok());
     if let Some(state)=state.as_mut() {
-        state.emitted=position==DIRECTORY_END;
-        state.virtual_end=state.emitted;
-        if state.emitted {return;}
+        if let Ok(entries)=directory_entries(state) {
+            let begin=directory_cookie(0,entries.len());
+            if position>begin {
+                let Some(native_end)=state.native_end else {errno(EINVAL);return;};
+                // Darwin rewind invalidates opaque telldir cookies. Clear the
+                // libc buffer, then restore the observed kernel EOF directly.
+                let reset=original!(rewinddir,unsafe extern "C" fn(*mut DIR));
+                reset(dir);
+                if libc::lseek(dirfd(dir),native_end,libc::SEEK_SET)<0 {
+                    state.position=0;state.virtual_end=false;return;
+                }
+                state.position=usize::try_from(position-begin).expect("Reserved directory cookie is in range");
+                state.virtual_end=state.position==entries.len();return;
+            }
+        }
+        state.position=0;state.virtual_end=false;
     }
     original(dir,position);
 });
@@ -997,36 +1698,84 @@ hook!(closedir, pnport_closedir, (dir:*mut DIR) -> c_int, {
     original(dir)
 });
 
+mod directory;
+
+#[derive(Clone, Copy)]
+enum DirectoryCallbacks {
+    Functions,
+    Blocks,
+}
+
+// Only the common ABI prefix is read; callbacks do not escape scandir_b.
+// https://clang.llvm.org/docs/Block-ABI-Apple.html#high-level
+#[repr(C)]
+struct DirectoryBlock<F> {
+    _isa: *const c_void,
+    _flags: c_int,
+    _reserved: c_int,
+    invoke: F,
+}
+
 unsafe extern "C" fn pnport_scandir(
     path: *const c_char,
     namelist: *mut c_void,
     select: *const c_void,
     compar: *const c_void,
 ) -> c_int {
+    scan_directory(
+        path,
+        namelist,
+        select,
+        compar,
+        DirectoryCallbacks::Functions,
+    )
+}
+
+unsafe extern "C" fn pnport_scandir_b(
+    path: *const c_char,
+    namelist: *mut c_void,
+    select: *const c_void,
+    compar: *const c_void,
+) -> c_int {
+    scan_directory(path, namelist, select, compar, DirectoryCallbacks::Blocks)
+}
+
+unsafe fn scan_directory(
+    path: *const c_char,
+    namelist: *mut c_void,
+    select: *const c_void,
+    compar: *const c_void,
+    callbacks: DirectoryCallbacks,
+) -> c_int {
+    let native = match callbacks {
+        DirectoryCallbacks::Functions => crate::libc::scandir,
+        DirectoryCallbacks::Blocks => crate::libc::scandir_b,
+    };
     let Some(_guard) = Guard::enter() else {
-        return crate::libc::scandir(path, namelist, select, compar);
+        return native(path, namelist, select, compar);
     };
     if RUNTIME.get().is_none() {
-        return crate::libc::scandir(path, namelist, select, compar);
+        return native(path, namelist, select, compar);
     }
     let (path, translation) = translated!(path, AT_FDCWD, false, -1);
     let mut stream = DirectoryStream {
         logical: translation.logical,
         physical: translation.physical,
-        emitted: false,
+        position: 0,
         virtual_end: false,
+        native_end: None,
         entry: Box::new(std::mem::zeroed()),
     };
-    let eligible = match directory_eligible(&stream) {
+    let overlay = match directory_entries(&stream) {
         Ok(value) => value,
         Err(code) => {
             errno(code);
             return -1;
         }
     };
-    if !eligible {
+    if overlay.is_empty() {
         let _callback_guard = CallbackGuard::enter();
-        return crate::libc::scandir(path.as_ptr(), namelist, select, compar);
+        return native(path.as_ptr(), namelist, select, compar);
     }
     let open = original!(opendir, unsafe extern "C" fn(*const c_char) -> *mut DIR);
     let read = original!(readdir, unsafe extern "C" fn(*mut DIR) -> *mut dirent);
@@ -1044,23 +1793,28 @@ unsafe extern "C" fn pnport_scandir(
                 if *__error() != 0 {
                     return Err(*__error());
                 }
-                if stream.emitted {
+                let overlay = directory_entries(&stream)?;
+                entry = directory_entry(&mut stream, &overlay)?;
+                if entry.is_null() {
                     break;
                 }
-                if !directory_eligible(&stream)? {
-                    break;
-                }
-                entry = directory_entry(&mut stream);
-            } else if CStr::from_ptr((*entry).d_name.as_ptr()).to_bytes() == b"node_modules" {
-                stream.emitted = true;
             }
             let keep = if select.is_null() {
                 true
             } else {
-                let callback: unsafe extern "C" fn(*const dirent) -> c_int =
-                    std::mem::transmute(select);
                 let _callback_guard = CallbackGuard::enter();
-                callback(entry) != 0
+                match callbacks {
+                    DirectoryCallbacks::Functions => {
+                        let callback: unsafe extern "C" fn(*const dirent) -> c_int =
+                            std::mem::transmute(select);
+                        callback(entry) != 0
+                    }
+                    DirectoryCallbacks::Blocks => {
+                        type Select = unsafe extern "C" fn(*const c_void, *const dirent) -> c_int;
+                        let block = &*select.cast::<DirectoryBlock<Select>>();
+                        (block.invoke)(select, entry) != 0
+                    }
+                }
             };
             if keep {
                 entries.try_reserve(1).map_err(|_| ENOMEM)?;
@@ -1088,13 +1842,14 @@ unsafe extern "C" fn pnport_scandir(
         errno(code);
         return -1;
     }
-    publish_directory_scan(entries, namelist, compar)
+    publish_directory_scan(entries, namelist, compar, callbacks)
 }
 
 unsafe fn publish_directory_scan(
     entries: Vec<*mut dirent>,
     namelist: *mut c_void,
     compar: *const c_void,
+    callbacks: DirectoryCallbacks,
 ) -> c_int {
     let Ok(count) = c_int::try_from(entries.len()) else {
         for entry in entries {
@@ -1114,15 +1869,25 @@ unsafe fn publish_directory_scan(
     if !entries.is_empty() {
         ptr::copy_nonoverlapping(entries.as_ptr(), list, entries.len());
         if !compar.is_null() {
-            let callback: unsafe extern "C" fn(*const c_void, *const c_void) -> c_int =
-                std::mem::transmute(compar);
             let _callback_guard = CallbackGuard::enter();
-            libc::qsort(
-                list.cast(),
-                entries.len(),
-                std::mem::size_of::<*mut dirent>(),
-                Some(callback),
-            );
+            match callbacks {
+                DirectoryCallbacks::Functions => {
+                    let callback: unsafe extern "C" fn(*const c_void, *const c_void) -> c_int =
+                        std::mem::transmute(compar);
+                    libc::qsort(
+                        list.cast(),
+                        entries.len(),
+                        std::mem::size_of::<*mut dirent>(),
+                        Some(callback),
+                    );
+                }
+                DirectoryCallbacks::Blocks => crate::libc::qsort_b(
+                    list.cast(),
+                    entries.len(),
+                    std::mem::size_of::<*mut dirent>(),
+                    compar,
+                ),
+            }
         }
     }
     *namelist.cast::<*mut *mut dirent>() = list;
@@ -1136,12 +1901,18 @@ const _: () = {
         _new: pnport_scandir as *const c_void,
         _old: crate::libc::scandir as *const c_void,
     };
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut BLOCKS: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_scandir_b as *const c_void,
+        _old: crate::libc::scandir_b as *const c_void,
+    };
 };
 hook!(lstat, pnport_lstat, (path:*const c_char,output:*mut stat) -> c_int, {
     let original=original!(lstat,unsafe extern "C" fn(*const c_char,*mut stat)->c_int);
     let Some(_guard)=Guard::enter() else {return original(path,output);};
     if RUNTIME.get().is_none() {return original(path,output);}
-    let (path,translation)=translated!(path,AT_FDCWD,false,-1);
+    let (path,translation)=translated!(path,AT_FDCWD,false,false,-1);
     let result=original(path.as_ptr(),output);
     if result==0 {virtual_link_metadata(output,&translation);} result
 });
@@ -1149,13 +1920,166 @@ hook!(rename, pnport_rename, (from:*const c_char,to:*const c_char) -> c_int, {
     let original=original!(rename,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(from,to);};
     if RUNTIME.get().is_none() {return original(from,to);}
-    let (from,_)=translated!(from,AT_FDCWD,true,-1);let (to,_)=translated!(to,AT_FDCWD,true,-1);original(from.as_ptr(),to.as_ptr())
+    let (from,_)=translated!(from,AT_FDCWD,true,false,-1);let (to,_)=translated!(to,AT_FDCWD,true,false,-1);original(from.as_ptr(),to.as_ptr())
+});
+hook!(renameat, pnport_renameat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char) -> c_int, {
+    let original=original!(renameat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to);}
+    let (from,_)=translated!(from,from_fd,true,false,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr())
+});
+hook!(renamex_np, pnport_renamex, (from:*const c_char,to:*const c_char,flags:libc::c_uint) -> c_int, {
+    let original=original!(renamex_np,unsafe extern "C" fn(*const c_char,*const c_char,libc::c_uint)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to,flags);};
+    if RUNTIME.get().is_none() {return original(from,to,flags);}
+    let (from,_)=translated!(from,AT_FDCWD,true,false,-1);
+    let (to,_)=translated!(to,AT_FDCWD,true,false,-1);
+    original(from.as_ptr(),to.as_ptr(),flags)
+});
+hook!(renameatx_np, pnport_renameatx, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:libc::c_uint) -> c_int, {
+    let original=original!(renameatx_np,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,libc::c_uint)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let (from,_)=translated!(from,from_fd,true,false,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr(),flags)
+});
+// Darwin's sys/clonefile.h flags are absent from Rust libc's constants.
+const CLONE_NOFOLLOW: u32 = 0x0001;
+const CLONE_NOOWNERCOPY: u32 = 0x0002;
+const CLONE_ACL: u32 = 0x0004;
+const CLONE_NOFOLLOW_ANY: u32 = 0x0008;
+const CLONE_RESOLVE_BENEATH: u32 = 0x0010;
+
+const fn clone_policy(flags: u32) -> std::result::Result<(bool, SymlinkPolicy), c_int> {
+    if flags
+        & !(CLONE_NOFOLLOW
+            | CLONE_NOOWNERCOPY
+            | CLONE_ACL
+            | CLONE_NOFOLLOW_ANY
+            | CLONE_RESOLVE_BENEATH)
+        != 0
+    {
+        return Err(EINVAL);
+    }
+    Ok((
+        flags & CLONE_NOFOLLOW == 0,
+        if flags & CLONE_NOFOLLOW_ANY != 0 {
+            SymlinkPolicy::Reject
+        } else {
+            SymlinkPolicy::Allow
+        },
+    ))
+}
+
+struct ClonePaths {
+    source: CString,
+    destination: CString,
+    native: bool,
+}
+
+const fn clone_native_path(translation: &Translation) -> bool {
+    !translation.readonly && matches!(translation.kind, PathKind::Native | PathKind::ToolCache)
+}
+
+unsafe fn clone_paths(
+    from_fd: c_int,
+    from: *const c_char,
+    to_fd: c_int,
+    to: *const c_char,
+    flags: u32,
+) -> std::result::Result<ClonePaths, c_int> {
+    let (follow, policy) = clone_policy(flags)?;
+    // Cloning reads the source without changing its inode/link count. Only
+    // destination creation needs write authority, unlike hard-link creation.
+    let (source, source_translation) = translate_following(from, from_fd, false, follow, policy)?;
+    let (destination, destination_translation) =
+        translate_following(to, to_fd, true, follow, policy)?;
+    let native =
+        clone_native_path(&source_translation) && clone_native_path(&destination_translation);
+    if flags & CLONE_RESOLVE_BENEATH != 0 && !native {
+        // Absolute backing rewrites cannot retain descriptor-relative beneath
+        // constraints. Fail without creation until bounded managed support
+        // exists.
+        return Err(ENOTSUP);
+    }
+    Ok(ClonePaths {
+        source,
+        destination,
+        native,
+    })
+}
+
+hook!(clonefile, pnport_clonefile, (from:*const c_char,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(clonefile,unsafe extern "C" fn(*const c_char,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to,flags);};
+    if RUNTIME.get().is_none() {return original(from,to,flags);}
+    let paths=match clone_paths(AT_FDCWD,from,AT_FDCWD,to,flags) {
+        Ok(paths)=>paths,Err(code)=>{errno(code);return -1;}
+    };
+    if paths.native {original(from,to,flags)}
+    else {original(paths.source.as_ptr(),paths.destination.as_ptr(),flags)}
+});
+hook!(clonefileat, pnport_clonefileat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(clonefileat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let paths=match clone_paths(from_fd,from,to_fd,to,flags) {
+        Ok(paths)=>paths,Err(code)=>{errno(code);return -1;}
+    };
+    if paths.native {original(from_fd,from,to_fd,to,flags)}
+    else {original(AT_FDCWD,paths.source.as_ptr(),AT_FDCWD,paths.destination.as_ptr(),flags)}
+});
+hook!(fclonefileat, pnport_fclonefileat, (from_fd:c_int,to_fd:c_int,to:*const c_char,flags:u32) -> c_int, {
+    let original=original!(fclonefileat,unsafe extern "C" fn(c_int,c_int,*const c_char,u32)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,to_fd,to,flags);}
+    let (follow,policy)=match clone_policy(flags) {Ok(policy)=>policy,Err(code)=>{errno(code);return -1;}};
+    let (destination,translation)=translated!(to,to_fd,true,follow,policy,-1);
+    if clone_native_path(&translation) {return original(from_fd,to_fd,to,flags);}
+    if flags & CLONE_RESOLVE_BENEATH!=0 {errno(ENOTSUP);return -1;}
+    original(from_fd,AT_FDCWD,destination.as_ptr(),flags)
+});
+hook!(link, pnport_link, (from:*const c_char,to:*const c_char) -> c_int, {
+    let original=original!(link,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from,to);};
+    if RUNTIME.get().is_none() {return original(from,to);}
+    // Creating another hard link changes the source inode's link count too.
+    // Darwin link follows the source's final symlink, unlike unflagged linkat.
+    let (from,_)=translated!(from,AT_FDCWD,true,true,-1);
+    let (to,_)=translated!(to,AT_FDCWD,true,false,-1);
+    original(from.as_ptr(),to.as_ptr())
+});
+hook!(linkat, pnport_linkat, (from_fd:c_int,from:*const c_char,to_fd:c_int,to:*const c_char,flags:c_int) -> c_int, {
+    let original=original!(linkat,unsafe extern "C" fn(c_int,*const c_char,c_int,*const c_char,c_int)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(from_fd,from,to_fd,to,flags);};
+    if RUNTIME.get().is_none() {return original(from_fd,from,to_fd,to,flags);}
+    let (from,_)=translated!(from,from_fd,true,flags & libc::AT_SYMLINK_FOLLOW != 0,-1);
+    let (to,_)=translated!(to,to_fd,true,false,-1);
+    original(AT_FDCWD,from.as_ptr(),AT_FDCWD,to.as_ptr(),flags)
+});
+hook!(symlink, pnport_symlink, (target:*const c_char,path:*const c_char) -> c_int, {
+    let original=original!(symlink,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(target,path);};
+    if RUNTIME.get().is_none() {return original(target,path);}
+    // The target is stored verbatim; only the new directory entry is mutated.
+    let (path,_)=translated!(path,AT_FDCWD,true,false,-1);
+    original(target,path.as_ptr())
+});
+hook!(symlinkat, pnport_symlinkat, (target:*const c_char,fd:c_int,path:*const c_char) -> c_int, {
+    let original=original!(symlinkat,unsafe extern "C" fn(*const c_char,c_int,*const c_char)->c_int);
+    let Some(_guard)=Guard::enter() else {return original(target,fd,path);};
+    if RUNTIME.get().is_none() {return original(target,fd,path);}
+    let (path,_)=translated!(path,fd,true,false,-1);
+    original(target,AT_FDCWD,path.as_ptr())
 });
 hook!(unlinkat, pnport_unlinkat, (fd:c_int,path:*const c_char,flags:c_int) -> c_int, {
     let original=original!(unlinkat,unsafe extern "C" fn(c_int,*const c_char,c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd,path,flags);};
     if RUNTIME.get().is_none() {return original(fd,path,flags);}
-    let (path,_)=translated!(path,fd,true,-1);original(AT_FDCWD,path.as_ptr(),flags)
+    let (path,_)=translated!(path,fd,true,false,-1);original(AT_FDCWD,path.as_ptr(),flags)
 });
 hook!(fchdir, pnport_fchdir, (fd:c_int) -> c_int, {
     let original=original!(fchdir,unsafe extern "C" fn(c_int)->c_int);
@@ -1174,17 +2098,68 @@ hook!(fchdir, pnport_fchdir, (fd:c_int) -> c_int, {
 hook!(dup, pnport_dup, (fd:c_int) -> c_int, {
     let original=original!(dup,unsafe extern "C" fn(c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd);};
+    let Some(runtime)=RUNTIME.get() else { return original(fd); };
+    let Ok(mut runtime)=runtime.lock() else {errno(fail(Code::PnportInjectionFailed));return -1;};
     let result=original(fd);
-    if result>=0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() && let Some(t)=runtime.descriptors.get(&fd).cloned() {runtime.descriptors.insert(result,t);} result
+    if result>=0 {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&result);if let Some(t)=t {runtime.descriptors.insert(result,t);}} result
 });
 hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
     let original=original!(dup2,unsafe extern "C" fn(c_int,c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd,newfd);};
+    let Some(runtime)=RUNTIME.get() else {return original(fd,newfd);};
+    let Ok(mut runtime)=runtime.lock() else {errno(fail(Code::PnportInjectionFailed));return -1;};
     let result=original(fd,newfd);
-    if result>=0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&newfd);if let Some(t)=t {runtime.descriptors.insert(newfd,t);}} result
+    if result>=0 {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&newfd);if let Some(t)=t {runtime.descriptors.insert(newfd,t);}} result
 });
 
+// Group/session changes keep native behavior only after the target birth is
+// durably admitted. Cleanup addresses audit generations, never new group IDs.
+hook!(setsid, pnport_setsid, () -> pid_t, {
+    let original = original!(setsid, unsafe extern "C" fn()->pid_t);
+    let Some(_guard) = Guard::enter() else { return original(); };
+    if RUNTIME.get().is_none() || libc::getpid() == libc::getpgrp() { return original(); }
+    if let Err(error) = admit_group_change(libc::getpid(), ProcessGroupOperation::Session) { errno(error); return -1; }
+    original()
+});
+hook!(setpgid, pnport_setpgid, (pid:pid_t,group:pid_t) -> c_int, {
+    let original = original!(setpgid, unsafe extern "C" fn(pid_t,pid_t)->c_int);
+    let Some(_guard) = Guard::enter() else { return original(pid,group); };
+    if RUNTIME.get().is_none() || pid < 0 || group < 0 { return original(pid,group); }
+    let target = if pid == 0 { libc::getpid() } else { pid };
+    // Preserve native errors for absent targets and non-child targets. Darwin
+    // cannot move an unrelated process; its PID is never admitted by this call.
+    let identity = pnport_core::macos_process::Identity::capture(target);
+    match &identity {
+        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return original(pid,group),
+        Ok(identity) if target != libc::getpid()
+            && pnport_core::macos_process::Identity::capture(libc::getpid()).is_ok_and(|current| current.birth != identity.parent_birth) => return original(pid,group),
+        _ => (),
+    }
+    if let Err(error) = admit_group_change(libc::getpid(), ProcessGroupOperation::Group) { errno(error); return -1; }
+    // Retain the first captured birth rather than capturing it again after
+    // caller admission. Exit/exec in that interval receives a signed terminal
+    // outcome, so libc can preserve ESRCH/EACCES without a whole-run failure.
+    if let Err(error) = admit_group_identity(identity, ProcessGroupOperation::Group) { errno(error); return -1; }
+    original(pid,group)
+});
+unsafe extern "C" {
+    #[link_name = "setpgrp"]
+    fn native_setpgrp() -> pid_t;
+}
+unsafe extern "C" fn pnport_setpgrp() -> pid_t {
+    pnport_setpgid(0, 0)
+}
+const _: () = {
+    #[used]
+    #[unsafe(link_section = "__DATA,__interpose")]
+    static mut ENTRY: crate::macros::InterposeEntry = crate::macros::InterposeEntry {
+        _new: pnport_setpgrp as _,
+        _old: native_setpgrp as _,
+    };
+};
+
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
+static NODE_LOADER: OnceLock<pnport_core::node::Loader> = OnceLock::new();
 fn child_exec_error(error: &Error) -> c_int {
     // A failed native exec is recoverable by its caller (and libc's PATH
     // search). It did not launch an unmediated image. Only admission/runtime
@@ -1194,6 +2169,10 @@ fn child_exec_error(error: &Error) -> c_int {
         Some(ExecFailureKind::PermissionDenied) => libc::EACCES,
         Some(ExecFailureKind::InvalidFormat) => libc::ENOEXEC,
         Some(ExecFailureKind::InterpreterLoop) => libc::ELOOP,
+        // Admission has rejected the image before any exec/spawn syscall.
+        // Keep it denied while allowing optional child probes to recover.
+        // Launch revalidation and injection failures use the critical path.
+        Some(ExecFailureKind::UnsupportedImage) => ENOTSUP,
         None => fail(error.code),
     }
 }
@@ -1266,16 +2245,13 @@ unsafe fn prepare_child_image(
         user_args,
         search_path,
         |path| {
-            runtime
-                .lock()
-                .map_err(|_| {
-                    pnport_core::diagnostic::Error::new(
-                        Code::PnportInjectionFailed,
-                        "The native interception state is unavailable.",
-                    )
-                })?
-                .view
-                .translate(path)
+            let mut runtime = runtime.lock().map_err(|_| {
+                pnport_core::diagnostic::Error::new(
+                    Code::PnportInjectionFailed,
+                    "The native interception state is unavailable.",
+                )
+            })?;
+            translate_lookup(&mut runtime, path, true)
         },
     )
     .map_err(|error| child_exec_error(&error))?;
@@ -1303,12 +2279,22 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
         return Err(EFAULT);
     }
     let mut result = Vec::new();
+    let mut node_options = None;
     let mut i = 0;
     while !(*envp.add(i)).is_null() {
         let value = CStr::from_ptr(*envp.add(i));
+        if let Some(options) = value.to_bytes().strip_prefix(b"NODE_OPTIONS=") {
+            if node_options.is_none() {
+                node_options = Some(OsString::from_vec(options.to_vec()));
+            }
+            i += 1;
+            continue;
+        }
         if ![
             b"PNPORT_SESSION=".as_slice(),
             b"PNPORT_CACHE=",
+            b"PNPORT_MACOS_GROUP=",
+            b"PNPORT_MACOS_OWNER_KEY=",
             b"PNPORT_LAUNCH_TOKEN=",
             b"DYLD_INSERT_LIBRARIES=",
             b"LD_PRELOAD=",
@@ -1325,6 +2311,14 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
     } else {
         return Err(EIO);
     }
+    let options = NODE_LOADER
+        .get()
+        .ok_or(EIO)?
+        .options(node_options.as_deref())
+        .map_err(|_| EINVAL)?;
+    let mut entry = b"NODE_OPTIONS=".to_vec();
+    entry.extend_from_slice(options.as_os_str().as_bytes());
+    result.push(CString::new(entry).map_err(|_| EINVAL)?);
     Ok(result)
 }
 hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*const *const c_char)->c_int,{
@@ -1363,6 +2357,13 @@ unsafe fn spawn_admitted(
             *const *mut c_char,
         ) -> c_int
     );
+    // Register the parent's current image before the kernel creates a child,
+    // including POSIX_SPAWN_SETSID/SETPGROUP and environment replacement. Its
+    // original-parent version proves ownership even before child
+    // initialization.
+    if let Err(error) = admit_group_change(getpid(), ProcessGroupOperation::SpawnGroup) {
+        return error;
+    }
     // Opaque file actions can change the child's cwd before resolving a
     // relative image. Until the actions can be inspected, reject this shape
     // instead of resolving and launching a different image in the parent cwd.
@@ -1458,7 +2459,10 @@ unsafe fn spawn_path(
             let runtime = runtime.lock().map_err(|_| EIO)?;
             path_from(candidate.as_ptr(), AT_FDCWD, &runtime)?
         };
-        let translation = runtime.lock().map_err(|_| EIO)?.view.translate(&logical);
+        let translation = {
+            let mut runtime = runtime.lock().map_err(|_| EIO)?;
+            translate_lookup(&mut runtime, &logical, true)
+        };
         let translation = match translation {
             Ok(translation) => translation,
             Err(error)

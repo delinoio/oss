@@ -1,0 +1,26 @@
+name: Prepare locked Tauri CLI
+description: Restore and verify the published host CLI without Cargo compilation
+outputs:
+  cache-path:
+    description: Verified host installation directory
+    value: ${{ steps.configure.outputs.path }}
+  cache-key:
+    description: Release, execution host and archive/executable digests
+    value: ${{ steps.configure.outputs.key }}
+  cache-hit:
+    description: Exact cache restoration result
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - id: configure
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/cache.mjs"
+    - id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.configure.outputs.path }}
+        key: ${{ steps.configure.outputs.key }}
+    - name: Verify restored CLI or download the immutable release
+      shell: bash
+      run: node scripts/tauri-cli.mjs --print-path

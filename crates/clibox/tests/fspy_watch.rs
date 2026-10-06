@@ -132,7 +132,8 @@ impl Watcher {
 impl Drop for Watcher {
     fn drop(&mut self) {
         if self.child.try_wait().unwrap().is_none() {
-            // SAFETY: only the unreaped child owned by this fixture is signalled.
+            // SAFETY: only the unreaped child owned by this fixture is
+            // signalled.
             unsafe { libc::kill(self.child.id() as i32, libc::SIGINT) };
             let deadline = Instant::now() + Duration::from_secs(10);
             while self.child.try_wait().unwrap().is_none() {

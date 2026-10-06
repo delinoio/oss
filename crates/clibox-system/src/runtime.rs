@@ -169,7 +169,8 @@ pub fn exit_child(status: ExitStatus) -> ! {
             finish_signal(signal);
         }
     }
-    // A child may handle cancellation and deliberately return its own exit code.
+    // A child may handle cancellation and deliberately return its own exit
+    // code.
     std::process::exit(status.code().unwrap_or(1))
 }
 

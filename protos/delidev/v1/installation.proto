@@ -1,0 +1,157 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Go owns signed release selection and SSH setup. Native installation is a
+// separate trusted-window/OS boundary, never an arbitrary command RPC.
+service InstallationService {
+  rpc InspectSSHHost(InspectSSHHostRequest) returns (InspectSSHHostResponse);
+  rpc StartSSHSetup(StartSSHSetupRequest) returns (StartSSHSetupResponse);
+  rpc GetSSHSetup(GetSSHSetupRequest) returns (GetSSHSetupResponse);
+  rpc ReconcileSSHSetup(ReconcileSSHSetupRequest) returns (ReconcileSSHSetupResponse);
+  rpc CancelSSHSetup(CancelSSHSetupRequest) returns (CancelSSHSetupResponse);
+  rpc CheckUpdate(CheckUpdateRequest) returns (CheckUpdateResponse);
+  rpc GetUpdate(GetUpdateRequest) returns (GetUpdateResponse);
+  rpc RequestWorkerUpdate(RequestWorkerUpdateRequest) returns (RequestWorkerUpdateResponse);
+  rpc CancelUpdate(CancelUpdateRequest) returns (CancelUpdateResponse);
+  rpc PollWorkerUpdate(PollWorkerUpdateRequest) returns (PollWorkerUpdateResponse);
+  rpc ClaimWorkerUpdate(ClaimWorkerUpdateRequest) returns (ClaimWorkerUpdateResponse);
+  rpc ReportWorkerUpdate(ReportWorkerUpdateRequest) returns (ReportWorkerUpdateResponse);
+}
+
+message InspectSSHHostRequest {
+  string request_id = 1;
+  string host = 2;
+  uint32 port = 3;
+  string user = 4;
+}
+message InspectSSHHostResponse {
+  Resource setup = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+// Credential is a write-only bounded document. It is excluded from receipts,
+// resources, ordinary output and logs; the original protected reference is kept.
+message StartSSHSetupRequest {
+  Mutation mutation = 1;
+  bytes credential = 2;
+  string name = 3;
+  string confirmed_fingerprint = 4;
+}
+message StartSSHSetupResponse {
+  Resource setup = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetSSHSetupRequest {
+  string id = 1;
+}
+message GetSSHSetupResponse {
+  Resource setup = 1;
+}
+message ReconcileSSHSetupRequest {
+  Mutation mutation = 1;
+}
+message ReconcileSSHSetupResponse {
+  Resource setup = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message CancelSSHSetupRequest {
+  Mutation mutation = 1;
+}
+message CancelSSHSetupResponse {
+  Resource setup = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+enum UpdateComponent {
+  UPDATE_COMPONENT_UNSPECIFIED = 0;
+  UPDATE_COMPONENT_DESKTOP = 1;
+  UPDATE_COMPONENT_WORKER = 2;
+}
+enum UpdateTarget {
+  UPDATE_TARGET_UNSPECIFIED = 0;
+  UPDATE_TARGET_DARWIN_AMD64 = 1;
+  UPDATE_TARGET_DARWIN_ARM64 = 2;
+  UPDATE_TARGET_WINDOWS_AMD64 = 3;
+  UPDATE_TARGET_WINDOWS_ARM64 = 4;
+  UPDATE_TARGET_LINUX_AMD64 = 5;
+  UPDATE_TARGET_LINUX_ARM64 = 6;
+}
+enum WorkerUpdateOutcome {
+  WORKER_UPDATE_OUTCOME_UNSPECIFIED = 0;
+  WORKER_UPDATE_OUTCOME_SUCCEEDED = 1;
+  WORKER_UPDATE_OUTCOME_FAILED = 2;
+  WORKER_UPDATE_OUTCOME_UNCERTAIN = 3;
+}
+message CheckUpdateRequest {
+  string request_id = 1;
+  UpdateComponent component = 2;
+  UpdateTarget target = 3;
+  string current_version = 4;
+  string machine_id = 5;
+  uint64 expected_machine_revision = 6;
+}
+message CheckUpdateResponse {
+  Resource update = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetUpdateRequest {
+  string id = 1;
+}
+message GetUpdateResponse {
+  Resource update = 1;
+  bool production_root_ready = 2;
+}
+message RequestWorkerUpdateRequest {
+  Mutation mutation = 1;
+}
+message RequestWorkerUpdateResponse {
+  Resource update = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message CancelUpdateRequest {
+  Mutation mutation = 1;
+}
+message CancelUpdateResponse {
+  Resource update = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+// Worker-only operations require the original machine/device/current instance.
+message PollWorkerUpdateRequest {
+  string instance_id = 1;
+  // Optional exact original observation; never claims or installs an update.
+  string original_update_id = 2;
+}
+message PollWorkerUpdateResponse {
+  Resource update = 1;
+  bool idle = 2;
+}
+message ClaimWorkerUpdateRequest {
+  Mutation mutation = 1;
+  string instance_id = 2;
+}
+message ClaimWorkerUpdateResponse {
+  Resource update = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ReportWorkerUpdateRequest {
+  Mutation mutation = 1;
+  string instance_id = 2;
+  WorkerUpdateOutcome outcome = 3;
+  string installed_version = 4;
+}
+message ReportWorkerUpdateResponse {
+  Resource update = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}

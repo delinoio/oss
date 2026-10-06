@@ -58,8 +58,9 @@ impl Fbx<'_> {
                     self.leaf("Version", &[A::I(100)])?;
                     self.leaf("Indexes", &[A::Ints(indices)])?;
                     self.leaf("Weights", &[A::Doubles(weights)])?;
-                    // FBX Transform is mesh-to-bone; TransformLink is the bone's
-                    // bind-to-world matrix. Keeping the two distinct matters
+                    // FBX Transform is mesh-to-bone; TransformLink is the
+                    // bone's bind-to-world matrix. Keeping
+                    // the two distinct matters
                     // when the rest mesh and skeleton have different parents.
                     self.leaf(
                         "Transform",

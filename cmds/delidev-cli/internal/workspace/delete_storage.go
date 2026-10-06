@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -34,12 +36,9 @@ func SessionStorageCopyPaths(root string, w domain.SessionDeletionWork) []string
 			paths = append(paths, filepath.Join(root, "snapshots", string(copy.SnapshotID)))
 		}
 		for _, directory := range []string{"storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
-			path := filepath.Join(root, directory, string(copy.JobID)+".json")
-			paths = append(paths, path)
-			if directory == "storage-removal-claims" {
-				paths = append(paths, filepath.Join(root, directory, string(copy.JobID)+".pending"))
-			}
+			paths = append(paths, filepath.Join(root, directory, string(copy.JobID)+".json"))
 		}
+		paths = append(paths, filepath.Join(root, "storage-removal-claims", string(copy.JobID)+".pending"))
 	}
 	return paths
 }
@@ -121,4 +120,74 @@ func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.Sessio
 		return false, domain.SessionDeletionPending()
 	}
 	return true, nil
+}
+
+// SessionStorageRemnantPaths inventories shared directories before both removal
+// and completed-proof replay. Partial owned writes cannot be decoded; their
+// target-bound names carry original operation authority. Legacy unowned names
+// remain protected and block completion rather than silently leaking content.
+func SessionStorageRemnantPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
+	paths := []string{}
+	jobs := map[domain.ID]bool{}
+	for _, copy := range w.Copies {
+		if copy.Type == domain.WorkspaceStorageJob {
+			jobs[copy.JobID] = true
+		}
+	}
+	for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+		path := filepath.Join(root, directory)
+		if err := security.CheckPrivateDir(path); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return nil, domain.SessionDeletionPending()
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, domain.SessionDeletionPending()
+		}
+		// The global namespace has a separate finite observation bound. Overflow
+		// preserves every entry; it never returns a truncated absence proof.
+		entries, readErr := f.ReadDir(65537)
+		closeErr := f.Close()
+		if readErr != nil && !errors.Is(readErr, io.EOF) || closeErr != nil || len(entries) > 65536 {
+			return nil, domain.SessionDeletionPending()
+		}
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			name := entry.Name()
+			if !strings.HasPrefix(name, ".pending-") {
+				continue
+			}
+			// Canonical UUID + .json + separator + CreateTemp decimal suffix.
+			target := strings.TrimPrefix(name, ".pending-")
+			separator := ".json-"
+			if directory == "storage-removal-claims" && strings.Contains(target, ".pending-") {
+				separator = ".pending-"
+			}
+			parts := strings.SplitN(target, separator, 2)
+			if len(parts) != 2 || domain.ID(parts[0]).Validate() != nil || len(parts[1]) == 0 || len(parts[1]) > 20 {
+				return nil, domain.SessionDeletionPending()
+			}
+			for _, ch := range parts[1] {
+				if ch < '0' || ch > '9' {
+					return nil, domain.SessionDeletionPending()
+				}
+			}
+			owned := jobs[domain.ID(parts[0])]
+			if directory == "workspace-restores" {
+				owned = parts[0] == string(w.SessionID)
+			}
+			if !owned {
+				continue
+			}
+			file := filepath.Join(path, name)
+			if security.RegularPrivate(file) != nil {
+				return nil, domain.SessionDeletionPending()
+			}
+			paths = append(paths, file)
+		}
+	}
+	return paths, nil
 }

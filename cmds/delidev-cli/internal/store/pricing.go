@@ -18,14 +18,18 @@ func (t *Tx) Pricing(id domain.ID) (PricingVersion, error) {
 	}
 	var body []byte
 	var created int64
-	err := t.tx.QueryRowContext(t.ctx, "SELECT model_id,provider_id,revision,body,created_at FROM pricing_versions WHERE id=?", id).Scan(&value.ModelID, &value.ProviderID, &value.Revision, &body, &created)
+	serviceColumn := "subscription_service"
+	if t.historicalPricingV1 {
+		serviceColumn = "''"
+	}
+	err := t.tx.QueryRowContext(t.ctx, "SELECT model_id,provider_id,"+serviceColumn+",revision,body,created_at FROM pricing_versions WHERE id=?", id).Scan(&value.ModelID, &value.ProviderID, &value.SubscriptionService, &value.Revision, &body, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, domain.Fail(domain.NotFound, "The pricing version is unavailable.", "Read the selected model's current pricing or retain the original historical version.")
 	}
 	if err != nil {
 		return value, storageError(err)
 	}
-	if value.ModelID.Validate() != nil || value.ProviderID.Validate() != nil || value.Revision == 0 || len(body) > 16<<10 || domain.Decode(body, &value.Basis) != nil || value.Basis.Validate() != nil {
+	if value.ModelID.Validate() != nil || !value.ValidIdentity() || value.Revision == 0 || len(body) > 16<<10 || domain.Decode(body, &value.Basis) != nil || value.Basis.Validate() != nil {
 		return value, corrupt()
 	}
 	value.ID, value.CreatedAt = id, time.UnixMilli(created).UTC()
@@ -71,7 +75,7 @@ func (t *Tx) PutPricing(model domain.ID, expected uint64, id domain.ID, basis do
 	if err != nil {
 		return value, err
 	}
-	if selected.ProviderID.Validate() != nil {
+	if selected.SourceKind == domain.SubscriptionModel && (!selected.SubscriptionService.Valid() || selected.ProviderID != "") || selected.SourceKind != domain.SubscriptionModel && selected.ProviderID.Validate() != nil {
 		return value, corrupt()
 	}
 	current, err := t.ActivePricing(model)
@@ -89,7 +93,7 @@ func (t *Tx) PutPricing(model domain.ID, expected uint64, id domain.ID, basis do
 	if err != nil || len(body) > 16<<10 {
 		return value, domain.Fail(domain.ResourceExhausted, "The pricing basis exceeds its bound.", "Shorten its source or explicit exclusions.")
 	}
-	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pricing_versions(id,model_id,provider_id,revision,body,created_at) VALUES(?,?,?,?,?,?)", id, model, selected.ProviderID, revision+1, body, t.now.UnixMilli())
+	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pricing_versions(id,model_id,provider_id,subscription_service,revision,body,created_at) VALUES(?,?,?,?,?,?,?)", id, model, selected.ProviderID, selected.SubscriptionService, revision+1, body, t.now.UnixMilli())
 	if err != nil {
 		return value, storageError(err)
 	}
@@ -119,8 +123,8 @@ func (t *Tx) snapshotResponseEstimate(id domain.ID, record domain.ResponseUsageR
 	var pricingID any
 	// A model's current provider can differ from the immutable execution. Its new
 	// rate card must never price an old-provider response under that reused UUID.
-	if basis != nil && basis.ProviderID == record.ProviderID {
-		estimate, err = domain.EstimateResponse(basis.ID, basis.Basis, record.Usage.Counts)
+	if basis != nil && basis.ProviderID == record.ProviderID && basis.SubscriptionService == record.SubscriptionService {
+		estimate, err = domain.EstimateObservedResponse(basis.ID, basis.Basis, record.Usage)
 		if err != nil {
 			return err
 		}
@@ -175,11 +179,11 @@ func (t *Tx) ResponseEstimate(id domain.ID) (domain.ResponseEstimate, *PricingVe
 func validateResponseEstimate(value domain.ResponseEstimate, record domain.ResponseUsageRecord, basis *PricingVersion) error {
 	expected := missingPriceEstimate()
 	if basis != nil {
-		if basis.ModelID != record.ModelID || basis.ProviderID != record.ProviderID {
+		if basis.ModelID != record.ModelID || basis.ProviderID != record.ProviderID || basis.SubscriptionService != record.SubscriptionService {
 			return corrupt()
 		}
 		var err error
-		expected, err = domain.EstimateResponse(basis.ID, basis.Basis, record.Usage.Counts)
+		expected, err = domain.EstimateObservedResponse(basis.ID, basis.Basis, record.Usage)
 		if err != nil {
 			return corrupt()
 		}

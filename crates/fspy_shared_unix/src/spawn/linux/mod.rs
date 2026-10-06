@@ -142,7 +142,8 @@ pub fn handle_exec(
             Err(error) => return Err(error),
         };
         admit_preload(&executable_fd)?;
-        // SAFETY: The file descriptor is valid and we only read from the mapping.
+        // SAFETY: The file descriptor is valid and we only read from the
+        // mapping.
         let executable_mmap = unsafe { Mmap::map(&executable_fd) }.map_err(|io_error| {
             nix::Error::try_from(io_error).unwrap_or(nix::Error::UnknownErrno)
         })?;

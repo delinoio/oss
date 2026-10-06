@@ -35,11 +35,14 @@ Each project must have one project index document and one or more domain contrac
 
 ## Repository Workflow
 
+- [Prebuilt dependency distribution](repository-prebuilt-dependencies-contract.md): shared immutable host executables and consumer installation.
+
 - `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, Runmoor stable publication, and consolidated documentation publication.
 
 ## Project Catalog
 
 ### delidev
+- [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Protected account browser](cmds-delidev-browser-contract.md)
@@ -79,6 +82,7 @@ Each project must have one project index document and one or more domain contrac
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Claude native context and manual compaction](cmds-delidev-claude-compaction-contract.md)
 - [Same-account native Codex session forks](cmds-delidev-forks-contract.md)
+- [Native read-only Sidechat](cmds-delidev-sidechat-contract.md)
 
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
@@ -131,7 +135,7 @@ Each project must have one project index document and one or more domain contrac
 ### runmoor
 - `docs/project-runmoor.md`
 - `docs/cmds-runmoor-foundation.md`
-- `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/operations`)
+- `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
 
 ### derun
 - `docs/project-derun.md`
@@ -190,3 +194,6 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
 
 - [React Forge static GLB/FBX scenes](packages-react-forge-scene-contract.md): generation, materials, sessions and interoperability evidence requirements.
+
+- [DeliDev signed updates](cmds-delidev-updates-contract.md)
+- [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)

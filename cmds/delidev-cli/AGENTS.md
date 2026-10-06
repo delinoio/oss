@@ -1,5 +1,7 @@
 # DeliDev CLI
 
+- Native read-only Sidechat additionally follows `docs/cmds-delidev-sidechat-contract.md`. Keep original account/snapshot provenance separate from the immutable child enforcement overlay and reference parent workspace roots without ownership. Parent deletion/storage cleanup must durably stop and join every dependent child before removing parent files; independent Fork lifetime remains unchanged.
+
 - Execution-device user-facing messages follow issue #1136: use `Runner Device` / `Runner Devices` for former Execution Worker presentation nouns, including PR planning failures and schedule reconfiguration guidance. Preserve generic technical Worker terminology, Agent Worker, user-assigned names, CLI commands, structured logs, stable error codes/classifications, authorization, protocol/storage identifiers and all execution conditions. The desktop New session selector alone uses `Runs on`; follow `docs/apps-delidev-desktop-contract.md`.
 
 ## Scoped DeliDev ownership
@@ -29,3 +31,9 @@ Native session compaction for issues #1093, #1202 and #1203 follows the planned 
 - Current-user service completion follows `docs/cmds-delidev-user-services-contract.md`: join the product controller and intent observer, acquire the bounded state gate independently of their canceled context, then atomically publish positive completion while retaining runtime ownership. Status readers and completion publication must share this gate, including Windows permission inspection.
 
 - Browser ownership and cleanup follow `docs/cmds-delidev-browser-contract.md`. Keep bounded non-secret profile metadata on the original paired-client Device document with independent UUID-v7 identity/revision, exact authorization and receipts. Account deletion atomically marks every device obligation; session deletion and Archive retain profiles. Service-owned browser messages avoid reserved shared enum numbers and SQLite migrations; never persist browsing content or paths.
+
+- Network bootstrap and native routing additionally read `internal/workernetwork/AGENTS.md`, `internal/nativeproxy/AGENTS.md` and `internal/outbound/AGENTS.md`. Go owns protected recipient/cache publication, authenticated generation admission and original runtime tunnel claims; native hosts grant only bounded OS/file presentation. Follow the network contract and keep capability reservations separate from product activation.
+
+- Signed updates and SSH Worker setup follow `docs/cmds-delidev-updates-contract.md` and `docs/cmds-delidev-ssh-setup-contract.md`. Preserve compiled release authority, exact confirmed host identity, protected credentials, original registration/workspaces, once-only remote effects and joined Worker replacement. Never replace live server/harness binaries or treat fixtures as installed-platform acceptance.
+
+- Codex attempts use the common SemVer minimum `0.151.0` without an upper bound across all native flows. Preserve actual detected versions and exact original executable/version ownership; higher-version eligibility never proves protocol or account support. Keep other harness pins unchanged. Follow the harness contract.

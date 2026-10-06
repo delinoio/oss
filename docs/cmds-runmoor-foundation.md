@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/runmoor` owns the CLI, local controller, GitHub adapter, Docker and Tart backends, image lifecycle, service integration, power inhibition, diagnostics, and reconciliation for issue #893. Internal implementation boundaries are files in `internal/runmoor`; adapters expose interfaces for deterministic tests without substituting mocks in production.
+`cmds/runmoor` owns the CLI, local controller, GitHub adapter, Docker, Tart and opt-in host backends, image lifecycle, service integration, power inhibition, diagnostics, and reconciliation for issues #893 and #1312. Internal implementation boundaries are files in `internal/runmoor`; adapters expose interfaces for deterministic tests without substituting mocks in production.
 
 ## Runtime and Language
 
@@ -21,17 +21,17 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Global and command-local `--config` select a TOML file. `--no-color` or `NO_COLOR` disables default text-log ANSI colors. JSON is uncolored. All product output is English.
 - `status --json` and `doctor --json` have `schema_version: 1`; errors contain stable `code`, `message`, `recovery`, and relevant pool/runner identifiers. Status includes image revisions and unresolved preparation; doctor includes the current status snapshot plus persistent pool/execution problems and probes actual sleep-inhibition acquisition. The local Unix HTTP control protocol is `/v1/control`, available only through an owner-only filesystem socket. It is not a remote API.
 - `init` exclusively creates a minimal valid configuration using prompts or flags and omission-aware defaults. Configuration loading rejects unknown keys/versions, unsafe paths, duplicate identities, unsupported targets/architecture, contradictory backend fields, and impossible budgets before activation.
-- New `init` pools write `runmoor-linux`, `linux`, `x64` on Docker amd64; `runmoor-linux`, `linux`, `ARM64` on Docker arm64; and `runmoor-macos`, `macOS`, `ARM64` on Tart arm64. The existing scale-set name remains the first label. These labels are generated only by `init`: loading, validating or reloading existing and manually authored pools never adds routing labels, and omitted labels remain empty.
+- New `init` pools write `runmoor-linux`, `linux`, `x64` on Docker amd64; `runmoor-linux`, `linux`, `ARM64` on Docker arm64; `runmoor-macos`, `macOS`, `ARM64` on Tart arm64; and `runmoor-macos-host`, `macOS`, `ARM64` on host arm64. The existing scale-set name remains the first label. These labels are generated only by `init`: loading, validating or reloading existing and manually authored pools never adds routing labels, and omitted labels remain empty.
 - TOML v1 has `storage`, `host`, `timeouts`, `logging`, `connections`, and `pools`; optional Docker socket/Tart executable settings select local dependencies. Connections contain a GitHub.com repository or organization URL, PAT/App enum, one `credential.env` or `credential.file` reference, and App client/installation IDs when applicable. Pools specify connection, explicit scale-set name, routing labels, optional organization group, backend/mode, optional native architecture, image or image source, latest or pinned runner version/path, min-idle/max-runners, runner resources, and DinD image/resources when enabled.
 - Host concurrency, CPU, memory MiB and minimum free disk MiB may be omitted for automatic defaults; explicit values must be positive limits. Aggregate minimum idle reservations, including daemon resources, must fit. Image setup consumes the same limits and counts toward the two-macOS-VM maximum.
-- Default timeouts are Docker preparation 5 minutes, Tart preparation 10 minutes, and a job 6 hours. Transient retries use exponential jittered backoff of 1–60 seconds, extended for provider rate-limit instructions. Three consecutive preparation failures suspend only the affected pool. Authentication/ownership failures require correction; an unchanged configuration requires explicit resume.
+- Default timeouts are Docker and host preparation 5 minutes, Tart preparation 10 minutes, and a job 6 hours. Transient retries use exponential jittered backoff of 1–60 seconds, extended for provider rate-limit instructions. Three consecutive preparation failures suspend only the affected pool. Authentication/ownership failures require correction; an unchanged configuration requires explicit resume.
 - Forced cancellation preserves the existing preparation-failure counter and pool suspension state, including when an adapter returns success after cancellation. It is logged as cancellation instead of an image/bootstrap failure.
 - A scheduled preparation must still be unforced and in the preparing phase when its worker starts. This closes the force-stop gap between reservation and worker registration; cancellation is also checked before JIT and backend work. After journaling a returned JIT registration ID, the worker re-reads the durable forced flag and preparing phase immediately before backend preparation. A stop or lifecycle transition during registration prevents provisioning even before context cancellation arrives, preserves the new phase and failure counters, and retains the registration ID for cleanup.
 
 ### Scheduling and lifecycle
 
 - The official client handles App/PAT token exchange. A custom session loop persists effects before acknowledgement; duplicate and stale messages do not become incremental demand counters. Demand comes from `TotalAssignedJobs`; lifecycle events identify started/completed runners.
-- Round-robin allocation satisfies real demand before idle targets. Reservations include preparation, active jobs, uncertain live resources, setup VMs and DinD. Running work is never preempted to satisfy another pool's demand. Low disk blocks new provisioning without evicting jobs or images. Insufficient host/pool capacity is a stable visible wait reason, logged when it changes.
+- Round-robin allocation satisfies real demand before idle targets. Reservations include preparation, active jobs, uncertain live resources and setup VMs. New DinD execution reservations include runner CPU and combined runner/daemon memory; daemon CPU is not separately reserved. Running work is never preempted to satisfy another pool's demand. Low disk blocks new provisioning without evicting jobs or images. Insufficient host/pool capacity is a stable visible wait reason, logged when it changes.
 - Idle retirement uses the same logical pool cap across generations as allocation. Excess queued demand at that cap does not evict minimum-idle runners in other pools; newly admissible demand can still displace idle capacity. Tart demand blocked by the shared two-VM ceiling does not evict warm Docker runners; a warm Tart VM can still yield its VM slot. Retirement planning uses the allocator with only demand targets and accounts for available capacity, candidates already selected, and deregistered executions pending cleanup. Once that capacity satisfies demand it preserves remaining minimum-idle runners, while additional CPU/memory needs can still require multiple retirements. These planning reservations never enter durable state or release actual capacity before confirmed termination.
 - Scale-set ownership requires the installation marker and durable ownership journal; names alone are insufficient. Unknown existing sets are rejected. Every new runner gets fresh JIT credentials and can execute at most one job.
 - Per-pool initialization and retirement share a serialization boundary through remote calls and durable publication. Reload can drain immediately, but new creation intent rechecks the current phase. Draining generations resolve journaled creation by lookup only: delete verified owned results, clear confirmed absence, and preserve unresolved outcomes before releasing the remote identity. Late initialization failures cannot resurrect retired generations.
@@ -56,6 +56,8 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Runner freshness requests the latest 100 GitHub runner releases under the existing ten-second probe context. Response acquisition reads at most 8 MiB plus one detection byte, rejects an exceeded 8 MiB ceiling before decoding, and parses the complete bounded response. Oversize responses report the limit with manual release-verification and retry guidance; read/transport failures, non-200 responses and malformed JSON remain safe `DEPENDENCY_RETRY` warnings without upstream bodies or raw errors. Stable-release selection and the 30-day update window are unchanged: unknown or expired pins return `RUNNER_VERSION_UNSUPPORTED`, and a newer release within the window prompts replacement for manually pinned pools. Doctor itself never updates a binary, image or running job. The manager owns automatic image updates.
 - Docker preparation observes a running container for one second after its execution-specific bootstrap marker appears. Immediate launcher exits remain preparation failures and trigger the same three-failure suspension as guest startup failures; `run.sh` stays PID 1 for normal cancellation signals.
 - Per execution, create labelled named volumes and a network. DinD adds a privileged daemon with private cgroup v2 namespace, its own socket and disposable Docker storage. Shared workspace/externals paths and network namespace support container actions and service containers. Both runner and daemon have CPU/memory limits.
+- DinD admission CPU equals `resources.cpu`; admission memory equals `resources.memory_mib + daemon_resources.memory_mib`. `daemon_resources.cpu` remains positive and bounded, defaults to one CPU, and controls the daemon container's `NanoCPUs`. Reject a daemon CPU limit above the physical engine's reported CPU count before provisioning; do not add it to host or engine admission usage. Pool costs, minimum-idle validation, automatic concurrency, GitHub advertised/acquired capacity, new execution reservations and status use the same admission policy. Daemon CPU can run in addition to the reserved runner CPU, so reservations no longer bound the sum of Docker container CPU limits. Plain, Tart and host allocations keep their existing semantics.
+- Releases through 0.2.7 reserve both runner and daemon CPU. The runner-only CPU change is unreleased and adds no configuration field or storage migration. Preserve persisted execution and in-flight preparation reservations exactly across restart/reload; do not lower their CPU costs under the new policy. They release only through existing confirmed-termination/cleanup boundaries. Newly created reservations use the new policy. Docker image preparation continues to reserve and limit its actual preparation container resources.
 - DinD reconciliation inspects the daemon's recorded identity and ownership as well as the runner. Missing/stopped/paused/restarting daemons make the execution unavailable for busy-aware cleanup without claiming termination; ownership changes quarantine it, and transient inspection errors preserve reservations for retry.
 - Termination checks deterministic runner/daemon/init names and recorded container IDs independently of label-filtered discovery, before stopping resources and again before confirming termination. Foreign replacements or identity mismatches quarantine the execution and retain its reservation even during force-stop; an empty filtered list alone never proves termination.
 - Paused or restarting runner containers are also unavailable, including in plain mode. They enter the same busy-aware cleanup path, retaining their capacity reservation until confirmed termination permits a replacement.
@@ -96,7 +98,7 @@ Before start, stop, or uninstall, securely read and structurally parse the gener
 - TOML may override absolute state/data directories. The Unix socket path must fit macOS's length limit. Directories are mode 0700; files/socket are 0600. Reject symlinks and foreign ownership at sensitive file boundaries.
 - SQLite schema v1 stores an atomic snapshot row under WAL/FULL durability: installation identity, configuration generations/references, pool/session metadata without tokens, runner lifecycle and reservations, image revisions, and cleanup progress. A nonblocking file lock excludes concurrent manager or offline state access.
 - SQLite opens the exact absolute `state.sqlite` filename through an escaped `file:` URI, preserving literal `?`, `#`, `%`, spaces, and Unicode in valid filesystem paths. For paths containing `?`, if the intended database is absent or empty while the prefix used by older raw-DSN opens is a regular file, startup fails before creating the state directory, data directory, manager lock, or database. The error omits private paths and requires stopping all affected managers and preserving complete backups of both locations before explicit recovery; Runmoor never adopts, moves, or deletes the ambiguous legacy database automatically.
-- Delete completed execution history after seven days. Preserve unresolved cleanup and ownership indefinitely. User-created sealed images remain until explicit deletion; generated revisions use reference-aware managed retention. SQLite v1 migrates atomically to v2; other unsupported versions are rejected.
+- Delete completed execution history after seven days. Preserve unresolved cleanup and ownership indefinitely. User-created sealed images remain until explicit deletion; generated revisions use reference-aware managed retention. SQLite upgrades atomically in v1-to-v2-to-v3-to-v4 order; other unsupported versions are rejected.
 - Storage relocation is accepted only after all executions complete cleanup and all image setup/removal operations close; it atomically rebinds retained generations while preserving installation ownership. Backup only after drain and stop: preserve the complete state and managed data directories, protect referenced credentials separately, and pair backups with a compatible binary. Runmoor binary updates and rollback are manual; never open a newer state schema with an older binary.
 
 ## Security
@@ -206,10 +208,12 @@ allocations shrink to the available budget on smaller machines, with automatic
 minimums of 1 CPU/1024 MiB and 2 CPUs/4096 MiB respectively. Existing explicit
 allocations retain their meaning. Pool concurrency is the minimum of the CPU and
 memory quotients, bounded by the two-VM Tart limit; global reservations include
-all pools, DinD and image preparation. Disk reserves default to 10240 MiB, or
+all pools and image preparation. DinD uses runner-only admission CPU and combined
+runner/daemon admission memory. Omitted runner CPU uses the full applicable host
+and engine CPU budget without subtracting or adding back daemon CPU. Disk reserves default to 10240 MiB, or
 20480 MiB when Tart is configured. Warm capacity defaults to zero.
 GitHub session polling and job acquisition apply the same host and Docker engine
-CPU/memory ceilings, including DinD, even when an explicit pool concurrency is
+CPU/memory ceilings with the same DinD admission cost, even when an explicit pool concurrency is
 larger. Acquisition rechecks current eligibility and capacity after polling so a
 concurrent capacity reduction cannot admit work under the previous ceiling.
 
@@ -281,7 +285,7 @@ its snapshot and `user_version` atomically to v2, then applies the atomic v2 to
 v3 migration without rewriting installation ownership or execution history.
 Opening v2 atomically adds the v3 identity fields while preserving legacy
 numeric-only Tart records; those records remain conservatively reserved while
-their recorded PIDs exist. Old binaries reject v3. Read-only configuration
+their recorded PIDs exist. SQLite v4 adds private host directory and execution journals with an atomic v3-to-v4 migration. Earlier binaries reject v4. Read-only configuration
 inspection does not migrate state. Public
 status/doctor JSON remains schema v1 with additive managed runner and artifact
 fields. Generated artifacts retain current, previous and referenced bases;
@@ -360,3 +364,118 @@ managed preparation and cleanup.
   A durable successful image-creation marker is required before reopening a
   journaled VM; a failed or interrupted Tart create cannot be cleared merely
   by a later open request.
+
+## Opt-in macOS host execution
+
+Issue #1312 extends the closed backend enum with `host` for macOS 14+ arm64.
+`init --backend host` creates `macos-host` with scale set `runmoor-macos-host`
+and labels `runmoor-macos-host`, `macOS`, `ARM64`. Defaults still select Tart on
+macOS and Docker on Linux. Loading and reload never add or replace authored labels.
+Host configuration rejects image, image-source, guest runner-path, DinD and
+image-only setup options. `timeouts.host_preparation` extends TOML v1 and defaults
+to `5m`. Effective internal host image references are generated distribution IDs;
+operators cannot configure execution paths or select an arbitrary distribution.
+
+Host admission uses the shared scheduler, reservations, low-disk checks and fair
+allocation. Omitted resources use 2 CPUs/4096 MiB, shrinking to 1 CPU/1024 MiB.
+Explicit allocations are never reduced. Host concurrency uses CPU/memory quotients
+without the Tart two-VM ceiling. Minimum idle defaults to zero; disk reserve is
+10240 MiB, or the existing higher 20480 MiB when Tart is configured. CPU/memory
+reservations govern admission and do not enforce process usage limits.
+
+Official macOS arm64 runner archives use the existing stable release selection,
+SHA-256 verification and bounded safe tar reconstruction. Downloads and extraction
+use opened, confined distribution directories. Preparation checks the installed
+version before sealing a digest. Latest and exact pins share managed generation
+publication, support expiry, retry and reference-aware retention. Each execution
+copies its original verified distribution into a fresh installation, creates
+separate HOME, temporary and work directories, and receives fresh JIT registration.
+The manager never edits an active installation or distribution. Host-only
+configurations do not probe Docker, Tart or Guest Agent.
+
+The detached native supervisor is launched through an inherited directory
+handle. Darwin private child entrypoints validate that descriptor's private
+owner marker and device/inode identity, use `fchdir`, and open the confined root
+from their resulting cwd. `/dev/fd` is never used as a traversal or cwd path;
+the manager's cwd never changes. A private runner exec helper opens the runner
+directory without following a symlink, rejects linked fixed entrypoints, and
+replaces itself with the fixed version-check or worker executable. Imported
+dependency symlinks remain subject to the existing archive/digest confinement.
+Execution HOME/temp derive from the physical descriptor-selected root, including
+after a rename. The helper retains PID/start/group identity through exec and
+rechecks durable unforced Preparing authority immediately before worker exec.
+JIT data travels through private stdin pipes and remains memory-only.
+A bounded anonymous close-on-exec outcome pipe carries only closed failure
+classifications. Subprocess stderr is discarded; structured failure logs retain
+only the action and safe reason. Execution/setup failures use existing
+`PREPARATION_FAILED` (or ownership/stale authority errors); a successful version
+command reporting a different version uses `RUNNER_VERSION_UNSUPPORTED`.
+Public CLI, TOML, SQLite and versioned JSON shapes remain unchanged.
+Each launch checks cancellation and the durable unforced Preparing phase. The
+supervisor rechecks that phase before starting the runner. Preparation retries
+pending supervisor status within its existing deadline; ownership conflicts and
+confirmed immediate exits still fail. It observes startup
+before publishing readiness, owns a separate runner process group, and continues
+across a manager-only restart. Process identity is the kernel PID, group and OS
+start time. The bootstrap deadline bounds preparation only. An empty successful
+Darwin PID sysctl result confirms process absence; actual inspection errors
+remain conservative. Idle host runners
+have no job deadline. Assignment establishes the persisted busy-job deadline;
+busy-aware removal uses the existing creation-time bound for an unknown start.
+An established job deadline remains authoritative across manager restarts. Process
+supervision reads deadline state at startup confirmation and at most once every
+five seconds, with an additional authority check when its cached deadline timer
+fires. The timer enforces an observed deadline independently of the polling cadence.
+Process names and command arguments confer no ownership. Completed,
+cancelled and timed-out executions terminate only verified group members. Missing
+supervisors, changed process identity and uncertain termination retain reservations
+and actionable recovery. Daemons escaping the managed group are unsupported.
+
+SQLite v4 keeps directory creation intent, installation/execution identity,
+owner-only markers, device/inode identity, supervisor/worker identity and cleanup
+progress in private journals. Ownership checks reject foreign, replaced and
+escaping paths. Markerless interrupted publication is preserved. Cleanup moves
+the verified directory without replacement, removes content through the opened
+root, and commits final removal intent before deleting its marker. Repeated
+cleanup reconciles confirmed absence. Public status/doctor remain JSON v1 and do
+not expose these private journals. Seven-day completed history and existing
+seven-day/256 MiB redacted diagnostic limits remain unchanged.
+
+Copied distribution directories may receive new device/inode identities only
+under the exclusive startup lock after a completed stop or drained storage
+relocation. Require all execution cleanup and image operations to be complete,
+every artifact to be ready and unreserved, and matching installation/token,
+artifact/version and runner digest before rebinding the marker and SQLite record.
+A marker committed before a failed state write can be retried at that same
+boundary. Live restart, execution directories, changed content and incomplete
+cleanup never authorize rebinding; runtime ownership checks remain strict.
+
+The manager and jobs use the same macOS account. Recommend a dedicated CI account;
+Runmoor neither provisions accounts nor requires a privileged helper. The job
+allowlist retains PATH and DEVELOPER_DIR when set, the minimal locale, and
+execution-owned HOME/TMPDIR/TMP/TEMP. Other manager variables and management
+credentials are excluded. Disposable directories provide no security boundary:
+trusted jobs can access account files and Keychains. Operators manage Xcode, SDKs,
+language tools, shared caches, signing, Simulators, GUI sessions and global tool
+settings. Ordinary builds/tests and unsigned Xcode builds are intended workloads.
+GitHub repository/group and fork policies remain authoritative.
+
+The existing lifecycle owns registration, assignment/retirement races, reload,
+pause/resume/drain, pool-scoped force-stop, launchd, six-hour deadlines,
+three-failure suspension, provider rate limits and sleep inhibition. No automatic
+job rerun, telemetry, remote control, feature flag or new release channel is added.
+Installed version and explicit backend selection determine availability. Manual
+stable releases retain all existing signing/package gates. Rollback requires
+drain/stop, a compatible binary and paired state/data backup; never use a v3
+binary against v4 state.
+
+Acceptance includes automated contract/mocked lifecycle tests, native Darwin
+child-process regression fixtures and supported-target builds. The opt-in
+`RUNMOOR_HOST_VERSION_TEST=1 go test -run '^TestOfficialHostRunnerVersion$' -v ./cmds/runmoor/internal/runmoor`
+validates official ARM64 archive preparation, `--version` and digest sealing in
+temporary state, without GitHub registration or job execution. These checks do
+not establish actual macOS host job execution, unsigned Xcode builds or live
+GitHub jobs. The real authentication/registration matrix remains unvalidated.
+Existing Docker/Tart, service and distribution evidence retains its original limits.
+Record commands, source revision, results and these gaps in the PR. Public guides
+must disclose host's unreleased status until a manual release provides it.

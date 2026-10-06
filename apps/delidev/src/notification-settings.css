@@ -7,7 +7,7 @@
 .notification-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px 24px; margin-bottom: 16px; }
 .notification-settings button { min-height: 40px; max-width: 100%; border-radius: 8px; border-color: var(--control-border); white-space: normal; overflow-wrap: anywhere; }
 .notification-settings button.primary { border-color: var(--accent); }
-.notification-settings :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.notification-settings :focus-visible:not(:where(input, select, textarea)) { outline: 3px solid var(--focus); outline-offset: 3px; }
 .notification-os { padding-bottom: 24px; border-bottom: 1px solid var(--border); }
 .notification-settings .notification-support { margin-top: 12px; font-size: 13px; }
 .notification-settings .notification-permission-granted { display: flex; align-items: flex-start; gap: 8px; color: var(--success-text); }
@@ -19,7 +19,6 @@
 .notification-row p { margin: 0; font-size: 13px; }
 .notification-value { min-width: 32px; text-align: right; }
 .notification-row input[type=checkbox] { width: 18px; height: 18px; margin: 3px; accent-color: var(--accent); outline: 1px solid var(--control-border); outline-offset: 1px; }
-.notification-row input[type=checkbox]:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .notification-settings .actions { margin-top: 16px; }
 .notification-settings .actions:empty { display: none; }
 .notification-preferences > [role=alert], .notification-preferences > [role=status] { margin-top: 16px; }

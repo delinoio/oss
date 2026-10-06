@@ -107,7 +107,8 @@ fn permissions(source: &File, metadata: &Metadata, target: &File) -> Result<()> 
         .map_err(|_| Failure::Permissions)?;
     #[cfg(target_os = "macos")]
     {
-        // Copy only the ACL. Never copy content, resource forks, or other state.
+        // Copy only the ACL. Never copy content, resource forks, or other
+        // state.
         if unsafe {
             libc::fcopyfile(
                 source.as_raw_fd(),
@@ -123,8 +124,9 @@ fn permissions(source: &File, metadata: &Metadata, target: &File) -> Result<()> 
     #[cfg(target_os = "linux")]
     {
         let name = c"system.posix_acl_access";
-        // Linux POSIX ACLs are kernel-owned xattrs; this avoids a libacl runtime
-        // dependency in standalone/musl packages. ENODATA means mode bits only.
+        // Linux POSIX ACLs are kernel-owned xattrs; this avoids a libacl
+        // runtime dependency in standalone/musl packages. ENODATA means
+        // mode bits only.
         let size =
             unsafe { libc::fgetxattr(source.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0) };
         if size < 0 {
@@ -210,8 +212,9 @@ impl Staging {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            // Creation's 0600 is filtered by umask. Restore owner access through
-            // the open handle before writing, even with caller umask 0777.
+            // Creation's 0600 is filtered by umask. Restore owner access
+            // through the open handle before writing, even with
+            // caller umask 0777.
             file.as_file()
                 .set_permissions(fs::Permissions::from_mode(0o600))
                 .map_err(|_| Failure::Permissions)?;
@@ -262,7 +265,8 @@ pub fn publish(path: &Path, bytes: &[u8], replace: bool, cancel: &Cancellation) 
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let mut temporary = Staging::new(parent)?;
-    // Windows inherits the parent's ACL. Both guards clean up on handled errors.
+    // Windows inherits the parent's ACL. Both guards clean up on handled
+    // errors.
     config_runtime::write(temporary.file.as_file_mut(), bytes, cancel)?;
     publish_prepared(temporary, path, replace, cancel)
 }
@@ -304,7 +308,8 @@ fn publish_prepared(
         drop(existing);
         cancel.check()?;
         publication.commit(path, replace)?;
-        // The held handle now owns the destination. Never clean up by its old name.
+        // The held handle now owns the destination. Never clean up by its old
+        // name.
         temporary.file.into_temp_path().disable_cleanup(true);
         Ok(())
     }

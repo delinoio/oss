@@ -15,6 +15,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -128,6 +129,11 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	// lifetime; the production read and execution admission deadlines still apply.
 	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
+	if harness == domain.OpenCode {
+		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1}})); err != nil {
+			t.Fatal(err)
+		}
+	}
 	f.machine = currentCatalogResource(t, base, f.machine)
 	selections, _ := json.Marshal(domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: harness, Path: executable}}})
 	_, err = client.DiscoverHarnesses(ctx, ownerRequest(base.identity, &pb.DiscoverHarnessesRequest{Mutation: acctMutation(f.machine, domain.NewID()), SelectionsJson: selections, VerifyProtocol: true}))
@@ -227,7 +233,7 @@ func (f *firstDispatchFixture) mutateAgent(t *testing.T, edit func(*domain.Agent
 func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.T) {
 	f := newFirstDispatchFixture(t)
 	ctx := context.Background()
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 2 })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = "unsupported" })
 	before := f.refresh(t)
 	if err := f.service.dispatchExecution(ctx, before); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("unsupported option dispatched", err)
@@ -251,7 +257,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	if f.refresh(t).Revision != blocked.Revision {
 		t.Fatal("unchanged block created a revision loop")
 	}
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 0; a.Effort = "high" })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = ""; a.Effort = "high" })
 	edited, err := sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, &pb.EditQueuedInputRequest{Mutation: acctMutation(f.change.Input, domain.NewID()), SessionId: f.change.Session.Id, Prompt: "latest input before claim"}))
 	if err != nil {
 		t.Fatal(err)
@@ -483,7 +489,7 @@ func TestInitialResumeFailurePreservesPauseAndRemovalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 2 })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = "unsupported" })
 	resume := &pb.ControlSessionRequest{Mutation: acctMutation(stopped.Msg.Change.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_RESUME}
 	_, err = sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, resume))
 	wantAccountCode(t, err, domain.Unsupported)
@@ -492,7 +498,7 @@ func TestInitialResumeFailurePreservesPauseAndRemovalOrder(t *testing.T) {
 	if unchanged.Revision != stopped.Msg.Change.Session.Revision || state.Dispatch != domain.DispatchPaused || state.InitialExecution != nil || !state.AutomaticRemediationStopped {
 		t.Fatal("failed explicit Resume changed paused state")
 	}
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 0 })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = "" })
 	second, err := sessionClient(f.accountFixture).EnqueueInput(ctx, ownerRequest(f.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: f.change.Session.Id, DocumentJson: []byte(`{"prompt":"second original input","mode":"execute"}`)}))
 	if err != nil {
 		t.Fatal(err)

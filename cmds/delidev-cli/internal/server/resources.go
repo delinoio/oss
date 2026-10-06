@@ -99,6 +99,10 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 			return f, err
 		}
 	}
+	f.SubscriptionService = rpc.SubscriptionService(input.SubscriptionService)
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || input.AccountType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API) {
+		return f, domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
+	}
 	switch input.AccountType {
 	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED:
 	case pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API:
@@ -108,7 +112,10 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 	default:
 		return f, domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription.")
 	}
-	if (f.AccountType != "" || f.ProviderID != "") && f.Kind != domain.AccountKind {
+	if f.AccountType == domain.SubscriptionAccount && f.ProviderID != "" {
+		return f, domain.Fail(domain.InvalidArgument, "Subscription account lists do not use providers.", "List subscription service accounts without a provider filter.")
+	}
+	if (f.AccountType != "" || f.ProviderID != "" || f.SubscriptionService != "") && f.Kind != domain.AccountKind {
 		return f, domain.Fail(domain.InvalidArgument, "Account type filtering is supported only for account lists.", "Select account as the resource kind.")
 	}
 	if input.Filter.PageToken != "" {
@@ -127,6 +134,21 @@ func (s *Service) GetResource(ctx context.Context, req *connect.Request[pb.GetRe
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	record, err := s.Store.Get(ctx, kind, domain.ID(req.Msg.Id))
+	if domain.SafeError(err).Code == domain.NotFound {
+		actor, ok := domain.PrincipalFrom(ctx)
+		if ok && (actor.Type == domain.OwnerDevice || actor.Type == domain.ClientDevice) {
+			if historical, e := s.Store.RetiredConfiguration(ctx, kind, domain.ID(req.Msg.Id)); e == nil {
+				historical.Data, e = json.Marshal(struct {
+					Retired               bool            `json:"retired"`
+					OriginalSchemaVersion uint32          `json:"original_schema_version"`
+					OriginalDocument      json.RawMessage `json:"original_document"`
+				}{true, 1, historical.Data})
+				record, err = historical, e
+			} else if domain.SafeError(e).Code != domain.NotFound {
+				err = e
+			}
+		}
+	}
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -280,12 +302,16 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 }
 func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb.SaveConfigurationRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A version 1 configuration and mutation identity are required.", "Use schema_version=1, a UUID-v7 request ID, and the current expected revision."), correlation)
+	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported configuration schema and mutation identity are required.", "Use schema version 1 for API configuration or version 2 for subscription identity, a UUID-v7 request ID and the current expected revision."), correlation)
 	}
 	kind, err := rpc.Kind(req.Msg.Kind)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
+	}
+	expectedSchema := rpc.ResourceSchemaVersion(kind, req.Msg.DocumentJson)
+	if req.Msg.SchemaVersion != expectedSchema && !(kind == domain.AgentKind && req.Msg.SchemaVersion == 2) {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Configuration schema does not match its identity family.", "Use schema 2 for service accounts/native models and schema 1 for API configuration. Update older clients before configuring subscriptions."), correlation)
 	}
 	if kind == domain.AccountKind || kind == domain.ProviderKind {
 		unlock, err := s.lockAccounts(ctx)

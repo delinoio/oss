@@ -72,8 +72,9 @@ impl Publication {
             return Ok(());
         };
         let temporary = self.temporary.as_ref().unwrap();
-        // Flush through a writable handle before restoring a read-only mode/ACL.
-        // FlushFileBuffers on Windows does not accept a read-only handle.
+        // Flush through a writable handle before restoring a read-only
+        // mode/ACL. FlushFileBuffers on Windows does not accept a
+        // read-only handle.
         fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -85,7 +86,8 @@ impl Publication {
         #[cfg(windows)]
         let mut readonly = false;
         // Recheck link/type policy and copy current permissions at publication,
-        // without comparing file identities or providing lost-update protection.
+        // without comparing file identities or providing lost-update
+        // protection.
         if let Some(original) = inspect(path, self.replace)? {
             #[cfg(windows)]
             {
@@ -93,7 +95,8 @@ impl Publication {
             }
             preserve_permissions(&original, temporary)?;
         }
-        // Cancellation during flushing/permission work must still prevent publication.
+        // Cancellation during flushing/permission work must still prevent
+        // publication.
         before_commit()?;
         #[cfg(windows)]
         {
@@ -194,10 +197,10 @@ impl WindowsPublication {
         // usize backing storage supplies the SDK structure's pointer alignment.
         let mut buffer = vec![0usize; (bytes as usize).div_ceil(std::mem::size_of::<usize>())];
         let information = buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
-        // FileRenameInfoEx can replace a read-only destination without temporarily
-        // changing the original's attributes. The OS still requires target write-
-        // attribute permission. Unsupported filesystems fail without modifying it.
-        // https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information
+        // FileRenameInfoEx can replace a read-only destination without
+        // temporarily changing the original's attributes. The OS still
+        // requires target write- attribute permission. Unsupported
+        // filesystems fail without modifying it. https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information
         const REPLACE_IF_EXISTS: u32 = 0x1;
         const IGNORE_READONLY_ATTRIBUTE: u32 = 0x40;
         let success = unsafe {
@@ -411,8 +414,8 @@ fn preserve_permissions(original: &Original, temporary: &Path) -> Result<()> {
         .metadata()
         .map_err(|_| Error::runtime(Code::Permissions))?;
     // Ownership affects effective access too. Do not silently widen permissions
-    // by publishing a file under another owner/group. chown can clear mode bits,
-    // so mode and ACL restoration follows it.
+    // by publishing a file under another owner/group. chown can clear mode
+    // bits, so mode and ACL restoration follows it.
     if (metadata.uid(), metadata.gid()) != (target_metadata.uid(), target_metadata.gid())
         && unsafe { libc::fchown(target.as_raw_fd(), metadata.uid(), metadata.gid()) } != 0
     {
@@ -502,8 +505,9 @@ fn preserve_acl(original: &Original, target: &File) -> Result<()> {
     const ACL_TYPE_EXTENDED: libc::c_int = 0x100;
     unsafe {
         let mut acl = acl_get_link_np(original.path.as_ptr(), ACL_TYPE_EXTENDED);
-        // Darwin represents an absent extended ACL as ENOENT even for an existing
-        // regular file. Apply an empty ACL to remove any inherited temp ACL.
+        // Darwin represents an absent extended ACL as ENOENT even for an
+        // existing regular file. Apply an empty ACL to remove any
+        // inherited temp ACL.
         if acl.is_null() && io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT) {
             acl = acl_init(0);
         }
@@ -542,9 +546,10 @@ fn preserve_permissions(original: &Original, temporary: &Path) -> Result<()> {
             UNPROTECTED_DACL_SECURITY_INFORMATION,
         },
     };
-    // Set access attributes while the temporary file still has its creation ACL.
-    // The original DACL may legitimately deny FILE_WRITE_ATTRIBUTES, while its
-    // parent still grants replacement. No pathname attribute writes follow it.
+    // Set access attributes while the temporary file still has its creation
+    // ACL. The original DACL may legitimately deny FILE_WRITE_ATTRIBUTES,
+    // while its parent still grants replacement. No pathname attribute
+    // writes follow it.
     fs::set_permissions(temporary, original.metadata.permissions())
         .map_err(|_| Error::runtime(Code::Permissions))?;
     let mut owner = std::ptr::null_mut();

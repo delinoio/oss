@@ -86,9 +86,10 @@ impl HttpClient {
     {
         self.initialization
             .get_or_init(|| {
-                // A blocking OS trust load cannot be cancelled. Retain its shared
-                // result across dropped attempt futures so retries await the same
-                // job instead of accumulating overlapping native loaders.
+                // A blocking OS trust load cannot be cancelled. Retain its
+                // shared result across dropped attempt futures
+                // so retries await the same job instead of
+                // accumulating overlapping native loaders.
                 tokio::task::spawn_blocking(initialize)
                     .map(|result| result.unwrap_or(Err(Code::TrustStore)))
                     .boxed()
@@ -150,7 +151,8 @@ where
                 last = network_io(error.kind());
                 if !last.retryable() {
                     // A local error may affect only this destination or family.
-                    // Preserve it if all addresses fail, but let others connect.
+                    // Preserve it if all addresses fail, but let others
+                    // connect.
                     terminal.get_or_insert(last);
                 }
             }
@@ -176,7 +178,8 @@ fn native_tls(
 ) -> Result<rustls::ClientConfig, Code> {
     let mut roots = rustls::RootCertStore::empty();
     // OS stores can contain unreadable or unsupported entries alongside usable
-    // roots. Keep usable roots without exposing loader errors or certificate data.
+    // roots. Keep usable roots without exposing loader errors or certificate
+    // data.
     let (usable_roots, ignored_certificates) = roots.add_parsable_certificates(loaded.certs);
     tracing::debug!(
         kind = "http",

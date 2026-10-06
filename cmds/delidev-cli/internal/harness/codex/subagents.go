@@ -229,7 +229,7 @@ func (c *Client) InspectDescendants(ctx context.Context) (Event, error) {
 		}
 		for _, raw := range result.Data {
 			var t threadWire
-			if domain.Decode(raw, &t) != nil || t.ID.Validate() != nil || t.ParentThreadID == nil || t.ParentThreadID.Validate() != nil || t.SessionID != c.execution.thread.SessionID || t.CLIVersion != SupportedVersion || t.ModelProvider != c.execution.settings.Provider || validateThreadStatus(t.Status) != nil || seen[string(t.ID)] {
+			if domain.Decode(raw, &t) != nil || t.ID.Validate() != nil || t.ParentThreadID == nil || t.ParentThreadID.Validate() != nil || t.SessionID != c.execution.thread.SessionID || t.CLIVersion != c.version || t.ModelProvider != c.execution.settings.Provider || validateThreadStatus(t.Status) != nil || seen[string(t.ID)] {
 				return Event{}, incompatible()
 			}
 			seen[string(t.ID)] = true
@@ -272,7 +272,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 		}
 		if domain.Decode(native.Params, &v) == nil && v.Thread.ParentThreadID != nil {
 			t := v.Thread
-			if t.ID.Validate() != nil || t.ID == c.thread || t.ParentThreadID.Validate() != nil || t.SessionID != c.execution.thread.SessionID || t.ModelProvider != c.execution.settings.Provider || t.CLIVersion != SupportedVersion || validateThreadStatus(t.Status) != nil {
+			if t.ID.Validate() != nil || t.ID == c.thread || t.ParentThreadID.Validate() != nil || t.SessionID != c.execution.thread.SessionID || t.ModelProvider != c.execution.settings.Provider || t.CLIVersion != c.version || validateThreadStatus(t.Status) != nil {
 				return Event{}, true, incompatible()
 			}
 			o, ok := c.subagents[string(t.ID)]

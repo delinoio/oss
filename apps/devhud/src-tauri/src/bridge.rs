@@ -28,9 +28,9 @@ const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
 const DIAGNOSTICS_EXPORT_LIMIT: usize = 1024 * 1024;
 const WIDGET_TEXT_LIMIT: usize = 4096;
-const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+const TAURI_REVISION: &str = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975";
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
+const CEF_REVISION: &str = "151.3.24+g2384915+chromium-151.0.7922.174";
 
 const FIRST_PARTY_API_ORIGIN: &str = "https://devhud.api.delino.io";
 const DEFAULT_API_ORIGIN: &str = FIRST_PARTY_API_ORIGIN;
@@ -2573,7 +2573,7 @@ mod tests {
         .expect("runtime snapshot");
         assert_eq!(
             snapshot["snapshot"]["tauriRevision"],
-            "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
+            "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975"
         );
         assert_eq!(snapshot["snapshot"]["osVersion"], runtime_os_version());
         assert_ne!(snapshot["snapshot"]["osVersion"], std::env::consts::OS);
@@ -2582,7 +2582,7 @@ mod tests {
         } else {
             assert_eq!(
                 snapshot["snapshot"]["cefRevision"],
-                "150.0.10+g8042e43+chromium-150.0.7871.101"
+                "151.3.24+g2384915+chromium-151.0.7922.174"
             );
         }
     }

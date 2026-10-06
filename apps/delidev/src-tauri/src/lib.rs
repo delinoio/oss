@@ -17,11 +17,68 @@ use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
+mod browser_opener;
+pub mod oauth;
+pub mod provider_guidance;
+pub mod updater;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
+
+// A GUI launch does not run the user's shell. Keep OS utilities first, then
+// bounded absolute lookup context and the standard macOS Homebrew locations.
+// This supplies executable lookup only; no other inherited variables survive.
+fn sidecar_lookup_path(inherited: Option<&std::ffi::OsStr>) -> OsString {
+    #[cfg(unix)]
+    let mut paths: Vec<PathBuf> = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    #[cfg(windows)]
+    let mut paths = {
+        let root = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        vec![
+            root.join("System32"),
+            root.clone(),
+            root.join("System32/WindowsPowerShell/v1.0"),
+        ]
+    };
+    if let Some(value) = inherited.filter(|value| value.as_encoded_bytes().len() <= 32768) {
+        for path in std::env::split_paths(value)
+            .take(64)
+            .filter(|path| path.is_absolute())
+        {
+            #[cfg(windows)]
+            let duplicate = paths.iter().any(|prior| {
+                prior
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(&path.to_string_lossy())
+            });
+            #[cfg(unix)]
+            let duplicate = paths.contains(&path);
+            if !duplicate {
+                paths.push(path);
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    for path in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        let path = PathBuf::from(path);
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    if !paths.contains(&PathBuf::from("/usr/local/bin")) {
+        paths.push(PathBuf::from("/usr/local/bin"));
+    }
+    std::env::join_paths(paths).unwrap_or_default()
+}
 
 pub mod browser;
 mod connections;
@@ -34,8 +91,11 @@ mod desktop_recovery;
 pub use desktop_recovery::{DesktopRegistration, DesktopRegistrationState};
 
 mod local_worker;
+mod worker_network;
 pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};
+pub use worker_network::WorkerNetworkAction;
 
+mod desktop_host;
 mod supervision;
 pub use supervision::{LocalServerState, LocalServerStatus, Supervision};
 
@@ -93,7 +153,7 @@ enum DeviceType {
     Worker,
 }
 
-#[derive(Deserialize, PartialEq, Eq)]
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct DeviceMetadata {
     version: u32,
@@ -130,12 +190,73 @@ pub struct Connector {
     executable: PathBuf,
     root: PathBuf,
     gate: Mutex<()>,
+    oauth_identity: Mutex<Option<DeviceMetadata>>,
     command_timeout: Duration,
     listen: String,
     exiting: AtomicBool,
+    hosted: Mutex<Vec<desktop_host::DesktopChild>>,
 }
 
 impl Connector {
+    // The verified local connection captures non-secret authority once. Empty
+    // callback polling rechecks that fixed descriptor without starting a CLI or
+    // competing with unrelated connector commands. Changed descriptors require
+    // a new Go-verified connection before receiving callback authority.
+    pub fn oauth_server_identity(&self) -> Result<String> {
+        if self.exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        let original = self
+            .oauth_identity
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?;
+        let original = original
+            .as_ref()
+            .ok_or(NativeFailure::CredentialUnavailable)?;
+        let path = self.root.join("desktop-client").join("device.json");
+        let file = fs::symlink_metadata(&path).map_err(|_| NativeFailure::CredentialUnavailable)?;
+        if !file.is_file() || file.file_type().is_symlink() || file.len() > 16 << 10 {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let bytes = Zeroizing::new(read_bounded(
+            File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
+            16 << 10,
+        )?);
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Descriptor {
+            #[serde(flatten)]
+            metadata: DeviceMetadata,
+            #[serde(rename = "token")]
+            _token: serde::de::IgnoredAny,
+        }
+        let current: Descriptor =
+            serde_json::from_slice(&bytes).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if current.metadata != *original
+            || original.kind != DeviceType::Client
+            || !original.machine_id.is_empty()
+            || original.endpoint != "http://127.0.0.1:46310"
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        canonical_id(&original.server_id)?;
+        Ok(original.server_id.clone())
+    }
+
+    pub fn open_provider_guidance(
+        &self,
+        preset: &str,
+        action: provider_guidance::GuidanceAction,
+    ) -> Result<()> {
+        let url = provider_guidance::destination(preset, action)?;
+        let result = browser_opener::dispatch(&url, &self.exiting);
+        match &result {
+            Ok(()) => tracing::info!(operation = "provider_guidance", phase = "dispatched"),
+            Err(code) => tracing::warn!(operation = "provider_guidance", phase = "failed", ?code),
+        }
+        result
+    }
+
     pub fn open_github(&self, url: &str) -> Result<()> {
         // Go applies the complete closed destination contract. Bound this
         // infrastructure argument before starting its credential-free sidecar.
@@ -169,9 +290,11 @@ impl Connector {
             executable,
             root,
             gate: Mutex::new(()),
+            oauth_identity: Mutex::new(None),
             command_timeout: COMMAND_TIMEOUT,
             listen: "127.0.0.1:46310".into(),
             exiting: AtomicBool::new(false),
+            hosted: Mutex::new(Vec::new()),
         })
     }
 
@@ -189,8 +312,9 @@ impl Connector {
     }
 
     // This read-only boundary never pairs, starts or replaces a Worker. The Go
-    // inspector validates private files; product RPCs recheck current revocation.
-    // Only the fixed CLI-owned local Worker scope can prove this computer.
+    // inspector validates private files; product RPCs recheck current
+    // revocation. Only the fixed CLI-owned local Worker scope can prove
+    // this computer.
     pub fn local_worker_proof(&self) -> Result<LocalWorkerProof> {
         let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
         let result = self.local_worker_proof_inner();
@@ -262,7 +386,8 @@ impl Connector {
     }
 
     // Cached launch credentials are never current-readiness authority. This
-    // read cannot start/pair and rechecks durable Stop plus the original identity.
+    // read cannot start/pair and rechecks durable Stop plus the original
+    // identity.
     fn observe_launch(&self, original: &Connection) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         let status = self.run(&self.server_arguments("desktop-status"))?;
@@ -300,9 +425,7 @@ impl Connector {
     }
 
     fn connect_inner(&self, action: &str) -> Result<Connection> {
-        // The Go executable owns compatibility, startup locking and detachment.
-        // Dropping this client never invokes stop or assumes server ownership.
-        let started = self.run(&self.server_arguments(action))?;
+        let started = self.run_desktop_host(action)?;
         if self.server_state(&started)? != LocalServerState::Ready {
             return Err(NativeFailure::Stopped);
         }
@@ -326,8 +449,9 @@ impl Connector {
 
     fn read_local_connection(&self, metadata: DeviceMetadata) -> Result<Connection> {
         let client_root = self.root.join("desktop-client");
-        // Go enforces platform-specific privacy and strict credential validation
-        // before this fixed file is read. No owner material crosses the bridge.
+        // Go enforces platform-specific privacy and strict credential
+        // validation before this fixed file is read. No owner material
+        // crosses the bridge.
         let inspected = self.run(&[
             "device".into(),
             "inspect".into(),
@@ -350,21 +474,15 @@ impl Connector {
             File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
             16 << 10,
         )?);
-        connection_from_bytes(&bytes, &metadata)
+        let connection = connection_from_bytes(&bytes, &metadata)?;
+        *self
+            .oauth_identity
+            .lock()
+            .map_err(|_| NativeFailure::Busy)? = Some(metadata);
+        Ok(connection)
     }
 
-    fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
-        self.run_with_input(arguments, None)
-    }
-
-    fn run_with_input(
-        &self,
-        arguments: &[OsString],
-        input: Option<Zeroizing<Vec<u8>>>,
-    ) -> Result<serde_json::Value> {
-        if self.exiting.load(Ordering::Acquire) {
-            return Err(NativeFailure::Stopped);
-        }
+    fn sidecar_command(&self, arguments: &[OsString], input: bool) -> Result<Command> {
         let metadata =
             fs::symlink_metadata(&self.executable).map_err(|_| NativeFailure::SidecarMissing)?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -375,11 +493,7 @@ impl Connector {
             .arg("--data-dir")
             .arg(&self.root)
             .args(arguments)
-            .stdin(if input.is_some() {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
+            .stdin(if input { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear();
@@ -402,8 +516,10 @@ impl Connector {
                 command.env(name, value);
             }
         }
-        #[cfg(unix)]
-        command.env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+        command.env(
+            "PATH",
+            sidecar_lookup_path(std::env::var_os("PATH").as_deref()),
+        );
         // Only the closed OS opener needs desktop-session display context.
         // No renderer-controlled environment or provider credentials are used.
         if arguments.first().is_some_and(|v| v == "presentation") {
@@ -423,6 +539,31 @@ impl Connector {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW applies only to the short CLI controller.
         }
+        Ok(command)
+    }
+
+    fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
+        self.run_with_input(arguments, None)
+    }
+
+    fn run_with_input(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+    ) -> Result<serde_json::Value> {
+        self.run_with_input_bound(arguments, input, self.command_timeout)
+    }
+
+    fn run_with_input_bound(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+        timeout: Duration,
+    ) -> Result<serde_json::Value> {
+        if self.exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        let mut command = self.sidecar_command(arguments, input.is_some())?;
         let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
         let stdout = child.stdout.take().ok_or(NativeFailure::SidecarFailed)?;
         let stderr = child.stderr.take().ok_or(NativeFailure::SidecarFailed)?;
@@ -443,9 +584,7 @@ impl Connector {
             }
             match child.try_wait() {
                 Ok(Some(status)) => break Ok(status),
-                Ok(None) if started.elapsed() < self.command_timeout => {
-                    thread::sleep(Duration::from_millis(25))
-                }
+                Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(25)),
                 Ok(None) => break Err(NativeFailure::TimedOut),
                 Err(_) => break Err(NativeFailure::SidecarFailed),
             }
@@ -490,7 +629,7 @@ impl Connector {
 
     fn ensure(&self) -> Result<LocalServerState> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
-        let value = self.run(&self.server_arguments("ensure"))?;
+        let value = self.run_desktop_host("ensure")?;
         self.server_state(&value)
     }
 
@@ -639,6 +778,9 @@ pub mod notifications;
 pub mod presentation;
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "desktop-host"))]
+mod permission_tests;
 
 #[cfg(test)]
 mod desktop_capability_tests {

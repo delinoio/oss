@@ -88,14 +88,25 @@ const (
 	GenerateSessionTitleJob JobType = "generate-session-title"
 )
 
+const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configuration-v1"
+
 type WorkerCapability string
 
 const (
+	CodexReadOnlySidechatWorkerV1  WorkerCapability = "codex-read-only-sidechat-v1"
+	SignedWorkerUpdatesV1          WorkerCapability = "signed-worker-updates-v1"
 	RepositoryInspectionMetadataV1 WorkerCapability = "repository-inspection-metadata-v1"
 	SessionTerminalsV1             WorkerCapability = "session-terminals-v1"
 	AutomaticTitlesCodexV1         WorkerCapability = "automatic-titles-codex-v1"
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
+	SubscriptionObservationsV1     WorkerCapability = "subscription-observations-v1"
+	NativeSessionCompactionV1      WorkerCapability = "native-session-compaction-v1"
+	CodexSessionCompactionV1       WorkerCapability = "codex-session-compaction-v1"
+	OpenCodeGeneralChatForkV1      WorkerCapability = "opencode-general-chat-fork-v1"
+	OpenCodeSessionCompactionV1    WorkerCapability = "opencode-session-compaction-v1"
+	NetworkBootstrapV1             WorkerCapability = "network-bootstrap-v1"
+	CodexAPIProxyV1                WorkerCapability = "codex-api-proxy-v1"
 )
 
 type JobState string
@@ -112,22 +123,28 @@ const (
 func (s JobState) Terminal() bool { return s == JobSucceeded || s == JobFailed || s == JobCanceled }
 
 type Job struct {
-	Type             JobType         `json:"type"`
-	State            JobState        `json:"state"`
-	MachineID        ID              `json:"machine_id,omitempty"`
-	InstanceID       ID              `json:"instance_id,omitempty"`
-	AssignedDeviceID ID              `json:"assigned_device_id,omitempty"`
-	ParentID         ID              `json:"parent_id,omitempty"`
-	Input            json.RawMessage `json:"input"`
-	Output           json.RawMessage `json:"output,omitempty"`
-	Problem          *Error          `json:"problem,omitempty"`
-	AcceptedAt       time.Time       `json:"accepted_at"`
-	FinishedAt       *time.Time      `json:"finished_at,omitempty"`
+	Type                JobType         `json:"type"`
+	State               JobState        `json:"state"`
+	MachineID           ID              `json:"machine_id,omitempty"`
+	InstanceID          ID              `json:"instance_id,omitempty"`
+	AssignedDeviceID    ID              `json:"assigned_device_id,omitempty"`
+	ParentID            ID              `json:"parent_id,omitempty"`
+	StorageReconciledBy ID              `json:"storage_reconciled_by,omitempty"`
+	Input               json.RawMessage `json:"input"`
+	Output              json.RawMessage `json:"output,omitempty"`
+	Problem             *Error          `json:"problem,omitempty"`
+	AcceptedAt          time.Time       `json:"accepted_at"`
+	FinishedAt          *time.Time      `json:"finished_at,omitempty"`
 }
 
+// Storage recovery duplicates bounded original preparation/manifest evidence.
+// The workspace/store owners restrict this allowance to explicit recovery.
+const MaxStorageRecoveryInputBytes = 3 << 20
+
 const (
-	maxJobDocumentBytes        = 1 << 20
-	maxCompactionJobInputBytes = 3 << 20
+	MaxWorkerJobOutputBytes    = 1 << 20
+	maxJobDocumentBytes        = MaxWorkerJobOutputBytes
+	maxCompactionJobInputBytes = MaxCompactionInputBytes
 )
 
 func (j Job) Validate() error {
@@ -152,6 +169,11 @@ func (j Job) Validate() error {
 	if j.AssignedDeviceID != "" && (j.State == JobQueued || j.InstanceID == "") {
 		return Fail(InvalidArgument, "A Worker device requires an original claimed process.", "Bind the paired device only when claiming a queued operation.")
 	}
+	if j.StorageReconciledBy != "" {
+		if j.StorageReconciledBy.Validate() != nil || j.Type != WorkspaceStorageJob || !j.State.Terminal() {
+			return Fail(InvalidArgument, "Storage reconciliation requires a terminal original storage job.", "Preserve its successful explicit recovery reference.")
+		}
+	}
 	maxInput := maxJobDocumentBytes
 	// Compaction carries the immutable source assignment and a fresh restore
 	// assignment. Both are individually bounded execution inputs, so the
@@ -160,6 +182,8 @@ func (j Job) Validate() error {
 	// reference; the larger cap is still finite and applies only to this job.
 	if j.Type == CompactSessionJob {
 		maxInput = maxCompactionJobInputBytes
+	} else if j.Type == WorkspaceStorageJob {
+		maxInput = MaxStorageRecoveryInputBytes
 	}
 	if len(j.Input) > maxInput || len(j.Output) > maxJobDocumentBytes || !json.Valid(j.Input) || (len(j.Output) > 0 && !json.Valid(j.Output)) {
 		return Fail(InvalidArgument, "Invalid Worker job document.", "Use a bounded versioned job payload.")
@@ -202,7 +226,7 @@ func (i AuxiliaryTitleInput) Validate() error {
 			return Fail(InvalidArgument, "Invalid automatic title assignment identity.", "Preserve the original completed execution and its immutable selection.")
 		}
 	}
-	if i.Version != 1 || i.NameGeneration == 0 || (i.ProjectID != "" && i.ProjectID.Validate() != nil) || i.Harness != Codex || i.NativeVersion != CodexProtocolVersion || i.ProviderProtocol != OpenAIResponses || Text(i.Executable, "native executable", 4096, true) != nil || Text(i.NativeModel, "native model", 256, true) != nil || Text(i.Effort, "reasoning effort", 64, false) != nil || Text(i.ServiceTier, "service tier", 64, false) != nil || Text(i.Prompt, "first session input", MaxPromptBytes, true) != nil {
+	if i.Version != 1 || i.NameGeneration == 0 || (i.ProjectID != "" && i.ProjectID.Validate() != nil) || i.Harness != Codex || !CodexVersionAllowed(i.NativeVersion) || i.ProviderProtocol != OpenAIResponses || Text(i.Executable, "native executable", 4096, true) != nil || Text(i.NativeModel, "native model", 256, true) != nil || Text(i.Effort, "reasoning effort", 64, false) != nil || Text(i.ServiceTier, "service tier", 64, false) != nil || Text(i.Prompt, "first session input", MaxPromptBytes, true) != nil {
 		return Fail(Unsupported, "This automatic title assignment has no verified native profile.", "Use the pinned Codex Responses title profile without changing its original account or model.")
 	}
 	return nil

@@ -277,6 +277,13 @@ func (s *Service) SelectNetworkProfile(ctx context.Context, req *connect.Request
 			return nil, networkConflict()
 		}
 		value := domain.NetworkRoute{MachineID: machine, Profile: directNetworkProfile()}
+		if current.ID != "" {
+			previous, err := store.Decode[domain.NetworkRoute](current)
+			if err != nil {
+				return nil, err
+			}
+			value.Binding = previous.Binding
+		}
 		if profile != "" {
 			r, e := tx.Get(domain.NetworkProfileKind, profile)
 			if e != nil {
@@ -398,7 +405,9 @@ func (s *Service) readNetworkRoute(ctx context.Context, machine domain.ID) (stor
 			return err
 		}
 		if machine != "" {
-			if _, err := tx.Get(domain.MachineKind, machine); err != nil {
+			// A pending encrypted bootstrap owns a route before pairing creates
+			// its Machine. This public owner read grants no pairing/admission.
+			if _, err := tx.Get(domain.MachineKind, machine); err != nil && domain.SafeError(err).Code != domain.NotFound {
 				return err
 			}
 		}
@@ -461,6 +470,17 @@ func (s *Service) ExportWorkerNetworkMetadata(ctx context.Context, req *connect.
 	machine := domain.ID(req.Msg.MachineId)
 	if machine.Validate() != nil {
 		return nil, rpc.Error(machine.Validate(), correlation)
+	}
+	// Legacy signed metadata remains limited to registered machines. Pending
+	// bootstrap instead requires its independently bound encrypted transfer.
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		_, err := tx.Get(domain.MachineKind, machine)
+		return err
+	}); err != nil {
+		return nil, rpc.Error(err, correlation)
 	}
 	r, v, err := s.readNetworkRoute(ctx, machine)
 	if err != nil {

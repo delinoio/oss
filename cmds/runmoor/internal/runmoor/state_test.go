@@ -23,6 +23,93 @@ func sqliteDatabasePath(t *testing.T, db *sql.DB) string {
 	return path
 }
 
+func TestDinDReservationsSurviveRestartAndReload(t *testing.T) {
+	c, store := fixtureStore(t)
+	c.Host.CPU, c.Host.MemoryMiB, c.Host.MaxRunners = 32, 524288, 15
+	c.DockerBudget = Resources{32, 524288}
+	p := &c.Pools[0]
+	p.Mode, p.DaemonImage = DinD, p.Image
+	p.Resources, p.DaemonResources, p.MaxRunners = Resources{2, 16384}, Resources{2, 2048}, 15
+	c, err := NormalizeConfig(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, artifact := newID(), newID()
+	var pool string
+	if err := store.Update(func(s *Snapshot) error {
+		s.Requested = c
+		if err := acceptSnapshot(s, c, true); err != nil {
+			return err
+		}
+		for id := range s.Pools {
+			pool = id
+		}
+		s.Pools[pool].ScaleSetID, s.Pools[pool].Session = 1, "fixture"
+		// These reservations were published by the old combined-CPU policy.
+		s.Runners[legacy] = &Runner{ID: legacy, PoolID: pool, Generation: s.Generation, Backend: Docker, Phase: Busy, Resources: Resources{4, 18432}}
+		s.Artifacts[artifact] = &RunnerArtifact{ID: artifact, Pool: p.Name, Backend: Docker, Phase: ArtifactPreparing, Reserved: true, Resources: Resources{4, 16384}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	for _, restart := range []bool{true, false} {
+		if !restart {
+			c.Host.MinFreeDiskMiB++
+		}
+		if err := reopened.Update(func(s *Snapshot) error {
+			initializeManaged(s, c)
+			return acceptSnapshot(s, c, restart)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		s := reopened.View()
+		if s.Runners[legacy].Resources != (Resources{4, 18432}) || s.Artifacts[artifact].Resources != (Resources{4, 16384}) {
+			t.Fatal("restart/reload reinterpreted existing reservations")
+		}
+		if got := dockerUsage(s); got != (Resources{8, 34816}) {
+			t.Fatalf("legacy reservations were released: %+v", got)
+		}
+	}
+	if err := reopened.Update(func(s *Snapshot) error {
+		s.Pools[pool].Demand = 100
+		for _, id := range Schedule(*s) {
+			p := s.Pools[id]
+			newRunner := newID()
+			s.Runners[newRunner] = &Runner{ID: newRunner, PoolID: id, Backend: Docker, Phase: Preparing, Resources: p.Spec.Cost()}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := reopened.View()
+	if used, count, _ := usage(s); used.CPU != 32 || count != 14 || len(s.Runners) != 13 {
+		t.Fatalf("new reservations ignored retained old costs: %+v, count %d", used, count)
+	}
+	for id, r := range s.Runners {
+		if id != legacy && r.Resources != (Resources{2, 18432}) {
+			t.Fatal("new reservation included daemon CPU", r)
+		}
+	}
+	if err := reopened.Update(func(s *Snapshot) error {
+		s.Runners[legacy].Terminated = true
+		s.Artifacts[artifact].Reserved = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := Schedule(reopened.View()); len(got) != 3 {
+		t.Fatalf("confirmed termination did not release old reservations: %v", got)
+	}
+}
+
 func TestStateOwnershipAtomicityAndRecovery(t *testing.T) {
 	c, s := fixtureStore(t)
 	install := s.View().Installation
@@ -74,7 +161,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = db.Exec("PRAGMA user_version=4"); e != nil {
+	if _, e = db.Exec("PRAGMA user_version=5"); e != nil {
 		t.Fatal(e)
 	}
 	db.Close()
@@ -84,7 +171,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	defer db.Close()
 	var version int
 	db.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 4 {
+	if version != 5 {
 		t.Fatal("future database modified")
 	}
 }
@@ -409,11 +496,11 @@ func TestStateMigratesV1AtomicallyAndReadOnlyInspectionDoesNotMigrate(t *testing
 	}
 	defer migrated.Close()
 	after := migrated.View()
-	if after.SchemaVersion != 3 || after.Installation != snapshot.Installation || fingerprint(after.Runners[id]) != fingerprint(snapshot.Runners[id]) || fingerprint(after.Requested) != fingerprint(snapshot.Config) {
+	if after.SchemaVersion != 4 || after.Installation != snapshot.Installation || fingerprint(after.Runners[id]) != fingerprint(snapshot.Runners[id]) || fingerprint(after.Requested) != fingerprint(snapshot.Config) {
 		t.Fatal("migration lost original state")
 	}
 	var version int
-	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 4 {
 		t.Fatal("snapshot and database schema differ")
 	}
 }
@@ -445,11 +532,11 @@ func TestStateMigratesV2ToV3WithPrivateTartProcessIdentityState(t *testing.T) {
 	}
 	defer migrated.Close()
 	after := migrated.View()
-	if after.SchemaVersion != 3 || after.ImageTartPIDs[id] != 4242 || after.ImageTartStarts[id] != "" {
+	if after.SchemaVersion != 4 || after.ImageTartPIDs[id] != 4242 || after.ImageTartStarts[id] != "" {
 		t.Fatal("v2 migration did not preserve the legacy PID conservatively", after.SchemaVersion, after.ImageTartPIDs, after.ImageTartStarts)
 	}
 	var version int
-	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 4 {
 		t.Fatal("snapshot and database schema differ after v2 migration")
 	}
 }

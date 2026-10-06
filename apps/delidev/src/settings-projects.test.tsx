@@ -64,7 +64,7 @@ it("groups rows in server order with complete identities, schema guards and no e
   for (const row of [last, first, future]) expect(within(list).getByText(row.id)).toBeTruthy();
   for (const action of ["Edit", "Delete"]) expect((screen.getByRole("button", { name: `${action} Unnamed` }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.get).not.toHaveBeenCalled();
-  expect(value.list.mock.calls.filter(([kind]) => kind === EntityKind.PROJECT)).toEqual([[EntityKind.PROJECT, ""]]);
+  expect(value.list.mock.calls.filter(([kind]) => kind === EntityKind.PROJECT)).toEqual([[EntityKind.PROJECT, ""], [EntityKind.PROJECT, ""]]);
 });
 it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("separates loading/failure %s from empty success and preserves creation availability", async code => {
   const value = fixture(), pending = deferred<Page>(), correlationId = newRequestId(); value.list.mockReturnValue(pending.promise); openProjects(value);
@@ -115,7 +115,7 @@ it.each(["save", "delete"])("explicitly retries the exact project %s request wit
   // Submit directly to isolate retry identity from HTML required-field validation.
   if (action === "save") fireEvent.submit(screen.getByRole("button", { name: submit }).closest("form")!); else fireEvent.click(screen.getByRole("button", { name: submit }));
   const retry = await screen.findByRole("button", { name: action === "save" ? "Retry the same configuration" : "Retry the same deletion" });
-  expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).disabled).toBe(true); expect((screen.getByRole("button", { name: submit }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).disabled).toBe(false); expect((screen.getByRole("button", { name: submit }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry); await waitFor(() => expect(operation).toHaveBeenCalledTimes(2)); expect(operation.mock.calls[1][0]).toEqual(operation.mock.calls[0][0]); expect(operation.mock.calls[0][0]).toMatchObject({ mutation: { id: row.id, expectedRevision: 7n } });
 });
 it.each(["navigation", "Escape then navigation"])("discards a project draft and uncertain retry after %s without replay", async route => {
@@ -132,4 +132,18 @@ it("focuses targeted creation and confines the presentation to Projects", async 
   const value = fixture(); render(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} />)); await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
   expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(true); fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   for (const category of ["Repositories", "Instructions", "API Providers"]) { fireEvent.click(screen.getByRole("button", { name: category })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(false); expect(screen.getByRole("heading", { level: 1, name: category })).toBeTruthy(); }
+});
+it("consumes explicit New Project and Repositories entry while another category has an unsaved form", async () => {
+  const value = fixture(), consumed = vi.fn(), view = render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" })); fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Discard this draft" } });
+  view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} destinationConsumed={consumed} />));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(""); expect(consumed).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Keep current project draft" } });
+  view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} destinationConsumed={consumed} />));
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Keep current project draft"); expect(consumed).toHaveBeenCalledTimes(1);
+  view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.Repositories} destinationConsumed={consumed} />));
+  await screen.findByRole("heading", { level: 1, name: "Repositories" }); expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull(); expect(consumed).toHaveBeenCalledTimes(2);
+  expect(value.save).not.toHaveBeenCalled();
 });

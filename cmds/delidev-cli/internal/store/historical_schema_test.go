@@ -73,7 +73,7 @@ func historicalSchema(db *sql.DB, version string) (sql.Result, error) {
 		// These frozen schemas predate native accounting. Retained user records
 		// must not carry a future layout marker into a reconstructed old fixture.
 		if table == "metadata" {
-			if _, err = tx.ExecContext(ctx, "DELETE FROM temp.retained_metadata WHERE key='native_accounting_layout'"); err != nil {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM temp.retained_metadata WHERE key IN ('native_accounting_layout','subscription_identity_layout','subscription_notification_layout','account_oauth_layout','provider_presets_layout')"); err != nil {
 				return nil, err
 			}
 		}
@@ -129,6 +129,11 @@ func historicalSchema(db *sql.DB, version string) (sql.Result, error) {
 			continue
 		}
 		projection := strings.Join(common, ",")
+		if table == "metadata" && (version == "025" || version == "026" || version == "027") {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM main.metadata WHERE key<>'native_accounting_layout'"); err != nil {
+				return nil, err
+			}
+		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO main.`+quote(table)+` (`+projection+`) SELECT `+projection+` FROM temp.`+quote("retained_"+table)); err != nil {
 			return nil, fmt.Errorf("restore fixture table %s: %w", table, err)
 		}

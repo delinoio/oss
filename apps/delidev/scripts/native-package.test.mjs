@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { targets, selectTarget, binaryArchitecture, cefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
+import { targets, selectTarget, binaryArchitecture, acquireNativeBuildLock, verifyPackageRevision, verifyAppImagePayload, cefResourcePath, cefCredits, prepareCefCredits, verifyNativePayload, verifyNotices, findOneFile } from "./native-package.mjs";
 import { nativeEnvironment } from "./bundle-native-dry-run.mjs";
 
 function fixture(t) {
@@ -63,8 +63,8 @@ test("bounded native header inspection rejects mixed, truncated and out-of-bound
 
 test("CEF credits retain the exact pinned distribution and original packaged bytes", t => {
   const root = fixture(t), selected = targets[1];
-  const cache = "Library/Caches/tauri-cef/150.0.10/cef_macos_aarch64";
-  const manifest = { type: "minimal", name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosarm64_minimal.tar.bz2" };
+  const cache = "Library/Caches/tauri-cef/151.3.24/cef_macos_aarch64";
+  const manifest = { type: "minimal", name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_macosarm64_minimal.tar.bz2" };
   write(root, `${cache}/archive.json`, JSON.stringify(manifest));
   const credits = write(root, `${cache}/CREDITS.html`, "original credits");
   assert.equal(cefCredits(selected, {}, root), credits);
@@ -72,7 +72,7 @@ test("CEF credits retain the exact pinned distribution and original packaged byt
   verifyNotices(join(root, "payload"), { [credits]: "notices/Chromium-CREDITS.html" });
   write(root, "payload/notices/Chromium-CREDITS.html", "changed credits");
   assert.throws(() => verifyNotices(join(root, "payload"), { [credits]: "notices/Chromium-CREDITS.html" }), /notice/);
-  write(root, `${cache}/archive.json`, JSON.stringify({ ...manifest, name: manifest.name.replace("150.0.10", "151.0.0") }));
+  write(root, `${cache}/archive.json`, JSON.stringify({ ...manifest, name: manifest.name.replace("151.3.24", "151.0.0") }));
   assert.throws(() => cefCredits(selected, {}, root), /pinned/);
 });
 
@@ -100,4 +100,86 @@ test("Debian verification follows only the exact packaged CEF launcher", { skip:
   rmSync(join(root, "usr/bin/delidev-desktop"));
   symlinkSync("delidev", join(root, "usr/bin/delidev-desktop"));
   assert.throws(() => verifyNativePayload(root, selected), /launcher/);
+});
+
+
+test("a clean CEF cache is prepared by the pinned CLI before notice validation", t => {
+  for (const selected of targets) {
+    const home = fixture(t);
+    const environment = { LOCALAPPDATA: join(home, "local") };
+    assert.throws(() => cefCredits(selected, environment, home), /ENOENT/);
+    const cache = selected.platform === "darwin" ? join(home, "Library/Caches")
+      : selected.platform === "win32" ? environment.LOCALAPPDATA : join(home, ".cache");
+    const distribution = selected.platform === "darwin" ? `macos${selected.arch === "arm64" ? "arm64" : "x64"}`
+      : selected.platform === "win32" ? `windows${selected.arch === "arm64" ? "arm64" : "64"}` : `linux${selected.arch === "arm64" ? "arm64" : "64"}`;
+    const directory = join(cache, "tauri-cef", "151.3.24", selected.cef);
+    let prepared = 0;
+    const credits = prepareCefCredits(selected, environment, (command, args) => {
+      assert.equal(command, process.execPath);
+      assert.ok(args[0].replaceAll("\\", "/").endsWith("/scripts/tauri-cli.mjs"));
+      assert.equal(args[1], "--");
+      assert.ok(!args.includes("cli"));
+      assert.ok(args.includes("--no-bundle"));
+      assert.ok(args.includes("desktop-host,custom-protocol"));
+      if (selected.platform !== "darwin") assert.equal(args[args.indexOf("--target") + 1], selected.target);
+      write(directory, "archive.json", JSON.stringify({ type: "minimal", name: `cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_${distribution}_minimal.tar.bz2` }));
+      write(directory, "CREDITS.html", "original notices");
+      prepared++;
+    }, home);
+    assert.equal(prepared, 1);
+    assert.equal(credits, join(directory, "CREDITS.html"));
+    assert.throws(() => prepareCefCredits(selected, environment, () => { throw new Error("preparation failed"); }, home), /preparation failed/);
+    write(directory, "archive.json", JSON.stringify({ type: "minimal", name: "unverified.tar.bz2" }));
+    assert.throws(() => prepareCefCredits(selected, environment, () => {}, home), /pinned distribution/);
+  }
+});
+
+
+test("native and updater preparation share one exclusive checkout lock", t => {
+  const root = fixture(t);
+  const release = acquireNativeBuildLock(root);
+  assert.throws(() => acquireNativeBuildLock(root), /EEXIST/);
+  release(); release();
+  const next = acquireNativeBuildLock(root);
+  assert.throws(() => acquireNativeBuildLock(root), /EEXIST/);
+  next();
+});
+
+test("revision-bound publication rejects changes after updater assembly", () => {
+  const revision = "a".repeat(40);
+  verifyPackageRevision(revision, revision + "\n", "");
+  assert.throws(() => verifyPackageRevision(revision, "b".repeat(40), ""), /Source changed/);
+  assert.throws(() => verifyPackageRevision(revision, revision, " M source.rs\n"), /Source changed/);
+});
+
+test("AppImage inspection distinguishes native product bytes from sharun launchers", t => {
+  const root = fixture(t), selected = targets[4];
+  write(root, "sharun", binary("linux", "x64"));
+  for (const name of ["delidev-desktop", "delidev"]) {
+    write(root, `shared/bin/${name}`, binary("linux", "x64"));
+    write(root, `bin/${name}`, binary("linux", "x64"));
+  }
+  write(root, "bin/libcef.so", binary("linux", "x64"));
+  for (const name of ["icudtl.dat", "resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak", "v8_context_snapshot.bin", "locales/en-US.pak"]) write(root, `bin/${name}`, "resource");
+  verifyAppImagePayload(root, selected);
+  write(root, "shared/bin/delidev", binary("linux", "arm64"));
+  assert.throws(() => verifyAppImagePayload(root, selected), /foreign/);
+  write(root, "shared/bin/delidev", binary("linux", "x64"));
+  write(root, "bin/libcef.so", binary("linux", "arm64"));
+  assert.throws(() => verifyAppImagePayload(root, selected), /foreign CEF/);
+});
+
+
+test("original CEF notices use a checkout-relative source key for Windows drive safety", t => {
+  const root = fixture(t), app = join(root, "apps/delidev"), selected = targets[2];
+  const original = write(root, "external-cache/CREDITS.html", "unchanged Chromium notices");
+  const source = cefResourcePath(app, root, selected, original);
+  assert.equal(source, join("../../..", "target/delidev-package-notices", selected.target, "Chromium-CREDITS.html"));
+  const staged = join(app, "src-tauri", source);
+  const resources = { [original]: "notices/Chromium-CREDITS.html" };
+  write(root, "payload/notices/Chromium-CREDITS.html", "unchanged Chromium notices");
+  verifyNotices(join(root, "payload"), resources);
+  // The staging key must point to a byte-identical original, independent of
+  // the caller's platform-specific absolute cache prefix.
+  assert.deepEqual(readFileSync(staged), readFileSync(original));
 });

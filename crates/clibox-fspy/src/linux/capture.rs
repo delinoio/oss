@@ -875,7 +875,8 @@ mod tests {
         input.write_all(b"fixture").unwrap();
         let mut command = Command::new("/bin/cat");
         command.arg(input.path()).stdout(Stdio::null());
-        // Capture sessions share a lock, so unrelated tests may run before this read.
+        // Capture sessions share a lock, so unrelated tests may run before this
+        // read.
         let mut read_started = None;
         let result = capture(
             &mut command,

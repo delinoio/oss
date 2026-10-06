@@ -1,5 +1,3 @@
-#![feature(c_variadic)]
-
 // Compile as an empty crate on non-unix targets and on musl (where seccomp
 // alone handles access tracking).
 
@@ -28,4 +26,4 @@ mod pnport;
 #[cfg(all(target_os = "macos", feature = "pnport"))]
 #[used]
 #[unsafe(no_mangle)]
-pub static PNPORT_PRELOAD_ABI: [u8; 35] = *b"PNPORT_PRELOAD_0.1.0_FORMAT_1_READY";
+pub static PNPORT_PRELOAD_ABI: [u8; 35] = *b"PNPORT_PRELOAD_0.1.0_FORMAT_3_READY";

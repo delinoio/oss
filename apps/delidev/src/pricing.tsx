@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { InputPricingMode, UsageQuery, newRequestId, type PricingVersion, type Resource, type TokenPricing } from "@delinoio/delidev-api-client";
+import { subscriptionServiceLabel, InputPricingMode, UsageQuery, newRequestId, type PricingVersion, type Resource, type TokenPricing } from "@delinoio/delidev-api-client";
 import { resourceName } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
@@ -11,7 +11,7 @@ export function PricingBasis({ value }: { value: PricingVersion }) {
   return <div className="pricing-basis"><dl><dt>Source</dt><dd>{p.source}</dd><dt>As of</dt><dd>{p.asOf}</dd><dt>Currency</dt><dd>{p.currency}</dd><dt>Input pricing</dt><dd>{p.inputMode === InputPricingMode.UNIFORM ? "Uniform input (cache included)" : p.inputMode === InputPricingMode.CACHED_DISCOUNT ? "Separate uncached input and cached reads" : "Unknown mode"}</dd><dt>Input / million</dt><dd>{p.inputPerMillion ?? "Unavailable"}</dd>{p.inputMode === InputPricingMode.CACHED_DISCOUNT ? <><dt>Cached input / million</dt><dd>{p.cachedInputPerMillion ?? "Unavailable"}</dd></> : null}<dt>Output / million</dt><dd>{p.outputPerMillion ?? "Unavailable"}</dd></dl>
     {p.exclusions.length ? <><h4>Declared exclusions</h4><ul>{p.exclusions.map((value, index) => <li key={index}>{value}</li>)}</ul></> : null}
     <p>Only observed token categories are covered. Provider fees, taxes, currency conversion and unobserved usage are excluded. This is not actual spend or a billing ceiling.</p>
-    <small>Version {value.revision.toString()} · {value.id}</small><small>Original model {value.modelId} · provider {value.providerId}</small>
+    <small>Version {value.revision.toString()} · {value.id}</small><small>Original model {value.modelId} · {value.subscriptionService ? `subscription service ${subscriptionServiceLabel(value.subscriptionService)}` : `provider ${value.providerId}`}</small>
   </div>;
 }
 interface Draft { currency: string; source: string; asOf: string; inputMode: InputPricingMode; input: string; cached: string; output: string; exclusions: string }
@@ -70,7 +70,7 @@ export function ModelPricing({ model, active, close }: { model: Resource; active
     {accepted ? <p role="status">Accepted pricing version {accepted.revision.toString()}. Current selection is shown after refresh.</p> : null}
     {missingResult ? <p role="alert">The server acknowledged the price without a readable version. Inspect current pricing before starting another save.</p> : null}
     {editing ? <PricingEditor model={model} initial={editing.initial} modelRevision={editing.modelRevision} current={data} readError={current.error} saved={(value) => { setEditing(undefined); setAccepted(value); setMissingResult(!value); void current.refetch(); }} cancel={() => setEditing(undefined)} /> : <><Problem error={current.error} />{data && current.error ? <p>The last retrieved pricing may be stale.</p> : null}{data?.pricing ? <PricingBasis value={data.pricing} /> : data ? <p>No pricing basis has been configured. Earlier responses stay unpriced.</p> : <p role="status">Loading pricing…</p>}
-    {data && data.modelRevision !== model.revision ? <p role="alert">The model configuration changed. Return to Models and refresh before editing its pricing.</p> : null}
-    <div className="actions"><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>Edit token pricing</button><button onClick={close}>Back to Models</button></div></>}
+    {data && data.modelRevision !== model.revision ? <p role="alert">The model configuration changed. Return to model details and refresh before editing its pricing.</p> : null}
+    <div className="actions"><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>Edit token pricing</button><button onClick={close}>Back to model details</button></div></>}
   </section>;
 }

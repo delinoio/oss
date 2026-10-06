@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "0.2.4"
+const Version = "0.2.8"
 
 // Revision is populated by release builds; development builds remain explicit.
 var Revision = "development"
@@ -17,6 +17,7 @@ type Backend string
 const (
 	Docker Backend = "docker"
 	Tart   Backend = "tart"
+	Host   Backend = "host"
 )
 
 type Mode string
@@ -199,6 +200,8 @@ type Image struct {
 	Problem          *Problem   `json:"problem,omitempty"`
 }
 type Snapshot struct {
+	HostDirectories      map[string]*HostDirectory   `json:"host_directories"`
+	HostExecutions       map[string]*HostExecution   `json:"host_executions"`
 	ReleaseRetryAt       time.Time                   `json:"release_retry_at,omitempty"`
 	ReleaseProblem       *Problem                    `json:"release_problem,omitempty"`
 	ReleaseAttempts      int                         `json:"release_attempts,omitempty"`

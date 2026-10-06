@@ -19,10 +19,11 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 25
+const SchemaVersion = 30
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -30,7 +31,7 @@ const MaxPage = 200
 // the immutable source and fresh restore assignments. Keep a small envelope
 // headroom here until those assignments can be stored by reference; this
 // exception applies only to the typed compaction job and remains finite.
-const maxCompactionJobEntityBytes = 4 << 20
+const maxCompactionJobEntityBytes = domain.MaxCompactionJobBytes
 
 type Store struct {
 	db                  *sql.DB
@@ -84,13 +85,16 @@ type Result struct {
 }
 
 type Tx struct {
-	tx           *sql.Tx
-	ctx          context.Context
-	requestID    domain.ID
-	now          time.Time
-	touched      map[domain.ID]bool
-	queueTouched map[domain.ID]bool
-	readOnly     bool
+	// Only migration 16 reads pre-service immutable pricing while rebuilding its
+	// original budget table. Normal transactions require the current layout.
+	historicalPricingV1 bool
+	tx                  *sql.Tx
+	ctx                 context.Context
+	requestID           domain.ID
+	now                 time.Time
+	touched             map[domain.ID]bool
+	queueTouched        map[domain.ID]bool
+	readOnly            bool
 }
 
 func Open(ctx context.Context, root string) (_ *Store, returned error) {
@@ -260,8 +264,33 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	// those files for explicit recovery instead of guessing a migration.
 	if version >= 25 {
 		var layout string
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != "grok-closed-input-v1" {
+		expectedLayout := "grok-closed-input-v1"
+		if version >= 26 {
+			expectedLayout = "priced-native-input-v2"
+		}
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != expectedLayout {
 			return domain.Fail(domain.RecoveryRequired, "The native accounting layout is unrecognized.", "Preserve the original database and use explicit recovery; never adopt an unmerged schema by version number.")
+		}
+	}
+	if version >= 28 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='subscription_notification_layout'").Scan(&layout); err != nil || layout != "account-recovery-v1" {
+			return domain.Fail(domain.RecoveryRequired, "The subscription notification layout is unrecognized.", "Preserve the original database and use a matching composed server version.")
+		}
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='subscription_identity_layout'").Scan(&layout); err != nil || layout != "service-accounts-v2" {
+			return domain.Fail(domain.RecoveryRequired, "The subscription identity layout is unrecognized.", "Preserve the original database and use a matching server version.")
+		}
+	}
+	if version >= 29 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='account_oauth_layout'").Scan(&layout); err != nil || layout != "pkce-once-v1" {
+			return corrupt()
+		}
+	}
+	if version >= 30 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='provider_presets_layout'").Scan(&layout); err != nil || layout != "hosted-additions-26-v1" {
+			return corrupt()
 		}
 	}
 	var check string
@@ -595,6 +624,8 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	maxBodyBytes := 1 << 20
 	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.CompactSessionJob {
 		maxBodyBytes = maxCompactionJobEntityBytes
+	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind {
+		maxBodyBytes = workspace.StorageJobDocumentLimit(job)
 	}
 	if err != nil || len(body) > maxBodyBytes {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid entity document.", "Use a validated bounded entity document.")
@@ -674,6 +705,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		if err := t.RequireBrowserProfileRemoval(id); err != nil {
 			return err
 		}
+		if err := t.deleteAccountRecoveryInbox(id); err != nil {
+			return err
+		}
 	}
 	if kind == domain.SessionKind {
 		if err := t.requireTerminalCleanup(id); err != nil {
@@ -700,8 +734,10 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		if err != nil {
 			return err
 		}
-		if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
-			return storageError(err)
+		if model.ProviderID != "" {
+			if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
+				return storageError(err)
+			}
 		}
 	}
 	if _, err = t.tx.ExecContext(t.ctx, "INSERT INTO tombstones(id,kind,created_at) VALUES(?,?,?)", id, kind, t.now.UnixMilli()); err != nil {
@@ -709,6 +745,11 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	}
 	if err := t.preserveDeletedProjectPolicy(r); err != nil {
 		return err
+	}
+	if kind == domain.JobKind {
+		if err := t.deleteWorkerNativeRoute(id); err != nil {
+			return err
+		}
 	}
 	if _, err = t.tx.ExecContext(t.ctx, "DELETE FROM entities WHERE id=?", id); err != nil {
 		return storageError(err)
@@ -724,13 +765,14 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 }
 
 type Filter struct {
-	Kind        domain.Kind        `json:"kind"`
-	SessionID   domain.ID          `json:"session_id,omitempty"`
-	ProjectID   domain.ID          `json:"project_id,omitempty"`
-	ProviderID  domain.ID          `json:"provider_id,omitempty"`
-	AccountType domain.AccountType `json:"account_type,omitempty"`
-	After       domain.ID          `json:"after,omitempty"`
-	Limit       int                `json:"limit"`
+	SubscriptionService domain.SubscriptionService `json:"subscription_service,omitempty"`
+	Kind                domain.Kind                `json:"kind"`
+	SessionID           domain.ID                  `json:"session_id,omitempty"`
+	ProjectID           domain.ID                  `json:"project_id,omitempty"`
+	ProviderID          domain.ID                  `json:"provider_id,omitempty"`
+	AccountType         domain.AccountType         `json:"account_type,omitempty"`
+	After               domain.ID                  `json:"after,omitempty"`
+	Limit               int                        `json:"limit"`
 }
 
 func (f Filter) validate() error {
@@ -747,13 +789,16 @@ func (f Filter) validate() error {
 			}
 		}
 	}
-	if f.ProviderID != "" || f.AccountType != "" {
+	if f.ProviderID != "" || f.AccountType != "" || f.SubscriptionService != "" {
 		if f.Kind != domain.AccountKind {
 			return domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind.")
 		}
 	}
 	if f.AccountType != "" && f.AccountType != domain.APIAccount && f.AccountType != domain.SubscriptionAccount {
 		return domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription.")
+	}
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || f.AccountType == domain.APIAccount) {
+		return domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
 	}
 	return nil
 }
@@ -774,6 +819,10 @@ func listRows(ctx context.Context, q queryer, f Filter, limit int) ([]Record, er
 	if f.AccountType != "" {
 		query += " AND json_extract(CAST(body AS TEXT),'$.type')=?"
 		args = append(args, f.AccountType)
+	}
+	if f.SubscriptionService != "" {
+		query += " AND json_extract(body,'$.type')='subscription' AND json_extract(body,'$.subscription_service')=?"
+		args = append(args, f.SubscriptionService)
 	}
 	if f.SessionID != "" {
 		query += " AND session_id=?"
@@ -930,8 +979,15 @@ func Decode[T any](r Record) (T, error) {
 		var envelope struct {
 			Type domain.JobType `json:"type"`
 		}
-		if json.Unmarshal(r.Data, &envelope) == nil && envelope.Type == domain.CompactSessionJob {
-			maxBytes = maxCompactionJobEntityBytes
+		if len(r.Data) <= workspace.MaxStorageRecoveryJobBytes && json.Unmarshal(r.Data, &envelope) == nil {
+			if envelope.Type == domain.CompactSessionJob {
+				maxBytes = maxCompactionJobEntityBytes
+			} else if envelope.Type == domain.WorkspaceStorageJob {
+				var job domain.Job
+				if workspace.DecodeStorageJob(r.Data, &job) == nil {
+					maxBytes = workspace.StorageJobDocumentLimit(job)
+				}
+			}
 		}
 	}
 	err := domain.DecodeWithLimit(r.Data, &result, maxBytes)

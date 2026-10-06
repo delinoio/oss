@@ -74,7 +74,7 @@ func frameData(frame []byte) (string, []byte, error) {
 	return event, data, nil
 }
 
-func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, operation Operation, lease *Lease, guard secretGuard, correlation string) (started bool, result error) {
+func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, operation Operation, lease *Lease, guard secretGuard, correlation string, diagnostic *diagnosticObservations) (started bool, result error) {
 	reader := bufio.NewReaderSize(io.LimitReader(body, maxStream+1), 32<<10)
 	controller := http.NewResponseController(w)
 	total := 0
@@ -82,6 +82,11 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 	titleReasoningBytes := 0
 	fragments := newStreamGuard(guard)
 	defer fragments.clear()
+	var foreground *foregroundToolGuard
+	if operation == ChatCompletion && lease.Scope.Harness == domain.OpenCode {
+		foreground = &foregroundToolGuard{}
+		defer foreground.clear()
+	}
 	write := func(frame []byte) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -116,7 +121,17 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 			if guard.contains(string(frame)) {
 				return started, errSecret
 			}
-			if err := fragments.deliver(frame, false, write); err != nil {
+			deliver := func(frame []byte) error {
+				// The secret guard can retain this frame beyond the foreground
+				// buffer's lifetime. Transfer an owned copy before clearing it.
+				return fragments.deliver(bytes.Clone(frame), false, write)
+			}
+			if foreground != nil {
+				err = foreground.deliver(frame, nil, deliver)
+			} else {
+				err = deliver(frame)
+			}
+			if err != nil {
 				return started, err
 			}
 			continue
@@ -124,6 +139,11 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 		if bytes.Equal(bytes.TrimSpace(data), []byte("[DONE]")) {
 			if operation != ChatCompletion || guard.contains(string(frame)) {
 				return started, errInvalidDocument
+			}
+			if foreground != nil {
+				if err := foreground.finish(func(pending []byte) error { return fragments.deliver(bytes.Clone(pending), false, write) }); err != nil {
+					return started, err
+				}
 			}
 			err := fragments.deliver(frame, true, write)
 			return started, err
@@ -210,7 +230,28 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 				return started, err
 			}
 		}
-		if err := fragments.deliver(frame, terminal, write); err != nil {
+		if terminal && kind == "response.completed" && observedResponse != nil && terminalFailure == nil {
+			if err := observeResponseUsage(ctx, lease, domain.ID(correlation), observedResponse); err != nil {
+				return started, err
+			}
+		}
+		if observedResponse != nil {
+			diagnosticResponse(observedResponse, diagnostic, guard)
+		} else if operation == ChatCompletion {
+			diagnosticResponse(object, diagnostic, guard)
+		} else if operation == MessageCreate && kind == "message_start" {
+			var message map[string]json.RawMessage
+			if json.Unmarshal(object["message"], &message) == nil {
+				diagnosticResponse(message, diagnostic, guard)
+			}
+		}
+		deliver := func(frame []byte) error { return fragments.deliver(bytes.Clone(frame), terminal, write) }
+		if foreground != nil {
+			err = foreground.deliver(frame, object, deliver)
+		} else {
+			err = deliver(frame)
+		}
+		if err != nil {
 			return started, err
 		}
 		if terminal {

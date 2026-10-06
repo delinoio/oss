@@ -1,5 +1,10 @@
 # DeliDev storage operations
 
+## Request diagnostic retention
+
+Schema 27 adds bounded metadata-only request diagnostic rows and session/execution indexes under the existing synchronized pre-migration backup boundary. It preserves all historical state, title claims, backup obligations and usage; no historical requests are synthesized. Rows retain immutable event-time attribution, exact revision checks and original publication receipts. Proxy revisions publish session invalidation events atomically at the unchanged session-state revision, while native observations share their original session publication. The 4 KiB row and 10,000-per-session admission limits do not evict history; existing observations may settle. Session deletion cascades rows, and reference-only old receipts cannot recreate them. Single-record and page reads reject row/body identity, session, execution or revision mismatches without exposing partial records. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for publication/cancellation/read ownership.
+
+
 ## Scope
 
 Go owns managed database backups, session deletion, Worker snapshots and recovery.
@@ -8,15 +13,13 @@ actual account/private-GitHub access and platform distribution validation remain
 deferred. This document covers managed backup observation, creation/deletion, permanent
 session deletion, database restore and Worker-local workspace snapshots and restoration.
 
-## Planned subscription retirement (issue #1235)
+## Subscription retirement (issue #1235)
 
-Migration 28 is reserved for [issue #1235](https://github.com/delinoio/oss/issues/1235)
+Migration 28 implements [issue #1235](https://github.com/delinoio/oss/issues/1235)
 after the real Claude accounting and request-diagnostics migrations at 26 and
-27. Establish this reservation and independent server capability 17 on main
-before dependent implementation. The executable sequence remains at 25; no
-empty predecessor, schema-version bump or retirement runs in this prerequisite.
+27. Reservations reached main before implementation. Complete accounting and diagnostics precede real migration 28 and independent server capability 17; no empty predecessor is permitted.
 
-The required reset must back up first and atomically retire legacy subscription
+The reset backs up first and atomically retires legacy subscription
 Accounts, native-subscription Providers and their provider-bound Models into
 read-only historical metadata with original IDs, revisions, timestamps and
 document bytes. Tombstone their IDs, exclude them from live configuration/export
@@ -36,31 +39,23 @@ version-1 imports remain supported and legacy subscription graphs are rejected
 atomically with recreate guidance. Implementation must compose the independent
 managed-account ownership and cleanup boundary from issue #1095.
 
-## Planned account OAuth attempts (issue #1146)
+## Account OAuth attempts (issue #1146)
 
-Migration 29 is reserved for the private `account_oauth_attempts` table under
-[issue #1146](https://github.com/delinoio/oss/issues/1146), following real
-migrations 26–28. Establish the reservation on main before dependent
-implementation; the executable sequence still ends at 25. Do not create empty
-predecessors, reuse an allocated version or activate this table early.
+Real migration 29 follows accounting 26, request diagnostics 27 and subscription
+identity 28, whose reservations reached main before these dependent feature implementations. It adds the private
+`account_oauth_attempts` table and `account_oauth_layout=pkce-once-v1` marker;
+foreign layouts fail the backup-first transactional upgrade. Attempt body/index
+identity and exact revisions agree, with an 8 KiB metadata ceiling and no account
+foreign key or cascading cleanup deletion. Codes, verifiers, keys and browser
+URLs never enter the table, receipts, events, resources or portable bundles.
 
-The [planned OAuth contract](cmds-delidev-account-oauth-contract.md) owns the
-complete lifecycle. Attempt metadata binds actor/server/provider and revision,
-original start/completion IDs, reserved account/create/connect IDs, process
-generation, state/revision/times, keyed comparison commitments, exact protected
-references and cleanup status. Do not require an existing account foreign key,
-cascade deletion of recovery evidence, or include attempts in public resources,
-snapshots/events or portable export. SQLite, receipts and backup images contain
-no raw verifier, code, key or callback/authorization URL.
+Current unresolved attempts/cleanup block managed restore. A candidate copies
+only the current private attempt table; old images and receipts cannot acquire
+new exchange authority. A fresh server lifetime interrupts awaiting attempts
+and fences claimed exchanges for explicit original local recovery. The
+[OAuth contract](cmds-delidev-account-oauth-contract.md) owns the original dispatch,
+protected reference and cancellation/publication gates.
 
-Fresh/upgrade paths must share the verified backup-first transaction and preserve
-existing account/provider/settings/claim state and explicit default deletions.
-A durable claim commits before HTTP outside locks; no restart, copied image,
-timeout, cancellation or retry can reacquire exchange authority. Original local
-recovery may finish only an exactly sealed credential or accepted result without
-HTTP. Keep account-less staged references, partial disconnected accounts and
-unresolved cleanup; unknown provider response never proves failure or revocation.
-This reservation implements no table, migration, exchange or restore feature.
 
 ## Managed backup observation
 
@@ -210,9 +205,9 @@ original job independently of history pagination. Settings requires
 an explicit inspection and permanent-deletion checkbox bound to that exact
 observation. Hiding the view or refreshing/replacing its inspection clears fresh
 confirmation; already submitted uncertain requests retain their original bytes.
-Settings retains uncertain requests
-across category navigation within one opening, and presents pending/completed jobs with separate cleanup
-failures. Accepted deletion cannot be canceled. Logical validated image bytes
+Settings retains uncertain requests within the active Backups category and
+presents pending/completed jobs with separate cleanup failures. Category
+departure discards local retries. Accepted deletion cannot be canceled. Logical validated image bytes
 removed are not a claim of reclaimed filesystem space; hard links, filesystem
 snapshots and allocation remain outside that measurement.
 
@@ -243,7 +238,9 @@ reapplies intent before listeners, reconstructs reference-only receipts and
 repurges an older database when removal had committed. Obligations are never
 evicted: 4,096 sessions and 4,096 original jobs per session are explicit bounds.
 Each plan validates UUID uniqueness across the full 4,096-job capacity independently
-of the general 1,000-link bound; one immutable plan is capped at 1 MiB. Unknown
+of the general 1,000-link bound; one immutable plan is capped at 4 MiB. Worker pages retain at most 20 envelopes
+and 4 MiB total ownership JSON; the native Connect response allowance includes
+its bounded JSON/base64 overhead. Ordinary command JSON retains its 1 MiB bound. Unknown
 ownership fails closed.
 
 A separate authenticated Worker polling/report lane survives an interrupted
@@ -322,8 +319,10 @@ claims/intents, retirement receipts and restoration bindings before acknowledgin
 A stored workspace supplies its validated original manifest before deleting its only
 copy; restored independent Git is removed solely within the managed root. Original
 Local/source checkouts remain protected. Completed-proof retries verify these exact
-paths remain absent. Future session-owned native services and dependent Sidechats
-must join this ownership graph and acknowledgement boundary before exposing them.
+paths remain absent. Dependent Sidechats join this ownership graph through their
+original child plans and unpublished Fork metadata claims before parent removal.
+Future session-owned native services must join the same acknowledgement boundary
+before exposure.
 The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
@@ -473,7 +472,7 @@ real-account, Worker workspace, native harness or platform-distribution acceptan
 
 ## Remaining implementation
 
-Worker-local workspace snapshots use the separate storage service below; database backup observation does not grant workspace or database restoration. Managed database restore uses its explicit lifecycle above. Permanent dependent Sidechat deletion, independent attachment/cache cleanup and a desktop storage-management surface remain separate issue #964 work. Parent workspace storage fails closed on unresolved dependent jobs or extra resources; it cannot report their permanent deletion. The complete requirements remain authoritative.
+Worker-local workspace snapshots and the desktop storage-management surface use the separate storage service below; database backup observation does not grant workspace or database restoration. Managed database restore uses its explicit lifecycle above. Permanent dependent Sidechat deletion follows its original native read-only ownership contract and composes through this deletion boundary. Independent attachment/cache cleanup retains its existing source-bound owners. Parent workspace storage fails closed on unresolved dependent jobs or extra resources; it cannot report their permanent deletion. The complete requirements remain authoritative.
 
 ## Validation
 
@@ -499,9 +498,9 @@ creation and migration-image checks; it never ingests external sidecar state or
 opens a backup as a writable live database. Foreign/corrupt images remain intact
 and end a durable creation with recovery-required rather than false success.
 
-Settings retains up to 20 accepted jobs per operation type in opening memory
+Settings retains up to 20 accepted jobs per operation type in active-category memory
 and observes each directly through `GetBackupCreation` or `GetBackupDeletion`.
-History page changes do not replace these identities. Closing Settings releases
+History page changes do not replace these identities. Category departure or leaving Settings releases
 local tracking and uncertain retries without canceling accepted jobs or replaying
 acceptance; a new opening observes durable history through fresh reads. Pending/failed reads poll
 only while the view is active; terminal observations stop polling and each newly
@@ -808,3 +807,126 @@ stable-PR chain. Explicit session controls retain their separate server-owned
 automation suppression bit, without changing historical outcomes or unpausing a
 failed queue. Missing or replaced source ownership cannot authorize a native claim.
 Follow the [automatic coordinator contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
+
+### Retirement storage boundary
+
+`retired_configurations` preserves the complete original record columns and document bytes independently of live `entities`. Ordinary Get, mutation, routing, catalog and export never consult it. Only explicit owner/client historical reads and usage labels may use it; their retired Resource projection has schema 2. Permanent tombstones and redacted historical receipts prevent resurrection. The schema marker is `service-accounts-v2`. The integrated migration also rebuilds the notification-delivery table, preserving every prior claim while extending its closed kind constraint to account-scoped subscription recovery. Its independent `subscription_notification_layout=account-recovery-v1` marker is required together with the identity marker; a partially composed or unrelated version-28 layout is recovery-required. This composition precedes migration 28's first main activation and does not alter historical migration 17.
+
+Before creating retirement tables or changing configuration, live upgrades reject original connections, protected generations/identity commitments, pending operations, leases, recovery fences, unremoved device browser profiles and affected claimed/uncertain native work. Failure rolls back the entire composed transaction and preserves the synchronized pre-migration backup. A private restore candidate has explicitly historical ownership without current local authority; it migrates before replacement preparation/publication, preserves original retired documents and merges current retirement/tombstone evidence. This exemption never applies to ordinary startup.
+
+Affected Agents retain names, options, templates and original model IDs with server-owned `reconfiguration_required`; ordered surviving account weights remain unchanged. Project account restrictions preserve their configured flag even when all IDs retire. Only affected Schedules disable their timer and retain accepted occurrence history with explicit reset guidance. Session/snapshot/transcript/usage bodies and their revisions remain unchanged. Pricing retains original API attribution and independently stores the service identity of newly configured native models.
+
+
+## Desktop workspace storage and permanent deletion
+
+The connection-owned `SessionStorageProvider` in `apps/delidev/src/session-storage.tsx`
+presents current workspace state, usage preview, snapshot creation, original
+operation inspection/cancellation/recovery and paginated snapshot inspection,
+restoration and permanent deletion. Session details open the workflow; closing the
+modal or navigating retains original request/job/session identity. original Local checkouts do not expose
+managed storage actions. Independent storage/deletion capabilities produce explicit
+older-server update guidance before product actions.
+
+Storage acceptance is displayed separately from Worker success and independently
+verified native cleanup. Exact decimal byte counts retain integer precision;
+logical source, retained snapshot and removed bytes remain separate from nullable
+filesystem free measurements. Cleanup confirmation pins the exact successful
+preview job and current session revision. Snapshot removal has separate irreversible confirmation. Restoration
+and recovery disclose paused outcomes and preserve original uncertainty.
+
+Permanent deletion requires its own explicit confirmation of managed native,
+workspace, backup removal. In-flight native work is stopped
+through its original owner; original Local checkouts and independent Forks remain
+outside removal authority. `GetSessionDeletion` observes the accepted original
+session independently of resource removal, exposing Worker, database and backup
+progress. Closing/navigating cannot resubmit either deletion or storage. Unknown
+acknowledgments retain original wire requests in the connection mutation registry;
+explicit retries use identical UUID/revision/selection bytes. A replacement
+connection follows the existing connection-memory lifetime and never adopts
+another server's operation.
+
+Removal append journals have a separate 64 MiB bound because each transition repeats original and private paths; immutable manifests and claims retain the 8 MiB bound. Capacity-triggered atomic journal compaction drops superseded restoration transitions while preserving exact active prepared/renamed/directory-mode replay and per-entry removed receipts against the unchanged original header. Failure/cancellation cannot replace a journal with partial proof. Snapshot publication by either create or cleanup makes later failure recovery-required; original recovery must retain that published snapshot before reporting settlement. CLI snapshot deletion requires explicit `--confirm`.
+
+Source preview/capture/cleanup observation enforces one shared 8,192-entry/8-GiB allowance for the workspace and all original Git administration/object inventories before hashing payloads; per-repository limits cannot multiply the retained observation. Oversized aggregate observations publish no preview digest. Permanent deletion and completed-proof replay include each original removal append journal in the same immutable job-derived path inventory. Reappearing journals block acknowledgement without granting replay new deletion authority.
+
+New source capture/observation admission reserves the largest original/private name at each path component plus snapshot/Git wrappers and the native removal root, within the platform path ceiling and the 4,096-byte relative replay bound. Insufficient headroom fails before snapshot publication or source removal. Original `.git` entries are checked before Git path resolution: regular linked-worktree pointer files are supported; symlinked administrative entries are rejected without copying or changing their external target.
+
+Source observation counts restored Git stores already covered by the complete managed workspace root only once. The root inventory still binds every retained Git byte and change. Failed or canceled explicit recovery restores its original uncertain predecessor as the retry anchor. Exact acknowledged failed/canceled recovery reports discard their pending replay receipts while retaining predecessor removal intent, including after response loss; these terminal attempts cannot block Worker reconnect or grant source-removal authority.
+
+Storage recovery preserves the pinned snapshot logical source bytes for inspect, restore and delete. Deletion intents retain that count before unlink under the original namespace claim; missing legacy count stays uncertain. Partial unpublished restore staging is removable only through its original external operation claim and native root identity, without completed-inventory equality. New storage admission reserves a job slot within the 4,096-job permanent deletion inventory bound and rejects atomically at capacity. Each new operation reserves its complete eight-claim lost-report recovery lineage. Cleanup also reserves a full restore plus its eight recoveries (18 total slots); recovery consumes only its remaining original lineage. While stored, inspection and other non-restore operations preserve the complete restore lineage. Repeated lost reports cannot exhaust restore/reconciliation capacity before the supported final recovery.
+
+The CLI snapshot inventory negotiates `WORKSPACE_STORAGE_V1`, requires the owning session UUID and preserves opaque Resource cursors through `--page-token`; `--limit` accepts 1–100. After failed/canceled explicit recovery, the desktop retains the attempt but uses the refreshed original uncertain predecessor for its next request. A lost report reply replaying acknowledged uncertainty discards only the pending report receipt and marks the journal reported, preserving original removal intent/claim ownership.
+
+All snapshot namespace publication, storage inspection/restore/delete/recovery, retained inventory scans and permanent-session copy removal share the same cross-process gate after the session/observation locks. Hold it through native effects and final inventory accounting; contention fails before any effect.
+
+- Claimed removal accepts only immutable directory permissions or the exact writable native mode authorized by an original durable directory-mode transition. Retain that transition through journal compaction, partial recovery and failure; check directory identity and permissions again before unlink. Preserve retained-writer permission changes as unresolved recovery.
+
+- A stale original storage report may acknowledge only an independently completed explicit recovery, with its exact immutable assignment, original instance/device, revision, input and recovery-claim digest. Preserve the original UUID receipt through the ordinary report transaction without another state/native mutation. The Worker clears only that pending report receipt and marks its journal reported; the successful recovery owns removal-intent retirement. Uncertain or unproven originals retain their receipt and native evidence.
+
+Compaction acceptance and execution credential publication require present workspace storage. Pending, uncertain or stored workspaces cannot grant native compaction authority.
+
+Recovery after the top-level removal rename may create a missing original claim only when its private namespace remains intact and matches the complete synchronized intent, and neither a claim nor its journal exists. Partial or fully absent namespaces require the preexisting original claim. Malformed or replaced claims stay uncertain.
+
+Workspace-storage recovery retains original preparation/manifest evidence twice
+and at most eight immutable claim references. Its input is capped at 3 MiB and
+its typed job entity at 4 MiB, with an 8 MiB native Connect response allowance
+for JSON/base64 overhead. Each original request retains the 1 MiB bound, and
+ordinary storage jobs/entities keep their original limits. Writes, strict reads,
+Worker dispatch, cancellation, report/receipt reconciliation and permanent
+deletion use the same ownership-specific rule. This finite exception can be
+removed only after immutable original evidence is stored by reference; it grants
+no new filesystem, execution, replay or inferred cleanup authority.
+
+Storage observations preserve the exact accepted snapshot ID, session, machine,
+digest, byte size, creation instant and repository count. Successful original
+deletion changes only its Deleted tombstone. Failed inspect/restore/delete recovery
+uses the same pinned metadata and cannot replace the historical record.
+
+Storage publications in shared private directories use target-attributed atomic
+temporary names: `.pending-<UUID>.json-<decimal suffix>`, plus
+`.pending-<UUID>.pending-<decimal suffix>` for claim-journal compaction. The storage
+writer exception leaves ordinary private atomic-write behavior unchanged. Permanent
+session deletion and completed-proof replay inventory those five shared namespaces
+with a separate 65,536-entry limit per directory. Original session/job target names
+retain cleanup authority even for partial contents; unrelated operations remain
+untouched. Unknown legacy names, malformed names, non-private files and overflow
+retain pending cleanup. A remnant that reappears after completion blocks receipt
+replay and is preserved. Per-operation staging/removal/snapshot directories retain
+their existing native identity and complete-inventory ownership gates.
+
+A failed or canceled nested recovery retains its immediate target in the first
+immutable claim/parent as the retry anchor. The flattened original remains
+historical reconciliation evidence; it does not bypass unresolved intermediate
+recovery ownership. Snapshot inventories include the original native root mode
+in their digests. Managed workspace roots require the original private writable
+mode before capture or rename, so changing root permissions after preview
+rejects without moving the workspace or publishing a snapshot. Removal validates
+that same root-mode authority alongside the native identity and independently
+journaled child-directory mode transitions.
+
+Storage admission reserves eight total original-group recovery attempts, counting
+canceled and failed accepted attempts as retained deletion obligations. Native
+uncertainty claims have their separate eight-member bound. Terminal attempts do
+not reset the reservation count or strand an earlier still-supported successor.
+Exact request replay consumes no additional attempt; exhausting the finite
+recovery-attempt bound preserves evidence and returns explicit resource guidance.
+
+Published snapshots bind the native identities of the original managed root and its chat/repository directories. Recovery verifies that publication and those identities, then uses its pinned source bytes and digest without rewalking mutable original files or external Git stores. A published Create settles as succeeded; Cleanup with its original source still live settles as failed with source preserved. Unsupported later files and unavailable external Git do not strand that settlement. Directory replacement remains uncertain; pre-amendment snapshots retain their previous checks. Windows cross-volume original Git stores remain external observations under the same aggregate budget.
+
+The shared server workspace read scope admits new file, directory, diff, private PR and terminal reads only while storage is present. Pending, uncertain and stored state closes that scope before publication. Previously admitted responses and cleanup retain their original separate ownership checks.
+
+The connection-owned desktop controller polls an active retained storage anchor for external deletion. Authenticated session NotFound releases the stale local operation lock and allows finishing/switching the view, while in-flight or uncertain mutation receipts remain retained. Independent deletion status continues to distinguish pending cleanup, completed cleanup and unavailable status; absence alone cannot prove cleanup. Transient or authorization errors do not release an original operation.
+
+Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
+
+Storage results retain at least the surviving snapshot size in retained bytes and bind successful cleanup to its original canonical preview digest, including recovered cleanup. CLI snapshot inventory emits revision as a decimal JSON string.
+
+Atomic journal compaction represents each settled removal with one inventory-bound original-path proof; it does not repeat generated private paths. The original immutable inventory bounds all such proofs, including deep-directory generated-name expansion. Recovered successful cleanup emits and validates the original snapshot source/preview digest before server settlement; authenticated native-result fixtures also verify the final accepted job state.
+
+## Added hosted-provider defaults (migration 30)
+
+Real 30 follows implemented OAuth 29 and actual accounting/diagnostics/retirement 26–28. It stores the private `provider_presets_layout=hosted-additions-26-v1` marker and seeds only the 26 explicitly allocated hosted preset identities. Historical defaults migrations retain their original six-ID set. Existing managed UUIDs, Off state, custom providers/accounts/models and explicit deletion of original presets remain authoritative. No Account, credential or model is created. Upgrade synchronizes the original backup first and publishes all predecessor/layout/seed changes atomically; failure leaves the original version and image intact. A current-store reopen validates the exact layout marker and never seeds again.
+
+Sidechat storage retirement decodes original storage/recovery inputs with the owning strict 3 MiB rule, even when no Sidechat is selected. Its private retirement wrapper permits the existing complete 4 MiB deletion plan plus 4 KiB fixed operation metadata, consistently at publication and restart. The allowance preserves complete original child cleanup obligations and grants no additional native removal authority or ordinary entity capacity.
+
+Server-owned subscription login retains optional original server_operation metadata and a disjoint native_started credential fence. Pending, claimed or recovery-required server ownership blocks managed restore and deletion like original Worker ownership; a terminal record grants no external authority. Restart preserves original pending/runtime obligations as recovery-required without relaunch. No new SQLite migration is required. Follow the managed subscription contract.

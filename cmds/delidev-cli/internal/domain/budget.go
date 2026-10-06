@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package domain
 
 import "regexp"
@@ -20,22 +21,40 @@ func (b EstimatedCostBudget) Validate() error {
 }
 
 type BudgetEvidence struct {
-	Currency             Currency `json:"currency"`
-	KnownAmount          string   `json:"known_amount"`
-	CompleteResponses    uint64   `json:"complete_responses"`
-	PartialResponses     uint64   `json:"partial_responses"`
-	UnavailableResponses uint64   `json:"unavailable_responses"`
+	Currency               Currency `json:"currency"`
+	KnownAmount            string   `json:"known_amount"`
+	CompleteResponses      uint64   `json:"complete_responses"`
+	PartialResponses       uint64   `json:"partial_responses"`
+	UnavailableResponses   uint64   `json:"unavailable_responses"`
+	CompleteNativeUnits    uint64   `json:"complete_native_units,omitempty"`
+	PartialNativeUnits     uint64   `json:"partial_native_units,omitempty"`
+	UnavailableNativeUnits uint64   `json:"unavailable_native_units,omitempty"`
 }
 
 func (e BudgetEvidence) Validate() error {
 	if (e.Currency != "" && !currencyPattern.MatchString(string(e.Currency))) || (e.KnownAmount != "" && !estimateDecimal.MatchString(e.KnownAmount)) || e.CompleteResponses > 1<<63-1 || e.PartialResponses > 1<<63-1 || e.UnavailableResponses > 1<<63-1 {
 		return Fail(RecoveryRequired, "The retained session estimate is inconsistent.", "Preserve its original response and pricing evidence for reconciliation.")
 	}
-	known := e.CompleteResponses > 0 || e.PartialResponses > 0
+	if e.CompleteNativeUnits > 1<<63-1 || e.PartialNativeUnits > 1<<63-1 || e.UnavailableNativeUnits > 1<<63-1 {
+		return Fail(RecoveryRequired, "The retained native estimate coverage is inconsistent.", "Preserve original input units and their historical price evidence.")
+	}
+	known := e.CompleteResponses > 0 || e.PartialResponses > 0 || e.CompleteNativeUnits > 0 || e.PartialNativeUnits > 0
 	if known != (e.KnownAmount != "") || (e.Currency == "" && known) {
 		return Fail(RecoveryRequired, "The retained session estimate is inconsistent.", "Preserve its original response and pricing evidence for reconciliation.")
 	}
 	return nil
+}
+func (e *BudgetEvidence) MergeNative(native BudgetEvidence) error {
+	if e.Validate() != nil || native.Validate() != nil || e.Currency != native.Currency {
+		return Fail(RecoveryRequired, "Inconsistent native budget evidence.", "Preserve original units and their immutable price bases.")
+	}
+	e.CompleteNativeUnits = native.CompleteResponses
+	e.PartialNativeUnits = native.PartialResponses
+	e.UnavailableNativeUnits = native.UnavailableResponses
+	if native.KnownAmount != "" {
+		e.KnownAmount = addAmount(e.KnownAmount, native.KnownAmount)
+	}
+	return e.Validate()
 }
 func (e *BudgetEvidence) Add(value ResponseEstimate) error {
 	if e.Currency != value.Currency {

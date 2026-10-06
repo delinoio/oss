@@ -12,7 +12,7 @@ class LauncherError extends Error {
 }
 
 function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json"), target = selectTarget()) {
-  if (!target) throw new LauncherError(Failure.Unsupported, "This release supports macOS and glibc Linux on x64/arm64. Windows support is planned for pnport 0.2.0.");
+  if (!target) throw new LauncherError(Failure.Unsupported, "This release supports macOS 15+ and glibc Linux on x64/arm64. Windows support is planned for pnport 0.2.0.");
   const { version } = JSON.parse(readFileSync(manifestPath, "utf8"));
   let dependencyPath;
   let dependency;

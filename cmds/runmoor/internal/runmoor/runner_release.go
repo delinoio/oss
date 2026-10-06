@@ -117,7 +117,7 @@ func updateDeadline(releases []RunnerRelease, version string) time.Time {
 }
 func runnerArchiveAsset(release RunnerRelease, backend Backend, arch string) (RunnerAsset, error) {
 	osName := "linux"
-	if backend == Tart {
+	if backend == Tart || backend == Host {
 		osName = "osx"
 	}
 	if arch == "amd64" {
@@ -157,28 +157,35 @@ func downloadRunnerArchive(ctx context.Context, client *http.Client, asset Runne
 			os.Remove(file)
 		}
 	}()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.URL, nil)
-	if err != nil {
-		return "", releaseProblem()
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", releaseProblem()
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", releaseProblem()
-	}
-	hash := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, hash), &contextReader{ctx, io.LimitReader(resp.Body, asset.Size+1)})
-	if err != nil || n != asset.Size || "sha256:"+hex.EncodeToString(hash.Sum(nil)) != asset.Digest {
-		return "", problem(ErrImage, "Runner archive size or SHA-256 verification failed.", "The candidate was not activated; retry the official download.")
-	}
-	if err = f.Sync(); err != nil {
+	if err = writeRunnerArchive(ctx, client, asset, f); err != nil {
 		return "", err
 	}
 	good = true
 	return file, nil
+}
+
+func writeRunnerArchive(ctx context.Context, client *http.Client, asset RunnerAsset, f *os.File) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.URL, nil)
+	if err != nil {
+		return releaseProblem()
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return releaseProblem()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return releaseProblem()
+	}
+	hash := sha256.New()
+	n, err := io.Copy(io.MultiWriter(f, hash), &contextReader{ctx, io.LimitReader(resp.Body, asset.Size+1)})
+	if err != nil || n != asset.Size || "sha256:"+hex.EncodeToString(hash.Sum(nil)) != asset.Digest {
+		return problem(ErrImage, "Runner archive size or SHA-256 verification failed.", "The candidate was not activated; retry the official download.")
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Repack regular files/directories and verified in-tree file symlinks. Links
@@ -190,25 +197,26 @@ func validatedRunnerTar(ctx context.Context, archive string, output string) erro
 		return err
 	}
 	defer in.Close()
+	out, err := openPrivate(output, os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if err = repackRunnerTar(ctx, in, out); err != nil {
+		os.Remove(output)
+		return err
+	}
+	return nil
+}
+func repackRunnerTar(ctx context.Context, in io.Reader, out *os.File) error {
 	gz, err := gzip.NewReader(in)
 	if err != nil {
 		return archiveProblem()
 	}
 	defer gz.Close()
 	reader := tar.NewReader(gz)
-	out, err := openPrivate(output, os.O_CREATE|os.O_EXCL|os.O_WRONLY)
-	if err != nil {
-		return err
-	}
 	writer := tar.NewWriter(out)
-	good := false
-	defer func() {
-		writer.Close()
-		out.Close()
-		if !good {
-			os.Remove(output)
-		}
-	}()
+	defer writer.Close()
 	var total int64
 	count := 0
 	listener, run := false, false
@@ -303,7 +311,6 @@ func validatedRunnerTar(ctx context.Context, archive string, output string) erro
 	if err = out.Sync(); err != nil {
 		return err
 	}
-	good = true
 	return nil
 }
 

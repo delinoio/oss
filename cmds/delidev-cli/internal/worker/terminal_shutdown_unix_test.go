@@ -27,12 +27,15 @@ import (
 
 type terminalShutdownFixture struct {
 	terminalTransportFixture
-	blocked chan struct{}
-	once    sync.Once
+	blocked    chan struct{}
+	prefix     chan struct{}
+	prefixOnce sync.Once
+	once       sync.Once
 }
 
 func (f *terminalShutdownFixture) PublishTerminalOutput(ctx context.Context, req *connect.Request[pb.PublishTerminalOutputRequest]) (*connect.Response[pb.PublishTerminalOutputResponse], error) {
 	if req.Msg.Sequence == 1 {
+		f.prefixOnce.Do(func() { close(f.prefix) })
 		return connect.NewResponse(&pb.PublishTerminalOutputResponse{}), nil
 	}
 	f.once.Do(func() { close(f.blocked) })
@@ -52,7 +55,7 @@ func TestTerminalShutdownLossSurvivesReplacementCloseAndResponseLoss(t *testing.
 	}
 	instance := domain.NewID()
 	a := terminal.Assignment{ID: domain.NewID(), SessionID: input.SessionID, Terminal: domain.Terminal{MachineID: input.MachineID, InstanceID: instance, OwnerInstanceID: instance, ShellOverride: "/bin/sh", State: domain.TerminalStarting, Rows: 24, Columns: 80}, Operation: domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalCreate}, Preparation: &input, Manifest: &manifest}
-	f := &terminalShutdownFixture{terminalTransportFixture: terminalTransportFixture{assignments: map[domain.ID]terminal.Assignment{a.Operation.ID: a}, claims: map[string]bool{}, reports: map[string][]byte{}, lose: map[domain.ID]bool{}}, blocked: make(chan struct{})}
+	f := &terminalShutdownFixture{terminalTransportFixture: terminalTransportFixture{assignments: map[domain.ID]terminal.Assignment{a.Operation.ID: a}, claims: map[string]bool{}, reports: map[string][]byte{}, lose: map[domain.ID]bool{}}, blocked: make(chan struct{}), prefix: make(chan struct{})}
 	_, handler := delidevv1connect.NewWorkerServiceHandler(f)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -61,6 +64,16 @@ func TestTerminalShutdownLossSurvivesReplacementCloseAndResponseLoss(t *testing.
 	defer m.close()
 	if err := m.apply(ctx, a); err != nil {
 		t.Fatal(err)
+	}
+	// PTY startup and command echo can share one native read. Wait for an
+	// independently captured prefix before sending the suffix whose reply blocks.
+	if _, err := m.live[a.ID].handle.Write([]byte("printf 'prefix'\r")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-f.prefix:
+	case <-ctx.Done():
+		t.Fatal("output did not publish its original prefix")
 	}
 	if _, err := m.live[a.ID].handle.Write([]byte("printf 'suffix'\r")); err != nil {
 		t.Fatal(err)

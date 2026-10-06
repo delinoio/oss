@@ -87,6 +87,8 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 	// creation claim or HTTP acknowledgment on this replacement process.
 	session.creation = &sessionCreation{request: ref.CreationRequestID, settings: session.apiProfile.Settings, identity: sessionIdentity{ref.SessionID, source.Project, source.Slug, source.Created}}
 	session.sessionAgent = previousAgent
+	session.forkOrigin = cloneForkProof(source.Fork)
+	session.forkSelectionPending = source.Fork != nil && source.Fork.SelectionPending
 	if source.Tools != nil && len(source.Tools.Always) != 0 {
 		if len(session.creation.settings.Permission) != 0 {
 			return nil, incompatible()
@@ -211,6 +213,10 @@ func checkpointReplacementProfile(value nativeCheckpoint) error {
 			for _, part := range message.Parts {
 				switch part.Kind {
 				case TextPartKind, ReasoningPartKind, StepStartPartKind, StepFinishPartKind:
+				case CompactionPartKind:
+					if value.Context == nil {
+						return incompatible()
+					}
 				case SnapshotPartKind, PatchPartKind:
 					if value.Snapshot == nil {
 						return incompatible()

@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, useState } from "react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, SystemService, SystemCapability, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
 import { ConfigurationEditor, Settings } from "./settings";
@@ -29,6 +29,7 @@ function fixture() {
     router.service(ResourceService, { listResources: request => list(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? ""), getResource: request => get(request.id) });
     router.service(ProviderService, { listProviderInventory: inventory, searchModels: request => search(request.pageToken), listProviderPresets: () => ({ presetsJson: encode([]) }) });
     router.service(ConfigurationService, { saveConfiguration: save });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.CODEX_SUBAGENT_CONFIGURATION_V1] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
   const view = (children: React.ReactNode, upstream: Transport = transport) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
@@ -218,39 +219,4 @@ it("blocks a stale revision without losing the Agent draft", async () => {
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value); change("Name", "Unsaved");
   value.get.mockImplementation(id => ({ resource: id === agent.id ? create(ResourceSchema, { ...agent, revision: 2n }) : value.resources.find(row => row.id === id) }));
   await act(async () => { await value.client.invalidateQueries(); }); expect(await screen.findByText(/This entry changed elsewhere/)).toBeTruthy(); expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(true); expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Unsaved");
-});
-
-it.each(["navigation", "Escape then navigation", "reselection then navigation"])("disposes Agent disclosures, draft and uncertain retry on %s", async route => {
-  const value = fixture(); value.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
-  function Harness() { const [visible, setVisible] = useState(false); return <><button onClick={() => setVisible(true)}>Open settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Navigate away fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>; }
-  render(value.view(<Harness />)); const opener = screen.getByRole("button", { name: "Open settings fixture" }); opener.focus(); fireEvent.click(opener);
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Abandoned"); change("Model", value.model.id); toggle(disclosure("Reasoning"), true); change("Reasoning effort", "high"); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" })); await screen.findByRole("button", { name: "Retry the same configuration" });
-  if (route === "Escape then navigation") fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { key: "Escape" });
-  if (route === "reselection then navigation") fireEvent.click(opener);
-  expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Navigate away fixture" }));
-  expect(document.activeElement).not.toBe(opener); fireEvent.click(opener); expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(""); expect(disclosure("Reasoning").open).toBe(false); expect((screen.getByLabelText("Reasoning effort") as HTMLInputElement).value).toBe(""); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull(); expect(value.save).toHaveBeenCalledTimes(1);
-});
-
-it("ignores a late accepted Agent response after closing and replacing the opening", async () => {
-  const value = fixture(); let release!: () => void; let pendingSignal: AbortSignal | undefined;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  const delayed: Transport = { ...value.transport, unary: async (method, signal, ...args) => {
-    if (method.name !== "SaveConfiguration") return value.transport.unary(method, signal, ...args);
-    const accepted = await value.transport.unary(method, undefined, ...args); pendingSignal = signal;
-    await gate; return accepted;
-  } };
-  const view = render(value.view(<Settings visible />, delayed));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Original accepted Agent"); change("Model", value.model.id); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  await waitFor(() => expect(pendingSignal).toBeTruthy());
-  view.rerender(value.view(<Settings visible={false} />, delayed)); expect(pendingSignal!.aborted).toBe(true);
-  view.rerender(value.view(<Settings visible />, delayed));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Replacement draft"); await act(async () => release());
-  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Replacement draft"); expect(value.save).toHaveBeenCalledTimes(1);
-  expect(disclosure("Reasoning").open).toBe(false); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
 });

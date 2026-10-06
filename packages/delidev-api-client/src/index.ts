@@ -28,3 +28,9 @@ export * as TerminalQuery from "./gen/delidev/v1/delidev-TerminalService_connect
 export * as NetworkQuery from "./gen/delidev/v1/network-NetworkService_connectquery.js";
 export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectquery.js";
 export * as PullRequestFixQuery from "./gen/delidev/v1/pr_fix-PullRequestFixService_connectquery.js";
+
+export * from "./configuration-identity.js";
+
+export * from "./provider-presets.js";
+
+export * as InstallationQuery from "./gen/delidev/v1/installation-InstallationService_connectquery.js";

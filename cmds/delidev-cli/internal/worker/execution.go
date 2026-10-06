@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -68,7 +69,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Configuration.Harness == domain.GrokBuild {
 		return executeGrokSession(ctx, config, owner, input, logger)
 	}
-	if input.Configuration.Harness != domain.Codex || input.Installation.Version != codex.SupportedVersion {
+	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) {
 		return nil, domain.Fail(domain.Unsupported, "This native execution profile is not implemented.", "Select a verified installed Codex profile; no fallback harness is used.")
 	}
 	var preparation workspace.PrepareRequest
@@ -84,7 +85,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if c := input.Continuation; c != nil {
-		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
+		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
+		if c.Compaction != nil {
+			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
+		}
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, previous, preparation, manifest)
 	} else {
 		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
 	}
@@ -124,6 +129,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	nativeHome := filepath.Join(home, "codex")
 	var checkpoint CodexExecutionCheckpoint
+	var compacted *codex.CompactedCheckpoint
 	if c := input.Continuation; c != nil {
 		rawDigest, err := hex.DecodeString(c.PromptDigest)
 		if err != nil || len(rawDigest) != sha256.Size {
@@ -149,6 +155,21 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		if replaced != 1 {
 			return nil, executionCheckpointUncertain()
+		}
+		if c.Compaction == nil {
+			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
+				return nil, err
+			}
+		}
+		if c.Compaction != nil {
+			retained, err := readCodexSessionCompactionCheckpoint(ctx, manager.Root, config.execution.Credential, input, *c.Compaction, checkpoint)
+			if err != nil {
+				return nil, err
+			}
+			if err := codex.VerifyCompactionRollout(ctx, nativeHome, retained); err != nil {
+				return nil, err
+			}
+			compacted = &retained
 		}
 		logger.InfoContext(ctx, "native_execution_predecessor_verified", "previous_execution_id", c.Previous.ExecutionID)
 	}
@@ -219,7 +240,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// Native subscription authentication is selected explicitly by the server's
 	// immutable assignment, independently of the existing API token profile.
 	if input.Configuration.Subscription {
-		client, closeRPC := subscriptionRPC(connection.Credential)
+		client, closeRPC, err := subscriptionRPC(ctx, config, connection.Credential)
+		if err != nil {
+			return nil, err
+		}
 		closeManagedRPC = closeRPC
 		managed, err = takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
 		if err != nil {
@@ -304,9 +328,30 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
 	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
+		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
+	}
+	var ownedProxy *nativeproxy.Proxy
+	if managed == nil {
+		proxy, err := openCodexNativeProxy(nativeCtx, config, input.ExecutionID)
+		if err != nil {
+			return nil, err
+		}
+		if proxy != nil {
+			ownedProxy = proxy
+			nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
+			nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
+			defer func() {
+				if err := proxy.Close(); err != nil {
+					output, returned = nil, err
+				}
+			}()
+		}
+	}
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
+		nativeConfig.QuotaObserver = managed.publishRollingQuota
 	}
 	// Once startup may own a process, only independently joined native cleanup
 	// may authorize removal. A definite failed Open already proves that closure;
@@ -341,6 +386,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 		}
 	}()
+	if managed != nil && config.observations != nil {
+		unregister := config.observations.register(input.AccountID, client, managed)
+		defer unregister()
+	}
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
@@ -350,7 +399,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if c.Intent == domain.ContinueExplicitly {
 				intent = codex.ResumeAfterTerminal
 			}
-			_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
+			if compacted != nil {
+				_, err = client.VerifyCompactedContinuation(ctx, c.HistoryRequestID, *compacted)
+			} else {
+				_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
+			}
 		}
 	} else if f := input.Fork; f != nil {
 		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
@@ -470,9 +523,35 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		// the workspace lease's process index, then form a completion result.
 		// Read native identity and final credentials while its wire is still
 		// open; the defer only reads on earlier exits and never retries this read.
+		var contextProof *codex.ContinuationContextCheckpoint
+		if !hasChildren {
+			bindings, err := mapper.completionInputs()
+			if err != nil {
+				return nil, err
+			}
+			nativeInputs := make([]codex.HistoricalInput, len(bindings))
+			for n, binding := range bindings {
+				nativeInputs[n].ID = binding.InputID
+				bytes, err := hex.DecodeString(binding.PromptDigest)
+				if err != nil || len(bytes) != 32 {
+					return nil, executionCheckpointUncertain()
+				}
+				copy(nativeInputs[n].PromptDigest[:], bytes)
+			}
+			original := codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
+			contextProof, err = client.RetainContinuationContext(ctx, original)
+			if err != nil {
+				return nil, err
+			}
+		}
 		captureManagedBundle()
 		if err := client.Close(); err != nil {
 			return nil, err
+		}
+		if ownedProxy != nil {
+			if err := ownedProxy.Close(); err != nil {
+				return nil, err
+			}
 		}
 		var push *domain.PRPushProof
 		if prGit != nil {
@@ -517,7 +596,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
-		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs)
+		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs, contextProof)
 		if err != nil {
 			return nil, err
 		}

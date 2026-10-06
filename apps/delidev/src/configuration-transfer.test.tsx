@@ -173,3 +173,25 @@ it("loads a UTF-8 file immediately and retains editable input after invalid UTF-
   expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
   expect(value.apply).not.toHaveBeenCalled();
 });
+
+it("accepts service-native v2 exports and original v2 preview bytes while retaining API-only v1", async () => {
+  const value = fixture();
+  const body = { version: 2, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt", alias: "Native account" } }], machines: [] };
+  const preview = encode({ token: "server-preview", plan: { version: 2, changes: [{ source_id: body.entries[0].id, id: newRequestId(), kind: "account", action: "create", after: body.entries[0].document }], machines: [] } });
+  value.preview.mockResolvedValue({ previewJson: preview }); render(value.view());
+  load(body);
+  fireEvent.click(screen.getByRole("button", { name: "Preview configuration changes" }));
+  await screen.findByRole("button", { name: "Apply reviewed configuration" });
+  expect(value.preview).toHaveBeenCalledTimes(1);
+  const request = value.preview.mock.calls[0][0] as { selectionJson: Uint8Array };
+  expect(new TextDecoder().decode(request.selectionJson).startsWith(`{"bundle":${JSON.stringify(body)},"bindings":`)).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Apply reviewed configuration" }));
+  await waitFor(() => expect(value.apply).toHaveBeenCalledTimes(1));
+  expect(Array.from((value.apply.mock.calls[0][0] as { previewJson: Uint8Array }).previewJson)).toEqual(Array.from(preview));
+});
+
+it("refuses a service-native v1 graph before requesting an import preview", () => {
+  const value = fixture(); render(value.view());
+  load({ ...value.bundle, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt" } }] });
+  expect(screen.getByText(/Service-native subscription configuration requires a version 2 export/)).toBeTruthy(); expect(value.preview).not.toHaveBeenCalled();
+});

@@ -8,8 +8,8 @@
 .api-keys-view :is(h1, h2, strong, code), .api-entry-workflow :is(h1, h2, h3, code) { overflow-wrap: anywhere; }
 .api-keys-view button, .api-entry-workflow button { min-height: 40px; border-color: var(--control-border); border-radius: 8px; white-space: normal; overflow-wrap: anywhere; }
 .api-keys-view input:not([type="checkbox"]), .api-entry-workflow input:not([type="checkbox"]), .api-entry-workflow select { min-height: 40px; border-radius: 8px; border-color: var(--control-border); }
-.api-keys-view :is(button, input, summary):focus-visible, .api-keys-view h2:focus-visible,
-.api-entry-workflow :is(button, input, select, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.api-keys-view :is(button, summary):focus-visible, .api-keys-view h2:focus-visible,
+.api-entry-workflow :is(button, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .api-keys-view .primary, .api-entry-workflow .primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .api-keys-view .api-entry-heading, .api-entry-workflow .api-entry-heading { display: block; margin: 0 0 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
 .api-keys-view .api-entry-heading h1, .api-entry-workflow .api-entry-heading h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; line-height: 1.25; }
@@ -57,3 +57,66 @@
   .api-entry-row .actions { flex-direction: column; align-items: flex-start; }
   .api-entry-row .actions button { max-width: 100%; }
 }
+
+.account-oauth-card { width: 100%; max-width: 760px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.account-oauth-card h2 { margin: 0 0 8px; font-size: 20px; }
+.account-oauth-card .account-oauth-subheading { color: var(--muted); }
+.account-oauth-progress { display: flex; align-items: center; gap: 10px; margin: 20px 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); }
+.account-oauth-spinner { flex-shrink: 0; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--muted); border-radius: 50%; animation: account-oauth-spin 1.5s linear infinite; }
+.account-oauth-card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-oauth-card .account-oauth-fallback { margin-top: 14px; padding-inline: 0; background: transparent; border: 0; color: var(--accent); text-align: left; }
+.account-oauth-card footer { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; color: var(--muted); font-size: 12px; }
+.account-oauth-card button { max-width: 100%; white-space: normal; }
+@keyframes account-oauth-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .account-oauth-spinner { animation: none; } }
+
+/* Account usage is a read-only list body; creation and other Settings bodies
+   retain the shared geometry. Container thresholds use the available column. */
+.api-usage-list { container-type: inline-size; }
+.api-usage-list-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin: 24px 0 16px; }
+.api-usage-list-heading h2 { margin: 0 0 6px; font-size: 16px; }
+.api-usage-list-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+.api-usage-list .api-entry-rows { border-top: 1px solid var(--border); }
+.api-usage-main { display: grid; grid-template-columns: minmax(180px, 1.3fr) minmax(0, 2.6fr) auto; gap: 20px; align-items: start; }
+.api-entry-identity { display: flex; gap: 14px; min-width: 0; }
+.api-entry-identity > div { min-width: 0; }
+.api-entry-mark { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; background: var(--surface-subtle); border-radius: 8px; }
+.api-entry-mark svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.api-entry-identity h2 { font-size: 16px; }
+.api-entry-statuses { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 12px; }
+.api-entry-statuses span { padding: 2px 6px; border-radius: 6px; color: var(--text-secondary); background: var(--surface-subtle); overflow-wrap: anywhere; }
+.api-entry-statuses [data-state="connected"] { color: var(--success-text); }
+.api-entry-statuses [data-state="warning"] { color: var(--warning-text); background: var(--warning-background); }
+.api-usage-row dl.api-usage-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; }
+.api-usage-row dl.api-usage-metrics > div { display: block; }
+.api-usage-metric dt { margin-bottom: 6px; }
+.api-usage-metric dd { display: grid; gap: 8px; }
+.api-usage-metric strong { display: block; font-size: 20px; line-height: 28px; font-weight: 600; }
+.api-usage-metric small { display: block; color: var(--muted); font-size: 12px; line-height: 18px; }
+.api-usage-metric .api-entry-exhausted { color: var(--danger-text); font-size: 14px; }
+.api-quota-window { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.api-quota-window strong { font-size: 14px; line-height: 20px; }
+.api-quota-window progress { width: 100%; height: 6px; accent-color: var(--success-text); }
+.api-entry-controls { display: flex; align-items: start; gap: 8px; }
+.api-entry-more { position: relative; }
+.api-entry-more > button { min-width: 40px; }
+.api-entry-more-panel { position: absolute; z-index: 2; right: 0; top: 46px; display: grid; gap: 4px; width: 200px; max-width: 70cqw; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 16px var(--shadow-soft); }
+.api-entry-more-panel button { text-align: left; }
+.api-entry-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--border-subtle); }
+.api-usage-row .api-entry-text-action { padding-inline: 0; border: 0; background: transparent; color: var(--muted); }
+.api-usage-row .api-entry-usage-link { color: var(--link); }
+.api-entry-details { padding-top: 16px; font-size: 12px; color: var(--text-secondary); }
+.api-entry-details .api-quota-window { margin-block: 12px; }
+.api-entry-usage-status p { margin: 8px 0; font-size: 12px; color: var(--muted); }
+@container (max-width: 899px) {
+  .api-usage-main { grid-template-columns: minmax(0, 1fr) auto; }
+  .api-usage-main .api-usage-metrics { grid-column: 1 / -1; grid-row: 2; }
+}
+@container (max-width: 639px) {
+  .api-usage-main { grid-template-columns: minmax(0, 1fr); }
+  .api-usage-row dl.api-usage-metrics { grid-template-columns: minmax(0, 1fr); }
+  .api-entry-controls { grid-row: 3; flex-wrap: wrap; }
+  .api-entry-more-panel { right: auto; left: 0; }
+}
+
+.api-entry-statuses .api-entry-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

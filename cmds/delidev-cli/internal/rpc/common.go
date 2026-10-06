@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -12,7 +13,10 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-const Version = "0.1.0"
+// Release builds pin both values with reviewed ldflags; neither is configuration.
+var Version = "0.1.0"
+var SourceRevision = ""
+
 const ProtocolVersion = 1
 const CorrelationHeader = "X-Delidev-Correlation-Id"
 
@@ -41,7 +45,7 @@ func Resource(record store.Record) *pb.Resource {
 	if record.Kind == domain.JobKind {
 		document = nativeModelJobDocument(document)
 	}
-	return &pb.Resource{Id: string(record.ID), Kind: WireKind(record.Kind), Revision: record.Revision, SessionId: string(record.SessionID), ProjectId: string(record.ProjectID), SchemaVersion: 1, DocumentJson: document, CreatedAt: record.CreatedAt.Format(time.RFC3339Nano), UpdatedAt: record.UpdatedAt.Format(time.RFC3339Nano)}
+	return &pb.Resource{Id: string(record.ID), Kind: WireKind(record.Kind), Revision: record.Revision, SessionId: string(record.SessionID), ProjectId: string(record.ProjectID), SchemaVersion: ResourceSchemaVersion(record.Kind, document), DocumentJson: document, CreatedAt: record.CreatedAt.Format(time.RFC3339Nano), UpdatedAt: record.UpdatedAt.Format(time.RFC3339Nano)}
 }
 func Error(err error, correlation string) error {
 	if err == nil {
@@ -101,4 +105,44 @@ func ClientError(err error) *domain.Error {
 }
 func CopyCorrelation[T any](response *connect.Response[T], request http.Header) {
 	response.Header().Set(CorrelationHeader, request.Get(CorrelationHeader))
+}
+
+func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
+	var identity struct {
+		Type                    domain.AccountType     `json:"type"`
+		SourceKind              domain.ModelSourceKind `json:"source_kind"`
+		ReconfigurationRequired bool                   `json:"reconfiguration_required"`
+		Retired                 bool                   `json:"retired"`
+	}
+	if json.Unmarshal(raw, &identity) == nil && ((kind == domain.AccountKind && identity.Type == domain.SubscriptionAccount) || (kind == domain.ModelKind && identity.SourceKind == domain.SubscriptionModel) || identity.ReconfigurationRequired || identity.Retired) {
+		return 2
+	}
+	return 1
+}
+
+func SubscriptionService(v pb.SubscriptionServiceIdentity) domain.SubscriptionService {
+	switch v {
+	case pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED:
+		return ""
+	case pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT:
+		return domain.SubscriptionChatGPT
+	case pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE:
+		return domain.SubscriptionClaude
+	case pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_GROK:
+		return domain.SubscriptionGrok
+	default:
+		return "unsupported"
+	}
+}
+func WireSubscriptionService(v domain.SubscriptionService) pb.SubscriptionServiceIdentity {
+	switch v {
+	case domain.SubscriptionChatGPT:
+		return pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT
+	case domain.SubscriptionClaude:
+		return pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE
+	case domain.SubscriptionGrok:
+		return pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_GROK
+	default:
+		return pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+	}
 }

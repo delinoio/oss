@@ -12,3 +12,9 @@ packages/react-forge/examples/travel-ir-assets/coast.png filter=lfs diff=lfs mer
 packages/react-forge/examples/travel-ir-assets/horizon.png filter=lfs diff=lfs merge=lfs -text
 packages/react-forge/examples/travel-ir-assets/product.png filter=lfs diff=lfs merge=lfs -text
 servers/devhud-api/internal/r2/removal.png filter=lfs diff=lfs merge=lfs -text
+
+# Canonical Go-generated guidance bytes are compared across native platforms.
+apps/delidev/src-tauri/provider-guidance.generated.json text eol=lf
+
+# The pinned Tauri CLI serializes this manifest with LF on every build host.
+apps/delidev/src-tauri/Cargo.toml text eol=lf

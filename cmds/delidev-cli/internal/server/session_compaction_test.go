@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
@@ -94,10 +95,46 @@ func publicCompactionResult(i domain.SessionCompactionInput, job domain.ID, fail
 }
 
 func TestPublicCompactionAtomicReceiptAndFIFO(t *testing.T) {
+	testPublicCompactionAtomicReceiptAndFIFO(t, domain.ClaudeCode)
+}
+func TestPublicCodexCompactionAtomicReceiptAndFIFO(t *testing.T) {
+	testPublicCompactionAtomicReceiptAndFIFO(t, domain.Codex)
+}
+func TestPublicOpenCodeCompactionAtomicReceiptAndFIFO(t *testing.T) {
+	testPublicCompactionAtomicReceiptAndFIFO(t, domain.OpenCode)
+}
+func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harness) {
 	for _, scenario := range []string{"success", "failed-compact-outer-success", "queued-stop", "queued-archive", "claimed-stop", "claimed-archive", "claimed-disconnect", "lost-report", "foreign-result"} {
+		if harness != domain.ClaudeCode && scenario == "failed-compact-outer-success" {
+			continue
+		}
 		t.Run(scenario, func(t *testing.T) {
 			ctx := context.Background()
-			f, pf := publicCompactionFixture(t)
+			var f *firstDispatchFixture
+			var pf *publicationFixture
+			if harness == domain.Codex || harness == domain.OpenCode {
+				c := newContinuationFixtureProfile(t, domain.ExecutionSucceeded, harness)
+				f = c.firstDispatchFixture
+				pf = &publicationFixture{authorityFixture: &authorityFixture{service: f.service, client: f.workerClient, workerToken: f.workerIdentity.Token, job: domain.ID(c.job.Id), device: f.workerDevice, instance: domain.ID(f.workerInstance), input: c.input}, revision: c.job.Revision, thread: c.thread, turn: c.turn}
+				f.workerStream.Close()
+				_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.codex-compaction-capability", nil, func(tx *store.Tx) (any, error) {
+					r, m, err := activeMachine(tx, f.selection.MachineID)
+					if err != nil {
+						return nil, err
+					}
+					nativeCapability := domain.CodexSessionCompactionV1
+					if harness == domain.OpenCode {
+						nativeCapability = domain.OpenCodeSessionCompactionV1
+					}
+					m.WorkerCapabilities = append(m.WorkerCapabilities, domain.NativeSessionCompactionV1, nativeCapability)
+					return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				f, pf = publicCompactionFixture(t)
+			}
 			client := sessionClient(f.accountFixture)
 			before := f.refresh(t)
 			prior, _ := store.Decode[domain.Session](before)
@@ -176,8 +213,29 @@ func TestPublicCompactionAtomicReceiptAndFIFO(t *testing.T) {
 				t.Fatal("action relay registration", e)
 			}
 			lease, e := f.service.executionAuthority.Acquire(ctx, token)
-			if e != nil || lease.Scope.ExecutionID != input.ActionID || lease.Scope.AccountID != input.Assignment.AccountID || len(lease.Scope.Operations) != 1 || lease.Scope.Operations[0] != apiproxy.MessageCreate {
+			expected := []apiproxy.Operation{apiproxy.MessageCreate}
+			if harness == domain.Codex {
+				expected = []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
+			} else if harness == domain.OpenCode {
+				expected = []apiproxy.Operation{apiproxy.ChatCompletion}
+			}
+			if lease != nil {
+				defer lease.Release()
+			}
+			if e != nil || lease.Scope.ExecutionID != input.ActionID || lease.Scope.AccountID != input.Assignment.AccountID || lease.Scope.Harness != harness || !reflect.DeepEqual(lease.Scope.Operations, expected) {
 				t.Fatal("manual action changed relay authority", e)
+			}
+			diagnosticOperation := domain.DiagnosticMessage
+			if harness == domain.Codex {
+				diagnosticOperation = domain.DiagnosticCompact
+			}
+			if harness == domain.OpenCode {
+				diagnosticOperation = domain.DiagnosticChat
+			}
+			diagnosticID := domain.NewID()
+			attempted := false
+			if err := lease.PublishDiagnostic(ctx, domain.RequestDiagnostic{ID: diagnosticID, CorrelationID: diagnosticID, SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, ModelID: lease.Scope.ModelID, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: diagnosticOperation, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, ObservedAt: time.Now().UTC(), HTTPAttempted: &attempted}); err != nil {
+				t.Fatal("manual compaction could not publish its initial diagnostic", err)
 			}
 			lease.Release()
 			canceled := strings.HasPrefix(scenario, "claimed-")
@@ -200,6 +258,12 @@ func TestPublicCompactionAtomicReceiptAndFIFO(t *testing.T) {
 				}
 			}
 			result := publicCompactionResult(input, claim.ID, scenario == "failed-compact-outer-success")
+			if harness == domain.Codex {
+				result = domain.SessionCompactionResult{Version: 2, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: result.Checkpoint, Codex: &domain.CodexCompactionResult{NativeThreadID: input.Completion.NativeThreadID, SourceNativeTurnID: input.Completion.NativeTurnID, NativeTurnID: domain.NativeIdentity(domain.NewID()), LiveItemID: "original-live-context", HistoryItemID: "item-0", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, ResponseUsages: []domain.NativeResponseUsage{}}}
+			}
+			if harness == domain.OpenCode {
+				result = domain.SessionCompactionResult{Version: 3, Harness: domain.OpenCode, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: result.Checkpoint, OpenCode: &domain.OpenCodeCompactionResult{NativeSessionID: input.Completion.NativeThreadID, SourceNativeInputID: input.Completion.NativeTurnID, UserID: "msg_01960dcbe1fcABCDEFGHIJKLMN", PartID: "prt_01960dcbe1fcABCDEFGHIJKLMN", SummaryID: "msg_01960dcbe1fdABCDEFGHIJKLMN", CompletedEventID: "evt_01960dcbe1fdABCDEFGHIJKLMN", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, Usages: []domain.OpenCodeUsageObservation{}}}
+			}
 			if scenario == "foreign-result" {
 				result.Checkpoint.JobID = domain.NewID()
 			}
@@ -574,5 +638,68 @@ func TestCompactionRejectsFailedConversationEligibleForExplicitResume(t *testing
 	state, err := store.Decode[domain.Session](after)
 	if err != nil || after.Revision != before.Revision || !reflect.DeepEqual(state, prior) {
 		t.Fatal("rejected compaction changed the failed predecessor", err)
+	}
+}
+
+func TestCodexCompactionRejectsIneligibleBoundaryBeforeMutation(t *testing.T) {
+	testCompactionRejectsIneligibleBoundary(t, domain.Codex)
+}
+func TestOpenCodeCompactionRejectsIneligibleBoundaryBeforeMutation(t *testing.T) {
+	testCompactionRejectsIneligibleBoundary(t, domain.OpenCode)
+}
+func testCompactionRejectsIneligibleBoundary(t *testing.T, harness domain.Harness) {
+	for _, scenario := range []string{"missing-worker-profile", "paused", "queued-input", "pending-question", "pending-approval", "unfinished-observation", "child-history", "unconfirmed-response"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newContinuationFixtureProfile(t, domain.ExecutionSucceeded, harness)
+			f.workerStream.Close()
+			if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.compaction-rejection", scenario, func(tx *store.Tx) (any, error) {
+				r, session, err := sessionRecord(tx, domain.ID(f.change.Session.Id))
+				if err != nil {
+					return nil, err
+				}
+				switch scenario {
+				case "paused":
+					session.Dispatch = domain.DispatchPaused
+				case "queued-input":
+					session.PendingInputs = 1
+					session.PendingInputBytes = 1
+				case "pending-question":
+					session.Execution.Waiting.UserInput = true
+				case "pending-approval":
+					session.Execution.Waiting.Approval = true
+				case "unfinished-observation":
+					session.Execution.NativeCompactions = domain.NativeCompactionState{"original-context": domain.NativeCompactionStarted}
+				case "unconfirmed-response":
+					session.Execution.UnconfirmedResponses = 1
+				case "child-history":
+					session.Execution.Subagents = domain.SubagentState{"original-child": {}}
+				}
+				if scenario != "missing-worker-profile" {
+					mr, m, err := activeMachine(tx, f.selection.MachineID)
+					if err != nil {
+						return nil, err
+					}
+					nativeCapability := domain.CodexSessionCompactionV1
+					if harness == domain.OpenCode {
+						nativeCapability = domain.OpenCodeSessionCompactionV1
+					}
+					m.WorkerCapabilities = append(m.WorkerCapabilities, domain.NativeSessionCompactionV1, nativeCapability)
+					if _, err := tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", m); err != nil {
+						return nil, err
+					}
+				}
+				return tx.Put(domain.SessionKind, r.ID, r.Revision, r.ID, r.ProjectID, session)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			before := f.refresh(t)
+			_, err := sessionClient(f.accountFixture).CompactSession(context.Background(), ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID())}))
+			if err == nil {
+				t.Fatal("ineligible Codex boundary accepted")
+			}
+			if after := f.refresh(t); after.Revision != before.Revision {
+				t.Fatal("rejected action changed original state")
+			}
+		})
 	}
 }

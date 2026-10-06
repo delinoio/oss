@@ -51,8 +51,10 @@ const (
 type compactionClaimName string
 
 const (
-	compactionRegistrationClaim compactionClaimName = "compaction-registration.json"
-	compactionCommandClaim      compactionClaimName = "compaction-command.json"
+	compactionRegistrationClaim   compactionClaimName = "compaction-registration.json"
+	compactionCommandClaim        compactionClaimName = "compaction-command.json"
+	openCodeCompactionResumeClaim compactionClaimName = "opencode-resume-claim.json"
+	openCodeCompactionNativeClaim compactionClaimName = "opencode-compact-claim.json"
 )
 
 type sessionCompactionRegistration struct {
@@ -81,10 +83,17 @@ func compactionClaimDigest(value any) string {
 // must independently survive. Neither a completed outer journal nor a native
 // snapshot can manufacture missing registration/send authority after replacement.
 func readSessionCompactionClaims(root string, p sessionCompactionCheckpoint) error {
-	if p.Version != compactionCheckpointVersion || p.JobID.Validate() != nil || !canonicalDigest(p.RegistrationDigest) || !canonicalDigest(p.CommandDigest) {
+	if p.Version != compactionCheckpointVersion {
 		return domain.CompactionUncertain()
 	}
-	directory := filepath.Join(root, "jobs", string(p.JobID))
+	return readCompactionClaimRecords(root, p.JobID, p.Input, p.RegistrationDigest, p.CommandDigest)
+}
+
+func readCompactionClaimRecords(root string, job domain.ID, input domain.SessionCompactionInput, registrationDigest, commandDigest string) error {
+	if job.Validate() != nil || !canonicalDigest(registrationDigest) || !canonicalDigest(commandDigest) {
+		return domain.CompactionUncertain()
+	}
+	directory := filepath.Join(root, "jobs", string(job))
 	for _, path := range []string{root, filepath.Join(root, "jobs"), directory} {
 		if security.CheckPrivateDir(path) != nil {
 			return domain.CompactionUncertain()
@@ -103,9 +112,9 @@ func readSessionCompactionClaims(root string, p sessionCompactionCheckpoint) err
 	}
 	var registration sessionCompactionRegistration
 	var command sessionCompactionCommand
-	if read(compactionRegistrationClaim, p.RegistrationDigest, &registration) != nil || read(compactionCommandClaim, p.CommandDigest, &command) != nil ||
-		registration.ActionID != p.Input.ActionID || registration.ExecutionID != p.Input.Assignment.ExecutionID ||
-		domain.UniqueIDs([]domain.ID{p.JobID, registration.ActionID, registration.ExecutionID, registration.RequestID}) != nil || !canonicalDigest(registration.CredentialDigest) ||
+	if read(compactionRegistrationClaim, registrationDigest, &registration) != nil || read(compactionCommandClaim, commandDigest, &command) != nil ||
+		registration.ActionID != input.ActionID || registration.ExecutionID != input.Assignment.ExecutionID ||
+		domain.UniqueIDs([]domain.ID{job, registration.ActionID, registration.ExecutionID, registration.RequestID}) != nil || !canonicalDigest(registration.CredentialDigest) ||
 		command.ActionID != registration.ActionID || command.ExecutionID != registration.ExecutionID || command.RegistrationRequestID != registration.RequestID || command.CredentialDigest != registration.CredentialDigest {
 		return domain.CompactionUncertain()
 	}
@@ -113,7 +122,7 @@ func readSessionCompactionClaims(root string, p sessionCompactionCheckpoint) err
 }
 
 func writeCompactionClaim(root string, job domain.ID, name compactionClaimName, value any) error {
-	if job.Validate() != nil || name != compactionRegistrationClaim && name != compactionCommandClaim {
+	if job.Validate() != nil || name != compactionRegistrationClaim && name != compactionCommandClaim && name != openCodeCompactionResumeClaim && name != openCodeCompactionNativeClaim {
 		return domain.CompactionUncertain()
 	}
 	// Compaction has no execution publisher to create its per-job directory.
@@ -179,8 +188,14 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	ctx = bounded
 	c := config.execution
 	var i domain.SessionCompactionInput
-	if c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || config.executionContext == nil || domain.Decode(job.Input, &i) != nil || i.Validate() != nil || c.Credential.MachineID != i.Assignment.MachineID || job.ParentID != i.SourceJobID || job.AssignedDeviceID != c.Credential.DeviceID || job.InstanceID != c.Instance || job.MachineID != c.Credential.MachineID || c.Assignment.Revision == 0 {
+	if c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || config.executionContext == nil || domain.DecodeCompactionInput(job.Input, &i) != nil || i.Validate() != nil || c.Credential.MachineID != i.Assignment.MachineID || job.ParentID != i.SourceJobID || job.AssignedDeviceID != c.Credential.DeviceID || job.InstanceID != c.Instance || job.MachineID != c.Credential.MachineID || c.Assignment.Revision == 0 {
 		return nil, domain.CompactionUncertain()
+	}
+	if i.Assignment.Configuration.Harness == domain.OpenCode {
+		return executeOpenCodeSessionCompaction(ctx, config, owner, job, i)
+	}
+	if i.Assignment.Configuration.Harness == domain.Codex {
+		return executeCodexSessionCompaction(ctx, config, owner, job, i)
 	}
 	logger := config.Logger
 	if logger == nil {

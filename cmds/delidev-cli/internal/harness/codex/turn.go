@@ -66,6 +66,10 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	contextBase         *ContinuationContextCheckpoint
+	contextOrder        []ContextRecord
+	compaction          *manualCompaction
+	compactionItems     map[string]compactionItem
 	thread              Thread
 	settings            EffectiveSettings
 	active              domain.ID
@@ -127,6 +131,9 @@ func (c *Client) eligibleTurnLocked(allowRecovery bool) error {
 	}
 	if !allowRecovery && c.problem != nil {
 		return c.problem
+	}
+	if !allowRecovery && c.execution.compaction != nil {
+		return compactionUncertain()
 	}
 	if !allowRecovery && c.execution.continuationPending {
 		return continuationUncertain()
@@ -209,7 +216,8 @@ type startTurnParams struct {
 // A serialized native metadata check and retained terminal observation precede
 // every new send. The coordinator still owns durable input claims and account
 // authority; a native acknowledgment is not a completed product execution.
-func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, input domain.SessionInput) (TurnResult, error) {
+func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, input domain.SessionInput) (diagnosticResult TurnResult, returned error) {
+	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result := TurnResult{RequestID: requestID, InputID: inputID}
 	for _, id := range []domain.ID{requestID, inputID} {
 		if err := id.Validate(); err != nil {
@@ -237,6 +245,12 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 		return result, err
 	}
 	s := state.settings
+	if err := c.verifySidechat(ctx, s.Cwd, c.thread); err != nil {
+		return result, err
+	}
+	if c.sidechat != "" && !sidechatEffective(s) {
+		return result, sidechatUnavailable()
+	}
 	mode := nativeExecute
 	if input.Mode == domain.PlanMode {
 		mode = nativePlan
@@ -261,7 +275,8 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 // Steer keeps mode, model, account and permissions unchanged and always uses
 // the native expected-turn precondition. Definite rejection leaves input free
 // for the coordinator to retain in its ordinary queue; no fallback is sent.
-func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID domain.ID, input domain.SessionInput) (TurnResult, error) {
+func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID domain.ID, input domain.SessionInput) (diagnosticResult TurnResult, returned error) {
+	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result := TurnResult{RequestID: requestID, InputID: inputID, TurnID: expectedTurnID}
 	for _, id := range []domain.ID{requestID, inputID, expectedTurnID} {
 		if err := id.Validate(); err != nil {
@@ -294,6 +309,12 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	}
 	if err := c.checkNativeStateLocked(ctx, false); err != nil {
 		return result, err
+	}
+	if err := c.verifySidechat(ctx, state.settings.Cwd, c.thread); err != nil {
+		return result, err
+	}
+	if c.sidechat != "" && !sidechatEffective(state.settings) {
+		return result, sidechatUnavailable()
 	}
 	params := struct {
 		ThreadID       domain.ID         `json:"threadId"`
@@ -333,7 +354,8 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 // Interrupt requests native cancellation, never reports process cleanup or
 // Archive completion. Inputs remain paused even after a terminal notification.
 // A second interrupt cannot replay an uncertain/acknowledged first attempt.
-func (c *Client) Interrupt(ctx context.Context, requestID, expectedTurnID domain.ID) (TurnResult, error) {
+func (c *Client) Interrupt(ctx context.Context, requestID, expectedTurnID domain.ID) (diagnosticResult TurnResult, returned error) {
+	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result := TurnResult{RequestID: requestID, TurnID: expectedTurnID}
 	for _, id := range []domain.ID{requestID, expectedTurnID} {
 		if err := id.Validate(); err != nil {

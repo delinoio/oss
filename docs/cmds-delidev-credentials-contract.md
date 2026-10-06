@@ -1,5 +1,7 @@
 # DeliDev protected credential storage
 
+OAuth seals only `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}` after a durable staging claim. Keep account-less references and cleanup evidence across uncertain Put/SQLite outcomes. Explicit original local completion may read that reference without another exchange; missing/tombstoned material cannot be replaced. Cancel records denial and cleanup before removal, retains disconnected metadata and never claims upstream revocation. Follow the [OAuth contract](cmds-delidev-account-oauth-contract.md).
+
 ## Scope and ownership
 
 Issue #964 and [the CLI contract](cmds-delidev-contract.md) require authoritative credentials on the server, outside SQLite, transcripts, snapshots, ordinary RPC responses, logs, Worker environments and harness configuration. `cmds/delidev-cli/internal/credentials` implements the protected storage primitive. API connect/disconnect and cleanup now use this primitive through the [account lifecycle contract](cmds-delidev-accounts-contract.md). Subscription login, provider validation, execution revocation, proxy use and full deletion/restore coordination remain separate work; this primitive alone does not grant execution readiness. No CLI/RPC secret read operation is exposed.

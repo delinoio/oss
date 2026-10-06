@@ -92,7 +92,7 @@ const cliboxHeadings = {
 
 const pnportHeadings = {
   "/pnport/": ["pnport", "Release targets", "What the CLI is designed to do", "Guides"],
-  "/pnport/installation": ["Installation and availability", "Planned distribution", "Before a future install"],
+  "/pnport/installation": ["Installation and availability", "Stable distribution", "Install 0.1.2", "Experimental npm next channel"],
   "/pnport/getting-started": ["Getting started", "Check the project", "Run a command"],
   "/pnport/preview-testing": ["Preview testing", "Install the preview", "Prepare a PnP project", "Run Turbopack", "Run TypeScript 7", "Report results"],
   "/pnport/commands": ["Commands", "Global options", "Machine-readable doctor output"],
@@ -101,7 +101,7 @@ const pnportHeadings = {
   "/pnport/cache": ["Cache management", "Inspect the cache", "Prune or clean"],
   "/pnport/diagnostics": ["Diagnostics and troubleshooting", "Start with doctor", "Exit codes and streams"],
   "/pnport/benchmarks": ["Benchmarks", "Reproduction protocol"],
-  "/pnport/releases": ["Releases and rollback", "Release readiness", "Explicit updates and rollback"],
+  "/pnport/releases": ["Releases and rollback", "Published validation and known limits", "Explicit updates and rollback"],
 };
 
 const reactForgeHeadings = {

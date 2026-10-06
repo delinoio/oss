@@ -20,7 +20,7 @@ pub unsafe fn with_argv(
     let argc = 1 + {
         let mut va = va.clone();
         // Safety: argv is guaranteed to be NULL-terminated
-        core::iter::from_fn(|| Some(unsafe { va.arg::<*const c_char>() }))
+        core::iter::from_fn(|| Some(unsafe { va.next_arg::<*const c_char>() }))
             .position(|s| {
                 // Find the NULL terminator
                 s.is_null()
@@ -35,14 +35,15 @@ pub unsafe fn with_argv(
     } else if argc < 4096 {
         // TODO: Use ARG_MAX, not this hardcoded constant
         // Include the terminating null pointer after the argc arguments.
-        // SAFETY: argc is bounded below 4096, so the allocation size cannot overflow.
+        // SAFETY: argc is bounded below 4096, so the allocation size cannot
+        // overflow.
         let ptr = unsafe { libc::malloc((argc + 1) * mem::size_of::<*const c_char>()) };
         if ptr.is_null() {
             Error::ENOMEM.set();
             return -1;
         }
-        // SAFETY: ptr is non-null (checked above), properly aligned, and points to
-        // argc argument slots plus one terminating null slot.
+        // SAFETY: ptr is non-null (checked above), properly aligned, and points
+        // to argc argument slots plus one terminating null slot.
         unsafe { slice::from_raw_parts_mut(ptr.cast::<MaybeUninit<*const c_char>>(), argc + 1) }
     } else {
         Error::E2BIG.set();
@@ -51,13 +52,13 @@ pub unsafe fn with_argv(
     out[0].write(arg0);
 
     for item in out.iter_mut().take(argc).skip(1) {
-        // SAFETY: extracting the next *const c_char argument from the va_list; the
-        // count was pre-validated
-        item.write(unsafe { va.arg::<*const c_char>() });
+        // SAFETY: extracting the next *const c_char argument from the va_list;
+        // the count was pre-validated
+        item.write(unsafe { va.next_arg::<*const c_char>() });
     }
     out[argc].write(core::ptr::null());
     // SAFETY: consuming the NULL terminator from the va_list to advance past it
-    unsafe { va.arg::<*const c_char>() };
+    unsafe { va.next_arg::<*const c_char>() };
 
     // Safety: MaybeUninit<*const c_char> has the same layout as *const c_char,
     // and all elements have been initialized via write() above.
@@ -65,8 +66,8 @@ pub unsafe fn with_argv(
 
     // f only returns if it fails
     if argc >= 32 {
-        // SAFETY: out was allocated with libc::malloc above (argc >= 32 branch), so it
-        // must be freed with libc::free
+        // SAFETY: out was allocated with libc::malloc above (argc >= 32
+        // branch), so it must be freed with libc::free
         unsafe { libc::free(out.as_mut_ptr().cast()) };
     }
     -1

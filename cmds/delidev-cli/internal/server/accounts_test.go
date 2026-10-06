@@ -151,7 +151,11 @@ func (f *accountFixture) shutdown() {
 func (f *accountFixture) save(kind pb.EntityKind, value any) *pb.Resource {
 	f.t.Helper()
 	raw, _ := json.Marshal(value)
-	response, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, Kind: kind, SchemaVersion: 1, DocumentJson: raw}))
+	ownedKind, err := rpc.Kind(kind)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	response, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, Kind: kind, SchemaVersion: rpc.ResourceSchemaVersion(ownedKind, raw), DocumentJson: raw}))
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -163,9 +167,7 @@ func (f *accountFixture) newAccount(auth domain.Authentication) *pb.Resource {
 		endpoint = "http://127.0.0.1:11434/v1"
 	}
 	if auth == domain.SubscriptionAuth {
-		protocol = domain.NativeSubscription
-		endpoint = ""
-		kind = domain.SubscriptionAccount
+		return f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "account", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
 	}
 	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "provider", Protocol: protocol, Endpoint: endpoint, Authentication: auth})
 	return f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "account", ProviderID: domain.ID(provider.Id), Type: kind, Enabled: true, Health: domain.AccountDisconnected})

@@ -3,7 +3,7 @@
 
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     os::{
         fd::{AsRawFd, FromRawFd},
         unix::{
@@ -110,7 +110,11 @@ impl Fixture {
     fn new(mode: &str, static_binary: bool) -> Self {
         let root = Self::project(static_binary);
         let binary = root.path().join("tree");
-        let child = Command::new(pnport_binary())
+        let mut command = Command::new(pnport_binary());
+        if std::env::var_os("PNPORT_TEST_TERMINAL_DIAGNOSTICS").is_some() {
+            command.args(["--log-level", "debug"]);
+        }
+        let child = command
             .current_dir(root.path())
             .args(["--cache-dir"])
             .arg(root.path().join("store"))
@@ -132,6 +136,17 @@ impl Fixture {
 
     fn terminal(mode: &str) -> (Self, fs::File) {
         let root = Self::project(false);
+        // Controlled pre-launch failures exercise diagnostics before the
+        // command group or preload exists. No native output is published.
+        match mode {
+            "missing-image" => fs::remove_file(root.path().join("tree")).unwrap(),
+            "invalid-image" => {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(root.path().join("tree"), fs::Permissions::from_mode(0o600))
+                    .unwrap();
+            }
+            _ => {}
+        }
         let driver = root.path().join("terminal-driver");
         assert!(Command::new("cc")
             .arg(concat!(
@@ -178,6 +193,9 @@ impl Fixture {
             0
         );
         let mut command = Command::new(driver);
+        if matches!(mode, "missing-image" | "invalid-image") {
+            command.env("PNPORT_TEST_TERMINAL_DIAGNOSTICS", "1");
+        }
         command
             .current_dir(root.path())
             .arg(pnport_binary())
@@ -215,18 +233,124 @@ impl Fixture {
             let status = self.child.as_mut().unwrap().try_wait().unwrap();
             assert!(
                 status.is_none(),
-                "terminal driver exited before {name}: {status:?}"
+                "terminal driver exited before {name}: {status:?}; diagnostics={}",
+                self.terminal_diagnostics()
             );
             assert!(
                 Instant::now() < deadline,
-                "terminal job did not reach {name}; driver={}, launching={}, running={}, root={}",
+                "terminal job did not reach {name}; driver={}, launching={}, running={}, root={}, \
+                 diagnostics={}",
                 self.root.path().join("terminal.driver").is_file(),
                 self.root.path().join("terminal.launching").is_file(),
                 self.root.path().join("terminal.running").is_file(),
-                self.root.path().join("root.pid").is_file()
+                self.root.path().join("root.pid").is_file(),
+                self.terminal_diagnostics()
             );
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    fn terminal_diagnostics(&self) -> serde_json::Value {
+        let mut log = String::new();
+        if let Ok(file) = fs::File::open(self.root.path().join("terminal.diagnostics")) {
+            let _ = file.take(64 * 1024).read_to_string(&mut log);
+        }
+        let actions = [
+            "command_prepared",
+            "native_image_admitted",
+            "macos_owner_started",
+            "macos_root_admitted",
+            "macos_owner_unavailable",
+            "macos_owner_recovery",
+            "spawn",
+            "initialization_started",
+            "root_injection_deadline",
+            "macos_job_stopped",
+            "macos_job_resumed",
+            "macos_job_detached",
+            "descendant_injection_deadline",
+            "supervisor_failed",
+            "native_failure_record",
+            "macos_owner_cleanup_requested",
+            "macos_owner_cleanup_acknowledged",
+            "child_exit",
+        ];
+        let observed: Vec<_> = log
+            .lines()
+            .flat_map(|line| {
+                actions
+                    .iter()
+                    .filter(move |action| line.contains(&format!("action=\"{action}\"")))
+            })
+            .take(128)
+            .collect();
+        let codes: Vec<_> = [
+            "PNPORT_MANIFEST_MISSING",
+            "PNPORT_MANIFEST_INVALID",
+            "PNPORT_RESOLUTION_FAILED",
+            "PNPORT_FILESYSTEM_CONFLICT",
+            "PNPORT_INJECTION_FAILED",
+            "PNPORT_CLEANUP_FAILED",
+            "PNPORT_UNSUPPORTED_OPERATION",
+            "PNPORT_GRAPH_CHANGED",
+            "PNPORT_CACHE_FAILED",
+            "PNPORT_ARCHIVE_CORRUPT",
+            "PNPORT_COMMAND_NOT_FOUND",
+            "PNPORT_COMMAND_NOT_EXECUTABLE",
+        ]
+        .into_iter()
+        .filter(|code| log.contains(code))
+        .collect();
+        let stages = [
+            "Starting",
+            "ProjectLoaded",
+            "ProjectValidated",
+            "PlatformValidated",
+            "CompanionValidated",
+            "CacheOpened",
+            "SessionPrepared",
+            "CommandResolved",
+        ];
+        let observed_stages: Vec<_> = log
+            .lines()
+            .filter(|line| line.contains("action=\"execution_stage\""))
+            .flat_map(|line| {
+                stages
+                    .iter()
+                    .filter(move |stage| line.contains(&format!("stage={stage}")))
+            })
+            .take(128)
+            .collect();
+        #[cfg(target_os = "macos")]
+        let stopped = fs::read_to_string(self.root.path().join("terminal.supervisor"))
+            .ok()
+            .and_then(|value| value.parse::<i32>().ok())
+            .and_then(|pid| {
+                let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+                let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+                (unsafe {
+                    libc::proc_pidinfo(
+                        pid,
+                        libc::PROC_PIDTBSDINFO,
+                        1,
+                        info.as_mut_ptr().cast(),
+                        size,
+                    )
+                } == size)
+                    .then(|| unsafe { info.assume_init() }.pbi_status == 4)
+            });
+        #[cfg(not(target_os = "macos"))]
+        let stopped: Option<bool> = None;
+        // Emit closed actions/codes and one state bit, never raw native output,
+        // identifiers, paths, argv or environment values from the debug file.
+        let wait: Vec<i32> = fs::read_to_string(self.root.path().join("terminal.wait"))
+            .unwrap_or_default()
+            .split_whitespace()
+            .filter_map(|value| value.parse().ok())
+            .take(3)
+            .collect();
+        json!({"actions": observed, "stages": observed_stages, "codes": codes, "supervisorStopped": stopped,
+            "waitOutcome": wait})
     }
 
     fn ready(&mut self) {
@@ -342,9 +466,37 @@ impl Fixture {
             assert_eq!(
                 fs::read(self.root.path().join(format!("{role}.signal"))).unwrap(),
                 [signal as u8],
-                "wrong descendant termination signal"
+                "wrong {role} termination signal"
             );
         }
+    }
+
+    fn owner_failure_diagnostics(output: &Output) -> serde_json::Value {
+        let log = String::from_utf8_lossy(&output.stderr);
+        let stages: Vec<_> = [
+            "Registration",
+            "Cleanup",
+            "JournalWrite",
+            "AdmissionReplica",
+        ]
+        .into_iter()
+        .filter(|stage| log.contains(&format!("stage: {stage},")))
+        .collect();
+        let errors: Vec<i32> = log
+            .lines()
+            .filter_map(|line| {
+                line.split("native_error: Some(")
+                    .nth(1)?
+                    .split(')')
+                    .next()?
+                    .parse()
+                    .ok()
+            })
+            .take(8)
+            .collect();
+        json!({"stages": stages, "nativeErrors": errors,
+            "injectionFailed": log.contains("PNPORT_INJECTION_FAILED"),
+            "cleanupFailed": log.contains("PNPORT_CLEANUP_FAILED")})
     }
 }
 
@@ -372,9 +524,116 @@ fn cancellation(signal: i32) {
     fixture.assert_active();
     fixture.signal(signal);
     let output = fixture.stopped();
-    assert_eq!(output.status.code(), Some(128 + signal));
+    assert_eq!(
+        output.status.code(),
+        Some(128 + signal),
+        "normal signal={signal}: diagnostics={}",
+        Fixture::owner_failure_diagnostics(&output)
+    );
     fixture.assert_signals(signal);
     fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+fn group_boundary(modes: &[&str], changed: bool) {
+    for mode in modes {
+        let root = Fixture::project_source(false, "process-group.c");
+        let executable = root.path().join("tree");
+        let native = Command::new(&executable)
+            .current_dir(root.path())
+            .args([*mode, "native"])
+            .process_group(0)
+            .output()
+            .unwrap();
+        assert_eq!(native.status.code(), Some(0));
+        if changed {
+            assert!(root
+                .path()
+                .join(if mode.starts_with("spawn-") {
+                    "spawn-created"
+                } else {
+                    "group-escaped"
+                })
+                .is_file());
+        }
+        for marker in ["spawn-created", "child-created", "group-escaped"] {
+            let _ = fs::remove_file(root.path().join(marker));
+        }
+        let cache_path = root.path().join("store");
+        let output = Command::new(pnport_binary())
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(&cache_path)
+            .args(["--color", "never", "run", "--"])
+            .arg(&executable)
+            .args([*mode, "virtual"])
+            .process_group(0)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if changed {
+            assert!(
+                root.path()
+                    .join(if mode.starts_with("spawn-") {
+                        "spawn-created"
+                    } else {
+                        "group-escaped"
+                    })
+                    .is_file(),
+                "native group operation did not execute"
+            );
+        }
+        if mode.starts_with("spawn-") {
+            assert_eq!(output.stdout, b"owned group control\n");
+            assert!(root.path().join("child-created").is_file());
+        } else if *mode == "join" {
+            assert_eq!(output.stdout, b"owned group control\n");
+        }
+        let cache = Cache::open(cache_path).unwrap();
+        let entries = cache.entries(Operation::List).unwrap();
+        assert!(
+            !entries.is_empty()
+                && entries
+                    .iter()
+                    .all(|entry| matches!(entry.state, State::Complete))
+        );
+        assert!(cache
+            .entries(Operation::Clean)
+            .unwrap()
+            .iter()
+            .all(|entry| matches!(entry.state, State::Removed)));
+        assert!(cache.entries(Operation::List).unwrap().is_empty());
+        assert!(!root.path().join("node_modules").exists());
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn session_and_group_creation_retain_native_behavior() {
+    group_boundary(&["setsid", "setpgid", "setpgrp", "spawn-new"], true);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn spawn_session_creation_retains_native_behavior() {
+    group_boundary(&["spawn-session"], true);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn children_can_join_and_spawn_into_the_existing_owned_group() {
+    group_boundary(&["join", "spawn-same"], false);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn group_target_exit_retains_native_errors_without_poisoning_the_run() {
+    group_boundary(&["exit-target"], false);
 }
 
 #[test]
@@ -488,17 +747,22 @@ fn vector_and_variadic_exec_preserve_nested_virtual_images_and_literal_arguments
 
 #[cfg(target_os = "macos")]
 #[test]
-fn protected_exec_and_shell_fallback_fail_without_starting_unmediated_images() {
-    for mode in ["protected", "shell-fallback"] {
+fn protected_exec_and_spawn_return_unsupported_without_starting_images() {
+    for mode in [
+        "protected",
+        "shell-fallback",
+        "protected-spawn",
+        "protected-spawnp",
+    ] {
         let mut fixture = exec_fixture(mode);
         let output = fixture.stopped();
         assert_eq!(
             output.status.code(),
-            Some(125),
+            Some(23),
             "{mode}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
         assert!(!fixture.root.path().join("exec.accepted").exists());
         assert!(!fixture.root.path().join("shell.accepted").exists());
         fixture.assert_released();
@@ -535,7 +799,7 @@ fn terminal_job(mode: &str) {
     if mode == "interrupt" {
         terminal.write_all(&[3]).unwrap();
     } else {
-        if mode == "stop" {
+        if matches!(mode, "stop" | "new-group") {
             terminal.write_all(&[26]).unwrap();
         }
         fixture.wait_marker("terminal.stopped");
@@ -575,6 +839,37 @@ fn redirected_input_keeps_the_callers_terminal_group() {
     assert_eq!(fixture.stopped().status.code(), Some(23));
     assert!(fixture.root.path().join("terminal.restored").is_file());
     fixture.assert_released();
+}
+
+#[test]
+fn terminal_startup_failures_retain_their_stage_and_exit_class() {
+    for (mode, status, code) in [
+        ("missing-image", 127, "PNPORT_COMMAND_NOT_FOUND"),
+        ("invalid-image", 126, "PNPORT_COMMAND_NOT_EXECUTABLE"),
+    ] {
+        let (mut fixture, _terminal) = Fixture::terminal(mode);
+        fixture.wait_marker("terminal.restored");
+        let output = fixture.child.take().unwrap().wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(status));
+        let diagnostics = fixture.terminal_diagnostics();
+        assert_eq!(diagnostics["codes"], json!([code]));
+        assert_eq!(
+            diagnostics["stages"],
+            json!([
+                "Starting",
+                "ProjectLoaded",
+                "ProjectValidated",
+                "PlatformValidated",
+                "CompanionValidated",
+                "CacheOpened",
+                "SessionPrepared",
+                "CommandResolved",
+            ])
+        );
+        assert_eq!(diagnostics["actions"], json!([]));
+        assert!(!fixture.root.path().join("root.pid").exists());
+        assert!(fixture.root.path().join("terminal.restored").is_file());
+    }
 }
 
 #[test]
@@ -728,7 +1023,7 @@ fn private_owner_rejects_direct_invocation_and_an_untrusted_peer() {
 }
 
 #[cfg(target_os = "macos")]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum OwnerFailure {
     Supervisor,
     Guardian,
@@ -861,5 +1156,335 @@ fn killed_supervisor_retains_grace_then_kills_unresponsive_descendants() {
     fixture.signal(libc::SIGKILL);
     assert_eq!(fixture.stopped().status.signal(), Some(libc::SIGKILL));
     assert!(start.elapsed() >= Duration::from_secs(5));
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn detached_native_trees_retain_signals_and_cache_cleanup() {
+    for mode in [
+        "detached",
+        "detached-group",
+        "detached-spawn-group",
+        "detached-spawn-session",
+    ] {
+        for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+            let mut fixture = Fixture::new(mode, false);
+            fixture.ready();
+            fixture.assert_active();
+            assert_ne!(
+                fs::read(fixture.root.path().join("root.group")).unwrap(),
+                fs::read(fixture.root.path().join("middle.group")).unwrap()
+            );
+            fixture.signal(signal);
+            let output = fixture.stopped();
+            assert_eq!(
+                output.status.code(),
+                Some(128 + signal),
+                "{mode} signal={signal}: diagnostics={}",
+                Fixture::owner_failure_diagnostics(&output)
+            );
+            fixture.assert_signals(signal);
+            fixture.assert_released();
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn detached_native_trees_survive_owner_loss_only_until_cleanup() {
+    for mode in [
+        "detached",
+        "detached-group",
+        "detached-spawn-group",
+        "detached-spawn-session",
+        "detached-ignore",
+    ] {
+        for failure in [OwnerFailure::Supervisor, OwnerFailure::Guardian] {
+            // Closed fixture values only: retain the failing variant without
+            // printing process identities, native content or environment state.
+            eprintln!("fixture_mode={mode} owner_failure={failure:?}");
+            let mut fixture = Fixture::new(mode, false);
+            fixture.ready();
+            let mut unrelated = Control(
+                Command::new("/bin/sleep")
+                    .arg("30")
+                    .process_group(0)
+                    .spawn()
+                    .unwrap(),
+            );
+            // Verify kernel stop admission before injecting owner failure. A
+            // queued SIGCONT before pnport observes the root stop can otherwise
+            // be lost before its subsequent intentional supervisor SIGSTOP.
+            for pid in &fixture.pids {
+                assert_eq!(unsafe { libc::kill(*pid, libc::SIGSTOP) }, 0);
+            }
+            let supervisor = fixture.child.as_ref().unwrap().id() as i32;
+            for pid in fixture.pids.iter().chain(std::iter::once(&supervisor)) {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                loop {
+                    let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
+                    let size = std::mem::size_of_val(&info) as i32;
+                    assert_eq!(
+                        unsafe {
+                            libc::proc_pidinfo(
+                                *pid,
+                                libc::PROC_PIDTBSDINFO,
+                                1,
+                                (&raw mut info).cast(),
+                                size,
+                            )
+                        },
+                        size
+                    );
+                    if info.pbi_status == 4 {
+                        break;
+                    }
+                    assert!(
+                        Instant::now() < deadline,
+                        "{mode}: native stop was not admitted"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+            let start = Instant::now();
+            if matches!(failure, OwnerFailure::Supervisor) {
+                fixture.signal(libc::SIGKILL);
+            } else {
+                assert_eq!(unsafe { libc::kill(fixture.group(), libc::SIGKILL) }, 0);
+                fixture.signal(libc::SIGCONT);
+            }
+            let output = fixture.stopped();
+            if matches!(failure, OwnerFailure::Supervisor) {
+                assert_eq!(output.status.signal(), Some(libc::SIGKILL));
+            } else {
+                assert_eq!(output.status.code(), Some(125));
+            }
+            if mode.ends_with("ignore") {
+                assert!(start.elapsed() >= Duration::from_secs(5));
+            } else {
+                // Forced owner loss can orphan a stopped group. The paired
+                // unvirtualized native control below proves XNU can deliver
+                // SIGHUP/SIGCONT independently of pnport's queued SIGTERM.
+                for role in ["root", "middle", "leaf"] {
+                    let delivered =
+                        fs::read(fixture.root.path().join(format!("{role}.signal"))).unwrap();
+                    assert!(
+                        delivered == [libc::SIGTERM as u8] || delivered == [libc::SIGHUP as u8],
+                        "{mode}, {failure:?}: unexpected {role} termination signal: {delivered:?}"
+                    );
+                }
+            }
+            assert!(unrelated.0.try_wait().unwrap().is_none());
+            fixture.assert_released();
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn normal_root_exit_stops_detached_native_descendants() {
+    let mut fixture = Fixture::new("detached-exit", false);
+    fixture.ready();
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn stopped_unregistered_orphan_is_owned_after_its_parent_exits() {
+    for failure in [OwnerFailure::Supervisor, OwnerFailure::Guardian] {
+        let mut fixture = Fixture::new("detached-orphan", false);
+        for marker in ["root.pid", "middle.pid", "parked.pid"] {
+            fixture.wait_marker(marker);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                if let Ok(pid) = fs::read_to_string(fixture.root.path().join(marker))
+                    .unwrap()
+                    .parse::<i32>()
+                {
+                    fixture.pids.push(pid);
+                    break;
+                }
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        fs::write(fixture.root.path().join("orphan-release"), b"1").unwrap();
+        let middle = fixture.pids[1];
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while pnport_core::macos_process::Identity::capture(middle)
+            .is_ok_and(|identity| !identity.zombie)
+        {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // The parked child has never reached its own image constructor.
+        assert!(!fixture.root.path().join("leaf.pid").exists());
+        if matches!(failure, OwnerFailure::Supervisor) {
+            fixture.signal(libc::SIGKILL);
+        } else {
+            assert_eq!(unsafe { libc::kill(fixture.group(), libc::SIGKILL) }, 0);
+        }
+        let output = fixture.stopped();
+        if matches!(failure, OwnerFailure::Supervisor) {
+            assert_eq!(output.status.signal(), Some(libc::SIGKILL));
+        } else {
+            assert_eq!(output.status.code(), Some(125));
+        }
+        fixture.assert_released();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn terminal_group_changes_retain_foreground_stop_and_resume() {
+    terminal_job("new-group");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn suspended_jobs_do_not_consume_pending_image_deadlines() {
+    terminal_job("pending-pause");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn terminal_interrupt_stops_a_root_in_a_new_session() {
+    let (mut fixture, mut terminal) = Fixture::terminal("detached-interrupt");
+    fixture.ready();
+    fixture.assert_active();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let caller = fs::read_to_string(fixture.root.path().join("terminal.supervisor"))
+            .unwrap()
+            .parse::<i32>()
+            .unwrap();
+        if unsafe { libc::tcgetpgrp(terminal.as_raw_fd()) } == caller {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "detached root retained terminal foreground"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    terminal.write_all(&[3]).unwrap();
+    assert_eq!(fixture.stopped().status.code(), Some(130));
+    fixture.assert_signals(libc::SIGINT);
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn native_stopped_orphan_groups_receive_kernel_hangup() {
+    let root = Fixture::project_source(false, "process-orphan.c");
+    let child = Command::new(root.path().join("tree"))
+        .current_dir(root.path())
+        .process_group(0)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut fixture = Fixture {
+        root,
+        child: Some(child),
+        pids: Vec::new(),
+    };
+    fixture.ready();
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    for role in ["middle", "leaf"] {
+        assert_eq!(
+            fs::read(fixture.root.path().join(format!("{role}.signal"))).unwrap(),
+            [libc::SIGHUP as u8]
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn descendant_foreground_group_restores_the_terminal_before_cleanup() {
+    let (mut fixture, mut master) = Fixture::terminal("child-group");
+    master.write_all(b"first\n").unwrap();
+    fixture.wait_marker("terminal.first");
+    let leaf = fs::read_to_string(fixture.root.path().join("leaf.pid"))
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    fixture.pids.push(leaf);
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn exited_descendant_foreground_group_restores_the_terminal() {
+    let (mut fixture, mut terminal) = Fixture::terminal("child-exit");
+    fixture.wait_marker("root.group");
+    terminal.write_all(b"first\n").unwrap();
+    fixture.wait_marker("terminal.first");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.empty-group").is_file());
+    assert!(fixture.root.path().join("terminal.restored").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn a_live_unrelated_foreground_is_preserved_after_owned_descendant_exit() {
+    let (mut fixture, mut terminal) = Fixture::terminal("unrelated-foreground");
+    fixture.wait_marker("root.group");
+    terminal.write_all(b"first\n").unwrap();
+    fixture.wait_marker("terminal.first");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.empty-group").is_file());
+    assert!(fixture.root.path().join("terminal.preserved").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn an_unclaimed_background_job_preserves_an_empty_foreground() {
+    let (mut fixture, _terminal) = Fixture::terminal("background-empty");
+    assert_eq!(fixture.stopped().status.code(), Some(23));
+    assert!(fixture.root.path().join("terminal.preserved").is_file());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn deleted_journal_and_guardian_loss_retain_an_orphan_parent_version() {
+    let mut fixture = Fixture::new("deleted-journal", false);
+    fixture.ready();
+    let mut unrelated = Control(
+        Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap(),
+    );
+    fs::write(fixture.root.path().join("attack.release"), b"1").unwrap();
+    assert_eq!(fixture.stopped().status.code(), Some(125));
+    assert!(fixture.root.path().join("attack.deleted").is_file());
+    for role in ["root", "leaf"] {
+        assert_eq!(
+            fs::read(fixture.root.path().join(format!("{role}.signal"))).unwrap(),
+            [libc::SIGTERM as u8]
+        );
+    }
+    assert!(unrelated.0.try_wait().unwrap().is_none());
+    fixture.assert_released();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn replacement_environment_cannot_override_the_pinned_owner_key() {
+    let mut fixture = Fixture::new("spoof-key", false);
+    fixture.ready();
+    fixture.signal(libc::SIGTERM);
+    assert_eq!(fixture.stopped().status.code(), Some(143));
+    fixture.assert_signals(libc::SIGTERM);
     fixture.assert_released();
 }

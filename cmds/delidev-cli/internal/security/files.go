@@ -54,7 +54,18 @@ func RegularPrivate(path string) error {
 }
 
 func WriteAtomic(path string, contents []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".pending-")
+	return writeAtomic(path, contents, ".pending-")
+}
+
+// WriteAtomicOwned attributes an interrupted publication to its immutable target.
+// Storage cleanup must inventory these files even when their contents are partial.
+// Ordinary callers retain their existing temporary-file naming contract.
+func WriteAtomicOwned(path string, contents []byte) error {
+	return writeAtomic(path, contents, ".pending-"+filepath.Base(path)+"-")
+}
+
+func writeAtomic(path string, contents []byte, prefix string) error {
+	f, err := os.CreateTemp(filepath.Dir(path), prefix)
 	if err != nil {
 		return err
 	}
@@ -158,3 +169,7 @@ func ReplacePrivateFile(from, to string) error {
 	}
 	return replaceFile(from, to)
 }
+
+// PublishImmutable moves a synchronized temporary file without replacing a
+// previously published generation. The destination must share its private directory.
+func PublishImmutable(from, to string) error { return publishImmutable(from, to) }

@@ -32,8 +32,27 @@ type DiscoveryConfig struct {
 	Logger  *slog.Logger
 }
 
-func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput) (result domain.HarnessDiscoveryOutput, returned error) {
+func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput) (domain.HarnessDiscoveryOutput, error) {
+	return discover(ctx, config, input, false)
+}
+
+// DiscoverCodex probes the server's installed adapter without registering a
+// Worker, probing other harnesses or opening any existing user authentication.
+func DiscoverCodex(ctx context.Context, config DiscoveryConfig) (domain.Installation, error) {
+	result, err := discover(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, true)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	if len(result.Installations) != 1 {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "The server's installed login adapter is unavailable.", "Install the supported Codex version on the server.")
+	}
+	return result.Installations[0], nil
+}
+
+func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool) (result domain.HarnessDiscoveryOutput, returned error) {
 	root, owner := config.Root, config.OwnerID
+	codexVersion := ""
+	var codexDiagnostic *domain.CodexDiagnostic
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
@@ -75,14 +94,32 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		// Even a failed probe may have spawned descendants. Preserve its private
 		// runtime if native ownership cannot prove that cleanup is safe.
 		if err := process.ReconcileOwner(processRoot, owner); err != nil {
+			if onlyCodex {
+				original := returned
+				if original == nil && codexDiagnostic != nil {
+					original = domain.RestoreCodexDiagnostic(*codexDiagnostic)
+				}
+				err = domain.CodexRecoveryFailure(codexVersion, domain.CodexCleanup, original, err)
+			}
 			result, returned = domain.HarnessDiscoveryOutput{}, err
 			return
 		}
 		if err := os.RemoveAll(directory); err != nil && returned == nil {
-			result, returned = domain.HarnessDiscoveryOutput{}, domain.Fail(domain.RecoveryRequired, "The private discovery runtime could not be removed.", "Inspect the Worker's retained probe directory before retrying.")
+			failure := error(domain.Fail(domain.RecoveryRequired, "The private discovery runtime could not be removed.", "Inspect the Worker's retained probe directory before retrying."))
+			if onlyCodex {
+				var original error
+				if codexDiagnostic != nil {
+					original = domain.RestoreCodexDiagnostic(*codexDiagnostic)
+				}
+				failure = domain.CodexRecoveryFailure(codexVersion, domain.CodexCleanup, original, failure)
+			}
+			result, returned = domain.HarnessDiscoveryOutput{}, failure
 		}
 	}()
 	result.Installations = input.Selections.Installations()
+	if onlyCodex {
+		result.Installations = result.Installations[:1]
+	}
 	for index := range result.Installations {
 		if err := ctx.Err(); err != nil {
 			return domain.HarnessDiscoveryOutput{}, domain.SafeError(err)
@@ -141,6 +178,9 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 				}
 			}
 		}
+		if i.Harness == domain.Codex {
+			codexVersion = i.Version
+		}
 		i.Problem = domain.InstallationProblem(i.State)
 		if input.VerifyProtocol && i.State == domain.InstallationDetected {
 			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(i.Harness), State: domain.ProtocolUnsupported}
@@ -163,7 +203,7 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 					var client *codex.Client
 					client, err = codex.Open(bounded, codex.Config{Process: config, Version: i.Version, Home: filepath.Join(home, "codex")})
 					if err == nil {
-						err = client.Close()
+						err = domain.WithCodexDiagnostic(i.Version, domain.CodexCleanup, client.Close())
 					}
 				case domain.ClaudeCode:
 					err = claude.Probe(bounded, claude.ProbeConfig{Process: config, Version: i.Version, Home: filepath.Join(home, "claude")})
@@ -173,6 +213,10 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 					err = opencode.Probe(bounded, opencode.ProbeConfig{Process: config, Version: i.Version, Home: filepath.Join(home, "opencode")})
 				}
 				cancel()
+				if i.Harness == domain.Codex {
+					i.Protocol.Diagnostic = domain.CodexErrorDiagnostic(err)
+					codexDiagnostic = i.Protocol.Diagnostic
+				}
 				if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
 					return domain.HarnessDiscoveryOutput{}, err
 				}
@@ -187,7 +231,7 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 				}
 			}
 			i.Protocol.Problem = domain.ProtocolProblem(i.Protocol.State)
-			logger.InfoContext(ctx, "harness protocol validation completed", "harness", i.Harness, "state", i.Protocol.State)
+			logger.InfoContext(ctx, "harness protocol validation completed", "harness", i.Harness, "state", i.Protocol.State, "version", i.Version)
 		}
 		logger.InfoContext(ctx, "harness discovery completed", "harness", i.Harness, "state", i.State)
 		if i.Harness == domain.Codex && i.State == domain.InstallationDetected {
