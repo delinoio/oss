@@ -24,6 +24,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Generic resource pagination must fit both binary and JSON Connect encodings and resume after the last returned record when the byte budget truncates a count-bounded page.
 
+- Public ResourceService event streams emit only supported nonzero EntityKind values. Keep routing and other unmapped store kinds private, advance the durable cursor across skipped rows and preserve bounded paging, ordering, backpressure and retained-history validation. Cursor gaps do not imply missing public events or authorize client routing.
+
 - Keyless account cleanup/deletion must remain usable without an OS credential store. Skip vault access only with validated immutable keyless API provider ownership; preserve relay cancellation, cleanup generations, receipt replay and credential-bearing staged-intent reconciliation.
 
 - Repository GitHub access follows the integration contract: derive the exact configured owner/repository/profile/generation, bound and join reads outside locks, and recheck authorization and repository revision before response. Keep all eight endpoint states independent; absent head evidence cannot invent Checks/statuses, and availability cannot imply successful CI, satisfied rules, reviewer identity or future authorization. No fallback token, response URL authority, access persistence or inspection receipt.
