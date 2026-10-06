@@ -26,10 +26,11 @@ unsafe fn seccomp(
 #[cfg(feature = "supervisor")]
 fn get_notif_sizes() -> nix::Result<libc::seccomp_notif_sizes> {
     use std::mem::zeroed;
-    // SAFETY: `seccomp_notif_sizes` is a plain data struct safe to zero-initialize
+    // SAFETY: `seccomp_notif_sizes` is a plain data struct safe to
+    // zero-initialize
     let mut sizes = unsafe { zeroed::<libc::seccomp_notif_sizes>() };
-    // SAFETY: `sizes` is a valid mutable pointer to a `seccomp_notif_sizes` struct,
-    // which is the expected argument for `SECCOMP_GET_NOTIF_SIZES`
+    // SAFETY: `sizes` is a valid mutable pointer to a `seccomp_notif_sizes`
+    // struct, which is the expected argument for `SECCOMP_GET_NOTIF_SIZES`
     unsafe { seccomp(libc::SECCOMP_GET_NOTIF_SIZES, 0, (&raw mut sizes).cast()) }?;
     Ok(sizes)
 }
@@ -77,8 +78,9 @@ pub fn install_unotify_filter(prog: &[libc::sock_filter]) -> nix::Result<std::os
         filter: prog.as_ptr().cast_mut().cast(),
     };
 
-    // SAFETY: `filter` is a valid `sock_fprog` pointing to the BPF program slice,
-    // and `SECCOMP_FILTER_FLAG_NEW_LISTENER` requests a notification fd
+    // SAFETY: `filter` is a valid `sock_fprog` pointing to the BPF program
+    // slice, and `SECCOMP_FILTER_FLAG_NEW_LISTENER` requests a notification
+    // fd
     #[expect(clippy::cast_possible_truncation, reason = "flag value fits in u32")]
     let fd = unsafe {
         seccomp(
@@ -88,7 +90,7 @@ pub fn install_unotify_filter(prog: &[libc::sock_filter]) -> nix::Result<std::os
         )
     }?;
 
-    // SAFETY: the seccomp syscall with `SECCOMP_FILTER_FLAG_NEW_LISTENER` returns
-    // a valid, owned file descriptor on success
+    // SAFETY: the seccomp syscall with `SECCOMP_FILTER_FLAG_NEW_LISTENER`
+    // returns a valid, owned file descriptor on success
     Ok(unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) })
 }

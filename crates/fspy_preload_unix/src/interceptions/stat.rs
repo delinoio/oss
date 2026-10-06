@@ -15,8 +15,8 @@ unsafe extern "C" fn stat(path: *const c_char, buf: *mut stat_struct) -> c_int {
     // SAFETY: path is the caller's pathname passed unchanged to libc.
     let operation = unsafe { operation::enter_metadata_path(path, FinalSymlink::Follow) };
     super::observe_path(path, AccessMode::READ);
-    // SAFETY: calling the original libc stat() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc stat() with the same arguments
+    // forwarded from the interposed function
     let result = unsafe { stat::original()(path, buf) };
     #[cfg(target_os = "macos")]
     operation::finish(operation, i64::from(result));
@@ -30,8 +30,8 @@ unsafe extern "C" fn lstat(path: *const c_char, buf: *mut stat_struct) -> c_int 
     let operation = unsafe { operation::enter_metadata_path(path, FinalSymlink::NoFollow) };
     // The legacy access hint has no final-component resolution policy.
     super::observe_path(path, AccessMode::READ);
-    // SAFETY: calling the original libc lstat() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc lstat() with the same arguments
+    // forwarded from the interposed function
     let result = unsafe { lstat::original()(path, buf) };
     #[cfg(target_os = "macos")]
     operation::finish(operation, i64::from(result));
@@ -59,8 +59,8 @@ unsafe extern "C" fn fstatat(
         )
     };
     super::observe_at(dirfd, pathname, AccessMode::READ);
-    // SAFETY: calling the original libc fstatat() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc fstatat() with the same arguments
+    // forwarded from the interposed function
     let result = unsafe { fstatat::original()(dirfd, pathname, buf, flags) };
     #[cfg(target_os = "macos")]
     operation::finish(operation, i64::from(result));
@@ -86,7 +86,8 @@ unsafe extern "C" fn statx(
     let Some(original) = statx::try_original() else {
         // Rust's standard library interprets ENOSYS from its statx availability
         // probe as unsupported and falls back to stat64.
-        // SAFETY: __errno_location returns the calling thread's errno storage on Linux.
+        // SAFETY: __errno_location returns the calling thread's errno storage
+        // on Linux.
         unsafe { *libc::__errno_location() = libc::ENOSYS };
         return -1;
     };
@@ -97,10 +98,11 @@ unsafe extern "C" fn statx(
             unsafe { handle_open(BorrowedFd::borrow_raw(dirfd), AccessMode::READ) };
         }
     } else {
-        // SAFETY: pathname is a non-null C string pointer provided by the statx caller.
+        // SAFETY: pathname is a non-null C string pointer provided by the statx
+        // caller.
         unsafe { handle_open(PathAt::borrow_raw(dirfd, pathname), AccessMode::READ) };
     }
-    // SAFETY: calling the original libc statx() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc statx() with the same arguments
+    // forwarded from the interposed function
     unsafe { original(dirfd, pathname, flags, mask, statxbuf) }
 }

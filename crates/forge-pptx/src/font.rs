@@ -72,7 +72,7 @@ fn eot() -> Result<Vec<u8>> {
         }
         let value = value.ok_or_else(|| failure("font name"))?;
         out.extend_from_slice(&(value.len() as u16).to_le_bytes());
-        for pair in value.chunks_exact(2) {
+        for pair in value.as_chunks::<2>().0.iter() {
             out.extend_from_slice(&[pair[1], pair[0]]);
         }
         out.extend_from_slice(&[0, 0]);

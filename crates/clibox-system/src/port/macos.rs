@@ -64,8 +64,9 @@ fn name(info: &libc::proc_bsdinfo) -> String {
 
 fn rows(pid: u32, info: &libc::proc_bsdinfo, ports: &BTreeSet<u16>, protocol: Protocol) -> Report {
     let mut report = Report::default();
-    // Reserve extra descriptors for concurrent opens. A full buffer is reported as
-    // incomplete rather than silently truncating or retrying an operation snapshot.
+    // Reserve extra descriptors for concurrent opens. A full buffer is reported
+    // as incomplete rather than silently truncating or retrying an
+    // operation snapshot.
     let count = info.pbi_nfiles as usize + 64;
     let mut fds = vec![
         libc::proc_fdinfo {
@@ -126,7 +127,8 @@ fn rows(pid: u32, info: &libc::proc_bsdinfo, ports: &BTreeSet<u16>, protocol: Pr
         if !matches!(socket.soi_family, libc::AF_INET | libc::AF_INET6) {
             continue;
         }
-        // Read only the active union member after verifying the kernel's discriminator.
+        // Read only the active union member after verifying the kernel's
+        // discriminator.
         let (kind, inet) = match (socket.soi_kind, socket.soi_protocol) {
             (2, libc::IPPROTO_TCP) => {
                 let tcp = unsafe { socket.soi_proto.pri_tcp };

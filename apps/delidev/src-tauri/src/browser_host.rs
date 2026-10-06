@@ -19,7 +19,8 @@ use delidev_desktop::{
     canonical_id,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Cef, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri_runtime_cef::CefRuntime;
 type Result<T> = std::result::Result<T, NativeFailure>;
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -268,7 +269,7 @@ impl BrowserHost {
     // accepts the reservation, before starting asynchronous authority reads.
     pub fn reserve_on_worker(
         self: &Arc<Self>,
-        app: AppHandle<Cef>,
+        app: AppHandle<CefRuntime>,
         window: String,
         view_id: String,
     ) -> Result<()> {
@@ -289,7 +290,8 @@ impl BrowserHost {
 
     pub fn begin_exit(&self, code: i32) -> bool {
         // Close address acceptance under its short queue gate. Already accepted
-        // callbacks remain owned by the tracked worker; the UI never waits for I/O.
+        // callbacks remain owned by the tracked worker; the UI never waits for
+        // I/O.
         {
             let _acceptance = self.addresses.lock();
             self.stopping.store(true, Ordering::Release);
@@ -304,7 +306,7 @@ impl BrowserHost {
             .unwrap_or(true)
     }
 
-    pub fn start(self: &Arc<Self>, app: AppHandle<Cef>) {
+    pub fn start(self: &Arc<Self>, app: AppHandle<CefRuntime>) {
         self.state.lock().unwrap().discovery_pending = true;
         let host = Arc::clone(self);
         let thread = thread::spawn(move || {
@@ -325,8 +327,9 @@ impl BrowserHost {
                     thread::sleep(Duration::from_millis(100));
                 }
             }
-            // Quit may arrive in the polling sleep after a new account deletion.
-            // Keep the event loop alive through one final worker discovery pass.
+            // Quit may arrive in the polling sleep after a new account
+            // deletion. Keep the event loop alive through one final
+            // worker discovery pass.
             host.discover_removals(
                 DiscoveryPass::Exit {
                     deadline: Instant::now() + Duration::from_secs(8),
@@ -355,7 +358,8 @@ impl BrowserHost {
         mut close_profile: impl FnMut(String),
     ) {
         // Completed offline connection tombstones preserve their original scope
-        // after credential destruction, including removals initiated by the CLI.
+        // after credential destruction, including removals initiated by the
+        // CLI.
         let mut after = String::new();
         for _ in 0..16 {
             if !self.can_discover(pass) {
@@ -379,9 +383,10 @@ impl BrowserHost {
                 break;
             }
         }
-        // Include saved clients whose windows have never been opened. Each child
-        // retains the observer's two-second deadline; no new read starts after
-        // the final pass's budget expires, even when endpoints remain offline.
+        // Include saved clients whose windows have never been opened. Each
+        // child retains the observer's two-second deadline; no new read
+        // starts after the final pass's budget expires, even when
+        // endpoints remain offline.
         let mut scopes = vec![None];
         if self.can_discover(pass)
             && let Ok(saved) = self.observer.saved_connections()
@@ -596,12 +601,12 @@ impl BrowserHost {
         Ok(())
     }
 
-    // Called on the UI thread only after worker preparation and a second trusted
-    // document check. This path performs no filesystem operations.
+    // Called on the UI thread only after worker preparation and a second
+    // trusted document check. This path performs no filesystem operations.
     pub fn open(
         self: &Arc<Self>,
-        app: &AppHandle<Cef>,
-        window: &WebviewWindow<Cef>,
+        app: &AppHandle<CefRuntime>,
+        window: &WebviewWindow<CefRuntime>,
         scope: Option<SavedConnection>,
         record: ProfileRecord,
         bounds: Bounds,
@@ -828,8 +833,8 @@ impl BrowserHost {
 
     pub fn control(
         self: &Arc<Self>,
-        app: &AppHandle<Cef>,
-        window: &WebviewWindow<Cef>,
+        app: &AppHandle<CefRuntime>,
+        window: &WebviewWindow<CefRuntime>,
         control: Control,
     ) -> Result<BrowserState> {
         let Control {
@@ -927,8 +932,9 @@ impl BrowserHost {
                 let p = state.profiles.get_mut(profile).unwrap();
                 let context = p.context.clone().ok_or(NativeFailure::Busy)?;
                 let selected = p.tabs.selected.clone();
-                // Profile tabs are shared: every live user observes the same selected
-                // tab, including closing the last tab without deleting the profile.
+                // Profile tabs are shared: every live user observes the same
+                // selected tab, including closing the last tab
+                // without deleting the profile.
                 let replacement = state.select_tab(profile, &selected, unmap_view)?;
                 drop(state);
                 for browser in replacement.closing {
@@ -965,7 +971,8 @@ impl BrowserHost {
     ) -> Result<BrowserState> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         // A superseding reservation already unmaps the previous child. Retried
-        // cleanup proves that old view is absent without touching its replacement.
+        // cleanup proves that old view is absent without touching its
+        // replacement.
         if let Some(view) = state
             .views
             .get_mut(window)
@@ -1050,7 +1057,8 @@ impl BrowserHost {
         close_child: impl FnOnce(),
     ) {
         // Initial native geometry can fail after the child has been accepted.
-        // Retain its exact failure before asynchronous closure clears the handle.
+        // Retain its exact failure before asynchronous closure clears the
+        // handle.
         if let Err(code) = self.creation_completed(profile, request, result) {
             close_child();
             tracing::warn!(operation = "browser_geometry", ?code);
@@ -1089,7 +1097,8 @@ impl BrowserHost {
     ) -> Result<()> {
         let mut first_failure = None;
         // Every shared user has already lost its old child. One failed creation
-        // cannot prevent later users from receiving a child or an exact failure.
+        // cannot prevent later users from receiving a child or an exact
+        // failure.
         for request in requests {
             if let Err(code) = self.creation_completed(profile, request, create_child(request)) {
                 first_failure.get_or_insert(code);
@@ -1384,8 +1393,9 @@ impl BrowserHost {
     }
 
     // Native UI loop only. Window destruction cannot rely on renderer cleanup.
-    // Invalidate pending preparation/creation before requesting raw-child close;
-    // retain profiles and callback accounting until actual CEF teardown.
+    // Invalidate pending preparation/creation before requesting raw-child
+    // close; retain profiles and callback accounting until actual CEF
+    // teardown.
     pub fn close_window(&self, window: &str) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         let hidden = if let Some(view) = state.views.get_mut(window) {
@@ -1533,7 +1543,8 @@ impl BrowserHost {
         Ok(())
     }
 
-    // No CEF API may run here. The caller has separately observed runtime return.
+    // No CEF API may run here. The caller has separately observed runtime
+    // return.
     pub fn finish_removals(&self) -> Result<()> {
         if !self.stopping.load(Ordering::Acquire)
             || self.join.lock().map_err(|_| NativeFailure::Busy)?.is_some()
@@ -1556,8 +1567,9 @@ impl BrowserHost {
         self.finish_account_removals()
     }
 
-    // Called only after independent native shutdown and the address-worker join,
-    // with storage serialized. Offline forgotten scopes cannot spend this budget.
+    // Called only after independent native shutdown and the address-worker
+    // join, with storage serialized. Offline forgotten scopes cannot spend
+    // this budget.
     fn finish_account_removals(&self) -> Result<()> {
         let started = Instant::now();
         let mut first_failure = None;
@@ -1591,13 +1603,16 @@ impl BrowserHost {
             if path.file_stem().and_then(|s| s.to_str()) != Some(removal.record.id.as_str()) {
                 return Err(NativeFailure::InvalidEvidence);
             }
-            // Persist progress before any offline acknowledgment can exhaust the
-            // exit budget. Retained receipts must not monopolize every later exit.
+            // Persist progress before any offline acknowledgment can exhaust
+            // the exit budget. Retained receipts must not
+            // monopolize every later exit.
             browser::write_private(&cursor_path, &removal.record.id)?;
             let result = (|| -> Result<()> {
-                // The durable original intent already denies reopen. Remove locally
-                // after native shutdown even if the owning server is temporarily offline.
-                // Its receipt remains pending until a fresh exact status and acknowledgment.
+                // The durable original intent already denies reopen. Remove
+                // locally after native shutdown even if the
+                // owning server is temporarily offline.
+                // Its receipt remains pending until a fresh exact status and
+                // acknowledgment.
                 let cache = browser::profile_path(&self.root.join("profiles"), &removal.record)?;
                 removal.shutdown_confirmed = true;
                 browser::write_private(&path, &removal)?;
@@ -1619,7 +1634,8 @@ impl BrowserHost {
             }
             // A completed local purge and a deferred server acknowledgment are
             // separate outcomes. Offline/revoked authority retains the original
-            // intent without turning an otherwise normal quit into host failure.
+            // intent without turning an otherwise normal quit into host
+            // failure.
             let acknowledgment = (|| -> Result<()> {
                 let current = self
                     .connector
@@ -1740,12 +1756,12 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T
     serde_json::from_slice(&fs::read(path).map_err(|_| NativeFailure::StorageUnavailable)?)
         .map_err(|_| NativeFailure::InvalidEvidence)
 }
-cef::wrap_request_context_handler! {struct ContextReady{host:Arc<BrowserHost>,app:AppHandle<Cef>,profile:String,}impl RequestContextHandler{
+cef::wrap_request_context_handler! {struct ContextReady{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,}impl RequestContextHandler{
  fn on_request_context_initialized(&self,context:Option<&mut RequestContext>){let Some(context)=context else{return};let pending={let Ok(mut state)=self.host.state.lock()else{return};let Some(p)=state.profiles.get_mut(&self.profile)else{return};if p.removing||self.host.stopping.load(Ordering::Acquire){return};p.ready=true;std::mem::take(&mut p.pending)};for request in pending{let _=create(&self.host,&self.app,self.profile.clone(),request,context.clone());}}
 }}
 fn create(
     host: &Arc<BrowserHost>,
-    app: &AppHandle<Cef>,
+    app: &AppHandle<CefRuntime>,
     profile: String,
     request: ViewRequest,
     context: RequestContext,
@@ -1755,7 +1771,7 @@ fn create(
 }
 fn create_child(
     host: &Arc<BrowserHost>,
-    app: &AppHandle<Cef>,
+    app: &AppHandle<CefRuntime>,
     profile: String,
     request: ViewRequest,
     mut context: RequestContext,
@@ -1833,7 +1849,7 @@ fn create_child(
     };
     Ok(())
 }
-cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<Cef>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,}impl Client{
+cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,}impl Client{
  // The pinned runtime installs a renderer-wide JavaScript message stub. Raw
  // external children have no Tauri browser-side handler: reject every process
  // message here so that stub cannot acquire product/native authority.
@@ -1845,7 +1861,7 @@ cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<Cef
  fn dialog_handler(&self)->Option<DialogHandler>{Some(DenyFiles::new())}
  fn download_handler(&self)->Option<DownloadHandler>{Some(DenyDownloads::new())}
 }}
-cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<Cef>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
+cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
  fn on_after_created(&self,browser:Option<&mut Browser>){
    let Some(b)=browser else{return};
    self.host.finish_child_created(&self.profile,&self.request,
@@ -1883,7 +1899,7 @@ cef::wrap_dialog_handler! {struct DenyFiles;impl DialogHandler{
  fn on_file_dialog(&self,_browser:Option<&mut Browser>,_mode:FileDialogMode,_title:Option<&CefString>,_path:Option<&CefString>,_filters:Option<&mut CefStringList>,_extensions:Option<&mut CefStringList>,_descriptions:Option<&mut CefStringList>,callback:Option<&mut FileDialogCallback>)->i32{if let Some(c)=callback{c.cancel()};1}
 }}
 cef::wrap_download_handler! {struct DenyDownloads;impl DownloadHandler{fn can_download(&self,_browser:Option<&mut Browser>,_url:Option<&CefString>,_method:Option<&CefString>)->i32{0}}}
-fn parent(window: &WebviewWindow<Cef>) -> Result<usize> {
+fn parent(window: &WebviewWindow<CefRuntime>) -> Result<usize> {
     #[cfg(target_os = "macos")]
     return window
         .ns_view()
@@ -1958,8 +1974,9 @@ fn unmap_view(view: &View) -> Result<()> {
 fn hide_browser(browser: &Browser, request: &ViewRequest) -> Result<()> {
     let host = browser.host().ok_or(NativeFailure::InvalidEvidence)?;
     // Native invisibility is synchronous; CloseBrowser only requests teardown.
-    // Still request closure after an unmap failure, retaining the view until its
-    // exact close callback or a later successful native hide proves absence.
+    // Still request closure after an unmap failure, retaining the view until
+    // its exact close callback or a later successful native hide proves
+    // absence.
     let hidden = position(host.window_handle(), request.bounds, request.scale, false);
     host.close_browser(1);
     hidden
@@ -2394,7 +2411,8 @@ mod tests {
             drop(state);
             host.hide_with("fixture", &record.id, &view_id, |_| {
                 // Hide has no old handle after replacement. Its earlier unmap
-                // must already have proved that the delayed old child is hidden.
+                // must already have proved that the delayed old child is
+                // hidden.
                 assert!(!visible.get());
                 Ok(())
             })
@@ -2793,9 +2811,10 @@ mod tests {
     fn after_created_geometry_failure_survives_the_close_callback_and_retry() {
         let (_temp, host, record, view_id, request) = active_storage_fixture();
         host.state.lock().unwrap().live = 1;
-        // The controlled geometry result models an already accepted native child.
-        // Its close adapter observes the retained failure before delivering CEF's
-        // separate close callback; neither callback uses a real renderer here.
+        // The controlled geometry result models an already accepted native
+        // child. Its close adapter observes the retained failure before
+        // delivering CEF's separate close callback; neither callback
+        // uses a real renderer here.
         host.finish_child_created(
             &record.id,
             &request,
@@ -2849,8 +2868,9 @@ mod tests {
         let (_temp, host, record) = storage_fixture();
         let original = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &original).unwrap();
-        // Model a slow filesystem with storage-worker backpressure. Native state
-        // and later reservations must remain usable while preparation is blocked.
+        // Model a slow filesystem with storage-worker backpressure. Native
+        // state and later reservations must remain usable while
+        // preparation is blocked.
         let storage = host.storage.lock().unwrap();
         let (started, wait) = std::sync::mpsc::channel();
         let copy = Arc::clone(&host);
@@ -3372,8 +3392,9 @@ esac
             65
         );
 
-        // Restart, rather than reusing in-memory progress. Every receipt remains
-        // offline, so only the durable cursor can reach the remaining directory.
+        // Restart, rather than reusing in-memory progress. Every receipt
+        // remains offline, so only the durable cursor can reach the
+        // remaining directory.
         let restarted = BrowserHost::new(host.root.clone(), Arc::clone(&host.connector)).unwrap();
         restarted.stopping.store(true, Ordering::Release);
         restarted.finish_removals().unwrap();
@@ -3433,8 +3454,9 @@ esac
         assert!(host.finish_removals().is_err());
         assert!(cache.exists());
         // A controlled adapter supplies the native close proof only after its
-        // writer has joined. The real host receives this through CEF callbacks and
-        // calls final cleanup only after app.run returns through CefShutdown.
+        // writer has joined. The real host receives this through CEF callbacks
+        // and calls final cleanup only after app.run returns through
+        // CefShutdown.
         host.state.lock().unwrap().live = 0;
         host.finish_removals().unwrap();
         assert!(!cache.exists());

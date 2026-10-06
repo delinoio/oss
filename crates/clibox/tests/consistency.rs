@@ -328,8 +328,9 @@ launch(process.env.CLIBOX_TEST_BINARY, process.argv.slice(1)).then(({code, signa
                     let _ = child.wait();
                     panic!("operation not ready: {}", reader.join().unwrap());
                 }
-                // Streaming transforms stage before consuming the blocked input;
-                // cancel after staging to exercise cleanup for both Unix signals.
+                // Streaming transforms stage before consuming the blocked
+                // input; cancel after staging to exercise
+                // cleanup for both Unix signals.
                 while args[0] == "base64" && fs::read_dir(dir.path()).unwrap().count() == 1 {
                     if child.try_wait().unwrap().is_some() || Instant::now() >= deadline {
                         let _ = child.kill();

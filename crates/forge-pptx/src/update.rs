@@ -903,7 +903,8 @@ pub fn update_with_measurer(
             }
             // Existing chart parts belong to the selective editor below. Build
             // only a frame fragment; change_geometry copies its transform, not
-            // its synthetic relationship. No package clone or workbook generation.
+            // its synthetic relationship. No package clone or workbook
+            // generation.
             let fragment = if old.is_some() && n.kind == NodeKind::Chart {
                 emit::chart_frame(n, b.shape_id, placement.nodes[&id].frame)?
             } else {

@@ -1,3 +1,4 @@
+import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -37,7 +38,6 @@ export function desktopArguments(platform, args, credits) {
     },
   };
   return [
-    ...cargo, "--features", "cli", "--bin", "delidev-tauri-cli", "--",
     "dev", "--features", "desktop-host,custom-protocol", "--no-watch", "--no-dev-server",
     "--config", JSON.stringify(config),
     "--", "--locked", "--bin", "delidev-desktop", "--", ...args,
@@ -76,7 +76,9 @@ export async function runDesktop(args, {
     // an application argument, never a Tauri/config/Cargo override.
     const forwarded = args[0] === "--" ? args.slice(1) : args;
     report("started");
-    const result = await run("cargo", desktopArguments(platform, forwarded, credits), options, lifecycle);
+    const cliArguments = desktopArguments(platform, forwarded, credits);
+    const invocation = platform === "darwin" ? tauriCommand(cliArguments) : ["cargo", cliArguments];
+    const result = await run(...invocation, options, lifecycle);
     report(result.code === 0 && result.signal === null ? "exited" : "failed", result);
     return result;
   } catch {

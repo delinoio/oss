@@ -170,7 +170,8 @@ unsafe extern "C" fn pread_nocancel(
     offset: off_t,
 ) -> ssize_t {
     let token = operation::enter_fd_requested(Kind::PositionalRead, fd, u64::try_from(count).ok());
-    // SAFETY: forwards the caller's original descriptor, buffer, count, and offset.
+    // SAFETY: forwards the caller's original descriptor, buffer, count, and
+    // offset.
     let result = unsafe { pread_nocancel::original()(fd, buffer, count, offset) };
     operation::finish(token, result as i64);
     result
@@ -232,7 +233,8 @@ unsafe extern "C" fn pwrite_nocancel(
     offset: off_t,
 ) -> ssize_t {
     let token = operation::enter_fd(Kind::PositionalWrite, fd);
-    // SAFETY: forwards the caller's original descriptor, buffer, count, and offset.
+    // SAFETY: forwards the caller's original descriptor, buffer, count, and
+    // offset.
     let result = unsafe { pwrite_nocancel::original()(fd, buffer, count, offset) };
     operation::finish(token, result as i64);
     result

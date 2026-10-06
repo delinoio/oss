@@ -11,8 +11,8 @@ unsafe extern "C" fn access(pathname: *const c_char, mode: c_int) -> c_int {
     // SAFETY: the caller's pathname is forwarded unchanged to libc.
     let operation = unsafe { operation::enter_path(Kind::Metadata, pathname) };
     super::observe_path(pathname, AccessMode::READ);
-    // SAFETY: calling the original libc access() with the same arguments forwarded
-    // from the interposed function
+    // SAFETY: calling the original libc access() with the same arguments
+    // forwarded from the interposed function
     let result = unsafe { access::original()(pathname, mode) };
     #[cfg(target_os = "macos")]
     operation::finish(operation, i64::from(result));

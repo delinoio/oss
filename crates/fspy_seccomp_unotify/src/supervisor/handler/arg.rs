@@ -180,6 +180,10 @@ impl Fd {
 
 impl FromSyscallArg for Fd {
     #[expect(
+        clippy::allow_attributes,
+        reason = "the imported cast lint depends on the owning workspace lint set"
+    )]
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Linux syscall descriptors use the low 32 bits, including negative AT_FDCWD"
     )]

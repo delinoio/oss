@@ -39,8 +39,8 @@ const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
 const MAX_DIAGNOSTIC_DECODINGS = 8;
 const MAX_DIAGNOSTIC_PARAMETER_SCANS = 16;
 const MAX_DIAGNOSTIC_SCAN_BYTES = 2 * MAX_CRASH_STACK_BYTES;
-const EXACT_TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
-const EXACT_CEF_REVISION = "150.0.10+g8042e43+chromium-150.0.7871.101";
+const EXACT_TAURI_REVISION = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975";
+const EXACT_CEF_REVISION = "151.3.24+g2384915+chromium-151.0.7922.174";
 const diagnosticPlatforms: ReadonlySet<DiagnosticPlatform> = new Set([
   DiagnosticPlatform.MACOS,
   DiagnosticPlatform.WINDOWS,

@@ -483,7 +483,7 @@ impl Graph<'_> {
             Raw::Mapping(ids) => {
                 let mut explicit = BTreeMap::new();
                 let mut merges = Vec::new();
-                for pair in ids.chunks_exact(2) {
+                for pair in ids.as_chunks::<2>().0.iter() {
                     let key = self.resolve(pair[0])?;
                     let value = self.resolve(pair[1])?;
                     match &key.kind {

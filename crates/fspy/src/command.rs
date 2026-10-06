@@ -374,7 +374,8 @@ impl Command {
 
         #[cfg(unix)]
         for pre_exec in self.pre_exec_closures {
-            // Safety: The caller of `pre_exec` is responsible for ensuring safety.
+            // Safety: The caller of `pre_exec` is responsible for ensuring
+            // safety.
             unsafe { tokio_cmd.pre_exec(pre_exec) };
         }
 

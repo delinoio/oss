@@ -31,8 +31,8 @@ const runtime: RuntimeSnapshot = {
   osVersion: "fixture",
   appVersion: "0.1.0",
   buildId: "test",
-  tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
-  cefRevision: "150.0.10+g8042e43+chromium-150.0.7871.101",
+  tauriRevision: "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975",
+  cefRevision: "151.3.24+g2384915+chromium-151.0.7922.174",
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };

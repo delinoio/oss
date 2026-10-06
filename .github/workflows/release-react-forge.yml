@@ -86,7 +86,7 @@ jobs:
           version: 10.26.2
       - uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: nightly-2026-01-01
+          toolchain: nightly-2026-09-28
           targets: ${{ matrix.target }}
           components: clippy
       - run: pnpm install --frozen-lockfile --ignore-scripts

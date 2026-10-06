@@ -167,9 +167,10 @@ impl Registry {
 
     fn commit(&mut self, identity: Identity) -> io::Result<()> {
         // The workload can delete a signed file, but cannot reach this private
-        // same-image inherited mapping. Publish a complete immutable slot before
-        // the admission ACK. Its unlinked backing survives guardian death and
-        // has capacity for every bounded version while the supervisor is stopped.
+        // same-image inherited mapping. Publish a complete immutable slot
+        // before the admission ACK. Its unlinked backing survives
+        // guardian death and has capacity for every bounded version
+        // while the supervisor is stopped.
         if let Err(error) = self.replicate(identity) {
             self.record_error(FailureStage::AdmissionReplica, Some(&error));
             return Err(error);

@@ -21,8 +21,9 @@ fn npm_launcher_console_events_preserve_native_cleanup_and_status() {
     let launcher =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/clibox/src/launcher.cjs");
     if !launcher.is_file() {
-        // Standalone Cargo packages do not include the npm workspace. Repository
-        // Windows CI and release runners provide Node and run this integration.
+        // Standalone Cargo packages do not include the npm workspace.
+        // Repository Windows CI and release runners provide Node and
+        // run this integration.
         return;
     }
     let output = Command::new(std::env::current_exe().unwrap())
@@ -44,8 +45,9 @@ fn npm_launcher_wait_console_events_preserve_cancelled_json() {
     let launcher =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/clibox/src/launcher.cjs");
     if !launcher.is_file() {
-        // Standalone Cargo packages do not include the npm workspace. Repository
-        // Windows CI and release runners provide Node and run this integration.
+        // Standalone Cargo packages do not include the npm workspace.
+        // Repository Windows CI and release runners provide Node and
+        // run this integration.
         return;
     }
     for via_npm in [false, true] {
@@ -164,8 +166,9 @@ process.stderr.write('launcher_ready\n');"#,
                         panic!("launcher did not become ready: {}", reader.join().unwrap());
                     }
                 }
-                // This console belongs only to the disposable helper and its Node
-                // and native children, so no event can reach the CI runner.
+                // This console belongs only to the disposable helper and its
+                // Node and native children, so no event can
+                // reach the CI runner.
                 assert_ne!(unsafe { GenerateConsoleCtrlEvent(event, 0) }, 0);
                 while child.try_wait().unwrap().is_none() {
                     if Instant::now() >= deadline {

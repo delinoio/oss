@@ -6,12 +6,29 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:46311",
-    "features": ["desktop-host"]
+    "features": [
+      "desktop-host"
+    ]
   },
   "app": {
-    "windows": [{"label": "main", "title": "DeliDev", "create": false, "width": 1280, "height": 820, "minWidth": 960, "minHeight": 640, "decorations": true, "maximized": true}],
+    "windows": [
+      {
+        "label": "main",
+        "title": "DeliDev",
+        "create": false,
+        "width": 1280,
+        "height": 820,
+        "minWidth": 960,
+        "minHeight": 640,
+        "decorations": true,
+        "maximized": true
+      }
+    ],
     "security": {
-      "capabilities": ["main", "saved"],
+      "capabilities": [
+        "main",
+        "saved"
+      ],
       "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:46310; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'",
       "devCsp": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:46310 ws://127.0.0.1:46311; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'"
     }
@@ -24,14 +41,29 @@
       "../../../NOTICE": "notices/NOTICE",
       "notices/CEF-LICENSE.txt": "notices/CEF-LICENSE.txt"
     },
-    "icon": ["icons/icon.png", "icons/icon-source@2x.png", "icons/icon.ico"],
-    "externalBin": ["binaries/delidev"],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon-source@2x.png",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/delidev"
+    ],
     "macOS": {
       "minimumSystemVersion": "13.0",
       "entitlements": "entitlements.plist",
       "files": {
         "PlugIns/DeliDevWidget.appex": "../../../target/delidev-widget/Release/DeliDevWidget.appex",
         "PlugIns/DeliDevWidgetSelection.appex": "../../../target/delidev-widget/Release/DeliDevWidgetSelection.appex"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "xdg-desktop-portal",
+          "xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde",
+          "zenity"
+        ]
       }
     }
   }

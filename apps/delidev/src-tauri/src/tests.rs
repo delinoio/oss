@@ -183,7 +183,8 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     connector.listen = listener.local_addr().unwrap().to_string();
     drop(listener);
-    // Always stop this private fixture server, including after assertion failure.
+    // Always stop this private fixture server, including after assertion
+    // failure.
     struct Stop<'a>(&'a Connector);
     impl Drop for Stop<'_> {
         fn drop(&mut self) {

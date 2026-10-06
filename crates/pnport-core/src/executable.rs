@@ -89,8 +89,9 @@ fn prepare_with_translation_in_context(
         let argument = fields.next().map(str::trim).filter(|s| !s.is_empty());
         let mut interpreter_args = Vec::new();
         path = if interpreter == "/usr/bin/env" {
-            // env in a shebang declares PATH-based interpreter selection. Resolve
-            // that declaration directly; never execute or replace protected env.
+            // env in a shebang declares PATH-based interpreter selection.
+            // Resolve that declaration directly; never execute or
+            // replace protected env.
             let argument = argument.ok_or_else(invalid)?;
             let words: Vec<_> = if let Some(split) = argument.strip_prefix("-S ") {
                 shell_words::split(split).map_err(|_| invalid())?

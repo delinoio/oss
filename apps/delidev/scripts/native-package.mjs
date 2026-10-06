@@ -1,3 +1,4 @@
+import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { openSync, readSync, closeSync, lstatSync, readdirSync, readFileSync, realpathSync, mkdirSync, rmSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
@@ -7,8 +8,8 @@ export const targets = Object.freeze([
   { target: "aarch64-apple-darwin", platform: "darwin", arch: "arm64", runner: "macos-15", cef: "cef_macos_aarch64" },
   { target: "x86_64-pc-windows-msvc", platform: "win32", arch: "x64", runner: "windows-2022", cef: "cef_windows_x86_64" },
   { target: "aarch64-pc-windows-msvc", platform: "win32", arch: "arm64", runner: "windows-11-arm", cef: "cef_windows_aarch64" },
-  { target: "x86_64-unknown-linux-gnu", platform: "linux", arch: "x64", runner: "ubuntu-22.04", cef: "cef_linux_x86_64" },
-  { target: "aarch64-unknown-linux-gnu", platform: "linux", arch: "arm64", runner: "ubuntu-22.04-arm", cef: "cef_linux_aarch64" },
+  { target: "x86_64-unknown-linux-gnu", platform: "linux", arch: "x64", runner: "ubuntu-24.04", cef: "cef_linux_x86_64" },
+  { target: "aarch64-unknown-linux-gnu", platform: "linux", arch: "arm64", runner: "ubuntu-24.04-arm", cef: "cef_linux_aarch64" },
 ]);
 
 export function selectTarget(target, platform, arch) {
@@ -38,17 +39,17 @@ export function verifyPackageRevision(expected, current, status) {
   }
 }
 
-// The pinned cef 150.0.0 crate resolves to distribution 150.0.10. Keep this
+// The pinned cef 151.8.1 crate resolves to distribution 151.3.24. Keep this
 // pairing explicit; a runtime upgrade requires reviewing the bundled notices.
 export function cefCredits(selected, environment, home = homedir()) {
   const cache = selected.platform === "darwin" ? join(home, "Library/Caches")
     : selected.platform === "win32" ? environment.LOCALAPPDATA : join(home, ".cache");
   if (!cache) throw new Error("The native CEF cache location is unavailable.");
-  const directory = join(cache, "tauri-cef", "150.0.10", selected.cef);
+  const directory = join(cache, "tauri-cef", "151.3.24", selected.cef);
   const archive = JSON.parse(readFileSync(join(directory, "archive.json"), "utf8"));
   const distribution = selected.platform === "darwin" ? `macos${selected.arch === "arm64" ? "arm64" : "x64"}`
     : selected.platform === "win32" ? `windows${selected.arch === "arm64" ? "arm64" : "64"}` : `linux${selected.arch === "arm64" ? "arm64" : "64"}`;
-  if (archive.type !== "minimal" || archive.name !== `cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_${distribution}_minimal.tar.bz2`) throw new Error("The CEF notice source does not match the pinned distribution.");
+  if (archive.type !== "minimal" || archive.name !== `cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_${distribution}_minimal.tar.bz2`) throw new Error("The CEF notice source does not match the pinned distribution.");
   const credits = join(directory, "CREDITS.html");
   if (!lstatSync(credits).isFile() || lstatSync(credits).size === 0) throw new Error("The original Chromium notices are missing.");
   return credits;
@@ -60,7 +61,7 @@ export function cefCredits(selected, environment, home = homedir()) {
 // independently verified distribution-preparation command.
 export function prepareCefCredits(selected, environment, build, home = homedir()) {
   const target = selected.platform === "darwin" ? [] : ["--target", selected.target];
-  build("cargo", ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "delidev-tauri-cli", "--", "build", "--no-bundle", ...target, "--features", "desktop-host,custom-protocol,tauri/cef"]);
+  build(...tauriCommand([ "build", "--no-bundle", ...target, "--features", "desktop-host,custom-protocol"]));
   return cefCredits(selected, environment, home);
 }
 

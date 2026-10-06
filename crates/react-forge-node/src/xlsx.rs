@@ -96,7 +96,8 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
                 use forge_xlsx::EditValue;
                 let value = match edit.value {
                     Value::Cell(mut v) => {
-                        // Omitted format on an imported edit retains the source style.
+                        // Omitted format on an imported edit retains the source
+                        // style.
                         let previous = v.format.clone();
                         forge_xlsx::prepare_cell_fonts(&mut v, &mut fonts)?;
                         if previous.is_none() {

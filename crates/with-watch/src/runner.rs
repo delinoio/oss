@@ -188,10 +188,10 @@ impl RunnerOptions {
     pub fn from_environment() -> Self {
         let mut options = Self::default();
 
-        // Test-only hooks for deterministic integration coverage. They keep the public
-        // CLI surface stable while allowing `cargo test` to stop the
-        // long-running watch loop and shorten debounce windows. Remove them
-        // when we have a better end-to-end harness.
+        // Test-only hooks for deterministic integration coverage. They keep the
+        // public CLI surface stable while allowing `cargo test` to stop
+        // the long-running watch loop and shorten debounce windows.
+        // Remove them when we have a better end-to-end harness.
         if let Ok(raw_max_runs) = std::env::var("WITH_WATCH_TEST_MAX_RUNS") {
             if let Ok(parsed) = raw_max_runs.parse::<usize>() {
                 options.max_runs = Some(parsed);
@@ -212,9 +212,9 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
     let mut watch_loop = WatchLoop::new(&plan.inputs)?;
     let mut baseline =
         capture_snapshot_with_logging("initial-baseline", &plan.inputs, plan.detection_mode)?;
-    // v1 contract: after inference, watcher setup, and baseline capture succeed,
-    // the delegated command must run immediately once before waiting for any
-    // filesystem change events.
+    // v1 contract: after inference, watcher setup, and baseline capture
+    // succeed, the delegated command must run immediately once before
+    // waiting for any filesystem change events.
     let mut child = Some(spawn_command(
         &plan.delegated_command,
         plan.output_refresh_mode,

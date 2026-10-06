@@ -23,8 +23,8 @@ pub struct Detour<T> {
 
 impl<T: Copy> Detour<T> {
     pub const unsafe fn new(symbol_name: &'static CStr, target: T, new: T) -> Self {
-        // SAFETY: transmute_copy reinterprets the function pointer as *mut c_void for
-        // Detours API
+        // SAFETY: transmute_copy reinterprets the function pointer as *mut
+        // c_void for Detours API
         Self {
             symbol_name,
             target: UnsafeCell::new(unsafe { transmute_copy(&target) }),
@@ -42,8 +42,8 @@ impl<T: Copy> Detour<T> {
 
     #[must_use]
     pub fn real(&self) -> &T {
-        // SAFETY: target is initialized during Detour construction or attach; read-only
-        // after attach
+        // SAFETY: target is initialized during Detour construction or attach;
+        // read-only after attach
         unsafe { &(*self.target.get().cast::<T>()) }
     }
 
@@ -93,14 +93,16 @@ impl DetourAny {
         // SAFETY: dereferencing pointer to static CStr symbol name
         let symbol_name = unsafe { *self.symbol_name }.as_ptr();
         if let Some(kernelbase) = ctx.kernelbase {
-            // SAFETY: GetProcAddress FFI call with valid module handle and symbol name
+            // SAFETY: GetProcAddress FFI call with valid module handle and
+            // symbol name
             let symbol_in_kernelbase =
                 unsafe { GetProcAddress(kernelbase.as_ptr().cast(), symbol_name) };
             if !symbol_in_kernelbase.is_null() {
                 // Stub symbols in kernel32 and other DLLs forward here. Hooking
                 // the shared implementation covers every stub.
                 // https://github.com/microsoft/Detours/issues/328#issuecomment-2494147615
-                // SAFETY: writing resolved symbol address to target pointer for Detours API
+                // SAFETY: writing resolved symbol address to target pointer for
+                // Detours API
                 unsafe { *self.target = symbol_in_kernelbase.cast() };
             }
         }
@@ -108,11 +110,13 @@ impl DetourAny {
         // target was resolved or KernelBase supplied an implementation.
         if unsafe { *self.target }.is_null() {
             // Dynamic symbols may come from kernel32 or ntdll.
-            // SAFETY: GetProcAddress FFI call with valid module handle and symbol name
+            // SAFETY: GetProcAddress FFI call with valid module handle and
+            // symbol name
             let symbol_in_kernel32 =
                 unsafe { GetProcAddress(ctx.kernel32.as_ptr().cast(), symbol_name) };
             if symbol_in_kernel32.is_null() {
-                // SAFETY: GetProcAddress FFI call with valid module handle and symbol name
+                // SAFETY: GetProcAddress FFI call with valid module handle and
+                // symbol name
                 let symbol_in_ntdll =
                     unsafe { GetProcAddress(ctx.ntdll.as_ptr().cast(), symbol_name) };
                 // SAFETY: writing resolved symbol address to target pointer
@@ -127,7 +131,8 @@ impl DetourAny {
             // dynamic symbol not found, skip attaching
             return Ok(());
         }
-        // SAFETY: DetourAttach FFI call with valid target and detour function pointers
+        // SAFETY: DetourAttach FFI call with valid target and detour function
+        // pointers
         ck_long(unsafe { DetourAttach(self.target, *self.new) })?;
         Ok(())
     }
@@ -138,7 +143,8 @@ impl DetourAny {
             // dynamic symbol not found, skip detaching
             return Ok(());
         }
-        // SAFETY: DetourDetach FFI call with valid target and detour function pointers
+        // SAFETY: DetourDetach FFI call with valid target and detour function
+        // pointers
         ck_long(unsafe { DetourDetach(self.target, *self.new) })
     }
 }

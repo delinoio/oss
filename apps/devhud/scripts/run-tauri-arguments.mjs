@@ -1,9 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { appImageEnvironment } from "../../../scripts/appimage-tools.mjs";
+export { prepareVerifiedAppImageSharun } from "../../../scripts/appimage-tools.mjs";
 
 const desktopTauriFeatures = ["--features", "desktop-cef"];
 export const repositoryAppleSigningIdentityKey = "devhud.appleSigningIdentity";
@@ -14,9 +12,7 @@ export const desktopTauriConfigPath = fileURLToPath(
 export const privateReleaseTauriConfigPath = fileURLToPath(
   new URL("../src-tauri/tauri.private-release.conf.json", import.meta.url),
 );
-const cefPins = JSON.parse(
-  readFileSync(fileURLToPath(new URL("../cef-pins.json", import.meta.url)), "utf8"),
-);
+
 
 function requestedPackageBundle(forwardedArguments, platformName, packageKinds) {
   const bundles = [];
@@ -55,52 +51,7 @@ const packageKindsByPlatform = {
   },
 };
 
-function appImageSharunAsset(architecture, sharunPin = cefPins.appImage.sharun) {
-  const asset = sharunPin.assets[architecture];
-  if (!asset) {
-    throw new Error(`unsupported Linux AppImage architecture ${architecture}`);
-  }
-  return {
-    sha256: asset.sha256,
-    url: `${sharunPin.repository}/releases/download/${sharunPin.version}/${asset.name}`,
-  };
-}
 
-export async function prepareVerifiedAppImageSharun(
-  architecture = process.arch,
-  fetchAsset = globalThis.fetch,
-  sharunPin = cefPins.appImage.sharun,
-) {
-  const asset = appImageSharunAsset(architecture, sharunPin);
-  const response = await fetchAsset(asset.url);
-  if (!response.ok) {
-    throw new Error(`AppImage launcher download failed with HTTP ${response.status}`);
-  }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const observedSha256 = createHash("sha256").update(bytes).digest("hex");
-  if (observedSha256 !== asset.sha256) {
-    throw new Error(
-      `AppImage launcher checksum mismatch: expected ${asset.sha256}, observed ${observedSha256}`,
-    );
-  }
-
-  // The upstream packager now downloads a tar containing helper libraries.
-  // Keep our immutable launcher separate: Tauri copies custom AppImage files
-  // before quick-sharun runs, and that tool preserves an existing executable.
-  // This also leaves the helper archive's own integrity checks enabled.
-  const directory = mkdtempSync(join(tmpdir(), "devhud-verified-sharun-"));
-  const launcher = join(directory, "sharun");
-  try {
-    writeFileSync(launcher, bytes, { mode: 0o755, flag: "wx" });
-    return {
-      config: { bundle: { linux: { appimage: { files: { sharun: launcher } } } } },
-      close: () => rmSync(directory, { recursive: true, force: true }),
-    };
-  } catch (error) {
-    rmSync(directory, { recursive: true, force: true });
-    throw error;
-  }
-}
 export function repositoryAppleSigningEnvironment(
   command,
   platform = process.platform,
@@ -158,8 +109,8 @@ export function repositoryAppleSigningEnvironment(
 }
 
 export function desktopTauriArguments(command, forwardedArguments, environment = process.env) {
-  // The pinned CLI resolves bundle features through app-owned Cargo features;
-  // passing tauri/cef directly builds CEF but leaves its bundle path unset.
+  // The pinned CLI detects the desktop runtime dependency by target. Keep the
+  // app-owned desktop marker and bundle configuration together.
   const config = command === "build" && environment.DEVHUD_PRIVATE_RELEASE === "1"
     ? privateReleaseTauriConfigPath
     : desktopTauriConfigPath;
@@ -188,22 +139,6 @@ export function desktopTauriEnvironment(
       `DEVHUD_PACKAGE_KIND ${environment.DEVHUD_PACKAGE_KIND} does not match the selected ${bundle} bundle`,
     );
   }
-  const result = {
-    ...environment,
-    DEVHUD_PACKAGE_KIND: packageKind,
-    ...(bundle === "appimage"
-      ? {
-          // Scope: CEF AppImages. Remove these overrides when pinned Tauri uses a
-          // sharun release with complete GLib auxv support and a non-hanging probe.
-          STRACE_MODE: "0",
-        }
-      : {}),
-  };
-  if (bundle === "appimage") {
-    // A launcher override is not a helper-library archive. Do not let ambient
-    // overrides misroute that download or bypass its checksum verification.
-    delete result.SHARUN_LINK;
-    delete result.SKIP_INTEGRITY_CHECKS;
-  }
-  return result;
+  const result = { ...environment, DEVHUD_PACKAGE_KIND: packageKind };
+  return bundle === "appimage" ? appImageEnvironment(result) : result;
 }

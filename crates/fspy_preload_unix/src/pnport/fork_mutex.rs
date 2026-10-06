@@ -72,8 +72,9 @@ impl<T> ForkMutex<T> {
     }
 
     pub(super) unsafe fn release(&self) {
-        // SAFETY: Only a current guard or a matching parent/child atfork callback may
-        // release this normal mutex. No Rust guard is copied into the child.
+        // SAFETY: Only a current guard or a matching parent/child atfork
+        // callback may release this normal mutex. No Rust guard is
+        // copied into the child.
         if unsafe { libc::pthread_mutex_unlock(self.raw()) } != 0 {
             // SAFETY: Immediate process termination avoids using corrupt state.
             unsafe { libc::_exit(125) };
@@ -97,7 +98,8 @@ impl<T> Deref for Guard<'_, T> {
 
 impl<T> DerefMut for Guard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
-        // SAFETY: A unique guard owns the lock, preventing concurrent references.
+        // SAFETY: A unique guard owns the lock, preventing concurrent
+        // references.
         unsafe { &mut *self.lock.value.get() }
     }
 }

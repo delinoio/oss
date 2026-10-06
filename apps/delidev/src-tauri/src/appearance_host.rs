@@ -5,11 +5,15 @@ use delidev_desktop::{
     NativeFailure,
     appearance::{AppearanceSnapshot, AppearanceStore, Theme},
 };
-use tauri::{AppHandle, Cef, Emitter, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
+use tauri_runtime_cef::CefRuntime;
 
 use super::{SavedWindows, saved_binding, trusted_main};
 
-fn authorized(window: &WebviewWindow<Cef>, windows: &SavedWindows) -> Result<(), NativeFailure> {
+fn authorized(
+    window: &WebviewWindow<CefRuntime>,
+    windows: &SavedWindows,
+) -> Result<(), NativeFailure> {
     if window.label() == "main" {
         trusted_main(window)
     } else {
@@ -19,7 +23,7 @@ fn authorized(window: &WebviewWindow<Cef>, windows: &SavedWindows) -> Result<(),
 
 #[tauri::command]
 pub async fn read_appearance(
-    window: WebviewWindow<Cef>,
+    window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     store: tauri::State<'_, Arc<AppearanceStore>>,
 ) -> Result<AppearanceSnapshot, NativeFailure> {
@@ -32,8 +36,8 @@ pub async fn read_appearance(
 
 #[tauri::command]
 pub async fn update_appearance(
-    window: WebviewWindow<Cef>,
-    app: AppHandle<Cef>,
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
     windows: tauri::State<'_, Arc<SavedWindows>>,
     store: tauri::State<'_, Arc<AppearanceStore>>,
     theme: Theme,

@@ -151,8 +151,8 @@ pub fn image(bytes: &[u8]) -> Result<(&'static str, u32, u32)> {
             "Image exceeds 64 million pixels",
         );
     }
-    // Decode once under image's allocation limits so corrupt compressed payloads
-    // never become apparently valid Office image parts.
+    // Decode once under image's allocation limits so corrupt compressed
+    // payloads never become apparently valid Office image parts.
     let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
     let mut limits = image::Limits::default();
     limits.max_alloc = Some(256 * 1024 * 1024);

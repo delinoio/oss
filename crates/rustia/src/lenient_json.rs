@@ -500,8 +500,8 @@ impl<'a> LenientJsonParser<'a> {
         }
 
         let mut value = 0u16;
-        for index in start..start + 4 {
-            let digit = self.chars[index].to_digit(16)? as u16;
+        for character in &self.chars[start..start + 4] {
+            let digit = character.to_digit(16)? as u16;
             value = (value << 4) | digit;
         }
         Some(value)

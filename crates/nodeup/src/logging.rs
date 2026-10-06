@@ -88,11 +88,7 @@ fn resolve_log_color_enabled(nodeup_log_color: Option<&str>, no_color: Option<&s
         Some(LogColorMode::Auto) | None => {}
     }
 
-    if no_color.is_some() {
-        return false;
-    }
-
-    true
+    no_color.is_none()
 }
 
 fn resolve_log_color_mode(

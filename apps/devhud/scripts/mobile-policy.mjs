@@ -341,9 +341,9 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assertMobileTargets(platforms.targets);
 
   const mobileCargo = cargo.match(/\[target\.'cfg\(any\(target_os = "android", target_os = "ios"\)\)'\.dependencies\]([\s\S]*?)(?=\n\[|$)/u)?.[1] ?? "";
-  assert(mobileCargo.includes('features = ["wry"]'), "mobile Tauri system-webview features changed");
+  assert(mobileCargo.includes('tauri-runtime-wry =') && mobileCargo.includes('features = []'), "mobile Tauri system-webview features changed");
   assert(!/cef|chromium|chrome-extension/iu.test(mobileCargo), "CEF or browser-extension dependency leaked into the mobile dependency set");
-  assert(/features = \["cef"/u.test(cargo), "desktop CEF contract was lost");
+  assert(cargo.includes("tauri-runtime-cef ="), "desktop CEF contract was lost");
 
   assertAndroidPermissions(androidManifest, androidDebugManifest);
   assert(androidManifest.includes('android:scheme="market"'), "Android market handler visibility is missing");

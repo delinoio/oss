@@ -86,8 +86,9 @@ impl Fonts {
                 ids.push(id);
             }
         }
-        // Registered fonts also serve as explicit fallbacks when system discovery
-        // is disabled. Generic defaults do not otherwise include private fonts.
+        // Registered fonts also serve as explicit fallbacks when system
+        // discovery is disabled. Generic defaults do not otherwise
+        // include private fonts.
         if !system {
             for family in [
                 GenericFamily::SansSerif,
@@ -422,7 +423,8 @@ impl Fonts {
                     let face = FontRef::from_index(font.data.as_ref(), font.index as usize)
                         .ok_or_else(missing)?;
                     // Swash decodes both Unicode and legacy Macintosh name
-                    // records. Several installed macOS fonts have only the latter.
+                    // records. Several installed macOS fonts have only the
+                    // latter.
                     let names = face.localized_strings();
                     let family: String = [StringId::TypographicFamily, StringId::Family]
                         .into_iter()

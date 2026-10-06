@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import yaml from "js-yaml";
+import { readDependency } from "../../../scripts/prebuilt-dependencies.mjs";
 
 import { hasExactCspDirectiveSources } from "./frontend-output-policy.mjs";
 import { createDevHudDevelopmentCsp } from "./development-csp.mjs";
@@ -48,19 +49,19 @@ const updaterRust = readFileSync(join(appRoot, "src-tauri/src/updater.rs"), "utf
 const nativeMessagingLifecycle = readFileSync(join(appRoot, "src-tauri/windows/native-messaging-lifecycle.wxs"), "utf8");
 
 const TAURI_REPOSITORY = "https://github.com/tauri-apps/tauri";
-const TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+const TAURI_REVISION = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975";
 const CRATES_IO_SOURCE = "registry+https://github.com/rust-lang/crates.io-index";
 const TAURI_SOURCE = `git+${TAURI_REPOSITORY}?rev=${TAURI_REVISION}#${TAURI_REVISION}`;
 const CANONICAL_CEF_RUST = {
-  revision: "c73f792f245d71ac1716448cdb7c165c8009e20c",
+  revision: "5b1f7e0e4c1247ab1360a0af094f45df70c234c8",
   packages: {
     cef: {
-      version: "150.0.0+150.0.10",
-      checksum: "8dd6aaa08e30ced80c7c18445807984243a06b7f4004c264922302b7e05d5c41",
+      version: "151.8.1+151.3.24",
+      checksum: "3d4fbc354286b45619122580b769f6cff53ed19565fe10359253ae4c235495db",
     },
     "cef-dll-sys": {
-      version: "150.0.0+150.0.10",
-      checksum: "d0ec349898441a7e9f91add53716d9c40f6fc381c9b41818241e4f63fb73f0b8",
+      version: "151.8.1+151.3.24",
+      checksum: "d073a3cd9fb40877a1ae38560cf5df2bb4601e02198880b61ef5476a8e28c35e",
     },
   },
 };
@@ -83,30 +84,42 @@ const CANONICAL_APPIMAGE_SHARUN = {
     },
   },
 };
+const CANONICAL_APPIMAGE_ANYLINUX = {
+  "repository": "https://github.com/FabianLars/Anylinux-AppImages",
+  "revision": "3e280d1b2270fecfcb2c2c823b490c782ecf1277",
+  "source": {
+    "path": "useful-tools/lib/anylinux.c",
+    "sha256": "f50650ad96d177559bdd0737df509fa20bd4af08887631c738fc1f31bfac185f"
+  },
+  "license": {
+    "path": "LICENSE",
+    "sha256": "78a983481f226ae0ee56d72fb73a027ce51f72ff40ec8ab3b55e8866ca9f2f7f"
+  }
+};
 const CANONICAL_CEF_ARCHIVES = {
   "aarch64-apple-darwin": {
-    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosarm64_minimal.tar.bz2",
-    sha1: "e73f7ce767420791b1965e15816a955d88cf1f9a",
+    name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_macosarm64_minimal.tar.bz2",
+    sha1: "82af2c0cadaafc4ad057f54c14cb3791cc139852",
   },
   "x86_64-apple-darwin": {
-    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosx64_minimal.tar.bz2",
-    sha1: "13e95f8bd0e13abe5283f67537d18b1b22f38ce7",
+    name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_macosx64_minimal.tar.bz2",
+    sha1: "0e3e0fcc35eeb13a8938763049845a8294cf34b9",
   },
   "aarch64-pc-windows-msvc": {
-    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_windowsarm64_minimal.tar.bz2",
-    sha1: "1e059f57e1f641a8925d140ae3724175605fb282",
+    name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_windowsarm64_minimal.tar.bz2",
+    sha1: "2cfa69c278ffc2a202e3b6857207b2fe7192ebe1",
   },
   "x86_64-pc-windows-msvc": {
-    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_windows64_minimal.tar.bz2",
-    sha1: "bce95ec52696c6725447fd0bf993cc928aefecd4",
+    name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_windows64_minimal.tar.bz2",
+    sha1: "19ed00643db89ad6d04903b3bd0adec57627db17",
   },
   "aarch64-unknown-linux-gnu": {
-    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_linuxarm64_minimal.tar.bz2",
-    sha1: "03e7a836ee73326280b8a3032e9741898133447e",
+    name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_linuxarm64_minimal.tar.bz2",
+    sha1: "95acd2a46975e2c60afa6b427ec50c0a3be6236f",
   },
   "x86_64-unknown-linux-gnu": {
-    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_linux64_minimal.tar.bz2",
-    sha1: "74a1186c566cbbac38c6b0f5298fc0bcfc1b9606",
+    name: "cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_linux64_minimal.tar.bz2",
+    sha1: "b1e99d3e3ff4213f99f7cda0211db89454398811",
   },
 };
 
@@ -138,7 +151,7 @@ assert(
   "DevHUD Rust host is not a root Cargo workspace member",
 );
 assert(
-  tauriMain.includes("#[tauri::cef_entry_point]"),
+  tauriMain.includes("#[tauri_runtime_cef::cef_entry_point]"),
   "DevHUD must route CEF helper processes through the CEF entry point",
 );
 assert(tauriConfig.identifier === "io.delino.devhud", "application identifier changed");
@@ -264,7 +277,7 @@ const dependencyFiles = [appCargo, cargoLock, packageJson, pnpmLock].map((value)
 );
 const dependencyText = dependencyFiles.join("\n");
 assert(!dependencyText.includes("feat/cef"), "moving feat/cef dependency detected");
-assert(!/tauri[^\n]*branch\s*=/u.test(dependencyText), "branch-based Tauri dependency detected");
+assert(!/(?:^|\n)tauri[\w-]*\s*=[^\n]*branch\s*=/u.test(dependencyText), "branch-based Tauri dependency detected");
 assert(
   !appCargo.includes("[patch."),
   "local Cargo patch declared by the DevHUD manifest",
@@ -276,14 +289,24 @@ assert(
 );
 const rootPatch = rootCargo.match(/\[patch\.crates-io\]\n([\s\S]*?)(?=\n\[|$)/u)?.[1] ?? "";
 const rootPatchEntries = rootPatch.split("\n").filter((line) => line.trim() && !line.trim().startsWith("#"));
-assert(rootPatchEntries.length === 3, "official Tauri compatibility patch set changed");
-for (const dependency of ["tauri", "tauri-plugin", "tauri-utils"]) {
+assert(rootPatchEntries.length === 6, "official Tauri compatibility patch set changed");
+for (const dependency of ["tauri", "tauri-build", "tauri-runtime", "tauri-plugin", "tauri-utils"]) {
   const linePattern = new RegExp(
     `^${escapeRegExp(dependency)}\\s*=\\s*\\{\\s*git\\s*=\\s*"${escapeRegExp(TAURI_REPOSITORY)}",\\s*rev\\s*=\\s*"${TAURI_REVISION}"\\s*\\}$`,
     "mu",
   );
   assert(linePattern.test(rootPatch), `${dependency} compatibility patch is not pinned to the required revision`);
 }
+const WINIT_SOURCE = "git+https://github.com/tauri-apps/winit-gtk4?branch=master#3d7c7cd19d3c752f75762ceea535444e63bdf8de";
+assert(/^dpi = \{ git = "https:\/\/github\.com\/tauri-apps\/winit-gtk4", branch = "master" \}$/mu.test(rootPatch), "upstream GTK4 dpi compatibility patch changed");
+assert(cargoLock.includes(`source = "${WINIT_SOURCE}"`) && !/winit-gtk4[^\n]*#(?!3d7c7cd19d3c752f75762ceea535444e63bdf8de)[a-f0-9]{40}/u.test(cargoLock), "GTK4 dependency revision changed");
+const prebuiltCli = readDependency(repoRoot, "tauri-cli");
+assert(prebuiltCli.source.repository === TAURI_REPOSITORY && prebuiltCli.source.revision === TAURI_REVISION, "prebuilt CLI source drifted");
+assert(prebuiltCli.repository === "delinoio/prebuilt" && prebuiltCli.release === `tauri-cli-${TAURI_REVISION}-r1`, "prebuilt CLI release changed");
+assert(prebuiltCli.toolchain === "nightly-2026-09-28" && Object.keys(prebuiltCli.assets).length === 6, "prebuilt CLI toolchain or hosts changed");
+assert(!appCargo.includes("tauri-cli =") && !cargoLock.includes('name = "tauri-cli"'), "consumer must not compile the Tauri CLI");
+assert(JSON.stringify(pins.runtime.sandboxPolicy) === JSON.stringify({ macos: "required", linux: "required", windows: "unsandboxedException" }), "desktop sandbox policy changed");
+assert(tauriMain.includes("SandboxPolicy::Required") && tauriMain.includes("SandboxPolicy::Auto") && tauriMain.includes("SecretStorage::System"), "runtime sandbox or secret storage selection changed");
 assert(!dependencyText.includes("github.com/delinoio/tauri"), "Tauri fork dependency detected");
 assert(nativeBridgeRust.includes(TAURI_REVISION), "native runtime diagnostics Tauri revision drifted from the immutable pin");
 assert(nativeBridgeRust.includes(pins.runtime.cefVersion), "native runtime diagnostics CEF revision drifted from the immutable pin");
@@ -313,7 +336,7 @@ assert(ciWorkflow.includes("DEVHUD_PACKAGE_KIND: ${{ matrix.package }}"), "deskt
 assert(appCargo.includes('tauri-plugin-deep-link = "=2.4.9"'), "desktop deep-link plugin version changed");
 assert(appCargo.includes('tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }'), "desktop single-instance deep-link integration changed");
 
-for (const dependency of ["tauri", "tauri-build", "tauri-cli"]) {
+for (const dependency of ["tauri", "tauri-build", "tauri-runtime-cef", "tauri-runtime-wry"]) {
   const linePattern = new RegExp(
     `${escapeRegExp(dependency)}\\s*=\\s*\\{[^\\n]*git\\s*=\\s*"${escapeRegExp(TAURI_REPOSITORY)}"[^\\n]*rev\\s*=\\s*"${TAURI_REVISION}"`,
     "u",
@@ -322,6 +345,10 @@ for (const dependency of ["tauri", "tauri-build", "tauri-cli"]) {
 }
 
 for (const [name, version] of Object.entries(pins.tauri.packages)) {
+  if (name === "tauri-cli") {
+    assert(prebuiltCli.verificationOutput === `tauri-cli ${version}`, "prebuilt CLI version drifted");
+    continue;
+  }
   const block = packageBlock(name, version);
   assert(block, `${name} ${version} is absent from Cargo.lock`);
   assert(
@@ -366,6 +393,10 @@ assert(
 assert(
   JSON.stringify(pins.appImage?.sharun) === JSON.stringify(CANONICAL_APPIMAGE_SHARUN),
   "AppImage sharun launcher pins changed",
+);
+assert(
+  JSON.stringify(pins.appImage?.anylinux) === JSON.stringify(CANONICAL_APPIMAGE_ANYLINUX),
+  "AppImage anylinux source and license pins changed",
 );
 
 const cargoMetadataResult = spawnSync(
@@ -413,7 +444,7 @@ assert(
 const dependencyClosure = validateResolvedDependencySources(
   cargoMetadata,
   devhudPackage.id,
-  new Set([CRATES_IO_SOURCE, TAURI_SOURCE]),
+  new Set([CRATES_IO_SOURCE, TAURI_SOURCE, WINIT_SOURCE]),
   new Set([nativeMessagingHostPackage.id]),
 );
 for (const feature of pins.runtime.requiredFeatures) {

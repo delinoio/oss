@@ -41,8 +41,8 @@ impl<'a> Reader<'a> {
                 checkpoint()?;
             }
             let mut value = [0.; N];
-            for (v, b) in value.iter_mut().zip(chunk.chunks_exact(4)) {
-                *v = f32::from_le_bytes(b.try_into().unwrap());
+            for (v, b) in value.iter_mut().zip(chunk.as_chunks::<4>().0.iter()) {
+                *v = f32::from_le_bytes(*b);
                 if !v.is_finite() {
                     return Err(invalid("asset"));
                 }
@@ -95,7 +95,7 @@ pub(crate) fn extended_geometry(bytes: &[u8]) -> Result<Geometry> {
     if flags == 1 {
         let raw = r.take(n.checked_mul(8).ok_or_else(limited)?)?;
         let mut joints = Vec::with_capacity(n);
-        for (i, row) in raw.chunks_exact(8).enumerate() {
+        for (i, row) in raw.as_chunks::<8>().0.iter().enumerate() {
             if i % 4096 == 0 {
                 checkpoint()?;
             }

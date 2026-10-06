@@ -136,8 +136,9 @@ impl Cache {
         match fs::read(&owner) {
             Ok(bytes) if bytes == OWNER => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // Refuse to adopt a directory with unrelated data. Never repurpose
-                // an arbitrary user-supplied cache directory as owned storage.
+                // Refuse to adopt a directory with unrelated data. Never
+                // repurpose an arbitrary user-supplied cache
+                // directory as owned storage.
                 if fs::read_dir(&root)
                     .map_err(|_| cache_error())?
                     .any(|e| e.map_or(true, |e| e.file_name() != ".lock"))
@@ -315,9 +316,11 @@ impl Cache {
                     continue;
                 }
                 if name == "incomplete" {
-                    // All materializers retain the global lock until publication;
-                    // therefore staging directories observed here are abandoned.
-                    // Only tempfile's exact owned prefix is eligible for removal.
+                    // All materializers retain the global lock until
+                    // publication; therefore staging
+                    // directories observed here are abandoned.
+                    // Only tempfile's exact owned prefix is eligible for
+                    // removal.
                     let owned = entry_name.starts_with("entry-")
                         && fs::read(entry.path().join(".pnport-staging"))
                             .ok()

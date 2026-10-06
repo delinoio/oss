@@ -110,7 +110,8 @@ impl Error {
 }
 
 pub fn report(error: Error, operation: &'static str) {
-    // Never format external errors: even parser and OS errors can contain input.
+    // Never format external errors: even parser and OS errors can contain
+    // input.
     if tracing::enabled!(tracing::Level::ERROR) {
         tracing::error!(operation, code = ?error.code, message = error.message(), "error: operation failed");
     } else {
