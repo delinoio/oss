@@ -76,6 +76,10 @@ test("environment checker invalidates a warm cache when its development graph ch
   git("config", "user.name", "Environment Cache Fixture");
   git("config", "user.email", "ci@example.invalid");
   git("config", "commit.gpgsign", "false");
+  // Keep the fixture byte-stable after checkout. Git for Windows can inherit
+  // autocrlf/eol settings that otherwise rewrite restored inputs as CRLF.
+  git("config", "core.autocrlf", "false");
+  git("config", "core.eol", "lf");
   git("config", "core.hooksPath", join(cwd, "empty-hooks"));
   git("add", "--all");
   git("commit", "-m", "fixture");
