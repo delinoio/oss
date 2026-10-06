@@ -1666,7 +1666,15 @@ fork in the initial root-only native profile. A mounted
 connection controller retains its name/workspace draft, exact uncertain request
 and accepted job through conversation navigation; Escape hides the modal without
 losing that operation. The name input receives focus. A changed source revision
-requires discarding the fresh draft and inspecting the new boundary. Default
+requires discarding the fresh draft and inspecting the new boundary. Fork
+preflight belongs to one draft generation and captures its exact source identity,
+revision, turn and form values before asynchronous validation. Discard or source
+replacement invalidates that preflight; recheck its generation after profile
+refresh and Local Worker proof, before submitting. A late result cannot admit the
+discarded source or populate a replacement draft. Permit only one preflight per
+generation. Hiding the modal preserves preflight and any admitted job, including
+the original uncertain request and explicit retry. Connection disposal invalidates
+unfinished preflight. Default
 workspace copying is independent; offer explicit Local sharing only for a Local
 source with fresh same-machine Worker proof. Managed Worktree sources retain only
 the independent workspace choice, preserving the child after parent deletion. Poll `GetSessionFork` only by the accepted job ID, stop automatic
