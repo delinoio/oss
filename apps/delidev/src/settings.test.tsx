@@ -310,9 +310,9 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Runner Devices", "Appearance", "Paired devices", "Server preferences", "Integrations", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
-  const values = ["subscription-accounts", "api-accounts", "providers", "models", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "appearance", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer", "backups"];
-  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
+  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+  const values = ["subscription-accounts", "api-accounts", "providers", "models", "agent-workers", "instructions", "projects", "repositories", "integrations", "git-workflow", "execution-workers", "paired-devices", "appearance", "server-preferences", "diagnostics", "notifications", "transfer", "backups"];
+  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI", "Coding", "Device management", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
   const buttons = within(navigation).getAllByRole("button");
   expect(buttons.map((button) => button.getAttribute("data-settings-category"))).toEqual(values);
@@ -616,7 +616,7 @@ it("renders unknown quota and server candidate reasons without performing select
   expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
 });
 
-it("edits global routing and fetch preferences without rewriting unrelated policy or creating another singleton", async () => {
+it("edits global routing preferences without rewriting unrelated policy or creating another singleton", async () => {
   const original = { default_routing: "sequential-exhaustion", automatic_fetch: true, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } };
   const preferences = resource(EntityKind.SETTINGS, original, 8n);
   const value = fixture([preferences]);
@@ -627,14 +627,14 @@ it("edits global routing and fetch preferences without rewriting unrelated polic
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Delete Server preferences/ })).toBeNull();
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
-  fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
+  expect(screen.queryByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
   const request = input(value.save.mock.calls[0][0]);
   expect(request.mutation.expectedRevision).toBe(8n);
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority", automatic_fetch: false });
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority" });
 });
 
 it("retains incompatible permission selections across harness changes until explicit clearing", async () => {

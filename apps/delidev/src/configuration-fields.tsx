@@ -142,14 +142,17 @@ function ProviderFields({ data, change, subscriptionOnly = false }: FieldsProps)
     <TextField label="API base URL" value={data.endpoint} max={4096} change={(endpoint) => change({ ...data, endpoint })} required /><p>Localhost refers to the server computer. Keys are entered separately in the entry connection form.</p><Choice label="Authentication" value={data.authentication} choices={[Authentication.Bearer, Authentication.Key, Authentication.Keyless]} change={(authentication) => change({ ...data, authentication })} /><Check label="Discover models automatically for connected entries" value={data.discovery} change={(discovery) => change({ ...data, discovery })} />
   </>;
 }
-interface FieldsProps { data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean }
+export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow" }
+interface FieldsProps { data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
-  const { data, change, active, existing } = props;
+  const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All } = props;
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
   if (kind === EntityKind.SETTINGS) return <>
-    <section className="server-preference-section"><h4>Account routing</h4><div className="server-routing-field"><Choice label="Default account routing" value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>Used by Agent Workers that inherit the server default. Existing execution snapshots keep their original selection and routing.</p></div></section>
+    {serverPreferenceSection !== ServerPreferenceSection.GitWorkflow ? <section className="server-preference-section"><h4>Account routing</h4><div className="server-routing-field"><Choice label="Default account routing" value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>Used by Agent Workers that inherit the server default. Existing execution snapshots keep their original selection and routing.</p></div></section> : null}
+    {serverPreferenceSection !== ServerPreferenceSection.AccountRouting ? <>
     <section className="server-preference-section"><h4>Worktree preparation</h4><Check label="Allow automatic fetch before Worktree preparation" value={data.automatic_fetch} change={field("automatic_fetch")} /><p>Fetching requires both this server preference and the repository's fetch preference. Disabling it uses retained remote-tracking references or reports missing references. Local checkouts remain unchanged.</p></section>
     <section className="server-preference-section"><RemediationFields value={object(data.remediation)} change={field("remediation")} active={active} presentation={RemediationDetailPresentation.Collapsible} /></section>
+    </> : null}
   </>;
   if (kind === EntityKind.PROJECT) return <ProjectFields {...props} />;
   if (kind === EntityKind.REPOSITORY) return <RepositoryFields {...props} />;
