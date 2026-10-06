@@ -83,3 +83,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Export independent server-login capability 30, typed progress state/name/generation and write-only original callback messages. URLs, callback bytes and unsaved suggested names stay outside shared caches/persistence/logs. Preserve API, Worker protected-lane and quota authorization; generate outputs from reconciled schemas.
 
 - Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
+
+- CI fixture executable reuse follows `docs/repository-workflow-contract.md`: accept only the runner-owned absolute `DELIDEV_TEST_BINARY` test input, preserve local source-build fallback and keep every server/process/credential/data lifetime private to its fixture. Client/Vitest integration is uncached; desktop CI retains the complete checks/two-shard inventory.

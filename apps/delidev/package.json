@@ -26,7 +26,10 @@
     "bundle:dry-run": "node scripts/bundle-native-dry-run.mjs",
     "test:bundle-dry-run": "node --test scripts/bundle-macos-dry-run.test.mjs scripts/native-package.test.mjs scripts/bundle-updater-dry-run.test.mjs",
     "test:desktop-launch": "node --test scripts/run-desktop.test.mjs scripts/prepare-assets.test.mjs",
-    "bundle:updater-dry-run": "node scripts/bundle-updater-dry-run.mjs"
+    "bundle:updater-dry-run": "node scripts/bundle-updater-dry-run.mjs",
+    "test:ci:checks": "pnpm typecheck && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm test:widget && pnpm test:qa && pnpm build && node scripts/qa/check-release.mjs",
+    "test:ci:tests-1": "vitest run --shard=1/2",
+    "test:ci:tests-2": "vitest run --shard=2/2"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
