@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -66,6 +64,10 @@ func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink, afterI
 	if lockedErr != nil || currentErr != nil || lockedIdentity != expectedIdentity || currentIdentity != lockedIdentity || currentMode.Perm() != 0 {
 		return ResultUncertain()
 	}
+	expectedPath, err := finalRootUnlinkPath(path)
+	if err != nil {
+		return ResultUncertain()
+	}
 
 	if err := unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR); err != nil {
 		// A retained writer can make the directory non-empty after the final
@@ -79,15 +81,8 @@ func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink, afterI
 		}
 		return err
 	}
-	if runtime.GOOS == "linux" {
-		info, statErr := root.Stat()
-		stat, statOK := info.Sys().(*syscall.Stat_t)
-		if statErr != nil || !statOK || stat.Nlink != 0 {
-			// Linux updates an open directory's link count when its final name is
-			// removed. A retained parent can otherwise remove a replacement after
-			// the final check; do not publish a receipt for that outcome.
-			return ResultUncertain()
-		}
+	if err := verifyFinalRootAfterUnlink(root, parent, filepath.Base(path), expectedIdentity, expectedPath); err != nil {
+		return err
 	}
 	return nil
 }
