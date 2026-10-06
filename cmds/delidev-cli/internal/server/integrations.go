@@ -105,6 +105,11 @@ func (s *Service) closeIntegrationSecrets() error {
 			return err
 		}
 	}
+	for id := range s.integrationPreviews {
+		if err := stopIntegrationRead(context.Background(), s.integrationPreviews, id); err != nil {
+			return err
+		}
+	}
 	if s.ownedPAT == nil {
 		return nil
 	}
