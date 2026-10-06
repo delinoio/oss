@@ -6,28 +6,31 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ErrorDetailSchema, AccountOAuthAttemptSchema, AccountOAuthState as State, EntityKind, ResourceSchema, newRequestId, type CompleteAccountOAuthRequest } from "@delinoio/delidev-api-client";
-import { OpenRouterOAuth, OAuthNativeAction, OAuthNativeProvider, useOpenRouterOAuth, type OAuthNativeControl, type OAuthNativeResult } from "./account-oauth";
+import { AccountService, AccountOAuthFlow, ErrorDetailSchema, AccountOAuthAttemptSchema, AccountOAuthState as State, EntityKind, ResourceSchema, newRequestId, type CompleteAccountOAuthRequest } from "@delinoio/delidev-api-client";
+import { OpenRouterOAuth, AccountOAuthProfile, OAuthNativeAction, OAuthNativeProvider, useOpenRouterOAuth, type OAuthNativeControl, type OAuthNativeResult } from "./account-oauth";
 import { SettingsLifetime } from "./settings-lifetime";
 import type { AccountProviderSummary } from "./account-settings";
 import { encode } from "./documents";
 
-function fixture(args: { complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
+function fixture(args: { huggingFace?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
+  const name = args.huggingFace ? "Hugging Face Inference Providers" : "OpenRouter";
   const providerId = newRequestId(), attemptId = newRequestId(), nativeGeneration = newRequestId();
-  const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "OpenRouter", preset_id: "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
-  const selected: AccountProviderSummary = { providerId, provider, displayName: "OpenRouter", enabled: true, oauthAvailable: true, keyGuidance: "", documentationUrl: "" };
+  const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name, preset_id: args.huggingFace ? "hugging-face" : "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
+  const selected: AccountProviderSummary = { providerId, provider, displayName: name, enabled: true, oauthAvailable: true, keyGuidance: "", documentationUrl: "" };
   const attempt = (state = State.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION, revision = 1n) => create(AccountOAuthAttemptSchema, { id: attemptId, providerId, revision, state, expiresAt: new Date(Date.now() + 600000).toISOString() });
   let retained = attempt(), callback = false;
+  const rawState = Array.from(new TextEncoder().encode("s".repeat(43)));
   const rawCode = Array.from(new TextEncoder().encode("renderer-oauth-code-sentinel"));
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 2n, documentJson: encode({ alias: "OpenRouter", provider_id: providerId, type: "api", health: "unverified", enabled: true, recovery_notifications: true }) });
-  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; if(args.interruptedStart) {retained=attempt(State.ACCOUNT_OAUTH_STATE_INTERRUPTED,2n);retained.problem=create(ErrorDetailSchema,{code:"conflict"});return {attempt:retained,requestId:request.provider?.requestId};} return { attempt: retained, requestId: request.provider?.requestId, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
+  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; if(args.interruptedStart) {retained=attempt(State.ACCOUNT_OAUTH_STATE_INTERRUPTED,2n);retained.problem=create(ErrorDetailSchema,{code:"conflict"});return {attempt:retained,requestId:request.provider?.requestId};} return { attempt: retained, requestId: request.provider?.requestId, flow: AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
   const complete = vi.fn(async (request: CompleteAccountOAuthRequest) => { if (args.complete) await args.complete(request); retained = attempt(State.ACCOUNT_OAUTH_STATE_CONNECTED, 5n); return { attempt: retained, account, requestId: request.mutation?.requestId }; });
   const cancel = vi.fn(async (request) => { retained = attempt(State.ACCOUNT_OAUTH_STATE_CANCELED, 2n); return { attempt: retained, requestId: request.mutation?.requestId }; });
   const status = vi.fn(async () => ({ attempt: retained, account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED ? account : undefined }));
   const transport = createRouterTransport(router => router.service(AccountService, { startAccountOAuth: start, completeAccountOAuth: complete, cancelAccountOAuth: cancel, getAccountOAuthStatus: status }));
   const native = vi.fn<OAuthNativeControl>(args.native ?? (async (_opening, action, generation): Promise<OAuthNativeResult> => {
-    if (action === OAuthNativeAction.Begin) return { generation: nativeGeneration, callback_url: `http://localhost:55451/oauth/openrouter/${"a".repeat(64)}` };
-    if (action === OAuthNativeAction.Take && callback) { callback = false; return { generation, code: rawCode }; }
+    if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: args.oldNative ? [] : [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace] };
+    if (action === OAuthNativeAction.Begin || action === OAuthNativeAction.BeginHuggingFace) return { generation: nativeGeneration, callback_url: `http://localhost:55451/oauth/openrouter/${"a".repeat(64)}` };
+    if (action === OAuthNativeAction.Take && callback) { callback = false; return { generation, code: rawCode, state: args.huggingFace ? rawState : undefined }; }
     return { generation };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -37,12 +40,12 @@ function fixture(args: { complete?: (request: CompleteAccountOAuthRequest) => Pr
     return <><button onClick={() => flow.start(selected)}>Connect selected OpenRouter</button><OpenRouterOAuth flow={flow} back={back} manual={manual} edit={edit} manage={manage} done={done} /></>;
   }
   const view = render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><SettingsLifetime>{() => <Harness />}</SettingsLifetime></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>);
-  return { start, complete, cancel, status, native, client, view, rawCode, manual, back, edit, account, trigger: () => { callback = true; }, change: (state: State, revision: bigint) => { retained = attempt(state, revision); } };
+  return { start, complete, cancel, status, native, client, view, rawCode, rawState, manual, back, edit, account, trigger: () => { callback = true; }, change: (state: State, revision: bigint) => { retained = attempt(state, revision); } };
 }
 
 it("starts and opens exactly once on deliberate action under Strict Mode, with no mount authentication", async () => {
   const f = fixture();
-  expect(f.start).not.toHaveBeenCalled(); expect(f.native).not.toHaveBeenCalled();
+  expect(f.start).not.toHaveBeenCalled(); expect(f.native.mock.calls.every(call => call[1] === OAuthNativeAction.Profiles)).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
   fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
   expect(await screen.findByText("Waiting for authorization…")).toBeTruthy();
@@ -118,7 +121,8 @@ it("retries the exact browser binding after a native failure before admission", 
  let binds = 0;
  const generation = newRequestId();
  const f = fixture({ native: async (_opening, action, current) => {
-  if (action === OAuthNativeAction.Begin) return { generation, callback_url: `http://localhost:55451/oauth/openrouter/${"c".repeat(64)}` };
+  if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace] };
+    if (action === OAuthNativeAction.Begin || action === OAuthNativeAction.BeginHuggingFace) return { generation, callback_url: `http://localhost:55451/oauth/openrouter/${"c".repeat(64)}` };
   if (action === OAuthNativeAction.BindOpen && ++binds === 1) throw new Error("native identity temporarily busy");
   return { generation: current };
  }});
@@ -164,4 +168,26 @@ it("a changed-provider original Start returns interruption ownership for explici
  fireEvent.click(screen.getByRole("button",{name:"Use an API key instead"}));
  await waitFor(()=>expect(f.manual).toHaveBeenCalledTimes(1));
  expect(f.cancel).toHaveBeenCalledTimes(1);expect(f.complete).not.toHaveBeenCalled();expect(f.start).toHaveBeenCalledTimes(1);
+});
+
+it("uses the selected Hugging Face copy and forwards state outside caches", async () => {
+  let observedState = "";
+  const f = fixture({ huggingFace: true, complete: async request => { observedState = new TextDecoder().decode(request.authorizationState); } });
+  await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Profiles)).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
+  await screen.findByRole("heading", { name: "Connect Hugging Face Inference Providers" });
+  expect(screen.getByText("Approve access on Hugging Face. DeliDev will finish connecting automatically.")).toBeTruthy();
+  await screen.findByText("Waiting for authorization…"); f.trigger();
+  await screen.findByText("Hugging Face Inference Providers connected", {}, { timeout: 2500 });
+  expect(observedState).toBe("s".repeat(43));
+  expect(f.rawState.every(byte => byte === 0)).toBe(true);
+  expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BeginHuggingFace)).toHaveLength(1);
+  expect(f.client.getMutationCache().getAll()).toHaveLength(0);
+});
+it("does not start Hugging Face with an older native profile inventory", async () => {
+  const f = fixture({ huggingFace: true, oldNative: true });
+  await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Profiles)).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
+  expect(f.start).not.toHaveBeenCalled();
+  expect(screen.queryByRole("heading", { name: "Connect Hugging Face Inference Providers" })).toBeNull();
 });

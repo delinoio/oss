@@ -57,6 +57,19 @@ and fences claimed exchanges for explicit original local recovery. The
 protected reference and cancellation/publication gates.
 
 
+## API OAuth token generations
+
+Real migration 31 follows real 26–30 and the main-established reservation. It
+adds private `account_oauth_credentials` metadata and the exact
+`account_oauth_credentials_layout=token-generations-v1` marker. Rows bind current
+account/connection/provider identity, accepted public profile, token references,
+expiry, refresh claim and cleanup. Access/refresh tokens remain only in Vault.
+No foreign key or deletion cascade may remove uncertain ownership. Retire metadata
+only after ordinary account cleanup confirms all protected references removed.
+Restore copies current metadata with the current attempt table; historical images
+cannot replace token generations or acquire a refresh claim. Unsettled refresh or
+cleanup blocks restore. Follow the account OAuth contract for HTTP and publication.
+
 ## Managed backup observation
 
 `SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are available only

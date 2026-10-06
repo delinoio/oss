@@ -22,6 +22,8 @@ use crate::{NativeFailure, canonical_id};
 #[serde(rename_all = "kebab-case")]
 pub enum OAuthAction {
     Begin,
+    BeginHuggingFace,
+    Profiles,
     BindOpen,
     SubscriptionOpen,
     SubscriptionReopen,
@@ -32,13 +34,49 @@ pub enum OAuthAction {
 #[derive(Default, Serialize)]
 pub struct OAuthResult {
     pub generation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<Vec<u8>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<OAuthProfile>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub denied: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub callback_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<Vec<u8>>,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OAuthProfile {
+    #[default]
+    Openrouter,
+    HuggingFace,
+}
+
+fn registered_client(profile: OAuthProfile) -> Option<String> {
+    if profile == OAuthProfile::Openrouter {
+        return Some(String::new());
+    }
+    let registrations: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../cmds/delidev-cli/internal/providers/oauth_clients.json"
+    ))
+    .ok()?;
+    let registration = registrations.get("hugging-face")?;
+    let id = registration.get("client_id")?.as_str()?;
+    (registration.get("registration")?.as_str()? == "registered"
+        && registration.get("api_compatibility")?.as_str()? == "accepted"
+        && registration.get("redirect_uri")?.as_str()?
+            == "http://localhost/oauth/hugging-face/callback"
+        && !id.is_empty()
+        && id.len() <= 256)
+        .then(|| id.to_owned())
+}
+
 impl Drop for OAuthResult {
     fn drop(&mut self) {
+        if let Some(state) = &mut self.state {
+            state.zeroize();
+        }
         if let Some(code) = &mut self.code {
             code.zeroize();
         }
@@ -54,12 +92,14 @@ pub struct OAuthScope {
 }
 struct Shared {
     expected_state: Option<Zeroizing<String>>,
+    api_state: Mutex<Option<Zeroizing<String>>>,
     bound: AtomicBool,
     consumed: AtomicBool,
     stop: AtomicBool,
     code: Mutex<Option<Zeroizing<Vec<u8>>>>,
 }
 struct Attempt {
+    profile: OAuthProfile,
     scope: OAuthScope,
     generation: String,
     callback: String,
@@ -248,12 +288,18 @@ impl OAuthHost {
                         generation,
                         callback_url: String::new(),
                         code: None,
+                        state: None,
+                        profiles: Vec::new(),
+                        denied: false,
                     });
                 }
                 return Ok(OAuthResult {
                     generation: original.generation.clone(),
                     callback_url: String::new(),
                     code: None,
+                    state: None,
+                    profiles: Vec::new(),
+                    denied: false,
                 });
             }
             if !generation.is_empty()
@@ -267,6 +313,9 @@ impl OAuthHost {
                 generation: original.generation.clone(),
                 callback_url: String::new(),
                 code: None,
+                state: None,
+                profiles: Vec::new(),
+                denied: false,
             };
             let shared = Arc::clone(&original.shared);
             let url = Zeroizing::new(original.authorization.to_string());
@@ -275,7 +324,28 @@ impl OAuthHost {
             opener(&url, &shared.stop)?;
             return Ok(result);
         }
-        if action == OAuthAction::Begin {
+        if action == OAuthAction::Profiles {
+            return Ok(OAuthResult {
+                profiles: [OAuthProfile::Openrouter, OAuthProfile::HuggingFace]
+                    .into_iter()
+                    .filter(|p| registered_client(*p).is_some())
+                    .collect(),
+                generation: String::new(),
+                callback_url: String::new(),
+                code: None,
+                state: None,
+                denied: false,
+            });
+        }
+        if matches!(action, OAuthAction::Begin | OAuthAction::BeginHuggingFace) {
+            let profile = if action == OAuthAction::Begin {
+                OAuthProfile::Openrouter
+            } else {
+                OAuthProfile::HuggingFace
+            };
+            if registered_client(profile).is_none() {
+                return Err(NativeFailure::InvalidEvidence);
+            }
             let disposed = self.disposed.lock().map_err(|_| NativeFailure::Busy)?;
             if disposed.len() >= 4096 || disposed.contains(&scope) {
                 return Err(NativeFailure::Stopped);
@@ -285,11 +355,14 @@ impl OAuthHost {
                 return Err(NativeFailure::InvalidInput);
             }
             if let Some(original) = attempts.get(&scope.window) {
-                if original.scope == scope {
+                if original.scope == scope && original.profile == profile {
                     return Ok(OAuthResult {
                         generation: original.generation.clone(),
                         callback_url: original.callback.clone(),
                         code: None,
+                        state: None,
+                        profiles: Vec::new(),
+                        denied: false,
                     });
                 }
                 return Err(NativeFailure::Busy);
@@ -297,11 +370,14 @@ impl OAuthHost {
             if attempts.len() >= 32 {
                 return Err(NativeFailure::Busy);
             }
-            let attempt = begin(scope)?;
+            let attempt = begin_profile(scope, profile)?;
             let result = OAuthResult {
                 generation: attempt.generation.clone(),
                 callback_url: attempt.callback.clone(),
                 code: None,
+                state: None,
+                profiles: Vec::new(),
+                denied: false,
             };
             attempts.insert(attempt.scope.window.clone(), attempt);
             tracing::info!(
@@ -327,6 +403,9 @@ impl OAuthHost {
                 generation: generation.into(),
                 callback_url: String::new(),
                 code: None,
+                state: None,
+                profiles: Vec::new(),
+                denied: false,
             });
         }
         let original = attempts
@@ -351,9 +430,27 @@ impl OAuthHost {
                         generation: generation.into(),
                         callback_url: String::new(),
                         code: None,
+                        state: None,
+                        profiles: Vec::new(),
+                        denied: false,
                     });
                 }
-                validate_authorization(authorization, &original.callback)?;
+                if original.profile == OAuthProfile::Openrouter {
+                    validate_authorization(authorization, &original.callback)?;
+                } else {
+                    let client = registered_client(original.profile)
+                        .ok_or(NativeFailure::InvalidEvidence)?;
+                    let state = validate_hugging_face_authorization(
+                        authorization,
+                        &original.callback,
+                        &client,
+                    )?;
+                    *original
+                        .shared
+                        .api_state
+                        .lock()
+                        .map_err(|_| NativeFailure::Busy)? = Some(state);
+                }
                 original.attempt = attempt_id.into();
                 original.authorization = Zeroizing::new(authorization.into());
                 original.shared.bound.store(true, Ordering::Release);
@@ -378,6 +475,42 @@ impl OAuthHost {
                     .lock()
                     .map_err(|_| NativeFailure::Busy)?
                     .take();
+                if original.profile == OAuthProfile::HuggingFace {
+                    let mut result = OAuthResult {
+                        generation: generation.into(),
+                        callback_url: String::new(),
+                        code: None,
+                        state: None,
+                        profiles: Vec::new(),
+                        denied: false,
+                    };
+                    if let Some(value) = code {
+                        let query = std::str::from_utf8(&value)
+                            .map_err(|_| NativeFailure::InvalidEvidence)?;
+                        for part in query.split('&') {
+                            let (name, raw) =
+                                part.split_once('=').ok_or(NativeFailure::InvalidEvidence)?;
+                            if name == "code" {
+                                result.code = Some(
+                                    decode_code(raw)
+                                        .ok_or(NativeFailure::InvalidEvidence)?
+                                        .to_vec(),
+                                );
+                            }
+                            if name == "state" {
+                                result.state = Some(
+                                    decode_code(raw)
+                                        .ok_or(NativeFailure::InvalidEvidence)?
+                                        .to_vec(),
+                                );
+                            }
+                            if name == "error" {
+                                result.denied = true;
+                            }
+                        }
+                    }
+                    return Ok(result);
+                }
                 return Ok(OAuthResult {
                     generation: generation.into(),
                     callback_url: String::new(),
@@ -386,6 +519,9 @@ impl OAuthHost {
                         value.zeroize();
                         result
                     }),
+                    state: None,
+                    profiles: Vec::new(),
+                    denied: false,
                 });
             }
             _ => return Err(NativeFailure::InvalidInput),
@@ -401,6 +537,9 @@ impl OAuthHost {
             generation: generation.into(),
             callback_url: String::new(),
             code: None,
+            state: None,
+            profiles: Vec::new(),
+            denied: false,
         })
     }
 }
@@ -410,7 +549,7 @@ impl Drop for OAuthHost {
     }
 }
 
-fn begin(scope: OAuthScope) -> Result<Attempt, NativeFailure> {
+fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, NativeFailure> {
     // Both families use the same ephemeral port. Never bind a wildcard or
     // silently omit one family: localhost resolver choice cannot change scope.
     let mut sockets = None;
@@ -433,15 +572,20 @@ fn begin(scope: OAuthScope) -> Result<Attempt, NativeFailure> {
         .map_err(|_| NativeFailure::SidecarFailed)?;
     // Each UUID-v7 has fresh cryptographic random bits. Their concatenation
     // supplies an unpredictable 32-byte path without a persistent identifier.
-    let path = format!(
-        "/oauth/openrouter/{}{}",
-        uuid::Uuid::now_v7().simple(),
-        uuid::Uuid::now_v7().simple()
-    );
+    let path = if profile == OAuthProfile::HuggingFace {
+        "/oauth/hugging-face/callback".into()
+    } else {
+        format!(
+            "/oauth/openrouter/{}{}",
+            uuid::Uuid::now_v7().simple(),
+            uuid::Uuid::now_v7().simple()
+        )
+    };
     let callback = format!("http://localhost:{port}{path}");
     let generation = uuid::Uuid::now_v7().to_string();
     let shared = Arc::new(Shared {
         expected_state: None,
+        api_state: Mutex::new(None),
         bound: AtomicBool::new(false),
         consumed: AtomicBool::new(false),
         stop: AtomicBool::new(false),
@@ -467,6 +611,7 @@ fn begin(scope: OAuthScope) -> Result<Attempt, NativeFailure> {
         })
         .map_err(|_| NativeFailure::SidecarFailed)?;
     Ok(Attempt {
+        profile,
         scope,
         generation,
         callback,
@@ -514,6 +659,15 @@ fn parse_request_mode(
     host: &str,
     path: &str,
     state: Option<&str>,
+) -> Option<Option<Zeroizing<Vec<u8>>>> {
+    parse_request_profile(raw, host, path, state, false)
+}
+fn parse_request_profile(
+    raw: &[u8],
+    host: &str,
+    path: &str,
+    state: Option<&str>,
+    api: bool,
 ) -> Option<Option<Zeroizing<Vec<u8>>>> {
     let text = std::str::from_utf8(raw).ok()?;
     let (first, headers) = text.split_once("\r\n")?;
@@ -567,14 +721,19 @@ fn parse_request_mode(
         let mut fields = BTreeMap::new();
         for part in query.split('&') {
             let (key, value) = part.split_once('=')?;
-            if !matches!(key, "code" | "state" | "scope")
+            if !(matches!(key, "code" | "state" | "scope") || api && key == "error")
                 || fields.insert(key, decode_code(value)?).is_some()
             {
                 return None;
             }
         }
         let supplied = fields.get("state")?;
-        if !fields.contains_key("code")
+        if (!fields.contains_key("code")
+            && !(api
+                && fields
+                    .get("error")
+                    .is_some_and(|v| v.as_slice() == b"access_denied")))
+            || fields.contains_key("code") && fields.contains_key("error")
             || supplied.len() != state.len()
             || supplied
                 .iter()
@@ -615,11 +774,17 @@ fn handle_request(stream: &mut TcpStream, host: &str, path: &str, shared: &Share
         }
     }
     buffer.zeroize();
-    let parsed = parse_request_mode(
+    let api_state = shared.api_state.lock().ok();
+    let state = api_state
+        .as_ref()
+        .and_then(|v| v.as_deref())
+        .map(String::as_str);
+    let parsed = parse_request_profile(
         &raw,
         host,
         path,
-        shared.expected_state.as_deref().map(String::as_str),
+        state.or_else(|| shared.expected_state.as_deref().map(String::as_str)),
+        state.is_some(),
     );
     let common = "Cache-Control: no-store\r\nReferrer-Policy: \
                   no-referrer\r\nContent-Security-Policy: default-src 'none'; frame-ancestors \
@@ -696,6 +861,59 @@ pub fn validate_authorization(raw: &str, callback: &str) -> Result<(), NativeFai
     }
     Ok(())
 }
+fn validate_hugging_face_authorization(
+    raw: &str,
+    callback: &str,
+    client: &str,
+) -> Result<Zeroizing<String>, NativeFailure> {
+    if raw.len() > 4096 || raw.chars().any(char::is_control) {
+        return Err(NativeFailure::InvalidInput);
+    }
+    let url = url::Url::parse(raw).map_err(|_| NativeFailure::InvalidInput)?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("huggingface.co")
+        || url.path() != "/oauth/authorize"
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || url.as_str() != raw
+    {
+        return Err(NativeFailure::InvalidInput);
+    }
+    let mut fields = BTreeMap::new();
+    for (key, value) in url.query_pairs() {
+        if fields
+            .insert(key.into_owned(), Zeroizing::new(value.into_owned()))
+            .is_some()
+        {
+            return Err(NativeFailure::InvalidInput);
+        }
+    }
+    let get = |name: &str| fields.get(name).map(|v| v.as_str());
+    if fields.len() != 7
+        || get("client_id") != Some(client)
+        || get("redirect_uri") != Some(callback)
+        || get("response_type") != Some("code")
+        || get("scope") != Some("inference-api")
+        || get("code_challenge_method") != Some("S256")
+        || get("code_challenge").is_none_or(|v| {
+            v.len() != 43
+                || !v
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
+        || get("state").is_none_or(|v| {
+            v.len() != 43
+                || !v
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
+    {
+        return Err(NativeFailure::InvalidInput);
+    }
+    fields.remove("state").ok_or(NativeFailure::InvalidInput)
+}
 fn open_authorization(url: &str, stopped: &AtomicBool) -> Result<(), NativeFailure> {
     crate::browser_opener::dispatch(url, stopped)
 }
@@ -738,6 +956,68 @@ mod tests {
         stream.read_to_string(&mut response).unwrap();
         response
     }
+    #[test]
+    fn hugging_face_profile_requires_registration_and_original_state() {
+        assert!(registered_client(OAuthProfile::HuggingFace).is_none());
+        let host = OAuthHost::default();
+        let profiles = host
+            .control(scope(), OAuthAction::Profiles, "", "", "")
+            .unwrap();
+        assert_eq!(profiles.profiles.len(), 1);
+        assert!(
+            host.control(scope(), OAuthAction::BeginHuggingFace, "", "", "")
+                .is_err()
+        );
+        let attempt = begin_profile(scope(), OAuthProfile::HuggingFace).unwrap();
+        let callback = url::Url::parse(&attempt.callback).unwrap();
+        let state = "s".repeat(43);
+        let mut authorization = url::Url::parse("https://huggingface.co/oauth/authorize").unwrap();
+        authorization
+            .query_pairs_mut()
+            .append_pair("client_id", "fixture-public-client")
+            .append_pair("redirect_uri", &attempt.callback)
+            .append_pair("response_type", "code")
+            .append_pair("scope", "inference-api")
+            .append_pair("code_challenge", &"c".repeat(43))
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("state", &state);
+        let expected = validate_hugging_face_authorization(
+            authorization.as_str(),
+            &attempt.callback,
+            "fixture-public-client",
+        )
+        .unwrap();
+        assert_eq!(expected.as_str(), state);
+        for bad in [
+            authorization
+                .to_string()
+                .replace("huggingface.co", "foreign.test"),
+            format!("{authorization}&state=duplicate"),
+            authorization.to_string().replace("inference-api", "openid"),
+        ] {
+            assert!(
+                validate_hugging_face_authorization(
+                    &bad,
+                    &attempt.callback,
+                    "fixture-public-client"
+                )
+                .is_err()
+            );
+        }
+        *attempt.shared.api_state.lock().unwrap() = Some(expected);
+        attempt.shared.bound.store(true, Ordering::Release);
+        let port = callback.port().unwrap();
+        let wrong = format!("{}?code=opaque&state={}", callback.path(), "x".repeat(43));
+        assert!(request(port, &wrong, false).starts_with("HTTP/1.1 400"));
+        assert!(!attempt.shared.consumed.load(Ordering::Acquire));
+        let denied = format!("{}?error=access_denied&state={state}", callback.path());
+        assert!(request(port, &denied, true).starts_with("HTTP/1.1 303"));
+        assert!(attempt.shared.consumed.load(Ordering::Acquire));
+        let bytes = attempt.shared.code.lock().unwrap().take().unwrap();
+        assert!(bytes.starts_with(b"error=access_denied&state="));
+        assert!(request(port, &denied, false).starts_with("HTTP/1.1 400"));
+    }
+
     #[test]
     fn lost_begin_replays_and_disposal_or_window_close_blocks_late_begin() {
         let host = OAuthHost::default();
@@ -1111,6 +1391,7 @@ fn begin_subscription(
     let (state, callback) = subscription_authorization(authorization)?;
     let shared = Arc::new(Shared {
         expected_state: Some(state),
+        api_state: Mutex::new(None),
         bound: AtomicBool::new(true),
         consumed: AtomicBool::new(false),
         stop: AtomicBool::new(false),
@@ -1155,6 +1436,7 @@ fn begin_subscription(
         )
     };
     Ok(Attempt {
+        profile: OAuthProfile::Openrouter,
         scope,
         generation: uuid::Uuid::now_v7().to_string(),
         callback: callback.uri().into(),

@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"strings"
+	"unicode"
 )
 
 // This compiled release metadata is shared with the native host. Pending apps
@@ -16,11 +18,17 @@ var oauthClients []byte
 
 type OAuthRegistrationState string
 
-const OAuthRegistered OAuthRegistrationState = "registered"
+const (
+	OAuthRegistered          OAuthRegistrationState = "registered"
+	OAuthRegistrationPending OAuthRegistrationState = "pending"
+)
 
 type OAuthCompatibilityState string
 
-const OAuthAPIAccepted OAuthCompatibilityState = "accepted"
+const (
+	OAuthAPIAccepted   OAuthCompatibilityState = "accepted"
+	OAuthAPIUnverified OAuthCompatibilityState = "unverified"
+)
 
 type OAuthRegistration struct {
 	ClientID      string                  `json:"client_id"`
@@ -30,7 +38,7 @@ type OAuthRegistration struct {
 }
 
 func (r OAuthRegistration) Accepted() bool {
-	return r.ClientID != "" && len(r.ClientID) <= 256 && r.Registration == OAuthRegistered && r.Compatibility == OAuthAPIAccepted
+	return strings.IndexFunc(r.ClientID, unicode.IsControl) < 0 && r.ClientID != "" && len(r.ClientID) <= 256 && r.Registration == OAuthRegistered && r.Compatibility == OAuthAPIAccepted
 }
 func OAuthRegistrations() map[domain.ProviderPresetID]OAuthRegistration {
 	var profiles map[domain.ProviderPresetID]OAuthRegistration

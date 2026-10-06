@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -116,6 +117,23 @@ func (c ownedOAuthTokenClient) token(ctx context.Context, p oauthProfile, fields
 			return result, domain.Fail(domain.PermissionDenied, "The provider rejected this OAuth authorization.", "Reconnect explicitly after removing the original connection.")
 		}
 		return result, oauthCredentialProblem()
+	}
+	if rawScope, present := parsed["scope"]; present {
+		var granted string
+		if json.Unmarshal(rawScope, &granted) != nil {
+			return result, oauthCredentialProblem()
+		}
+		for _, required := range strings.Fields(p.scope) {
+			found := false
+			for _, scope := range strings.Fields(granted) {
+				if scope == required {
+					found = true
+				}
+			}
+			if !found {
+				return result, domain.Fail(domain.PermissionDenied, "The provider did not grant required API access.", "Reconnect with the required provider scope.")
+			}
+		}
 	}
 	var kind string
 	if json.Unmarshal(parsed["token_type"], &kind) != nil || kind != "Bearer" && kind != "bearer" {

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package domain
 
-import "time"
+import (
+	"encoding/hex"
+	"time"
+)
 
 type OAuthRefreshState string
 
@@ -31,6 +34,13 @@ type AccountOAuthCredential struct {
 }
 
 func (v AccountOAuthCredential) Validate() error {
+	digest, digestErr := hex.DecodeString(v.ClientDigest)
+	if digestErr != nil || len(digest) != 32 || hex.EncodeToString(digest) != v.ClientDigest {
+		return Fail(RecoveryRequired, "OAuth client binding is invalid.", "Preserve the original credential profile.")
+	}
+	if v.Preset != PresetGemini && v.QuotaProject != "" {
+		return Fail(RecoveryRequired, "OAuth project ownership is invalid.", "Preserve the original provider attribution.")
+	}
 	if v.AccountID.Validate() != nil || v.ConnectionID.Validate() != nil || v.ProviderID.Validate() != nil || v.TokenID.Validate() != nil || v.Revision == 0 || v.ExpiresAt.IsZero() || len(v.ClientDigest) != 64 || len(v.Cleanup) > 32 {
 		return Fail(RecoveryRequired, "OAuth credential metadata is invalid.", "Preserve its original protected generations.")
 	}
@@ -45,17 +55,19 @@ func (v AccountOAuthCredential) Validate() error {
 			return Fail(RecoveryRequired, "OAuth refresh identity is invalid.", "Preserve original refresh authority.")
 		}
 	case OAuthRefreshClaimed, OAuthRefreshRecovery, OAuthRefreshDenied:
-		if v.RefreshID.Validate() != nil {
+		if v.RefreshID.Validate() != nil || v.RefreshID == v.TokenID || v.RefreshID == v.ConnectionID {
 			return Fail(RecoveryRequired, "OAuth refresh claim is invalid.", "Do not resend the original refresh.")
 		}
 	case OAuthRefreshRetired:
 	default:
 		return Fail(RecoveryRequired, "OAuth refresh state is invalid.", "Preserve original refresh authority.")
 	}
+	seen := map[ID]bool{}
 	for _, id := range v.Cleanup {
-		if id.Validate() != nil || id == v.TokenID {
+		if id.Validate() != nil || id == v.TokenID || seen[id] {
 			return Fail(RecoveryRequired, "OAuth cleanup identity is invalid.", "Preserve protected references.")
 		}
+		seen[id] = true
 	}
 	return nil
 }

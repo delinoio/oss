@@ -1,6 +1,6 @@
 import type { UsageEntry } from "./usage-entry";
 import { providerPresetNames } from "@delinoio/delidev-api-client";
-import { useOpenRouterOAuth } from "./account-oauth";
+import { useAccountOAuth } from "./account-oauth";
 import { SubscriptionAccounts } from "./subscription-accounts";
 import { Backups } from "./backups";
 import { RepositoryGitHubAccess } from "./integration-access";
@@ -225,10 +225,10 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
 }
 
 function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, entry, navigate }: SettingsProps & { selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
-  const oauth = useOpenRouterOAuth();
+  const oauth = useAccountOAuth();
   const oauthStarted = useRef(false);
   useEffect(() => {
-    if (oauthStarted.current || entry?.kind !== SettingsEntryKind.AddAccount || !entry.provider?.oauthAvailable || !oauth.available) return;
+    if (oauthStarted.current || entry?.kind !== SettingsEntryKind.AddAccount || !entry.provider?.oauthAvailable || !oauth.supports(entry.provider)) return;
     let active = true;
     // Wait until mount effects settle so Strict Mode's setup replay cannot
     // create an OAuth owner that its simulated cleanup immediately disposes.
@@ -322,7 +322,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
       for (const preset of items(parsed).map(object)) presets.set(text(preset.id), preset);
     }
   } catch { /* Preset-specific help stays unavailable when the server response is malformed. */ }
-  const providerSummary = (entry: ProviderInventoryEntry, oauthSupported = false): AccountProviderSummary | undefined => entry.providerId && entry.provider?.kind === EntityKind.PROVIDER ? {
+  const providerSummary = (entry: ProviderInventoryEntry, capabilities: readonly ProviderInventoryCapability[] = []): AccountProviderSummary | undefined => entry.providerId && entry.provider?.kind === EntityKind.PROVIDER ? {
     providerId: entry.providerId,
     displayName: entry.displayName,
     enabled: entry.enabled,
@@ -331,10 +331,10 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     documentationUrl: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.documentation),
     presetId: providerPresetNames.get(entry.presetId),
     keyCreationUrl: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.key_creation_url),
-    oauthAvailable: oauthSupported && entry.enabled && entry.connectionMethod === ProviderConnectionMethod.OAUTH_PKCE,
+    oauthAvailable: capabilities.includes(entry.presetId === ProviderPresetId.OPENROUTER ? ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 : ProviderInventoryCapability.ACCOUNT_OAUTH_V1) && entry.enabled && entry.connectionMethod === ProviderConnectionMethod.OAUTH_PKCE,
   } : undefined;
-  const apiProviders = (apiInventory.data?.entries ?? []).map(entry => providerSummary(entry, Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1)))).filter((value): value is AccountProviderSummary => value !== undefined);
-  const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(entry => providerSummary(entry, Boolean(eligibleInventory.data?.capabilities.includes(ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1)))).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
+  const apiProviders = (apiInventory.data?.entries ?? []).map(entry => providerSummary(entry, apiInventory.data?.capabilities ?? [])).filter((value): value is AccountProviderSummary => value !== undefined);
+  const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(entry => providerSummary(entry, eligibleInventory.data?.capabilities ?? [])).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
   const configurationList = area === SettingsArea.Configuration && !hasOverlay && !hasSpecializedPanel;
   const successfulEmptyFirstPage = !page && Boolean(result.data && result.data.resources.length === 0 && !result.error && !result.data.nextPageToken);
   const retainedServerEmpty = isServerPreferences && !page && Boolean(result.data && result.data.resources.length === 0 && !result.data.nextPageToken);
@@ -342,7 +342,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const serverSingleton = isServerPreferences && result.data?.resources.length === 1 ? result.data.resources[0] : undefined;
   const projectNameFocused = useCallback(() => setFocusNewProjectName(false), []);
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
-  const providerEntrySummary = (entry?: ProviderInventoryEntry, oauthSupported = false) => entry ? providerSummary(entry, oauthSupported) : undefined;
+  const providerEntrySummary = (entry?: ProviderInventoryEntry, capabilities: readonly ProviderInventoryCapability[] = []) => entry ? providerSummary(entry, capabilities) : undefined;
   return <>
       <section className={isProjects ? "settings-content settings-projects" : isServerPreferences ? "settings-content settings-server-preferences" : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices && !hasOverlay ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
         <div className="settings-content-column">

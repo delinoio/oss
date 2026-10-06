@@ -524,11 +524,11 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		return nil, rpc.Error(err, c)
 	}
 	commitment := a.CodeCommitment
-	if len(req.Msg.AuthorizationCode) > 0 {
+	if len(req.Msg.AuthorizationCode) > 0 || a.Version == 2 && a.State == domain.OAuthAwaiting {
 		commitment = s.oauthCommitment("code", domain.ID(m.RequestId), req.Msg.AuthorizationCode)
 	}
 	stateCommitment := a.StateCommitment
-	if a.Version == 2 && len(req.Msg.AuthorizationCode) > 0 {
+	if a.Version == 2 && (len(req.Msg.AuthorizationCode) > 0 || a.State == domain.OAuthAwaiting) {
 		if domain.ValidateOAuthCode(req.Msg.AuthorizationState) != nil || !hmac.Equal([]byte(s.oauthCommitment("state", a.StartRequestID, req.Msg.AuthorizationState)), []byte(a.StateCommitment)) {
 			return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "The original OAuth state does not match.", "Use the original native callback."), c)
 		}
@@ -599,8 +599,41 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		}
 		return respond(a, true)
 	}
-	if len(req.Msg.AuthorizationCode) == 0 || a.State != domain.OAuthAwaiting || a.Revision != m.ExpectedRevision || a.Generation != s.oauthGeneration || !time.Now().Before(a.ExpiresAt) || s.oauthLive[a.ID] == nil {
+	if len(req.Msg.AuthorizationCode) == 0 && a.Version != 2 || a.State != domain.OAuthAwaiting || a.Revision != m.ExpectedRevision || a.Generation != s.oauthGeneration || !time.Now().Before(a.ExpiresAt) || s.oauthLive[a.ID] == nil {
 		return nil, rpc.Error(domain.Fail(domain.Conflict, "The original live authorization is unavailable.", "Read the original attempt. Only an already claimed original completion permits code-free local recovery."), c)
+	}
+	if len(req.Msg.AuthorizationCode) == 0 {
+		// An original state-bound access_denied callback records a terminal
+		// receipt. It never gains authority to send a token request.
+		_, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "oauth.complete", input, func(tx *store.Tx) (any, error) {
+			if err := s.oauthProvider(tx, a.ProviderID, a.ProviderRevision); err != nil {
+				return nil, err
+			}
+			current, err := tx.AccountOAuth(a.ID)
+			if err != nil {
+				return nil, err
+			}
+			if current.Revision != a.Revision || current.State != domain.OAuthAwaiting {
+				return nil, domain.Fail(domain.Conflict, "Authorization changed.", "Read the original attempt.")
+			}
+			current.Revision++
+			current.State = domain.OAuthFailed
+			current.CompletionRequestID = domain.ID(m.RequestId)
+			current.CompletionRevision = m.ExpectedRevision
+			current.CodeCommitment = commitment
+			current.Problem = domain.SafeError(domain.Fail(domain.PermissionDenied, "Authorization was denied.", "Cancel before starting another connection."))
+			current.UpdatedAt = time.Now().UTC().Truncate(time.Millisecond)
+			if err := tx.PutAccountOAuth(current, a.Revision); err != nil {
+				return nil, err
+			}
+			a = current
+			return oauthReceipt{a.ID}, nil
+		})
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
+		s.clearOAuthLive(a.ID)
+		return respond(a, false)
 	}
 	checkCtx, finish, err := s.startAccountCheck(ctx, a.AccountID, domain.ID(m.RequestId), a.ProviderID, oauthInspection)
 	if err != nil {
