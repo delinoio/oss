@@ -1,0 +1,9 @@
+{
+  "native-response-bounds.keepOpenCodeAnswerWithin64Kib": "각 OpenCode 답변을 64 KiB 이내로 유지하세요. 이전 초안을 유지했습니다.",
+  "native-response-bounds.keepOpenCodeCorrectionFeedbackWithin64Kib": "OpenCode 수정 피드백을 64 KiB 이내로 유지하세요. 이전 초안을 유지했습니다.",
+  "native-response-bounds.keepClaudeDenialReasonWithin4Kib": "Claude 거부 이유를 4 KiB 이내로 유지하세요. 이전 초안을 유지했습니다.",
+  "native-response-bounds.keepClaudeAnswerWithin256Kib": "각 Claude 답변을 256 KiB 이내로 유지하세요. 이전 초안을 유지했습니다.",
+  "native-response-bounds.keepGrokAnswerWithin64Kib": "각 Grok 답변을 64 KiB 이내로 유지하세요. 이전 초안을 유지했습니다.",
+  "native-response-bounds.keepGrokNoteWithin64Kib": "각 Grok 메모를 64 KiB 이내로 유지하세요. 이전 초안을 유지했습니다.",
+  "native-response-bounds.completeResponseExceeds256Kib": "전체 응답이 256 KiB를 초과합니다. 텍스트를 더 추가하기 전에 줄이세요. 이전 초안을 유지했습니다."
+}
