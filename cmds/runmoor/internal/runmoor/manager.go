@@ -430,7 +430,7 @@ func (m *Manager) step() error {
 		if p.Phase == Retired {
 			continue
 		}
-		if p.Phase != Suspended {
+		if !poolLoopStopped(p) {
 			m.ensurePoolLoop(id)
 		}
 		if p.Phase == Draining {
@@ -578,6 +578,24 @@ func (m *Manager) ensurePoolLoop(id string) {
 		m.poolLoop(ctx, id)
 	}()
 }
+
+func poolLoopStopped(p *PoolState) bool {
+	if p == nil || p.Phase == Retired || p.Phase == Suspended {
+		return true
+	}
+	if p.Phase != Paused || p.Problem == nil {
+		return false
+	}
+	switch p.Problem.Code {
+	case ErrAuth, ErrOwnership, ErrImage, ErrPlatform, ErrRunnerVersion:
+		return true
+	case ErrPreparation:
+		return p.PreparationFailures >= 3
+	default:
+		return false
+	}
+}
+
 func (m *Manager) poolProblem(id string, err error, suspend bool) {
 	m.poolProblemWithSource(id, err, suspend, SuspensionUnknown)
 }
@@ -610,7 +628,7 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 	for ctx.Err() == nil {
 		s := m.Store.View()
 		p := s.Pools[id]
-		if p == nil || p.Phase == Retired || p.Phase == Suspended {
+		if poolLoopStopped(p) {
 			return
 		}
 		if p.Phase == Ready && p.Spec.Backend == Docker && s.Config.DockerCapacityPending && !s.Stopping {

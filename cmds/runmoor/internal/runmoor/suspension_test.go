@@ -165,6 +165,27 @@ func TestLateFailureReloadPreservesOperatorPause(t *testing.T) {
 	}
 }
 
+func TestTerminalPausedFailureDoesNotRestartPoolLoop(t *testing.T) {
+	m, c, _, _, pool := testManager(t)
+	if err := m.Pause(c.Pools[0].Name); err != nil {
+		t.Fatal(err)
+	}
+	m.poolProblem(pool, problem(ErrAuth, "Fixture credential is invalid.", "Replace the credential."), true)
+
+	if !poolLoopStopped(m.Store.View().Pools[pool]) {
+		t.Fatal("terminal paused failure did not stop the pool loop")
+	}
+	if err := m.step(); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	_, running := m.poolLoops[pool]
+	m.mu.Unlock()
+	if running {
+		t.Fatal("manager step restarted a terminal paused pool loop")
+	}
+}
+
 func TestValidatedReloadRecoversOnlyRelatedSuspensions(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
