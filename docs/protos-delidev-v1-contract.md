@@ -1,5 +1,47 @@
 # DeliDev v1 Connect contract
 
+
+## GitHub token-first onboarding reservations
+
+Issue #964 reserves `SystemCapability.GITHUB_TOKEN_ONBOARDING_V1 = 34` for
+profile-independent token identity inspection and official token-form preparation.
+`GitHubTokenKind` reserves UNSPECIFIED 0, FINE_GRAINED 1 and CLASSIC 2.
+`GitHubTokenIdentityState` reserves UNSPECIFIED 0, VERIFIED 1, INVALID_TOKEN 2,
+ACCESS_RESTRICTED 3, SSO_REQUIRED 4, RATE_LIMITED 5 and UNAVAILABLE 6.
+The five new message declarations and their fields are recorded with exclusive
+ownership in `allocations.json`: token inspection request ID/token 1–2, response
+request ID/state/identity/problem JSON 1–4, public identity ID/node ID/login 1–3,
+form request request ID/token kind/resource owner/access 1–4 and form response
+request ID/token kind/resource owner/access/URL 1–5. Establish this closure on main
+before dependent implementation. This prerequisite introduces no active schema,
+generated binding, advertised support, credential lifetime, browser authority or
+database migration. Existing profile/revision-bound token forms remain unchanged.
+
+## Agent Worker wizard
+
+PR #1351 established the issue #964 allocations on main before implementation.
+System `AGENT_WORKER_WIZARD_V1 = 33` advertises source-scoped account/model lists
+and atomic `ConfigurationService.SaveAgentWorker`. `ListResourcesRequest` field
+4 and `SearchModelsRequest` field 7 select a closed subscription service. Reject
+unknown services, API/provider combinations and account selectors on other kinds.
+Filter in SQL before pagination and bind the source into each cursor. Unspecified
+selectors preserve legacy behavior; shared Filter, snapshots and events do not
+change.
+
+`SaveAgentWorkerRequest` carries mutation, document, typed model selection and
+schema version in fields 1–4. `AgentWorkerModelSelection` uses a oneof canonical
+model ID or exact executable/native ID, plus the canonical model's expected
+revision. A canonical selection requires a nonzero revision; a direct ID requires
+zero. The RPC reuses the existing `SaveConfigurationResponse` acknowledgement,
+with narrow Buf lint exceptions on the two save methods for this deliberate reuse.
+Existing RPCs, CLI operations and resource/storage schemas remain compatible.
+The new path requires at least one account and one common API provider or native
+subscription service. Fixed routing requires exactly one account. Go resolves or
+creates the model and saves the Worker in one receipt transaction. Saved harness
+compatibility is a configuration declaration, never native/account/platform proof.
+No database migration is added. Follow the [catalog contract](cmds-delidev-catalog-contract.md)
+and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
+
 ## Repository addition reservations
 
 Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and

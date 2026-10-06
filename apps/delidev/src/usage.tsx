@@ -1,14 +1,19 @@
-import { useState } from "react";
+import type { UsageEntry } from "./usage-entry";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, EntityKind, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
+import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, ResourceQuery, EntityKind, supportsResourceSchema, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
 import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { ResourceChoice } from "./configuration-fields";
 import { Problem } from "./ui";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
-import { detectDeviceTimeZone, localDateTimeToUnixMs } from "./usage-time";
+import { detectDeviceTimeZone, localDateTimeToUnixMs, unixMsToLocalDateTime } from "./usage-time";
 import { UsageCharts } from "./usage-chart";
 import { GrokAccounting } from "./grok-accounting";
 import { NativeAccounting } from "./native-accounting";
+import { ModelPricing } from "./pricing";
+import { SettingsLifetime } from "./settings-lifetime";
+import { MutationIntents } from "./mutation";
+import { document, resourceName, text } from "./documents";
 
 interface Filters { from: string; until: string; sessionId: string; projectId: string; accountId: string; providerId: string; subscriptionService: SubscriptionServiceIdentity; modelId: string; generalChat: boolean }
 const emptyFilters: Filters = { from: "", until: "", sessionId: "", projectId: "", accountId: "", providerId: "", subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED, modelId: "", generalChat: false };
@@ -62,14 +67,28 @@ function appliedFilters(selection: ReturnType<typeof request>): string[] {
   return values;
 }
 
-export function Usage({ active, open }: { active: boolean; open: (id: string) => void }) {
+export function Usage({ active, open, entry }: { active: boolean; open: (id: string) => void; entry?: UsageEntry }) {
+  const [detail, setDetail] = useState("");
   const [draft, setDraft] = useState<Filters>(emptyFilters);
   const [appliedDraft, setAppliedDraft] = useState<Filters>(emptyFilters);
   const [selection, setSelection] = useState(() => request(emptyFilters, detectDeviceTimeZone()));
   const [invalid, setInvalid] = useState("");
+  const consumedEntry = useRef<string>(undefined);
+  useLayoutEffect(() => {
+    if (!active || !entry || consumedEntry.current === entry.key) return;
+    consumedEntry.current = entry.key;
+    const zone = detectDeviceTimeZone();
+    const next = { ...emptyFilters, accountId: entry.accountId, from: unixMsToLocalDateTime(entry.fromUnixMs, zone), until: unixMsToLocalDateTime(entry.untilUnixMs, zone) };
+    setDraft(next);
+    setAppliedDraft(next);
+    setInvalid("");
+    // Do not round-trip the applied range through wall time: DST folds can
+    // otherwise select a different instant. The original server bounds win.
+    setSelection({ ...request(emptyFilters, zone), accountId: entry.accountId, fromUnixMs: entry.fromUnixMs, untilUnixMs: entry.untilUnixMs });
+  }, [active, entry]);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const nativeFilters = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
-  const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active });
+  const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active && (!entry || consumedEntry.current === entry.key) });
   const closeDrawer = useCloseSidebarDrawer();
   const detectedTimeZone = detectDeviceTimeZone();
   const change = <K extends keyof Filters>(key: K, value: Filters[K]) => setDraft((current) => ({ ...current, [key]: value }));
@@ -115,12 +134,14 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
         <ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => setDraft((current) => ({ ...current, providerId: id, subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED }))} active={active} />
         <label>Subscription service<select disabled={!nativeFilters} value={draft.subscriptionService} onChange={(event) => setDraft((current) => ({ ...current, providerId: "", subscriptionService: Number(event.target.value) as SubscriptionServiceIdentity }))}><option value={SubscriptionServiceIdentity.UNSPECIFIED}>All services</option><option value={SubscriptionServiceIdentity.CHATGPT}>ChatGPT</option><option value={SubscriptionServiceIdentity.CLAUDE}>Claude</option><option value={SubscriptionServiceIdentity.GROK}>Grok</option></select></label>
         <ResourceChoice label="Model" kind={EntityKind.MODEL} value={draft.modelId} change={(id) => change("modelId", id)} active={active} />
+        <button type="button" disabled={!draft.modelId} onClick={() => { setDetail(draft.modelId); closeDrawer(); }}>Model details and token pricing</button>
         <label className="checkbox"><input type="checkbox" checked={draft.generalChat} onChange={(event) => setDraft((current) => ({ ...current, generalChat: event.target.checked, projectId: event.target.checked ? "" : current.projectId }))} />General Chat only</label>
         {invalid ? <p role="alert">{invalid}</p> : null}
         <div className="actions"><button type="submit" className="primary">Apply filters</button><button type="button" onClick={reset}>Reset to last 30 days</button></div>
       </form>
     </SidebarSurface>
     <section hidden={!active} className="page usage-page" aria-busy={result.isFetching}>
+    {detail ? <SettingsLifetime key={detail}>{() => <MutationIntents><UsageModelDetail id={detail} active={active} close={() => setDetail("")} /></MutationIntents>}</SettingsLifetime> : null}
     <header className="usage-header"><div><h1>Token Usage</h1><p>DeliDev activity only · Archived sessions included</p></div><div className="usage-header-actions"><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh</button></div></header>
     <div className="usage-applied" role="group" aria-label="Applied conditions"><strong>Applied conditions</strong><span>{data ? `${formatAppliedTime(data.fromUnixMs, appliedZone)} – ${formatAppliedTime(data.untilUnixMs, appliedZone)} (exclusive)` : pendingRange(selection)}</span><span>Timezone: {appliedZone}</span><span>Response times show when the server first retained each response, not provider execution time.</span>{conditions.length ? <span>{conditions.join(" · ")}</span> : <span>All sessions, accounts, APIs and models</span>}{draftChanged ? <span className="usage-draft-state">Unapplied filter edits</span> : null}</div>
     {draftChanged ? <p className="usage-draft-state" role="status">Unapplied filter edits are in the Usage sidebar.</p> : null}<Problem error={result.error} />
@@ -140,7 +161,7 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
         {responseGroups.length ? <div className="usage-table" role="region" aria-label="Session, model and account usage table; scroll horizontally to inspect all details" tabIndex={0}><table><caption>Known response subtotals with original session, project, account, API and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th><th scope="col">Token-price estimate</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${subscriptionServiceLabel(group.subscriptionService)}:${group.modelId}`}>
           <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || `Project ${group.projectId}` : "General Chat"}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
           <td><span>{group.accountName || "Retained account"}</span><small>{group.accountId}</small></td>
-          <td><span>{group.modelName || "Retained model"}</span><small>{group.modelId}</small><p>{group.subscriptionService ? `Subscription service ${subscriptionServiceLabel(group.subscriptionService)}` : group.providerName || `API ${group.providerId}`}</p><small>{group.providerId}</small></td>
+          <td><button type="button" onClick={() => setDetail(group.modelId)}>{group.modelName || "Retained model"}</button><small>{group.modelId}</small><p>{group.subscriptionService ? `Subscription service ${subscriptionServiceLabel(group.subscriptionService)}` : group.providerName || `API ${group.providerId}`}</p><small>{group.providerId}</small></td>
           <td><strong>{measure(group.totals?.total)}</strong><p>{group.totals?.responses.toLocaleString()} responses{group.totals?.total?.unavailableResponses ? ` · ${group.totals.total.unavailableResponses} unavailable` : ""}</p><details><summary>Token breakdown</summary><Measures value={group.totals} /></details></td><td><EstimateAmounts value={group.estimates} /></td>
         </tr>)}</tbody></table></div> : <p>No exact response usage is recorded for these filters. This does not mean zero usage or zero cost.</p>}
       </section>
@@ -149,4 +170,21 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       <section className="usage-costs" aria-labelledby="usage-cost-title"><h2 id="usage-cost-title">Cost evidence</h2><p><strong>Actual API cost:</strong> Unavailable — no verified attributable charge is supplied by the current telemetry.</p><EstimateCosts totals={data.estimates} pricing={data.pricing} /><p>Complete token-price categories do not establish complete telemetry, billed spend, a billing ceiling or budget compliance. Historical estimates remain separated by currency and original price basis.</p></section>
     </> : null}
   </section></>;
+}
+
+function UsageModelDetail({ id, active, close }: { id: string; active: boolean; close: () => void }) {
+  const [pricing, setPricing] = useState(false);
+  const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id }, { enabled: active, refetchInterval: active ? 5000 : false });
+  const model = current.data?.resource;
+  const value = document(model);
+  return <section className="usage-detail" aria-label="Model details">
+    <h2>Model details · {model ? resourceName(model) : id}</h2>
+    <Problem error={current.error} />
+    {current.isLoading ? <p role="status">Loading model details…</p> : null}
+    {current.error && model ? <p role="status">The displayed model details may be stale.</p> : null}
+    {model ? <><p>Model ID: {id} · Native ID: {text(value.native_id) || "Unavailable"}</p><p>{value.source_kind === "subscription" ? `Subscription service: ${text(value.subscription_service)}` : `API provider: ${text(value.provider_id)}`}</p>
+      {value.retired === true ? <p>Retired configuration retains its historical attribution. Current pricing cannot be edited.</p> : pricing ? <ModelPricing model={model} active={active && !current.error} close={() => { setPricing(false); void current.refetch(); }} /> : <button type="button" disabled={!supportsResourceSchema(model) || Boolean(current.error)} onClick={() => setPricing(true)}>Token pricing</button>}
+    </> : null}
+    <div className="actions"><button type="button" disabled={current.isFetching} onClick={() => void current.refetch()}>Refresh model details</button><button type="button" onClick={close}>Back to Usage</button></div>
+  </section>;
 }

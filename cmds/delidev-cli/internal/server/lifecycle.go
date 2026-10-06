@@ -128,6 +128,16 @@ func SuppressLocalRestart(root string, requestID domain.ID) error {
 // automatic startup. Match the original generation so a replacement foreground
 // controller can never have its newer intent suppressed by an old service exit.
 func SuppressCompletedServiceRestart(root string, generation domain.ID) error {
+	return suppressGenerationRestart(root, generation)
+}
+
+// SuppressDesktopRestart targets only the original startup generation. A
+// desktop process control pipe never grants authority over a replacement.
+func SuppressDesktopRestart(root string, generation domain.ID) error {
+	return suppressGenerationRestart(root, generation)
+}
+
+func suppressGenerationRestart(root string, generation domain.ID) error {
 	if err := generation.Validate(); err != nil {
 		return err
 	}

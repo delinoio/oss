@@ -46,7 +46,7 @@ function Disclosure({ section, summary, children, invalidValue = false, note }: 
   </div>;
 }
 
-export function AgentConfiguration({ data, core, permissions, reasoning, accounts, instructions, native, routingProblem }: { data: Document; core: ReactNode; permissions: ReactNode; reasoning: ReactNode; accounts: ReactNode; instructions: ReactNode; native: ReactNode; routingProblem: boolean }) {
+export function AgentConfiguration({ data, core, permissions, reasoning, accounts, instructions, native, routingProblem }: { data: Document; core: ReactNode; permissions: ReactNode; reasoning: ReactNode; accounts?: ReactNode; instructions: ReactNode; native: ReactNode; routingProblem: boolean }) {
   const coreId = useId();
   const optionalId = useId();
   const links = items(data.accounts);
@@ -58,7 +58,7 @@ export function AgentConfiguration({ data, core, permissions, reasoning, account
     <section className="agent-core" aria-labelledby={coreId}><header><h4 id={coreId}>Core settings</h4><p>Required fields are marked *</p></header>{core}<div className="agent-permissions">{permissions}</div></section>
     <section className="agent-optional" aria-labelledby={optionalId}><header><h4 id={optionalId}>Optional settings</h4><p>Leave these unchanged to keep the current defaults.</p></header>
       <Disclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, "Native default")} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</Disclosure>
-      <Disclosure section={AgentSection.Accounts} summary={`${links.length} accounts · ${retainedSummary(data.routing, "Server default")}`} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? "Can be saved without accounts; execution requires an eligible account." : undefined}>{accounts}</Disclosure>
+      {accounts !== undefined ? <Disclosure section={AgentSection.Accounts} summary={`${links.length} accounts · ${retainedSummary(data.routing, "Server default")}`} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? "Can be saved without accounts; execution requires an eligible account." : undefined}>{accounts}</Disclosure> : null}
       <Disclosure section={AgentSection.Instructions} summary={`${items(data.templates).length} templates`}>{instructions}</Disclosure>
       <Disclosure section={AgentSection.Native} summary={nativeSummary(data)} invalidValue={invalidConcurrency}>{native}</Disclosure>
     </section>
