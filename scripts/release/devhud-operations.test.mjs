@@ -139,7 +139,7 @@ test("CI validates release fixtures without publication authority", () => {
   for (const job of [
     "ci-contracts", "devhud-frontend", "devhud-extension", "devhud-rust-conformance",
     "devhud-security", "devhud-desktop", "devhud-mobile-contracts", "devhud-ios-simulator",
-    "devhud-android-emulator", "devhud-protocol", "devhud-admin", "devhud-api", "devhud-oci",
+    "devhud-android-emulator", "devhud-admin", "devhud-api", "devhud-oci",
     "devhud-supply-chain", "devhud-release-contracts", "ci-result",
   ]) assert.match(ciWorkflow, new RegExp(`\\n  ${job}:`, "u"), job);
   for (const forbidden of [

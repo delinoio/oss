@@ -50,7 +50,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [1280,800], [960,640], [640,480]];
-let checked = 0, formsChecked = 0, harnessChecks = 0, keyboardChecks = 0;
+let checked = 0, formsChecked = 0, harnessChecks = 0, keyboardChecks = 0, hiddenChoicesChecked = 0;
 try {
   const build = await createRsbuild({ cwd: app, rsbuildConfig: { plugins: [pluginReact()], source: { entry: { index: join(app, "src/settings-layout.fixture.tsx") } }, html: { template: join(app, "index.html") }, output: { distPath: { root: directory }, assetPrefix: "/", sourceMap: false, cleanDistPath: true } } });
   await build.build();
@@ -143,6 +143,23 @@ try {
     const footer = await action.boundingBox();
     assert(footer && footer.y >= 0 && footer.y + footer.height <= page.viewportSize().height + 0.5, "Wizard footer remains visible in document flow");
   };
+  const checkHiddenAccountChoices = async () => {
+    await select("Agent Workers");
+    await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
+    const form = page.locator(".worker-wizard");
+    await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    assert.equal(await form.locator(".worker-account-row").count(), 0, "Hidden accounts have no DOM/focusable rows");
+    assert.equal(await form.getByRole("checkbox").count(), 0, "Hidden accounts have no accessible checkbox");
+    assert(await form.getByText("0 accounts selected", { exact: true }).isVisible());
+    assert(await form.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.", { exact: true }).isVisible());
+    await form.getByRole("button", { name: "Refresh accounts", exact: true }).click();
+    await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    await checkWizard();
+    await form.getByRole("button", { name: "Cancel", exact: true }).click();
+    hiddenChoicesChecked++;
+  };
   for (const theme of ["light", "dark", "system"]) for (const populated of [false, true]) for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport[0], height: viewport[1] });
     await page.emulateMedia({ colorScheme: theme === "system" ? "dark" : theme });
@@ -193,6 +210,9 @@ try {
       assert(await page.getByRole("checkbox", { name: /^Team API/ }).isChecked());
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       formsChecked += 4;
+      await page.goto(`${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true`);
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await checkHiddenAccountChoices();
     }
     if (!populated) {
       for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", null], ["Git", "New Git workflow"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
@@ -254,12 +274,18 @@ try {
   }
   // 200% effective-layout coverage uses half-size CSS viewports. Actual browser
   // chrome zoom and packaged CEF keyboard/platform acceptance remain separate.
-  await page.goto(`${origin}/?theme=dark`); await page.getByRole("button", { name: "Settings", exact: true }).click();
   for (const [width,height] of viewports) {
     await page.setViewportSize({ width: width / 2, height: height / 2 });
+    await page.goto(`${origin}/?theme=dark`); await page.getByRole("button", { name: "Settings", exact: true }).click();
     for (const category of categories) { await select(category); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
     await select("Agent Workers"); await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
     await checkWizard(); await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+  for (const [width,height] of viewports) {
+    await page.setViewportSize({ width: width / 2, height: height / 2 });
+    await page.goto(`${origin}/?theme=dark&populated=true&hiddenWorkerChoices=true`);
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await checkHiddenAccountChoices();
   }
   for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
     await page.setViewportSize({ width: width / 2, height: height / 2 });
@@ -297,7 +323,7 @@ try {
     await page.getByRole("button", { name: /^Edit Example PROJECT/ }).click(); await page.getByRole("dialog").waitFor();
     await page.screenshot({ path: screenshotPath });
   }
-  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length, keyboardChecks, nativeAcceptance: "not-performed" }));
+  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length, keyboardChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

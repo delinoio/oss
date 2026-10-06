@@ -90,9 +90,50 @@ The shared checksum generator keeps sorted recursive paths, GNU filename escapin
 
 `.github/workflows/CI.yml` is a read-only validation workflow. It uses `contents: read` and `pull-requests: read`, does not consume repository secrets, and must not push tags, create or upload releases, submit stores, push OCI images, deploy documentation or infrastructure, promote updater state, or call any mutating release-controller operation. Release workflows and packaging inputs are tested as source and deterministic fixtures only.
 
-The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files before compiling DevHud. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. PR #1041's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
+The central `changes` job runs on Ubuntu 24.04 and resolves one Rust package
+selection for the generic `rust-test` and `rust-clippy` jobs. It prepares the
+first-party `cargo-mono@v0.6.9` Linux x64 release only when the initial path plan
+selects Rust validation. The archive size/SHA-256, executable size/SHA-256,
+source revision and exact `cargo mono 0.6.9` output are pinned in
+`scripts/ci/cargo-mono-prebuilt.mjs`. The verified executable lives in private
+runner temporary storage; no binary cache or source-build fallback is used.
+This repository utility release is separate from the Tauri producer recipe lock.
 
-Those same jobs build the DeliDev typed client, frontend and target-specific Go sidecar before compiling its desktop Tauri host. The Go setup uses the repository's pinned `go.mod` version, and generated frontend and sidecar output remains ignored. This preserves Tauri's declared external-binary input without adding a placeholder artifact to source control.
+The published executable must pass offline temporary-workspace fixtures for
+transitive, normal, optional, build, dev and target-specific path dependents, rename owners,
+empty selection, and the pnport runtime relationship before repository planning.
+Those Linux fixtures also execute the selected test and all-features Clippy
+commands. Ordinary `pnpm ci:contracts` skips these two live tests when no verified
+executable is supplied; static, injected-installer and Git fixture tests still run.
+
+`scripts/ci/rust-affected.mjs` detects affected packages at the planner's exact
+head in a temporary detached worktree. Metadata selection skips LFS smudging
+only in that temporary reference, never in compilation checkouts. Cleanup removes
+the worktree even after command or JSON failures. Detection includes transitive
+manifest path dependents and retains cargo-mono's default AGENTS exclusion.
+Rename detection is disabled. The released CLI writes tracing logs to stdout even in JSON mode; only its child environment sets `RUST_LOG=off`, while the adapter retains structured planning logs. The CLI's files and merge-base must match the
+planner's exact NUL-separated comparison; unsupported newline/quoted/trimmed
+paths and non-linear push ranges select the full validation workspace instead.
+Manual runs, forced checks, root Cargo inputs, toolchains, external Rust-job
+inputs and PR merge manifest/lock/config differences also select the full
+baseline. Download, digest, execution, schema and metadata-lock failures fail
+planning; they never authorize a skip. `pnport-preload` additionally selects
+`pnport`, because the CLI loads that companion outside Cargo's dependency graph.
+
+The final `rust_packages` JSON array excludes `forge-scene`, `forge-glb` and
+`forge-fbx`. An empty selection disables both generic Rust jobs in the final
+job plan, and `CI Result` checks package/job consistency. Compilation still uses
+the normal PR merge checkout. Tests run `cargo test --locked -p <package> ...
+--all-targets`; Clippy runs `cargo clippy --locked -p <package> ... --all-targets
+--all-features -- -D warnings`. Required dependency compilation remains Cargo's
+responsibility. rustfmt and project-owned native/release validation retain their
+existing scopes. Logs and step summaries record comparison and validation
+revisions, package names, full-selection reasons, commands and outcomes without
+credentials or raw native content.
+
+The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files when DevHud or the DeliDev desktop host is selected, before compiling those hosts. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. PR #1041's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
+
+Those same jobs build the DevHud frontend only when `devhud` is selected, and the DeliDev typed client, frontend and target-specific Go sidecar only when `delidev-desktop` is selected. The generic test job builds pnport and its injection companion only when `pnport` is selected. Go setup is also retained for selected pnport static-child fixtures, so that test does not silently skip its compiler prerequisite. The Go setup uses the repository's pinned `go.mod` version, and generated frontend and sidecar output remains ignored. This preserves Tauri's declared external-binary input without adding a placeholder artifact to source control.
 
 CI never builds a signed private candidate and never publishes.
 
@@ -143,7 +184,7 @@ Every pnpm install uses `--frozen-lockfile --ignore-scripts` and runs only once 
 
 The PR frontend job runs the complete DevHud test command and `verify:pins`, retaining the script fixtures, deterministic clean desktop/mobile frontend builds, font/dependency isolation, static widget contracts, and immutable CEF checks previously available inside native packaging. The aggregate DevHud `test` task is non-cacheable because these checks exercise clean builds and external contract inputs.
 
-Generated protocol output and package-local frontend output are deterministic cacheable Turbo products. The shared protocol job also runs DeliDev TypeScript client lint/tests/build and generated freshness. DeliDev command changes select this job because its uncached client fixture compiles and starts a real temporary Go server; no user credentials or inference are involved. The ignored administrator and ach UI embeds, native host, desktop installer, mobile, smoke, signing, release, and deployment tasks are explicitly non-cacheable. CI validates schemas and generated freshness; Go formatting, vet, unit, PostgreSQL migration, integration, API, and sweeper behavior; Rust formatting, Clippy, unit, capture, shortcut, IPC, and updater behavior; frontend type, lint, unit, component, accessibility, build, security, and adapter fixtures; exact CEF pins and feasible native architecture builds; extension/native-host/installer packages; SPDX SBOM and provenance; non-root multi-architecture API and migration-bearing sweeper OCI layouts; public routes; and release workflow fixtures.
+Generated protocol output and package-local frontend output are deterministic cacheable Turbo products. The `delidev-protocol` job, named `DeliDev Protocol and Client`, replaces `DevHud Protocol and Client`. It runs DeliDev Go binding tests, TypeScript client lint/tests/build, desktop tests and shared protocol validation on Ubuntu. DeliDev desktop, command, protocol and client changes plus shared configuration inputs select this job; DevHud-only source changes do not. The job has no DevHud client lint/test/build step. Shared `pnpm proto:check` retains repository-wide formatting, lint, compatibility and generated freshness checks, including DevHud while its sources remain. DeliDev command changes select this job because its uncached client fixture compiles and starts a real temporary Go server; no user credentials or inference are involved. The ignored administrator and ach UI embeds, native host, desktop installer, mobile, smoke, signing, release, and deployment tasks are explicitly non-cacheable. CI validates schemas and generated freshness; Go formatting, vet, unit, PostgreSQL migration, integration, API, and sweeper behavior; Rust formatting, Clippy, unit, capture, shortcut, IPC, and updater behavior; frontend type, lint, unit, component, accessibility, build, security, and adapter fixtures; exact CEF pins and feasible native architecture builds; extension/native-host/installer packages; SPDX SBOM and provenance; non-root multi-architecture API and migration-bearing sweeper OCI layouts; public routes; and release workflow fixtures.
 
 The `ci-result` job retains the `CI Result` name and always evaluates every required dependency. Planning and CI contracts must succeed. Every planned job must succeed and every unselected job must be skipped; failures, cancellations, missing jobs, invalid plans, and unexpected skips or execution fail the aggregate. The changes job publishes a structured decision log and a job-selection table in its run summary.
 

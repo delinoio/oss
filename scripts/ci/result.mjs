@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Event, jobPaths, matricesForEvent } from "./plan.mjs";
+import { rustJobs, validateRustPackages } from "./rust-affected.mjs";
 
 export function validateResults(needs) {
   for (const id of ["changes", "ci-contracts"]) {
@@ -8,6 +9,8 @@ export function validateResults(needs) {
   }
   const expected = JSON.parse(needs.changes.outputs.jobs);
   const event = needs.changes.outputs.event;
+  const rustPackages = validateRustPackages(JSON.parse(needs.changes.outputs.rust_packages));
+  if (rustJobs.some(id => expected[id]) !== (rustPackages.length > 0)) throw new Error("Rust package selection differs from the planned jobs");
   const matrices = matricesForEvent(event);
   for (const [output, matrix] of [["desktop_matrix", matrices.desktopMatrix], ["react_forge_matrix", matrices.reactForgeMatrix]]) {
     const actual = JSON.parse(needs.changes.outputs[output]);

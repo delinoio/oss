@@ -225,12 +225,12 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     ["packages/docs-site-switcher/src/index.tsx", ["node-public-docs-test"]],
     ["apps/public-docs/theme/index.tsx", ["repository-environment", "node-public-docs-test"]],
     ["scripts/dev-environment/orchestrator.mjs", ["repository-environment"]],
-    ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-protocol", "devhud-admin", "devhud-api", "rust-test"]],
+    ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-admin", "devhud-api", "rust-test"]],
     ["apps/devhud/src-tauri/src/updater.rs", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance", "devhud-frontend"]],
-    ["protos/devhud/v1/account.proto", ["devhud-protocol", "devhud-api", "devhud-frontend"]],
-    ["packages/delidev-api-client/src/synchronization.ts", ["devhud-protocol"]],
-    ["apps/delidev/src/App.tsx", ["devhud-protocol"]],
-    ["cmds/delidev-cli/internal/server/resources.go", ["devhud-protocol"]],
+    ["protos/devhud/v1/account.proto", ["devhud-api", "devhud-frontend"]],
+    ["packages/delidev-api-client/src/synchronization.ts", ["delidev-protocol"]],
+    ["apps/delidev/src/App.tsx", ["delidev-protocol"]],
+    ["cmds/delidev-cli/internal/server/resources.go", ["delidev-protocol"]],
     [".nvmrc", ["node-public-docs-test", "devhud-frontend", "devhud-api", "repository-environment"]],
     ["pnpm-lock.yaml", ["node-public-docs-test", "devhud-admin", "devhud-api", "devhud-frontend"]],
     [".cargo/config.toml", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance"]],
@@ -253,6 +253,45 @@ test("workspace, shared, runtime, and external contract inputs select their owne
   }
   assert.equal(planJobs(Event.PullRequest, ["scripts/install/binpm.sh"]).forced["node-public-docs-test"], true);
   assert.throws(() => planJobs("unknown", []), /Unsupported CI event/u);
+});
+
+test("DeliDev protocol validation selects DeliDev and shared inputs independently of DevHud", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of [
+      "apps/delidev/src/App.tsx", "cmds/delidev-cli/internal/server/resources.go",
+      "packages/delidev-api-client/src/synchronization.ts", "protos/delidev/v1/delidev.proto",
+      "protos/gen/go/delidev/v1/common.pb.go", "scripts/delidev/proto-compat.mjs",
+      "buf.yaml", "buf.gen.yaml", "go.mod", "go.sum", ".npmrc", ".nvmrc",
+      "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json",
+      "scripts/check-proto-breaking.sh",
+    ]) assert.equal(planJobs(event, [path]).jobs["delidev-protocol"], true, `${event}: ${path}`);
+    for (const path of [
+      "apps/devhud/src/App.tsx", "packages/devhud-api-client/src/client.ts",
+      "protos/devhud/v1/account.proto", "protos/gen/go/devhud/v1/account.pb.go",
+    ]) assert.equal(planJobs(event, [path]).jobs["delidev-protocol"], false, `${event}: ${path}`);
+  }
+  const manual = planJobs(Event.Manual, []).jobs;
+  assert.equal(manual["delidev-protocol"], true);
+  assert.equal(Object.hasOwn(manual, "devhud-protocol"), false);
+});
+
+test("DeliDev protocol failures, missing results and unauthorized skips fail the aggregate", () => {
+  const paths = ["packages/delidev-api-client/src/synchronization.ts"];
+  for (const event of [Event.PullRequest, Event.Push, Event.Manual]) {
+    assert.equal(validateResults(results(event, paths)), true);
+    for (const result of ["failure", "cancelled", "skipped", undefined]) {
+      const needs = results(event, paths);
+      needs["delidev-protocol"].result = result;
+      assert.throws(() => validateResults(needs), /delidev-protocol/u);
+    }
+    const needs = results(event, paths);
+    delete needs["delidev-protocol"];
+    assert.throws(() => validateResults(needs), /inventory/u);
+  }
+  const needs = results(Event.PullRequest, ["protos/devhud/v1/account.proto"]);
+  assert.equal(validateResults(needs), true);
+  needs["delidev-protocol"].result = "success";
+  assert.throws(() => validateResults(needs), /delidev-protocol/u);
 });
 
 function fixture(t) {
@@ -329,7 +368,7 @@ function results(event, paths) {
   const { jobs } = planJobs(event, paths);
   const matrices = matricesForEvent(event);
   return {
-    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix) } },
+    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), rust_packages: JSON.stringify(jobs["rust-test"] || jobs["rust-clippy"] ? ["fixture-package"] : []), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix) } },
     "ci-contracts": { result: "success" },
     ...Object.fromEntries(Object.entries(jobs).map(([id, run]) => [id, { result: run ? "success" : "skipped" }])),
   };
@@ -436,4 +475,15 @@ test("unrelated packages and protocols do not select DevHud jobs", () => {
   for (const path of ["packages/devhud-api-client/src/index.ts", "protos/devhud/v1/settings.proto", "protos/gen/go/devhud/v1/settings.pb.go", "servers/devhud-api/internal/rpc/settings.go"]) {
     assert.ok(Object.entries(planJobs(Event.Push, [path]).jobs).some(([id, run]) => id.startsWith("devhud-") && run), path);
   }
+});
+
+test("aggregate rejects missing, excluded and inconsistent Rust package selections", () => {
+  for (const value of [undefined, "{}", '["forge-scene"]', '["fixture-package","fixture-package"]', "[]"]) {
+    const needs = results(Event.PullRequest, ["crates/binpm/src/main.rs"]);
+    needs.changes.outputs.rust_packages = value;
+    assert.throws(() => validateResults(needs));
+  }
+  const needs = results(Event.PullRequest, ["docs/project-with-watch.md"]);
+  needs.changes.outputs.rust_packages = '["fixture-package"]';
+  assert.throws(() => validateResults(needs), /Rust package selection/u);
 });

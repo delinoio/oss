@@ -1,5 +1,9 @@
 # Workflow contracts
 
+- `delidev-protocol` owns the DeliDev protocol, client and desktop checks formerly run by `DevHud Protocol and Client`. Select it for DeliDev sources and shared inputs, exclude DevHud-only inputs, and require it through `CI Result`. Shared `pnpm proto:check` remains repository-wide; follow `docs/repository-workflow-contract.md`.
+
+- Generic Rust CI uses the single verified prebuilt cargo-mono selection and exact comparison/fallback policy in `docs/repository-workflow-contract.md`. Validate the published executable with offline live fixtures before planning; no source fallback or binary cache. Preserve final package/job agreement, pnport runtime ownership, scene exclusions, conditional native preparation, full manual/shared-input checks and independent project validation.
+
 - The owner-authorized 2026-10-05 repair release in `docs/project-pnport.md` permits exactly stable 0.1.2 after the failed 0.1.1 candidate is repaired and all retained four-native candidate gates pass. Keep 0.1.1 and published tags/bytes immutable. Require `pnportReleaseReady: true` and exact `pnportReleaseVersion: "0.1.2"`; preserve the earlier disclosed initialization/SIGHUP, clibox watch and full-acceptance limits without claiming fixes or skipped passes. No new candidate failure is waived. Keep issue #958 and Windows 0.2.0 acceptance open; preserve final-tag dry-run, fresh native validation, integrity/signing, native-before-launcher and immutable-retry gates. Later versions need separate reviewed authorization.
 
 - Each pnport native CI/candidate host must pass installed hidden-cache native conformance and the prepared, offline default-config Vitest cache suite in inline/split forms before evidence recording. Linux includes dynamic/static children. Keep all four macOS/glibc Linux targets and existing native/benchmark/publication gates.

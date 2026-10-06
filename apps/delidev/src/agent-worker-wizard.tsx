@@ -13,6 +13,7 @@ import "./agent-worker-wizard.css";
 
 enum Step { Harness = 1, Accounts, Model, Configure }
 enum SourceKind { Api = "api", Subscription = "subscription" }
+enum AccountHealth { Disconnected = "disconnected", Unverified = "unverified", Ready = "ready", Expired = "expired", Revoked = "revoked", Failed = "failed" }
 interface Source { kind: SourceKind; id: string }
 const steps = [Step.Harness, Step.Accounts, Step.Model, Step.Configure];
 const stepNames = { [Step.Harness]: "Harness", [Step.Accounts]: "Accounts", [Step.Model]: "Model", [Step.Configure]: "Configure" };
@@ -33,6 +34,13 @@ function sameSource(row: Resource, source?: Source) {
   return row.kind === EntityKind.ACCOUNT && supportsResourceSchema(row) && data.retired !== true && (source?.kind === SourceKind.Subscription
     ? data.type === "subscription" && data.subscription_service === source.id && !data.provider_id
     : source?.kind === SourceKind.Api && data.type === "api" && data.provider_id === source.id);
+}
+// Choice visibility does not change retained selections or execution eligibility.
+// Keep the complete source page for validation, pagination and selected reads.
+function showAccountChoice(row: Resource) {
+  const data = document(row);
+  return data.connection !== null && typeof data.connection === "object" && !Array.isArray(data.connection) && !data.removal
+    && (data.health === AccountHealth.Ready || data.health === AccountHealth.Unverified);
 }
 function modelSource(row: Resource): Source | undefined {
   const data = document(row);
@@ -84,6 +92,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const models = useQuery(ProviderQuery.searchModels, { query, providerId: source?.kind === SourceKind.Api ? source.id : "", subscriptionService: wireService(source), includeHidden: true, enabledProvidersOnly: true, pageSize: 50, pageToken: modelPage }, { enabled: active && supported && Boolean(source) && step === Step.Model });
   const currentModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: model?.id ?? "" }, { enabled: active && supported && Boolean(model), refetchInterval: active && model ? 5000 : false });
   const accountPageValid = accountRows.data?.resources.every(row => sameSource(row, source));
+  const accountChoices = accountPageValid ? accountRows.data!.resources.filter(showAccountChoice) : [];
   const modelPageValid = models.data?.models.every(row => supportsResourceSchema(row) && sourceKey(modelSource(row)) === sourceKey(source));
   const links = items(data.accounts).map(object);
   const ids = links.map(link => text(link.id));
@@ -222,7 +231,9 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
         {source && accountRows.isLoading ? <p role="status">Loading accounts…</p> : null}
         {accountRows.error && accountRows.data ? <p role="status">Refresh failed. Showing the last successfully loaded accounts.</p> : null}
         {accountRows.data && !accountPageValid ? <p role="alert">This account page includes unsupported or mismatched source data. Refresh accounts before selecting it.</p> : null}
-        <div className="worker-account-list">{accountPageValid ? accountRows.data!.resources.map(row => { const value = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" checked={ids.includes(row.id)} onChange={event => change({ ...data, accounts: event.target.checked ? [...links, { id: row.id, weight: 1 }] : links.filter(link => link.id !== row.id) })} /><span><strong>{resourceName(row)}</strong><small>Connection: {value.connection ? "Connected" : "Disconnected"} · Health: {text(value.health) || "Unavailable"}</small><small>Execution eligibility: {value.enabled === false ? "Disabled" : value.removal ? "Removal pending" : "Checked when execution starts"}</small></span></label>; }) : null}</div>
+        <div className="worker-account-list">{accountChoices.map(row => { const value = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" checked={ids.includes(row.id)} onChange={event => change({ ...data, accounts: event.target.checked ? [...links, { id: row.id, weight: 1 }] : links.filter(link => link.id !== row.id) })} /><span><strong>{resourceName(row)}</strong><small>Connection: Connected · Health: {text(value.health)}</small><small>Execution eligibility: {value.enabled === false ? "Disabled" : "Checked when execution starts"}</small></span></label>; })}
+          {source && accountPageValid && accountRows.data!.resources.length > 0 && !accountRows.error && accountChoices.length === 0 ? <div className="worker-account-empty"><p>No accounts to select on this page.</p><p>Connect an account in AI Subscription or AI API Keys, then refresh.</p></div> : null}
+        </div>
         {source && accountRows.data?.resources.length === 0 && !accountRows.error ? <p>{accountPage ? "No accounts on this page." : "No accounts for this source. Add an account in AI Subscription or AI API Keys."}</p> : null}
         {source ? <nav aria-label="Account pages"><button type="button" disabled={!accountPage || accountRows.isFetching} onClick={() => setAccountPage("")}>First account page</button><button type="button" disabled={!accountRows.data?.nextPageToken || accountRows.isFetching} onClick={() => setAccountPage(accountRows.data!.nextPageToken)}>Next account page</button><button type="button" disabled={accountRows.isFetching} onClick={() => void accountRows.refetch()}>Refresh accounts</button></nav> : null}
         <p>{ids.length} accounts selected</p><p>All selected accounts must use the same subscription service or API provider.</p>

@@ -6784,6 +6784,20 @@
       "declaration": "SaveAgentWorkerRequest",
       "member": "route_models",
       "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1",
+      "number": 37
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1",
+      "number": 19
     }
   ]
 }
