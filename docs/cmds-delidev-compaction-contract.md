@@ -342,6 +342,10 @@ store reads, authenticated Worker dispatch, server scope/settlement and deletion
 copy derivation. The Connect receive bound covers the finite serialized job.
 Larger ordinary execution or other jobs do not acquire this exception. Trailing
 documents, unknown fields and invalid original assignments remain rejected.
+The primary WatchWork claim receipt adds only a separate 1 KiB Record metadata
+allowance and rechecks its embedded job through the owning typed decoder.
+Same-instance reconnect preserves the original claim identity, revision and
+assignment bytes without another claim mutation or native effect.
 
 Retained Claude/Codex compaction checkpoint readers preserve their strict 10 MiB ceiling. OpenCode uses one strict 12 MiB canonical retention/restoration envelope: the native document keeps its independent 8 MiB bound, the accepted compaction input keeps 3 MiB and closed ownership metadata reserves 1 MiB. Every reader uses the same envelope, including repeated-action restoration, without relaxing typed, canonical, claim, journal or native evidence checks. Session context uses the same typed 3 MiB compaction input decoder as acceptance and settlement, so large original assignments remain visible through queued and completed states.
 
