@@ -30,16 +30,17 @@ type Inspection struct {
 	GitHubRepositories map[string]GitHubRepository `json:"github_repositories,omitempty"`
 }
 type Git struct {
-	Executable    string
-	ProcessRoot   string
-	OwnerID       domain.ID
-	Logger        *slog.Logger
-	HooksDir      string
-	Timeout       time.Duration
-	environment   []string
-	readOnly      bool
-	offline       bool
-	diffIndexFile string
+	Executable       string
+	ProcessRoot      string
+	OwnerID          domain.ID
+	Logger           *slog.Logger
+	HooksDir         string
+	Timeout          time.Duration
+	environment      []string
+	cloneDiagnostics bool
+	readOnly         bool
+	offline          bool
+	diffIndexFile    string
 }
 
 type limitedOutput struct {
@@ -114,7 +115,7 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		})
 		environment = append(environment, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1")
 	}
-	if g.readOnly {
+	if g.readOnly || g.cloneDiagnostics {
 		// Git localizes binary/EOF patch markers. Read observations require a
 		// stable wire grammar independent of the execution machine's locale.
 		environment = slices.DeleteFunc(environment, func(value string) bool { key, _, _ := strings.Cut(value, "="); return strings.EqualFold(key, "LC_ALL") })
@@ -130,12 +131,22 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		// capability without changing the source repository configuration.
 		environment = append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.longpaths", "GIT_CONFIG_VALUE_0=true")
 	}
-	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: environment, Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
+	var diagnostic limitedOutput
+	diagnostic.limit = 8192
+	var stderr io.Writer = io.Discard
+	if g.cloneDiagnostics {
+		stderr = cloneDiagnosticWriter{&diagnostic}
+	}
+	defer func() { clear(diagnostic.Bytes()) }()
+	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: environment, Cwd: root, Stdout: &out, Stderr: stderr, Logger: g.Logger})
 	if err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
 			return nil, -1, err
 		}
 		if bounded.Err() != nil {
+			if g.cloneDiagnostics && errors.Is(bounded.Err(), context.DeadlineExceeded) {
+				return nil, -1, &domain.Error{Code: domain.Unavailable, Message: "Repository clone timed out.", Guidance: "Inspect the original clone job before retrying.", Cause: "clone_timeout"}
+			}
 			return nil, -1, domain.SafeError(bounded.Err())
 		}
 		if out.overflow {
@@ -143,6 +154,12 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		}
 		var exit interface{ ExitCode() int }
 		if errors.As(err, &exit) {
+			if g.cloneDiagnostics {
+				value := strings.ToLower(diagnostic.String())
+				if strings.Contains(value, "authentication failed") || strings.Contains(value, "permission denied (publickey") || strings.Contains(value, "could not read username") || strings.Contains(value, "could not read password") {
+					return nil, exit.ExitCode(), &domain.Error{Code: domain.PermissionDenied, Message: "Git authentication failed.", Guidance: "Configure this computer's Git credentials or SSH key, then retry.", Cause: "clone_authentication"}
+				}
+			}
 			if g.Logger != nil {
 				g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_exit", "exit_code", exit.ExitCode(), "read_only", g.readOnly, "offline", g.offline)
 			}

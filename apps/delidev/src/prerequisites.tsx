@@ -1,3 +1,6 @@
+import { formatTimestamp } from "./localization";
+import { statusLabel } from "./product-status";
+import { copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, FailureCode, ResourceQuery, SystemQuery, isEntityId, subscriptionService, type Resource } from "@delinoio/delidev-api-client";
@@ -140,12 +143,14 @@ function configurations(rows: Resource[] | undefined, kind: EntityKind): Documen
   return values;
 }
 function Step({ label, state, children }: { label: string; state: CheckState; children: React.ReactNode }) {
-  return <li><h4>{label}: {state}</h4>{children}</li>;
+  useLocale();
+  return <li><h4>{label}: {copy(state === CheckState.NotChecked ? "prerequisites.state.notChecked" : state === CheckState.Observed ? "prerequisites.state.observed" : state === CheckState.Setup ? "prerequisites.state.setup" : state === CheckState.Failed ? "prerequisites.state.failed" : "prerequisites.state.unknown")}</h4>{children}</li>;
 }
 
 // Read-only snapshots deliberately do not grant execution readiness. In particular,
 // a retained handshake, readable credential and configured Agent are separate facts.
 export function Prerequisites({ active, openSettings }: { active: boolean; openSettings: () => void }) {
+  useLocale();
   const [checked, setChecked] = useState(false);
   const options = { enabled: active && checked, retry: false, staleTime: 0, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false } as const;
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active, refetchInterval: active ? 30000 : false });
@@ -165,19 +170,19 @@ export function Prerequisites({ active, openSettings }: { active: boolean; openS
     if (!checked) setChecked(true);
     else void Promise.all([status.refetch(), doctor.refetch(), accounts.refetch(), agents.refetch()]);
   };
-  return <section aria-label="First session checklist">
-    <h3>Before your first session</h3>
-    <p>Check the selected server's saved setup. This does not log in, install or probe a harness, refresh a provider, or run inference.</p>
-    <div className="actions"><button disabled={!active || loading} onClick={refresh}>{checked ? "Refresh prerequisites" : "Check prerequisites"}</button><button onClick={(event) => { event.currentTarget.focus(); openSettings(); }}>View prerequisites in Settings</button></div>
-    {loading ? <p role="status">Reading prerequisite observations…</p> : null}
+  return <section aria-label={copy("prerequisites.firstSessionChecklist_9536bf")}>
+    <h3>{copy("prerequisites.beforeYourFirstSession_ec24ba")}</h3>
+    <p>{copy("prerequisites.checkTheSelectedServerSSaved_e07ed8")}</p>
+    <div className="actions"><button disabled={!active || loading} onClick={refresh}>{checked ? copy("prerequisites.refreshPrerequisites_a7eed6") : copy("prerequisites.checkPrerequisites_4124f1")}</button><button onClick={(event) => { event.currentTarget.focus(); openSettings(); }}>{copy("prerequisites.viewPrerequisitesInSettings_e5b5ca")}</button></div>
+    {loading ? <p role="status">{copy("prerequisites.readingPrerequisiteObservations_6e51a2")}</p> : null}
     <Problem error={status.error} />{checked ? <><Problem error={doctor.error} /><Problem error={accounts.error} /><Problem error={agents.error} /></> : null}
     <ol>
-      <Step label="Server connection" state={status.error ? CheckState.Failed : status.data?.stopping ? CheckState.Setup : status.data && isEntityId(status.data.serverId) ? CheckState.Observed : CheckState.Unknown}><p>{status.error ? "Reconnect to the selected server." : status.data?.stopping ? "The server is stopping." : status.data && isEntityId(status.data.serverId) ? `Connected to server ${status.data.version}.` : "Waiting for an authenticated server identity."}</p></Step>
-      <Step label="Server diagnostics" state={!checked ? CheckState.NotChecked : doctor.error ? CheckState.Failed : !report ? CheckState.Unknown : report.database === "ready" && object(report.storage).result && object(object(report.storage).result).state === "observed" ? CheckState.Observed : CheckState.Setup}><p>{report ? `Database read: ${report.database === "ready" ? "succeeded" : "not established"}. Storage: ${text(object(object(report.storage).result).state) || "unknown"}. Observed at ${text(report.observed_at)}.` : checked ? "No current supported diagnostic report is available." : "Run the read-only check for database and storage observations."}</p></Step>
-      <Step label="Runner Device and harness" state={observationState(doctor.error, Boolean(report), verified.length, report?.more_machines)}><p>{report ? `${connected.length} enabled Worker(s) had an active connection; ${verified.length} retained harness handshake(s) were verified on those Workers.` : "Pair a Worker and explicitly discover its installed harness in Settings."}</p>{report?.more_machines ? <p>Only the first 50 Workers were inspected; absence from this page does not establish missing setup.</p> : null}<p>A connection or past handshake does not establish current account compatibility or execution readiness.</p></Step>
-      <Step label="AI account" state={observationState(accounts.error, Boolean(accountRows), readyAccounts, accounts.data?.nextPageToken)}><p>{accountRows ? `${accountRows.length} account(s) inspected; ${readyAccounts} enabled account(s) have a connection and saved ready status.` : "Connect and validate an account explicitly in Settings."}</p>{accounts.data?.nextPageToken ? <p>More accounts exist. Open AI accounts for the remaining records.</p> : null}<p>Saved status does not prove current quota or provider access.</p></Step>
-      <Step label="Agent Worker configuration" state={observationState(agents.error, Boolean(agentRows), agentRows?.length ?? 0, agents.data?.nextPageToken)}><p>{agentRows ? `${agentRows.length} Agent Worker configuration(s) inspected.` : "Configure an Agent Worker with its selected model, account and harness."}</p>{agents.data?.nextPageToken ? <p>More Agent Workers exist. Open Settings for the remaining records.</p> : null}<p>Choose a project for repository work, or General Chat. Session creation validates the exact selections again.</p></Step>
+      <Step label={copy("prerequisites.serverConnection_6f3920")} state={status.error ? CheckState.Failed : status.data?.stopping ? CheckState.Setup : status.data && isEntityId(status.data.serverId) ? CheckState.Observed : CheckState.Unknown}><p>{status.error ? copy("prerequisites.reconnectToTheSelectedServer_1f6199") : status.data?.stopping ? copy("prerequisites.theServerIsStopping_c31c66") : status.data && isEntityId(status.data.serverId) ? copy("prerequisites.connectedToServer_e0d871", { v0: status.data.version }) : copy("prerequisites.waitingForAnAuthenticatedServerIdentity_2b2585")}</p></Step>
+      <Step label={copy("prerequisites.serverDiagnostics_d85a0c")} state={!checked ? CheckState.NotChecked : doctor.error ? CheckState.Failed : !report ? CheckState.Unknown : report.database === "ready" && object(report.storage).result && object(object(report.storage).result).state === "observed" ? CheckState.Observed : CheckState.Setup}><p>{report ? copy("prerequisites.databaseReadStorageObservedAt_6d0805", { v0: report.database === "ready" ? copy("prerequisites.succeeded_5dceae") : copy("prerequisites.notEstablished_318f15"), v1: statusLabel(text(object(object(report.storage).result).state)) || "unknown", v2: formatTimestamp(text(report.observed_at)) }) : checked ? copy("prerequisites.noCurrentSupportedDiagnosticReportIs_348049") : copy("prerequisites.runTheReadOnlyCheckFor_7ec8e5")}</p></Step>
+      <Step label={copy("prerequisites.runnerDeviceAndHarness_8c251b")} state={observationState(doctor.error, Boolean(report), verified.length, report?.more_machines)}><p>{report ? copy("prerequisites.enabledWorkerSHadAnActive_3030c1", { v0: connected.length, v1: verified.length }) : copy("prerequisites.pairAWorkerAndExplicitlyDiscover_02bb83")}</p>{report?.more_machines ? <p>{copy("prerequisites.onlyTheFirst50WorkersWere_dd7bbb")}</p> : null}<p>{copy("prerequisites.aConnectionOrPastHandshakeDoes_d0dff3")}</p></Step>
+      <Step label={copy("prerequisites.aiAccount_042001")} state={observationState(accounts.error, Boolean(accountRows), readyAccounts, accounts.data?.nextPageToken)}><p>{accountRows ? copy("prerequisites.accountSInspectedEnabledAccountS_6a6af9", { v0: accountRows.length, v1: readyAccounts }) : copy("prerequisites.connectAndValidateAnAccountExplicitly_c817f1")}</p>{accounts.data?.nextPageToken ? <p>{copy("prerequisites.moreAccountsExistOpenAiAccounts_2994b9")}</p> : null}<p>{copy("prerequisites.savedStatusDoesNotProveCurrent_621ca4")}</p></Step>
+      <Step label={copy("prerequisites.agentWorkerConfiguration_e66058")} state={observationState(agents.error, Boolean(agentRows), agentRows?.length ?? 0, agents.data?.nextPageToken)}><p>{agentRows ? copy("prerequisites.agentWorkerConfigurationSInspected_a6aad7", { v0: agentRows.length }) : copy("prerequisites.configureAnAgentWorkerWithIts_b5534e")}</p>{agents.data?.nextPageToken ? <p>{copy("prerequisites.moreAgentWorkersExistOpenSettings_71120c")}</p> : null}<p>{copy("prerequisites.chooseAProjectForRepositoryWork_101a36")}</p></Step>
     </ol>
-    {checked && !loading ? <p>These are separate observations, not a successful execution test. Refresh after setup changes.</p> : null}
+    {checked && !loading ? <p>{copy("prerequisites.theseAreSeparateObservationsNotA_c09fb7")}</p> : null}
   </section>;
 }

@@ -69,14 +69,18 @@ func (c ownedOAuthTokenClient) Exchange(ctx context.Context, p oauthProfile, cod
 func (c ownedOAuthTokenClient) Refresh(ctx context.Context, p oauthProfile, refresh []byte) (oauthTokenResult, error) {
 	return c.token(ctx, p, map[string][]byte{"grant_type": []byte("refresh_token"), "client_id": []byte(p.registration.ClientID), "refresh_token": refresh})
 }
-func (c ownedOAuthTokenClient) token(ctx context.Context, p oauthProfile, fields map[string][]byte) (oauthTokenResult, error) {
-	var result oauthTokenResult
+func clearOAuthObject(v map[string]json.RawMessage) {
+	for _, b := range v {
+		clear(b)
+	}
+}
+func (c ownedOAuthTokenClient) request(ctx context.Context, endpoint string, fields map[string][]byte) (int, map[string]json.RawMessage, error) {
 	payload := oauthForm(fields)
 	defer clear(payload)
 	transport := c.transport
 	if transport == nil {
 		if c.route == nil {
-			return result, oauthCredentialProblem()
+			return 0, nil, oauthCredentialProblem()
 		}
 		base := &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 20 * time.Second}).DialContext, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, TLSHandshakeTimeout: 20 * time.Second, ResponseHeaderTimeout: 20 * time.Second, MaxResponseHeaderBytes: 32 << 10, DisableKeepAlives: true, DisableCompression: true}
 		defer base.CloseIdleConnections()
@@ -84,34 +88,41 @@ func (c ownedOAuthTokenClient) token(ctx context.Context, p oauthProfile, fields
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.token, io.NopCloser(bytes.NewReader(payload)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, io.NopCloser(bytes.NewReader(payload)))
 	if err != nil {
-		return result, oauthCredentialProblem()
+		return 0, nil, oauthCredentialProblem()
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(req)
 	if err != nil {
-		return result, oauthCredentialProblem()
+		return 0, nil, oauthCredentialProblem()
 	}
 	defer response.Body.Close()
 	raw := make([]byte, (64<<10)+1)
 	defer clear(raw)
 	n, err := io.ReadFull(response.Body, raw)
 	if err != io.EOF && err != io.ErrUnexpectedEOF || n > 64<<10 {
-		return result, oauthCredentialProblem()
+		return 0, nil, oauthCredentialProblem()
 	}
 	parsed, err := decodeOAuthSecretObject(raw[:n], 0)
 	if err != nil {
-		return result, oauthCredentialProblem()
+		return 0, nil, oauthCredentialProblem()
 	}
-	defer func() {
-		for _, v := range parsed {
-			clear(v)
-		}
-	}()
-	if response.StatusCode != http.StatusOK {
+	return response.StatusCode, parsed, nil
+}
+func (c ownedOAuthTokenClient) token(ctx context.Context, p oauthProfile, fields map[string][]byte) (oauthTokenResult, error) {
+	status, parsed, err := c.request(ctx, p.token, fields)
+	if err != nil {
+		return oauthTokenResult{}, err
+	}
+	defer clearOAuthObject(parsed)
+	return parseOAuthToken(status, parsed, p)
+}
+func parseOAuthToken(status int, parsed map[string]json.RawMessage, p oauthProfile) (oauthTokenResult, error) {
+	var result oauthTokenResult
+	if status != http.StatusOK {
 		var code string
 		if json.Unmarshal(parsed["error"], &code) == nil && (code == "invalid_grant" || code == "access_denied" || code == "expired_token") {
 			return result, domain.Fail(domain.PermissionDenied, "The provider rejected this OAuth authorization.", "Reconnect explicitly after removing the original connection.")

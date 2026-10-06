@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
@@ -14,6 +15,7 @@ function useReadiness(active = true) {
 }
 
 export function NotificationPresentation() {
+  useLocale();
   const enabled = isTauri();
   const transport = useTransport();
   const service = useMemo(() => createClient(InboxService, transport), [transport]);
@@ -31,10 +33,11 @@ export function NotificationPresentation() {
     return () => { value.close(); if (pump.current === value) pump.current = undefined; };
   }, [enabled, service, candidates.refetch]);
   useEffect(() => { if (ready && !candidates.isError && candidates.data) pump.current?.update(candidates.data.candidates); }, [ready, candidates.isError, candidates.data, candidates.dataUpdatedAt]);
-  return enabled && (failed || candidates.isError || readiness.isError) ? <p role="status">Desktop notifications could not be confirmed. Requests remain in the inbox; notification settings show native availability.</p> : null;
+  return enabled && (failed || candidates.isError || readiness.isError) ? <p role="status">{copy("notification-presentation.desktopNotificationsCouldNotBeConfirmed_8b02e8")}</p> : null;
 }
 
 export function NativeNotificationSettings({ active }: { active: boolean }) {
+  useLocale();
   const client = useQueryClient();
   const opening = useSettingsOpening();
   const readiness = useReadiness(active);
@@ -47,11 +50,11 @@ export function NativeNotificationSettings({ active }: { active: boolean }) {
   const value = readiness.data;
   const failed = readiness.isError || request.isError;
   const granted = desktop && !failed && value?.permission === Permission.Granted;
-  const unavailable = value?.problem === Reason.BundleRequired ? "Native notifications require the installed DeliDev app bundle." : value?.problem === Reason.ActionsUnavailable ? "This desktop notification service cannot open notification actions." : value?.problem === Reason.Capacity ? "The native notification limit is reached for this app process. Requests remain in the inbox; restart DeliDev to clear its native presentation state." : "Native notification service is unavailable.";
-  return <section className="notification-os"><div className="notification-section-heading"><h2>On this computer</h2>{desktop ? <button type="button" disabled={readiness.isFetching || request.isPending} onClick={() => { request.reset(); void readiness.refetch(); }} aria-label="Refresh status for native notifications">Refresh status</button> : null}</div>
-    <p role="status" className={granted ? "notification-permission-granted" : undefined}>{granted ? <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg> : null}{!desktop ? "Open DeliDev on your desktop to manage native notifications." : failed ? "Native notification permission could not be confirmed." : !value ? "Checking native notification availability…" : value.permission === Permission.NotDetermined ? "Notification permission has not been requested." : value.permission === Permission.Denied ? "Notifications are disabled. Enable DeliDev in your operating system's notification settings." : granted ? "Notifications allowed" : value.permission === Permission.ServiceAvailable ? "The desktop notification service supports actions. This service does not report user permission or whether a banner was shown." : unavailable}</p>
-    {granted ? <p>Focus or Do Not Disturb may still suppress banners.</p> : null}
-    {desktop && !failed && value?.permission === Permission.NotDetermined ? <button type="button" disabled={request.isPending || readiness.isFetching} onClick={() => request.mutate()}>Allow desktop notifications</button> : null}
-    <p className="notification-support">Permission is shared by DeliDev windows on this computer.</p>
+  const unavailable = value?.problem === Reason.BundleRequired ? copy("notification-presentation.extra.0be8addf8c13") : value?.problem === Reason.ActionsUnavailable ? copy("notification-presentation.extra.49bd1f979ff9") : value?.problem === Reason.Capacity ? copy("notification-presentation.extra.d0382f5b548f") : copy("notification-presentation.extra.e8b3afa7a523");
+  return <section className="notification-os"><div className="notification-section-heading"><h2>{copy("notification-presentation.onThisComputer_e6af7e")}</h2>{desktop ? <button type="button" disabled={readiness.isFetching || request.isPending} onClick={() => { request.reset(); void readiness.refetch(); }} aria-label={copy("notification-presentation.refreshStatusForNativeNotifications_6d39c7")}>{copy("notification-presentation.refreshStatus_442c4b")}</button> : null}</div>
+    <p role="status" className={granted ? "notification-permission-granted" : undefined}>{granted ? <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg> : null}{!desktop ? copy("notification-presentation.openDelidevOnYourDesktopTo_7da841") : failed ? copy("notification-presentation.nativeNotificationPermissionCouldNotBe_1d14b3") : !value ? copy("notification-presentation.checkingNativeNotificationAvailability_b63c11") : value.permission === Permission.NotDetermined ? copy("notification-presentation.notificationPermissionHasNotBeenRequested_e0df38") : value.permission === Permission.Denied ? copy("notification-presentation.notificationsAreDisabledEnableDelidevIn_6e5797") : granted ? copy("notification-presentation.notificationsAllowed_675cad") : value.permission === Permission.ServiceAvailable ? copy("notification-presentation.theDesktopNotificationServiceSupportsActions_aec2f5") : unavailable}</p>
+    {granted ? <p>{copy("notification-presentation.focusOrDoNotDisturbMay_42e527")}</p> : null}
+    {desktop && !failed && value?.permission === Permission.NotDetermined ? <button type="button" disabled={request.isPending || readiness.isFetching} onClick={() => request.mutate()}>{copy("notification-presentation.allowDesktopNotifications_c30c0d")}</button> : null}
+    <p className="notification-support">{copy("notification-presentation.permissionIsSharedByDelidevWindows_5376fc")}</p>
   </section>;
 }

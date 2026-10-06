@@ -54,7 +54,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await screen.findByRole("region", { name: "Repository detected" }, { timeout: 15000 });
   fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
   change("Name", "Owned repository");
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(screen.queryByRole("region", { name: "Add repository" })).toBeNull(), { timeout: 15000 });
   await screen.findByRole("heading", { name: "Owned repository" });
   const repositories = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.REPOSITORY } });

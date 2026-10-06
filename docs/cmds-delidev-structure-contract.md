@@ -14,7 +14,7 @@ sessions retain their selected account/model and immutable attribution.
 
 
 
-## Known subscription model reservations
+## Known subscription model allocation and activation
 
 Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
 and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
@@ -23,9 +23,14 @@ UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
 reserves native ID/display name/order/minimum harness version/retirement date
 fields 1–5. The request reserves subscription service field 1; the response
 reserves subscription service/models/catalog version/updated at/source fields 1–5.
-Establish these allocations on main before dependent implementation. Reservations
-grant no catalog retrieval, authentication, account entitlement, native discovery
-or execution capability. No database migration is introduced.
+These allocations reached main in PR #1370 before dependent activation. The
+complete feature activates capability 35 and the owner/client read-only RPC in
+provider.proto; generated bindings use the normal compatibility pipeline.
+Reservations alone grant no feature support. The active advisory read grants no
+authentication, account entitlement, native discovery or execution capability.
+The response echoes the exact closed service, includes at most 200 models and
+uses BUNDLED/CACHE/ONLINE provenance; unsupported service values fail. No database
+migration is introduced. Follow the catalog, desktop and network contracts.
 
 ## Scope
 
@@ -79,6 +84,16 @@ assignments are immutable.
 Reservations do not advertise capability support or activate implementation.
 New allocations must be established on main before dependent feature branches use
 them. Existing shared message semantics still require explicit composition.
+
+Issue #1203's shared compaction RPC closure reserves
+`CompactSessionRequest.expected_execution_id = 2` and
+`CompactSessionResponse.session = 4`, with #1093/#1202 as shared consumers.
+Record PR #1221's already-active request/response assignments in the immutable
+baseline without renumbering them. Establish the additive reservations on main
+before implementing exact predecessor admission and joined current-session/job
+responses. The existing response request ID remains the original action ID.
+Reservations do not add active schema fields, generated bindings, capabilities
+or migrations and do not establish complete native acceptance.
 
 Wholly new messages and closed enums use explicit `newDeclaration: true` member
 reservations under one original owner, including the zero UNSPECIFIED member of

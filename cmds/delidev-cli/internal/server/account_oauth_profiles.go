@@ -18,7 +18,11 @@ type oauthProfile struct {
 }
 
 func (p oauthProfile) digest() string {
-	sum := sha256.Sum256([]byte(string(p.preset) + "\x00" + p.registration.ClientID + "\x00" + p.registration.RedirectURI + "\x00" + p.scope))
+	material := string(p.preset) + "\x00" + p.registration.ClientID + "\x00" + p.registration.RedirectURI + "\x00" + p.scope
+	if p.preset == domain.PresetBaseten {
+		material += "\x00" + p.registration.VerificationURI
+	}
+	sum := sha256.Sum256([]byte(material))
 	return hex.EncodeToString(sum[:])
 }
 func (s *Service) oauthProfile(p domain.Provider) (oauthProfile, error) {
@@ -37,6 +41,17 @@ func (s *Service) oauthProfile(p domain.Provider) (oauthProfile, error) {
 		profile.authorization = "https://huggingface.co/oauth/authorize"
 		profile.token = "https://huggingface.co/oauth/token"
 		profile.scope = "inference-api"
+	case domain.PresetGemini:
+		profile.name = "Google Gemini"
+		profile.endpoint = "https://generativelanguage.googleapis.com/v1beta/openai"
+		profile.authorization = "https://accounts.google.com/o/oauth2/v2/auth"
+		profile.token = "https://oauth2.googleapis.com/token"
+		profile.scope = "https://www.googleapis.com/auth/cloud-platform"
+	case domain.PresetBaseten:
+		profile.name = "Baseten"
+		profile.endpoint = "https://inference.baseten.co/v1"
+		profile.authorization = "https://api.baseten.co/v1/users/auth/device/authorize"
+		profile.token = "https://api.baseten.co/v1/users/auth/device/token"
 	default:
 		return profile, oauthUnsupported()
 	}
@@ -49,7 +64,17 @@ func (s *Service) oauthProfile(p domain.Provider) (oauthProfile, error) {
 			registrations = providers.OAuthRegistrations()
 		}
 		profile.registration = registrations[profile.preset]
-		if !profile.registration.Accepted() || profile.registration.RedirectURI != "http://localhost/oauth/hugging-face/callback" {
+		expectedCallback := "http://localhost/oauth/hugging-face/callback"
+		if profile.preset == domain.PresetGemini {
+			expectedCallback = "http://127.0.0.1/oauth/google-gemini/callback"
+		}
+		if profile.preset == domain.PresetBaseten {
+			expectedCallback = ""
+			if !providers.ValidBasetenVerificationURI(profile.registration.VerificationURI) {
+				return profile, oauthUnsupported()
+			}
+		}
+		if !profile.registration.Accepted() || profile.registration.RedirectURI != expectedCallback {
 			return profile, oauthUnsupported()
 		}
 	}
@@ -79,6 +104,12 @@ func (s *Service) oauthProvider(tx *store.Tx, id domain.ID, revision uint64) err
 func (p oauthProfile) callback(raw string) error {
 	if p.preset == domain.PresetOpenRouter {
 		return domain.ValidateOAuthCallback(raw)
+	}
+	if p.preset == domain.PresetBaseten {
+		if raw != "" {
+			return domain.Fail(domain.InvalidArgument, "Device OAuth does not accept a callback.", "Start its server-owned approval operation.")
+		}
+		return nil
 	}
 	u, err := url.Parse(raw)
 	registered, e := url.Parse(p.registration.RedirectURI)

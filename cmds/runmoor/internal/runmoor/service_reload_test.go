@@ -289,6 +289,89 @@ func TestServiceReloadLeavesCurrentNewerAndForegroundManagers(t *testing.T) {
 	}
 }
 
+func TestServiceReloadNativeInspectionFailureUsesBoundPeer(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		for _, scenario := range []string{"foreground", "service peer", "invalid candidate", "stop error", "changed peer", "unreachable peer"} {
+			t.Run(platform+"/"+scenario, func(t *testing.T) {
+				f := newReloadFixture(t, platform)
+				f.peer = 404
+				if scenario == "service peer" {
+					f.peer = f.pid
+				}
+				originalPeer := f.peer
+				definition, info, err := readPrivateServiceDefinition(f.r.Unit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "invalid candidate" {
+					if err := os.WriteFile(f.path, []byte("invalid TOML ["), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				query := "launchctl list"
+				if platform == "linux" {
+					query = "systemctl --user show --property=MainPID --value runmoor.service"
+				}
+				f.onCommand = func(command string) error {
+					if command != query {
+						t.Fatalf("unexpected native command: %s", command)
+					}
+					if scenario == "changed peer" {
+						f.peer = 505
+					} else if scenario == "unreachable peer" {
+						f.peer = 0
+					}
+					return errors.New("private native failure " + f.path + " private-fixture-value")
+				}
+				var peerErr error
+				f.r.Control = func(ctx context.Context, c Config, req ControlRequest, expected int) (ControlResponse, int, error) {
+					if req.Action == "reload" {
+						if expected != originalPeer {
+							t.Fatalf("reload bound to %d, want %d", expected, originalPeer)
+						}
+						if scenario == "stop error" {
+							f.actions = append(f.actions, req.Action)
+							peerErr = problem(ErrControl, "Manager is stopping.", "Start the manager before reloading.")
+							return ControlResponse{}, f.peer, peerErr
+						}
+					}
+					response, peer, err := f.control(ctx, c, req, expected)
+					if req.Action == "reload" {
+						peerErr = err
+					}
+					return response, peer, err
+				}
+				err = f.reload()
+				wantError := scenario != "foreground" && scenario != "service peer"
+				if (err != nil) != wantError || err != peerErr {
+					t.Fatalf("reload returned %v, peer returned %v, want error: %t", err, peerErr, wantError)
+				}
+				if strings.Join(f.actions, ",") != "status,reload" || len(f.commands) != 1 {
+					t.Fatalf("unexpected dispatch: actions=%v commands=%v", f.actions, f.commands)
+				}
+				current, currentInfo, err := readPrivateServiceDefinition(f.r.Unit)
+				if err != nil || !bytes.Equal(definition, current) || !os.SameFile(info, currentInfo) {
+					t.Fatalf("service definition changed: %v", err)
+				}
+				entries, err := os.ReadDir(filepath.Dir(f.r.Unit))
+				if err != nil || len(entries) != 1 || entries[0].Name() != filepath.Base(f.r.Unit) {
+					t.Fatalf("ordinary reload created service authority: entries=%v error=%v", entries, err)
+				}
+				if strings.Contains(f.log.String(), f.path) || strings.Contains(f.log.String(), "private-fixture-value") {
+					t.Fatal("native inspection diagnostic exposed private content")
+				}
+				code := ErrControl
+				if platform == "linux" {
+					code = ErrDependency
+				}
+				if !strings.Contains(f.log.String(), "service_reload_native_inspection_unavailable") || !strings.Contains(f.log.String(), "platform="+platform) || !strings.Contains(f.log.String(), "code="+string(code)) {
+					t.Fatalf("missing structured native inspection diagnostic: %s", f.log.String())
+				}
+			})
+		}
+	}
+}
+
 func TestServiceReloadRejectsUnsafeCandidatesBeforeReplacement(t *testing.T) {
 	for _, scenario := range []string{"invalid version", "invalid CLI version", "preflight", "stopping", "wrong arguments", "reused PID", "invalid unit", "wrong config", "unreachable", "concurrent service"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -326,6 +409,46 @@ func TestServiceReloadRejectsUnsafeCandidatesBeforeReplacement(t *testing.T) {
 			}
 			if f.mutated() {
 				t.Fatal("unsafe reload reached native mutation")
+			}
+		})
+	}
+}
+
+func TestServiceReloadNativeInspectionFailureRetainsPendingJournal(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newReloadFixture(t, platform)
+			f.onCommand = func(command string) error {
+				if strings.Contains(command, " daemon-reload") || strings.Contains(command, " debug ") {
+					return errors.New("retain recovery intent")
+				}
+				return nil
+			}
+			if err := f.reload(); err == nil {
+				t.Fatal("interrupted replacement unexpectedly succeeded")
+			}
+			journal, err := readPrivate(reloadJournalPath(f.r.Unit), reloadJournalLimit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			definition, info, err := readPrivateServiceDefinition(f.r.Unit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.commands = nil
+			f.actions = nil
+			f.peer = 404
+			f.onCommand = func(string) error { return errors.New("native inspection unavailable") }
+			if err := f.reload(); err == nil || strings.Join(f.actions, ",") != "status" || len(f.commands) != 1 || f.mutated() {
+				t.Fatalf("pending recovery did not fail closed: error=%v actions=%v commands=%v", err, f.actions, f.commands)
+			}
+			currentJournal, err := readPrivate(reloadJournalPath(f.r.Unit), reloadJournalLimit)
+			if err != nil || !bytes.Equal(journal, currentJournal) {
+				t.Fatalf("recovery intent changed: %v", err)
+			}
+			current, currentInfo, err := readPrivateServiceDefinition(f.r.Unit)
+			if err != nil || !bytes.Equal(definition, current) || !os.SameFile(info, currentInfo) {
+				t.Fatalf("service definition changed: %v", err)
 			}
 		})
 	}
@@ -423,10 +546,11 @@ func TestServiceReloadReestablishesMacHandoffAfterPreviousManagerRestart(t *test
 	}
 }
 
-func TestServiceReloadPreviousManagerStartsFromCommittedConfiguration(t *testing.T) {
-	f := newReloadFixture(t, "linux")
+func previousManagerReloadFixture(t *testing.T, platform string) *reloadFixture {
+	t.Helper()
+	f := newReloadFixture(t, platform)
 	f.onCommand = func(command string) error {
-		if strings.Contains(command, " daemon-reload") {
+		if strings.Contains(command, " daemon-reload") || strings.Contains(command, " debug ") {
 			return errors.New("retain handoff intent")
 		}
 		return nil
@@ -447,13 +571,193 @@ func TestServiceReloadPreviousManagerStartsFromCommittedConfiguration(t *testing
 	f.peer = f.pid
 	f.version = j.PreviousVersion
 	f.args[f.pid] = f.args[101]
+	f.r.Binary = f.args[101][0]
 	f.r.Version = j.PreviousVersion
-	_, preserve, recovery, err := f.r.startup(context.Background(), f.path, f.c)
-	if err != nil || preserve || recovery != nil {
-		t.Fatalf("previous manager was not allowed to start normally: preserve=%t recovery=%v err=%v", preserve, recovery != nil, err)
+	return f
+}
+
+func TestServiceReloadPreviousManagerStartsFromCommittedConfiguration(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		for _, scenario := range []string{"changed labels", "invalid TOML", "changed storage"} {
+			for _, stopping := range []bool{false, true} {
+				t.Run(platform+"/"+scenario+"/stopping="+strconv.FormatBool(stopping), func(t *testing.T) {
+					f := previousManagerReloadFixture(t, platform)
+					pool := sortedPools(f.m.Store.View())[0].ID
+					id := seedRunner(t, f.m, pool, Busy)
+					if err := f.m.Store.Update(func(s *Snapshot) error {
+						s.Paused = true
+						s.Pools[pool].Phase = Paused
+						s.Runners[id].Resources = Resources{7, 1234}
+						return nil
+					}); err != nil {
+						t.Fatal(err)
+					}
+					if stopping {
+						if err := f.m.Stop(false); err != nil {
+							t.Fatal(err)
+						}
+					}
+					before := f.m.Store.View()
+					candidate := f.m.Store.View().Requested
+					candidate.Pools[0].Labels = append(candidate.Pools[0].Labels, "unvalidated-candidate")
+					if scenario == "changed storage" {
+						candidate.Storage = Storage{State: filepath.Join(filepath.Dir(f.path), "unrelated-state"), Data: filepath.Join(filepath.Dir(f.path), "unrelated-data")}
+					}
+					body, err := toml.Marshal(candidate)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if scenario == "invalid TOML" {
+						body = []byte("invalid candidate TOML")
+					}
+					if err := os.WriteFile(f.path, body, 0600); err != nil {
+						t.Fatal(err)
+					}
+					journal, err := os.ReadFile(reloadJournalPath(f.r.Unit))
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					// Execute first selects the committed snapshot before candidate loading.
+					committed, useCommitted, recovery, err := f.r.startup(context.Background(), f.path, Config{})
+					if err != nil || !useCommitted || recovery != nil || fingerprint(committed) != fingerprint(before.Requested) {
+						t.Fatalf("previous startup lost committed authority: useCommitted=%t recovery=%t err=%v", useCommitted, recovery != nil, err)
+					}
+					// runForegroundReady repeats startup before accepting configuration.
+					committed, preserve, recovery, err := f.r.startup(context.Background(), f.path, committed)
+					if err != nil || !preserve || recovery != nil {
+						t.Fatalf("previous manager lost Stop or journal authority: preserve=%t recovery=%t err=%v", preserve, recovery != nil, err)
+					}
+					f.m.PreserveStop = preserve
+					if err := f.m.initializeRun(committed); err != nil {
+						t.Fatal(err)
+					}
+					after := f.m.Store.View()
+					if after.Generation != before.Generation || len(after.Generations) != len(before.Generations) || len(after.Pools) != len(before.Pools) || fingerprint(after.Requested) != fingerprint(before.Requested) || fingerprint(after.Config) != fingerprint(before.Config) {
+						t.Fatal("startup accepted the candidate or replaced a generation")
+					}
+					if after.Stopping != stopping || !after.Paused || after.Pools[pool].Phase != Paused || fingerprint(after.Runners[id]) != fingerprint(before.Runners[id]) {
+						t.Fatal("startup changed Stop, pauses or independent execution reservations")
+					}
+					if current, err := os.ReadFile(reloadJournalPath(f.r.Unit)); err != nil || !bytes.Equal(current, journal) {
+						t.Fatalf("previous manager changed recovery intent: %v", err)
+					}
+					if !strings.Contains(f.log.String(), "service_reload_previous_manager_startup") || strings.Contains(f.log.String(), f.path) || strings.Contains(f.log.String(), f.c.Storage.State) {
+						t.Fatal("startup diagnostic is missing or exposes private paths")
+					}
+					if scenario == "changed storage" {
+						for _, path := range []string{candidate.Storage.State, candidate.Storage.Data} {
+							if _, err := os.Stat(path); !os.IsNotExist(err) {
+								t.Fatalf("candidate storage was opened: %v", err)
+							}
+						}
+					}
+				})
+			}
+		}
 	}
-	if got, err := readReloadJournal(f.r.Unit); err != nil || got == nil {
-		t.Fatalf("previous manager consumed recovery intent: %v", err)
+}
+
+func TestServiceReloadPreviousManagerRejectsUnprovenStartup(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		for _, scenario := range []string{"wrong installation", "missing snapshot", "wrong arguments", "wrong version", "wrong platform", "wrong config path"} {
+			t.Run(platform+"/"+scenario, func(t *testing.T) {
+				f := previousManagerReloadFixture(t, platform)
+				j, err := readReloadJournal(f.r.Unit)
+				if err != nil || j == nil {
+					t.Fatalf("missing recovery intent: %v", err)
+				}
+				path := f.path
+				switch scenario {
+				case "wrong installation":
+					j.Installation = newID()
+				case "missing snapshot":
+					j.Storage.State = filepath.Join(filepath.Dir(f.path), "missing-state")
+				case "wrong arguments":
+					f.args[f.pid] = []string{f.r.Binary, "run", "--config", "/unrelated/config.toml"}
+				case "wrong version":
+					f.r.Version = "0.1.0"
+				case "wrong platform":
+					if platform == "linux" {
+						f.r.Platform = "darwin"
+					} else {
+						f.r.Platform = "linux"
+					}
+				case "wrong config path":
+					path += ".unrelated"
+				}
+				body, err := json.Marshal(j)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(reloadJournalPath(f.r.Unit), body, 0600); err != nil {
+					t.Fatal(err)
+				}
+				before := f.m.Store.View()
+				committed, preserve, recovery, err := f.r.startup(context.Background(), path, Config{})
+				if err == nil || preserve || recovery != nil || fingerprint(committed) != fingerprint(Config{}) {
+					t.Fatalf("unproven startup accepted authority: preserve=%t recovery=%t err=%v", preserve, recovery != nil, err)
+				}
+				requireCode(t, err, ErrControl)
+				if fingerprint(f.m.Store.View()) != fingerprint(before) {
+					t.Fatal("failed startup changed committed state")
+				}
+				if current, err := os.ReadFile(reloadJournalPath(f.r.Unit)); err != nil || !bytes.Equal(current, body) {
+					t.Fatalf("failed startup changed recovery intent: %v", err)
+				}
+				if scenario == "missing snapshot" {
+					if _, err := os.Stat(j.Storage.State); !os.IsNotExist(err) {
+						t.Fatalf("failed startup created storage: %v", err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestServiceReloadOrdinaryStartupKeepsExplicitStartBehavior(t *testing.T) {
+	for _, scenario := range []string{"no journal", "foreground beside journal"} {
+		t.Run(scenario, func(t *testing.T) {
+			var f *reloadFixture
+			if scenario == "foreground beside journal" {
+				f = previousManagerReloadFixture(t, "linux")
+				f.pid = os.Getpid() + 1
+			} else {
+				f = newReloadFixture(t, "linux")
+			}
+			if err := f.m.Stop(false); err != nil {
+				t.Fatal(err)
+			}
+			candidate := f.m.Store.View().Requested
+			candidate.Pools[0].Labels = append(candidate.Pools[0].Labels, "explicit-start")
+			body, err := toml.Marshal(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(f.path, body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, useCommitted, recovery, err := f.r.startup(context.Background(), f.path, Config{})
+			if err != nil || useCommitted || recovery != nil {
+				t.Fatalf("ordinary startup selected service recovery: %v", err)
+			}
+			loaded, err := LoadConfig(f.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			committed, preserve, recovery, err := f.r.startup(context.Background(), f.path, loaded)
+			if err != nil || preserve || recovery != nil || fingerprint(committed) != fingerprint(loaded) {
+				t.Fatalf("ordinary startup lost the candidate: %v", err)
+			}
+			f.m.PreserveStop = preserve
+			if err := f.m.initializeRun(committed); err != nil {
+				t.Fatal(err)
+			}
+			after := f.m.Store.View()
+			if after.Stopping || fingerprint(after.Requested) != fingerprint(loaded) {
+				t.Fatal("explicit Start did not accept the candidate and clear completed Stop")
+			}
+		})
 	}
 }
 

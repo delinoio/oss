@@ -11,6 +11,7 @@
     "account-oauth",
     "provider-guidance",
     "device-appearance",
+    "device-language",
     "browser-presentation",
     "repository-folder",
     "worker-network"

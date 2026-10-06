@@ -85,8 +85,19 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 			}
 			if profile, e := s.oauthProfile(p); e == nil {
 				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_PKCE
+				if profile.preset == domain.PresetBaseten {
+					wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_DEVICE
+				}
 				if profile.preset != domain.PresetOpenRouter {
-					message.Capabilities = append(message.Capabilities, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1)
+					found := false
+					for _, capability := range message.Capabilities {
+						if capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1 {
+							found = true
+						}
+					}
+					if !found {
+						message.Capabilities = append(message.Capabilities, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1)
+					}
 				}
 			}
 			wire.Provider = rpc.Resource(*entry.Provider)

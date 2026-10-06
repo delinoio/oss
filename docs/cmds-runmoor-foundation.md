@@ -102,6 +102,15 @@ configuration has an installed service. An unreachable manager does not start a
 stopped service. Stable SemVer triplets compare numerically; equal/newer managers
 reload configuration without changing their service definition or downgrading.
 
+Without a pending recovery journal, failed native PID inspection falls back to
+ordinary reload of the authenticated socket peer. Bind that request to the PID
+observed by status and return its result unchanged, including candidate-validation
+and Stop errors. This fallback acquires no service lock, writes no definition or
+journal, and performs no native mutation. A changed or unreachable peer remains
+an error. Log only a structured diagnostic with the platform and safe error code;
+omit raw native errors and output. Pending-journal recovery retains its native
+inspection requirements and fails closed when inspection is unavailable.
+
 Before replacement, the newer CLI reads state without migration and applies the
 same whole-candidate capacity, backend and remote validation as manager reload.
 Managed pools defer image preparation as before. Verify the installed executable
@@ -142,9 +151,18 @@ cached executable as well as its on-disk reference; `AbandonProcessGroup=true`
 continues to protect independent executions. An inactive unverified loaded job
 or a changed native/definition identity remains an error.
 
-Only the actual replacement service may use the journal to load the last
-committed requested configuration before reading the candidate TOML. Its
-startup acceptance preserves durable Stop and pool/global pause decisions.
+The actual replacement service and a verified restart of the exact previous
+service invocation/version use the journal-owned snapshot to load the last
+committed requested configuration before reading the candidate TOML. Require
+matching journal platform, unit, configuration path and snapshot installation;
+an unavailable or mismatched snapshot fails before startup acceptance. Changed,
+malformed or relocated candidate TOML cannot authorize this startup. Both
+startup paths preserve durable Stop and pool/global pause decisions. The previous
+manager retains the handoff journal and receives no retirement authority; only
+replacement startup returns a retirement handle. The initiating CLI keeps its
+existing completion authority. Foreground runs and no-journal explicit Start
+retain ordinary candidate loading and completed-Stop recovery.
+
 Complete startup acceptance and session reset before exposing control; entering
 the manager loop must not overwrite a reload or Stop accepted after readiness.
 Independent executions, original generations, reservations, deadlines, image
@@ -153,6 +171,26 @@ boundaries. A final normal reload revalidates and atomically accepts the candida
 The existing two-minute CLI context covers preflight, native replacement,
 readiness and configuration acceptance. Success requires the new native
 invocation, matching live socket peer/version, and non-stopping status.
+
+After an interrupted replacement honors Stop and exits, one later explicit
+`service start` must resume the inactive target service. Under the existing
+service-operation lock, verify the private journal, matching installed CLI,
+installation, configuration/storage references and exact target definition
+contents/file identity. Confirm the reload initiator has exited or its PID now
+has a different nonempty process-start identity; permission errors, unreadable
+identities and legacy journals without initiator authority do not confirm exit.
+Acquire exclusive manager-state ownership without creating or migrating the
+database, then require durable Stop and complete runner, image, artifact and
+host cleanup through the existing completed-stop boundaries. Recheck native
+inactivity, initiator and definition authority before exact-record journal
+retirement. Retire before native Start so ordinary startup acceptance clears
+Stop on the first attempt while retaining pool/global pauses. Active services,
+unknown ownership, changed definitions and pending cleanup fail closed before
+native mutation and preserve recovery intent and reservations. Generic manager
+startup must never clear Stop merely because the initiating CLI disappeared.
+Structured recovery logs use safe event names and codes without private paths
+or native output. This recovery behavior is part of the unreleased service
+version reload workflow and adds no public field or migration.
 
 Persist intent before native actions. After interruption, observe a matching
 replacement or the journaled helper before continuing; never blindly repeat a

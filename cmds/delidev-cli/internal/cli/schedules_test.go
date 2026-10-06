@@ -73,7 +73,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 	ready := make(chan server.Endpoint, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- server.Serve(running, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(e server.Endpoint) { ready <- e })
+		done <- server.Serve(running, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(e server.Endpoint) { ready <- e })
 	}()
 	t.Cleanup(func() {
 		cancel()

@@ -1,0 +1,10 @@
+{
+  "native-claude-retry.theRetainedClaudeRetryIsUnavailable_6f0bde": "The retained Claude retry is unavailable or inconsistent.",
+  "native-claude-retry.nativeRetryAttempt_a0b7b9": "Native retry attempt",
+  "native-claude-retry.nativeMaximumRetries_617637": "Native maximum retries",
+  "native-claude-retry.reportedRetryDelayMs_951c2b": "Reported retry delay (ms)",
+  "native-claude-retry.reportedError_1f1a98": "Reported error",
+  "native-claude-retry.httpStatus_0f7cf9": "HTTP status",
+  "native-claude-retry.notReported_adadfa": "Not reported",
+  "native-claude-retry.thisRecordsClaudeSRetryObservation_e4c795": "This records Claude’s retry observation. It does not confirm another request, input acceptance, completion or billed usage."
+}
