@@ -122,12 +122,7 @@ func (r *serviceReloader) publish(path string, j *serviceReloadJournal) error {
 		}
 	}
 	if j.Publication == publicationRestored {
-		if !originalClaim(j) || !matchesReloadFile(r.Unit, j.OriginalFileID, j.Original) || !absentReloadFile(claim) {
-			return publicationFailure()
-		}
-		copy := *j
-		copy.Publication, copy.ClaimFileID, copy.ClaimSHA256 = publicationPrepared, "", ""
-		if err := r.saveJournal(j, &copy); err != nil {
+		if err := r.rebaseRestoredPublication(path, j); err != nil {
 			return err
 		}
 	}
@@ -223,6 +218,27 @@ func (r *serviceReloader) publish(path string, j *serviceReloadJournal) error {
 		return publicationFailure()
 	}
 	return nil
+}
+
+// A restored claim may have belonged to an external writer. Permit a retry
+// only after the canonical file has been repaired to the journaled original
+// bytes. The recreated file receives a new identity, so record that identity
+// before starting another no-replace claim. Do not copy the external bytes
+// from the restored claim into the journal or accept an already-published
+// target as a new baseline.
+func (r *serviceReloader) rebaseRestoredPublication(path string, j *serviceReloadJournal) error {
+	claim := reloadClaimPath(j)
+	if !absentReloadFile(claim) {
+		return publicationFailure()
+	}
+	snapshot, err := validateServiceConfigMatch(r.Platform, r.Unit, path)
+	if err != nil || !bytes.Equal(snapshot.data, j.Original) || bytes.Equal(snapshot.data, j.Target) {
+		return publicationFailure()
+	}
+	copy := *j
+	copy.OriginalFileID = hostFileIdentity(snapshot.info)
+	copy.Publication, copy.ClaimFileID, copy.ClaimSHA256 = publicationPrepared, "", ""
+	return r.saveJournal(j, &copy)
 }
 
 func (r *serviceReloader) abortPublication(j *serviceReloadJournal) error {

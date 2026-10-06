@@ -1,3 +1,5 @@
+//go:build darwin || linux
+
 package runmoor
 
 import (
@@ -23,6 +25,17 @@ func replaceFixtureDefinition(t *testing.T, f *reloadFixture, binary string) []b
 		t.Fatal(err)
 	}
 	return []byte(body)
+}
+
+func replaceFixtureBytes(t *testing.T, f *reloadFixture, body []byte) {
+	t.Helper()
+	temporary := f.r.Unit + ".external"
+	if err := os.WriteFile(temporary, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(temporary, f.r.Unit); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func fixtureReloadJournal(t *testing.T, f *reloadFixture) *serviceReloadJournal {
@@ -125,10 +138,18 @@ func TestServiceReloadPublicationRestoresChangedClaimOnlyIntoVacancy(t *testing.
 	requireFixtureFile(t, f.r.Unit, foreign)
 	requireFixtureFile(t, reloadTargetPath(j), j.Target)
 	f.r.BeforePublish = nil
+	f.commands = nil
 	if err := f.reload(); err == nil || f.mutated() {
-		t.Fatal("restored external definition became authorized original")
+		t.Fatal("unresolved external definition became authorized original")
 	}
-	requireFixtureFile(t, f.r.Unit, foreign)
+	replaceFixtureBytes(t, f, j.Original)
+	f.commands = nil
+	if err := f.reload(); err != nil {
+		t.Fatalf("corrected definition did not permit retry: %v", err)
+	}
+	if !f.mutated() {
+		t.Fatal("corrected definition did not complete native replacement")
+	}
 }
 
 func TestServiceReloadPublicationRecoversInterruptedRenames(t *testing.T) {
