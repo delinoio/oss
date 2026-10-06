@@ -4,6 +4,7 @@
 package workspace
 
 import (
+	"errors"
 	"os"
 	"unsafe"
 
@@ -45,11 +46,28 @@ func removeVerifiedFinalRoot(path, expectedIdentity string) error {
 	type dispositionInformation struct {
 		Flags uint32
 	}
-	disposition := dispositionInformation{Flags: windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_POSIX_SEMANTICS}
-	return windows.SetFileInformationByHandle(
+	disposition := dispositionInformation{Flags: windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK | windows.FILE_DISPOSITION_POSIX_SEMANTICS | windows.FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE}
+	err = windows.SetFileInformationByHandle(
 		handle,
 		windows.FileDispositionInformationEx,
 		(*byte)(unsafe.Pointer(&disposition)),
 		uint32(unsafe.Sizeof(disposition)),
+	)
+	if err == nil {
+		return nil
+	}
+	// POSIX disposition is unavailable on older Windows versions and some
+	// file systems. The legacy disposition still binds deletion to this
+	// identity-checked handle, so it preserves the replacement safety of this
+	// operation while retaining compatibility with those environments.
+	if !errors.Is(err, windows.ERROR_INVALID_FUNCTION) && !errors.Is(err, windows.ERROR_INVALID_PARAMETER) && !errors.Is(err, windows.ERROR_NOT_SUPPORTED) {
+		return err
+	}
+	legacyDisposition := struct{ DeleteFile uint8 }{DeleteFile: 1}
+	return windows.SetFileInformationByHandle(
+		handle,
+		windows.FileDispositionInfo,
+		(*byte)(unsafe.Pointer(&legacyDisposition)),
+		uint32(unsafe.Sizeof(legacyDisposition)),
 	)
 }
