@@ -1424,6 +1424,17 @@ identity, bounded unique Worker/harness inventories and no inference-probe claim
 Account/Agent reads validate their expected resource scope and preserve the
 first-page bound. Missing results from a partial page remain unknown; malformed,
 foreign and failed observations cannot leave a previous successful badge visible.
+The account check accepts schema-1 API accounts with an explicit API type and
+Provider identity, and schema-2 subscription accounts with an explicit subscription
+type, a closed ChatGPT/Claude/Grok service and no Provider identity. Reject mixed
+identity fields, retired records, future schemas, duplicate IDs and unsupported
+account or connection fields for the whole page. Validate saved health, enablement
+and connection identity, authentication and timestamp before counting an enabled
+connected account with ready health. Valid disabled, disconnected or non-ready
+accounts mean Needs setup on a complete page; an incomplete page with no observed
+ready account remains Unknown. A ready account on the first page remains an
+explicitly partial saved-health observation. Quota, entitlement, native support and
+execution eligibility remain independent; this read starts no lifecycle operation.
 Inactive welcome/settings presentation starts no checklist read. All results remain
 in the connection's existing nonpersistent query scope.
 
