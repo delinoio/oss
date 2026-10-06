@@ -407,6 +407,34 @@ edit. They may open independently and retain mounted controls and queries:
 | 2 | Instructions | Template count; all ordered reference operations |
 | 3 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
 
+Reasoning effort and Subagent effort use the shared editable combobox in
+`apps/delidev/src/reasoning-effort-field.tsx` and its static stylesheet. These
+harness-level hints do not establish selected-model or execution support:
+
+| Harness | Reasoning effort hints | Subagent effort hints |
+| --- | --- | --- |
+| Codex | none, minimal, low, medium, high, xhigh, max, ultra, persistent | The same nine values |
+| Claude Code | low, medium, high, xhigh, max | None |
+| OpenCode / Grok Build | None | None |
+
+Focus or the list button opens the in-flow list, capped at 280px with scrolling.
+Filter hints by a case-insensitive prefix; trim only the search comparison, never
+the stored input. Use native default remains the first option and explicitly
+passes an empty string. Direct input remains editable, including unknown values;
+existing server validation and errors remain authoritative. Opening, closing or
+changing harness never writes an effort value or adds an omitted field. A harness
+change replaces hints and clears keyboard selection while retaining both drafts.
+
+Arrow keys move the active option and keep it visible. Enter selects that option;
+with no active option it closes the open list and retains direct input without
+submitting. Escape, Tab and focus departure close without selecting. Composition
+keys are left to the IME. Each input has a unique combobox/listbox identity,
+active-descendant and help association. Use the existing semantic themes, 40px
+controls, 8px corners and responsive form width, without extra panels or input
+focus rings. Preserve Codex child capability-disabled values and ancestor form
+locks for both the input and custom list actions. The component adds no query,
+RPC, discovery, persistence, public schema or native execution authority.
+
 Accounts & routing moves to Accounts, retaining ordered weighted links and all
 add/move/remove operations. The legacy configuration RPC and shared field seam
 still permit accountless Workers; existing records remain valid. The wizard
@@ -660,7 +688,7 @@ Issue #1237 simplifies AI API Keys for a few saved entries. List mode owns one *
 
 Remove API Search providers, Filter entries by provider and More provider filters entirely, with no hidden filter equivalent, totals, sorting or bulk operations. Its account-provider inventory always sends `query: ""`, `enabledOnly: false`, `pageSize: 50` and an API-owned bounded cursor. Subscription retains its own visit-local search/provider/cursor, and API Providers retains its own search. Provider-origin Manage stores only the exact provider-ID scope and bounded hint, never a display-name search. Display that provider’s exact label or complete inert ID with **Clear provider filter**, which clears the scope/hint and returns account pagination to its first page. Preserve server-side API/provider filtering before pagination and cursor binding; never accumulate the whole inventory or filter a loaded page.
 
-Saved entries retain server order in flat divided semantic rows with the shared 16px padding. The approved usage body adds **Your API keys**, **DeliDev usage · Last 30 days** and **Refresh usage**. Each row presents the full wrapping alias/provider identity, separate connection and health states, historical **Estimated cost**, **Observed tokens** with observed-response counts, and saved **Quota** observations. Confirmed exhaustion remains authoritative; missing observations are **Not reported**, never measured zero. Costs remain separate by currency and native accounting unit; unavailable native totals are never computed from categories. Initially collapsed **Details** retains Entry Enabled/Disabled, Provider Enabled/Off/Unavailable, full Account identity, original observation/range and incomplete evidence. **Manage connection** stays visible; the accessible More actions disclosure retains **Edit preferences** and **Delete entry**, their existing confirmation/retry authority, and Escape/opener focus restoration. **View usage** deliberately opens the original account and exact returned half-open range in the existing Usage page. Unknown schemas retain inert full identity and disabled business/navigation actions; read-only Details grants no authority. No stored-key masking/readback/reveal/copy is added.
+Saved entries retain server order in flat divided semantic rows with the shared 16px padding. The approved usage body adds **Your API keys**, **DeliDev usage · Last 30 days** and **Refresh usage**. Each row presents the full wrapping alias/provider identity, separate connection and health states, historical **Estimated cost**, **Observed tokens** with observed-response counts, and saved **Quota** observations. Confirmed exhaustion remains authoritative; missing observations are **Not reported**, never measured zero. Costs remain separate by currency and native accounting unit; unavailable native totals are never computed from categories. A successful empty usage interval shows **$0** estimated cost and **0** observed tokens, both with **No usage in this period**. Empty presentation requires returned native accounting support, present response totals, zero response and all returned accounting-unit counts, present native summary totals, and no accepted executions or native context actions without response usage. Loading, failed reads, absent totals, unreported usage or prices, and older accounting profiles cannot become zero. Refresh failures retain the last successful values with the existing stale notice. This empty display is independent of connection/health and quota and does not establish actual charges or alter ledger/budget evidence. Initially collapsed **Details** retains Entry Enabled/Disabled, Provider Enabled/Off/Unavailable, full Account identity, original observation/range and incomplete evidence. **Manage connection** stays visible; the accessible More actions disclosure retains **Edit preferences** and **Delete entry**, their existing confirmation/retry authority, and Escape/opener focus restoration. **View usage** deliberately opens the original account and exact returned half-open range in the existing Usage page. Unknown schemas retain inert full identity and disabled business/navigation actions; read-only Details grants no authority. No stored-key masking/readback/reveal/copy is added.
 
 The list uses generated account-scoped GetUsageSummary reads only for its current bounded page, with the server-default last 30 days and independent native accounting profile. It never traverses inventory, sums groups in React, queries provider billing or polls usage. Refresh usage refetches the current Account page and active scoped summary reads without connection, validation, discovery or native quota operations. Usage read failure is independent of entry management; retained values are marked stale, and deliberate retry reads only that exact account. The shared Settings opening owns summary caches and cancellation. View usage carries an in-memory unique event key and original account/range; it applies once and subsequent navigation/reconnect cannot overwrite Usage filter drafts. These reads grant no credential or execution capability. Below the list retain **Known usage may be incomplete. Estimates are not billed amounts.** and the existing secure-storage note. Example values and preview notices are fixture-only.
 
