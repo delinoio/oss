@@ -428,10 +428,11 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   }
   assert.deepEqual(extensionTurbo.extends, ["//"]);
   // Both build:test and the clean-build regression replace the same outputs.
-  // Keep their writers ordered before checking the final ZIP bytes.
-  assert.deepEqual(extensionTurbo.tasks["test:package"].dependsOn, ["build:test"]);
+  // Finish the regression before the final build or cached output restoration.
+  assert.deepEqual(extensionTurbo.tasks["test:package"].dependsOn, []);
   assert.equal(extensionTurbo.tasks["test:package"].cache, false);
-  assert.deepEqual(extensionTurbo.tasks["ci:zip"].dependsOn, ["test:package"]);
+  assert.deepEqual(extensionTurbo.tasks["build:test"].dependsOn, ["test:package"]);
+  assert.deepEqual(extensionTurbo.tasks["ci:zip"].dependsOn, ["build:test"]);
   for (const output of ["dist/**", "build/**", "artifacts/**"]) {
     assert.ok(extensionTurbo.tasks["build:test"].outputs.includes(output), output);
   }
