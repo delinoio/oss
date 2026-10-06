@@ -116,6 +116,8 @@ Provider reflection protection includes SSE field names across frames, sanitized
 
 Stream reflection checks include decoded JSON key fragments at both global and original parent paths, so repeated wrappers and JSON escaping cannot bypass protected-name checks.
 
+Locally generated relay errors use every protected value already acquired by the request. A colliding fixed error body is omitted while preserving failure status and safe headers. Pre-key denials do not load credentials for error construction, and failures after SSE output starts retain stream-abort behavior. See the [relay contract](cmds-delidev-proxy-contract.md).
+
 Controller creation failure before native startup removes only the current attempt's original empty scope and synchronizes its parent. Nonempty/replaced evidence and uncertain durability remain recoverable failures; native-started scopes always require their existing ownership proof.
 
 Native relay cancellation retains its original response-writer ownership until

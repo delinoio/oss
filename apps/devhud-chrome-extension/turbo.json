@@ -35,9 +35,7 @@
     },
     "test:package": {
       "cache": false,
-      "dependsOn": [
-        "build:test"
-      ],
+      "dependsOn": [],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -51,7 +49,9 @@
     },
     "build:test": {
       "cache": true,
-      "dependsOn": [],
+      "dependsOn": [
+        "test:package"
+      ],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -74,7 +74,7 @@
     "ci:zip": {
       "cache": true,
       "dependsOn": [
-        "test:package"
+        "build:test"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",

@@ -5,3 +5,5 @@
 - `cmd/guidance` generates `apps/delidev/src-tauri/provider-guidance.generated.json` from reconciled static official documentation/key-creation metadata. Regenerate with `go -C cmds/delidev-cli run ./internal/providers/cmd/guidance > apps/delidev/src-tauri/provider-guidance.generated.json` from the repository root. Keep the freshness test and native compiled selector aligned; guidance grants no account, discovery or execution capability.
 
 - Keep generated native guidance byte-identical across hosts through its exact-path LF attribute; regenerate from the registry and preserve the freshness check rather than accepting platform-specific JSON bytes.
+
+- oauth_clients.json contains only compiled DeliDev public registration/ordinary API acceptance metadata, shared with native. Pending/unverified profiles cannot advertise support. Never copy other applications client IDs or accept user-selected OAuth authorities. Follow `docs/cmds-delidev-account-oauth-contract.md`.

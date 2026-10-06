@@ -1,6 +1,6 @@
 # DeliDev TypeScript client
 
-Pure client fixtures use the cacheable `test:unit` Turbo leaf; the real temporary Go server uses uncached `test:integration`. CI serializes that integration after desktop pure UI and before desktop integration/QA through explicit task dependencies. Local `pnpm test` executes both client suites. Imported-layout fixtures hash the shared protocol layout file. See `docs/repository-workflow-contract.md`.
+Pure client fixtures use the cacheable `test:unit` Turbo leaf; the real temporary Go server uses uncached `test:integration`. CI serializes that integration after desktop pure UI and before desktop integration/QA through explicit task dependencies. Local `pnpm test` executes both client suites. Historical-order fixtures hash the shared fixed protocol snapshot. See `docs/repository-workflow-contract.md`.
 
 Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAccountOAuth, CancelAccountOAuth and GetAccountOAuthStatus, with exact bigint revisions and closed OAuth state/connection-method enums. Authorization URL exists only in original live Start; status carries metadata only. Completion code is a write-only bounded byte array: use a direct authenticated RPC without query/mutation-cache retention, clear transient buffers, and recover only the original completion identity without code. No client-side retry may repeat an exchange. Preserve all four existing account-flow gates independently of capability 5 under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
@@ -13,6 +13,13 @@ Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to reproduce historical module and
 Connect Query import paths. Package-root exports and existing `./gen/*` consumers
 remain compatible; facades contain re-exports, never handwritten descriptors.
+Legacy aggregate reflection retains the fixed 358-declaration historical prefix
+(303 messages, 36 enums and 19 services), including PullRequestFix, Terminal and
+Browser. Compatibility tests use the shared protocol testdata snapshot from
+`54187b780d48e94a49763e87fc140f449869d9f4`, independently of the editable
+relocation map; the client unit-test cache includes that snapshot. Additive
+WorkspaceStorage, Network and Subscription services follow the historical prefix
+in direct enumeration and remain available in reconstructed registries.
 
 ## Scope
 `packages/delidev-api-client` owns private `@delinoio/delidev-api-client`, generated messages and service-specific Connect Query namespaces, explicit transport, typed errors, UUID-v7 request identities and bounded resource synchronization. This is the client integration boundary for desktop implementation; it does not itself constitute a desktop app or complete issue #964.

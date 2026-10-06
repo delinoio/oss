@@ -77,7 +77,7 @@ test("each Windows invocation discovers native packages and runs its whole shard
       options: { shell: false, stdio: "inherit" },
     });
     assert.deepEqual(execution, {
-      command: "go", args: ["test", "-p=1", shard === GoTestShard.Worker ? "-timeout=45m" : "-timeout=20m", ...fixtures[shard].toSorted()],
+      command: "go", args: ["test", "-count=1", "-p=1", shard === GoTestShard.Worker ? "-timeout=45m" : "-timeout=20m", ...fixtures[shard].toSorted()],
       options: { shell: false, stdio: "inherit" },
     });
     assert.equal(fixture.events[0].packageCount, fixtures[shard].length);
@@ -90,11 +90,11 @@ test("each Windows invocation discovers native packages and runs its whole shard
   }
 });
 
-test("Linux and macOS retain their original full-suite Go invocation", () => {
+test("Linux and macOS execute the full Go suite without reusing successful test results", () => {
   const fixture = runner();
   assert.equal(runGoTests(GoTestShard.All, fixture.options), 0);
   assert.deepEqual(fixture.calls, [{
-    command: "go", args: ["test", "-timeout=20m", "./..."], options: { shell: false, stdio: "inherit" },
+    command: "go", args: ["test", "-count=1", "-timeout=20m", "./..."], options: { shell: false, stdio: "inherit" },
   }]);
 });
 
@@ -102,7 +102,7 @@ test("Windows compilation uses Go's literal NUL exception rather than Node's ext
   const fixture = runner({ status: 0, stdout: inventory });
   assert.equal(runGoTests(GoTestShard.Core, { ...fixture.options, platform: "win32" }), 0);
   assert.deepEqual(fixture.calls[1].args.slice(0, 4), ["test", "-c", "-o", "NUL"]);
-  assert.deepEqual(fixture.calls[2].args.slice(0, 3), ["test", "-p=1", "-timeout=20m"]);
+  assert.deepEqual(fixture.calls[2].args.slice(0, 4), ["test", "-count=1", "-p=1", "-timeout=20m"]);
 });
 
 test("discovery failures never start tests, even with partial output", () => {
