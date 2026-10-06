@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { items, object, text, type Document } from "./documents";
 import { bounded, positive, sha } from "./github-query-model";
 
@@ -50,24 +51,25 @@ export function validPRRules(raw: unknown, item: Document): boolean {
 }
 
 export function PRRules({ value }: { value: Document }) {
+  useLocale();
   const rules = items(value.rules);
-  return <section aria-label="Active PR base rules">
-    <p>Active rules for <code>{text(value.base_ref)}</code> at base <code>{text(value.base_sha)}</code>.</p>
-    <p>These rules describe required checks. They do not establish which commit GitHub evaluates or whether CI passes.</p>
-    {rules.length === 0 ? <p>No active rules were returned for this PR base. Classic branch protection is not included.</p> : rules.map((raw) => {
+  return <section aria-label={copy("github-rules.activePrBaseRules_707652")}>
+    <p><LocalizedText id="github-rules.activeRulesForAtBase_116160" components={{ s0: <code>{text(value.base_ref)}</code>, s1: <code>{text(value.base_sha)}</code> }} /></p>
+    <p>{copy("github-rules.theseRulesDescribeRequiredChecksThey_d1ba1d")}</p>
+    {rules.length === 0 ? <p>{copy("github-rules.noActiveRulesWereReturnedFor_72967c")}</p> : rules.map((raw) => {
       const rule = object(raw), required = object(rule.required_checks);
       return <article key={`${text(rule.ruleset_id)}:${text(rule.type)}`}>
         <h5>{text(rule.type)}</h5>
-        <p>{text(rule.native_source_kind)}: {text(rule.source)} · Ruleset {text(rule.ruleset_id)}{rule.source_kind === "unknown" ? " · Unknown source type" : ""}</p>
+        <p><LocalizedText id="github-rules.ruleset_d1d0bf" components={{ s0: <>{text(rule.native_source_kind)}</>, s1: <>{text(rule.source)}</>, s2: <>{text(rule.ruleset_id)}</>, s3: <>{rule.source_kind === "unknown" ? copy("github-rules.unknownSourceType_5f3c59") : ""}</> }} /></p>
         {rule.type === "required_status_checks" ? <>
-          {required.unknown_parameters ? <p>This rule includes unrecognized parameters; CI evaluation is unknown.</p> : null}
-          <p>Require an up-to-date branch: {required.strict ? "Yes" : "No"}</p>
-          {items(required.checks).length ? <table><caption>Required status checks · ruleset {text(rule.ruleset_id)}</caption>
-            <thead><tr><th scope="col">Context or check name</th><th scope="col">Required App</th></tr></thead>
-            <tbody>{items(required.checks).map((raw) => { const check = object(raw); return <tr key={`${text(check.context)}:${text(check.integration_id)}`}><th scope="row">{text(check.context)}</th><td>{check.integration_id == null ? "No App restriction reported" : check.integration_id === "0" ? "Provider reported 0 · unresolved" : `App ${text(check.integration_id)}`}</td></tr>; })}</tbody>
-          </table> : <p>This rule lists no required status checks.</p>}
+          {required.unknown_parameters ? <p>{copy("github-rules.thisRuleIncludesUnrecognizedParametersCi_e5756c")}</p> : null}
+          <p><LocalizedText id="github-rules.requireAnUpToDateBranch_cade59" components={{ s0: <>{required.strict ? copy("github-rules.yes_85a39a") : copy("github-rules.no_1ea442")}</> }} /></p>
+          {items(required.checks).length ? <table><caption><LocalizedText id="github-rules.requiredStatusChecksRuleset_f7be98" components={{ s0: <>{text(rule.ruleset_id)}</> }} /></caption>
+            <thead><tr><th scope={"col"}>{copy("github-rules.contextOrCheckName_177862")}</th><th scope={"col"}>{copy("github-rules.requiredApp_3802d1")}</th></tr></thead>
+            <tbody>{items(required.checks).map((raw) => { const check = object(raw); return <tr key={`${text(check.context)}:${text(check.integration_id)}`}><th scope={"row"}>{text(check.context)}</th><td>{check.integration_id == null ? copy("github-rules.noAppRestrictionReported_39534b") : check.integration_id === "0" ? copy("github-rules.providerReported0Unresolved_3b4b8d") : copy("github-rules.app_915609", { v0: text(check.integration_id) })}</td></tr>; })}</tbody>
+          </table> : <p>{copy("github-rules.thisRuleListsNoRequiredStatus_16ad10")}</p>}
         </> : null}
-        {rule.required_workflows ? <ul aria-label="Required workflows">{items(object(rule.required_workflows).workflows).map((raw) => { const ref = object(raw); return <li key={`${ref.repository_id}:${ref.path}`}>Repository {text(ref.repository_id)} · <code>{text(ref.path)}</code> · {ref.sha ? <code>{text(ref.sha)}</code> : "No immutable source SHA; evaluation remains unknown"}</li>; })}</ul> : null}
+        {rule.required_workflows ? <ul aria-label={copy("github-rules.requiredWorkflows_49dd4c")}>{items(object(rule.required_workflows).workflows).map((raw) => { const ref = object(raw); return <li key={`${ref.repository_id}:${ref.path}`}><LocalizedText id="github-rules.repository_edbad0" components={{ s0: <>{text(ref.repository_id)}</>, s1: <code>{text(ref.path)}</code>, s2: <>{ref.sha ? <code>{text(ref.sha)}</code> : copy("github-rules.noImmutableSourceShaEvaluationRemains_48550b")}</> }} /></li>; })}</ul> : null}
       </article>;
     })}
   </section>;

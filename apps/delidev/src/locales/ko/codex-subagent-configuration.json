@@ -1,0 +1,12 @@
+{
+  "codex-subagent-configuration.codexSubagents_8b1822": "Codex 하위 에이전트",
+  "codex-subagent-configuration.updateTheConnectedServerAndRunner_466379": "Codex 하위 에이전트 설정을 적용하려면 연결된 서버와 실행 장치를 업데이트하세요. 저장된 값은 유지됩니다.",
+  "codex-subagent-configuration.childrenUseTheParentSSelected_7b2922": "하위 에이전트는 부모가 선택한 계정을 사용합니다. 접수된 실행에서 이 선택은 고정되며 이후 에이전트 편집은 향후 세션에 적용됩니다.",
+  "codex-subagent-configuration.subagentModel_28463c": "하위 에이전트 모델",
+  "codex-subagent-configuration.useTheExactRegisteredNativeModel_e6e196": "같은 제공업체 또는 구독 서비스에 등록된 정확한 네이티브 모델을 사용하세요. 값이 비어 있으면 Codex 네이티브 기본값을 지정하지 않습니다.",
+  "codex-subagent-configuration.subagentEffort_eea2b1": "하위 에이전트 추론 강도",
+  "codex-subagent-configuration.useNativeDefault_b5fc7e": "네이티브 기본값 사용",
+  "codex-subagent-configuration.unsupportedSelection_7c6fcd": "지원되지 않는 선택 · <s0/>",
+  "codex-subagent-configuration.maximumConcurrency0UsesNativeDefault_451d39": "최대 동시 실행 수(0이면 네이티브 기본값 사용)",
+  "codex-subagent-configuration.requestedSettingsDoNotEstablishAn_4e5da8": "요청한 설정은 관측된 하위 모델을 나타내지 않습니다. 하위 에이전트에서 사용 가능한 네이티브 관측값을 별도로 표시합니다."
+}

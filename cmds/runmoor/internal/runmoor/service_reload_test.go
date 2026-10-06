@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -288,6 +289,89 @@ func TestServiceReloadLeavesCurrentNewerAndForegroundManagers(t *testing.T) {
 	}
 }
 
+func TestServiceReloadNativeInspectionFailureUsesBoundPeer(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		for _, scenario := range []string{"foreground", "service peer", "invalid candidate", "stop error", "changed peer", "unreachable peer"} {
+			t.Run(platform+"/"+scenario, func(t *testing.T) {
+				f := newReloadFixture(t, platform)
+				f.peer = 404
+				if scenario == "service peer" {
+					f.peer = f.pid
+				}
+				originalPeer := f.peer
+				definition, info, err := readPrivateServiceDefinition(f.r.Unit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "invalid candidate" {
+					if err := os.WriteFile(f.path, []byte("invalid TOML ["), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				query := "launchctl list"
+				if platform == "linux" {
+					query = "systemctl --user show --property=MainPID --value runmoor.service"
+				}
+				f.onCommand = func(command string) error {
+					if command != query {
+						t.Fatalf("unexpected native command: %s", command)
+					}
+					if scenario == "changed peer" {
+						f.peer = 505
+					} else if scenario == "unreachable peer" {
+						f.peer = 0
+					}
+					return errors.New("private native failure " + f.path + " private-fixture-value")
+				}
+				var peerErr error
+				f.r.Control = func(ctx context.Context, c Config, req ControlRequest, expected int) (ControlResponse, int, error) {
+					if req.Action == "reload" {
+						if expected != originalPeer {
+							t.Fatalf("reload bound to %d, want %d", expected, originalPeer)
+						}
+						if scenario == "stop error" {
+							f.actions = append(f.actions, req.Action)
+							peerErr = problem(ErrControl, "Manager is stopping.", "Start the manager before reloading.")
+							return ControlResponse{}, f.peer, peerErr
+						}
+					}
+					response, peer, err := f.control(ctx, c, req, expected)
+					if req.Action == "reload" {
+						peerErr = err
+					}
+					return response, peer, err
+				}
+				err = f.reload()
+				wantError := scenario != "foreground" && scenario != "service peer"
+				if (err != nil) != wantError || err != peerErr {
+					t.Fatalf("reload returned %v, peer returned %v, want error: %t", err, peerErr, wantError)
+				}
+				if strings.Join(f.actions, ",") != "status,reload" || len(f.commands) != 1 {
+					t.Fatalf("unexpected dispatch: actions=%v commands=%v", f.actions, f.commands)
+				}
+				current, currentInfo, err := readPrivateServiceDefinition(f.r.Unit)
+				if err != nil || !bytes.Equal(definition, current) || !os.SameFile(info, currentInfo) {
+					t.Fatalf("service definition changed: %v", err)
+				}
+				entries, err := os.ReadDir(filepath.Dir(f.r.Unit))
+				if err != nil || len(entries) != 1 || entries[0].Name() != filepath.Base(f.r.Unit) {
+					t.Fatalf("ordinary reload created service authority: entries=%v error=%v", entries, err)
+				}
+				if strings.Contains(f.log.String(), f.path) || strings.Contains(f.log.String(), "private-fixture-value") {
+					t.Fatal("native inspection diagnostic exposed private content")
+				}
+				code := ErrControl
+				if platform == "linux" {
+					code = ErrDependency
+				}
+				if !strings.Contains(f.log.String(), "service_reload_native_inspection_unavailable") || !strings.Contains(f.log.String(), "platform="+platform) || !strings.Contains(f.log.String(), "code="+string(code)) {
+					t.Fatalf("missing structured native inspection diagnostic: %s", f.log.String())
+				}
+			})
+		}
+	}
+}
+
 func TestServiceReloadRejectsUnsafeCandidatesBeforeReplacement(t *testing.T) {
 	for _, scenario := range []string{"invalid version", "invalid CLI version", "preflight", "stopping", "wrong arguments", "reused PID", "invalid unit", "wrong config", "unreachable", "concurrent service"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -325,6 +409,46 @@ func TestServiceReloadRejectsUnsafeCandidatesBeforeReplacement(t *testing.T) {
 			}
 			if f.mutated() {
 				t.Fatal("unsafe reload reached native mutation")
+			}
+		})
+	}
+}
+
+func TestServiceReloadNativeInspectionFailureRetainsPendingJournal(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newReloadFixture(t, platform)
+			f.onCommand = func(command string) error {
+				if strings.Contains(command, " daemon-reload") || strings.Contains(command, " debug ") {
+					return errors.New("retain recovery intent")
+				}
+				return nil
+			}
+			if err := f.reload(); err == nil {
+				t.Fatal("interrupted replacement unexpectedly succeeded")
+			}
+			journal, err := readPrivate(reloadJournalPath(f.r.Unit), reloadJournalLimit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			definition, info, err := readPrivateServiceDefinition(f.r.Unit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.commands = nil
+			f.actions = nil
+			f.peer = 404
+			f.onCommand = func(string) error { return errors.New("native inspection unavailable") }
+			if err := f.reload(); err == nil || strings.Join(f.actions, ",") != "status" || len(f.commands) != 1 || f.mutated() {
+				t.Fatalf("pending recovery did not fail closed: error=%v actions=%v commands=%v", err, f.actions, f.commands)
+			}
+			currentJournal, err := readPrivate(reloadJournalPath(f.r.Unit), reloadJournalLimit)
+			if err != nil || !bytes.Equal(journal, currentJournal) {
+				t.Fatalf("recovery intent changed: %v", err)
+			}
+			current, currentInfo, err := readPrivateServiceDefinition(f.r.Unit)
+			if err != nil || !bytes.Equal(definition, current) || !os.SameFile(info, currentInfo) {
+				t.Fatalf("service definition changed: %v", err)
 			}
 		})
 	}
@@ -507,6 +631,191 @@ func TestServiceReloadManagerWaitsForInitiatorBeforeRetiringJournal(t *testing.T
 	j.ReloadStart = "fixture:dead"
 	if !f.r.reloadInitiatorFinished(j) {
 		t.Fatal("finished initiating reload was not reclaimable")
+	}
+	j.ReloadPID, j.ReloadStart = 0, ""
+	if f.r.reloadInitiatorFinished(j) {
+		t.Fatal("legacy journal without an initiator was not retained")
+	}
+}
+
+// Leave private intent from an interrupted CLI whose identity is no longer
+// live, or from a legacy CLI that did not record its completion identity.
+func (f *reloadFixture) prepareRetry(alreadyReady, legacy bool) {
+	f.t.Helper()
+	f.onCommand = func(command string) error {
+		if alreadyReady {
+			if strings.Contains(command, " --signal=SIGKILL ") || strings.Contains(command, " bootstrap ") {
+				f.replaceManager()
+				f.loaded = true
+				return errors.New("interrupted after replacement")
+			}
+		} else if strings.Contains(command, " daemon-reload") || strings.Contains(command, " debug ") {
+			return errors.New("interrupted before replacement")
+		}
+		return nil
+	}
+	if err := f.reload(); err == nil {
+		f.t.Fatal("interrupted reload unexpectedly completed")
+	}
+	j, err := readReloadJournal(f.r.Unit)
+	if err != nil || j == nil {
+		f.t.Fatalf("interrupted reload lost its intent: %v", err)
+	}
+	j.ReloadPID, j.ReloadStart = 999, "exited-first-initiator"
+	if legacy {
+		j.ReloadPID, j.ReloadStart = 0, ""
+	}
+	body, err := json.Marshal(j)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(reloadJournalPath(f.r.Unit), body, 0600); err != nil {
+		f.t.Fatal(err)
+	}
+	f.onCommand = nil
+	f.commands, f.actions = nil, nil
+}
+
+func TestServiceReloadRetryOwnsJournalUntilCompletion(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		for _, owner := range []string{"exited", "legacy"} {
+			t.Run(platform+"/"+owner, func(t *testing.T) {
+				f := newReloadFixture(t, platform)
+				f.prepareRetry(false, owner == "legacy")
+				candidate := f.c
+				candidate.Pools = append([]Pool{}, f.c.Pools...)
+				candidate.Pools[0].Labels = append(append([]string{}, f.c.Pools[0].Labels...), "retry-candidate")
+				body, err := toml.Marshal(candidate)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(f.path, body, 0600); err != nil {
+					t.Fatal(err)
+				}
+				started, retired := false, false
+				f.onCommand = func(command string) error {
+					if !strings.Contains(command, " --signal=SIGKILL ") && !strings.Contains(command, " bootstrap ") {
+						return nil
+					}
+					f.replaceManager()
+					f.loaded = true
+					f.pid, f.peer = os.Getpid(), os.Getpid()
+					f.args[f.pid] = f.args[303]
+					committed, preserve, recovery, err := f.r.startup(context.Background(), f.path, candidate)
+					if err != nil || !preserve || recovery == nil || fingerprint(committed) != fingerprint(f.m.Store.View().Requested) {
+						t.Fatalf("replacement did not recover committed configuration: %v", err)
+					}
+					f.m.PreserveStop = preserve
+					if err := f.m.initializeRun(committed); err != nil {
+						return err
+					}
+					started = true
+					// Use the same startup/retirement sequence as runManager, before
+					// the retry observes readiness or accepts its candidate.
+					if f.r.reloadInitiatorFinished(recovery) {
+						retired = true
+						return f.r.retire(recovery)
+					}
+					if recovery.ReloadPID != os.Getpid() || recovery.ReloadStart != "fixture:"+strconv.Itoa(os.Getpid()) {
+						t.Fatal("startup retained the previous completion owner")
+					}
+					return nil
+				}
+				if err := f.reload(); err != nil {
+					t.Fatalf("retry failed: started=%v retired=%v error=%v", started, retired, err)
+				}
+				if !started || retired || !slices.Equal(f.m.Store.View().Requested.Pools[0].Labels, candidate.Pools[0].Labels) {
+					t.Fatal("retry lost completion ownership or did not accept the candidate")
+				}
+				if j, err := readReloadJournal(f.r.Unit); err != nil || j != nil {
+					t.Fatalf("completed retry retained its journal: %v", err)
+				}
+				if strings.Count(strings.Join(f.actions, "\n"), "reload") != 1 || strings.Count(f.log.String(), "service_reload_completed") != 1 {
+					t.Fatal("retry did not complete exactly once through normal reload")
+				}
+			})
+		}
+	}
+}
+
+func TestServiceReloadReadyRetryClaimsJournalBeforeReadiness(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newReloadFixture(t, platform)
+			f.prepareRetry(true, false)
+			control := f.r.Control
+			readinessChecks := 0
+			f.r.Control = func(ctx context.Context, c Config, req ControlRequest, pid int) (ControlResponse, int, error) {
+				if pid == f.pid {
+					j, err := readReloadJournal(f.r.Unit)
+					if err != nil || j == nil || j.ReloadPID != os.Getpid() || j.ReloadStart != "fixture:"+strconv.Itoa(os.Getpid()) || f.r.reloadInitiatorFinished(j) {
+						t.Fatalf("ready target was contacted before ownership transfer: %v", err)
+					}
+					readinessChecks++
+				}
+				return control(ctx, c, req, pid)
+			}
+			if err := f.reload(); err != nil {
+				t.Fatal(err)
+			}
+			if f.mutated() || readinessChecks == 0 {
+				t.Fatal("ready retry repeated replacement or skipped readiness")
+			}
+			if j, err := readReloadJournal(f.r.Unit); err != nil || j != nil {
+				t.Fatalf("ready retry did not complete: %v", err)
+			}
+		})
+	}
+}
+
+func TestServiceReloadRetryClaimFailurePreservesIntent(t *testing.T) {
+	for _, platform := range []string{"linux", "darwin"} {
+		for _, failure := range []string{"identity error", "empty identity", "changed journal"} {
+			t.Run(platform+"/"+failure, func(t *testing.T) {
+				f := newReloadFixture(t, platform)
+				f.prepareRetry(false, false)
+				journal := reloadJournalPath(f.r.Unit)
+				retained, err := os.ReadFile(journal)
+				if err != nil {
+					t.Fatal(err)
+				}
+				definition, err := os.ReadFile(f.r.Unit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				processStart := f.r.ProcessStart
+				f.r.ProcessStart = func(pid int) (string, error) {
+					if pid == os.Getpid() {
+						switch failure {
+						case "identity error":
+							return "", errors.New("private identity failure")
+						case "empty identity":
+							return "", nil
+						case "changed journal":
+							// Keep the same intent, but change its exact bytes after
+							// recovery read it so the conditional update must fail.
+							retained = append(retained, '\n')
+							if err := os.WriteFile(journal, retained, 0600); err != nil {
+								t.Fatal(err)
+							}
+						}
+					}
+					return processStart(pid)
+				}
+				var problem *Problem
+				if err := f.reload(); !errors.As(err, &problem) || problem.Code != ErrControl || f.mutated() || strings.Contains(strings.Join(f.actions, "\n"), "reload") {
+					t.Fatalf("failed ownership transfer reached replacement or completion: %v", err)
+				}
+				current, err := os.ReadFile(journal)
+				if err != nil || !bytes.Equal(current, retained) {
+					t.Fatal("failed ownership transfer changed the retained intent")
+				}
+				current, err = os.ReadFile(f.r.Unit)
+				if err != nil || !bytes.Equal(current, definition) {
+					t.Fatal("failed ownership transfer changed the service definition")
+				}
+			})
+		}
 	}
 }
 

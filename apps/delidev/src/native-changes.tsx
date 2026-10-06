@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
 enum RevisionSource { Snapshot = "snapshot", Patch = "patch", Start = "step-start", Finish = "step-finish" }
@@ -20,13 +21,14 @@ function revisionSnapshot(value: unknown): Revision | undefined {
   } else if (r.files != null) return;
   return { source: r.source as RevisionSource, hash: r.hash, files: r.files as string[] | null };
 }
-const revisionLabels: Record<RevisionSource, string> = { snapshot: "Snapshot reference", patch: "Changed file references", "step-start": "Step start snapshot", "step-finish": "Step finish snapshot" };
+const revisionLabels: Record<RevisionSource, string> = { get snapshot() { return copy("native-changes.snapshotReference_7c953a"); }, get patch() { return copy("native-changes.changedFileReferences_9d7464"); }, get "step-start"() { return copy("native-changes.stepStartSnapshot_d9105a"); }, get "step-finish"() { return copy("native-changes.stepFinishSnapshot_835810"); } };
 
 export function NativeRevision({ artifact, state }: { artifact: Record<string, unknown>; state: string }) {
+  useLocale();
   const first = revisionSnapshot(artifact.started), completed = revisionSnapshot(artifact.completed);
-  if (!first || artifact.deltas != null || state !== "complete" || !completed || first.source !== completed.source || first.hash !== completed.hash || (first.files == null) !== (completed.files == null) || first.files && (!completed.files || first.files.length !== completed.files.length || first.files.some((f, i) => f !== completed.files![i]))) return <details><summary>Native revision · Unavailable</summary><p>The retained revision observation is incomplete or inconsistent.</p></details>;
-  return <details><summary>{revisionLabels[first.source]}</summary><p>Original native reference: <code>{first.hash}</code></p>
-    {first.files ? first.files.length ? <ul>{first.files.map((path, i) => <li key={i}><code>{path}</code></li>)}</ul> : <p>The original file list is empty.</p> : null}
+  if (!first || artifact.deltas != null || state !== "complete" || !completed || first.source !== completed.source || first.hash !== completed.hash || (first.files == null) !== (completed.files == null) || first.files && (!completed.files || first.files.length !== completed.files.length || first.files.some((f, i) => f !== completed.files![i]))) return <details><summary>{copy("native-changes.nativeRevisionUnavailable_5ba088")}</summary><p>{copy("native-changes.theRetainedRevisionObservationIsIncomplete_cf4770")}</p></details>;
+  return <details><summary>{revisionLabels[first.source]}</summary><p><LocalizedText id="native-changes.originalNativeReference_bbb471" components={{ s0: <code>{first.hash}</code> }} /></p>
+    {first.files ? first.files.length ? <ul>{first.files.map((path, i) => <li key={i}><code>{path}</code></li>)}</ul> : <p>{copy("native-changes.theOriginalFileListIsEmpty_e072b3")}</p> : null}
   </details>;
 }
 
@@ -39,19 +41,20 @@ function fileDiff(value: unknown): value is FileDiff {
 // Reported patches are original inert evidence. This disclosure never reads
 // files, applies a patch, navigates to a path, or treats snapshots as backups.
 export function NativeChanges({ progress, state, turn }: { progress: Record<string, unknown>; state: string; turn: string }) {
+  useLocale();
   const c = object(progress.changes);
   const valid = state === "complete" && progress.kind === "opencode-changes" && progress.workspace == null && progress.plan == null && progress.diff == null && progress.todo == null
     && shape(progress.changes, ["source", "native_event_id", "native_message_id", "title", "body", "diffs"])
     && typeof c.native_event_id === "string" && /^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(c.native_event_id)
     && (c.source === ChangeSource.Session && c.native_message_id === undefined && c.title == null && c.body == null || c.source === ChangeSource.Input && typeof c.native_message_id === "string" && /^msg_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(c.native_message_id) && c.native_message_id === turn)
     && (c.title == null || bounded(c.title)) && (c.body == null || bounded(c.body)) && Array.isArray(c.diffs) && c.diffs.length <= 4096 && c.diffs.every(fileDiff);
-  if (!valid) return <details><summary>Native changes · Unavailable</summary><p>The retained change observation is unavailable or inconsistent.</p></details>;
+  if (!valid) return <details><summary>{copy("native-changes.nativeChangesUnavailable_06d3fa")}</summary><p>{copy("native-changes.theRetainedChangeObservationIsUnavailable_2cf048")}</p></details>;
   const diffs = c.diffs as FileDiff[];
-  return <details><summary>{c.source === ChangeSource.Session ? "Native session diff" : "Native input change summary"}</summary>
+  return <details><summary>{c.source === ChangeSource.Session ? copy("native-changes.nativeSessionDiff_dd228a") : copy("native-changes.nativeInputChangeSummary_a7b5ad")}</summary>
     {typeof c.title === "string" ? <pre>{c.title}</pre> : null}{typeof c.body === "string" ? <pre>{c.body}</pre> : null}
     {diffs.length ? <ol>{diffs.map((d, i) => <li key={i}><details>
-      <summary>{d.file === undefined ? "File unavailable" : d.file} · {d.status ?? "Status unavailable"} · +{d.additions} / −{d.deletions}</summary>
-      {d.patch === undefined ? <p>Patch unavailable.</p> : <pre>{d.patch}</pre>}
-    </details></li>)}</ol> : <p>The original diff list is empty.</p>}
+      <summary>{d.file === undefined ? copy("native-changes.fileUnavailable_b3b9ef") : d.file} · {d.status ?? copy("native-changes.statusUnavailable_7eb5af")} · +{d.additions} / −{d.deletions}</summary>
+      {d.patch === undefined ? <p>{copy("native-changes.patchUnavailable_87d458")}</p> : <pre>{d.patch}</pre>}
+    </details></li>)}</ol> : <p>{copy("native-changes.theOriginalDiffListIsEmpty_078d07")}</p>}
   </details>;
 }

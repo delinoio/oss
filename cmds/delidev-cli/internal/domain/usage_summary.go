@@ -79,9 +79,9 @@ func invalidUsageTimeZone() error {
 	return Fail(InvalidArgument, "Invalid usage timezone.", "Choose an explicit IANA timezone from the bundled timezone database.")
 }
 
-// UsageDayBuckets partitions the whole selected interval at local calendar
-// midnights. It intentionally derives every next boundary from the timezone
-// database instead of adding a fixed 24-hour duration, preserving DST days.
+// UsageDayBuckets partitions the whole selected interval at the first real
+// instant of each local calendar date, preserving missing/repeated midnights,
+// skipped dates and DST days through the timezone database.
 func (f UsageSelection) UsageDayBuckets() ([]UsageAnalyticsDay, error) {
 	if f.Granularity != UsageTimeGranularityDay {
 		return nil, nil
@@ -96,23 +96,9 @@ func (f UsageSelection) UsageDayBuckets() ([]UsageAnalyticsDay, error) {
 		if len(buckets) >= UsageDayBucketLimit {
 			return nil, Fail(InvalidArgument, "The usage range has too many calendar days.", "Choose a range that contains at most 370 local calendar days.")
 		}
-		local := cursor.In(zone)
-		year, month, day := local.Date()
-		candidate := time.Date(year, month, day, 0, 0, 0, 0, zone)
-		if candidate.After(cursor) {
-			return nil, Fail(InvalidArgument, "The usage timezone produced an invalid calendar boundary.", "Choose another explicit IANA timezone or a shorter range.")
-		}
-		var next time.Time
-		for step := 1; step <= 4; step++ {
-			civil := time.Date(year, month, day+step, 0, 0, 0, 0, time.UTC)
-			boundary := time.Date(civil.Year(), civil.Month(), civil.Day(), 0, 0, 0, 0, zone)
-			if boundary.After(cursor) {
-				next = boundary
-				break
-			}
-		}
-		if next.IsZero() {
-			return nil, Fail(InvalidArgument, "The usage timezone has an unsupported calendar transition.", "Choose another explicit IANA timezone.")
+		next, err := usageNextDayBoundary(cursor.In(zone))
+		if err != nil {
+			return nil, err
 		}
 		until := next
 		if until.After(f.Until) {
@@ -122,6 +108,46 @@ func (f UsageSelection) UsageDayBuckets() ([]UsageAnalyticsDay, error) {
 		cursor = until
 	}
 	return buckets, nil
+}
+
+func usageNextDayBoundary(cursor time.Time) (time.Time, error) {
+	year, month, day := cursor.Date()
+	civil := time.Date(year, month, day+1, 0, 0, 0, 0, time.UTC)
+	// time.Date in an IANA zone may normalize missing midnight backward or
+	// choose either repeated midnight. Resolve the civil midnight within each
+	// constant-offset interval, walking transitions in chronological order.
+	for step := 0; step < 4; step++ {
+		_, offset := cursor.Zone()
+		boundary := civil.Add(-time.Duration(offset) * time.Second)
+		_, end := cursor.ZoneBounds()
+		// Go's recurring-rule lookup assumes a 365-day year and may return
+		// a past bound on December 31 of a future leap year. Correct only
+		// that synthetic UTC year end. Remove this workaround when the
+		// pinned Go runtime returns a future bound for that whole day.
+		if !end.IsZero() && !end.After(cursor) {
+			utc := cursor.UTC()
+			if utc.YearDay() == 366 && end.Equal(time.Date(utc.Year(), time.December, 31, 0, 0, 0, 0, time.UTC)) {
+				end = time.Date(utc.Year()+1, time.January, 1, 0, 0, 0, 0, time.UTC).In(cursor.Location())
+			}
+		}
+		if end.IsZero() || boundary.Before(end) {
+			if boundary.After(cursor) {
+				return boundary, nil
+			}
+			break
+		}
+		if !end.After(cursor) {
+			break
+		}
+		cursor = end
+		year, month, day = cursor.Date()
+		if !time.Date(year, month, day, 0, 0, 0, 0, time.UTC).Before(civil) {
+			// A forward jump reaches the next existing date even when its
+			// midnight or the entire requested civil date does not exist.
+			return cursor, nil
+		}
+	}
+	return time.Time{}, Fail(InvalidArgument, "The usage timezone has an unsupported calendar transition.", "Choose another explicit IANA timezone.")
 }
 
 // Empty KnownTotal means no measurement, while "0" is a measured zero. Decimal

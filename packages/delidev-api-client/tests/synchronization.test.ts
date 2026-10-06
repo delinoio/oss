@@ -16,6 +16,44 @@ function event(r: Resource, revision = r.revision, action = EventAction.UPDATED,
 }
 const expired = () => new ConnectError("Cursor expired.", Code.OutOfRange, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "cursor_expired" }) }]);
 
+it("keeps unscoped templates live across unrelated dispatch events and opaque cursor gaps", async () => {
+  const template = { ...resource(), kind: EntityKind.TEMPLATE, sessionId: "" };
+  const controls = new AbortController();
+  const cursors: string[] = [];
+  const reads = vi.fn(() => ({ resource: { ...template, revision: 2n } }));
+  const update = event(template, 2n, EventAction.UPDATED, "after-private-pages");
+  const removal = event(template, 3n, EventAction.DELETED, "later-public-sequence");
+  const snapshots = vi.fn(() => ({ resources: [template], cursor: "snapshot" }));
+  const client = createClient(ResourceService, createRouterTransport((router) => router.service(ResourceService, {
+    getSnapshot: snapshots,
+    getResource: reads,
+    async *watchEvents(request) {
+      cursors.push(request.cursor);
+      if (cursors.length === 1) {
+        for (const kind of [EntityKind.QUEUE, EntityKind.SESSION, EntityKind.JOB]) {
+          yield event({ ...resource(), kind }, 1n, EventAction.UPDATED, `dispatch-${kind}`);
+        }
+        // Private routing rows have no wire events. Their sequences are part
+        // of the server's opaque cursor, not a client continuity requirement.
+        yield update;
+        throw new ConnectError("Disconnected.", Code.Unavailable);
+      }
+      yield removal;
+    },
+  })));
+  const updates: SyncUpdate[] = [];
+  for await (const value of synchronizeResources(client, { kind: EntityKind.TEMPLATE }, { signal: controls.signal, initialRetryMs: 1 })) {
+    updates.push(value);
+    if (value.kind === SyncKind.Remove) controls.abort();
+  }
+  expect(snapshots).toHaveBeenCalledTimes(1);
+  expect(reads).toHaveBeenCalledTimes(1);
+  expect(cursors).toEqual(["snapshot", update.cursor]);
+  expect(updates.filter((value) => value.kind === SyncKind.Upsert)).toEqual([{ kind: SyncKind.Upsert, resource: { ...template, revision: 2n }, eventId: update.id }]);
+  expect(updates.at(-1)).toMatchObject({ kind: SyncKind.Remove, id: template.id });
+  expect(updates.some((value) => value.kind === SyncKind.Connection && value.state === ConnectionState.Failed)).toBe(false);
+});
+
 it.each([Code.Unavailable, Code.DeadlineExceeded, Code.Unknown])("applies indexed revisions once and resumes the committed cursor after %s", async (code) => {
   const first = resource();
   const update = event(first, 2n);

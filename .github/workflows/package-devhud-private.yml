@@ -261,6 +261,7 @@ jobs:
           $source = Get-ChildItem -Recurse "target/release/bundle/${{ matrix.bundle }}" -Filter $extension | Select-Object -First 1
           if (-not $source) { throw "installer missing" }
           signtool.exe verify /pa /all /v $source.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed with exit code $LASTEXITCODE" }
           $installDir = Join-Path $env:RUNNER_TEMP "devhud-installed"
           if ("${{ matrix.bundle }}" -eq "msi") {
             $process = Start-Process msiexec.exe -ArgumentList "/i", $source.FullName, "/qn", "INSTALLDIR=$installDir" -Wait -PassThru

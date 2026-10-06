@@ -13,6 +13,7 @@ func publication(_ id: String, _ name: String, _ raw: String) throws -> Publicat
     let summary = try JSONDecoder().decode(Summary.self, from: Data(raw.utf8))
     return Publication(action: .publish, id: id, name: name, summary: summary)
 }
+func checkEqual<T: Equatable>(_ actual: T, _ expected: T) { assert(actual == expected) }
 func expectFailure(_ body: () throws -> Void) {
     do { try body(); fatalError("Expected fixture rejection") } catch {}
 }
@@ -85,4 +86,35 @@ chmod(file.path, 0o600)
 let oversized = Data(repeating: 65, count: 2 * 1024 * 1024 + 1)
 try oversized.write(to: file)
 expectFailure { _ = try store.read() }
+// Device language is independent of server observation and successful-read time.
+checkEqual(try store.readLanguage(), .system)
+let observationBytes = try Data(contentsOf: file)
+try store.setLanguage(WidgetLanguageDocument(version: 1, language: .korean))
+checkEqual(try store.readLanguage(), .korean)
+checkEqual(try Data(contentsOf: file), observationBytes)
+assert(resolveWidgetLanguage(.system, languages: ["fr-FR", "ko-KR", "en-US"]) == .korean)
+assert(resolveWidgetLanguage(.system, languages: ["en-GB", "ko-KR"]) == .english)
+assert(resolveWidgetLanguage(.system, languages: ["zh-Hant"]) == .english)
+assert(resolveWidgetLanguage(.korean, languages: ["en-US"]) == .korean)
+assert(widgetCopy(.sessions, .korean) == "세션")
+let languageFile = store.directory.appendingPathComponent("language-v1.json")
+let languageBytes = try Data(contentsOf: languageFile)
+assert(!String(decoding: languageBytes, as: UTF8.self).contains("observed"))
+assert(stat(languageFile.path, &info) == 0 && info.st_mode & 0o777 == 0o600)
+for invalid in ["{broken", "{\"version\":2,\"language\":\"ko\"}", "{\"version\":1,\"language\":\"fr\"}", "{\"version\":1,\"language\":\"en\",\"extra\":true}"] {
+    let original = Data(invalid.utf8)
+    try original.write(to: languageFile)
+    chmod(languageFile.path, 0o600)
+    expectFailure { _ = try store.readLanguage() }
+    expectFailure { try store.setLanguage(WidgetLanguageDocument(version: 1, language: .english)) }
+    checkEqual(try Data(contentsOf: languageFile), original)
+}
+try FileManager.default.removeItem(at: languageFile)
+try FileManager.default.createSymbolicLink(at: languageFile, withDestinationURL: root.appendingPathComponent("sentinel-language"))
+expectFailure { _ = try store.readLanguage() }
+expectFailure { try store.setLanguage(WidgetLanguageDocument(version: 1, language: .english)) }
+try FileManager.default.removeItem(at: languageFile)
+try store.setLanguage(WidgetLanguageDocument(version: 1, language: .english))
+checkEqual(try store.readLanguage(), .english)
+checkEqual(try Data(contentsOf: file), observationBytes)
 print("Widget fixture checks passed: exact values, currencies, isolation, stale/closure, masking, corruption and private storage")
