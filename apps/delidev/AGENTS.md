@@ -2,6 +2,8 @@
 
 # DeliDev desktop
 
+- In-app toast presentation follows the desktop contract and scoped source ownership. Mount its provider within the existing connection boundary, preserve Settings disposal and native notification/Inbox authority, and keep layout/component evidence separate from native platform acceptance.
+
 - Execution-device presentation follows issue #1136 and `docs/apps-delidev-desktop-contract.md`: New session's visible and accessible machine-selector label is exactly `Runs on`; its resource noun and other former Execution Worker labels/messages are `Runner Device` / `Runner Devices`. Preserve Agent Worker, generic technical Worker terms, user-assigned names, machine IDs, RPC/storage fields, CLI commands, logs, error codes and the `execution-workers` Settings category value. `ResourceChoice.resourceLabel` defaults to `label` and changes only placeholder/status nouns.
 - New schedule creation presentation is owned by `src/schedule-creation.tsx` and `src/schedule-creation.css` (relative to `apps/delidev`) and follows the issue #1152 section in `docs/apps-delidev-desktop-contract.md`: creation-only Task/Execution/Repeat layout with bounded responsive columns and an unobscured main-content action row, mounted collapsed overrides, native radios, explicit catalog states and once-only name focus. Frequency/time/weekday/disclosure stay in connection memory, emit only canonical existing Cron fields, preserve raw Custom transitions and invalid Time drafts, and never replace server calendar authority. Preserve strict schema-v1 writes, limits, fresh Local proof, exact uncertain retry and all existing edit/list/detail/history/sidebar behavior. Keep native viewport/zoom evidence separate from component checks.
 

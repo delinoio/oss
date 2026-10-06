@@ -36,16 +36,18 @@ import { SettingsLifetime } from "./settings-lifetime";
 import { AppearanceSettings } from "./appearance";
 import { readableServerPreferences, revealServerPreferenceInvalidControl, ServerPreferencesEmpty, ServerPreferencesSummary } from "./server-preferences";
 import { SettingsLoading } from "./settings-presentation";
+import { ToastKind, useNotifications } from "./toast-notifications";
 import "./api-account.css";
 
 export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, active, saved, cancel, focusName = false, nameFocused }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; active: boolean; saved: () => void; cancel: () => void; focusName?: boolean; nameFocused?: () => void }) {
+  const notifications = useNotifications();
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
   const [problem, setProblem] = useState("");
   const form = useRef<HTMLFormElement>(null);
   const current = useQuery(ResourceQuery.getResource, { kind, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
-  const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result) => { if (result.job) setJob(result.job); else if (result.resource) saved(); else setJob("unknown"); });
+  const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result, request) => { if (result.job) setJob(result.job); else if (result.resource) { notifications.notify({ kind: ToastKind.Success, message: `${kindNames[kind]} saved.`, id: request.mutation?.requestId }); saved(); } else setJob("unknown"); });
   const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const blocked = mutation.busy || mutation.uncertain;
   useEffect(() => {
