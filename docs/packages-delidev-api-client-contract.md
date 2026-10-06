@@ -250,3 +250,13 @@ metadata; its original durable job completes registration server-side. Keep proo
 outside read keys, drafts and persistence. Retain identical uncertain mutation
 bytes only in the disposable dialog registry; close/departure drops that registry
 and guards all late callbacks without canceling accepted business work.
+
+## Agent Worker wizard bindings
+
+Generate ConfigurationQuery.saveAgentWorker, typed model-selection oneof and
+System capability 33 from their canonical schemas. Source-scoped account/model
+queries use the closed service enum and server pagination; keys retain each exact
+source/cursor. Keep original uint64 model/Worker revisions and exact uncertain
+wire requests. The canonical model resource remains an internal identity used by
+existing APIs, Usage and historical snapshots. Configured compatibility and
+catalog results grant no execution readiness. Follow the desktop/catalog contracts.

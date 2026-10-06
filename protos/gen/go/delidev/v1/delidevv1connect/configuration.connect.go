@@ -42,6 +42,9 @@ const (
 	// ConfigurationServiceApplyConfigurationImportProcedure is the fully-qualified name of the
 	// ConfigurationService's ApplyConfigurationImport RPC.
 	ConfigurationServiceApplyConfigurationImportProcedure = "/delidev.v1.ConfigurationService/ApplyConfigurationImport"
+	// ConfigurationServiceSaveAgentWorkerProcedure is the fully-qualified name of the
+	// ConfigurationService's SaveAgentWorker RPC.
+	ConfigurationServiceSaveAgentWorkerProcedure = "/delidev.v1.ConfigurationService/SaveAgentWorker"
 	// ConfigurationServiceSaveConfigurationProcedure is the fully-qualified name of the
 	// ConfigurationService's SaveConfiguration RPC.
 	ConfigurationServiceSaveConfigurationProcedure = "/delidev.v1.ConfigurationService/SaveConfiguration"
@@ -58,6 +61,11 @@ type ConfigurationServiceClient interface {
 	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
 	PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error)
 	ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error)
+	// Both save paths use the existing revisioned acknowledgement envelope.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	SaveAgentWorker(context.Context, *connect.Request[v1.SaveAgentWorkerRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
 	DeleteConfiguration(context.Context, *connect.Request[v1.DeleteConfigurationRequest]) (*connect.Response[v1.DeleteConfigurationResponse], error)
 	PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error)
@@ -92,6 +100,12 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(configurationServiceMethods.ByName("ApplyConfigurationImport")),
 			connect.WithClientOptions(opts...),
 		),
+		saveAgentWorker: connect.NewClient[v1.SaveAgentWorkerRequest, v1.SaveConfigurationResponse](
+			httpClient,
+			baseURL+ConfigurationServiceSaveAgentWorkerProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("SaveAgentWorker")),
+			connect.WithClientOptions(opts...),
+		),
 		saveConfiguration: connect.NewClient[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse](
 			httpClient,
 			baseURL+ConfigurationServiceSaveConfigurationProcedure,
@@ -118,6 +132,7 @@ type configurationServiceClient struct {
 	exportConfiguration        *connect.Client[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse]
 	previewConfigurationImport *connect.Client[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse]
 	applyConfigurationImport   *connect.Client[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse]
+	saveAgentWorker            *connect.Client[v1.SaveAgentWorkerRequest, v1.SaveConfigurationResponse]
 	saveConfiguration          *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
 	deleteConfiguration        *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
 	previewRouting             *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
@@ -136,6 +151,11 @@ func (c *configurationServiceClient) PreviewConfigurationImport(ctx context.Cont
 // ApplyConfigurationImport calls delidev.v1.ConfigurationService.ApplyConfigurationImport.
 func (c *configurationServiceClient) ApplyConfigurationImport(ctx context.Context, req *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error) {
 	return c.applyConfigurationImport.CallUnary(ctx, req)
+}
+
+// SaveAgentWorker calls delidev.v1.ConfigurationService.SaveAgentWorker.
+func (c *configurationServiceClient) SaveAgentWorker(ctx context.Context, req *connect.Request[v1.SaveAgentWorkerRequest]) (*connect.Response[v1.SaveConfigurationResponse], error) {
+	return c.saveAgentWorker.CallUnary(ctx, req)
 }
 
 // SaveConfiguration calls delidev.v1.ConfigurationService.SaveConfiguration.
@@ -158,6 +178,11 @@ type ConfigurationServiceHandler interface {
 	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
 	PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error)
 	ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error)
+	// Both save paths use the existing revisioned acknowledgement envelope.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	SaveAgentWorker(context.Context, *connect.Request[v1.SaveAgentWorkerRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
 	DeleteConfiguration(context.Context, *connect.Request[v1.DeleteConfigurationRequest]) (*connect.Response[v1.DeleteConfigurationResponse], error)
 	PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error)
@@ -188,6 +213,12 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 		connect.WithSchema(configurationServiceMethods.ByName("ApplyConfigurationImport")),
 		connect.WithHandlerOptions(opts...),
 	)
+	configurationServiceSaveAgentWorkerHandler := connect.NewUnaryHandler(
+		ConfigurationServiceSaveAgentWorkerProcedure,
+		svc.SaveAgentWorker,
+		connect.WithSchema(configurationServiceMethods.ByName("SaveAgentWorker")),
+		connect.WithHandlerOptions(opts...),
+	)
 	configurationServiceSaveConfigurationHandler := connect.NewUnaryHandler(
 		ConfigurationServiceSaveConfigurationProcedure,
 		svc.SaveConfiguration,
@@ -214,6 +245,8 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 			configurationServicePreviewConfigurationImportHandler.ServeHTTP(w, r)
 		case ConfigurationServiceApplyConfigurationImportProcedure:
 			configurationServiceApplyConfigurationImportHandler.ServeHTTP(w, r)
+		case ConfigurationServiceSaveAgentWorkerProcedure:
+			configurationServiceSaveAgentWorkerHandler.ServeHTTP(w, r)
 		case ConfigurationServiceSaveConfigurationProcedure:
 			configurationServiceSaveConfigurationHandler.ServeHTTP(w, r)
 		case ConfigurationServiceDeleteConfigurationProcedure:
@@ -239,6 +272,10 @@ func (UnimplementedConfigurationServiceHandler) PreviewConfigurationImport(conte
 
 func (UnimplementedConfigurationServiceHandler) ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ApplyConfigurationImport is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) SaveAgentWorker(context.Context, *connect.Request[v1.SaveAgentWorkerRequest]) (*connect.Response[v1.SaveConfigurationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.SaveAgentWorker is not implemented"))
 }
 
 func (UnimplementedConfigurationServiceHandler) SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error) {
