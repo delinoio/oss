@@ -469,6 +469,21 @@ func (d *DockerDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapsh
 		return dockerProblem()
 	}
 	for _, v := range vols.Items {
+		// Volume deletion resolves a name, so discovery labels can belong to
+		// a volume that has since been replaced. Recheck the current volume.
+		// Docker has no immutable volume ID or conditional delete; this does
+		// not prevent a further replacement between inspection and removal.
+		current, err := cli.VolumeInspect(ctx, v.Name, client.VolumeInspectOptions{})
+		if errdefs.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return dockerProblem()
+		}
+		role := current.Volume.Labels[roleKey]
+		if !ownedDocker(current.Volume.Labels, s, r) || current.Volume.Name != v.Name || v.Name != r.Name+"-"+role || (role != "work" && role != "socket" && role != "externals" && role != "docker") {
+			return problem(ErrOwnership, "Docker volume ownership is ambiguous during cleanup.", "Preserve the volume and inspect its execution name and ownership labels before retrying cleanup.")
+		}
 		if _, e = cli.VolumeRemove(ctx, v.Name, client.VolumeRemoveOptions{Force: false}); e != nil && !errdefs.IsNotFound(e) {
 			return dockerProblem()
 		}
