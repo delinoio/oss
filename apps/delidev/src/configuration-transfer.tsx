@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
-import { ConfigurationQuery, EntityKind, ResourceQuery, newRequestId } from "@delinoio/delidev-api-client";
+import { ConfigurationQuery, EntityKind, ResourceQuery, SystemQuery, SystemCapability, newRequestId } from "@delinoio/delidev-api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { document, items, object, text, type Document } from "./documents";
 import { ResourceChoice, TextField } from "./configuration-fields";
@@ -107,6 +107,8 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const exportText = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
   const opening = useSettingsOpening();
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && loaded?.bundle.entries.some(entry => entry.kind === "repository") === true, retry: false });
+  const remoteUnsupported = loaded?.bundle.entries.some(entry => entry.kind === "repository") === true && !status.data?.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1);
   const exportRead = useMutation(ConfigurationQuery.exportConfiguration, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   const previewRead = useMutation(ConfigurationQuery.previewConfigurationImport, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; }; }, []);
@@ -143,7 +145,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     finally { exportRead.reset(); gate.current = false; }
   };
   const inspect = async () => {
-    if (gate.current || blocked || !loaded || !active) return;
+    if (gate.current || blocked || !loaded || !active || remoteUnsupported) return;
     gate.current = true; setProblem(""); setPreview(undefined);
     const original = generation.current;
     try {
@@ -198,6 +200,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
       <p className="transfer-load-guidance">You will map resources and review changes before applying.</p>
     </section>
     {loading || exportRead.isPending || previewRead.isPending || mutation.busy ? <p role="status">{loading ? "Reading configuration file…" : exportRead.isPending ? "Exporting configuration…" : previewRead.isPending ? "Loading configuration change preview…" : "Sending configuration import request…"}</p> : null}
+    {remoteUnsupported ? <p role="status">Update the selected server before importing repositories.</p> : null}
     {loaded ? <fieldset className="transfer-panel transfer-mapping" disabled={blocked}>
       <legend>Map imported configuration</legend>
       <p>New entries keep their original contents and relationships. Reuse requires identical values after mapping. Only server preferences can replace an existing entry, and replacement requires its current revision.</p>
@@ -213,9 +216,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
           }) : null}
         </section>;
       })}
-      <button disabled={!active} onClick={() => void inspect()}>Preview configuration changes</button>
+      <button disabled={!active || remoteUnsupported} onClick={() => void inspect()}>Preview configuration changes</button>
     </fieldset> : null}
-    {preview ? <section className="transfer-panel" aria-label="Configuration change preview"><h3>Review changes before applying</h3><p>New repository paths must pass validation on every selected Worker before any settings are applied. Conflicts preserve existing configuration. Review full access permissions, provider endpoints and instruction contents below.</p>{preview.machines.map((machine) => <p key={text(machine.id)}>Target Worker: {text(machine.name)} · {text(machine.os)} / {text(machine.architecture)} · {text(machine.id)}</p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || "Server preferences"} · {text(change.kind)}</h4><p>Target: {text(change.id)}</p><p>{change.before ? "Current and imported values are both included in the complete change details." : "New values are included in the complete change details."}</p></article>)}<label>Complete change details<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active} onClick={() => { if (!blocked) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>Apply reviewed configuration</button></section> : null}
+    {preview ? <section className="transfer-panel" aria-label="Configuration change preview"><h3>Review changes before applying</h3><p>New repository paths must pass validation on every selected Worker before any settings are applied. Conflicts preserve existing configuration. Review full access permissions, provider endpoints and instruction contents below.</p>{preview.machines.map((machine) => <p key={text(machine.id)}>Target Worker: {text(machine.name)} · {text(machine.os)} / {text(machine.architecture)} · {text(machine.id)}</p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || "Server preferences"} · {text(change.kind)}</h4><p>Target: {text(change.id)}</p><p>{change.before ? "Current and imported values are both included in the complete change details." : "New values are included in the complete change details."}</p></article>)}<label>Complete change details<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active || remoteUnsupported} onClick={() => { if (!blocked && !remoteUnsupported) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>Apply reviewed configuration</button></section> : null}
     {mutation.uncertain ? <section className="transfer-panel" aria-label="Uncertain configuration import"><button disabled={mutation.busy || !active} onClick={mutation.retry}>Retry the same configuration import</button></section> : null}
     {report ? <section className="transfer-panel" aria-label="Configuration import result"><p role="status">{state === JobState.Succeeded ? "Configuration import completed. Connect each imported account before execution." : state === JobState.Failed || state === JobState.Canceled ? "Configuration import failed. Existing configuration was preserved." : state === JobState.Queued || state === JobState.Claimed ? "Import accepted. Waiting for confirmation of every repository validation." : "The import outcome is unavailable. Inspect the original operation before trying another import."}</p>{jobId ? <><small>{jobId}</small><button disabled={job.isFetching || !active} onClick={() => void job.refetch()}>Refresh configuration import</button></> : null}{text(importProblem.message) ? <p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setReport(undefined); invalidate(); }}>Return to retained import document</button> : null}</section> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />

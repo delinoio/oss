@@ -93,7 +93,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 	// A persisted pre-start beat is no longer current availability. Exercise
 	// the authenticated attach boundary after this server process is ready.
 	workers := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, endpoint.URL)
-	attach := connect.NewRequest(&pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version})
+	attach := connect.NewRequest(&pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})
 	attach.Header().Set("Authorization", "Bearer "+token)
 	if _, err := workers.AttachWorker(ctx, attach); err != nil {
 		t.Fatal(err)

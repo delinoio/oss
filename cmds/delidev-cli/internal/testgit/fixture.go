@@ -14,6 +14,11 @@ import (
 )
 
 func Executable(t testing.TB, sources map[string]string) string {
+	binary, _ := Setup(t, sources)
+	return binary
+}
+
+func Setup(t testing.TB, sources map[string]string) (string, func(string, string)) {
 	t.Helper()
 	realGit, err := exec.LookPath("git")
 	if err != nil {
@@ -69,5 +74,15 @@ func main(){
 	if out, err := exec.Command("go", "build", "-o", binary, input).CombinedOutput(); err != nil {
 		t.Fatalf("Git fixture build: %v %s", err, out)
 	}
-	return binary
+	return binary, func(url, path string) {
+		t.Helper()
+		sources[url] = path
+		raw, err := json.Marshal(sources)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(mapping, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
