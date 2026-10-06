@@ -46,3 +46,18 @@ func TestRepositoryRejectsInvalidGitRemoteNames(t *testing.T) {
 		})
 	}
 }
+
+func TestRepositoryRejectsGitHubMetadataFromAnotherRemote(t *testing.T) {
+	for _, repository := range []Repository{
+		{Name: "remote", RemoteURL: "https://github.com/source/repo.git", GitHubOwner: "other", GitHubName: "repo"},
+		{Name: "remote", RemoteURL: "https://github.com/source/repo.git", GitHubOwner: "source", GitHubName: "other"},
+		{Name: "remote", RemoteURL: "https://git.example.com/source/repo.git", GitHubOwner: "source", GitHubName: "repo"},
+	} {
+		if err := repository.Validate(); err == nil || SafeError(err).Code != InvalidArgument {
+			t.Fatalf("foreign GitHub metadata was accepted: %+v, %v", repository, err)
+		}
+	}
+	if err := (Repository{Name: "remote", RemoteURL: "https://github.com/SOURCE/Repo.git", GitHubOwner: "source", GitHubName: "repo"}).Validate(); err != nil {
+		t.Fatalf("GitHub metadata comparison should be case-insensitive: %v", err)
+	}
+}

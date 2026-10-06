@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -66,7 +67,14 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 		}
 		for _, checkout := range repository.Checkouts {
 			identity := ""
-			if repository.RemoteURL != "" {
+			_, machine, machineErr := activeMachine(tx, checkout.MachineID)
+			if machineErr != nil {
+				return nil, machineErr
+			}
+			// The identity field was added after the original inspection input.
+			// Keep it omitted for older Workers so their strict decoder retains the
+			// legacy inspection path; newer Workers enforce the source binding.
+			if repository.RemoteURL != "" && slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
 				identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
 				if err != nil {
 					return nil, err

@@ -67,7 +67,15 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 	}
 	if strings.Contains(value, "://") {
 		u, err := url.Parse(value)
-		if err != nil || u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Host, ":") || !cloneHost(u.Hostname()) || (u.Scheme != "https" && u.Scheme != "ssh") {
+		// url.Parse exposes an escaped slash as a path separator in Path. Reject
+		// it instead of allowing distinct server-side namespaces to collapse into
+		// one opaque identity; the same rule also keeps encoded backslashes out of
+		// the path before the decoded-path validation below.
+		if err != nil {
+			return result, cloneInvalidURL()
+		}
+		escapedPath := strings.ToLower(u.EscapedPath())
+		if u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" || strings.Contains(escapedPath, "%2f") || strings.Contains(escapedPath, "%5c") || strings.HasSuffix(u.Host, ":") || !cloneHost(u.Hostname()) || (u.Scheme != "https" && u.Scheme != "ssh") {
 			return result, cloneInvalidURL()
 		}
 		if u.Port() != "" {

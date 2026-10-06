@@ -183,8 +183,17 @@ func (r Repository) Validate() error {
 		return Fail(InvalidArgument, "A repository requires an execution-machine checkout.", "Inspect a checkout on its Worker first.")
 	}
 	if r.RemoteURL != "" {
-		if _, err := ParseRepositoryCloneURL(r.RemoteURL); err != nil {
+		parsed, err := ParseRepositoryCloneURL(r.RemoteURL)
+		if err != nil {
 			return err
+		}
+		if r.GitHubOwner != "" || r.GitHubName != "" {
+			if err := ValidateGitHubRepository(r.GitHubOwner, r.GitHubName); err != nil {
+				return err
+			}
+			if parsed.GitHubOwner == "" || !strings.EqualFold(parsed.GitHubOwner, r.GitHubOwner) || !strings.EqualFold(parsed.GitHubName, r.GitHubName) {
+				return Fail(InvalidArgument, "GitHub repository metadata does not match the remote URL.", "Use the owner and repository name from the configured GitHub URL.")
+			}
 		}
 	}
 	ids := make([]ID, 0, len(r.Checkouts))

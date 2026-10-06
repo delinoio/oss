@@ -540,6 +540,18 @@ it("keeps repository saving blocked and offers a retry when the capability check
   expect(value.save).not.toHaveBeenCalled();
 });
 
+it("keeps legacy checkout repository editing available without remote capability", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Legacy repository", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  const value = fixture([repository], { systemCapabilities: [] });
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed legacy repository" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
+  expect(saved).toEqual({ name: "Renamed legacy repository", checkouts: [{ machine_id: expect.any(String), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  expect(saved).not.toHaveProperty("remote_url");
+});
+
 it("retries an original checkout inspection and uses only its owning Worker's canonical root", async () => {
   const machine = resource(EntityKind.MACHINE, { name: "Owned Worker" });
   const job = resource(EntityKind.JOB, { type: "inspect-repository", state: "succeeded", machine_id: machine.id, output: { root: "/canonical/checkout", remotes: ["origin"], default_refs: { origin: "main" } } });

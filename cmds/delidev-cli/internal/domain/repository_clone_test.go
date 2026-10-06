@@ -10,7 +10,7 @@ func TestRepositoryCloneURLs(t *testing.T) {
 			t.Errorf("accepted URL: %q, %+v, %v", value, got, err)
 		}
 	}
-	for _, value := range []string{"", " /tmp/repo", "/tmp/repo", "../repo", "C:/repo", "file:///tmp/repo", "http://host/repo", "git://host/repo", "ext::helper", "https://token@host/repo", "https://user:password@host/repo", "ssh://user:password@host/repo", "https://host/repo?token=secret", "https://host/repo#token", "ssh://-option@host/repo", "-option@host:repo", "https://host/repo%00", "https://host/repo%0a", "https://host/repo\n", "https://host/../repo", "https://host/%2e%2e/repo", "https://host/repo%5cother", "https://host:0/repo", "https://host:65536/repo", "ssh://host", "host:", "git@host:repo:another"} {
+	for _, value := range []string{"", " /tmp/repo", "/tmp/repo", "../repo", "C:/repo", "file:///tmp/repo", "http://host/repo", "git://host/repo", "ext::helper", "https://token@host/repo", "https://user:password@host/repo", "ssh://user:password@host/repo", "https://host/repo?token=secret", "https://host/repo#token", "ssh://-option@host/repo", "-option@host:repo", "https://host/repo%00", "https://host/repo%0a", "https://host/repo\n", "https://host/../repo", "https://host/%2e%2e/repo", "https://host/team%2Frepo", "https://host/team%2frepo", "https://host/repo%5cother", "https://host:0/repo", "https://host:65536/repo", "ssh://host", "host:", "git@host:repo:another"} {
 		if _, err := ParseRepositoryCloneURL(value); err == nil {
 			t.Errorf("accepted unsafe URL: %q", value)
 		}
