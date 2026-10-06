@@ -1,4 +1,4 @@
-import { ownedMessage, LocalizedText, copy, useLocale } from "./localization";
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { type MessageShape } from "@bufbuild/protobuf";
@@ -26,7 +26,7 @@ function fixAcknowledgement({ repositoryId, remoteRepositoryId, pullRequestId, n
 
 export function PRFixAction({ row, set, value, selection, disabled, refreshed }: { row: Resource; set: Resource; value: Document; selection: PRProblemSelection; disabled: boolean; refreshed: () => void }) {
  useLocale();
- const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useState("");
+ const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useProductMessage("");
  const fix = useRetainedMutation(`pr-fix:${selection.remoteRepositoryId}:${selection.pullRequestId}`, PullRequestFixQuery.requestPullRequestFix, (response) => {
   setNotice(ownedMessage("pr-fix.sentence.613a13e6da0e", { v0: response.session!.id })); setOpen(false); refreshed();
  });
