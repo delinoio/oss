@@ -8,8 +8,31 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
+
+// Independent forks of new remote or Local sources need their own Git store.
+// Sidechat only references the parent and never acquires clone authority.
+func ForkRequiresManagedClone(input domain.ForkJobInput) (bool, error) {
+	if input.Workspace != domain.Worktree || input.Purpose == domain.SidechatFork {
+		return false, nil
+	}
+	var source Manifest
+	if err := domain.Decode(input.SourceAssignment.Manifest, &source); err != nil {
+		return false, err
+	}
+	for _, repository := range source.Repositories {
+		switch repository.SourceKind {
+		case RemoteCloneSource, IndependentForkSource, LocalCheckoutSource:
+			return true, nil
+		case CheckoutSource:
+		default:
+			return false, ResultUncertain()
+		}
+	}
+	return false, nil
+}
 
 // The two clone flows share transport, credentials and deadline policy. Their
 // publication and lifetime authority stays separate: a managed clone never

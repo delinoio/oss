@@ -178,6 +178,19 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		if err := validateForkSharing(input); err != nil {
 			return nil, err
 		}
+		clones, err := workspace.ForkRequiresManagedClone(input)
+		if err != nil {
+			return nil, err
+		}
+		if clones {
+			_, machine, err := activeMachine(tx, session.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
+				return nil, domain.Fail(domain.Unsupported, "The selected Runner Device cannot clone an independent Fork.", "Update and reconnect the original Worker before creating the Fork.")
+			}
+		}
 		if origin != nil && purpose != domain.SidechatFork {
 			current, err := tx.Authenticate(originDigest[:])
 			if err != nil {
@@ -274,6 +287,19 @@ func (s *Service) GetSessionFork(ctx context.Context, req *connect.Request[pb.Ge
 }
 
 func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
+	clones, err := workspace.ForkRequiresManagedClone(input)
+	if err != nil {
+		return err
+	}
+	if clones {
+		_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
+			return domain.Fail(domain.Unsupported, "The original Runner Device cannot clone an independent Fork.", "Update and reconnect that Worker before creating a Fork.")
+		}
+	}
 	if err := input.Validate(); err != nil {
 		return err
 	}
@@ -417,10 +443,20 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 		if spec.ID != repo.ID || spec.Checkout != repo.Path || spec.AutoFetch || spec.PRTarget != nil || spec.PreferredRemote != "" || spec.Base.Type != domain.CommitReference || spec.Base.Name != manifest.Repositories[i].BaseCommit {
 			return forkConflict()
 		}
-		if input.Workspace == domain.Worktree && (spec.ForkRegistrationSource != repo.Source || spec.Starting != spec.Base || manifest.Repositories[i].StartingCommit != spec.Base.Name) {
-			return forkConflict()
+		if input.Workspace == domain.Worktree {
+			independent := repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource || repo.SourceKind == workspace.LocalCheckoutSource
+			if independent {
+				if spec.SourceKind != workspace.IndependentForkSource || spec.RemoteURL != repo.RemoteURL || spec.ForkRegistrationSource != "" {
+					return forkConflict()
+				}
+			} else if spec.SourceKind != workspace.CheckoutSource || spec.RemoteURL != "" || spec.ForkRegistrationSource != repo.Source {
+				return forkConflict()
+			}
+			if spec.Starting != spec.Base || manifest.Repositories[i].StartingCommit != spec.Base.Name {
+				return forkConflict()
+			}
 		}
-		if input.Workspace == domain.Local && (spec.ForkRegistrationSource != "" || spec.Starting != (domain.Reference{}) || preparation.OriginMachineID != input.SourceAssignment.MachineID) {
+		if input.Workspace == domain.Local && (spec.SourceKind != repo.SourceKind || spec.RemoteURL != repo.RemoteURL || spec.ForkRegistrationSource != "" || spec.Starting != (domain.Reference{}) || preparation.OriginMachineID != input.SourceAssignment.MachineID) {
 			return forkConflict()
 		}
 		if repo.Path == source.PrimaryPath && preparation.PrimaryRepository != repo.ID {

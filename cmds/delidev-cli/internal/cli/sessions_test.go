@@ -197,7 +197,11 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		commits = append(commits, commit)
 		url := "https://github.com/fixture/repo-" + strconv.Itoa(i) + ".git"
 		registerGit(url, checkout)
-		saved := run([]string{"repository", "create", "--wait"}, domain.Repository{RemoteURL: url, Name: "fixture-" + strconv.Itoa(i), Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
+		checkouts := []domain.Checkout{}
+		if i == 1 {
+			checkouts = append(checkouts, domain.Checkout{MachineID: domain.ID(machine), Path: checkout})
+		}
+		saved := run([]string{"repository", "create", "--wait"}, domain.Repository{RemoteURL: url, Name: "fixture-" + strconv.Itoa(i), Checkouts: checkouts, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
 		repositories = append(repositories, domain.ID(saved["id"].(string)))
 	}
 	project := run([]string{"project", "create"}, domain.Project{Name: "all repositories", Repositories: repositories, PrimaryRepository: repositories[1]})["resource"].(map[string]any)

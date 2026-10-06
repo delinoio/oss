@@ -127,3 +127,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Subscription server_operation is optional server-owned closed metadata. A machine-less pending claim is valid only for its exact server operation/actor; native_started requires no Worker lease and the original generation. Active/recovery ownership retains pending authority. Terminal metadata grants no credential use. Keep APIs, immutable historical service attribution and real migrations unchanged.
 
 - Codex diagnostics are optional bounded existing-document metadata with closed phases/codes and locally reconstructed safe text. Validate actual version attribution and original operation correlation; no diagnostic grants native/account authority or requires a SQLite migration.
+
+- Repository remote_url is required on explicit save/import and accepts credential-free HTTPS, SSH or SCP syntax. Empty checkouts are valid. Keep historical omitted URLs readable without migration, extraction or rewriting; pinned preparation source kinds remain closed enums.

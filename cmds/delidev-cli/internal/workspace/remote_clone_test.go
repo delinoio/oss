@@ -2,17 +2,84 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
+
+func TestManagedCloneFailedAuthenticationAndCanceledProcessCleanup(t *testing.T) {
+	for _, cancelProcess := range []bool{false, true} {
+		t.Run(map[bool]string{false: "authentication", true: "canceled process"}[cancelProcess], func(t *testing.T) {
+			m, input, _ := managedCloneFixture(t)
+			started := filepath.Join(t.TempDir(), "started")
+			body := "#!/bin/sh\nprintf 'fatal: Authentication failed for private-native-content\\n' >&2\nexit 128\n"
+			if cancelProcess {
+				body = "#!/bin/sh\nprintf started > '" + strings.ReplaceAll(started, "'", "'\"'\"'") + "'\nexec sleep 20\n"
+			}
+			if err := os.WriteFile(m.Git.Executable, []byte(body), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var logs bytes.Buffer
+			m.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			completed := make(chan error, 1)
+			go func() { _, err := m.Prepare(ctx, input); completed <- err }()
+			if cancelProcess {
+				deadline := time.Now().Add(30 * time.Second)
+				for {
+					if _, err := os.Stat(started); err == nil {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatal("owned clone process did not start")
+					}
+					time.Sleep(25 * time.Millisecond)
+				}
+				cancel()
+			}
+			err := <-completed
+			problem := domain.SafeError(err)
+			if cancelProcess && problem.Cause != "clone_timeout" || !cancelProcess && problem.Cause != "clone_authentication" || strings.Contains(logs.String(), "private-native-content") || strings.Contains(problem.Error(), "private-native-content") {
+				t.Fatal("clone failure lost its bounded classification", problem)
+			}
+			if _, err := os.Stat(filepath.Join(m.Root, "workspaces", string(input.SessionID))); !os.IsNotExist(err) {
+				t.Fatal("confirmed process failure retained owned files", err)
+			}
+		})
+	}
+}
+
+func TestManagedCloneAdditionalFetchFailureNeverUsesCloneReferences(t *testing.T) {
+	m, input, _ := managedCloneFixture(t)
+	body, err := os.ReadFile(m.Git.Executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep successful full clone and inspection, but fail the additional fetch
+	// with a native diagnostic. Existing clone refs cannot replace that failure.
+	body = bytes.Replace(body, []byte("case \" $* \" in\n"), []byte("case \" $* \" in\n*' fetch '*) exit 128 ;;\n"), 1)
+	if err := os.WriteFile(m.Git.Executable, body, 0700); err != nil {
+		t.Fatal(err)
+	}
+	input.Repositories[0].AutoFetch = true
+	if _, err := m.Prepare(context.Background(), input); err == nil {
+		t.Fatal("failed fetch silently used retained clone refs")
+	}
+	if _, err := os.Stat(filepath.Join(m.Root, "workspaces", string(input.SessionID))); !os.IsNotExist(err) {
+		t.Fatal("failed preparation retained clone", err)
+	}
+}
 
 // The injected executable maps a validated HTTPS address to an isolated Git
 // fixture. Production transport validation stays intact; this proves ownership
@@ -215,5 +282,36 @@ func TestManagedCloneSidechatAndPermanentDeletion(t *testing.T) {
 	}
 	if _, err := os.Stat(parent.PrimaryPath); !os.IsNotExist(err) {
 		t.Fatal("clone not deleted", err)
+	}
+}
+
+func TestManagedCloneForkFromLocalPreservesOriginalFolder(t *testing.T) {
+	m := manager(t)
+	path := repository(t)
+	input, _ := requestFor(path)
+	input.Type, input.OriginMachineID = domain.Local, input.MachineID
+	input.Repositories[0].SourceKind, input.Repositories[0].RemoteURL = LocalCheckoutSource, "https://github.com/fixture/repo.git"
+	input.Repositories[0].Starting = domain.Reference{}
+	parent, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fork, err := m.ForkPreparation(context.Background(), parent, domain.NewID(), domain.Worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := m.Prepare(context.Background(), fork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.Repositories[0].SourceKind != IndependentForkSource || gitTest(t, child.PrimaryPath, "rev-parse", "--git-common-dir") != ".git" {
+		t.Fatal("Fork retained original Local Git store")
+	}
+	child.State = CleanupPending
+	if err := m.cleanup(context.Background(), filepath.Dir(child.PrimaryPath), child); err != nil {
+		t.Fatal(err)
+	}
+	if gitTest(t, path, "rev-parse", "HEAD") != parent.Repositories[0].StartingCommit {
+		t.Fatal("child deletion changed original Local folder")
 	}
 }

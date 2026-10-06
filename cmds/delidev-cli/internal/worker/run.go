@@ -1016,6 +1016,17 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		}
 		return json.Marshal(result)
 	case domain.ForkSessionJob:
+		var input domain.ForkJobInput
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		clones, err := workspace.ForkRequiresManagedClone(input)
+		if err != nil {
+			return nil, err
+		}
+		if clones && !config.remoteWorkspaceClone {
+			return nil, domain.Fail(domain.Unsupported, "Independent Fork cloning was not negotiated.", "Update and reconnect the original Worker.")
+		}
 		return forkSession(ctx, config, owner, job)
 	case domain.ExecuteSessionJob:
 		return executeSession(ctx, config, owner, job)
