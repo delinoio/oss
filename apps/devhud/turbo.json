@@ -44,7 +44,7 @@
     "test:native:shortcuts": {
       "cache": false,
       "dependsOn": [
-        "ci:build:frontend"
+        "test:native:capture"
       ],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -55,7 +55,7 @@
     "test:native:ipc": {
       "cache": false,
       "dependsOn": [
-        "ci:build:frontend"
+        "test:native:shortcuts"
       ],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -66,7 +66,7 @@
     "test:native:updater": {
       "cache": false,
       "dependsOn": [
-        "ci:build:frontend"
+        "test:native:ipc"
       ],
       "passThroughEnv": [
         "CARGO_HOME",

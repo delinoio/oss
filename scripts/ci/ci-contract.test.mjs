@@ -58,12 +58,37 @@ test("cache setup receives workflow variables through composite inputs and retai
   assert.equal(auth.with.policy, "${{ inputs.policy }}");
   assert.equal(auth["continue-on-error"], true);
   assert.ok(auth.if.includes("inputs.team != ''"));
+  assert.ok(auth.if.includes("github.repository == 'delinoio/oss'"));
+  assert.ok(auth.if.includes("github.workflow == 'CI'"));
+  assert.ok(auth.if.includes("startsWith(github.workflow_ref, 'delinoio/oss/.github/workflows/CI.yml@')"));
   assert.ok(auth.if.includes("github.event.pull_request.head.repo.full_name == github.repository"));
   for (const [id, job] of Object.entries(workflow.jobs)) {
     for (const setup of job.steps.filter(({ uses }) => uses === "./.github/actions/setup-turbo-cache")) {
       assert.deepEqual(setup.with, { team: "${{ vars.TURBO_TEAM }}", policy: "${{ vars.TURBO_OIDC_POLICY }}" }, id);
       assert.equal(job.permissions["id-token"], "write", id);
     }
+    // Local manifests must exist before the runner attempts to load them.
+    const checkout = job.steps.findIndex(({ uses }) => uses?.startsWith("actions/checkout@"));
+    for (const [index, candidate] of job.steps.entries()) {
+      if (candidate.uses?.startsWith("./.github/actions/")) assert.ok(checkout >= 0 && checkout < index, `${id}: ${candidate.uses} precedes checkout`);
+    }
+  }
+});
+
+test("native CI prepares tool state before Turbo and serializes shared Rust suites", () => {
+  const job = workflow.jobs["devhud-rust-conformance"];
+  const preparation = job.steps.findIndex(({ uses }) => uses === "dtolnay/rust-toolchain@v1");
+  const validation = job.steps.findIndex(({ run }) => run?.includes("test:native:capture"));
+  assert.ok(preparation >= 0 && preparation < validation);
+  assert.equal(job.steps[preparation].with.toolchain, readFileSync(`${root}/rust-toolchain`, "utf8").trim());
+  const config = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
+  const sequence = ["ci:build:frontend", "test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"];
+  for (let i = 1; i < sequence.length; i++) assert.deepEqual(config.tasks[sequence[i]].dependsOn, [sequence[i - 1]]);
+  const go = readFileSync(`${root}/.github/actions/setup-ci-go/action.yml`, "utf8");
+  for (const variable of ["GOCACHE", "GOPATH"]) assert.ok(go.includes(`echo "${variable}=$(go env ${variable})" >> "$GITHUB_ENV"`));
+  const goTasks = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8"));
+  for (const name of ["ci:go:vet", "ci:go:test"]) {
+    for (const variable of ["GOCACHE", "GOPATH"]) assert.ok(goTasks.tasks[name].passThroughEnv.includes(variable), `${name}: ${variable}`);
   }
 });
 

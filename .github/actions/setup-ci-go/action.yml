@@ -32,6 +32,10 @@ runs:
           go env GOMODCACHE GOCACHE
           echo 'CI_GO_CACHE_PATHS'
         } >> "$GITHUB_OUTPUT"
+        # Turbo's strict task environment excludes Windows LocalAppData. Export
+        # the prepared cache locations explicitly instead of passing user state.
+        echo "GOCACHE=$(go env GOCACHE)" >> "$GITHUB_ENV"
+        echo "GOPATH=$(go env GOPATH)" >> "$GITHUB_ENV"
     - uses: actions/cache/restore@v5
       id: restore
       with:

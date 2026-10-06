@@ -7,3 +7,5 @@
 - Keep JS hashes independent of native tool availability. Hash installed Go/Rust/Buf versions only in their owning cached tasks; metadata queries must not install compilers.
 - Vercel OIDC tokens are short-lived and cache-only. Main writes, first-party PR/manual non-main reads, forks skip auth; failures fall back locally and must not suppress validation failures. Keep development's exact environment boundary unchanged.
 - Test cold/warm restoration, invalidation and uncached failure propagation in disposable fixtures. Record hosted main-write/PR-hit and comparable timing in PRs or CI artifacts, not repository evidence files.
+
+- CI task setup must resolve Go cache paths before strict environment filtering and install the pinned Rust toolchain before shared-target native validation. Retain the ordered DevHud capture, shortcut, IPC and updater dependency chain.

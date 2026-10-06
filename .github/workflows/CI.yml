@@ -706,17 +706,17 @@ jobs:
       pull-requests: read
       id-token: write
     steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: ci-node
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
         with:
           team: ${{ vars.TURBO_TEAM }}
           policy: ${{ vars.TURBO_OIDC_POLICY }}
 
-      - uses: actions/checkout@v6
-        with:
-          lfs: true
-      - uses: ./.github/actions/setup-ci-node
-        id: ci-node
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
@@ -1024,6 +1024,11 @@ jobs:
         with:
           team: ${{ vars.TURBO_TEAM }}
           policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install pinned Rust toolchain before native tasks
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
 
       - name: Install Linux native prerequisites
         run: |
@@ -2190,18 +2195,18 @@ jobs:
       pull-requests: read
       id-token: write
     steps:
-      - name: Setup Turbo remote cache
-        uses: ./.github/actions/setup-turbo-cache
-        with:
-          team: ${{ vars.TURBO_TEAM }}
-          policy: ${{ vars.TURBO_OIDC_POLICY }}
-
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
         id: ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
@@ -2260,18 +2265,18 @@ jobs:
       pull-requests: read
       id-token: write
     steps:
-      - name: Setup Turbo remote cache
-        uses: ./.github/actions/setup-turbo-cache
-        with:
-          team: ${{ vars.TURBO_TEAM }}
-          policy: ${{ vars.TURBO_OIDC_POLICY }}
-
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
         id: ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify source version, package metadata, and fail-closed publication
         run: node scripts/ci/run-affected.mjs @delino/pnport test ci:release ci:package

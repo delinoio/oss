@@ -14,7 +14,7 @@ runs:
   steps:
     - name: Authenticate first-party CI cache
       id: auth
-      if: ${{ inputs.team != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      if: ${{ inputs.team != '' && github.repository == 'delinoio/oss' && github.workflow == 'CI' && startsWith(github.workflow_ref, 'delinoio/oss/.github/workflows/CI.yml@') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
       continue-on-error: true
       uses: vercel/setup-turborepo-remote-cache-action@49d7b1b46ba4c9251e1977986bfe18336feabc8f # v1.1.0
       with:
@@ -24,7 +24,10 @@ runs:
       shell: bash
       env:
         AUTHENTICATED: ${{ steps.auth.outcome == 'success' }}
+        CACHE_WORKFLOW: ${{ github.workflow }}
+        CACHE_WORKFLOW_REF: ${{ github.workflow_ref }}
       run: |
+        node -e 'console.log(JSON.stringify({event: "ci_cache_auth", authenticated: process.env.AUTHENTICATED === "true", workflow: process.env.CACHE_WORKFLOW, workflowRef: process.env.CACHE_WORKFLOW_REF}))'
         echo "TURBO_REMOTE_CACHE_AUTH=$AUTHENTICATED" >> "$GITHUB_ENV"
         if [ "$AUTHENTICATED" = true ]; then
           echo 'Turbo remote cache authenticated; task runner enforces main write / PR read policy.' >> "$GITHUB_STEP_SUMMARY"
