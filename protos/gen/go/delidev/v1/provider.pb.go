@@ -717,7 +717,8 @@ type SearchModelsRequest struct {
 	PageSize      uint32                 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	// Filters before SQL pagination; false preserves the historical broad search.
-	EnabledProvidersOnly bool `protobuf:"varint,6,opt,name=enabled_providers_only,json=enabledProvidersOnly,proto3" json:"enabled_providers_only,omitempty"`
+	EnabledProvidersOnly bool                        `protobuf:"varint,6,opt,name=enabled_providers_only,json=enabledProvidersOnly,proto3" json:"enabled_providers_only,omitempty"`
+	SubscriptionService  SubscriptionServiceIdentity `protobuf:"varint,7,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -792,6 +793,13 @@ func (x *SearchModelsRequest) GetEnabledProvidersOnly() bool {
 		return x.EnabledProvidersOnly
 	}
 	return false
+}
+
+func (x *SearchModelsRequest) GetSubscriptionService() SubscriptionServiceIdentity {
+	if x != nil {
+		return x.SubscriptionService
+	}
+	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
 }
 
 type SearchModelsResponse struct {
@@ -987,7 +995,7 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
 	"\breplayed\x18\x03 \x01(\bR\breplayed\x12)\n" +
-	"\x10observation_json\x18\x04 \x01(\fR\x0fobservationJson\"\xe5\x01\n" +
+	"\x10observation_json\x18\x04 \x01(\fR\x0fobservationJson\"\xc1\x02\n" +
 	"\x13SearchModelsRequest\x12\x14\n" +
 	"\x05query\x18\x01 \x01(\tR\x05query\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
@@ -996,7 +1004,8 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\tpage_size\x18\x04 \x01(\rR\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x05 \x01(\tR\tpageToken\x124\n" +
-	"\x16enabled_providers_only\x18\x06 \x01(\bR\x14enabledProvidersOnly\"\xa0\x01\n" +
+	"\x16enabled_providers_only\x18\x06 \x01(\bR\x14enabledProvidersOnly\x12Z\n" +
+	"\x14subscription_service\x18\a \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\xa0\x01\n" +
 	"\x14SearchModelsResponse\x12,\n" +
 	"\x06models\x18\x01 \x03(\v2\x14.delidev.v1.ResourceR\x06models\x122\n" +
 	"\tproviders\x18\x02 \x03(\v2\x14.delidev.v1.ResourceR\tproviders\x12&\n" +
@@ -1096,6 +1105,7 @@ var file_delidev_v1_provider_proto_goTypes = []any{
 	(*ResolveModelResponse)(nil),          // 13: delidev.v1.ResolveModelResponse
 	(*Resource)(nil),                      // 14: delidev.v1.Resource
 	(*Mutation)(nil),                      // 15: delidev.v1.Mutation
+	(SubscriptionServiceIdentity)(0),      // 16: delidev.v1.SubscriptionServiceIdentity
 }
 var file_delidev_v1_provider_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.ProviderInventoryEntry.preset_id:type_name -> delidev.v1.ProviderPresetId
@@ -1105,24 +1115,25 @@ var file_delidev_v1_provider_proto_depIdxs = []int32{
 	1,  // 4: delidev.v1.ListProviderInventoryResponse.capabilities:type_name -> delidev.v1.ProviderInventoryCapability
 	15, // 5: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
 	14, // 6: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
-	14, // 7: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
-	14, // 8: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
-	14, // 9: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
-	6,  // 10: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
-	3,  // 11: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
-	8,  // 12: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
-	10, // 13: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
-	12, // 14: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
-	7,  // 15: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
-	5,  // 16: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
-	9,  // 17: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
-	11, // 18: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
-	13, // 19: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
-	15, // [15:20] is the sub-list for method output_type
-	10, // [10:15] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	16, // 7: delidev.v1.SearchModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	14, // 8: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
+	14, // 9: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
+	14, // 10: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
+	6,  // 11: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
+	3,  // 12: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
+	8,  // 13: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
+	10, // 14: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
+	12, // 15: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
+	7,  // 16: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
+	5,  // 17: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
+	9,  // 18: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
+	11, // 19: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
+	13, // 20: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
+	16, // [16:21] is the sub-list for method output_type
+	11, // [11:16] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_provider_proto_init() }

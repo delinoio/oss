@@ -9,9 +9,31 @@ service ConfigurationService {
   rpc ExportConfiguration(ExportConfigurationRequest) returns (ExportConfigurationResponse);
   rpc PreviewConfigurationImport(PreviewConfigurationImportRequest) returns (PreviewConfigurationImportResponse);
   rpc ApplyConfigurationImport(ApplyConfigurationImportRequest) returns (ApplyConfigurationImportResponse);
+  // Both save paths use the existing revisioned acknowledgement envelope.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc SaveAgentWorker(SaveAgentWorkerRequest) returns (SaveConfigurationResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
   rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
   rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
+}
+
+// Saves a Worker and resolves its source-scoped model atomically.
+message SaveAgentWorkerRequest {
+  Mutation mutation = 1;
+  bytes document_json = 2;
+  AgentWorkerModelSelection model = 3;
+  uint32 schema_version = 4;
+}
+
+message AgentWorkerModelSelection {
+  oneof selection {
+    string model_id = 1;
+    string native_id = 2;
+  }
+  // Required for a canonical model selection; zero for direct native IDs.
+  uint64 expected_model_revision = 3;
 }
 
 message SaveConfigurationRequest {

@@ -15,7 +15,7 @@ const playwright = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
 const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
-const categories = ["AI Subscription", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [960,640], [640,480]];
 let checked = 0, formsChecked = 0;
 try {
@@ -43,6 +43,15 @@ try {
     await page.waitForFunction(() => ![...document.querySelectorAll(".settings-content [role=status]")].some(node => node.getClientRects().length && /^(Loading |Reading server diagnostics)/.test(node.textContent ?? "")));
     if (category === "Notifications") await page.getByRole("button", { name: "Edit notification preferences", exact: true }).waitFor();
   };
+  const checkWizard = async () => {
+    const form = page.locator(".worker-wizard");
+    assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), "Wizard form cap");
+    assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Wizard content overflow");
+    const next = form.getByRole("button", { name: /^(Next|Save Agent Worker)$/ });
+    await next.scrollIntoViewIfNeeded();
+    const footer = await next.boundingBox();
+    assert(footer && footer.y >= 0 && footer.y + footer.height <= page.viewportSize().height + 0.5, "Wizard footer remains visible in document flow");
+  };
   for (const theme of ["light", "dark", "system"]) for (const populated of [false, true]) for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport[0], height: viewport[1] });
     await page.emulateMedia({ colorScheme: theme === "system" ? "dark" : theme });
@@ -67,8 +76,35 @@ try {
       assert(layout.width <= 1040.5 && !layout.overflow && layout.controls && layout.multiline && layout.empty && layout.forms, context);
       checked++;
     }
+    if (populated) {
+      await select("Agent Workers");
+      await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
+      await checkWizard();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
+      await page.getByRole("checkbox", { name: /^Personal API/ }).check();
+      await page.getByRole("checkbox", { name: /^Team API/ }).check();
+      await checkWizard();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      const input = page.getByRole("combobox", { name: "Model", exact: true });
+      await input.fill("example-model");
+      await page.getByRole("option", { name: /^Fixture model/ }).waitFor();
+      await input.press("ArrowDown"); await input.press("Enter");
+      await checkWizard();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      const heading = page.getByRole("heading", { name: "Configure", exact: true });
+      assert(await heading.evaluate(node => node === document.activeElement), "Wizard step heading receives focus");
+      await checkWizard();
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      assert.equal((await input.inputValue()).startsWith("example-model-native-"), true, "Model selection survives Back");
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      assert(await page.getByRole("checkbox", { name: /^Personal API/ }).isChecked());
+      assert(await page.getByRole("checkbox", { name: /^Team API/ }).isChecked());
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      formsChecked += 4;
+    }
     if (!populated) {
-      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", "New Server preferences"], ["Git", "New Git workflow"], ["Models", "New Model"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
+      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", "New Server preferences"], ["Git", "New Git workflow"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
         await select(category); await page.getByRole("button", { name: action, exact: true }).click();
         if (category === "Repositories") {
           // Registration first inspects a folder before exposing saved fields.
@@ -87,9 +123,13 @@ try {
         assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
         assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
         assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
-        if (category === "Agent Workers") assert(await form.evaluate(node => node.getBoundingClientRect().width >= 640 || getComputedStyle(node.querySelector(".agent-core-columns")).gridTemplateColumns.split(" ").length === 1), "Narrow Agent fields stack");
+        if (category === "Agent Workers") {
+          assert.equal(await form.locator(".worker-steps li").count(), 4);
+          assert.equal(await form.getByRole("heading", { name: "Harness", exact: true }).count(), 1);
+          assert.equal(await form.getByRole("button", { name: "Save Agent Worker", exact: true }).count(), 0);
+        }
         formsChecked++;
-        await page.getByRole("button", { name: category === "AI API Keys" ? "Back to AI API Keys" : category === "Notifications" ? "Cancel notification edit" : "Cancel edit", exact: true }).click();
+        await page.getByRole("button", { name: category === "AI API Keys" ? "Back to AI API Keys" : category === "Notifications" ? "Cancel notification edit" : category === "Agent Workers" ? "Cancel" : "Cancel edit", exact: true }).click();
         if (category === "AI API Keys" && await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).isVisible()) await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).click();
       }
     }
