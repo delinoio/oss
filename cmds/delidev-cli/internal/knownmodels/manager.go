@@ -55,7 +55,13 @@ func New(root string, transport http.RoundTripper, logger *slog.Logger) *Manager
 		var cached diskCache
 		if strictJSON(raw, &cached) == nil && !cached.FetchedAt.IsZero() && !cached.FetchedAt.After(manager.now()) {
 			catalog, err := Decode(cached.Catalog)
-			if err == nil && catalog.UpdatedAt >= manager.catalog.UpdatedAt {
+			// A date-only catalog timestamp cannot order two different reviewed
+			// revisions published on the same day. Keep an exact-version cache, but
+			// prefer the bundled catalog for an equal-date mismatch and refresh it
+			// immediately instead of extending an ambiguous cache deadline.
+			cacheMatchesBundle := catalog.UpdatedAt > manager.catalog.UpdatedAt ||
+				catalog.UpdatedAt == manager.catalog.UpdatedAt && catalog.CatalogVersion == manager.catalog.CatalogVersion
+			if err == nil && cacheMatchesBundle {
 				manager.catalog, manager.source, manager.fetchedAt = catalog, Cache, cached.FetchedAt
 				return manager
 			}

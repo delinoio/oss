@@ -64,6 +64,7 @@ func TestBundledOnlineCacheAndRestart(t *testing.T) {
 	raw := changedFixture(t, func(v map[string]any) {
 		model := v["services"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
 		model["native_id"] = "gpt-fixture-reviewed"
+		v["updated_at"] = "2026-10-07"
 	})
 	manager := New(root, fixtureTransport(raw), quiet())
 	initial := manager.List("chatgpt")
@@ -97,6 +98,42 @@ func TestBundledOnlineCacheAndRestart(t *testing.T) {
 		}
 	}
 }
+
+func TestSameDateDifferentVersionCacheFallsBackToBundled(t *testing.T) {
+	root := privateRoot(t)
+	raw := changedFixture(t, func(v map[string]any) {
+		model := v["services"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
+		model["native_id"] = "gpt-same-day-fixture"
+	})
+	manager := New(root, fixtureTransport(raw), quiet())
+	if err := manager.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if manager.List("chatgpt").Source != Online {
+		t.Fatal("fixture catalog was not published")
+	}
+
+	restarted := New(root, nil, quiet())
+	bundled := BundledCatalog()
+	if snapshot := restarted.List("chatgpt"); snapshot.Source != Bundled || snapshot.Version != bundled.CatalogVersion || !restarted.fetchedAt.IsZero() {
+		t.Fatalf("ambiguous cache was restored: snapshot=%+v fetched_at=%v", snapshot, restarted.fetchedAt)
+	}
+}
+
+func TestExactVersionCacheRetainsRefreshDeadline(t *testing.T) {
+	root := privateRoot(t)
+	manager := New(root, fixtureTransport(fixtureRaw(t)), quiet())
+	if err := manager.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fetchedAt := manager.fetchedAt
+
+	restarted := New(root, nil, quiet())
+	if snapshot := restarted.List("chatgpt"); snapshot.Source != Cache || snapshot.Version != BundledCatalog().CatalogVersion || !restarted.fetchedAt.Equal(fetchedAt) {
+		t.Fatalf("exact-version cache deadline was not retained: snapshot=%+v fetched_at=%v want=%v", snapshot, restarted.fetchedAt, fetchedAt)
+	}
+}
+
 func TestInvalidRefreshRetainsLastCatalog(t *testing.T) {
 	raw := fixtureRaw(t)
 	cases := map[string][]byte{"bad_json": []byte("{"), "schema": bytes.Replace(raw, []byte(`"schema_version": 1`), []byte(`"schema_version": 2`), 1), "unknown": bytes.Replace(raw, []byte(`"schema_version": 1`), []byte(`"unknown": 1, "schema_version": 1`), 1), "duplicate": bytes.Replace(raw, []byte(`"schema_version": 1`), []byte(`"schema_version": 1, "schema_version": 1`), 1), "too_large": bytes.Repeat([]byte(" "), MaxBytes+1), "empty": []byte(`{}`), "digest": bytes.Replace(raw, []byte("gpt-6.1-sol"), []byte("gpt-changed"), 1)}

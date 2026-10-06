@@ -36,9 +36,12 @@ credentials are denied. The read neither downloads data nor reads account secret
 starts native tools or creates saved models. Initial reads use the embedded or
 valid private cached catalog. Successful server downloads refresh after 24 hours;
 failures retain the last valid catalog and retry after one hour. Restart retains
-the last successful download deadline. Each request has a 15-second deadline and
-1 MiB body limit. Redirects, ambient proxies and route fallback are forbidden;
-server shutdown cancels and joins the request and maintenance owner.
+the last successful download deadline when the cached reviewed date is newer than
+the bundled date or when both the date and semantic catalog version exactly
+match. An equal-date version mismatch is ambiguous, so the server uses the
+bundled catalog and refreshes immediately. Each request has a 15-second deadline
+and 1 MiB body limit. Redirects, ambient proxies and route fallback are
+forbidden; server shutdown cancels and joins the request and maintenance owner.
 
 Known metadata is separate from native discovery, credential/account entitlement,
 readiness and canonical saved-model authority. Known selections use the existing
