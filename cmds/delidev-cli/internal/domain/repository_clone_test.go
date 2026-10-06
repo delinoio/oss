@@ -54,6 +54,38 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 			t.Fatalf("source identity collision: %q, %q, %v", value, got, err)
 		}
 	}
+	for _, values := range [][2]string{
+		{"alice@git.example.com:team/repo.git", "bob@git.example.com:team/repo.git"},
+		{"git.example.com:team/repo.git", "git.example.com:/team/repo.git"},
+		{"https://git.example.com/team/repo.git", "ssh://git@git.example.com/team/repo.git"},
+	} {
+		left, err := RepositoryCloneSourceIdentity(values[0])
+		if err != nil {
+			t.Fatal(values[0], err)
+		}
+		right, err := RepositoryCloneSourceIdentity(values[1])
+		if err != nil {
+			t.Fatal(values[1], err)
+		}
+		if left == right {
+			t.Fatalf("security-significant source identity collision: %q and %q", values[0], values[1])
+		}
+	}
+	for _, values := range [][2]string{
+		{"ssh://git@git.example.com/team/repo.git", "git@git.example.com:/team/repo.git"},
+	} {
+		left, err := RepositoryCloneSourceIdentity(values[0])
+		if err != nil {
+			t.Fatal(values[0], err)
+		}
+		right, err := RepositoryCloneSourceIdentity(values[1])
+		if err != nil {
+			t.Fatal(values[1], err)
+		}
+		if left != right {
+			t.Fatalf("equivalent SSH source identity changed: %q and %q", values[0], values[1])
+		}
+	}
 	for _, value := range []string{"", "0", "not-a-digest", "000000000000000000000000000000000000000000000000000000000000000g"} {
 		if ValidRepositoryCloneSourceIdentity(value) {
 			t.Fatalf("accepted invalid source identity: %q", value)

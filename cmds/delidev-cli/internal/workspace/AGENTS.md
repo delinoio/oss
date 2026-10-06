@@ -81,9 +81,15 @@ Compact settled removal proof to one original inventory path per entry, without 
 - Managed Worktree clones use the restricted clone Git profile for remote URL
   changes, inspection, PR preparation and automatic fetches. Add every configured
   preferred/base/starting remote name against the one pinned repository URL and
-  mirror initial tracking refs without stale fallback. Never widen the ambient
-  transport policy for an alias or later fetch.
+  mirror initial tracking refs without stale fallback. Validate Git's effective
+  source URL before networking, isolate `insteadOf` rules, and retain only the
+  configured credential-helper and SSH settings in the restricted environment.
+  One ten-minute context covers the complete clone, validation, resolution and
+  checkout flow; never widen the ambient transport policy for an alias or later
+  fetch.
 - Local repository saves bind each configured checkout to the server's opaque
   source identity. The Worker computes that identity from the selected effective
-  remote without returning the raw URL; a mismatch fails the save before the
-  checkout can become Local execution authority.
+  remote without returning the raw URL; GitHub transport forms normalize only
+  within their established namespace, while generic SSH user/path namespaces
+  remain distinct. A mismatch fails the save before the checkout can become
+  Local execution authority.

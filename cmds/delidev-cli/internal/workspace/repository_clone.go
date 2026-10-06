@@ -172,8 +172,9 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 		g.Logger.InfoContext(ctx, "repository_clone", "job_id", request.JobID, "phase", cloneCreated)
 	}
 	// Empty hooks/templates and explicit transport policy prevent repository hook
-	// or external helper execution. Submodules and optional LFS smudging stay off.
-	g = g.cloneProfile()
+	// or external Git transport-helper execution. Native credential helpers stay
+	// available through the sanitized clone profile. Submodules and optional LFS
+	// smudging stay off.
 	template := filepath.Join(staging, "template")
 	if err := os.Mkdir(template, 0700); err != nil {
 		return result, domain.SafeError(err)
@@ -196,6 +197,14 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	}
 	if identity, err := directoryPathIdentity(staging); err != nil || identity != stagingIdentity {
 		return result, cloneRecoveryRequired()
+	}
+	if err := g.validateManagedCloneSource(bounded, staging, request.URL); err != nil {
+		return result, err
+	}
+	var profileErr error
+	g, profileErr = g.cloneProfile(bounded, staging)
+	if profileErr != nil {
+		return result, profileErr
 	}
 	args := cloneArguments(request.URL, checkout, template, "origin", false, false)
 	if _, err := g.run(bounded, staging, args...); err != nil {

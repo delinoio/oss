@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -38,13 +40,88 @@ func ForkRequiresManagedClone(input domain.ForkJobInput) (bool, error) {
 // The two clone flows share transport, credentials and deadline policy. Their
 // publication and lifetime authority stays separate: a managed clone never
 // transfers files to the user and a published Local clone never belongs here.
-func (g Git) cloneProfile() Git {
+const managedCloneCredentialConfigPattern = `^(credential(\..*)?|core\.sshcommand|ssh\..*)$`
+
+func (g Git) cloneCredentialConfiguration(ctx context.Context, root string) ([][2]string, error) {
+	raw, exit, err := g.runCommand(ctx, root, "config", "--null", "--get-regexp", managedCloneCredentialConfigPattern)
+	if err != nil {
+		// git-config returns 1 when no key matches. An empty retained config is
+		// valid; every other status is an execution failure.
+		if exit == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	entries := make([][2]string, 0, 8)
+	for _, record := range strings.Split(string(raw), "\x00") {
+		if record == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(record, "\n")
+		if !ok || key == "" || len(key) > 4096 || len(value) > 16384 {
+			return nil, ResultUncertain()
+		}
+		entries = append(entries, [2]string{key, value})
+		if len(entries) > 256 {
+			return nil, ResultUncertain()
+		}
+	}
+	return entries, nil
+}
+
+func (g Git) cloneProfile(ctx context.Context, root string) (Git, error) {
+	credentials, err := g.cloneCredentialConfiguration(ctx, root)
+	if err != nil {
+		return Git{}, err
+	}
 	g.cloneDiagnostics = true
 	g.restrictedTransport = true
 	g.Timeout = RepositoryCloneTimeout
-	g.environment = append(gitEnvironment(), "GIT_LFS_SKIP_SMUDGE=1")
+	environment := slices.DeleteFunc(gitEnvironment(), func(value string) bool {
+		key, _, _ := strings.Cut(value, "=")
+		return strings.EqualFold(key, "GIT_CONFIG_GLOBAL") || strings.EqualFold(key, "GIT_CONFIG_SYSTEM") || strings.EqualFold(key, "GIT_CONFIG_NOSYSTEM") || strings.EqualFold(key, "GIT_CONFIG_COUNT") || strings.HasPrefix(strings.ToUpper(key), "GIT_CONFIG_KEY_") || strings.HasPrefix(strings.ToUpper(key), "GIT_CONFIG_VALUE_")
+	})
+	// URL insteadOf rules are deliberately excluded. The source URL is checked
+	// before this profile is created, and the isolated config prevents a later
+	// fetch from silently changing the pinned target. Credential helpers and SSH
+	// settings are copied back through Git's config environment so native
+	// credentials remain available without restoring rewrite authority.
+	environment = append(environment, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_LFS_SKIP_SMUDGE=1", "GIT_CONFIG_COUNT="+strconv.Itoa(len(credentials)))
+	for index, entry := range credentials {
+		environment = append(environment, "GIT_CONFIG_KEY_"+strconv.Itoa(index)+"="+entry[0], "GIT_CONFIG_VALUE_"+strconv.Itoa(index)+"="+entry[1])
+	}
+	g.environment = environment
 	g.HooksDir = os.DevNull
-	return g
+	if g.Logger != nil {
+		g.Logger.DebugContext(ctx, "workspace_clone_config_sanitized", "credential_entries", len(credentials), "url_rewrites", "excluded")
+	}
+	return g, nil
+}
+
+func (g Git) validateManagedCloneSource(ctx context.Context, root, source string) error {
+	expected, err := domain.RepositoryCloneSourceIdentity(source)
+	if err != nil {
+		return err
+	}
+	// Keep the same redacted timeout/authentication classification if a native
+	// Git wrapper fails during the no-network URL probe. The probe itself still
+	// uses no restricted clone profile and therefore observes the configured
+	// effective URL before the first network-capable command.
+	probe := g
+	probe.cloneDiagnostics = true
+	raw, err := probe.run(ctx, root, "ls-remote", "--get-url", "--", source)
+	if err != nil {
+		return err
+	}
+	effective := strings.TrimSpace(string(raw))
+	if effective == "" || strings.ContainsAny(effective, "\r\n") {
+		return ResultUncertain()
+	}
+	actual, err := domain.RepositoryCloneSourceIdentity(effective)
+	if err != nil || actual != expected {
+		return domain.Fail(domain.InvalidArgument, "The Worker Git configuration rewrites the repository source.", "Remove the conflicting Git URL rewrite and retry the repository operation.")
+	}
+	return nil
 }
 func cloneArguments(source, destination, template, remote string, noCheckout, independentFork bool) []string {
 	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false"}
@@ -245,10 +322,22 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if spec.SourceKind == IndependentForkSource {
 		source = spec.Checkout
 	}
-	clone := git.cloneProfile()
+	// One deadline covers source validation, cloning, remote/ref preparation,
+	// optional PR fetches, resolution and final checkout. Individual Git
+	// commands keep their shorter launch timeout, but cannot extend this
+	// repository-level budget by starting a fresh ten-minute window.
 	bounded, cancel := context.WithTimeout(ctx, RepositoryCloneTimeout)
+	defer cancel()
+	if spec.SourceKind == RemoteCloneSource {
+		if err := git.validateManagedCloneSource(bounded, root, source); err != nil {
+			return *entry, nil, err
+		}
+	}
+	clone, err := git.cloneProfile(bounded, root)
+	if err != nil {
+		return *entry, nil, err
+	}
 	_, err = clone.run(bounded, root, cloneArguments(source, prepared.Path, filepath.Join(m.Root, "empty-hooks"), remote, true, spec.SourceKind == IndependentForkSource)...)
-	cancel()
 	if err != nil {
 		return *entry, nil, err
 	}
@@ -260,22 +349,22 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 		return *entry, nil, ResultUncertain()
 	}
 	if spec.SourceKind == IndependentForkSource {
-		if _, err := clone.run(ctx, prepared.Path, "remote", "set-url", remote, spec.RemoteURL); err != nil {
+		if _, err := clone.run(bounded, prepared.Path, "remote", "set-url", remote, spec.RemoteURL); err != nil {
 			return *entry, nil, err
 		}
 	}
-	if err := provisionManagedCloneRemotes(ctx, clone, prepared.Path, spec.RemoteURL, spec, remote); err != nil {
+	if err := provisionManagedCloneRemotes(bounded, clone, prepared.Path, spec.RemoteURL, spec, remote); err != nil {
 		return *entry, nil, err
 	}
-	if err := materializeManagedCloneBranches(ctx, clone, prepared.Path, spec, remote); err != nil {
+	if err := materializeManagedCloneBranches(bounded, clone, prepared.Path, spec, remote); err != nil {
 		return *entry, nil, err
 	}
-	inspection, err := clone.Inspect(ctx, prepared.Path)
+	inspection, err := clone.Inspect(bounded, prepared.Path)
 	if err != nil {
 		return *entry, nil, err
 	}
 	if spec.PRTarget != nil {
-		if err := clone.preparePRObjects(ctx, inspection, spec); err != nil {
+		if err := clone.preparePRObjects(bounded, inspection, spec); err != nil {
 			return *entry, nil, err
 		}
 	}
@@ -285,7 +374,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 			return *entry, nil, err
 		}
 	}
-	entry.StartingCommit, err = clone.Resolve(ctx, inspection, entry.Starting, spec.AutoFetch)
+	entry.StartingCommit, err = clone.Resolve(bounded, inspection, entry.Starting, spec.AutoFetch)
 	if err != nil {
 		return *entry, nil, err
 	}
@@ -294,7 +383,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	}
 	entry.BaseCommit = entry.StartingCommit
 	if entry.Base != entry.Starting {
-		entry.BaseCommit, err = clone.Resolve(ctx, inspection, entry.Base, spec.AutoFetch)
+		entry.BaseCommit, err = clone.Resolve(bounded, inspection, entry.Base, spec.AutoFetch)
 		if err != nil {
 			return *entry, nil, err
 		}
@@ -303,15 +392,15 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 		return *entry, nil, ResultUncertain()
 	}
 	if spec.SourceKind == IndependentForkSource {
-		if _, err := git.run(ctx, prepared.Path, "update-ref", "--no-deref", "HEAD", entry.StartingCommit); err != nil {
+		if _, err := clone.run(bounded, prepared.Path, "update-ref", "--no-deref", "HEAD", entry.StartingCommit); err != nil {
 			return *entry, nil, err
 		}
-	} else if _, err := clone.run(ctx, prepared.Path, "checkout", "--detach", "--no-recurse-submodules", entry.StartingCommit); err != nil {
+	} else if _, err := clone.run(bounded, prepared.Path, "checkout", "--detach", "--no-recurse-submodules", entry.StartingCommit); err != nil {
 		return *entry, nil, err
 	}
 	var copy *forkCopy
 	if spec.SourceKind == IndependentForkSource {
-		copied, err := copyForkRepository(ctx, git, spec.Checkout, prepared.Path, entry.StartingCommit)
+		copied, err := copyForkRepository(bounded, clone, spec.Checkout, prepared.Path, entry.StartingCommit)
 		if err != nil {
 			return *entry, nil, err
 		}

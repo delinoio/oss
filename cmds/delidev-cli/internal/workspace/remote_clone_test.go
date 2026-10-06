@@ -60,6 +60,48 @@ func TestManagedCloneFailedAuthenticationAndCanceledProcessCleanup(t *testing.T)
 	}
 }
 
+func TestManagedCloneRejectsEffectiveURLRewrite(t *testing.T) {
+	m, input, marker := managedCloneFixture(t)
+	config := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(config, []byte("[url \"https://other.invalid/\"]\n\tinsteadOf = https://github.com/fixture/\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", config)
+	if _, err := m.Prepare(context.Background(), input); domain.SafeError(err).Code != domain.InvalidArgument {
+		t.Fatal("rewritten clone source was accepted", err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("network-capable clone started before rewrite validation")
+	}
+}
+
+func TestManagedCloneProfileRetainsCredentialsWithoutURLRewrites(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(config, []byte("[url \"https://other.invalid/\"]\n\tinsteadOf = https://github.com/fixture/\n[credential]\n\thelper = fixture-helper\n[core]\n\tsshCommand = ssh -o IdentitiesOnly=yes\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", config)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	g := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID()}
+	profile, err := g.cloneProfile(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, err := profile.run(context.Background(), root, "config", "--get-all", "credential.helper")
+	if err != nil || strings.TrimSpace(string(helper)) != "fixture-helper" {
+		t.Fatalf("credential helper was not retained: %q, %v", helper, err)
+	}
+	sshCommand, err := profile.run(context.Background(), root, "config", "--get", "core.sshCommand")
+	if err != nil || strings.TrimSpace(string(sshCommand)) != "ssh -o IdentitiesOnly=yes" {
+		t.Fatalf("SSH configuration was not retained: %q, %v", sshCommand, err)
+	}
+	effective, err := profile.run(context.Background(), root, "ls-remote", "--get-url", "--", "https://github.com/fixture/repo.git")
+	if err != nil || strings.TrimSpace(string(effective)) != "https://github.com/fixture/repo.git" {
+		t.Fatalf("URL rewrite was not isolated: %q, %v", effective, err)
+	}
+}
+
 func TestManagedCloneAdditionalFetchFailureNeverUsesCloneReferences(t *testing.T) {
 	m, input, _ := managedCloneFixture(t)
 	body, err := os.ReadFile(m.Git.Executable)
