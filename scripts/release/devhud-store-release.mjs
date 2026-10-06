@@ -60,7 +60,13 @@ export function classifyApple(state) {
 
 export function classifyGoogle(state) {
   if (state === "RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED") return StoreStatus.ApprovedHeld;
-  if (state === "RELEASE_LIFECYCLE_STATE_PUBLISHED") return StoreStatus.Public;
+  if (state === "RELEASE_LIFECYCLE_STATE_PUBLISHED") {
+    // ReleaseSummary also labels partial and resumable halted rollouts as
+    // PUBLISHED, without a rollout fraction or completion state. Status and
+    // withdrawal must stop until independent authoritative full-rollout
+    // evidence is available; a completed submission request cannot prove it.
+    throw new Error("Google Play published release summary cannot verify a full rollout; release advancement and automatic cleanup are blocked");
+  }
   if (state === "RELEASE_LIFECYCLE_STATE_NOT_APPROVED") return StoreStatus.Rejected;
   if (["RELEASE_LIFECYCLE_STATE_DRAFT", "RELEASE_LIFECYCLE_STATE_NOT_SENT_FOR_REVIEW"].includes(state)) return StoreStatus.Withdrawn;
   return StoreStatus.Pending;

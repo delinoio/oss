@@ -51,8 +51,11 @@ test("store states distinguish unsubmitted, pending, approved-held, public, and 
   assert.equal(classifyApple("DEVELOPER_REJECTED"), StoreStatus.Withdrawn);
   assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_IN_REVIEW"), StoreStatus.Pending);
   assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED"), StoreStatus.ApprovedHeld);
-  assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_PUBLISHED"), StoreStatus.Public);
+  assert.throws(() => classifyGoogle("RELEASE_LIFECYCLE_STATE_PUBLISHED"), {
+    message: "Google Play published release summary cannot verify a full rollout; release advancement and automatic cleanup are blocked",
+  });
   assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_NOT_APPROVED"), StoreStatus.Rejected);
+  assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_DRAFT"), StoreStatus.Withdrawn);
   assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_NOT_SENT_FOR_REVIEW"), StoreStatus.Withdrawn);
 });
 
@@ -244,10 +247,69 @@ test("Google status uses the direct release lifecycle endpoint and current respo
   assert.equal(requests.at(-1).options.method, undefined);
 });
 
+test("Google published summaries block status and withdrawal for complete, partial, and resumable halted rollouts", async () => {
+  // These rollout conditions have the same documented summary schema. The name
+  // labels each fixture; it provides no authoritative rollout evidence.
+  for (const condition of ["complete", "partial", "resumable halted"]) {
+    for (const command of ["status", "withdraw"]) {
+      const requests = [];
+      const fetchImpl = async (input, options = {}) => {
+        const url = String(input);
+        requests.push({ url, method: options.method ?? "GET" });
+        if (url === "https://oauth2.example.test/token") return jsonResponse({ access_token: "private-fixture-token" });
+        return jsonResponse({ releases: [{
+          releaseName: `private-fixture-${condition}`,
+          track: "production",
+          releaseLifecycleState: "RELEASE_LIFECYCLE_STATE_PUBLISHED",
+          activeArtifacts: [{ versionCode: 1 }],
+        }] });
+      };
+      await assert.rejects(run(command, StoreProvider.GooglePlay, {}, environment(), fetchImpl), {
+        message: "Google Play published release summary cannot verify a full rollout; release advancement and automatic cleanup are blocked",
+      });
+      assert.deepEqual(requests, [
+        { url: "https://oauth2.example.test/token", method: "POST" },
+        { url: "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/io.delino.devhud/tracks/production/releases", method: "GET" },
+      ]);
+    }
+  }
+});
+
+test("Google non-published lifecycle states keep their status and withdrawal behavior", async () => {
+  for (const [state, expected] of [
+    ["RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED", StoreStatus.ApprovedHeld],
+    ["RELEASE_LIFECYCLE_STATE_IN_REVIEW", StoreStatus.Pending],
+    ["RELEASE_LIFECYCLE_STATE_UNSPECIFIED", StoreStatus.Pending],
+    ["RELEASE_LIFECYCLE_STATE_NOT_APPROVED", StoreStatus.Rejected],
+    ["RELEASE_LIFECYCLE_STATE_DRAFT", StoreStatus.Withdrawn],
+    ["RELEASE_LIFECYCLE_STATE_NOT_SENT_FOR_REVIEW", StoreStatus.Withdrawn],
+  ]) {
+    const requests = [];
+    const fetchImpl = async (input, options = {}) => {
+      const url = String(input);
+      requests.push({ url, method: options.method ?? "GET" });
+      if (url === "https://oauth2.example.test/token") return jsonResponse({ access_token: "google-token" });
+      return jsonResponse({ releases: [
+        { releaseLifecycleState: "RELEASE_LIFECYCLE_STATE_PUBLISHED", activeArtifacts: [{ versionCode: 2 }] },
+        { releaseLifecycleState: state, activeArtifacts: [{ versionCode: 1 }] },
+      ] });
+    };
+    assert.equal((await run("status", StoreProvider.GooglePlay, {}, environment(), fetchImpl)).status, expected);
+    if ([StoreStatus.Rejected, StoreStatus.Withdrawn].includes(expected)) {
+      assert.equal((await run("withdraw", StoreProvider.GooglePlay, {}, environment(), fetchImpl)).status, StoreStatus.Withdrawn);
+    } else {
+      await assert.rejects(run("withdraw", StoreProvider.GooglePlay, {}, environment(), fetchImpl), /protected operator gate/u);
+    }
+    assert.ok(requests.every(({ url, method }) => method === "GET" || url === "https://oauth2.example.test/token"));
+  }
+});
+
 test("Google operations reject a credential outside the protected production-release prerequisite", async () => {
   const env = { ...environment(), DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: "reader@example.test" };
   let requests = 0;
-  await assert.rejects(run("status", StoreProvider.GooglePlay, {}, env, async () => { requests += 1; return jsonResponse({}); }), /production-release authority prerequisite/u);
+  for (const command of ["status", "withdraw"]) {
+    await assert.rejects(run(command, StoreProvider.GooglePlay, {}, env, async () => { requests += 1; return jsonResponse({}); }), /production-release authority prerequisite/u);
+  }
   assert.equal(requests, 0);
 });
 
