@@ -264,7 +264,7 @@ it("retains the Device approval code when native browser opening fails", async (
  fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
  expect((await screen.findByRole("alert")).textContent).toContain("browser could not be opened");
  expect(screen.getByText("ABCD-EFGH")).toBeTruthy();
- expect(f.complete).not.toHaveBeenCalled();
+  expect(f.complete).not.toHaveBeenCalled();
 });
 it("retains an admitted attempt for cancellation when its new-provider flow is unsupported", async () => {
  const f=fixture({huggingFace:true,wrongFlow:true});
