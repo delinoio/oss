@@ -3,6 +3,32 @@
     "//"
   ],
   "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/scripts/install/nodeup.sh",
+        "$TURBO_ROOT$/scripts/install/nodeup.ps1",
+        "$TURBO_ROOT$/scripts/install/binpm.sh",
+        "$TURBO_ROOT$/scripts/install/binpm.ps1",
+        "$TURBO_ROOT$/scripts/install/async-commit-hook.sh",
+        "$TURBO_ROOT$/scripts/install/async-commit-hook.ps1",
+        "$TURBO_ROOT$/scripts/install/pnport.sh",
+        "$TURBO_ROOT$/scripts/install/pnport.ps1"
+      ]
+    },
+    "build:frontend": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/scripts/install/nodeup.sh",
+        "$TURBO_ROOT$/scripts/install/nodeup.ps1",
+        "$TURBO_ROOT$/scripts/install/binpm.sh",
+        "$TURBO_ROOT$/scripts/install/binpm.ps1",
+        "$TURBO_ROOT$/scripts/install/async-commit-hook.sh",
+        "$TURBO_ROOT$/scripts/install/async-commit-hook.ps1",
+        "$TURBO_ROOT$/scripts/install/pnport.sh",
+        "$TURBO_ROOT$/scripts/install/pnport.ps1"
+      ]
+    },
     "ci:routes": {
       "cache": true,
       "dependsOn": [
@@ -17,7 +43,15 @@
         "$TURBO_ROOT$/rust-toolchain",
         "$TURBO_ROOT$/go.mod",
         "$TURBO_ROOT$/go.sum",
-        "$TURBO_ROOT$/docs/apps-*-docs-foundation.md"
+        "$TURBO_ROOT$/docs/apps-*-docs-foundation.md",
+        "$TURBO_ROOT$/scripts/install/nodeup.sh",
+        "$TURBO_ROOT$/scripts/install/nodeup.ps1",
+        "$TURBO_ROOT$/scripts/install/binpm.sh",
+        "$TURBO_ROOT$/scripts/install/binpm.ps1",
+        "$TURBO_ROOT$/scripts/install/async-commit-hook.sh",
+        "$TURBO_ROOT$/scripts/install/async-commit-hook.ps1",
+        "$TURBO_ROOT$/scripts/install/pnport.sh",
+        "$TURBO_ROOT$/scripts/install/pnport.ps1"
       ],
       "outputs": [],
       "env": [

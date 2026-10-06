@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
 const exact = (v: Document, keys: string[]) => Object.keys(v).length === keys.length && keys.every((key) => Object.hasOwn(v, key));
@@ -31,20 +32,22 @@ export function validClaudeCompactionSummary(value: unknown): boolean {
 }
 
 export function NativeClaudeCompactionBoundary({ value }: { value: unknown }) {
+  useLocale();
   const v = object(value);
   return <>
-    <dl><dt>Compaction trigger</dt><dd>{v.trigger === "auto" ? "Automatic" : "Manual"}</dd><dt>Tokens before compaction</dt><dd>{v.pre_tokens as string}</dd>
-      <dt>Tokens after compaction</dt><dd>{v.post_tokens as string ?? "Not reported"}</dd><dt>Duration (milliseconds)</dt><dd>{v.duration_ms as string ?? "Not reported"}</dd><dt>Cumulative dropped tokens</dt><dd>{v.cumulative_dropped_tokens as string ?? "Not reported"}</dd></dl>
-    <details><summary>Original context references</summary><pre>{JSON.stringify({ logical_parent_uuid: v.logical_parent_uuid, preserved_segment: v.preserved_segment, preserved_messages: v.preserved_messages }, null, 2)}</pre></details>
-    <p>Context counts are separate from provider usage and billed cost. This boundary does not delete the retained conversation or confirm input completion.</p>
+    <dl><dt>{copy("native-claude-compaction.compactionTrigger_aedcf8")}</dt><dd>{v.trigger === "auto" ? copy("native-claude-compaction.automatic_d461a4") : copy("native-claude-compaction.manual_b0b9fe")}</dd><dt>{copy("native-claude-compaction.tokensBeforeCompaction_602d37")}</dt><dd>{v.pre_tokens as string}</dd>
+      <dt>{copy("native-claude-compaction.tokensAfterCompaction_047fdc")}</dt><dd>{v.post_tokens as string ?? copy("native-claude-compaction.notReported_adadfa")}</dd><dt>{copy("native-claude-compaction.durationMilliseconds_60d19b")}</dt><dd>{v.duration_ms as string ?? copy("native-claude-compaction.notReported_adadfa")}</dd><dt>{copy("native-claude-compaction.cumulativeDroppedTokens_b82734")}</dt><dd>{v.cumulative_dropped_tokens as string ?? copy("native-claude-compaction.notReported_adadfa")}</dd></dl>
+    <details><summary>{copy("native-claude-compaction.originalContextReferences_ea9604")}</summary><pre>{JSON.stringify({ logical_parent_uuid: v.logical_parent_uuid, preserved_segment: v.preserved_segment, preserved_messages: v.preserved_messages }, null, 2)}</pre></details>
+    <p>{copy("native-claude-compaction.contextCountsAreSeparateFromProvider_92356b")}</p>
   </>;
 }
 
 export function NativeClaudeCompactionSummary({ value }: { value: unknown }) {
+  useLocale();
   const v = object(value);
-  return <details><summary>Original native compaction summary</summary>
-    <p>This is context supplied by Claude, not a new user message or a replacement for the retained transcript.</p>
+  return <details><summary>{copy("native-claude-compaction.originalNativeCompactionSummary_809770")}</summary>
+    <p>{copy("native-claude-compaction.thisIsContextSuppliedByClaude_cbc806")}</p>
     {v.text !== null ? <pre>{v.text as string}</pre> : (v.blocks as Document[]).map((block, index) => <pre key={index}>{block.text as string}</pre>)}
-    <dl><dt>Original boundary</dt><dd>{v.boundary_native_id as string}</dd></dl>
+    <dl><dt>{copy("native-claude-compaction.originalBoundary_3e1890")}</dt><dd>{v.boundary_native_id as string}</dd></dl>
   </details>;
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useId, useRef, useState } from "react";
 import { text } from "./documents";
+import { copy, useLocale } from "./localization";
 import "./reasoning-effort-field.css";
 
 enum ReasoningEffort { None = "none", Minimal = "minimal", Low = "low", Medium = "medium", High = "high", XHigh = "xhigh", Max = "max", Ultra = "ultra", Persistent = "persistent" }
@@ -12,6 +13,7 @@ export const claudeEffortSuggestions: readonly string[] = [ReasoningEffort.Low, 
 const emptySuggestions: readonly string[] = [];
 
 export function ReasoningEffortField({ label, value, change, suggestions = emptySuggestions, disabled = false }: { label: string; value: unknown; change: (value: string) => void; suggestions?: readonly string[]; disabled?: boolean }) {
+  useLocale();
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -41,7 +43,7 @@ export function ReasoningEffortField({ label, value, change, suggestions = empty
   return <div className="reasoning-effort-field" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) close(); }}>
     <label htmlFor={`${id}-input`}>{label}</label>
     <div className="reasoning-effort-control">
-      <input ref={input} id={`${id}-input`} role="combobox" aria-autocomplete="list" aria-expanded={popup} aria-controls={popup ? listId : undefined} aria-activedescendant={activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined} aria-describedby={`${id}-help`} value={current} placeholder="Native default" maxLength={256} autoComplete="off" spellCheck={false} disabled={disabled}
+      <input ref={input} id={`${id}-input`} role="combobox" aria-autocomplete="list" aria-expanded={popup} aria-controls={popup ? listId : undefined} aria-activedescendant={activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined} aria-describedby={`${id}-help`} value={current} placeholder={copy("reasoning-effort.nativeDefault")} maxLength={256} autoComplete="off" spellCheck={false} disabled={disabled}
         onFocus={() => { if (available()) setOpen(true); }} onClick={() => { if (available()) setOpen(true); }}
         onChange={event => { change(event.target.value); setNavigation(undefined); setOpen(true); }}
         onKeyDown={event => {
@@ -57,14 +59,14 @@ export function ReasoningEffortField({ label, value, change, suggestions = empty
             event.preventDefault(); event.stopPropagation(); close();
           } else if (event.key === "Tab") close();
         }} />
-      <button type="button" className="reasoning-effort-toggle" disabled={disabled} aria-label={`${popup ? "Hide" : "Show"} ${label} suggestions`} aria-expanded={popup} aria-haspopup="listbox" aria-controls={popup ? listId : undefined} onMouseDown={event => event.preventDefault()} onClick={() => { if (!available()) return; input.current?.focus(); setNavigation(undefined); setOpen(!popup); }}><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m6 9 6 6 6-6" /></svg></button>
+      <button type="button" className="reasoning-effort-toggle" disabled={disabled} aria-label={`${copy(popup ? "reasoning-effort.hide" : "reasoning-effort.show")} ${label} ${copy("reasoning-effort.suggestions")}`} aria-expanded={popup} aria-haspopup="listbox" aria-controls={popup ? listId : undefined} onMouseDown={event => event.preventDefault()} onClick={() => { if (!available()) return; input.current?.focus(); setNavigation(undefined); setOpen(!popup); }}><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m6 9 6 6 6-6" /></svg></button>
     </div>
     {popup ? <>
-      <ul ref={list} id={listId} className="reasoning-effort-suggestions" role="listbox" aria-label={`${label} suggestions`}>
-        {choices.map((candidate, index) => <li id={`${listId}-${index}`} key={candidate} role="option" aria-selected={activeIndex >= 0 ? activeIndex === index : current === candidate} onMouseDown={event => event.preventDefault()} onClick={() => pick(index)}>{candidate || "Use native default"}</li>)}
+      <ul ref={list} id={listId} className="reasoning-effort-suggestions" role="listbox" aria-label={`${label} ${copy("reasoning-effort.suggestions")}`}>
+        {choices.map((candidate, index) => <li id={`${listId}-${index}`} key={candidate} role="option" aria-selected={activeIndex >= 0 ? activeIndex === index : current === candidate} onMouseDown={event => event.preventDefault()} onClick={() => pick(index)}>{candidate || copy("reasoning-effort.useNativeDefault")}</li>)}
       </ul>
-      {filtered.length === 0 ? <p className="reasoning-effort-status" role="status">{suggestions.length ? "No matching suggestions. You can keep typing." : "No effort suggestions for this harness."}</p> : null}
+      {filtered.length === 0 ? <p className="reasoning-effort-status" role="status">{suggestions.length ? copy("reasoning-effort.noMatchingSuggestions") : copy("reasoning-effort.noEffortSuggestions")}</p> : null}
     </> : null}
-    <p id={`${id}-help`} className="reasoning-effort-help">Choose a suggestion or type a value. Leave empty for native default.</p>
+    <p id={`${id}-help`} className="reasoning-effort-help">{copy("reasoning-effort.chooseSuggestionOrType")}</p>
   </div>;
 }

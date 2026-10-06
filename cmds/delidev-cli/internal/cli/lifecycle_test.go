@@ -45,7 +45,7 @@ func TestServerLifecycleNeverTargetsPairedRemoteScope(t *testing.T) {
 func TestAutomaticStartupRecoversOnlyRunningOriginalConfiguration(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "server")
 	o := options{dataDir: root}
-	config := server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	config := server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	streams := IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -149,7 +149,7 @@ func TestAutomaticStartupRecoversOnlyRunningOriginalConfiguration(t *testing.T) 
 
 func TestStartupCannotReplaceIntentOrSpawnBeforeOriginalStoreReleasesOwnership(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "server")
-	config := server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	config := server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	ctx, cancel := context.WithCancel(context.Background())
 	ready, done := make(chan struct{}), make(chan error, 1)
 	go func() { done <- server.Serve(ctx, config, func(server.Endpoint) { close(ready) }) }()
@@ -209,7 +209,7 @@ func TestStartupOwnershipWaitResumesAfterOriginalCleanup(t *testing.T) {
 	result := make(chan *security.Lock, 1)
 	errors := make(chan error, 1)
 	go func() {
-		lock, err := waitStartupOwnership(ctx, root, server.Config{})
+		lock, err := waitStartupOwnership(ctx, root, server.Config{DisableBackgroundMaintenanceForTesting: true})
 		if err != nil {
 			errors <- err
 		} else {

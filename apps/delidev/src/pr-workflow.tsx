@@ -1,3 +1,4 @@
+import { useLocale } from "./localization";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { PullRequestProblemCollectionKind } from "@delinoio/delidev-api-client";
 
@@ -31,6 +32,7 @@ export const prSelectionKey = (selection: PRSelectionIdentity) => `${selection.r
 export const prAllowanceKey = (selection: PRSelectionIdentity) => `pr-remediation-confirm:${prSelectionKey(selection)}`;
 
 export function PRWorkflowProvider({ children }: { children: ReactNode }) {
+  useLocale();
   const [state, setState] = useState<PRWorkflowState>(() => ({ confirmations: new Map(), collectionKinds: new Map() }));
   const value: PRWorkflowValue = {
     ...state,

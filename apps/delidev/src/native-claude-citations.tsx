@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
 enum Kind { Character = "char_location", Page = "page_location", Block = "content_block_location", Search = "search_result_location", Web = "web_search_result_location" }
@@ -38,27 +39,30 @@ export function validClaudeCitationHistory(value: unknown, state: string): boole
  if(h.completion==="matched") return expected.length===actual.length && expected.every((v,i)=>citationKey(v)===citationKey(actual[i]));
  return h.completion==="omitted-by-native" && entries(h.initial).length===0 && h.deltas.length>0 && h.completed!==null && object(h.completed).null===false && actual.length===0;
 }
-const labels = { [Kind.Character]: "Document character range", [Kind.Page]: "Document page range", [Kind.Block]: "Document block range", [Kind.Search]: "Search result block range", [Kind.Web]: "Web source" };
+const labels = { get [Kind.Character]() { return copy("native-claude-citations.documentCharacterRange_0acfb2"); }, get [Kind.Page]() { return copy("native-claude-citations.documentPageRange_a5be82"); }, get [Kind.Block]() { return copy("native-claude-citations.documentBlockRange_dd02ea"); }, get [Kind.Search]() { return copy("native-claude-citations.searchResultBlockRange_89c759"); }, get [Kind.Web]() { return copy("native-claude-citations.webSource_7d8b46"); } };
 function Citation({value}: {value: Document}) {
+  useLocale();
  const kind=value.kind as Kind,d=object(value.document),s=object(value.search),ref=kind===Kind.Search?s:d;
  return <li><p>{labels[kind]}</p><pre>{value.text as string}</pre><dl>
-  <dt>Original title</dt><dd>{value.title===null?"Not reported":value.title as string}</dd>
-  {kind===Kind.Web?<><dt>Original URL</dt><dd><pre>{object(value.web).url as string}</pre></dd></>:<>
-   <dt>{kind===Kind.Search?"Search result index":"Document index"}</dt><dd>{ref.index as string}</dd>
-   <dt>Start</dt><dd>{ref.start as string}</dd><dt>End</dt><dd>{ref.end as string}</dd>
-   {kind===Kind.Search?<><dt>Original source</dt><dd><pre>{s.source as string}</pre></dd></>:<><dt>Native file reference</dt><dd>{d.file===undefined?"Not reported":object(d.file).value===null?"Explicitly null":object(d.file).value as string}</dd></>}
+  <dt>{copy("native-claude-citations.originalTitle_4c198f")}</dt><dd>{value.title===null?copy("native-claude-citations.notReported_adadfa"):value.title as string}</dd>
+  {kind===Kind.Web?<><dt>{copy("native-claude-citations.originalUrl_b62a4e")}</dt><dd><pre>{object(value.web).url as string}</pre></dd></>:<>
+   <dt>{kind===Kind.Search?copy("native-claude-citations.searchResultIndex_788333"):copy("native-claude-citations.documentIndex_ab06ed")}</dt><dd>{ref.index as string}</dd>
+   <dt>{copy("native-claude-citations.start_e4bb9f")}</dt><dd>{ref.start as string}</dd><dt>{copy("native-claude-citations.end_f4db1e")}</dt><dd>{ref.end as string}</dd>
+   {kind===Kind.Search?<><dt>{copy("native-claude-citations.originalSource_fdf375")}</dt><dd><pre>{s.source as string}</pre></dd></>:<><dt>{copy("native-claude-citations.nativeFileReference_6cbeef")}</dt><dd>{d.file===undefined?copy("native-claude-citations.notReported_adadfa"):object(d.file).value===null?copy("native-claude-citations.explicitlyNull_a8f253"):object(d.file).value as string}</dd></>}
   </>}
  </dl></li>;
 }
 function Collection({value,label}: {value: unknown;label: string}) {
- return <details><summary>{label}</summary>{value===null?<p>Not reported</p>:object(value).null===true?<p>Explicitly null</p>:entries(value).length===0?<p>Empty native list</p>:<ol>{entries(value).map((entry,index)=><Citation key={index} value={entry}/>)}</ol>}</details>;
+  useLocale();
+ return <details><summary>{label}</summary>{value===null?<p>{copy("native-claude-citations.notReported_adadfa")}</p>:object(value).null===true?<p>{copy("native-claude-citations.explicitlyNull_a8f253")}</p>:entries(value).length===0?<p>{copy("native-claude-citations.emptyNativeList_c4376f")}</p>:<ol>{entries(value).map((entry,index)=><Citation key={index} value={entry}/>)}</ol>}</details>;
 }
 export function NativeClaudeCitations({value}: {value: Document}) {
- return <details><summary>Original citations</summary>
-  <p>Locations refer to native sources. These references do not open files or fetch content.</p>
-  {value.completion==="omitted-by-native"?<p>Claude omitted streamed citations from its completed block. The original streamed references remain below.</p>:null}
-  <Collection value={value.initial} label="Initial native citations"/>
-  <details><summary>Streamed citations</summary><ol>{(value.deltas as Document[]).map((v,index)=><Citation key={index} value={v}/>)}</ol></details>
-  {value.completion!==undefined?<Collection value={value.completed} label="Completed native citations"/>:null}
+  useLocale();
+ return <details><summary>{copy("native-claude-citations.originalCitations_ec8a0d")}</summary>
+  <p>{copy("native-claude-citations.locationsReferToNativeSourcesThese_f537fe")}</p>
+  {value.completion==="omitted-by-native"?<p>{copy("native-claude-citations.claudeOmittedStreamedCitationsFromIts_989f28")}</p>:null}
+  <Collection value={value.initial} label={copy("native-claude-citations.initialNativeCitations_ec43fb")}/>
+  <details><summary>{copy("native-claude-citations.streamedCitations_4cfef6")}</summary><ol>{(value.deltas as Document[]).map((v,index)=><Citation key={index} value={v}/>)}</ol></details>
+  {value.completion!==undefined?<Collection value={value.completed} label={copy("native-claude-citations.completedNativeCitations_f0aab4")}/>:null}
  </details>;
 }

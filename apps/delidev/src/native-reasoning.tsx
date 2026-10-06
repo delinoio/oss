@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
 enum ReasoningState {
@@ -39,9 +40,10 @@ function reasoningText(artifact: Record<string, unknown>, state: string): string
 // The server's original reasoning part stays separate from assistant answers
 // and indexed summaries. Render plain text once, without executing native HTML.
 export function NativeReasoning({ artifact, state }: { artifact: Record<string, unknown>; state: string }) {
+  useLocale();
   const content = reasoningText(artifact, state);
   return <details>
-    <summary>Reasoning · {content === undefined ? "Unavailable" : state === ReasoningState.Complete ? "Complete" : "Streaming"}</summary>
-    {content === undefined ? <p>The retained reasoning content is unavailable or inconsistent.</p> : <pre>{content}</pre>}
+    <summary><LocalizedText id="native-reasoning.reasoning_4d3137" components={{ s0: <>{content === undefined ? copy("native-reasoning.unavailable_ca1844") : state === ReasoningState.Complete ? copy("native-reasoning.complete_143b27") : copy("native-reasoning.streaming_a951c5")}</> }} /></summary>
+    {content === undefined ? <p>{copy("native-reasoning.theRetainedReasoningContentIsUnavailable_d2c416")}</p> : <pre>{content}</pre>}
   </details>;
 }

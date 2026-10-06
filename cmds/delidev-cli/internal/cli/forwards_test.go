@@ -24,7 +24,7 @@ func TestCLISessionForward(t *testing.T) {
 	ready, done := make(chan struct{}), make(chan error, 1)
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	go func() {
-		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: logger}, func(server.Endpoint) { close(ready) })
+		done <- server.Serve(ctx, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: logger}, func(server.Endpoint) { close(ready) })
 	}()
 	defer func() {
 		cancel()

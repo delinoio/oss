@@ -19,6 +19,100 @@ func usageDaySelection(t *testing.T, from, until, zone string) UsageSelection {
 	return UsageSelection{From: start, Until: end, Granularity: UsageTimeGranularityDay, TimeZone: zone}
 }
 
+func TestUsageDayBucketsResolveMissingAndRepeatedMidnight(t *testing.T) {
+	for _, scenario := range []struct {
+		name       string
+		zone       string
+		boundaries []string
+	}{
+		{
+			name:       "Santiago missing midnight",
+			zone:       "America/Santiago",
+			boundaries: []string{"2026-09-05T04:00:00Z", "2026-09-06T04:00:00Z", "2026-09-07T03:00:00Z"},
+		},
+		{
+			name:       "Havana missing midnight",
+			zone:       "America/Havana",
+			boundaries: []string{"2026-03-07T05:00:00Z", "2026-03-08T05:00:00Z", "2026-03-09T04:00:00Z"},
+		},
+		{
+			name:       "Beirut missing midnight",
+			zone:       "Asia/Beirut",
+			boundaries: []string{"2026-03-27T22:00:00Z", "2026-03-28T22:00:00Z", "2026-03-29T21:00:00Z"},
+		},
+		{
+			name:       "Havana repeated midnight",
+			zone:       "America/Havana",
+			boundaries: []string{"2026-10-31T04:00:00Z", "2026-11-01T04:00:00Z", "2026-11-02T05:00:00Z"},
+		},
+		{
+			name:       "clip within first repeated midnight hour",
+			zone:       "America/Havana",
+			boundaries: []string{"2026-11-01T04:30:00Z", "2026-11-02T05:00:00Z", "2026-11-02T05:30:00Z"},
+		},
+		{
+			name:       "clip before missing midnight",
+			zone:       "America/Santiago",
+			boundaries: []string{"2026-09-06T03:30:00Z", "2026-09-06T04:00:00Z", "2026-09-06T04:30:00Z"},
+		},
+		{
+			name:       "UTC year boundary",
+			zone:       "UTC",
+			boundaries: []string{"2026-12-31T12:00:00Z", "2027-01-01T00:00:00Z", "2027-01-01T12:00:00Z"},
+		},
+		{
+			name:       "New York future year boundary",
+			zone:       "America/New_York",
+			boundaries: []string{"2050-12-31T05:00:00Z", "2051-01-01T05:00:00Z", "2051-01-02T05:00:00Z"},
+		},
+		{
+			name:       "New York future leap year boundary",
+			zone:       "America/New_York",
+			boundaries: []string{"2052-12-31T05:00:00Z", "2053-01-01T05:00:00Z", "2053-01-02T05:00:00Z"},
+		},
+		{
+			name:       "supported calendar upper bound",
+			zone:       "UTC",
+			boundaries: []string{"9999-12-30T12:00:00Z", "9999-12-31T00:00:00Z", "9999-12-31T23:59:59Z"},
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			selection := usageDaySelection(t, scenario.boundaries[0], scenario.boundaries[len(scenario.boundaries)-1], scenario.zone)
+			buckets, err := selection.UsageDayBuckets()
+			if err != nil || len(buckets) != len(scenario.boundaries)-1 {
+				t.Fatalf("unexpected buckets: %+v %v", buckets, err)
+			}
+			zone, err := time.LoadLocation(scenario.zone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, bucket := range buckets {
+				if bucket.From.UTC().Format(time.RFC3339) != scenario.boundaries[i] || bucket.Until.UTC().Format(time.RFC3339) != scenario.boundaries[i+1] {
+					t.Fatalf("boundary %d: %s..%s, want %s..%s", i, bucket.From.UTC().Format(time.RFC3339), bucket.Until.UTC().Format(time.RFC3339), scenario.boundaries[i], scenario.boundaries[i+1])
+				}
+				if !bucket.Until.After(bucket.From) || (i > 0 && !buckets[i-1].Until.Equal(bucket.From)) {
+					t.Fatalf("partition has a gap or empty day: %+v", buckets)
+				}
+				if bucket.From.In(zone).Format(time.DateOnly) != bucket.Until.Add(-time.Nanosecond).In(zone).Format(time.DateOnly) {
+					t.Fatalf("bucket spans different civil dates: %+v", bucket)
+				}
+			}
+		})
+	}
+}
+
+func TestUsageDayBucketsRetainBucketLimit(t *testing.T) {
+	selection := usageDaySelection(t, "2026-01-01T00:00:00Z", "2027-01-06T00:00:00Z", "UTC")
+	buckets, err := selection.UsageDayBuckets()
+	if err != nil || len(buckets) != UsageDayBucketLimit {
+		t.Fatalf("exact bucket limit rejected: %d %v", len(buckets), err)
+	}
+	selection.Until = selection.Until.Add(time.Nanosecond)
+	if buckets, err := selection.UsageDayBuckets(); err == nil || buckets != nil {
+		t.Fatalf("bucket overflow returned partial analytics: %d %v", len(buckets), err)
+	}
+}
+
 func TestUsageDayBucketsPartitionCalendarTimeAcrossDST(t *testing.T) {
 	selection := usageDaySelection(t, "2026-03-07T12:00:00Z", "2026-03-10T12:00:00Z", "America/New_York")
 	buckets, err := selection.UsageDayBuckets()
@@ -63,6 +157,12 @@ func TestUsageDayBucketsSkipSkippedCivilDateAndClipRange(t *testing.T) {
 	}
 	if !buckets[0].From.Equal(from) || !buckets[len(buckets)-1].Until.Equal(until) {
 		t.Fatalf("clipped endpoints changed: %+v", buckets)
+	}
+	if got := buckets[0].Until.UTC().Format(time.RFC3339); got != "2011-12-30T10:00:00Z" || !buckets[0].Until.Equal(buckets[1].From) {
+		t.Fatalf("wrong skipped-date boundary: %+v", buckets)
+	}
+	if buckets[0].From.In(zone).Day() != 29 || buckets[1].From.In(zone).Day() != 31 {
+		t.Fatalf("skipped date acquired a bucket: %+v", buckets)
 	}
 }
 
