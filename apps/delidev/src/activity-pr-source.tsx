@@ -1,3 +1,4 @@
+import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -30,8 +31,8 @@ function OriginalPRSource({ target, revision }: { target: ActivityPRMetadata; re
     <Problem error={source.error || parent.error} />
     {source.isPending || parent.isPending ? <p role="status">{copy("activity-pr-source.readingRetainedPrSource_cfa2ca")}</p> : !valid ? <p role="alert">{copy("activity-pr-source.theOriginalPrSourceIsUnavailable_1c6ae0")}</p> : <>
       <p><LocalizedText id="activity-pr-source.recordedSourceRevisionCurrentSourceRevision_df8461" components={{ s0: <>{revision.toString()}</>, s1: <>{row!.revision.toString()}</> }} /></p>
-      {verified ? <p><LocalizedText id="activity-pr-source.dedicatedVerificationRecordItsOriginalProblem_17b711" components={{ s0: <>{target.verificationId}</> }} /></p> : value?.type === "pull-request-remediation-attempt" ? <p><LocalizedText id="activity-pr-source.currentAttemptStateACompletedAttempt_6b3175" components={{ s0: <>{text(value.state)}</>, s1: <>{value.outcome ? copy("activity-pr-source.outcome_f04e83", { v0: text(value.outcome) }) : ""}</> }} /></p> : value ? <>
-        <p><LocalizedText id="activity-pr-source.originalProblemKindContentVersionCurrent_0adac4" components={{ s0: <>{text(value.kind)}</>, s1: <code>{text(value.content_version)}</code>, s2: <>{text(value.state)}</> }} /></p>
+      {verified ? <p><LocalizedText id="activity-pr-source.dedicatedVerificationRecordItsOriginalProblem_17b711" components={{ s0: <>{target.verificationId}</> }} /></p> : value?.type === "pull-request-remediation-attempt" ? <p><LocalizedText id="activity-pr-source.currentAttemptStateACompletedAttempt_6b3175" components={{ s0: <>{statusLabel(text(value.state))}</>, s1: <>{value.outcome ? copy("activity-pr-source.outcome_f04e83", { v0: statusLabel(text(value.outcome)) }) : ""}</> }} /></p> : value ? <>
+        <p><LocalizedText id="activity-pr-source.originalProblemKindContentVersionCurrent_0adac4" components={{ s0: <>{text(value.kind)}</>, s1: <code>{text(value.content_version)}</code>, s2: <>{statusLabel(text(value.state))}</> }} /></p>
         {value.feedback ? <pre>{text(object(value.feedback).body) || copy("activity-pr-source.extra.4faa01b666e4")}</pre> : <p>{copy("activity-pr-source.originalEvidenceRemainsAvailableInRetained_0e5bc5")}</p>}
       </> : null}
     </>}

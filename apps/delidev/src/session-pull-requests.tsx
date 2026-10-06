@@ -1,3 +1,4 @@
+import { formatTimestamp } from "./localization";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -51,7 +52,7 @@ function LinkRow({ row, value, sessionId, refreshed }: { row: Resource; value: D
   const remove = useRetainedMutation(`session-pr:unlink:${sessionId}:${row.id}`, SessionQuery.unlinkSessionPullRequest, (r) => { if (r.id !== row.id) setNotice(ownedMessage("session-pull-requests.extra.648a9b6650b9")); refreshed(); });
   return <article aria-label={copy("session-pull-requests.linkedPr_299ef1", { v0: text(value.owner), v1: text(value.name), v2: text(value.number) })}>
     <h4>{text(value.owner)}/{text(value.name)}#{text(value.number)}</h4><p>{text(value.title)}</p>
-    <p><LocalizedText id="session-pull-requests.linkedObservationCurrentPrStateAnd_e8d519" components={{ s0: <>{text(value.observed_at)}</> }} /></p>
+    <p><LocalizedText id="session-pull-requests.linkedObservationCurrentPrStateAnd_e8d519" components={{ s0: <>{formatTimestamp(text(value.observed_at))}</> }} /></p>
     <details><summary>{copy("session-pull-requests.originalPrIdentity_92b511")}</summary><p><LocalizedText id="session-pull-requests.repositoryIdPrIdNode_78f0da" components={{ s0: <>{text(value.remote_repository_id)}</>, s1: <>{text(value.pull_request_id)}</>, s2: <>{text(value.pull_request_node_id)}</> }} /></p><p><LocalizedText id="session-pull-requests.configuredRepository_6aa131" components={{ s0: <>{text(value.repository_id)}</> }} /></p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></details>
     <OpenPRProblemHistory selection={{ repositoryId: text(value.repository_id), remoteRepositoryId: text(value.remote_repository_id), pullRequestId: text(value.pull_request_id), number: text(value.number) }} />
     <button disabled={remove.busy || remove.uncertain} onClick={() => void remove.send({ sessionId, mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() } })}><LocalizedText id="session-pull-requests.unlink_1c427a" components={{ s0: <>{text(value.number)}</> }} /></button>

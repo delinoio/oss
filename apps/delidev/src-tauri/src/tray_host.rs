@@ -10,7 +10,7 @@ use std::{
 
 use delidev_desktop::{
     NativeFailure,
-    localization::{Message, format as translated, number, text},
+    localization::{Message, date, format as translated, number, text},
     presentation::{TrayDestination, TraySummary, menu_alias},
 };
 use tauri::{
@@ -331,10 +331,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
             append(
                 app,
                 &submenu,
-                &translated(
-                    Message::Updated,
-                    &[("at", &crate::localization::date(&overview.observed_at))],
-                ),
+                &translated(Message::Updated, &[("at", &date(&overview.observed_at))]),
                 None,
                 &mut state,
             )?;
@@ -505,10 +502,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
                         append(
                             app,
                             &quota,
-                            &translated(
-                                Message::ObservedAt,
-                                &[("at", &crate::localization::date(at))],
-                            ),
+                            &translated(Message::ObservedAt, &[("at", &date(at))]),
                             None,
                             &mut state,
                         )?;
@@ -517,10 +511,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
                         append(
                             app,
                             &quota,
-                            &translated(
-                                Message::ResetAt,
-                                &[("at", &crate::localization::date(at))],
-                            ),
+                            &translated(Message::ResetAt, &[("at", &date(at))]),
                             None,
                             &mut state,
                         )?;

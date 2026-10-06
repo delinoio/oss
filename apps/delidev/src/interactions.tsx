@@ -1,3 +1,4 @@
+import { statusLabel } from "./product-status";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { NativeGrokInteraction } from "./native-grok-interactions";
 import { useState } from "react";
@@ -25,7 +26,7 @@ export function Interaction({ resource, refresh, draft, saveDraft, clearDraft, s
   const data = document(current);
   const changed = (result?: Resource) => { if (result) { setAccepted(result); clearDraft?.(); } refresh(); };
   return <article className="interaction"><header><h3>{text(data.type) === InteractionType.Question ? copy("interactions.agentQuestion_1a6b3f") : copy("interactions.nativeApproval_c515b9")}</h3><small>{text(data.closure)}</small></header>
-    <p><LocalizedText id="interactions.response_83879c" components={{ s0: <>{text(object(data.response ?? data.approval_response).state) || copy("interactions.extra.d3289e625281")}</> }} /></p>
+    <p><LocalizedText id="interactions.response_83879c" components={{ s0: <>{statusLabel(text(object(data.response ?? data.approval_response).state)) || copy("interactions.extra.d3289e625281")}</> }} /></p>
     {Object.hasOwn(data,"grok") ? <NativeGrokInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.claude != null ? <NativeClaudeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.opencode != null ? <NativeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Question ? <Questions resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Approval ? <Approval resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : <p>{copy("interactions.thisNativeRequestTypeIsNot_6fd7af")}</p>}
   </article>;
 }

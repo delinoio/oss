@@ -33,7 +33,8 @@ pub async fn read_language(
     let windows = Arc::clone(windows.inner());
     tauri::async_runtime::spawn_blocking(move || {
         let _publication = store.presentation();
-        store.read();
+        let inspected = store.read();
+        tracing::info!(operation = "device_language_read", revision = inspected.revision, problem = ?inspected.problem);
         publish(&app, &windows, &store)
     })
     .await
@@ -55,6 +56,7 @@ pub async fn update_language(
     tauri::async_runtime::spawn_blocking(move || {
         let _publication = store.presentation();
         let snapshot = store.update(language, expected_revision);
+        tracing::info!(operation = "device_language_update", revision = snapshot.revision, problem = ?snapshot.problem);
         if snapshot.problem.is_none() {
             return publish(&app, &windows, &store);
         }
@@ -86,6 +88,12 @@ fn publish(
     let widget_problem = super::widget_host::set_language(snapshot.language)
         .err()
         .map(|_| "storage-unavailable");
+    if widget_problem.is_some() {
+        tracing::warn!(
+            operation = "widget_language_publish",
+            code = "storage-unavailable"
+        );
+    }
     let published = PublishedLanguage {
         snapshot,
         widget_problem,

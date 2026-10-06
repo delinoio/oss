@@ -1,4 +1,5 @@
 import { LocalizedText, copy, useLocale } from "./localization";
+import { statusLabel } from "./product-status";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -66,7 +67,7 @@ function QueryProblem({ query, label, retryLabel }: { query: NavigationQuery; la
   if (!query.error) return null;
   const { failure, stalled } = query.error;
   const reload = failure.code === FailureCode.CursorExpired || stalled;
-  const message = reload ? `${label}: ${stalled ? copy("sidebar.extra.ad70acba0412") : copy("sidebar.extra.b36417b2a769")}` : query.loaded ? copy("sidebar.sentence.28902f557c4c", { v0: query.error.stage === ReadStage.Additional ? copy("sidebar.extra.de45c9bc43ff") : "refresh", v1: label }) : failure.code === FailureCode.PermissionDenied ? copy("sidebar.sentence.1c87008c72bf", { v0: label }) : copy("sidebar.sentence.3c9f0d81b95a", { v0: label });
+  const message = reload ? `${label}: ${stalled ? copy("sidebar.extra.ad70acba0412") : copy("sidebar.extra.b36417b2a769")}` : query.loaded ? copy("sidebar.sentence.28902f557c4c", { v0: query.error.stage === ReadStage.Additional ? copy("sidebar.extra.de45c9bc43ff") : statusLabel("refresh"), v1: label }) : failure.code === FailureCode.PermissionDenied ? copy("sidebar.sentence.1c87008c72bf", { v0: label }) : copy("sidebar.sentence.3c9f0d81b95a", { v0: label });
   return <div className="sidebar-query-problem">
     <span role="status">{message}{failure.correlationId ? copy("sidebar.correlation_3851eb", { v0: failure.correlationId }) : ""}</span>
     <button type="button" aria-label={reload ? copy("sidebar.reloadList_83b8c9", { v0: label }) : retryLabel} disabled={Boolean(query.loading)} onClick={reload ? query.reload : query.retry}>{reload ? copy("sidebar.reloadList_095352") : copy("sidebar.retry_942087")}</button>
@@ -102,11 +103,11 @@ function workspaceLabel(raw: string): string {
 }
 
 function executionLabel(raw: string): string {
-  return raw || "unknown";
+  return statusLabel(raw || "unknown");
 }
 
 function archiveLabel(raw: string): string {
-  return raw || "unknown";
+  return statusLabel(raw || "unknown");
 }
 
 function StatusGlyph({ outcome, archive }: { outcome: string; archive: string }) {

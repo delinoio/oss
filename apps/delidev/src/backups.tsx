@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { LocalizedText, copy, displayLocale, formatNumber, formatTimestamp, useLocale } from "./localization";
 import { SettingsHeading } from "./settings-presentation";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -12,12 +12,11 @@ import "./backups.css";
 const maxTrackedJobs = 20;
 enum HistoryTab { Creation = "creation", Deletion = "deletion" }
 const historyTabs = [HistoryTab.Creation, HistoryTab.Deletion];
-const bytes = new Intl.NumberFormat("en-US");
-const modifiedDate = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
-const modifiedTime = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
 function modificationLabel(value: string) {
   const date = new Date(value);
+  const modifiedDate = new Intl.DateTimeFormat(displayLocale(), { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
+  const modifiedTime = new Intl.DateTimeFormat(displayLocale() === "en-US" ? "en-GB" : displayLocale(), { timeZone: "UTC", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
   return Number.isNaN(date.getTime()) ? value : copy("backups.sentence.e6f7491a0231", { v0: modifiedDate.format(date), v1: modifiedTime.format(date) });
 }
 
@@ -114,7 +113,7 @@ export function Backups({ active }: { active: boolean }) {
         <thead><tr role="row"><th role="columnheader" id={`${panelId}-modified`} scope={"col"}>{copy("backups.modifiedUtcBackupId_bacb2a")}</th><th role="columnheader" id={`${panelId}-size`} scope={"col"}>{copy("backups.size_1af851")}</th><th role="columnheader" id={`${panelId}-integrity`} scope={"col"}>{copy("backups.integrity_ad5ea6")}</th><th role="columnheader" id={`${panelId}-action`} scope={"col"}><span className="backups-sr-only">{copy("backups.action_64cff1")}</span></th></tr></thead>
         <tbody>{inventory.data?.backups.map(item => <tr role="row" key={item.id} className={selected === item.id ? "backups-selected" : undefined}>
           <td role="cell" headers={`${panelId}-modified`}><time dateTime={item.modifiedAt}>{modificationLabel(item.modifiedAt)}</time><span className="backups-sr-only"><LocalizedText id="backups.originalModificationTimestamp_06e09f" components={{ s0: <>{item.modifiedAt}</> }} /></span><code className="backups-id">{item.id}</code></td>
-          <td role="cell" headers={`${panelId}-size`}><LocalizedText id="backups.bytes_825916" components={{ s0: <span className="backups-cell-label" aria-hidden="true">{copy("backups.size_1af851")}</span>, s1: <>{bytes.format(item.sizeBytes)}</> }} /></td>
+          <td role="cell" headers={`${panelId}-size`}><LocalizedText id="backups.bytes_825916" components={{ s0: <span className="backups-cell-label" aria-hidden="true">{copy("backups.size_1af851")}</span>, s1: <>{formatNumber(item.sizeBytes)}</> }} /></td>
           <td role="cell" headers={`${panelId}-integrity`}><span className="backups-cell-label" aria-hidden="true">{copy("backups.integrity_ad5ea6")}</span><span className="backups-integrity">{checked?.backup?.id === item.id ? copy("backups.verifiedInspection_14f284") : copy("backups.notChecked_d16948")}</span></td>
           <td role="cell" headers={`${panelId}-action`}><button ref={node => { if (node) inspectButtons.current.set(item.id, node); else inspectButtons.current.delete(item.id); }} aria-label={copy("backups.inspectBackup_78fbba", { v0: item.id })} disabled={!active || Boolean(inventory.error) || inventory.isFetching || inspection.isFetching} onClick={() => {
             inspectionOrigin.current = item.id;
@@ -134,7 +133,7 @@ export function Backups({ active }: { active: boolean }) {
       {inspection.isFetching ? <p role="status">{copy("backups.checkingTheSelectedBackup_ca89e6")}</p> : null}
       {checked ? <>
         <p role="status">{copy("backups.databaseIntegrityAndOriginalServerIdentity_26b0d4")}</p>
-        <dl><div><dt>{copy("backups.backupId_8c6f39")}</dt><dd><code>{checked.backup!.id}</code></dd></div><div><dt>{copy("backups.modifiedUtc_d81af6")}</dt><dd><time dateTime={checked.backup!.modifiedAt}>{checked.backup!.modifiedAt}</time></dd></div><div><dt>{copy("backups.size_1af851")}</dt><dd><LocalizedText id="backups.bytes_e17732" components={{ s0: <>{bytes.format(checked.backup!.sizeBytes)}</> }} /></dd></div><div><dt>{copy("backups.schema_07b091")}</dt><dd>{checked.schemaVersion}</dd></div><div><dt>{copy("backups.sha256_bbd07c")}</dt><dd><code>{checked.sha256}</code></dd></div></dl>
+        <dl><div><dt>{copy("backups.backupId_8c6f39")}</dt><dd><code>{checked.backup!.id}</code></dd></div><div><dt>{copy("backups.modifiedUtc_d81af6")}</dt><dd><time dateTime={checked.backup!.modifiedAt}>{formatTimestamp(checked.backup!.modifiedAt)}</time></dd></div><div><dt>{copy("backups.size_1af851")}</dt><dd><LocalizedText id="backups.bytes_e17732" components={{ s0: <>{formatNumber(checked.backup!.sizeBytes)}</> }} /></dd></div><div><dt>{copy("backups.schema_07b091")}</dt><dd>{checked.schemaVersion}</dd></div><div><dt>{copy("backups.sha256_bbd07c")}</dt><dd><code>{checked.sha256}</code></dd></div></dl>
         <p>{copy("backups.thisObservationDoesNotRestoreData_2a506c")}</p>
         <fieldset className="backups-deletion"><legend>{copy("backups.permanentBackupDeletion_7640fe")}</legend><p>{copy("backups.theSelectedImageWillBeDeleted_214572")}</p><label><input type="checkbox" checked={confirm} disabled={remove.busy || remove.uncertain} onChange={event => setConfirmation(event.target.checked ? checked : undefined)} /><LocalizedText id="backups.iConfirmPermanentDeletionOfBackup_6eefd3" components={{ s0: <>{selected}</> }} /></label><button className="backups-destructive" disabled={!active || !confirm || remove.busy || remove.uncertain || trackedDeletions.length >= maxTrackedJobs} onClick={() => { void remove.send({ requestId: newRequestId(), backup: checked.backup!, sha256: checked.sha256 }); }}>{copy("backups.permanentlyDeleteSelectedBackup_6bc00c")}</button></fieldset>
       </> : null}
@@ -163,7 +162,7 @@ export function Backups({ active }: { active: boolean }) {
         <Problem error={deletions.error} />{deletions.error && deletions.data ? <p>{copy("backups.previousDeletionObservationsAreShownCurrent_b3d9d1")}</p> : null}
         {!deletions.data && deletions.isPending ? <p role="status">{copy("backups.readingDeletionJobs_24fef4")}</p> : null}{deletions.data && deletions.isFetching ? <p role="status">{copy("backups.updatingDeletionJobs_de4b91")}</p> : null}
         {deletions.data?.jobs.length === 0 ? <EmptyHistory>{copy("backups.noDeletionJobsOnThisPage_c7d742")}</EmptyHistory> : null}
-        {deletions.data?.jobs.map(job => <article className="backups-job" key={job.id}><h3><LocalizedText id="backups.backup_181f9b" components={{ s0: <>{job.backupId}</> }} /></h3><p><LocalizedText id="backups.jobRevision_b89f71" components={{ s0: <>{job.id}</>, s1: <>{job.revision.toString()}</> }} /></p><p>{job.state === BackupDeletionState.SUCCEEDED ? copy("backups.deletionCompleted_80a98a") : job.state === BackupDeletionState.PENDING ? copy("backups.deletionPending_614524") : copy("backups.deletionStateUnavailable_ea52ae")}</p>{job.problemCode ? <p><LocalizedText id="backups.cleanupNeedsAttention_650005" components={{ s0: <>{job.problemCode}</> }} /></p> : null}{job.state === BackupDeletionState.SUCCEEDED ? <p>{job.removalObserved ? copy("backups.imageBytesRemoved_9f2ac1", { v0: bytes.format(job.imageBytes) }) : copy("backups.imageAbsenceConfirmedOriginalUnlinkByte_435895")}</p> : null}</article>)}
+        {deletions.data?.jobs.map(job => <article className="backups-job" key={job.id}><h3><LocalizedText id="backups.backup_181f9b" components={{ s0: <>{job.backupId}</> }} /></h3><p><LocalizedText id="backups.jobRevision_b89f71" components={{ s0: <>{job.id}</>, s1: <>{job.revision.toString()}</> }} /></p><p>{job.state === BackupDeletionState.SUCCEEDED ? copy("backups.deletionCompleted_80a98a") : job.state === BackupDeletionState.PENDING ? copy("backups.deletionPending_614524") : copy("backups.deletionStateUnavailable_ea52ae")}</p>{job.problemCode ? <p><LocalizedText id="backups.cleanupNeedsAttention_650005" components={{ s0: <>{job.problemCode}</> }} /></p> : null}{job.state === BackupDeletionState.SUCCEEDED ? <p>{job.removalObserved ? copy("backups.imageBytesRemoved_9f2ac1", { v0: formatNumber(job.imageBytes) }) : copy("backups.imageAbsenceConfirmedOriginalUnlinkByte_435895")}</p> : null}</article>)}
         {!hidePager(deletionPage, deletions.data?.jobs.length, deletions.data?.nextPageToken, deletions.error) ? <nav className="backups-actions" aria-label={copy("backups.deletionJobPages_68fad7")}><button disabled={!active || !deletionPage || deletions.isFetching} onClick={() => setDeletionPage("")}>{copy("backups.firstDeletionPage_b8a839")}</button><button disabled={!active || !deletions.data?.nextPageToken || deletions.isFetching || Boolean(deletions.error)} onClick={() => setDeletionPage(deletions.data!.nextPageToken)}>{copy("backups.nextDeletionPage_f9e500")}</button></nav> : null}
       </div>
     </section>

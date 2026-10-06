@@ -144,7 +144,7 @@ export function AppearanceSettings() {
       <legend>{copy("appearance.theme_efb52e")}</legend>
       <div className="appearance-choices">{[Theme.System, Theme.Light, Theme.Dark].map((theme) => <label className="appearance-choice" key={theme}>
         <input type="radio" name="device-theme" value={theme} checked={snapshot.theme === theme} onChange={() => select(theme)} />
-        <span className="appearance-miniature" data-preview={theme} aria-hidden="true" /><span>{theme === Theme.System ? copy("appearance.system_6725e7") : theme === Theme.Light ? copy("appearance.light_dbcd5e") : copy("appearance.dark_60acc5")}</span>
+        <span className="appearance-miniature" data-preview={theme} aria-hidden="true" /><span className="appearance-choice-label">{theme === Theme.System ? copy("appearance.system_6725e7") : theme === Theme.Light ? copy("appearance.light_dbcd5e") : copy("appearance.dark_60acc5")}</span>
       </label>)}</div>
     </fieldset>
     <p id="appearance-scope">{copy("appearance.systemFollowsThisComputerSAppearance_edf3db")}</p>

@@ -1,3 +1,5 @@
+import { formatTimestamp } from "./localization";
+import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { ManagedSubscriptionAccount, serviceAccount } from "./subscription-accounts";
 import { useEffect, useState } from "react";
@@ -12,7 +14,7 @@ import "./api-account.css";
 function Observation({ label, value }: { label: string; value: unknown }) {
   useLocale();
   const observation = object(value), problem = object(observation.problem);
-  return <div><p>{label}: {text(observation.state) || copy("account-connection.extra.b764cdc0eab7")}{text(observation.observed_at) ? copy("account-connection.message_2fa20b", { v0: text(observation.observed_at) }) : ""}</p>{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}</div>;
+  return <div><p>{label}: {statusLabel(text(observation.state)) || copy("account-connection.extra.b764cdc0eab7")}{text(observation.observed_at) ? copy("account-connection.message_2fa20b", { v0: formatTimestamp(text(observation.observed_at)) }) : ""}</p>{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}</div>;
 }
 export function AccountConnection(props: { initial: Resource; active: boolean; close: () => void }) {
   useLocale();
@@ -50,7 +52,7 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
     if (!text(removal.request_id) || !Number.isSafeInteger(removal.expected_revision)) return;
     void disconnect.send({ mutation: { id: initial.id, requestId: text(removal.request_id), expectedRevision: BigInt(removal.expected_revision as number) } });
   };
-  return <section className={isApi ? "api-entry-workflow" : undefined}>{isApi ? <><button className="api-entry-back" onClick={close}>{copy("account-connection.backToAiApiKeys_2d6214")}</button><header className="api-entry-heading"><h2>{copy("account-connection.manageConnection_ad2892")}</h2><p>{resourceName(current)}</p><p className="api-entry-scope">{copy("account-connection.savedOnTheSelectedServer_93dbee")}</p></header></> : <header><h3>{resourceName(current)}</h3><button onClick={close}>{copy("account-connection.backToAccounts_68d8e7")}</button></header>}<p><LocalizedText id="account-connection.health_842f5a" components={{ s0: <>{text(data.health)}</>, s1: <>{data.connection ? copy("account-connection.credentialConnected_eed6f1") : copy("account-connection.disconnected_04dfac")}</> }} /></p><p><LocalizedText id="account-connection.provider_0a5bc7" components={{ s0: <>{resourceName(provider.data?.resource)}</>, s1: <>{text(metadata.authentication)}</>, s2: <>{provider.data?.resource ? providerEnabled ? copy("account-connection.enabled_92c1cd") : copy("account-connection.off_ca7981") : copy("account-connection.unavailable_ca1844")}</> }} /></p>
+  return <section className={isApi ? "api-entry-workflow" : undefined}>{isApi ? <><button className="api-entry-back" onClick={close}>{copy("account-connection.backToAiApiKeys_2d6214")}</button><header className="api-entry-heading"><h2>{copy("account-connection.manageConnection_ad2892")}</h2><p>{resourceName(current)}</p><p className="api-entry-scope">{copy("account-connection.savedOnTheSelectedServer_93dbee")}</p></header></> : <header><h3>{resourceName(current)}</h3><button onClick={close}>{copy("account-connection.backToAccounts_68d8e7")}</button></header>}<p><LocalizedText id="account-connection.health_842f5a" components={{ s0: <>{statusLabel(text(data.health))}</>, s1: <>{data.connection ? copy("account-connection.credentialConnected_eed6f1") : copy("account-connection.disconnected_04dfac")}</> }} /></p><p><LocalizedText id="account-connection.provider_0a5bc7" components={{ s0: <>{resourceName(provider.data?.resource)}</>, s1: <>{text(metadata.authentication)}</>, s2: <>{provider.data?.resource ? providerEnabled ? copy("account-connection.enabled_92c1cd") : copy("account-connection.off_ca7981") : copy("account-connection.unavailable_ca1844")}</> }} /></p>
     {data.type === "subscription" ? <p>{copy("account-connection.subscriptionLoginIsNotImplementedYet_68e05f")}</p> : disconnected ? <><form onSubmit={(event) => {
       event.preventDefault(); if (blocked || !providerEnabled || !provider.data?.resource || (!keyless && !/^[!-~]{1,8192}$/.test(key))) return;
       const input = { mutation: mutation(), keyless, apiKey: keyless ? new Uint8Array() : new TextEncoder().encode(key) };

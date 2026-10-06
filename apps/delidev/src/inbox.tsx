@@ -1,3 +1,5 @@
+import { statusLabel } from "./product-status";
+import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { createQueryOptions, useQuery, useTransport } from "@connectrpc/connect-query";
@@ -66,7 +68,7 @@ function itemIcon(view: InboxView): { symbol: string; tone: string } {
 function statusText(value: unknown): string {
   const state = text(value);
   if (!state) return copy("inbox.extra.d3289e625281");
-  if (["queued", "claimed", "transmitted", "uncertain", "accepted", "canceled"].includes(state)) return state[0]!.toUpperCase() + state.slice(1);
+  if (["queued", "claimed", "transmitted", "uncertain", "accepted", "canceled"].includes(state)) return statusLabel(state[0]!.toUpperCase() + state.slice(1));
   return copy("inbox.extra.ca1844969742");
 }
 
@@ -315,7 +317,7 @@ function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft,
         {responseCurrent ? null : <p>{copy("inbox.thisRequestIsRetainedForInspection_208dff")}</p>}
         <Interaction resource={view.interaction} refresh={refresh} draft={draft} saveDraft={(editable) => saveDraft(view.interaction!, editable)} clearDraft={() => clearDraft(view.interaction!.id)} submissionAllowed={canMutate && responseCurrent && !identityChanged} receiptRetryAllowed={canMutate} />
       </section>
-    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label={copy("inbox.subscriptionQuotaRecovery_44e5d3")}><h4>{copy("inbox.subscriptionQuotaRecovery_44e5d3")}</h4><p><LocalizedText id="inbox.account_e07497" components={{ s0: <>{resourceName(view.account)}</> }} /></p><p><LocalizedText id="inbox.observed_e8e2c1" components={{ s0: <time dateTime={text(object(data.recovery).observed_at)}>{text(object(data.recovery).observed_at)}</time> }} /></p><p>{copy("inbox.thisRecordsTheAccountSObserved_bd3f28")}</p></section> : <section className="inbox-terminal"><h4>{copy("inbox.originalTerminalObservation_b3bd33")}</h4><p>{itemLabel(view)}</p><pre>{JSON.stringify(terminal, null, 2)}</pre><p>{copy("inbox.recordedTimeIsTheInboxRecord_4acabe")}</p></section>}
+    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label={copy("inbox.subscriptionQuotaRecovery_44e5d3")}><h4>{copy("inbox.subscriptionQuotaRecovery_44e5d3")}</h4><p><LocalizedText id="inbox.account_e07497" components={{ s0: <>{resourceName(view.account)}</> }} /></p><p><LocalizedText id="inbox.observed_e8e2c1" components={{ s0: <time dateTime={text(object(data.recovery).observed_at)}>{formatTimestamp(text(object(data.recovery).observed_at))}</time> }} /></p><p>{copy("inbox.thisRecordsTheAccountSObserved_bd3f28")}</p></section> : <section className="inbox-terminal"><h4>{copy("inbox.originalTerminalObservation_b3bd33")}</h4><p>{itemLabel(view)}</p><pre>{JSON.stringify(terminal, null, 2)}</pre><p>{copy("inbox.recordedTimeIsTheInboxRecord_4acabe")}</p></section>}
   </article>;
 }
 

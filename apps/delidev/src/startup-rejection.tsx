@@ -1,3 +1,4 @@
+import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
@@ -29,7 +30,7 @@ export function StartupRejection({ session }: { session: Resource }) {
   const value = startupRejection(session);
   if (!value) return <p className="notice" role="status">{copy("startup-rejection.startupRejectionDetailsAreUnavailableKeep_780ffd")}</p>;
   const proof = object(value.workspace);
-  return <section className="notice" aria-label={copy("startup-rejection.agentStartupRejection_27a3f8")}><strong>{copy("startup-rejection.agentDidNotStart_32a1e1")}</strong><p>{reasons[text(proof.reason)]}</p><p>{copy("startup-rejection.theOriginalInputRemainsInHistory_e7a561")}</p><small><LocalizedText id="startup-rejection.recordedThisSessionRemainsPaused_ed54d8" components={{ s0: <>{text(proof.finished_at)}</> }} /></small></section>;
+  return <section className="notice" aria-label={copy("startup-rejection.agentStartupRejection_27a3f8")}><strong>{copy("startup-rejection.agentDidNotStart_32a1e1")}</strong><p>{reasons[text(proof.reason)]}</p><p>{copy("startup-rejection.theOriginalInputRemainsInHistory_e7a561")}</p><small><LocalizedText id="startup-rejection.recordedThisSessionRemainsPaused_ed54d8" components={{ s0: <>{formatTimestamp(text(proof.finished_at))}</> }} /></small></section>;
 }
 
 export function RejectedInput({ resource, session }: { resource: Resource; session?: Resource }) {

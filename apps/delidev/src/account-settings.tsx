@@ -1,3 +1,4 @@
+import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { ProviderGuidance } from "./provider-guidance";
 import { OpenRouterOAuth, useOpenRouterOAuth, type OpenRouterOAuthFlow } from "./account-oauth";
@@ -470,7 +471,7 @@ function AccountCreationWizard({
     const data = document(current);
     const hasCredentials = Boolean(text(object(data.connection).id));
     const validationState = text(object(data.validation).state) || copy("account-settings.extra.3bc91159cd96");
-    const validationLabel = text(data.health) === "unverified" ? copy("account-settings.extra.b2c4eef1f935") : copy("account-settings.sentence.60031f8620a9", { v0: validationState });
+    const validationLabel = text(data.health) === "unverified" ? copy("account-settings.extra.b2c4eef1f935") : copy("account-settings.sentence.60031f8620a9", { v0: statusLabel(validationState) });
     return <section className="account-wizard api-keys-view" aria-labelledby="api-account-created-title">
       <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</button>
       <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><h2 id="api-account-created-title">{resourceName(current)}</h2>
@@ -478,7 +479,7 @@ function AccountCreationWizard({
       {!accountTypeFilteringReady ? <p role="status">{copy("account-settings.connectionIsPausedUntilThisServer_0528c4")}</p> : null}
       {create.busy ? <p role="status">{copy("account-settings.creatingEntry_e95d50")}</p> : null}
       {create.uncertain ? <p role="status">{copy("account-settings.resultNotConfirmedRetryTheSame_5df0a1")}</p> : null}
-      {hasCredentials ? <p role="status"><LocalizedText id="account-settings.connectedHealth_c7ee69" components={{ s0: <>{text(data.health) || "unknown"}</>, s1: <>{validationLabel}</> }} /></p> : <p><LocalizedText id="account-settings.connection_654eff" components={{ s0: <>{text(data.health) || "disconnected"}</> }} /></p>}
+      {hasCredentials ? <p role="status"><LocalizedText id="account-settings.connectedHealth_c7ee69" components={{ s0: <>{statusLabel(text(data.health) || "unknown")}</>, s1: <>{validationLabel}</> }} /></p> : <p><LocalizedText id="account-settings.connection_654eff" components={{ s0: <>{statusLabel(text(data.health) || "disconnected")}</> }} /></p>}
       {connect.busy ? <p role="status">{copy("account-settings.connectingEntry_34fa4f")}</p> : null}
       {connect.uncertain ? <p role="status">{copy("account-settings.resultNotConfirmedTheOriginalConnection_0f9cdc")}</p> : null}
       {connect.error && !connect.uncertain ? <p role="status">{keyless ? copy("account-settings.entryCreatedConnectionFailedRetryThe_174e75") : copy("account-settings.entryCreatedConnectionFailedReEnter_fc83a6")}</p> : null}
@@ -673,7 +674,7 @@ function ApiAccountSettings({
           <p className="api-entry-provider-name">{provider?.displayName ?? copy("account-settings.extra.37709967fc3f") + text(data.provider_id)}</p>
           <dl>
             <div><dt>{copy("account-settings.connection_5d80f5")}</dt><dd>{text(object(data.removal).request_id) ? copy("account-settings.credentialCleanupPending_50459d") : text(object(data.connection).id) ? copy("account-settings.credentialConnected_eed6f1") : copy("account-settings.disconnected_04dfac")}</dd></div>
-            <div><dt>{copy("account-settings.health_ac2be4")}</dt><dd>{text(data.health) || copy("account-settings.extra.b764cdc0eab7")}</dd></div>
+            <div><dt>{copy("account-settings.health_ac2be4")}</dt><dd>{statusLabel(text(data.health)) || copy("account-settings.extra.b764cdc0eab7")}</dd></div>
             <div><dt>{copy("account-settings.entry_861e39")}</dt><dd>{data.enabled === true ? copy("account-settings.enabled_92c1cd") : copy("account-settings.disabled_75081b")}</dd></div>
             <div><dt>{copy("account-settings.providerStatus_369744")}</dt><dd>{provider ? provider.enabled ? copy("account-settings.enabled_92c1cd") : copy("account-settings.off_ca7981") : copy("account-settings.unavailable_ca1844")}</dd></div>
             <div><dt>{copy("account-settings.quota_e67c46")}</dt><dd>{data.confirmed_exhausted === true ? copy("account-settings.confirmedExhausted_763851") : quotaCount ? copy("account-settings.observations_402a6b", { v0: quotaCount }) : copy("account-settings.noQuotaObservation_d9e3af")}</dd></div>

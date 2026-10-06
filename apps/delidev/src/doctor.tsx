@@ -1,3 +1,4 @@
+import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { SettingsHeading } from "./settings-presentation";
 import "./doctor.css";
@@ -46,7 +47,7 @@ function Storage({ value }: { value: Document }) {
 const installationStates: Record<string, string> = { get unchecked() { return copy("doctor.extra.d16948e73a68"); }, get detected() { return copy("doctor.extra.4db4587e4b04"); }, get missing() { return copy("doctor.extra.1c2850a512c4"); }, get "permission-denied"() { return copy("doctor.extra.59b77dbd5bd2"); }, get incompatible() { return copy("doctor.extra.8777e3a9e3ec"); }, get failed() { return copy("doctor.extra.450e4a86d32c"); } };
 function Installation({ value, secondary = false }: { value: Document; secondary?: boolean }) {
   useLocale();
-  if (secondary) return <li><strong>{text(value.harness) || copy("doctor.extra.22b7d757d71d")}</strong><p><LocalizedText id="doctor.lastDiscovery_d132d5" components={{ s0: <>{text(value.observed_at) || copy("doctor.extra.1d3efcd60643")}</> }} /></p><p><LocalizedText id="doctor.reportedCapabilities_24b97b" components={{ s0: <>{items(value.capabilities).map(text).filter(Boolean).join(", ") || copy("doctor.extra.dc937b598926")}</> }} /></p></li>;
+  if (secondary) return <li><strong>{text(value.harness) || copy("doctor.extra.22b7d757d71d")}</strong><p><LocalizedText id="doctor.lastDiscovery_d132d5" components={{ s0: <>{formatTimestamp(text(value.observed_at)) || copy("doctor.extra.1d3efcd60643")}</> }} /></p><p><LocalizedText id="doctor.reportedCapabilities_24b97b" components={{ s0: <>{items(value.capabilities).map(text).filter(Boolean).join(", ") || copy("doctor.extra.dc937b598926")}</> }} /></p></li>;
   const protocol = value.protocol_verified === true && value.protocol_state === "verified" ? copy("doctor.extra.496da28ce709") : value.protocol_state === "failed" ? copy("doctor.extra.9a71446fe830") : value.protocol_state === "unsupported" ? copy("doctor.extra.dfbc698f5beb") : value.protocol_verified === false && !value.protocol_state ? copy("doctor.extra.b5efd1b1759a") : copy("doctor.extra.248274344040");
   const state = text(value.state);
   return <li><strong>{text(value.harness) || copy("doctor.extra.22b7d757d71d")}</strong>: {Object.hasOwn(installationStates, state) ? installationStates[state] : copy("doctor.unknownInstallationState_648bed")}{text(value.version) ? copy("doctor.message_2fa20b", { v0: text(value.version) }) : ""}<p>{protocol}</p>{text(value.problem_code) ? <p>{text(value.problem_code)}</p> : null}{text(value.guidance) ? <ServiceProblem code={text(value.code) || text(value.problem_code)}><p>{text(value.guidance)}</p></ServiceProblem> : null}</li>;
@@ -82,7 +83,7 @@ function Report({ report }: { report: Document }) {
   };
   const expanded = report.schema_version === 2;
   return <>
-    {expanded ? <p className="diagnostics-observed"><LocalizedText id="doctor.observedAt_2044a6" components={{ s0: <span>{text(report.observed_at) || copy("doctor.extra.b764cdc0eab7")}</span> }} /></p> : null}
+    {expanded ? <p className="diagnostics-observed"><LocalizedText id="doctor.observedAt_2044a6" components={{ s0: <span>{formatTimestamp(text(report.observed_at)) || copy("doctor.extra.b764cdc0eab7")}</span> }} /></p> : null}
     <div className="diagnostics-observations">
       <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.databaseReadCheck_465f92")}</h2><p><span className={report.database === "ready" ? "diagnostics-success" : "diagnostics-symbol"} aria-hidden="true">{report.database === "ready" ? "✓" : "?"}</span>{report.database === "ready" ? copy("doctor.readSucceeded_14f977") : report.database === "failed" ? copy("doctor.readFailedInspectServerStorageAnd_06b368") : copy("doctor.unknown_b764cd")}</p></section>
       <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.ownerCredential_028058")}</h2><p><span className="diagnostics-symbol" aria-hidden="true">ⓘ</span>{report.credential_store === "owner-credential-ready" ? copy("doctor.serverOwnerCredentialLoaded_ed8968") : copy("doctor.unknown_b764cd")}</p></section>

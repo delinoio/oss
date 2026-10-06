@@ -77,6 +77,7 @@ try {
       assert.equal(layout.padding, viewport[0] >= 1100 ? "32px" : viewport[0] >= 760 ? "24px" : "16px", context);
       assert.equal(layout.anchor, Number.parseInt(layout.padding), context);
       assert(layout.width <= 1040.5 && !layout.overflow && layout.controls && layout.multiline && layout.empty && layout.forms, context);
+      if (category === "Appearance") assert(await page.locator(".appearance-choice-label").evaluateAll(labels => labels.every(node => node.getBoundingClientRect().width >= node.parentElement.clientWidth - 32 && node.scrollWidth <= node.clientWidth)), `${context} theme labels retain available width`);
       checked++;
     }
     if (!populated) {
@@ -110,7 +111,8 @@ try {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${origin}/?theme=light&language=${language}`);
     for (const surface of ["Sessions", "New session", "Pull requests", "Usage", "Schedules", "Activity", "Inbox", "Search"]) {
-      await page.locator(".sidebar-rail").getByRole("button", { name: l(surface), exact: true }).click();
+      if (surface === "Inbox" || surface === "Search") await page.getByRole("button", { name: l("Sessions"), exact: true }).click();
+      await page.getByRole("button", { name: l(surface), exact: true }).click();
       assert.equal(await page.locator("main").evaluate(node => node.scrollWidth <= node.clientWidth), true, `${language}/${surface} overflow`);
       assert.equal(await page.locator("html").getAttribute("lang"), language);
     }

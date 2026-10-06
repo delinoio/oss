@@ -1,3 +1,4 @@
+import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
@@ -47,7 +48,7 @@ export function SessionTerminals({ session, close }: { session: Resource; close:
     {!supported ? <p role="status">{copy("session-terminals.waitingForAServerThatSupports_e0becc")}</p> : null}
     <Problem error={create.error} />{create.uncertain ? <button disabled={create.busy} onClick={create.retry}>{copy("session-terminals.retryTheSameTerminalCreation_bc3946")}</button> : null}
     <Problem error={supported ? list.error : undefined} /><button disabled={!supported || list.isFetching} onClick={() => { if (supported) void list.refetch(); }}>{copy("session-terminals.refreshTerminals_6e87f2")}</button>
-    <ul>{supported ? list.data?.resources.map((value, index) => <li key={value.id}><button aria-pressed={selected === value.id} onClick={() => setSelected(value.id)}><LocalizedText id="session-terminals.terminal_8058ce" components={{ s0: <>{index + 1}</>, s1: <>{text(document(value).state)}</> }} /></button></li>) : null}</ul>
+    <ul>{supported ? list.data?.resources.map((value, index) => <li key={value.id}><button aria-pressed={selected === value.id} onClick={() => setSelected(value.id)}><LocalizedText id="session-terminals.terminal_8058ce" components={{ s0: <>{index + 1}</>, s1: <>{statusLabel(text(document(value).state))}</> }} /></button></li>) : null}</ul>
     <nav aria-label={copy("session-terminals.terminalHistoryPages_2ace98")}><button disabled={!supported || !page} onClick={() => { setPage(""); setSelected(""); }}>{copy("session-terminals.firstPage_0bdbb7")}</button><button disabled={!supported || !list.data?.nextPageToken} onClick={() => { setPage(list.data!.nextPageToken); setSelected(""); }}>{copy("session-terminals.nextPage_c08ac7")}</button></nav>
     {resource ? <TerminalView key={resource.id} resource={resource} refresh={() => { if (supported) void list.refetch(); }} /> : null}
   </aside>;
@@ -103,7 +104,7 @@ function TerminalView({ resource, refresh }: { resource: Resource; refresh: () =
   }, [inputBlocked]);
   const send = (action: TerminalAction, input = new Uint8Array()) => void control.send({ mutation: { id: terminal.id, expectedRevision: terminal.revision, requestId: newRequestId() }, action, input, rows: action === TerminalAction.RESIZE ? rows : 0, columns: action === TerminalAction.RESIZE ? columns : 0 });
   return <section aria-label={copy("session-terminals.attachedTerminal_19246e")}>
-    <p role="status">{state} · {text(data.state)}{data.cleanup_verified ? copy("session-terminals.processCleanupVerified_024000") : copy("session-terminals.processCleanupPending_efa78d")}</p>
+    <p role="status">{state} · {statusLabel(text(data.state))}{data.cleanup_verified ? copy("session-terminals.processCleanupVerified_024000") : copy("session-terminals.processCleanupPending_efa78d")}</p>
     <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{text(data.machine_id)}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>
     <Problem error={error} />{state === OutputState.Detached ? <button onClick={() => setRestart((value) => value + 1)}>{copy("session-terminals.reattachOriginalTerminal_b22f08")}</button> : null}
     <pre className="terminal-output" tabIndex={0} aria-label={copy("session-terminals.attribute.34ad7d49708a")}>{output || copy("session-terminals.extra.d1bcaf842eff")}</pre>

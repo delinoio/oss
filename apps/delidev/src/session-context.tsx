@@ -1,3 +1,4 @@
+import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, SessionContextCapability, SessionQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -37,7 +38,7 @@ export function SessionContext({ session }: { session: Resource }) {
   return <section aria-label={copy("session-context.sessionContext_93a2ab")} className="session-context"><header><h3>{copy("session-context.context_a6e600")}</h3><button disabled={context.isFetching} onClick={() => void context.refetch()}>{copy("session-context.refreshContext_f79efc")}</button></header>
     <p><LocalizedText id="session-context.currentContextTokens_2fb474" components={{ s0: <>{view?.current_tokens === null || view?.current_tokens === undefined ? copy("session-context.notReported_adadfa") : text(view.current_tokens)}</> }} /></p>
     {(harness === "codex" || harness === "opencode") && view?.automatic_boundary ? <NativeContextCompaction progress={object(object(object(view.automatic_boundary).document).progress)} state="complete" /> : null}
-    {state ? <section aria-label={copy("session-context.compactionOperation_22b764")}><p role="status"><LocalizedText id="session-context.compactionOperation_42746a" components={{ s0: <>{state}</> }} /></p><small>{text(manual.action_id)}</small>
+    {state ? <section aria-label={copy("session-context.compactionOperation_22b764")}><p role="status"><LocalizedText id="session-context.compactionOperation_42746a" components={{ s0: <>{statusLabel(state)}</> }} /></p><small>{text(manual.action_id)}</small>
       {state === JobState.Succeeded && result.compact_result === "success" ? <p>{copy("session-context.theNativeContextWasCompactedAnd_c4307f")}</p> : null}
       {result.harness === "codex" && typeof codex.actions === "number" ? <p><LocalizedText id="session-context.retainedCompactionsResponseCounters_8201cb" components={{ s0: <>{codex.actions}</>, s1: <>{Array.isArray(codex.response_usages) && codex.response_usages.length > 0 ? copy("session-context.reported_34540b") : copy("session-context.notReportedByTheNativeProcess_e76117")}</> }} /></p> : null}
       {result.harness === "opencode" && typeof opencode.actions === "number" ? <p><LocalizedText id="session-context.retainedCompactionsNativeStepCounters_5af773" components={{ s0: <>{opencode.actions}</>, s1: <>{Array.isArray(opencode.usages) && opencode.usages.length > 0 ? copy("session-context.reported_34540b") : copy("session-context.notReportedByTheNativeProcess_e76117")}</> }} /></p> : null}

@@ -1,3 +1,4 @@
+import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -61,7 +62,7 @@ export function NativeModelSettings({ active, createModel }: { active: boolean; 
     {discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>{copy("native-model-settings.retryTheSameObservationRequest_0b6c58")}</button> : null}
     <label>{copy("native-model-settings.originalObservationId_949ead")}<input value={lookup} maxLength={36} disabled={blocked} onChange={(event) => setLookup(event.target.value)} /></label>
     <button type="button" disabled={!supported || blocked || !lookup} onClick={() => { setJobID(lookup); setObservationID(""); setPage(""); }}>{copy("native-model-settings.inspectObservation_ded69a")}</button>
-    {job ? <div><p role="status"><LocalizedText id="native-model-settings.observation_48f31e" components={{ s0: <>{job.id}</>, s1: <>{state}</>, s2: <>{text(object(document(job).output).observed_at)}</> }} /></p>
+    {job ? <div><p role="status"><LocalizedText id="native-model-settings.observation_48f31e" components={{ s0: <>{job.id}</>, s1: <>{state}</>, s2: <>{formatTimestamp(text(object(document(job).output).observed_at))}</> }} /></p>
       <button type="button" disabled={!active || operation.isFetching} onClick={() => void operation.refetch()}>{copy("native-model-settings.refreshObservationStatus_2714ea")}</button>
       {["queued", "claimed"].includes(state) ? <button type="button" disabled={blocked} onClick={() => void cancellation.send({ mutation: { requestId: newRequestId(), id: job.id, expectedRevision: job.revision } })}>{copy("native-model-settings.cancelObservation_0f4be7")}</button> : null}
       {document(job).problem ? <ServiceProblem code={text(object(document(job).problem).code) || text(object(document(job).problem).problem_code)}><p role="alert">{text(object(document(job).problem).message)}</p></ServiceProblem> : null}

@@ -1,3 +1,5 @@
+import { statusLabel } from "./product-status";
+import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -37,10 +39,10 @@ function DeviceMetadata({ resource }: { resource: Resource }) {
   return <dl className="paired-device-metadata">
     <dt>{copy("device-settings.deviceId_6e0a0b")}</dt><dd>{resource.id}</dd>
     {text(value.machine_id) ? <><dt>{copy("device-settings.runnerDeviceId_a03c92")}</dt><dd>{text(value.machine_id)}</dd></> : null}
-    <dt>{copy("device-settings.originalPairedTimestamp_7fae2b")}</dt><dd>{text(value.paired_at) || copy("device-settings.extra.b764cdc0eab7")}</dd>
-    {value.revoked === true || text(value.revoked_at) ? <><dt>{copy("device-settings.originalRevokedTimestamp_c0f6f5")}</dt><dd>{text(value.revoked_at) || copy("device-settings.extra.b764cdc0eab7")}</dd></> : null}
+    <dt>{copy("device-settings.originalPairedTimestamp_7fae2b")}</dt><dd>{formatTimestamp(text(value.paired_at)) || copy("device-settings.extra.b764cdc0eab7")}</dd>
+    {value.revoked === true || text(value.revoked_at) ? <><dt>{copy("device-settings.originalRevokedTimestamp_c0f6f5")}</dt><dd>{formatTimestamp(text(value.revoked_at)) || copy("device-settings.extra.b764cdc0eab7")}</dd></> : null}
     {text(value.type) && value.type !== "client" && value.type !== "worker" ? <><dt>{copy("device-settings.type_baaddf")}</dt><dd>{text(value.type)}</dd></> : null}
-    {text(value.health) ? <><dt>{copy("device-settings.status_920e41")}</dt><dd>{text(value.health)}</dd></> : null}
+    {text(value.health) ? <><dt>{copy("device-settings.status_920e41")}</dt><dd>{statusLabel(text(value.health))}</dd></> : null}
     {text(value.harness) ? <><dt>{copy("device-settings.harness_e3b5b4")}</dt><dd>{text(value.harness)}</dd></> : null}
   </dl>;
 }

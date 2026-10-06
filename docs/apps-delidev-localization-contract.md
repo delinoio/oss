@@ -61,8 +61,10 @@ from measured zero, success, actual cost and execution readiness.
 
 Error codes select localized guidance. Original server message/guidance and
 technical metadata remain inert text inside an explicit Technical details
-disclosure; a translation never replaces original evidence or creates retry
-permission.
+disclosure. Existing native diagnostic redaction remains authoritative: protected
+native content is not made available by localization. A disclosure contains only
+original details already admitted by the owning diagnostic contract. A translation
+never replaces original evidence or creates retry permission.
 
 The Appearance category retains all 17 existing categories, theme choices,
 colors, navigation and visit lifetime. A divider below Theme introduces Language.
@@ -132,6 +134,13 @@ Test System resolution, restart, new/multiple windows, delayed events, conflict,
 failed/uncertain writes, malformed-file preservation and retained drafts/focus/
 operations without added product RPCs. Inspect every screen and all 17 categories
 in both languages; verify widget sizes, selection, offline/stale/storage failures.
+`test-settings-layout.mjs` checks both catalogs across all existing categories,
+forms, themes and effective 200% viewports, then primary surfaces and an Appearance
+save transition. Host-supplied Playwright remains a validation-only tool.
+`test:widget` includes protected-storage fixtures and offscreen SwiftUI layout
+fixtures for both languages, three sizes and six states. The optional
+`DELIDEV_WIDGET_LAYOUT_OUTPUT` and `DELIDEV_LAYOUT_SCREENSHOT` destinations contain
+synthetic render output only; they never establish installed native acceptance.
 Remove generated `dist` from the final worktree.
 
 Record source revision, commands, results and unresolved limits in PRs/issues and

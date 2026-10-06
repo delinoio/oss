@@ -1,3 +1,4 @@
+import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useRef, useState } from "react";
@@ -32,7 +33,7 @@ function ProfileFacts({ profile }: { profile: Resource }) {
   return <dl className="integration-facts">
     <div><dt>{copy("integrations.tokenStorage_9e7378")}</dt><dd>{!supported ? copy("integrations.unsupportedProfileVersion_2e278a") : data.pending ? copy("integrations.changePendingTokenUseDisabled_8ff1c5") : data.connection ? copy("integrations.tokenStored_4475d6") : copy("integrations.noTokenConnected_1d18ae")}</dd></div>
     <div><dt>{copy("integrations.identityValidation_657b2c")}</dt><dd>{!supported ? copy("integrations.unsupportedProfileVersion_2e278a") : !state ? copy("integrations.notVerified_151339") : Object.hasOwn(identityLabels, state) ? identityLabels[state as IdentityState] : copy("integrations.unknownIdentityObservation_bb9e25")}</dd>
-      {supported && text(validation.checked_at) ? <dd className="integration-secondary"><LocalizedText id="integrations.checkedAt_0485ac" components={{ s0: <>{text(validation.checked_at)}</> }} /></dd> : null}
+      {supported && text(validation.checked_at) ? <dd className="integration-secondary"><LocalizedText id="integrations.checkedAt_0485ac" components={{ s0: <>{formatTimestamp(text(validation.checked_at))}</> }} /></dd> : null}
     </div>
   </dl>;
 }

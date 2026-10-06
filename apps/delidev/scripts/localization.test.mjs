@@ -63,11 +63,11 @@ test("product JSX text and accessible literal attributes come from catalogs", ()
 // guard covers the boundaries most likely to regress during string extraction.
 test("translation does not supply reconciliation identity or business values", () => {
   const violations = [];
-  const stableAttributes = new Set(["key", "id", "className", "value", "name", "role", "type", "htmlFor", "data-settings-category"]);
+  const stableAttributes = new Set(["key", "id", "className", "value", "name", "role", "type", "htmlFor", "data-settings-category", "state", "kind", "status"]);
   for (const file of readdirSync(join(app, "src")).filter(file => /\.tsx?$/.test(file) && !/test|fixture|localization/.test(file))) {
     const tree = ts.createSourceFile(file, readFileSync(join(app, "src", file), "utf8"), ts.ScriptTarget.Latest, true);
     function containsCopy(node) {
-      if (ts.isCallExpression(node) && ["copy", "ownedMessage"].includes(node.expression.getText(tree))) return true;
+      if (ts.isCallExpression(node) && ["copy", "ownedMessage", "statusLabel"].includes(node.expression.getText(tree))) return true;
       return ts.forEachChild(node, containsCopy) ?? false;
     }
     function visit(node) {
@@ -77,6 +77,7 @@ test("translation does not supply reconciliation identity or business values", (
         if (!(node.name.getText(tree) === "name" && tag === "EstimateCategory")) violations.push(`${file}: ${node.getText(tree)}`);
       }
       if (ts.isBinaryExpression(node) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(node.operatorToken.kind) && containsCopy(node)) violations.push(`${file}: ${node.getText(tree)}`);
+      if (ts.isElementAccessExpression(node) && containsCopy(node.argumentExpression)) violations.push(`${file}: ${node.getText(tree)}`);
       ts.forEachChild(node, visit);
     }
     visit(tree);
