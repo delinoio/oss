@@ -89,7 +89,7 @@ fn authorized(
     window: &WebviewWindow<CefRuntime>,
     windows: &ProductWindows,
 ) -> Result<(), NativeFailure> {
-    if super::is_local(&window) {
+    if super::is_local(window) {
         trusted_local(window)
     } else {
         saved_binding(window, windows).map(|_| ())

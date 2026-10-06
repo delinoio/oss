@@ -53,7 +53,7 @@ fn instance(
     window: &WebviewWindow<CefRuntime>,
     windows: &ProductWindows,
 ) -> Result<Option<String>, NativeFailure> {
-    if super::is_local(&window) {
+    if super::is_local(window) {
         trusted_local(window)?;
         Ok(None)
     } else {

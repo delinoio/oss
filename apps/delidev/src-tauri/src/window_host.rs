@@ -189,7 +189,7 @@ fn cleanup(windows: &ProductWindows, entry: &Entry) {
 
 enum CreationState {
     Pending,
-    Created(WebviewWindow<CefRuntime>),
+    Created(Box<WebviewWindow<CefRuntime>>),
     Complete,
     Canceled,
 }
@@ -206,8 +206,8 @@ impl Drop for PendingCreation {
             }
             std::mem::replace(&mut *state, CreationState::Canceled)
         };
-        if let CreationState::Created(window) = previous {
-            if self
+        if let CreationState::Created(window) = previous
+            && self
                 .app
                 .run_on_main_thread(move || {
                     if window.destroy().is_err() {
@@ -215,9 +215,8 @@ impl Drop for PendingCreation {
                     }
                 })
                 .is_err()
-            {
-                tracing::warn!(operation = "new_window", code = "cleanup-uncertain");
-            }
+        {
+            tracing::warn!(operation = "new_window", code = "cleanup-uncertain");
         }
     }
 }
@@ -249,7 +248,7 @@ pub async fn create_on_loop(
             let retained = {
                 let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
                 if matches!(*state, CreationState::Pending) {
-                    *state = CreationState::Created(window.clone());
+                    *state = CreationState::Created(Box::new(window.clone()));
                     true
                 } else {
                     false
@@ -300,10 +299,9 @@ pub fn restore_recent(app: &AppHandle<CefRuntime>) {
         .and_then(|r| r.recent(None));
     if let Some(entry) = entry
         && let Some(window) = app.get_webview_window(&entry.label)
+        && show(&window).is_err()
     {
-        if show(&window).is_err() {
-            tracing::warn!(operation = "window_restore", code = "window-unavailable");
-        }
+        tracing::warn!(operation = "window_restore", code = "window-unavailable");
     }
 }
 

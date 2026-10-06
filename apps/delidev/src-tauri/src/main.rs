@@ -1072,17 +1072,15 @@ fn update_saved_label(
                 .get(&entry.label)
                 .filter(|v| !v.closing && v.profile.id == id && v.instance == entry.instance)
                 && let Some(window) = target.get_webview_window(&entry.label)
-            {
-                if window
+                && (window
                     .set_title(&window_host::title(&entry, Some(&binding.profile.name)))
                     .is_err()
-                    || window.emit("saved-connection-label", ()).is_err()
-                {
-                    tracing::warn!(
-                        operation = "saved_window_label",
-                        code = "window-unavailable"
-                    );
-                }
+                    || window.emit("saved-connection-label", ()).is_err())
+            {
+                tracing::warn!(
+                    operation = "saved_window_label",
+                    code = "window-unavailable"
+                );
             }
         }
         tray_host::schedule(&target);
