@@ -623,6 +623,9 @@ jobs:
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Test DevHud API client
+        run: pnpm --filter @delinoio/devhud-api-client test
+
       - name: Run affected frontend contracts
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['devhud-frontend'] }}
