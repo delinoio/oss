@@ -49,6 +49,15 @@ it("checks live read surfaces only after the user's action and distinguishes obs
   expect(f.doctor).toHaveBeenCalledTimes(1);
 });
 
+it("accepts a valid schema-3 routed Worker alongside a legacy Worker", async () => {
+  const f = fixture();
+  const routed = create(ResourceSchema, { ...f.agent, id: newRequestId(), schemaVersion: 3, documentJson: encode({ harness: "codex", routes: [{ model_id: newRequestId(), accounts: [{ id: newRequestId(), weight: 1 }], routing: "priority" }] }) });
+  f.list.mockImplementation(async input => ({ resources: input.filter?.kind === EntityKind.ACCOUNT ? [f.account] : [f.agent, routed], nextPageToken: "" }));
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check prerequisites" }));
+  await screen.findByText("Agent Worker configuration: Observed");
+});
+
 it("does not retain successful checks after a failed refresh or count disabled/disconnected accounts as ready", async () => {
   const f = fixture();
   render(f.view());

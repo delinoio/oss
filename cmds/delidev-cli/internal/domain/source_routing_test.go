@@ -145,3 +145,15 @@ func TestInheritedFixedPolicyCannotAdvanceInvalidSource(t *testing.T) {
 		t.Fatalf("invalid fixed source advanced: %+v %v", route, err)
 	}
 }
+
+func TestLegacySourceProblemBlocksRouting(t *testing.T) {
+	id, agent, sources := sourceFixture()
+	legacy := agent.WithSource(agent.Routes[1])
+	source := sources[1]
+	source.Problem = Fail(ProviderDisabled, "The selected API provider is off.", "Enable this provider before starting another turn.")
+
+	route, next, err := RouteSources(id, legacy, nil, []SourceRouteInput{source}, Priority, RoutingState{}, time.Now().UTC())
+	if err == nil || SafeError(err).Code != ProviderDisabled || route.Selected != "" || !reflect.DeepEqual(next, RoutingState{}) {
+		t.Fatalf("legacy source problem was bypassed: route=%+v next=%+v err=%v", route, next, err)
+	}
+}

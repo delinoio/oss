@@ -606,16 +606,11 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 				}
 				if kind == domain.ModelKind {
 					if initial := session.InitialExecution; initial != nil {
-						if initial.Configuration.ModelID == id {
+						if executionReferencesModel(*initial, id) {
 							return conflict()
 						}
-						for _, source := range initial.Route.Sources {
-							if source.ModelID == id {
-								return conflict()
-							}
-						}
 					}
-					if session.Fork != nil && session.Fork.Snapshot.Configuration.ModelID == id {
+					if session.Fork != nil && executionReferencesModel(session.Fork.Snapshot, id) {
 						return conflict()
 					}
 					continue
@@ -625,25 +620,8 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 					return conflict()
 				}
 				if initial := session.InitialExecution; initial != nil {
-					if initial.InitialAccountID == id || initial.Route.Selected == id {
+					if executionReferencesAccount(*initial, id) {
 						return conflict()
-					}
-					for _, account := range initial.Configuration.Accounts {
-						if account.ID == id {
-							return conflict()
-						}
-					}
-					for _, source := range initial.Route.Sources {
-						for _, candidate := range source.Route.Candidates {
-							if candidate.ID == id {
-								return conflict()
-							}
-						}
-					}
-					for _, candidate := range initial.Route.Candidates {
-						if candidate.ID == id {
-							return conflict()
-						}
 					}
 					if session.ProjectID != "" {
 						policy, err := tx.ExecutionProjectPolicy(session)
@@ -655,6 +633,9 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 						}
 					}
 				}
+				if session.Fork != nil && executionReferencesAccount(session.Fork.Snapshot, id) {
+					return conflict()
+				}
 			}
 			if len(records) < filter.Limit {
 				break
@@ -663,4 +644,43 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		}
 	}
 	return nil
+}
+
+func executionReferencesModel(execution domain.InitialExecution, id domain.ID) bool {
+	if execution.Configuration.ModelID == id {
+		return true
+	}
+	for _, source := range execution.Route.Sources {
+		if source.ModelID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func executionReferencesAccount(execution domain.InitialExecution, id domain.ID) bool {
+	if execution.InitialAccountID == id || execution.Route.Selected == id {
+		return true
+	}
+	for _, account := range execution.Configuration.Accounts {
+		if account.ID == id {
+			return true
+		}
+	}
+	for _, source := range execution.Route.Sources {
+		if source.Route.Selected == id {
+			return true
+		}
+		for _, candidate := range source.Route.Candidates {
+			if candidate.ID == id {
+				return true
+			}
+		}
+	}
+	for _, candidate := range execution.Route.Candidates {
+		if candidate.ID == id {
+			return true
+		}
+	}
+	return false
 }

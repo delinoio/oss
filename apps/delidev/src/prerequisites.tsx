@@ -38,6 +38,7 @@ const reportFields = new Set(["schema_version", "observed_at", "version", "proto
 const machineFields = new Set(["machine_id", "name", "os", "architecture", "version", "last_seen", "disabled", "active_stream", "installations"]);
 const storageBytes = ["database_bytes", "wal_bytes", "logical_database_bytes", "volume_capacity_bytes", "volume_available_bytes"];
 const resourceKinds = new Set(["pairing", "project", "repository", "agent", "account", "provider", "model", "machine", "session", "template", "settings", "schedule", "occurrence", "message", "queue", "steer", "interaction", "review", "snapshot", "device", "integration", "pull_request", "problem", "inbox", "usage", "job", "routing", "forward", "subagent"]);
+const routingPolicies = new Set(["fixed", "priority", "round-robin", "remaining-quota", "reset-window", "sequential-exhaustion"]);
 const unavailableCodes = new Set([FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Unsupported, FailureCode.Canceled]);
 function shape(value: unknown, fields: Set<string>): value is Document {
   return value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => fields.has(key));
@@ -105,17 +106,45 @@ function reportFrom(bytes: Uint8Array | undefined, server: string): Document | u
     return report;
   } catch { return; }
 }
+function validWeightedAccounts(value: unknown, requireOne: boolean): value is Document[] {
+  if (!Array.isArray(value) || value.length > 1000 || requireOne && value.length === 0) return false;
+  const seen = new Set<string>();
+  return value.every(item => {
+    const link = object(item);
+    if (Object.keys(link).length !== 2 || !isEntityId(text(link.id)) || !Number.isInteger(link.weight) || Number(link.weight) < 1 || Number(link.weight) > 1000 || seen.has(text(link.id))) return false;
+    seen.add(text(link.id));
+    return true;
+  });
+}
+function validAgentConfiguration(value: Document, schemaVersion: number): boolean {
+  if (!harnesses.has(text(value.harness))) return false;
+  if (schemaVersion === 1) return isEntityId(text(value.model_id)) && Array.isArray(value.accounts);
+  if (schemaVersion !== 3 || !Array.isArray(value.routes) || value.routes.length === 0 || value.routes.length > 1000 || value.model_id !== undefined || value.accounts !== undefined || value.routing !== undefined) return false;
+  const accountIDs = new Set<string>();
+  return value.routes.every(item => {
+    const route = object(item);
+    if (Object.keys(route).some(key => !["model_id", "accounts", "routing"].includes(key)) || !isEntityId(text(route.model_id)) || !validWeightedAccounts(route.accounts, true)) return false;
+    if (route.routing !== undefined && !routingPolicies.has(text(route.routing))) return false;
+    if (route.routing === "fixed" && items(route.accounts).length !== 1) return false;
+    for (const account of items(route.accounts)) {
+      const id = text(object(account).id);
+      if (accountIDs.has(id)) return false;
+      accountIDs.add(id);
+    }
+    return true;
+  });
+}
 function configurations(rows: Resource[] | undefined, kind: EntityKind): Document[] | undefined {
   if (!rows || rows.length > 50) return;
   const seen = new Set();
   const values = [];
   for (const row of rows) {
-    if (row.kind !== kind || !isEntityId(row.id) || row.revision <= 0n || row.schemaVersion !== 1 || seen.has(row.id) || row.sessionId || row.projectId) return;
+    if (row.kind !== kind || !isEntityId(row.id) || row.revision <= 0n || kind === EntityKind.ACCOUNT && row.schemaVersion !== 1 || kind === EntityKind.AGENT && row.schemaVersion !== 1 && row.schemaVersion !== 3 || seen.has(row.id) || row.sessionId || row.projectId) return;
     seen.add(row.id);
     const value = document(row);
     if (kind === EntityKind.ACCOUNT) {
       if (!healthStates.has(text(value.health)) || typeof value.enabled !== "boolean" || !isEntityId(text(value.provider_id)) || (value.connection !== undefined && !isEntityId(text(object(value.connection).id)))) return;
-    } else if (!harnesses.has(text(value.harness)) || !isEntityId(text(value.model_id)) || !Array.isArray(value.accounts)) return;
+    } else if (!validAgentConfiguration(value, row.schemaVersion)) return;
     values.push(value);
   }
   return values;
