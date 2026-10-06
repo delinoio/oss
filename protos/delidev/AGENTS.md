@@ -1,5 +1,7 @@
 # DeliDev delidev ownership
 
+- General API OAuth follows `docs/cmds-delidev-account-oauth-contract.md`. Establish issue #964's inventory capability 6, device method 4, closed flow enum, Google options and additive Start/Complete fields on main before use. Preserve OpenRouter capability 5 and existing wire assignments. Reservations grant no OAuth support; new providers require registered DeliDev public/native apps, real API compatibility and native/server support before advertisement.
+
 - Agent Worker wizard reservations under issue #964 own System capability 33,
   `ListResourcesRequest.subscription_service = 4`,
   `SearchModelsRequest.subscription_service = 7`, and the new
