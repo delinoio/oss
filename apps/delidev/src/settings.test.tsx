@@ -577,12 +577,12 @@ it("edits global routing preferences without rewriting unrelated policy or creat
   value.save.mockRejectedValueOnce(new ConnectError("lost response", Code.Unavailable));
   render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Server preferences" }));
+  await screen.findByRole("form", { name: "Server preferences form" });
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Delete Server preferences/ })).toBeNull();
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
-  expect(screen.queryByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  expect(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { AccountTypeFilter, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SubscriptionServiceIdentity, SystemCapability, SystemQuery, newRequestId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { AccountTypeFilter, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SystemCapability, SystemQuery, newRequestId, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationFields, Harness, Routing, newConfiguration } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -11,6 +11,7 @@ import { revealAgentInvalidControl } from "./agent-configuration";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import "./agent-worker-wizard.css";
 import { SourceKind, SelectedAccount, fromKey, modelSource, sameSource, sourceKey, wireService, type Source } from "./worker-source";
+import { WorkerHarnessPicker } from "./worker-harness-picker";
 import { AgentWorkerSourceWizard } from "./agent-worker-source-wizard";
 
 enum Step { Harness = 1, Accounts, Model, Configure }
@@ -84,6 +85,11 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const change = (value: Document) => { if (encode(value).byteLength > 1 << 20) { setProblem("This configuration is too large."); return; } setData(value); setProblem(""); };
   const clearModel = () => { setModel(undefined); setInput(""); setModelPage(""); setPopup(false); setHighlight(-1); };
+  const chooseHarness = (harness: Harness) => {
+    if (blocked || !active || !supported || harness === data.harness) return;
+    initialized.current = true; setSource(undefined); clearModel();
+    change({ ...data, harness, accounts: [], model_id: "" });
+  };
   const chooseSource = (value: string) => {
     initialized.current = true;
     setSource(fromKey(value)); setAccountPage(""); clearModel();
@@ -141,8 +147,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
     {initial && data.reconfiguration_required === true ? <p role="status">This Worker needs explicit account and model reconfiguration. Historical executions keep their original attribution.</p> : null}
     <fieldset disabled={blocked || !supported}>
       <section hidden={step !== Step.Harness}>
-        <p>Choose the tool that runs this Worker.</p>
-        <label>Harness<select data-wizard-field="harness" value={text(data.harness)} onChange={event => { initialized.current = true; setSource(undefined); clearModel(); change({ ...data, harness: event.target.value, accounts: [], model_id: "" }); }}>{Object.values(Harness).map(value => <option key={value} value={value}>{harnessNames[value]}</option>)}</select></label>
+        <WorkerHarnessPicker value={data.harness} disabled={blocked || !active || !supported} change={chooseHarness} />
       </section>
       <section hidden={step !== Step.Accounts} aria-label="Choose accounts">
         <p>{harnessNames[data.harness as Harness]} <button type="button" onClick={() => { setStep(Step.Harness); setFocusField(""); }}>Change harness</button></p>

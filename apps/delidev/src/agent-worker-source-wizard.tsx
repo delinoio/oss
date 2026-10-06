@@ -10,6 +10,7 @@ import { NativeModelSettings } from "./native-model-settings";
 import { Problem } from "./ui";
 import { revealAgentInvalidControl } from "./agent-configuration";
 import { ToastKind, useNotifications } from "./toast-notifications";
+import { WorkerHarnessPicker } from "./worker-harness-picker";
 
 // Groups remain mounted through step changes and reordering. Their stable keys
 // own pagination/discovery receipts independently of their priority position.
@@ -169,7 +170,7 @@ export function AgentWorkerSourceWizard({ initial, active, saved, cancel }: { in
   }}>
     <h2>{initial ? "Edit Agent Worker" : "New Agent Worker"}</h2><ol className="worker-steps" aria-label="Worker configuration steps">{[Step.Harness, Step.Accounts, Step.Model, Step.Configure].map(value => <li key={value} aria-current={step === value ? "step" : undefined} data-completed={value < step}><span>{value}</span><span>{names[value]}</span></li>)}</ol><h3 ref={heading} tabIndex={-1}>{names[step]}</h3>
     <fieldset disabled={mutation.busy || mutation.uncertain}>
-      <section hidden={step !== Step.Harness}><p>Choose the tool that runs this Worker.</p><label>Harness<select disabled={blocked} data-wizard-field="harness" value={text(data.harness)} onChange={event => { setData(previous => ({ ...previous, harness: event.target.value })); setRoutes([draft({ routing: Routing.Priority })]); setProblem(""); }}>{Object.values(Harness).map(harness => <option key={harness} value={harness}>{harnessNames[harness]}</option>)}</select></label></section>
+      <section hidden={step !== Step.Harness}><WorkerHarnessPicker value={data.harness} disabled={blocked || !active} change={harness => { if (harness === data.harness) return; setData(previous => ({ ...previous, harness })); setRoutes([draft({ routing: Routing.Priority })]); setProblem(""); }} /></section>
       <div hidden={step !== Step.Accounts}><p>{harnessNames[data.harness as Harness]} <button type="button" disabled={blocked} onClick={() => { setStep(Step.Harness); focus(); }}>Change harness</button></p><h4>Account sources</h4><p>Use subscription accounts first, then API accounts when their quota is exhausted.</p></div>
       {routes.map((route, index) => <SourceGroup key={route.key} value={route} index={index} count={routes.length} step={step} harness={data.harness as Harness} active={active} locked={blocked} duplicateSources={routes.filter(other => other.key !== route.key).map(other => sourceKey(other.source))} update={update} report={report} move={move} remove={key => { setRoutes(previous => previous.filter(route => route.key !== key)); focus(); }} />)}
       <div hidden={step !== Step.Accounts}><button type="button" disabled={blocked || routes.length >= 1000} onClick={() => { const next = draft({ routing: Routing.Priority }); setRoutes(previous => [...previous, next]); focus(next.key, "source"); }}>+ Add account source</button><p>New sessions only. Sources advance only after confirmed quota exhaustion. Recovered subscription quota is preferred again.</p><p>Choose a model for each source in the next step.</p></div>
