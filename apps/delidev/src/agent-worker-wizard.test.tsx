@@ -55,7 +55,7 @@ async function accounts(value: ReturnType<typeof fixture>, multi = false) {
 it("removes Models and saves an ordered multi-account Worker only at the last step", async () => {
   const value = fixture(); await start(value);
   expect(screen.queryByRole("button", { name: "Models" })).toBeNull();
-  expect(within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")).toHaveLength(16);
+  expect(within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")).toHaveLength(17);
   await accounts(value, true);
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
   expect(value.list.mock.calls.some(([request]) => request.providerId === value.provider.id)).toBe(true);

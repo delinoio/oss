@@ -43,6 +43,15 @@ try {
     await page.waitForFunction(() => ![...document.querySelectorAll(".settings-content [role=status]")].some(node => node.getClientRects().length && /^(Loading |Reading server diagnostics)/.test(node.textContent ?? "")));
     if (category === "Notifications") await page.getByRole("button", { name: "Edit notification preferences", exact: true }).waitFor();
   };
+  const checkWizard = async () => {
+    const form = page.locator(".worker-wizard");
+    assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), "Wizard form cap");
+    assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Wizard content overflow");
+    const next = form.getByRole("button", { name: /^(Next|Save Agent Worker)$/ });
+    await next.scrollIntoViewIfNeeded();
+    const footer = await next.boundingBox();
+    assert(footer && footer.y >= 0 && footer.y + footer.height <= page.viewportSize().height + 0.5, "Wizard footer remains visible in document flow");
+  };
   for (const theme of ["light", "dark", "system"]) for (const populated of [false, true]) for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport[0], height: viewport[1] });
     await page.emulateMedia({ colorScheme: theme === "system" ? "dark" : theme });
@@ -66,6 +75,33 @@ try {
       assert.equal(layout.anchor, Number.parseInt(layout.padding), context);
       assert(layout.width <= 1040.5 && !layout.overflow && layout.controls && layout.multiline && layout.empty && layout.forms, context);
       checked++;
+    }
+    if (populated) {
+      await select("Agent Workers");
+      await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
+      await checkWizard();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
+      await page.getByRole("checkbox", { name: /^Personal API/ }).check();
+      await page.getByRole("checkbox", { name: /^Team API/ }).check();
+      await checkWizard();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      const input = page.getByRole("combobox", { name: "Model", exact: true });
+      await input.fill("example-model");
+      await page.getByRole("option", { name: /^Fixture model/ }).waitFor();
+      await input.press("ArrowDown"); await input.press("Enter");
+      await checkWizard();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      const heading = page.getByRole("heading", { name: "Configure", exact: true });
+      assert(await heading.evaluate(node => node === document.activeElement), "Wizard step heading receives focus");
+      await checkWizard();
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      assert.equal((await input.inputValue()).startsWith("example-model-native-"), true, "Model selection survives Back");
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      assert(await page.getByRole("checkbox", { name: /^Personal API/ }).isChecked());
+      assert(await page.getByRole("checkbox", { name: /^Team API/ }).isChecked());
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      formsChecked += 4;
     }
     if (!populated) {
       for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", "New Server preferences"], ["Git", "New Git workflow"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
