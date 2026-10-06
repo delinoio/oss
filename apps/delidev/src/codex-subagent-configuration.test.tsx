@@ -25,7 +25,7 @@ it("retains original settings when the server has no child configuration capabil
   const change = mount(false, { subagent_model: "original-child", subagent_effort: "medium", max_concurrency: 4 });
   await screen.findByText(/Update the connected server/);
   expect((screen.getByLabelText("Subagent model") as HTMLInputElement).value).toBe("original-child");
-  expect((screen.getByLabelText("Subagent effort") as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole("combobox", { name: "Subagent effort" }) as HTMLInputElement).disabled).toBe(true);
   expect(change).not.toHaveBeenCalled();
 });
 
