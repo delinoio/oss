@@ -69,6 +69,18 @@ and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
 ## Repository addition reservations
 
+### Remote-first repository reservations
+
+The approved remote-first extension under issue #964 reserves System
+`REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19`.
+Establish both allocations on main before active declarations, generated bindings
+or advertisements. URL-only registration will be an owner/client configuration
+operation without Worker admission; managed Worktree preparation will clone the
+immutable remote source on its selected Worker. Optional checkouts remain the
+source only for explicit Local execution. System 31/32 and Worker 18 retain their
+separate immediate-clone/listing contracts. Reservations grant no configuration,
+Git, filesystem or execution capability and add no SQLite migration.
+
 Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
 `GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
 `ListGitHubRepositoriesRequest`/`Response`, `RepositoryCloneGitHubSelection`,

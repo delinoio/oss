@@ -18,18 +18,24 @@ function count(value: string | undefined, measured: number | undefined) {
   return measured && value !== undefined && /^(0|[1-9][0-9]*)$/.test(value) ? BigInt(value).toLocaleString() : "Unavailable";
 }
 function UsageMetrics({ data }: { data?: GetUsageSummaryResponse }) {
+  // Empty history is a display state only; accepted work with missing telemetry
+  // must retain its unavailable evidence instead of becoming measured zero.
+  const empty = Boolean(data?.totals && data.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1
+    && data.totals.responses === 0 && data.totals.accounting.every(row => row.units === 0)
+    && data.nativeAccounting.every(row => row.totals?.units === 0)
+    && data.acceptedExecutionsWithoutResponse === 0 && data.acceptedCompactionsWithoutResponse === 0);
   const native = data?.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1 ? data.nativeAccounting.filter(row => row.totals && (row.totals.kind === AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT || row.totals.kind === AccountingUnitKind.OPENCODE_STEP) && row.totals.units > 0) : [];
   const grok = data?.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1 ? data.totals?.accounting.find(row => row.kind === AccountingUnitKind.GROK_CLOSED_INPUT && row.units > 0) : undefined;
   const response = (data?.totals?.responses ?? 0) > 0 || (!native.length && !grok);
   const separate = native.length > 0 || Boolean(grok);
   return <>
     <div className="api-usage-metric"><dt>Estimated cost</dt><dd>
-      {response ? <div>{separate ? <small>Responses</small> : null}{data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL && data.estimates?.currencies.length ? data.estimates.currencies.map(row => <strong key={row.currency}>{row.currency} {row.knownAmount || "Unavailable"}</strong>) : <strong>Unavailable</strong>}</div> : null}
+      {response ? <div>{separate ? <small>Responses</small> : null}{empty ? <strong>$0</strong> : data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL && data.estimates?.currencies.length ? data.estimates.currencies.map(row => <strong key={row.currency}>{row.currency} {row.knownAmount || "Unavailable"}</strong>) : <strong>Unavailable</strong>}</div> : null}
       {native.map(row => <div key={row.totals!.kind}><small>{unitNames[row.totals!.kind]}</small>{row.totals!.currencies.length ? row.totals!.currencies.map(value => <strong key={value.currency}>{value.currency} {value.knownAmount || "Unavailable"}</strong>) : <strong>Unavailable</strong>}</div>)}
       {grok ? <div><small>Grok closed inputs</small><strong>Unavailable</strong></div> : null}
-    </dd><small>{data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL || native.some(row => row.totals!.currencies.some(value => value.knownAmount !== "")) ? "Known subtotal" : "No historical estimate"}</small></div>
+    </dd><small>{empty ? "No usage in this period" : data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL || native.some(row => row.totals!.currencies.some(value => value.knownAmount !== "")) ? "Known subtotal" : "No historical estimate"}</small></div>
     <div className="api-usage-metric"><dt>Observed tokens</dt><dd>
-      {response ? <div>{separate ? <small>Responses</small> : null}<strong>{count(data?.totals?.total?.knownTotal, data?.totals?.total?.measuredResponses)}</strong><small>{data?.totals ? data.totals.responses > 0 ? `${data.totals.responses.toLocaleString()} observed responses` : "No exact response records" : "Not reported"}</small></div> : null}
+      {response ? <div>{separate ? <small>Responses</small> : null}<strong>{empty ? "0" : count(data?.totals?.total?.knownTotal, data?.totals?.total?.measuredResponses)}</strong><small>{empty ? "No usage in this period" : data?.totals ? data.totals.responses > 0 ? `${data.totals.responses.toLocaleString()} observed responses` : "No exact response records" : "Not reported"}</small></div> : null}
       {native.map(row => <div key={row.totals!.kind}><small>{unitNames[row.totals!.kind]}</small><strong>{count(row.totals!.total?.knownTotal, row.totals!.total?.measuredUnits)}</strong><small>{row.totals!.units.toLocaleString()} observed units</small></div>)}
       {grok ? <div><small>Grok closed inputs</small><strong>{count(grok.knownTotal, grok.measuredUnits)}</strong><small>{grok.units.toLocaleString()} observed units</small></div> : null}
     </dd></div>

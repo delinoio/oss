@@ -116,6 +116,15 @@ the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ### Repository addition prerequisites
 
+The approved remote-first extension reserves System 37
+(`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`) on main
+before dependent implementation. It follows the Add repository implementation
+in PR #1355 and preserves its immediate-clone/listing allocations. Reservations
+alone grant no URL registration or managed workspace clone and add no migration.
+The complete feature must compose repository saving, session/schedule admission,
+Worker preparation, native ownership, recovery, snapshots, Fork, Sidechat and
+deletion; a URL-only form without remote Worker preparation is incomplete.
+
 The Add repository extension under issue #964 reserves System capabilities 31
 (`REPOSITORY_CLONE_V1`) and 32 (`GITHUB_REPOSITORY_PICKER_V1`), Worker capability
 18 (`REPOSITORY_CLONE_V1`), and the five new repository-list/clone message
