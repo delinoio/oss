@@ -1,4 +1,62 @@
-# OpenRouter account OAuth PKCE (issue #1146)
+# API account browser OAuth
+
+## General API OAuth reservations (issue #964)
+
+The approved extension covers direct ordinary API credentials only: OpenRouter
+PKCE to an API key, Hugging Face PKCE to OAuth tokens, Google Gemini PKCE to OAuth
+tokens with an explicit quota/billing project, and Baseten device authorization
+to OAuth tokens. Coding subscriptions and flows that broker or separately create
+API keys are outside this extension. Other providers retain API-key or Keyless
+connections. Existing OpenRouter behavior and its issue #1146 ownership remain.
+
+Establish these issue #964 reservations on main before dependent implementation:
+
+- `ProviderInventoryCapability.ACCOUNT_OAUTH_V1 = 6`; preserve OpenRouter-only 5.
+- `ProviderConnectionMethod.OAUTH_DEVICE = 4`; preserve values 0–3.
+- New `AccountOAuthFlow`: UNSPECIFIED 0, PKCE 1, DEVICE 2.
+- New `AccountOAuthGoogleOptions.quota_project_id = 1`.
+- `StartAccountOAuthRequest.google = 3`.
+- `StartAccountOAuthResponse.flow = 5` and `user_code = 6`. The temporary device
+  approval code is available only from the live Start response, never Status.
+- `CompleteAccountOAuthRequest.authorization_state = 3`; new PKCE profiles bind
+  completion to the original state. Preserve the historical OpenRouter input.
+- Private migration 31 follows the real migrations 26–30. It owns authentication
+  profiles, protected token-generation references, durable refresh claims and
+  cleanup metadata. Existing OpenRouter records and vault references survive.
+
+These reservations activate no schema, credential exchange, capability or native
+browser authority. Complete feature PRs follow reservation closure on main in
+this order: common lifecycle plus Hugging Face, Gemini, then Baseten.
+
+Go owns exchange, device polling, protected access/refresh tokens and refresh.
+SQLite, logs and frontend caches contain no tokens, verifier or device code.
+Credential resolution serializes refresh per connection and atomically replaces
+the protected generation without changing account, connection or execution
+ownership. Uncertain exchange or refresh never grants an automatic resend.
+Device polling repeats only after explicit pending/slow_down responses; uncertain
+token issuance stops. Cancellation, restart, restore and deletion retain durable
+claims and independent cleanup. API inspection and execution share this authority.
+
+Only an enabled exact managed official provider profile can grant OAuth.
+DeliDev-owned public/native app registration and real ordinary-API credential
+compatibility are activation prerequisites. Do not copy another application's
+client ID. Profiles without registration or acceptance do not advertise OAuth
+support and remain incomplete. User-owned OAuth app configuration is excluded.
+New connections follow the current API defaults and remain unverified until the
+user explicitly validates or discovers models. Native flow support and server
+capabilities must both be present; old combinations keep manual connections and
+the existing OpenRouter compatibility behavior.
+
+Gemini requires an explicit Google Cloud project ID before browser launch and
+uses that project for quota/billing. Baseten opens its fixed approved browser
+address and displays the transient approval code without a callback listener.
+Every native flow retains original window/server/attempt lifetime ownership;
+PKCE also retains the original state. The common AccountOAuth card preserves the
+approved 760px width, 20px padding, 12px radius, theme, wrapped actions, keyboard
+focus, status announcements, narrow-window and 200% zoom behavior. Switch to an
+API key only after cancellation is confirmed; success never auto-validates.
+
+## OpenRouter account OAuth PKCE (issue #1146)
 
 ## Status and ownership
 

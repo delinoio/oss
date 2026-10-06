@@ -20,15 +20,23 @@ all affected owners, even when their rules live outside the edited directory.
 
 ## Protocol
 
+GitHub token-first onboarding under issue #964 reserves System capability 34,
+two closed enums and five new message declarations in the protocol allocation
+ledger. Establish this reservation-only closure on main before dependent
+implementation. It grants no token inspection, pre-profile form, credential
+retention or browser capability and adds no migration. Follow the protocol and
+integration contracts.
+
 The Agent Worker wizard amendment under issue #964 reserves System capability
 `AGENT_WORKER_WIZARD_V1 = 33`, list-only subscription-service field 4 on
 `ListResourcesRequest`, field 7 on `SearchModelsRequest`, and the wholly new
 `SaveAgentWorkerRequest` and `AgentWorkerModelSelection` declarations. The request
 reserves mutation/document/model/schema-version fields 1–4; model selection
 reserves canonical model ID/native ID/expected model revision fields 1–3.
-Establish this closure on main before implementing the source-scoped wizard and
-atomic model/Agent save. It changes no active schema, runtime capability or
-database migration, and grants no native execution or account authority.
+PR #1351 established this closure on main before the source-scoped wizard and
+atomic model/Agent save. The implementation reuses the existing acknowledgement
+and storage schemas without a database migration. Reservations alone still grant
+no runtime support, native execution or account authority.
 
 Keep package `delidev.v1`, Go import paths, RPC procedure names, existing field and
 enum numbers, JSON meanings and TypeScript exports stable. Service-specific schema
@@ -60,7 +68,7 @@ CLI framing/authentication and command groups have separate files. They retain
 existing order, authorization, cleanup and output behavior.
 
 The original structural change retained schema 24. The current executable registry
-implements real migrations through 28; later reserved versions remain inactive. Versioned migration
+implements real migrations through 30; later reserved versions remain inactive. Versioned migration
 definitions share creation and upgrade paths while retaining backup-first atomic
 upgrade and all recognized historical layout repairs. Historical migration tests
 start from fixed historical SQL, not a newer schema with an expanding drop list.
@@ -70,6 +78,14 @@ Unknown or newer databases, including unmerged variant schema-25 databases, rema
 preserved and require recovery rather than being inferred from their version alone.
 
 ## Validation and rollout
+
+The general API browser OAuth extension reserves migration 31 under issue #964
+after real 26–30 and retains the original 29/30 owners. Inventory capability 6,
+device connection method 4 and the additive flow/options/state fields belong to
+the same main-first reservation closure in the allocation ledger. Reservations
+grant no provider registration, exchange or native capability. Deliver complete
+common/Hugging Face, Gemini and Baseten feature PRs in that dependency order under
+the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ### Repository addition prerequisites
 
