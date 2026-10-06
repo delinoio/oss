@@ -1,0 +1,219 @@
+// SPDX-License-Identifier: Apache-2.0
+package workspace
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+)
+
+// The injected executable maps a validated HTTPS address to an isolated Git
+// fixture. Production transport validation stays intact; this proves ownership
+// and Git history, not real network, credential-helper or platform acceptance.
+func managedCloneFixture(t *testing.T) (*Manager, PrepareRequest, string) {
+	t.Helper()
+	git, _, clone, marker := cloneFixture(t)
+	m := manager(t)
+	m.Git.Executable = git.Executable
+	repo := domain.NewID()
+	request := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.Worktree, PrimaryRepository: repo, Repositories: []RepositorySpec{{ID: repo, SourceKind: RemoteCloneSource, RemoteURL: clone.URL}}}
+	return m, request, marker
+}
+func TestManagedCloneDetachedFullHistoryAndRestartReplay(t *testing.T) {
+	m, input, marker := managedCloneFixture(t)
+	manifest, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := manifest.Repositories[0]
+	if repo.Source != repo.Path || repo.SourceKind != RemoteCloneSource || !repo.Owned || gitTest(t, repo.Path, "branch", "--show-current") != "" {
+		t.Fatal("not an independent detached clone")
+	}
+	if err := ValidateResult(input, manifest, runtime.GOOS); err != nil {
+		t.Fatal(err)
+	}
+	if gitTest(t, repo.Path, "rev-parse", "--is-shallow-repository") != "false" {
+		t.Fatal("partial history")
+	}
+	replacement := &Manager{Root: m.Root, Git: Git{Executable: m.Git.Executable}, Logger: m.Logger}
+	again, err := replacement.Prepare(context.Background(), input)
+	if err != nil || manifestDigest(again) != manifestDigest(manifest) {
+		t.Fatal("ready result not reused", err)
+	}
+	raw, _ := os.ReadFile(marker)
+	if string(raw) != "invoked" {
+		t.Fatal("duplicate clone", string(raw))
+	}
+	recovered, err := replacement.Recover(context.Background(), recoveryInput(input), false)
+	if err != nil || recovered.Outcome != RecoveredReady {
+		t.Fatal("lost response did not recover", err)
+	}
+	changed := input
+	changed.Repositories = append([]RepositorySpec(nil), input.Repositories...)
+	changed.Repositories[0].RemoteURL = "https://github.com/fixture/another.git"
+	if _, err := replacement.Prepare(context.Background(), changed); err == nil {
+		t.Fatal("accepted source changed")
+	}
+}
+func TestManagedCloneConcurrentPreparationRunsOnce(t *testing.T) {
+	m, input, marker := managedCloneFixture(t)
+	var group sync.WaitGroup
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		group.Add(1)
+		go func() { defer group.Done(); _, err := m.Prepare(context.Background(), input); results <- err }()
+	}
+	group.Wait()
+	close(results)
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes == 0 {
+		t.Fatal("no preparation succeeded")
+	}
+	raw, _ := os.ReadFile(marker)
+	if string(raw) != "invoked" {
+		t.Fatal("concurrent clone duplicated", string(raw))
+	}
+}
+func TestManagedCloneProjectFailureAndForeignReplacement(t *testing.T) {
+	t.Run("partial project", func(t *testing.T) {
+		m, input, _ := managedCloneFixture(t)
+		input.Repositories = append(input.Repositories, RepositorySpec{ID: domain.NewID(), SourceKind: RemoteCloneSource, RemoteURL: input.Repositories[0].RemoteURL, Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "origin", Name: "missing"}})
+		if _, err := m.Prepare(context.Background(), input); err == nil {
+			t.Fatal("partial project became ready")
+		}
+		if _, err := os.Stat(filepath.Join(m.Root, "workspaces", string(input.SessionID))); !os.IsNotExist(err) {
+			t.Fatal("owned partial clone retained", err)
+		}
+	})
+	t.Run("replacement", func(t *testing.T) {
+		m, input, _ := managedCloneFixture(t)
+		manifest, err := m.Prepare(context.Background(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		repo := manifest.Repositories[0]
+		if err := os.Rename(repo.Path, repo.Path+"-original"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := walkSnapshot(context.Background(), repo.Path+"-original", repo.Path, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.verifyWorkspaceIdentity(context.Background(), input, manifest, continuationIdentity); err == nil {
+			t.Fatal("replacement adopted")
+		}
+		manifest.State = CleanupPending
+		if err := m.cleanup(context.Background(), filepath.Dir(repo.Path), manifest); err == nil {
+			t.Fatal("replacement deleted")
+		}
+		if _, err := os.Stat(repo.Path); err != nil {
+			t.Fatal("foreign clone lost", err)
+		}
+	})
+}
+func TestManagedCloneLeaseSnapshotRestoreAndIndependentFork(t *testing.T) {
+	m, input, _ := managedCloneFixture(t)
+	manifest, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	parent := manifest.Repositories[0].Path
+	if err := os.WriteFile(filepath.Join(parent, "tracked.txt"), []byte("fork dirty\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// The public clone fixture redirects every clone. Use actual Git for the
+	// explicitly bound local Fork, which must copy objects without hard links.
+	m.Git.Executable = ""
+	fork, err := m.ForkPreparation(context.Background(), manifest, domain.NewID(), domain.Worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := m.InspectForkSnapshot(context.Background(), manifest, fork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := m.PrepareFork(context.Background(), fork, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.Repositories[0].SourceKind != IndependentForkSource {
+		t.Fatal("fork retains parent Git lifetime")
+	}
+	storage := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: input, Manifest: manifest}
+	preview := storageDo(t, m, storage)
+	storage.Action, storage.OperationID, storage.SnapshotID, storage.PreviewDigest = StorageCleanup, domain.NewID(), domain.NewID(), preview.PreviewDigest
+	cleaned := storageDo(t, m, storage)
+	if _, err := m.verifyWorkspaceIdentity(context.Background(), fork, child, preparationIdentity); err != nil {
+		t.Fatal("parent cleanup invalidated fork", err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(child.PrimaryPath, "tracked.txt"))
+	if string(raw) != "fork dirty\n" {
+		t.Fatal("dirty fork lost")
+	}
+	storage.Action, storage.OperationID, storage.PreviousState, storage.SnapshotDigest = StorageRestore, domain.NewID(), domain.WorkspaceStored, cleaned.Snapshot.SHA256
+	storageDo(t, m, storage)
+	if _, err := m.verifyWorkspaceIdentity(context.Background(), input, manifest, continuationIdentity); err != nil {
+		t.Fatal("restored clone identity lost", err)
+	}
+	if !strings.Contains(gitTest(t, manifest.PrimaryPath, "log", "--oneline"), "initial") {
+		t.Fatal("history lost")
+	}
+}
+
+func TestManagedCloneSidechatAndPermanentDeletion(t *testing.T) {
+	m, input, _ := managedCloneFixture(t)
+	ctx := context.Background()
+	parent, err := m.Prepare(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(m.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	reference, child, err := m.PrepareSidechatReference(ctx, domain.NewID(), domain.NewID(), input, parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateResult(reference, child, runtime.GOOS); err != nil {
+		t.Fatal(err)
+	}
+	if child.Repositories[0].Owned {
+		t.Fatal("Sidechat acquired clone ownership")
+	}
+	if _, err := m.verifyWorkspaceIdentity(ctx, reference, child, continuationIdentity); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.DeleteOwnedWorkspace(ctx, sidechatDeletionWork(parent), false, func() error { return nil }); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("parent deletion crossed Sidechat", err)
+	}
+	if err := m.DeleteOwnedWorkspace(ctx, sidechatDeletionWork(child), false, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(parent.PrimaryPath); err != nil {
+		t.Fatal("child deleted parent", err)
+	}
+	if err := m.DeleteOwnedWorkspace(ctx, sidechatDeletionWork(parent), false, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(parent.PrimaryPath); !os.IsNotExist(err) {
+		t.Fatal("clone not deleted", err)
+	}
+}

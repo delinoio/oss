@@ -150,7 +150,7 @@ func TestCLIPairWorkerAndInspectRealRepository(t *testing.T) {
 		t.Fatalf("wrong canonical root: %v", data)
 	}
 
-	repository, err := json.Marshal(domain.Repository{Name: "fixture", PreferredRemote: "origin", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: sub}}})
+	repository, err := json.Marshal(domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "fixture", PreferredRemote: "origin", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: sub}}})
 	if err != nil {
 		t.Fatal(err)
 	}

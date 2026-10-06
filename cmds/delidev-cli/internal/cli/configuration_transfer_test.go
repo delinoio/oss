@@ -88,7 +88,7 @@ func TestCLIConfigurationTransferThroughRealWorker(t *testing.T) {
 		t.Fatalf("git init: %s %v", out, err)
 	}
 	sourceMachine, repoID, templateID := domain.NewID(), domain.NewID(), domain.NewID()
-	repo, _ := json.Marshal(domain.Repository{Name: "Imported repository", Checkouts: []domain.Checkout{{MachineID: sourceMachine, Path: "/old/computer/path"}}, AutoFetch: true})
+	repo, _ := json.Marshal(domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Imported repository", Checkouts: []domain.Checkout{{MachineID: sourceMachine, Path: "/old/computer/path"}}, AutoFetch: true})
 	template, _ := json.Marshal(domain.Template{Name: "Imported instructions", Contents: "Keep this original content.\n"})
 	selection := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{{ID: repoID, Kind: domain.RepositoryKind, Document: repo}, {ID: templateID, Kind: domain.TemplateKind, Document: template}}, Machines: []domain.ConfigurationMachine{{ID: sourceMachine, Name: "Original computer", OS: "linux", Architecture: "amd64"}}}, Machines: []domain.ConfigurationMachineBinding{{SourceID: sourceMachine, TargetID: machine}}, Checkouts: []domain.ConfigurationCheckoutBinding{{RepositoryID: repoID, MachineID: sourceMachine, Path: checkout}}}
 	previewPath := filepath.Join(t.TempDir(), "reviewed.json")

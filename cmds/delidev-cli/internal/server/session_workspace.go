@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -57,13 +58,19 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 			return input, err
 		}
 		spec := workspace.RepositorySpec{ID: r.ID, PreferredRemote: repo.PreferredRemote, Base: repo.Base, Starting: repo.Starting, AutoFetch: settings.AutomaticFetch && repo.AutoFetch}
+		if session.Workspace == domain.Worktree {
+			if _, err := domain.ParseRepositoryCloneURL(repo.RemoteURL); err != nil {
+				return input, err
+			}
+			spec.SourceKind, spec.RemoteURL = workspace.RemoteCloneSource, repo.RemoteURL
+		}
 		for _, checkout := range repo.Checkouts {
-			if checkout.MachineID == session.MachineID {
+			if session.Workspace == domain.Local && checkout.MachineID == session.MachineID {
 				spec.Checkout = checkout.Path
 				break
 			}
 		}
-		if spec.Checkout == "" {
+		if session.Workspace == domain.Local && spec.Checkout == "" {
 			return input, domain.Fail(domain.MissingInput, "A project repository has no checkout on the selected Worker.", "Inspect and configure every project repository on that machine.")
 		}
 		for _, start := range session.Starting {
@@ -72,6 +79,7 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 			}
 		}
 		if session.Workspace == domain.Local {
+			spec.SourceKind, spec.RemoteURL = workspace.LocalCheckoutSource, repo.RemoteURL
 			spec.Starting = domain.Reference{}
 			spec.AutoFetch = false
 		}
@@ -81,8 +89,14 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 }
 
 func queueSessionWorkspace(tx *store.Tx, id domain.ID, session *domain.Session, input workspace.PrepareRequest) error {
-	if _, _, err := activeMachine(tx, session.MachineID); err != nil {
+	_, machine, err := activeMachine(tx, session.MachineID)
+	if err != nil {
 		return err
+	}
+	for _, repo := range input.Repositories {
+		if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
+			return domain.Fail(domain.Unsupported, "The selected Runner Device cannot clone remote workspaces.", "Update and reconnect that Worker before preparing this session.")
+		}
 	}
 	raw, err := json.Marshal(input)
 	if err != nil {

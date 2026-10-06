@@ -190,8 +190,15 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 			return request, forkUnsupported()
 		}
 		spec := RepositorySpec{ID: repo.ID, Checkout: repo.Path}
+		if kind == domain.Local && repo.SourceKind == LocalCheckoutSource {
+			spec.SourceKind, spec.RemoteURL = LocalCheckoutSource, repo.RemoteURL
+		}
 		if kind == domain.Worktree {
-			spec.ForkRegistrationSource = repo.Source
+			if repo.SourceKind.managed() {
+				spec.SourceKind, spec.RemoteURL = IndependentForkSource, repo.RemoteURL
+			} else {
+				spec.ForkRegistrationSource = repo.Source
+			}
 		}
 		request.Repositories = append(request.Repositories, spec)
 		if repo.Path == source.PrimaryPath {

@@ -147,6 +147,7 @@ type Checkout struct {
 	Path      string `json:"path"`
 }
 type Repository struct {
+	RemoteURL       string             `json:"remote_url,omitempty"`
 	Name            string             `json:"name"`
 	Checkouts       []Checkout         `json:"checkouts"`
 	PreferredRemote string             `json:"preferred_remote,omitempty"`
@@ -163,8 +164,13 @@ func (r Repository) Validate() error {
 	if err := Text(r.Name, "repository name", 256, true); err != nil {
 		return err
 	}
-	if len(r.Checkouts) == 0 || len(r.Checkouts) > 1000 {
+	if len(r.Checkouts) > 1000 || len(r.Checkouts) == 0 && r.RemoteURL == "" {
 		return Fail(InvalidArgument, "A repository requires an execution-machine checkout.", "Inspect a checkout on its Worker first.")
+	}
+	if r.RemoteURL != "" {
+		if _, err := ParseRepositoryCloneURL(r.RemoteURL); err != nil {
+			return err
+		}
 	}
 	ids := make([]ID, 0, len(r.Checkouts))
 	for _, c := range r.Checkouts {
@@ -679,7 +685,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

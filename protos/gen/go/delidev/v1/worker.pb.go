@@ -26,6 +26,7 @@ type WorkerCapability int32
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
 	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1            WorkerCapability = 18
+	WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1      WorkerCapability = 19
 	WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1       WorkerCapability = 17
 	WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1    WorkerCapability = 16
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1   WorkerCapability = 5
@@ -51,6 +52,7 @@ var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
 		18: "WORKER_CAPABILITY_REPOSITORY_CLONE_V1",
+		19: "WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1",
 		17: "WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1",
 		16: "WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1",
 		5:  "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
@@ -72,6 +74,7 @@ var (
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
 		"WORKER_CAPABILITY_REPOSITORY_CLONE_V1":               18,
+		"WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1":         19,
 		"WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1":          17,
 		"WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1":       16,
 		"WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":      5,
@@ -3297,10 +3300,11 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed*\xbe\a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed*\xef\a\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
-	"%WORKER_CAPABILITY_REPOSITORY_CLONE_V1\x10\x12\x12.\n" +
+	"%WORKER_CAPABILITY_REPOSITORY_CLONE_V1\x10\x12\x12/\n" +
+	"+WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1\x10\x13\x12.\n" +
 	"*WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1\x10\x11\x121\n" +
 	"-WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1\x10\x10\x122\n" +
 	".WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1\x10\x05\x121\n" +

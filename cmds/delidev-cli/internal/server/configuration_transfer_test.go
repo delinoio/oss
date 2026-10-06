@@ -290,7 +290,7 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 			selection := transferSelection()
 			sources := []domain.ID{domain.NewID(), domain.NewID()}
 			targets := []domain.ID{domain.NewID(), domain.NewID()}
-			repository := domain.Repository{Name: "Both checkouts", AutoFetch: true}
+			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Both checkouts", AutoFetch: true}
 			for i, source := range sources {
 				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"})
 				selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: source, Name: "source", OS: "linux", Architecture: "amd64"})

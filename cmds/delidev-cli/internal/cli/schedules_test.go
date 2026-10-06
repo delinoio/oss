@@ -52,7 +52,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 			{domain.AgentKind, agent, domain.Agent{Name: "Fixture", ModelID: model, Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}},
 			{domain.MachineKind, machine, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"}},
 			{domain.DeviceKind, device, domain.Device{Name: "Fixture", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}},
-			{domain.RepositoryKind, repository, domain.Repository{Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: machine, Path: checkout}}, Base: domain.Reference{Type: domain.LocalBranch, Name: "main"}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}},
+			{domain.RepositoryKind, repository, domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: machine, Path: checkout}}, Base: domain.Reference{Type: domain.LocalBranch, Name: "main"}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}},
 			{domain.ProjectKind, project, domain.Project{Name: "Fixture", Repositories: []domain.ID{repository}, PrimaryRepository: repository}},
 		} {
 			if _, err := tx.Put(item.kind, item.id, 0, "", "", item.value); err != nil {

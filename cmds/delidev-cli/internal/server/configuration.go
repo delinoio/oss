@@ -47,6 +47,15 @@ func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
 	if err := domain.Decode(raw, value); err != nil {
 		return nil, err
 	}
+	if repository, ok := value.(*domain.Repository); ok {
+		parsed, err := domain.ParseRepositoryCloneURL(repository.RemoteURL)
+		if err != nil {
+			return nil, err
+		}
+		if repository.Name == "" {
+			repository.Name = parsed.DirectoryName
+		}
+	}
 	if err := value.Validate(); err != nil {
 		return nil, err
 	}

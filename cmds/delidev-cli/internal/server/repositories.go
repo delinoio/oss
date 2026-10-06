@@ -74,6 +74,12 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 				return nil, err
 			}
 		}
+		if len(repository.Checkouts) == 0 {
+			if err := finishRepositorySave(tx, parent.ID); err != nil {
+				return nil, err
+			}
+			return tx.Get(domain.JobKind, parent.ID)
+		}
 		return parent, nil
 	})
 }

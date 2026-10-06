@@ -28,7 +28,7 @@ func TestRepositoryValidationIsAtomicAcrossWorkersAndRevisions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	configuration := domain.Repository{Name: "repo", PreferredRemote: "origin", AutoFetch: true, Checkouts: []domain.Checkout{{MachineID: machines[0], Path: "/tmp/one/sub"}, {MachineID: machines[1], Path: "/tmp/two/sub"}}}
+	configuration := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "repo", PreferredRemote: "origin", AutoFetch: true, Checkouts: []domain.Checkout{{MachineID: machines[0], Path: "/tmp/one/sub"}, {MachineID: machines[1], Path: "/tmp/two/sub"}}}
 	raw, _ := json.Marshal(configuration)
 	accepted := func(id domain.ID, revision uint64) (store.Record, []store.Record) {
 		t.Helper()

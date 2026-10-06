@@ -26,6 +26,7 @@ type SystemCapability int32
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                    SystemCapability = 0
 	SystemCapability_SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1            SystemCapability = 31
+	SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1         SystemCapability = 37
 	SystemCapability_SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1    SystemCapability = 32
 	SystemCapability_SYSTEM_CAPABILITY_SIGNED_UPDATES_V1              SystemCapability = 28
 	SystemCapability_SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1            SystemCapability = 29
@@ -70,6 +71,7 @@ var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
 		31: "SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1",
+		37: "SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1",
 		32: "SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1",
 		28: "SYSTEM_CAPABILITY_SIGNED_UPDATES_V1",
 		29: "SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1",
@@ -106,6 +108,7 @@ var (
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                      0,
 		"SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1":              31,
+		"SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1":           37,
 		"SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1":      32,
 		"SYSTEM_CAPABILITY_SIGNED_UPDATES_V1":                28,
 		"SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1":              29,
@@ -2902,10 +2905,11 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xf2\f\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xa0\r\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
-	"%SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1\x10\x1f\x121\n" +
+	"%SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1\x10\x1f\x12,\n" +
+	"(SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1\x10%\x121\n" +
 	"-SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1\x10 \x12'\n" +
 	"#SYSTEM_CAPABILITY_SIGNED_UPDATES_V1\x10\x1c\x12)\n" +
 	"%SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1\x10\x1d\x122\n" +

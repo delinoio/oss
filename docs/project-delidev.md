@@ -12,6 +12,8 @@ Codex native flows use a common minimum SemVer `0.151.0` with no upper bound und
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
 
+Repositories use required remote URLs with optional Local folder connections under the [workspace contract](cmds-delidev-workspace-contract.md). System 37 and Worker 19 activate only after main reservations in PR #1377. Desktop registration, CLI/configuration transfer and session/schedule preparation share this source authority; independent managed clones preserve Fork, Sidechat and storage/deletion lifetimes without rewriting accepted history.
+
 ## Domain Ownership Map
 - `apps/delidev`: desktop presentation and native host.
 - `cmds/delidev-cli`: Go CLI, server, Worker, storage and native adapters.

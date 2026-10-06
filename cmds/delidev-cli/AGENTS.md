@@ -37,3 +37,5 @@ Native session compaction for issues #1093, #1202 and #1203 follows the planned 
 - Signed updates and SSH Worker setup follow `docs/cmds-delidev-updates-contract.md` and `docs/cmds-delidev-ssh-setup-contract.md`. Preserve compiled release authority, exact confirmed host identity, protected credentials, original registration/workspaces, once-only remote effects and joined Worker replacement. Never replace live server/harness binaries or treat fixtures as installed-platform acceptance.
 
 - Codex attempts use the common SemVer minimum `0.151.0` without an upper bound across all native flows. Preserve actual detected versions and exact original executable/version ownership; higher-version eligibility never proves protocol or account support. Keep other harness pins unchanged. Follow the harness contract.
+
+- Repository saves/imports require credential-free remote_url and allow empty checkouts. Gate remote managed preparation at acceptance/assignment with Worker 19, pin source kind and URL, and preserve explicit Local authentication, immutable historical preparation and no automatic conversion. Follow the workspace/transfer/protocol contracts.

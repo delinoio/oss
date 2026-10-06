@@ -95,6 +95,7 @@ type WorkerCapability string
 
 const (
 	CodexReadOnlySidechatWorkerV1  WorkerCapability = "codex-read-only-sidechat-v1"
+	RemoteWorkspaceCloneV1         WorkerCapability = "remote-workspace-clone-v1"
 	RepositoryCloneV1              WorkerCapability = "repository-clone-v1"
 	SignedWorkerUpdatesV1          WorkerCapability = "signed-worker-updates-v1"
 	RepositoryInspectionMetadataV1 WorkerCapability = "repository-inspection-metadata-v1"
