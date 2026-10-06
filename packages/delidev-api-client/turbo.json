@@ -27,8 +27,7 @@
     "test:integration": {
       "cache": false,
       "dependsOn": [
-        "test:unit",
-        "delidev-desktop#test:unit"
+        "test:unit"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -44,7 +43,8 @@
         "GOCACHE",
         "GOPATH",
         "GOFLAGS",
-        "RUNNER_TEMP"
+        "RUNNER_TEMP",
+        "DELIDEV_TEST_BINARY"
       ]
     },
     "ci:check": {

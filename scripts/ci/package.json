@@ -42,6 +42,9 @@
     "ci:rust:clippy:devhud": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
     "ci:rust:clippy:delidev": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
     "ci:rust:clippy:devhud-delidev": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
-    "ci:rust:selection-fixture": "node from-root.mjs node --test scripts/ci/rust-affected-live.test.mjs"
+    "ci:rust:selection-fixture": "node from-root.mjs node --test scripts/ci/rust-affected-live.test.mjs",
+    "ci:go:quality": "node from-root.mjs node scripts/ci/go-quality.mjs",
+    "ci:go:discovery": "node from-root.mjs node --test scripts/ci/go-affected.test.mjs",
+    "ci:delidev:fixture": "node from-root.mjs node scripts/ci/prepare-delidev-test-binary.mjs"
   }
 }
