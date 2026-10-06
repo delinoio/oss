@@ -66,6 +66,7 @@
         "REACT_FORGE_TARGET",
         "REACT_FORGE_SKIP_SCENE_TESTS",
         "CARGO_HOME",
+        "CARGO_TARGET_DIR",
         "RUSTUP_HOME",
         "RUNNER_TEMP",
         "RUNNER_OS",

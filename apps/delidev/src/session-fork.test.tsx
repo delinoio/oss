@@ -3,12 +3,114 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ForkPurpose, ForkWorkspace, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ForkPurpose, ForkWorkspace, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, object } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionForkAction, SessionForkProvider } from "./session-fork";
+
+function deferred<T>() {
+ let resolve!: (value: T) => void;
+ const promise = new Promise<T>(done => { resolve = done; });
+ return { promise, resolve };
+}
+
+async function openCodePreflightFixture() {
+ const machineId = newRequestId();
+ const sources = ["Source A", "Source B"].map(name => create(ResourceSchema, {
+  kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1,
+  documentJson: encode({ name, machine_id: machineId, workspace: "general-chat", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "opencode" } }, execution: { native_thread_id: "ses_01960dcbe1faABCDEFGHIJKLMN", native_turn_id: "msg_01960dcbe1fcABCDEFGHIJKLMN", cleanup_verified: true, observed: { opencode_agent: "build" } } }),
+ }));
+ const machine = create(ResourceSchema, { kind: EntityKind.MACHINE, id: machineId, revision: 1n, schemaVersion: 1, documentJson: encode({ os: "linux", worker_capabilities: ["opencode-general-chat-fork-v1"] }) });
+ const gate = deferred<void>();
+ const waiting = vi.fn();
+ let hold = false;
+ const jobs = new Map<string, Resource>();
+ const fork = vi.fn(async request => {
+  const job = create(ResourceSchema, { kind: EntityKind.JOB, id: newRequestId(), revision: 1n, schemaVersion: 1, documentJson: encode({ state: "claimed", input: { source_session_id: request.mutation?.id } }) });
+  jobs.set(job.id, job);
+  return { job };
+ });
+ const transport = createRouterTransport(router => {
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1] }) });
+  router.service(ResourceService, {
+   getResource: request => ({ resource: request.kind === EntityKind.MACHINE ? machine : sources.find(source => source.id === request.id) }),
+   listResources: async request => {
+    const source = sources.find(source => source.id === request.filter?.sessionId)!;
+    if (hold && source.id === sources[0]!.id) { waiting(); await gate.promise; }
+    return { resources: openCodePlainMessages(source) };
+   },
+  });
+  router.service(SessionService, { forkSession: fork, getSessionFork: request => ({ job: jobs.get(request.jobId) }) });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+ const view = (source = sources[0]!) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+ const rendered = render(view());
+ fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+ await waitFor(() => expect((screen.getByRole("button", { name: "Create fork" }) as HTMLButtonElement).disabled).toBe(false));
+ hold = true;
+ fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
+ await waitFor(() => expect(waiting).toHaveBeenCalledTimes(1));
+ return { sources, fork, client, gate, view, rendered, waiting };
+}
+
+it("does not admit a discarded Fork after its deferred profile check completes", async () => {
+ const fixture = await openCodePreflightFixture();
+ fireEvent.click(screen.getByRole("button", { name: "Discard fork draft" }));
+ await act(async () => { fixture.gate.resolve(); });
+ await waitFor(() => expect(fixture.client.isFetching()).toBe(0));
+ expect(fixture.fork).not.toHaveBeenCalled();
+ expect(screen.queryByRole("dialog", { name: "Fork session" })).toBeNull();
+ expect(screen.queryByRole("button", { name: "Return to retained fork operation" })).toBeNull();
+});
+
+it("keeps a replacement draft and its accepted job independent of the old profile check", async () => {
+ const fixture = await openCodePreflightFixture();
+ fixture.rendered.rerender(fixture.view(fixture.sources[1]!));
+ fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+ expect((screen.getByRole("textbox", { name: "Fork name" }) as HTMLInputElement).value).toBe("Source B fork");
+ await waitFor(() => expect((screen.getByRole("button", { name: "Create fork" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
+ await screen.findByRole("region", { name: "Fork operation" });
+ await act(async () => { fixture.gate.resolve(); });
+ await waitFor(() => expect(fixture.client.isFetching()).toBe(0));
+ expect(fixture.fork).toHaveBeenCalledTimes(1);
+ expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: fixture.sources[1]!.id, expectedRevision: 8n }, name: "Source B fork" });
+ expect(screen.getByText(`Source: ${fixture.sources[1]!.id} · Turn: msg_01960dcbe1fcABCDEFGHIJKLMN`)).not.toBeNull();
+});
+
+it("requires a new submission when the same source is reopened after discard", async () => {
+ const fixture = await openCodePreflightFixture();
+ fireEvent.click(screen.getByRole("button", { name: "Discard fork draft" }));
+ fireEvent.click(screen.getByRole("button", { name: "Fork session" }));
+ fireEvent.change(screen.getByRole("textbox", { name: "Fork name" }), { target: { value: "Replacement name" } });
+ await act(async () => { fixture.gate.resolve(); });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Create fork" }) as HTMLButtonElement).disabled).toBe(false));
+ expect(fixture.fork).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
+ await screen.findByRole("region", { name: "Fork operation" });
+ expect(fixture.fork).toHaveBeenCalledTimes(1);
+ expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: fixture.sources[0]!.id, expectedRevision: 8n }, name: "Replacement name" });
+});
+
+it("submits once and retains the original Fork when hidden during profile validation", async () => {
+ const fixture = await openCodePreflightFixture();
+ const form = screen.getByRole("textbox", { name: "Fork name" }).closest("form")!;
+ fireEvent.submit(form);
+ fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+ await act(async () => { fixture.gate.resolve(); });
+ await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
+ expect(fixture.waiting).toHaveBeenCalledTimes(1);
+ expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: fixture.sources[0]!.id, expectedRevision: 8n }, name: "Source A fork" });
+ expect(screen.queryByRole("dialog", { name: "Fork session" })).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Return to retained fork operation" }));
+ await screen.findByRole("region", { name: "Fork operation" });
+ fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+ fireEvent.click(screen.getByRole("button", { name: "Return to retained fork operation" }));
+ expect(screen.getByRole("region", { name: "Fork operation" })).not.toBeNull();
+ expect(fixture.fork).toHaveBeenCalledTimes(1);
+});
 
 it("retains exact fork retry and accepted job while navigation changes, publishing only the verified child", async () => {
  const turn = newRequestId();
