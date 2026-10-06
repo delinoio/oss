@@ -155,7 +155,7 @@ jobs:
           key: ${{ steps.ci-node.outputs.cache-key }}
 
       - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outcome == 'success' && steps.ci-go.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}

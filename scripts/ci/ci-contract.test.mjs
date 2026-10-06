@@ -53,6 +53,7 @@ test("protocol launcher fixtures run uncached on every native CI contract host",
   for (const name of ["Setup Go", "Validate workflow syntax", "Validate CI contracts and affected behavior"]) {
     assert.equal(namedStep(job, name).if, "${{ runner.os == 'Linux' }}");
   }
+  assert.ok(namedStep(job, "Save Go cache after successful main validation").if.includes("steps.ci-go.outcome == 'success'"));
   const native = namedStep(job, "Validate protocol launcher on native host");
   assert.equal(native.if, "${{ runner.os != 'Linux' }}");
   assert.equal(native.run, "node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:launcher");
