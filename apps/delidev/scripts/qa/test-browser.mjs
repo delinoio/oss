@@ -54,10 +54,12 @@ try {
     await page.getByRole("button", { name: `New ${kind}`, exact: true }).click();
     await page.getByLabel("Name", { exact: true }).fill(`Parallel ${kind}`);
     if (kind === "Project") {
-      const select = page.getByLabel("Add Repository", { exact: true });
-      const option = await select.locator("option").last().getAttribute("value");
+      const select = page.getByRole("combobox", { name: /^Add Repository/ });
+      const options = select.locator('option[value]:not([value=""])');
+      await options.first().waitFor({ state: "attached" });
+      const option = await options.first().getAttribute("value");
       await select.selectOption(option); await page.getByRole("button", { name: "Add selected", exact: true }).click();
-      await page.getByLabel("Primary repository", { exact: true }).selectOption(option);
+      await page.getByRole("combobox", { name: /^Primary repository/ }).selectOption(option);
     } else await page.getByLabel("Instructions", { exact: true }).fill("Synthetic QA instructions.");
     await page.getByRole("button", { name: `Save ${kind}`, exact: true }).click();
     await page.getByRole("button", { name: `Edit Parallel ${kind}`, exact: true }).waitFor();

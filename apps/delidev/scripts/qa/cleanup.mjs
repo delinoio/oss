@@ -21,7 +21,7 @@ const mutation = (api, row) => ({ id: row.id, expectedRevision: row.revision, re
 async function paged(read, key) {
   const rows = [], seen = new Set(); let pageToken = "";
   do {
-    const page = await read({ pageSize: 100, pageToken }); rows.push(...page[key]); pageToken = page.nextPageToken;
+    const page = await read({ pageSize: 50, pageToken }); rows.push(...page[key]); pageToken = page.nextPageToken;
     if (rows.length > 10_000 || pageToken && seen.has(pageToken)) throw new QaError("cleanup-inventory-invalid");
     seen.add(pageToken);
   } while (pageToken);
@@ -99,7 +99,10 @@ async function productCleanup(environment) {
   });
   const system = createClient(api.SystemService, environment.ownerTransport);
   for (const job of await paged(input => system.listBackupCreations(input, options), "jobs")) {
-    if (job.state === api.BackupCreationState.PENDING) await until(async () => (await system.getBackupCreation({ id: job.id }, options)).job?.state !== api.BackupCreationState.PENDING);
+    if (job.state === api.BackupCreationState.PENDING) await until(async () => {
+      const original = (await system.getBackupCreation({ id: job.id }, options)).job;
+      return original && [api.BackupCreationState.SUCCEEDED, api.BackupCreationState.FAILED].includes(original.state);
+    });
   }
   for (const backup of await paged(input => system.listBackups(input, options), "backups")) {
     const inspected = await system.inspectBackup({ id: backup.id }, options);

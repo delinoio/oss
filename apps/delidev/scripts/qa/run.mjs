@@ -61,7 +61,7 @@ export class QaRun {
     return this;
   }
   checkPreparing() { if (this.stopping) throw new QaError("qa-interrupted"); }
-  interrupt() { this.stopping = true; for (const environment of this.environments) environment.closing = true; return this.processes.close(); }
+  interrupt() { if (this.closing) return Promise.resolve(); this.stopping = true; for (const environment of this.environments) environment.closing = true; return this.processes.close(); }
   manifest() { return { operation: "qa-environments", version: 1, command: `pnpm --filter delidev-desktop dev:qa -- --workers ${this.workers}`, source: this.source, artifacts: this.artifacts, environments: this.environments.map(environment => environment.manifest()) }; }
   async record(value) {
     if (this.artifacts) await writeFile(join(this.artifacts, "run.json"), JSON.stringify(value, null, 2), { mode: 0o600 });
@@ -72,6 +72,8 @@ export class QaRun {
   }
   async finish() {
     this.stopping = true;
+    for (const environment of this.environments) environment.closing = true;
+    await Promise.allSettled(this.environments.map(environment => environment.host?.close()));
     const results = [];
     for (const environment of this.environments) results.push(await cleanup(environment));
     try { await this.processes.close(); } catch { results.push({ state: "preserved", path: this.root, reasons: ["preparation-process-exit-unconfirmed"] }); }

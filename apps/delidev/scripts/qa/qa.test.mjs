@@ -148,7 +148,7 @@ test("runner SIGTERM after readiness and SIGINT during preparation settle cleanu
     for (const [signal, stage] of [["SIGTERM", "qa-environments"], ["SIGINT", "qa-build"]]) {
       const child = processes.spawn(process.execPath, [join(app, "scripts/qa/run.mjs"), "--workers", "1"]);
       await until(() => child.lines.find(value => value.operation === stage), 180_000);
-      child.child.kill(signal);
+      child.child.kill(signal); child.child.kill(signal);
       const result = await Promise.race([child.done, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error("signal cleanup timeout")), 60_000); timer.unref(); })]);
       assert.equal(result.code, 0);
       const record = child.lines.find(value => value.operation === "qa-cleanup");
