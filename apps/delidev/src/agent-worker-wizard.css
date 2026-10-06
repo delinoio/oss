@@ -5,7 +5,7 @@
 .worker-steps { list-style: none; padding: 0; margin: 0; display: flex; gap: 24px; border-bottom: 1px solid var(--border); padding-bottom: 24px; }
 .worker-steps li { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .worker-steps li > span:first-child { border: 1px solid var(--border); border-radius: 50%; width: 28px; height: 28px; display: grid; place-items: center; flex-shrink: 0; }
-.worker-steps li[aria-current="step"] { color: var(--accent); font-weight: 600; }
+.worker-steps li[aria-current="step"] { color: var(--selected-text); font-weight: 600; }
 .worker-steps li[aria-current="step"] > span:first-child { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .worker-steps li[data-completed="true"] { color: var(--text); }
 .worker-wizard fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
