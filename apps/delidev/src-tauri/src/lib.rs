@@ -777,6 +777,9 @@ pub mod presentation;
 #[cfg(test)]
 mod tests;
 
+#[cfg(all(test, feature = "desktop-host"))]
+mod permission_tests;
+
 #[cfg(test)]
 mod desktop_capability_tests {
     #[test]
