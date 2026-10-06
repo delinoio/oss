@@ -48,7 +48,7 @@ function Disclosure({ section, summary, children, invalidValue = false, note }: 
   </div>;
 }
 
-export function AgentConfiguration({ data, core, permissions, reasoning, accounts, instructions, native, routingProblem }: { data: Document; core: ReactNode; permissions: ReactNode; reasoning: ReactNode; accounts: ReactNode; instructions: ReactNode; native: ReactNode; routingProblem: boolean }) {
+export function AgentConfiguration({ data, core, permissions, reasoning, accounts, instructions, native, routingProblem }: { data: Document; core: ReactNode; permissions: ReactNode; reasoning: ReactNode; accounts?: ReactNode; instructions: ReactNode; native: ReactNode; routingProblem: boolean }) {
   useLocale();
   const coreId = useId();
   const optionalId = useId();
@@ -63,6 +63,7 @@ export function AgentConfiguration({ data, core, permissions, reasoning, account
       <Disclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, copy("agent-configuration.extra.2bab94029bed"))} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</Disclosure>
       <Disclosure section={AgentSection.Accounts} summary={copy("agent-configuration.sentence.ad26a61b1351", { v0: links.length, v1: retainedSummary(data.routing, copy("agent-configuration.extra.42b998374988")) })} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? copy("agent-configuration.extra.8116757327fb") : undefined}>{accounts}</Disclosure>
       <Disclosure section={AgentSection.Instructions} summary={copy("agent-configuration.sentence.74d105c1160d", { v0: items(data.templates).length })}>{instructions}</Disclosure>
+      {accounts !== undefined ? <Disclosure section={AgentSection.Accounts} summary={copy("agent-configuration.sentence.ad26a61b1351", { v0: links.length, v1: retainedSummary(data.routing, copy("agent-configuration.extra.42b998374988")) })} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? copy("agent-configuration.extra.8116757327fb") : undefined}>{accounts}</Disclosure> : null}
       <Disclosure section={AgentSection.Native} summary={nativeSummary(data)} invalidValue={invalidConcurrency}>{native}</Disclosure>
     </section>
   </>;

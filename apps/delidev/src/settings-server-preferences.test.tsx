@@ -8,7 +8,7 @@ import { configure, fireEvent, render, screen, waitFor, within } from "@testing-
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type ListResourcesRequest, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationEditor, Settings } from "./settings";
-import { newConfiguration } from "./configuration-fields";
+import { newConfiguration, ServerPreferenceSection } from "./configuration-fields";
 import { encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
 
@@ -37,7 +37,113 @@ function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise
   return { list, save, get, client, transport, makeTransport, view };
 }
 function choosePreferences() { fireEvent.click(screen.getByRole("button", { name: "Server preferences" })); }
+function chooseGit() { fireEvent.click(screen.getByRole("button", { name: "Git" })); }
 function details() { return screen.getByText("Remediation details").closest("details")!; }
+
+it.each([ServerPreferenceSection.AccountRouting, ServerPreferenceSection.GitWorkflow])("saves the %s slice without replacing hidden singleton fields and retries the original bytes", async section => {
+  const original = { default_routing: "priority", automatic_fetch: true, notifications: false, remediation: { ci_failure: false, review_feedback: false, merge_conflict: false, conflict_strategy: "merge", session_strategy: "reuse", attempt_limit: 3 }, retained_preference: { enabled: false } };
+  const row = resource(EntityKind.SETTINGS, original);
+  const value = fixture([row]);
+  value.save.mockRejectedValueOnce(new ConnectError("Fixture lost response", Code.Unavailable));
+  render(value.view(<Settings />));
+  const git = section === ServerPreferenceSection.GitWorkflow, label = git ? "Git workflow" : "Server preferences";
+  git ? chooseGit() : choosePreferences();
+  expect(Boolean(screen.queryByRole("button", { name: "Network settings" }))).toBe(!git);
+  fireEvent.click(await screen.findByRole("button", { name: `Edit ${label}` }));
+  if (git) {
+    expect(screen.queryByLabelText("Default account routing")).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
+  } else {
+    expect(screen.queryByLabelText("Allow automatic fetch before Worktree preparation")).toBeNull();
+    expect(screen.queryByText("Remediation details")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "fixed" } });
+  }
+  fireEvent.click(screen.getByRole("button", { name: `Save ${label}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  const request = value.save.mock.calls[0][0] as { mutation: { id: string; expectedRevision: bigint }; documentJson: Uint8Array };
+  expect(value.save.mock.calls[1][0]).toEqual(request);
+  expect(request.mutation.id).toBe(row.id); expect(request.mutation.expectedRevision).toBe(row.revision);
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, ...(git ? { automatic_fetch: false } : { default_routing: "fixed" }) });
+});
+
+it.each(["Server preferences", "Git"])("creates the full default singleton through %s", async category => {
+  const value = fixture(); render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: category }));
+  const label = category === "Git" ? "Git workflow" : "Server preferences";
+  const create = screen.getByRole("button", { name: `New ${label}` });
+  await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(create);
+  expect(Boolean(screen.queryByLabelText("Default account routing"))).toBe(category !== "Git");
+  expect(Boolean(screen.queryByLabelText("Allow automatic fetch before Worktree preparation"))).toBe(category === "Git");
+  fireEvent.click(screen.getByRole("button", { name: `Save ${label}` }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  const request = value.save.mock.calls[0][0] as { documentJson: Uint8Array };
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual(newConfiguration(EntityKind.SETTINGS));
+});
+
+it.each(["loading", "permission", "unavailable", "continuation", "later", "invalid", "future"])("keeps Git singleton actions non-authoritative for %s", async state => {
+  const row = resource(EntityKind.SETTINGS, known);
+  if (state === "invalid") row.documentJson = new Uint8Array([255]);
+  if (state === "future") row.schemaVersion = 2;
+  const value = fixture([], token => {
+    if (state === "loading") return new Promise<Page>(() => {});
+    if (state === "permission" || state === "unavailable") throw new ConnectError("Fixture read failure", state === "permission" ? Code.PermissionDenied : Code.Unavailable);
+    if (state === "continuation" || state === "later") return { resources: [], nextPageToken: token ? "" : "page-2" };
+    return { resources: [row] };
+  });
+  render(value.view(<Settings />)); chooseGit();
+  if (state === "invalid" || state === "future") {
+    const summary = await screen.findByRole("article", { name: "Saved git workflow" });
+    expect(within(summary).getByRole("status").textContent).toContain("Policy values are unavailable.");
+    expect((screen.getByRole("button", { name: "Edit Git workflow" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "New Git workflow" })).toBeNull();
+  } else {
+    if (state === "permission" || state === "unavailable") await screen.findByRole("alert");
+    if (state === "continuation" || state === "later") {
+      await screen.findByText("No git workflow on this page.");
+      if (state === "later") {
+        fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+        await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+      }
+    }
+    expect((screen.getByRole("button", { name: "New Git workflow" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("region", { name: "No saved git workflow" })).toBeNull();
+  }
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("retains the active Git draft on reselection and reconnect, then disposes it on menu departure", async () => {
+  const value = fixture([resource(EntityKind.SETTINGS, known)]);
+  const element = <Settings />;
+  const view = render(value.view(element)); chooseGit();
+  fireEvent.click(await screen.findByRole("button", { name: "Edit Git workflow" }));
+  details().open = true;
+  const limit = screen.getByLabelText("Consecutive automatic attempt limit");
+  fireEvent.change(limit, { target: { value: "11" } });
+  chooseGit(); view.rerender(value.view(element, value.makeTransport()));
+  expect(screen.getByLabelText("Consecutive automatic attempt limit")).toBe(limit);
+  expect((limit as HTMLInputElement).value).toBe("11"); expect(details().open).toBe(true);
+  choosePreferences();
+  await screen.findByRole("article", { name: "Saved server preferences" });
+  expect(screen.queryByText("Remediation details")).toBeNull();
+  chooseGit(); fireEvent.click(await screen.findByRole("button", { name: "Edit Git workflow" }));
+  expect((screen.getByLabelText("Consecutive automatic attempt limit") as HTMLInputElement).value).toBe("9");
+  expect(details().open).toBe(false); expect(value.save).not.toHaveBeenCalled();
+});
+
+it("rejects a late Git read after switching to the other view of the same singleton", async () => {
+  let resolve!: (response: Page) => void, waiting = true;
+  const pending = new Promise<Page>(done => { resolve = done; });
+  const value = fixture([], () => waiting ? pending : { resources: [] });
+  render(value.view(<Settings />)); chooseGit();
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.kind === EntityKind.SETTINGS)).toBe(true));
+  waiting = false; choosePreferences(); await screen.findByRole("region", { name: "No saved server preferences" });
+  resolve({ resources: [resource(EntityKind.SETTINGS, known)] });
+  await waitFor(() => expect(value.client.isFetching()).toBe(0));
+  expect(screen.queryByRole("article", { name: "Saved server preferences" })).toBeNull();
+  expect(screen.getByRole("region", { name: "No saved server preferences" })).toBeTruthy();
+});
 
 it("shows the exact final-empty content only after a successful first read", async () => {
   let resolve!: (value: Page) => void;
@@ -49,8 +155,10 @@ it("shows the exact final-empty content only after a successful first read", asy
   expect(screen.queryByRole("region", { name: "No saved server preferences" })).toBeNull();
   resolve({ resources: [] });
   const empty = await screen.findByRole("region", { name: "No saved server preferences" });
-  for (const copy of ["Review the defaults, then save one preference set for this server.", "Choose the default policy for Agent Workers that inherit server routing.", "Allow fetching before Worktree preparation. Repository preferences also apply.", "Configure bounded automatic fixes for linked pull requests. All automatic policies default off.", "Choose New Server preferences to review and save."]) expect(within(empty).getByText(copy)).toBeTruthy();
-  expect(screen.getByText("Default routing, Worktree fetch, and pull request remediation.")).toBeTruthy();
+  for (const copy of ["Review the defaults, then save one preference set for this server.", "Choose the default policy for Agent Workers that inherit server routing.", "Choose New Server preferences to review and save."]) expect(within(empty).getByText(copy)).toBeTruthy();
+  expect(screen.getByText("Default account routing.")).toBeTruthy();
+  expect(within(empty).queryByText("Worktree fetch")).toBeNull();
+  expect(within(empty).queryByText("Pull request remediation")).toBeNull();
   expect(screen.getAllByRole("button", { name: "New Server preferences" })).toHaveLength(1);
   expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(false);
   expect(within(empty).queryByRole("button")).toBeNull();
@@ -120,9 +228,8 @@ it("summarizes exact known stored values and keeps one title-aligned Edit action
   const value = fixture([row]);
   render(value.view(<Settings />)); choosePreferences();
   const summary = within(await screen.findByRole("article", { name: "Saved server preferences" }));
-  expect(summary.getByText(row.id)).toBeTruthy(); expect(summary.getByText("priority")).toBeTruthy(); expect(summary.getByText("Disabled")).toBeTruthy();
-  expect(summary.getAllByText("On")).toHaveLength(2); expect(summary.getAllByText("Off")).toHaveLength(1);
-  expect(summary.getByText("Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.")).toBeTruthy();
+  expect(summary.getByText(row.id)).toBeTruthy(); expect(summary.getByText("priority")).toBeTruthy(); expect(summary.queryByText("Worktree fetch")).toBeNull();
+  expect(summary.queryByText("Pull request remediation")).toBeNull();
   const edit = screen.getByRole("button", { name: "Edit Server preferences" });
   expect(edit.closest(".settings-toolbar")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
@@ -196,15 +303,18 @@ it.each(["", "0", "reviewer"])("reveals and focuses a hidden invalid %s input be
   expect(value.save).not.toHaveBeenCalled();
 });
 
-it("retains a draft after revision drift and blocks a fresh save", async () => {
+it.each([ServerPreferenceSection.AccountRouting, ServerPreferenceSection.GitWorkflow])("retains a %s draft after revision drift and blocks a fresh save", async section => {
   const row = resource(EntityKind.SETTINGS, known);
-  const value = fixture([row]); render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} initial={row} active saved={() => {}} cancel={() => {}} />));
-  fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "fixed" } });
+  const value = fixture([row]); render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} initial={row} serverPreferenceSection={section} active saved={() => {}} cancel={() => {}} />));
+  const git = section === ServerPreferenceSection.GitWorkflow;
+  if (git) fireEvent.click(screen.getByLabelText("Allow automatic fetch before Worktree preparation"));
+  else fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "fixed" } });
   value.get.mockReturnValue({ resource: { ...row, revision: 9n } });
   await value.client.invalidateQueries();
   await screen.findByText(/This entry changed elsewhere/);
-  expect((screen.getByLabelText("Default account routing") as HTMLSelectElement).value).toBe("fixed");
-  expect((screen.getByRole("button", { name: "Save Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
+  if (git) expect((screen.getByLabelText("Allow automatic fetch before Worktree preparation") as HTMLInputElement).checked).toBe(true);
+  else expect((screen.getByLabelText("Default account routing") as HTMLSelectElement).value).toBe("fixed");
+  expect((screen.getByRole("button", { name: git ? "Save Git workflow" : "Save Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
 });
 
@@ -212,22 +322,22 @@ it("disposes a changed disclosure and ignores a late prior save in a replacement
   const value = fixture();
   let resolve!: (response: { resource: Resource }) => void;
   value.save.mockImplementation(() => new Promise(done => { resolve = done; }));
-  const view = render(value.view(<Settings visible />)); choosePreferences();
-  await waitFor(() => expect((screen.getByRole("button", { name: "New Server preferences" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "New Server preferences" }));
+  const view = render(value.view(<Settings visible />)); fireEvent.click(screen.getByRole("button", { name: "Git" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "New Git workflow" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "New Git workflow" }));
   details().open = true;
   fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "11" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Git workflow" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   view.rerender(value.view(<Settings visible={false} />));
   view.rerender(value.view(<Settings visible />));
   expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
-  choosePreferences(); await screen.findByRole("region", { name: "No saved server preferences" });
+  fireEvent.click(screen.getByRole("button", { name: "Git" })); await screen.findByRole("region", { name: "No saved git workflow" });
   resolve({ resource: resource(EntityKind.SETTINGS, known) });
   await waitFor(() => expect(value.client.isMutating()).toBe(0));
   expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
-  expect(screen.queryByRole("article", { name: "Saved server preferences" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "New Server preferences" }));
+  expect(screen.queryByRole("article", { name: "Saved git workflow" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New Git workflow" }));
   expect(details().open).toBe(false);
   expect((screen.getByLabelText("Consecutive automatic attempt limit") as HTMLInputElement).value).toBe("3");
   expect(value.save).toHaveBeenCalledOnce();

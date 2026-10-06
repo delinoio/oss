@@ -1,6 +1,6 @@
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, NativeModelQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text, type Document } from "./documents";
@@ -9,6 +9,7 @@ import { useRetainedMutation } from "./mutation";
 import { ServiceProblem, More, Problem  } from "./ui";
 
 export function NativeModelSettings({ active, createModel }: { active: boolean; createModel: (data: Document) => void }) {
+export function NativeModelSettings({ active, createModel, selectedAccounts, pendingOperation }: { active: boolean; createModel: (data: Document) => void; selectedAccounts?: Resource[]; pendingOperation?: (pending: boolean) => void }) {
   useLocale();
   const [opened, setOpened] = useState(false);
   const [machine, setMachine] = useState<Resource>();
@@ -43,8 +44,10 @@ export function NativeModelSettings({ active, createModel }: { active: boolean; 
     } catch { malformed = true; }
   }
   const observedScope = object(document(models.data?.job).input);
-  const canRegister = observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
+  const accountSelected = !selectedAccounts || selectedAccounts.some(row => row.id === account?.id);
+  const canRegister = accountSelected && observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
   const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain;
+  useEffect(() => { pendingOperation?.(blocked); return () => pendingOperation?.(false); }, [blocked, pendingOperation]);
   const reset = () => { setJobID(""); setObservationID(""); setPage(""); };
   return <details onToggle={(event) => setOpened(event.currentTarget.open)}><summary>{copy("native-model-settings.nativeCodexModelObservations_e3a909")}</summary>{opened ? <section aria-label={copy("native-model-settings.nativeCodexModelObservations_e3a909")}>
     <h2>{copy("native-model-settings.observeNativeCodexModels_7d4b36")}</h2>
@@ -54,9 +57,9 @@ export function NativeModelSettings({ active, createModel }: { active: boolean; 
     <fieldset disabled={!supported || blocked}>
       <legend>{copy("native-model-settings.observationScope_329506")}</legend>
       <ResourceChoice label={copy("native-model-settings.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setMachine(row); reset(); }} />
-      <ResourceChoice label={copy("native-model-settings.connectedAccount_3903f0")} kind={EntityKind.ACCOUNT} value={account?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setAccount(row); reset(); }} />
+      {selectedAccounts ? <label>{copy("native-model-settings.connectedSelectedAccount")}<select value={account?.id ?? ""} onChange={event => { setAccount(selectedAccounts.find(row => row.id === event.target.value)); reset(); }}><option value="">{copy("native-model-settings.selectAccount")}</option>{selectedAccounts.map(row => <option key={row.id} value={row.id}>{text(document(row).alias) || row.id}</option>)}</select></label> : <ResourceChoice label={copy("native-model-settings.connectedAccount_3903f0")} kind={EntityKind.ACCOUNT} value={account?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setAccount(row); reset(); }} />}
       <label><input type="checkbox" checked={hidden} onChange={(event) => { setHidden(event.target.checked); reset(); }} />{copy("native-model-settings.includeHiddenModels_64799e")}</label>
-      <button type="button" disabled={!machine || !account || !document(account).connection} onClick={() => void discovery.send({ mutation: { requestId: newRequestId(), id: machine!.id, expectedRevision: machine!.revision }, accountId: account!.id, accountRevision: account!.revision, includeHidden: hidden })}>{copy("native-model-settings.observeModels_cf8865")}</button>
+      <button type="button" disabled={!machine || !account || !accountSelected || !document(account).connection} onClick={() => void discovery.send({ mutation: { requestId: newRequestId(), id: machine!.id, expectedRevision: machine!.revision }, accountId: account!.id, accountRevision: account!.revision, includeHidden: hidden })}>{copy("native-model-settings.observeModels_cf8865")}</button>
     </fieldset>
     <Problem error={discovery.error} />
     {discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>{copy("native-model-settings.retryTheSameObservationRequest_0b6c58")}</button> : null}
@@ -76,7 +79,7 @@ export function NativeModelSettings({ active, createModel }: { active: boolean; 
       {entries.length === 0 ? <p>{copy("native-model-settings.noNativeModelsInThisObservation_a24b4f")}</p> : entries.map((entry) => <article key={text(entry.id)}>
         <h3>{text(entry.display_name)}</h3><p><LocalizedText id="native-model-settings.pickerIdExecutableModel_ea304e" components={{ s0: <>{text(entry.id)}</>, s1: <>{text(entry.model)}</> }} /></p>
         <p>{text(entry.description)}</p><p><LocalizedText id="native-model-settings.reasoningInputServiceTiers_aa5c58" components={{ s0: <>{items(entry.reasoning).map(text).join(", ")}</>, s1: <>{items(entry.modalities).map(text).join(", ")}</>, s2: <>{items(entry.service_tiers).map(text).join(", ")}</>, s3: <>{entry.hidden === true ? copy("native-model-settings.hidden_7e6fef") : copy("native-model-settings.visible_8411f5")}</> }} /></p>
-        <button type="button" disabled={!canRegister || blocked} onClick={() => createModel({ name: text(entry.display_name), provider_id: text(observedScope.provider_id), native_id: text(entry.model), alias: "", harnesses: ["codex"], hidden: false, order: 0, manual: true, new: false, metadata_source: "unknown" })}><LocalizedText id="native-model-settings.register_55d230" components={{ s0: <>{text(entry.display_name)}</> }} /></button>
+        <button type="button" disabled={!canRegister || blocked} onClick={() => createModel({ name: text(entry.display_name), provider_id: text(observedScope.provider_id), native_id: text(entry.model), alias: "", harnesses: ["codex"], hidden: false, order: 0, manual: true, new: false, metadata_source: "unknown" })}>{selectedAccounts ? copy("native-model-settings.useModel") : <LocalizedText id="native-model-settings.register_55d230" components={{ s0: <>{text(entry.display_name)}</> }} />}</button>
       </article>)}
       <button type="button" disabled={!page || models.isFetching} onClick={() => setPage("")}>{copy("native-model-settings.firstObservationPage_e0db18")}</button><More available={Boolean(models.data.nextPageToken)} busy={models.isFetching} load={() => setPage(models.data!.nextPageToken)} />
     </> : null}

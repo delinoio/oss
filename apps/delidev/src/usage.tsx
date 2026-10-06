@@ -2,7 +2,7 @@ import { ownedMessage, useProductMessage, LocalizedText, copy, displayLocale, us
 import { useLayoutEffect, useRef, useState } from "react";
 import type { UsageEntry } from "./usage-entry";
 import { useQuery } from "@connectrpc/connect-query";
-import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, EntityKind, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
+import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, ResourceQuery, EntityKind, supportsResourceSchema, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
 import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { ResourceChoice } from "./configuration-fields";
 import { Problem } from "./ui";
@@ -11,6 +11,10 @@ import { detectDeviceTimeZone, localDateTimeToUnixMs, unixMsToLocalDateTime } fr
 import { UsageCharts } from "./usage-chart";
 import { GrokAccounting } from "./grok-accounting";
 import { NativeAccounting } from "./native-accounting";
+import { ModelPricing } from "./pricing";
+import { SettingsLifetime } from "./settings-lifetime";
+import { MutationIntents } from "./mutation";
+import { document, resourceName, text } from "./documents";
 
 interface Filters { from: string; until: string; sessionId: string; projectId: string; accountId: string; providerId: string; subscriptionService: SubscriptionServiceIdentity; modelId: string; generalChat: boolean }
 const emptyFilters: Filters = { from: "", until: "", sessionId: "", projectId: "", accountId: "", providerId: "", subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED, modelId: "", generalChat: false };
@@ -68,6 +72,7 @@ function appliedFilters(selection: ReturnType<typeof request>): string[] {
 
 export function Usage({ active, open, entry }: { active: boolean; open: (id: string) => void; entry?: UsageEntry }) {
   useLocale();
+  const [detail, setDetail] = useState("");
   const [draft, setDraft] = useState<Filters>(emptyFilters);
   const [appliedDraft, setAppliedDraft] = useState<Filters>(emptyFilters);
   const [selection, setSelection] = useState(() => request(emptyFilters, detectDeviceTimeZone()));
@@ -133,12 +138,14 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
         <ResourceChoice label={copy("usage.provider_472590")} kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => setDraft((current) => ({ ...current, providerId: id, subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED }))} active={active} />
         <label>{copy("usage.subscriptionService_0e16df")}<select disabled={!nativeFilters} value={draft.subscriptionService} onChange={(event) => setDraft((current) => ({ ...current, providerId: "", subscriptionService: Number(event.target.value) as SubscriptionServiceIdentity }))}><option value={SubscriptionServiceIdentity.UNSPECIFIED}>{copy("usage.allServices_5b9809")}</option><option value={SubscriptionServiceIdentity.CHATGPT}>{copy("usage.chatgpt_50a412")}</option><option value={SubscriptionServiceIdentity.CLAUDE}>{copy("usage.claude_061557")}</option><option value={SubscriptionServiceIdentity.GROK}>{copy("usage.grok_dca61d")}</option></select></label>
         <ResourceChoice label={copy("usage.model_5e2c61")} kind={EntityKind.MODEL} value={draft.modelId} change={(id) => change("modelId", id)} active={active} />
+        <button type="button" disabled={!draft.modelId} onClick={() => { setDetail(draft.modelId); closeDrawer(); }}>{copy("usage.modelDetailsAndTokenPricing")}</button>
         <label className="checkbox"><input type="checkbox" checked={draft.generalChat} onChange={(event) => setDraft((current) => ({ ...current, generalChat: event.target.checked, projectId: event.target.checked ? "" : current.projectId }))} />{copy("usage.generalChatOnly_9032cc")}</label>
         {invalid ? <p role="alert">{invalid}</p> : null}
         <div className="actions"><button type="submit" className="primary">{copy("usage.applyFilters_d80ab1")}</button><button type="button" onClick={reset}>{copy("usage.resetToLast30Days_a15ab6")}</button></div>
       </form>
     </SidebarSurface>
     <section hidden={!active} className="page usage-page" aria-busy={result.isFetching}>
+    {detail ? <SettingsLifetime key={detail}>{() => <MutationIntents><UsageModelDetail id={detail} active={active} close={() => setDetail("")} /></MutationIntents>}</SettingsLifetime> : null}
     <header className="usage-header"><div><h1>{copy("usage.tokenUsage_00f594")}</h1><p>{copy("usage.delidevActivityOnlyArchivedSessionsIncluded_09c1fa")}</p></div><div className="usage-header-actions"><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("usage.refresh_0e9161")}</button></div></header>
     <div className="usage-applied" role="group" aria-label={copy("usage.appliedConditions_bc3af3")}><strong>{copy("usage.appliedConditions_bc3af3")}</strong><span>{data ? copy("usage.exclusive_fd9e0a", { v0: formatAppliedTime(data.fromUnixMs, appliedZone), v1: formatAppliedTime(data.untilUnixMs, appliedZone) }) : pendingRange(selection)}</span><span><LocalizedText id="usage.timezone_9229e0" components={{ s0: <>{appliedZone}</> }} /></span><span>{copy("usage.responseTimesShowWhenTheServer_c28198")}</span>{conditions.length ? <span>{conditions.join(" · ")}</span> : <span>{copy("usage.allSessionsAccountsApisAndModels_d7b7c7")}</span>}{draftChanged ? <span className="usage-draft-state">{copy("usage.unappliedFilterEdits_f387c1")}</span> : null}</div>
     {draftChanged ? <p className="usage-draft-state" role="status">{copy("usage.unappliedFilterEditsAreInThe_b69e11")}</p> : null}<Problem error={result.error} />
@@ -158,7 +165,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
         {responseGroups.length ? <div className="usage-table" role="region" aria-label={copy("usage.sessionModelAndAccountUsageTable_fc350c")} tabIndex={0}><table><caption>{copy("usage.knownResponseSubtotalsWithOriginalSession_e1cb71")}</caption><thead><tr><th scope="col">{copy("usage.sessionProject_59a44c")}</th><th scope="col">{copy("usage.account_7e1b0d")}</th><th scope="col">{copy("usage.modelApi_6a8129")}</th><th scope="col">{copy("usage.tokens_a039df")}</th><th scope="col">{copy("usage.tokenPriceEstimate_ed3009")}</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${subscriptionServiceLabel(group.subscriptionService)}:${group.modelId}`}>
           <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || copy("usage.sentence.874241e2ef76", { v0: group.projectId }) : copy("usage.generalChat_f634bc")}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
           <td><span>{group.accountName || copy("usage.extra.415673677e87")}</span><small>{group.accountId}</small></td>
-          <td><span>{group.modelName || copy("usage.extra.a99bc331d9ad")}</span><small>{group.modelId}</small><p>{group.subscriptionService ? copy("usage.subscriptionService_67a163", { v0: subscriptionServiceLabel(group.subscriptionService) }) : group.providerName || copy("usage.sentence.886fdf04e3f3", { v0: group.providerId })}</p><small>{group.providerId}</small></td>
+          <td><button type="button" onClick={() => setDetail(group.modelId)}>{group.modelName || copy("usage.extra.a99bc331d9ad")}</button><small>{group.modelId}</small><p>{group.subscriptionService ? copy("usage.subscriptionService_67a163", { v0: subscriptionServiceLabel(group.subscriptionService) }) : group.providerName || copy("usage.sentence.886fdf04e3f3", { v0: group.providerId })}</p><small>{group.providerId}</small></td>
           <td><strong>{measure(group.totals?.total)}</strong><p><LocalizedText id="usage.responses_5238cc" components={{ s0: <>{group.totals?.responses.toLocaleString(displayLocale())}</>, s1: <>{group.totals?.total?.unavailableResponses ? copy("usage.unavailable_e4701b", { v0: group.totals.total.unavailableResponses }) : ""}</> }} /></p><details><summary>{copy("usage.tokenBreakdown_c7576a")}</summary><Measures value={group.totals} /></details></td><td><EstimateAmounts value={group.estimates} /></td>
         </tr>)}</tbody></table></div> : <p>{copy("usage.noExactResponseUsageIsRecorded_d85b24")}</p>}
       </section>
@@ -167,4 +174,21 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
       <section className="usage-costs" aria-labelledby="usage-cost-title"><h2 id="usage-cost-title">{copy("usage.costEvidence_9ab3af")}</h2><p><LocalizedText id="usage.unavailableNoVerifiedAttributableChargeIs_35ada6" components={{ s0: <strong>{copy("usage.actualApiCost_c88286")}</strong> }} /></p><EstimateCosts totals={data.estimates} pricing={data.pricing} /><p>{copy("usage.completeTokenPriceCategoriesDoNot_ddbf3a")}</p></section>
     </> : null}
   </section></>;
+}
+
+function UsageModelDetail({ id, active, close }: { id: string; active: boolean; close: () => void }) {
+  const [pricing, setPricing] = useState(false);
+  const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id }, { enabled: active, refetchInterval: active ? 5000 : false });
+  const model = current.data?.resource;
+  const value = document(model);
+  return <section className="usage-detail" aria-label="Model details">
+    <h2>Model details · {model ? resourceName(model) : id}</h2>
+    <Problem error={current.error} />
+    {current.isLoading ? <p role="status">Loading model details…</p> : null}
+    {current.error && model ? <p role="status">The displayed model details may be stale.</p> : null}
+    {model ? <><p>Model ID: {id} · Native ID: {text(value.native_id) || "Unavailable"}</p><p>{value.source_kind === "subscription" ? `Subscription service: ${text(value.subscription_service)}` : `API provider: ${text(value.provider_id)}`}</p>
+      {value.retired === true ? <p>Retired configuration retains its historical attribution. Current pricing cannot be edited.</p> : pricing ? <ModelPricing model={model} active={active && !current.error} close={() => { setPricing(false); void current.refetch(); }} /> : <button type="button" disabled={!supportsResourceSchema(model) || Boolean(current.error)} onClick={() => setPricing(true)}>Token pricing</button>}
+    </> : null}
+    <div className="actions"><button type="button" disabled={current.isFetching} onClick={() => void current.refetch()}>Refresh model details</button><button type="button" onClick={close}>Back to Usage</button></div>
+  </section>;
 }
