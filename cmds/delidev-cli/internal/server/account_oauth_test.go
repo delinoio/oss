@@ -355,7 +355,7 @@ func TestAccountOAuthUnownedDurableDispatchCannotRemainLiveOrResend(t *testing.T
 	original := domain.NewID()
 	actor := domain.Principal{Type: domain.OwnerDevice}
 	commitment := f.s.oauthCommitment("code", original, []byte("unknown-dispatch-code"))
-	_, err = f.s.Store.Mutate(f.ctx, original, "oauth.complete", oauthCompleteInput{private.ID, private.Revision, actor, commitment}, func(tx *store.Tx) (any, error) {
+	_, err = f.s.Store.Mutate(f.ctx, original, "oauth.complete", oauthCompleteInput{private.ID, private.Revision, actor, commitment, ""}, func(tx *store.Tx) (any, error) {
 		current := private
 		current.Revision++
 		current.State = domain.OAuthExchanging

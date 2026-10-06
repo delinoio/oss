@@ -1,0 +1,20 @@
+{
+  "hugging-face": {
+    "client_id": "",
+    "redirect_uri": "http://localhost/oauth/hugging-face/callback",
+    "registration": "pending",
+    "api_compatibility": "unverified"
+  },
+  "gemini": {
+    "client_id": "",
+    "redirect_uri": "http://127.0.0.1/oauth/google-gemini/callback",
+    "registration": "pending",
+    "api_compatibility": "unverified"
+  },
+  "baseten": {
+    "client_id": "",
+    "redirect_uri": "",
+    "registration": "pending",
+    "api_compatibility": "unverified"
+  }
+}

@@ -29,6 +29,8 @@ under issue #1203 with #1093 and #1202 as shared consumers:
 | SystemCapability | SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 | 15 |
 | WorkerCapability | WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 | 5 |
 | SessionChange | compaction_job | 9 |
+| CompactSessionRequest | expected_execution_id | 2 |
+| CompactSessionResponse | session | 4 |
 
 The action is distinct from its Worker job and ordinary input/execution.
 The request uses an exact session mutation and expected predecessor
@@ -37,6 +39,23 @@ action, including reference-only receipt replay. Profile availability must be
 checked independently of the common capability; a reservation grants neither.
 These allocations must be present on main before dependent implementations use
 them, as required by the structure contract.
+
+The existing `CompactSessionRequest.mutation = 1` and response `job = 1`,
+`request_id = 2`, `replayed = 3` assignments are recorded in the immutable
+baseline. They were introduced by merged PR #1221 and retain their current wire
+meanings. The two additional fields above are reserved only; the active RPC and
+generated bindings do not yet contain them. The current native profiles still
+use the original revision-bound mutation and job receipt, so their implementation
+does not satisfy this additional shared request/response boundary.
+
+After the new reservations reach main, dependent implementation must bind
+`expected_execution_id` to the exact original successful execution in the
+admission transaction and actor-bound receipt identity. The response must read
+its current `session` and original `job` together under current authorization,
+including receipt replay. Existing `request_id` already identifies the original
+action; it must remain equal to the accepted action ID rather than the Worker
+job ID. These reservations add no capability, native command authority or
+migration and do not establish issue #1203 acceptance.
 
 The existing schema-24 entities, jobs, receipts and cancellation tables provide
 the generic durable storage boundary. Compaction allocates no migration and leaves
