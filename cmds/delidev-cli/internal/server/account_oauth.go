@@ -412,6 +412,11 @@ func (s *Service) oauthUpdate(ctx context.Context, a domain.AccountOAuthAttempt,
 		if err := tx.PutAccountOAuth(current, a.Revision); err != nil {
 			return nil, err
 		}
+		if current.Version == 2 && current.State == domain.OAuthCanceled && current.StagingClaimed && !current.CleanupPending {
+			if err := tx.RetireAccountOAuthCredentials(current.AccountID); err != nil {
+				return nil, err
+			}
+		}
 		a = current
 		return oauthReceipt{current.ID}, nil
 	})
@@ -823,7 +828,7 @@ func (s *Service) CancelAccountOAuth(ctx context.Context, req *connect.Request[p
 		a.State = domain.OAuthCanceled
 		a.UpdatedAt = time.Now().UTC().Truncate(time.Millisecond)
 		if a.CompletionRequestID != "" {
-			a.Problem = oauthProblem()
+			a.Problem = oauthProblemFor(a)
 		}
 		if a.StagingClaimed {
 			a.CleanupPending = true
