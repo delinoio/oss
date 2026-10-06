@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { InteractionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -14,6 +15,7 @@ const validText = (v: string, limit: number) => !v.includes("\0") && !/[\uD800-\
 // Native question replies use text keys and comma-separated multiple choices.
 // Custom answers remain exact strings; skipped questions are explicitly omitted.
 export function NativeClaudeResponse({ resource, questions, closed, accepted, draft, saveDraft, submissionAllowed = true, receiptRetryAllowed = true }: { resource: Resource; questions?: ClaudeQuestion[]; closed: boolean; accepted: (value?: Resource) => void; draft?: InteractionDraftState; saveDraft?: (value: InteractionDraftState) => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
+  useLocale();
   const replyFor = (value: ClaudeDraft): Reply => value.denial
     ? { behavior: Behavior.Deny, message: value.reason, ...(value.interrupt ? { interrupt: true } : {}) }
     : { behavior: Behavior.Allow, ...(questions ? { answers: Object.fromEntries(questions.flatMap((q, i) => value.skipped[i] ? [] : [[q.question, value.customEnabled[i] ? value.custom[i] ?? "" : (value.selected[i] ?? []).join(", ")]])) } : {}) };
@@ -32,30 +34,30 @@ export function NativeClaudeResponse({ resource, questions, closed, accepted, dr
   const invalid = denial ? !reason.trim() || !validText(reason, 4096) : Object.values(answers ?? {}).some((v) => !validText(v, 256 * 1024));
   const oversized = nativeResponseByteLength({ claude: reply }) > nativeResponseLimit;
   const blocked = closed || mutation.busy || mutation.uncertain || !submissionAllowed;
-  return <form aria-label="Respond to original Claude request" onSubmit={(event) => {
+  return <form aria-label={copy("native-claude-response.respondToOriginalClaudeRequest_566f4d")} onSubmit={(event) => {
     event.preventDefault();
     if (blocked || missing || invalid || oversized) return;
     void mutation.send({ mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() }, responseJson: encode({ claude: reply }) });
   }}>
     <fieldset disabled={blocked}>
-      <label className="checkbox"><input type="checkbox" checked={denial} onChange={(event) => setEditable({ ...editable, denial: event.target.checked })} />Deny this request</label>
+      <label className="checkbox"><input type="checkbox" checked={denial} onChange={(event) => setEditable({ ...editable, denial: event.target.checked })} />{copy("native-claude-response.denyThisRequest_b31c70")}</label>
       {denial ? <>
-        <label>Reason for denial<textarea value={reason} onChange={(event) => setEditable({ ...editable, reason: event.target.value })} /></label>
-        <label className="checkbox"><input type="checkbox" checked={interrupt} onChange={(event) => setEditable({ ...editable, interrupt: event.target.checked })} />Also interrupt this Claude run</label>
-        {interrupt ? <p>Claude will stop after this denial. Further input remains paused until the original execution is reconciled.</p> : null}
+        <label>{copy("native-claude-response.reasonForDenial_2060f4")}<textarea value={reason} onChange={(event) => setEditable({ ...editable, reason: event.target.value })} /></label>
+        <label className="checkbox"><input type="checkbox" checked={interrupt} onChange={(event) => setEditable({ ...editable, interrupt: event.target.checked })} />{copy("native-claude-response.alsoInterruptThisClaudeRun_01c924")}</label>
+        {interrupt ? <p>{copy("native-claude-response.claudeWillStopAfterThisDenial_ed455d")}</p> : null}
       </> : questions ? questions.map((q, i) => <fieldset key={q.question}><legend>{q.header}</legend><p>{q.question}</p>
         {q.options.map((o) => <label className="checkbox" key={o.label}><input type={q.multiSelect ? "checkbox" : "radio"} name={`claude-${resource.id}-${i}`} checked={!customEnabled[i] && !skipped[i] && (selected[i] ?? []).includes(o.label)} onChange={(event) => {
           setEditable({ ...editable, skipped: { ...skipped, [i]: false }, customEnabled: { ...customEnabled, [i]: false }, selected: selectedRows.map((row, index) => index !== i ? row : event.target.checked ? q.multiSelect ? [...row, o.label] : [o.label] : row.filter((v) => v !== o.label)) });
         }} /><span>{o.label}<small>{o.description}</small></span></label>)}
-        <label className="checkbox"><input type="checkbox" checked={customEnabled[i] ?? false} onChange={(event) => setEditable({ ...editable, customEnabled: { ...customEnabled, [i]: event.target.checked }, skipped: { ...skipped, [i]: false } })} />Use an exact custom answer for question {i + 1}</label>
-        {customEnabled[i] ? <label>Custom answer for question {i + 1}<textarea value={custom[i] ?? ""} onChange={(event) => setEditable({ ...editable, custom: { ...custom, [i]: event.target.value } })} /></label> : null}
-        <label className="checkbox"><input type="checkbox" checked={skipped[i] ?? false} onChange={(event) => setEditable({ ...editable, skipped: { ...skipped, [i]: event.target.checked }, ...(event.target.checked ? { customEnabled: { ...customEnabled, [i]: false }, selected: selectedRows.map((row, index) => index === i ? [] : row) } : {}) })} />Leave question {i + 1} unanswered</label>
-      </fieldset>) : <p>Allow this original request with its unchanged input.</p>}
-      <button className="primary" disabled={Boolean(missing) || invalid || oversized}>{denial ? "Send denial to Claude" : questions ? "Send answers to Claude" : "Allow this Claude request"}</button>
+        <label className="checkbox"><input type="checkbox" checked={customEnabled[i] ?? false} onChange={(event) => setEditable({ ...editable, customEnabled: { ...customEnabled, [i]: event.target.checked }, skipped: { ...skipped, [i]: false } })} /><LocalizedText id="native-claude-response.useAnExactCustomAnswerFor_e60759" components={{ s0: <>{i + 1}</> }} /></label>
+        {customEnabled[i] ? <label><LocalizedText id="native-claude-response.customAnswerForQuestion_76fa79" components={{ s0: <>{i + 1}</> }} /><textarea value={custom[i] ?? ""} onChange={(event) => setEditable({ ...editable, custom: { ...custom, [i]: event.target.value } })} /></label> : null}
+        <label className="checkbox"><input type="checkbox" checked={skipped[i] ?? false} onChange={(event) => setEditable({ ...editable, skipped: { ...skipped, [i]: event.target.checked }, ...(event.target.checked ? { customEnabled: { ...customEnabled, [i]: false }, selected: selectedRows.map((row, index) => index === i ? [] : row) } : {}) })} /><LocalizedText id="native-claude-response.leaveQuestionUnanswered_c5d878" components={{ s0: <>{i + 1}</> }} /></label>
+      </fieldset>) : <p>{copy("native-claude-response.allowThisOriginalRequestWithIts_2a5592")}</p>}
+      <button className="primary" disabled={Boolean(missing) || invalid || oversized}>{denial ? copy("native-claude-response.sendDenialToClaude_8203ab") : questions ? copy("native-claude-response.sendAnswersToClaude_e80585") : copy("native-claude-response.allowThisClaudeRequest_940805")}</button>
     </fieldset>
     {editProblem ? <p role="alert">{editProblem}</p> : null}
-    {invalid || oversized ? <p role="alert">Keep the complete response within 256 KiB and a nonempty denial reason within 4 KiB, using valid text.</p> : null}
+    {invalid || oversized ? <p role="alert">{copy("native-claude-response.keepTheCompleteResponseWithin256_7a7390")}</p> : null}
     <Problem error={mutation.error} />
-    {mutation.uncertain ? <button type="button" disabled={mutation.busy || !receiptRetryAllowed} onClick={mutation.retry}>Retry the same response request</button> : null}
+    {mutation.uncertain ? <button type="button" disabled={mutation.busy || !receiptRetryAllowed} onClick={mutation.retry}>{copy("native-claude-response.retryTheSameResponseRequest_ebd80d")}</button> : null}
   </form>;
 }

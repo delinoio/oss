@@ -1,0 +1,16 @@
+{
+  "native-claude-response.respondToOriginalClaudeRequest_566f4d": "기존 Claude 요청에 응답",
+  "native-claude-response.denyThisRequest_b31c70": "이 요청 거부",
+  "native-claude-response.reasonForDenial_2060f4": "거부 이유",
+  "native-claude-response.alsoInterruptThisClaudeRun_01c924": "이 Claude 실행도 중단",
+  "native-claude-response.claudeWillStopAfterThisDenial_ed455d": "이 거부 후 Claude가 중지됩니다. 원래 실행 상태가 확인될 때까지 추가 입력은 일시 중지됩니다.",
+  "native-claude-response.useAnExactCustomAnswerFor_e60759": "질문 <s0/>에 정확한 사용자 지정 답변 사용",
+  "native-claude-response.customAnswerForQuestion_76fa79": "질문 <s0/>의 사용자 지정 답변",
+  "native-claude-response.leaveQuestionUnanswered_c5d878": "질문 <s0/>에 답변하지 않음",
+  "native-claude-response.allowThisOriginalRequestWithIts_2a5592": "변경되지 않은 입력으로 기존 요청 허용.",
+  "native-claude-response.sendDenialToClaude_8203ab": "Claude에 거부 전송",
+  "native-claude-response.sendAnswersToClaude_e80585": "Claude에 답변 전송",
+  "native-claude-response.allowThisClaudeRequest_940805": "이 Claude 요청 허용",
+  "native-claude-response.keepTheCompleteResponseWithin256_7a7390": "올바른 텍스트를 사용하세요. 전체 응답은 256 KiB 이하, 비어 있지 않은 거부 사유는 4 KiB 이하로 입력하세요.",
+  "native-claude-response.retryTheSameResponseRequest_ebd80d": "동일한 응답 요청 다시 시도"
+}

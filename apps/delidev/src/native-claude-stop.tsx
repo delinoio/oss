@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 import { validClaudeAPIRetry } from "./native-claude-retry";
 import { NativeClaudeProviderUsage, NativeClaudeResultUsage, validClaudeProviderUsage, validClaudeResultUsage } from "./native-claude-usage";
@@ -20,20 +21,21 @@ function valid(progress: Document) {
 }
 
 export function NativeClaudeStop({ progress }: { progress: Document }) {
+  useLocale();
   if (progress.claude_stop == null) return null;
-  if (!valid(progress)) return <p>The retained Claude Stop evidence is unavailable or inconsistent.</p>;
+  if (!valid(progress)) return <p>{copy("native-claude-stop.theRetainedClaudeStopEvidenceIs_d1dc14")}</p>;
   const v = object(progress.claude_stop);
-  return <section aria-label="Claude original Stop">
-    <h4>Claude Stop observed</h4>
-    <p>The response was interrupted. Claude reported a session result without an input result identity.</p>
-    <dl><dt>Native interrupt request</dt><dd>Acknowledged</dd><dt>Native loop</dt><dd>Idle observed</dd>
-      <dt>Owned native process cleanup</dt><dd>Confirmed</dd><dt>Worker workspace cleanup report</dt><dd>{progress.cleanup_verified === true ? "Confirmed" : "Not confirmed"}</dd></dl>
-    {v.content_evidence === "closed-stream-before-retry" ? <p>The stream closed before retry wait was interrupted. The transcript preserves the last streamed text; Claude did not emit a final partial-response snapshot.</p> : <p>The transcript preserves Claude’s original aborted response snapshot.</p>}
-    {Array.isArray(v.retries) ? <details><summary>Native retry observations</summary><ol>{v.retries.map((entry, index) => { const r = object(entry); return <li key={index}>Attempt {r.attempt as string} of {r.max_retries as string}; delay {r.retry_delay_ms as string} ms; {r.error as string}; HTTP {r.error_status === null ? "unavailable" : String(r.error_status)}.</li>; })}</ol><p>These are observations from the stopped native run. No new request is authorized.</p></details> : null}
-    <details><summary>Original interruption context</summary><pre>{v.context as string}</pre></details>
-    <details><summary>Native interruption usage</summary><NativeClaudeResultUsage value={v.usage} />
-      {v.partial_usage !== null ? <><h4>Interrupted response report</h4><NativeClaudeProviderUsage value={v.partial_usage} /></> : <p>Interrupted response usage unavailable.</p>}
-      <p>These reports overlap and do not establish billed cost or an input outcome.</p></details>
-    <p>Original history must be reconciled before another input.</p>
+  return <section aria-label={copy("native-claude-stop.claudeOriginalStop_ca5b72")}>
+    <h4>{copy("native-claude-stop.claudeStopObserved_dc2f94")}</h4>
+    <p>{copy("native-claude-stop.theResponseWasInterruptedClaudeReported_a3292e")}</p>
+    <dl><dt>{copy("native-claude-stop.nativeInterruptRequest_f33630")}</dt><dd>{copy("native-claude-stop.acknowledged_d87cdf")}</dd><dt>{copy("native-claude-stop.nativeLoop_fec242")}</dt><dd>{copy("native-claude-stop.idleObserved_34b00d")}</dd>
+      <dt>{copy("native-claude-stop.ownedNativeProcessCleanup_05bea7")}</dt><dd>{copy("native-claude-stop.confirmed_fe00b6")}</dd><dt>{copy("native-claude-stop.workerWorkspaceCleanupReport_e52033")}</dt><dd>{progress.cleanup_verified === true ? copy("native-claude-stop.confirmed_fe00b6") : copy("native-claude-stop.notConfirmed_bc1c29")}</dd></dl>
+    {v.content_evidence === "closed-stream-before-retry" ? <p>{copy("native-claude-stop.theStreamClosedBeforeRetryWait_d850de")}</p> : <p>{copy("native-claude-stop.theTranscriptPreservesClaudeSOriginal_0dd473")}</p>}
+    {Array.isArray(v.retries) ? <details><summary>{copy("native-claude-stop.nativeRetryObservations_7f1b4d")}</summary><ol>{v.retries.map((entry, index) => { const r = object(entry); return <li key={index}><LocalizedText id="native-claude-stop.attemptOfDelayMsHttp_904c77" components={{ s0: <>{r.attempt as string}</>, s1: <>{r.max_retries as string}</>, s2: <>{r.retry_delay_ms as string}</>, s3: <>{r.error as string}</>, s4: <>{r.error_status === null ? copy("native-claude-stop.unavailable_ba691b") : String(r.error_status)}</> }} /></li>; })}</ol><p>{copy("native-claude-stop.theseAreObservationsFromTheStopped_ffb6f4")}</p></details> : null}
+    <details><summary>{copy("native-claude-stop.originalInterruptionContext_fb2fe5")}</summary><pre>{v.context as string}</pre></details>
+    <details><summary>{copy("native-claude-stop.nativeInterruptionUsage_fd5e14")}</summary><NativeClaudeResultUsage value={v.usage} />
+      {v.partial_usage !== null ? <><h4>{copy("native-claude-stop.interruptedResponseReport_751c6f")}</h4><NativeClaudeProviderUsage value={v.partial_usage} /></> : <p>{copy("native-claude-stop.interruptedResponseUsageUnavailable_d58c68")}</p>}
+      <p>{copy("native-claude-stop.theseReportsOverlapAndDoNot_c16702")}</p></details>
+    <p>{copy("native-claude-stop.originalHistoryMustBeReconciledBefore_9378d6")}</p>
   </section>;
 }

@@ -1,3 +1,4 @@
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -33,22 +34,24 @@ export function githubTokenFormURL(kind: string, owner: string, access: Access):
   return `https://github.com${path}?${q}`;
 }
 
-export function OpenGitHub({ url, disabled = false, label = "Open on GitHub" }: { url: string; disabled?: boolean; label?: string }) {
-  const [busy, setBusy] = useState(false), [status, setStatus] = useState("");
+export function OpenGitHub({ url, disabled = false, label = copy("github-opening.extra.03f69885814b") }: { url: string; disabled?: boolean; label?: string }) {
+  useLocale();
+  const [busy, setBusy] = useState(false), [status, setStatus] = useProductMessage("");
   const open = async () => {
     if (busy || disabled || !isTauri()) return;
     setBusy(true); setStatus("");
-    try { await invoke("open_github", { url }); setStatus("Sent to your default browser. This does not verify page access."); }
-    catch { setStatus("Browser opening was not confirmed. Inspect your browser before trying again."); }
+    try { await invoke("open_github", { url }); setStatus(ownedMessage("github-opening.extra.96dce755f727")); }
+    catch { setStatus(ownedMessage("github-opening.extra.45a2c8995dcd")); }
     finally { setBusy(false); }
   };
-  return <div><button type="button" disabled={disabled || busy || !isTauri()} onClick={() => void open()}>{label}</button>{!isTauri() ? <p>Browser opening is available in the desktop app.</p> : null}{status ? <p role="status">{status}</p> : null}</div>;
+  return <div><button type="button" disabled={disabled || busy || !isTauri()} onClick={() => void open()}>{label}</button>{!isTauri() ? <p>{copy("github-opening.browserOpeningIsAvailableInThe_33be1f")}</p> : null}{status ? <p role="status">{status}</p> : null}</div>;
 }
 
 export function GitHubTokenForm({ profile, active, disabled, showHeading = true }: { profile: Resource; active: boolean; disabled: boolean; showHeading?: boolean }) {
+  useLocale();
   const p = document(profile), fine = p.token_kind === "fine-grained";
   const [access, setAccess] = useState<Access>(fine ? GitHubTokenAccess.SELECTED_REPOSITORIES : GitHubTokenAccess.PUBLIC_REPOSITORIES);
-  const [busy, setBusy] = useState(false), [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false), [status, setStatus] = useProductMessage("");
   const epoch = useRef(0);
   useEffect(() => { epoch.current++; if (!active || disabled) setBusy(false); return () => { epoch.current++; }; }, [active, disabled]);
   const form = useQuery(IntegrationQuery.getGitHubTokenForm, { profileId: profile.id, expectedRevision: profile.revision, access }, { enabled: false, retry: false, gcTime: 0, staleTime: 0 });
@@ -62,11 +65,11 @@ export function GitHubTokenForm({ profile, active, disabled, showHeading = true 
       if (!url) throw new Error("Invalid form");
       if (epoch.current !== original) return;
       await invoke("open_github", { url });
-      if (epoch.current === original) setStatus("Sent to your default browser. Review repository selection, permissions and expiry before generating a token.");
-    } catch { if (epoch.current === original) setStatus("The official form could not be confirmed. Refresh the profile and inspect your browser before trying again."); }
+      if (epoch.current === original) setStatus(ownedMessage("github-opening.extra.783701cedcbe"));
+    } catch { if (epoch.current === original) setStatus(ownedMessage("github-opening.extra.f2427e02d7bb")); }
     finally { if (epoch.current === original) setBusy(false); }
   };
-  return <section aria-label="GitHub token creation">{showHeading ? <h4>Create a token on GitHub</h4> : null}{fine ? <><p>Resource owner: {text(p.resource_owner)}. The official form defaults to All repositories. Choose Only select repositories and select the repositories this profile needs.</p><p>Metadata, Contents, Pull requests, Issues and Commit statuses are preselected as read-only, with a 30-day expiry. The verified form offers no Checks permission; access must be checked separately. Organization approval may be required.</p></> : <><label>Classic token access<select value={access} disabled={busy || disabled} onChange={(event) => { setAccess(Number(event.target.value) as Access); setStatus(""); }}><option value={GitHubTokenAccess.PUBLIC_REPOSITORIES}>Public repositories only (no scopes)</option><option value={GitHubTokenAccess.PRIVATE_REPOSITORIES}>Private repositories (broad repo scope)</option></select></label>{access === GitHubTokenAccess.PRIVATE_REPOSITORIES ? <p role="note">Classic repo grants broad read/write access to private repositories even though DeliDev only reads GitHub APIs. Prefer fine-grained selected repositories when possible.</p> : <p>No classic scopes will be preselected for public repository lookup.</p>}</>}<p>Review the form and create the token yourself, then enter it in the protected token field below. Opening a form does not create or save a token.</p><button type="button" disabled={!active || disabled || busy || !isTauri()} onClick={() => void open()}>Open official GitHub token form</button>{!isTauri() ? <p>Open the official form from the desktop app or use the CLI token-form command.</p> : null}{status ? <p role="status">{status}</p> : null}</section>;
+  return <section aria-label={copy("github-opening.githubTokenCreation_acffe8")}>{showHeading ? <h4>{copy("github-opening.createATokenOnGithub_519994")}</h4> : null}{fine ? <><p><LocalizedText id="github-opening.resourceOwnerTheOfficialFormDefaults_f8b002" components={{ s0: <>{text(p.resource_owner)}</> }} /></p><p>{copy("github-opening.metadataContentsPullRequestsIssuesAnd_a0bd31")}</p></> : <><label>{copy("github-opening.classicTokenAccess_d1110d")}<select value={access} disabled={busy || disabled} onChange={(event) => { setAccess(Number(event.target.value) as Access); setStatus(""); }}><option value={GitHubTokenAccess.PUBLIC_REPOSITORIES}>{copy("github-opening.publicRepositoriesOnlyNoScopes_d7d490")}</option><option value={GitHubTokenAccess.PRIVATE_REPOSITORIES}>{copy("github-opening.privateRepositoriesBroadRepoScope_5791af")}</option></select></label>{access === GitHubTokenAccess.PRIVATE_REPOSITORIES ? <p role="note">{copy("github-opening.classicRepoGrantsBroadReadWrite_1e0aa7")}</p> : <p>{copy("github-opening.noClassicScopesWillBePreselected_667cb5")}</p>}</>}<p>{copy("github-opening.reviewTheFormAndCreateThe_d41506")}</p><button type="button" disabled={!active || disabled || busy || !isTauri()} onClick={() => void open()}>{copy("github-opening.openOfficialGithubTokenForm_d8a937")}</button>{!isTauri() ? <p>{copy("github-opening.openTheOfficialFormFromThe_dc9177")}</p> : null}{status ? <p role="status">{status}</p> : null}</section>;
 }
 
 // Draft preparation cannot weaken the saved profile's revision-bound form read.
@@ -74,7 +77,7 @@ export function GitHubTokenForm({ profile, active, disabled, showHeading = true 
 export function GitHubDraftTokenForm({ kind, owner, changeKind, changeOwner, active, disabled }: { kind: GitHubTokenKind; owner: string; changeKind: (kind: GitHubTokenKind) => void; changeOwner: (owner: string) => void; active: boolean; disabled: boolean }) {
   const opening = useSettingsOpening();
   const [classicAccess, setClassicAccess] = useState<Access>(GitHubTokenAccess.PUBLIC_REPOSITORIES);
-  const [busy, setBusy] = useState(false), [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false), [status, setStatus] = useProductMessage("");
   const [requestId] = useState(newRequestId);
   const fine = kind === GitHubTokenKind.FINE_GRAINED;
   const access = fine ? GitHubTokenAccess.SELECTED_REPOSITORIES : classicAccess;
@@ -91,22 +94,22 @@ export function GitHubDraftTokenForm({ kind, owner, changeKind, changeOwner, act
       if (!result || result.requestId !== requestId || result.tokenKind !== kind || result.resourceOwner !== owner || result.access !== access || result.url !== expected) throw new Error("Invalid draft form");
       if (epoch.current !== original || opening?.disposed) return;
       await invoke("open_github", { url: expected });
-      if (epoch.current === original) setStatus("Sent to your default browser. Review repository selection, permissions and expiry before generating a token.");
-    } catch { if (epoch.current === original) setStatus("The official form could not be confirmed. Inspect your browser before trying again."); }
+      if (epoch.current === original) setStatus(ownedMessage("github-opening.extra.783701cedcbe"));
+    } catch { if (epoch.current === original) setStatus(ownedMessage("github-opening.extra.f2427e02d7bb")); }
     finally { if (epoch.current === original) setBusy(false); }
   };
   return <details className="integration-draft-guidance" open>
-    <summary>Create a token on GitHub</summary>
+    <summary>{copy("github-opening.createATokenOnGithub_519994")}</summary>
     <form onSubmit={event => { event.preventDefault(); void open(); }}>
       <fieldset disabled={disabled || busy}>
         <label>Token type<select value={kind} onChange={event => changeKind(Number(event.target.value) as GitHubTokenKind)}><option value={GitHubTokenKind.FINE_GRAINED}>Fine-grained PAT (preferred)</option><option value={GitHubTokenKind.CLASSIC}>Classic PAT</option></select></label>
         <label>Resource owner<input value={owner} onChange={event => changeOwner(event.target.value)} maxLength={100} placeholder="GitHub user or organization" required={fine} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" /></label>
-        {fine ? <><p>The official form defaults to All repositories. Choose Only select repositories and select the repositories this profile needs.</p><p>Metadata, Contents, Pull requests, Issues and Commit statuses are preselected as read-only, with a 30-day expiry. The verified form offers no Checks permission; access must be checked separately. Organization approval may be required.</p></> : <><label>Classic token access<select value={classicAccess} onChange={event => setClassicAccess(Number(event.target.value) as Access)}><option value={GitHubTokenAccess.PUBLIC_REPOSITORIES}>Public repositories only (no scopes)</option><option value={GitHubTokenAccess.PRIVATE_REPOSITORIES}>Private repositories (broad repo scope)</option></select></label>{classicAccess === GitHubTokenAccess.PRIVATE_REPOSITORIES ? <p role="note">Classic repo grants broad read/write access to private repositories even though DeliDev only reads GitHub APIs. Prefer fine-grained selected repositories when possible.</p> : <p>No classic scopes will be preselected for public repository lookup.</p>}</>}
-        <button type="submit" disabled={!active || !expected || !isTauri() || busy}><svg className="integration-external-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 3h7v7m0-7L10 14M10 3H3v18h18v-7" /></svg>Open official GitHub token form</button>
-        <p>Review the owner, permissions and expiry, create the token yourself, then paste it above. Opening a form does not create or save a token.</p>
+        {fine ? <><p>{copy("github-opening.resourceOwnerTheOfficialFormDefaults_f8b002", { v0: owner })}</p><p>{copy("github-opening.metadataContentsPullRequestsIssuesAnd_a0bd31")}</p></> : <><label>{copy("github-opening.classicTokenAccess_d1110d")}<select value={classicAccess} onChange={event => setClassicAccess(Number(event.target.value) as Access)}><option value={GitHubTokenAccess.PUBLIC_REPOSITORIES}>{copy("github-opening.publicRepositoriesOnlyNoScopes_d7d490")}</option><option value={GitHubTokenAccess.PRIVATE_REPOSITORIES}>{copy("github-opening.privateRepositoriesBroadRepoScope_5791af")}</option></select></label>{classicAccess === GitHubTokenAccess.PRIVATE_REPOSITORIES ? <p role="note">{copy("github-opening.classicRepoGrantsBroadReadWrite_1e0aa7")}</p> : <p>{copy("github-opening.noClassicScopesWillBePreselected_667cb5")}</p>}</>}
+        <button type="submit" disabled={!active || !expected || !isTauri() || busy}>{copy("github-opening.openOfficialGithubTokenForm_d8a937")}</button>
+        <p>{copy("github-opening.reviewTheFormAndCreateThe_d41506")}</p>
       </fieldset>
     </form>
-    {!isTauri() ? <p>Browser opening is available in the desktop app.</p> : null}
+    {!isTauri() ? <p>{copy("github-opening.browserOpeningIsAvailableInThe_33be1f")}</p> : null}
     {busy ? <p role="status">Preparing the official GitHub token form…</p> : null}{status ? <p role="status">{status}</p> : null}
   </details>;
 }

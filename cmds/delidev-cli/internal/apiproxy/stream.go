@@ -170,14 +170,38 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 			}
 		}
 		if kind == "error" || nonNull(object["error"]) {
-			code, nativeCode := nativeErrorCode(object["error"], domain.Unavailable)
+			nativeError := object["error"]
+			if operation == ResponseCreate && kind == "error" {
+				// Responses SSE errors are flat events. HTTP errors and failed
+				// response objects retain their separate nested envelopes.
+				nativeError = data
+			}
+			code, nativeCode := nativeErrorCode(nativeError, domain.Unavailable)
 			raw := errorBodyWithNativeCode(operation.protocol(), code, correlation, nativeCode)
+			prefix := "data: "
+			if operation == ResponseCreate && kind == "error" {
+				raw = responseStreamErrorBody(object, code, correlation, nativeCode, guard)
+				prefix = "event: error\ndata: "
+			} else if operation.protocol() == domain.AnthropicMessages {
+				prefix = "event: error\ndata: "
+			}
 			if guard.contains(string(raw)) {
 				return started, errSecret
 			}
-			prefix := "data: "
-			if operation.protocol() == domain.AnthropicMessages {
-				prefix = "event: error\ndata: "
+			if operation == ResponseCreate && kind == "error" {
+				if event == "" {
+					// The synthesized event line is new SSE metadata. Inspect it
+					// before terminal delivery so a data-only native error cannot
+					// complete a protected metadata prefix and flush pending frames.
+					if err := fragments.inspectMetadata([]byte(prefix + string(raw) + "\n\n")); err != nil {
+						return started, err
+					}
+				}
+				// The retained sequence number participates in the same path
+				// guard as earlier events, including split numeric credentials.
+				if err := fragments.inspect(raw); err != nil {
+					return started, err
+				}
 			}
 			safe := append([]byte(prefix), raw...)
 			safe = append(safe, '\n', '\n')

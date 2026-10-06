@@ -4,9 +4,10 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { AccountingUnitKind, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, UsageAccountingProfile, UsageCostState, UsageService, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
+import { i18n, formatNumber, formatTimestamp } from "./localization";
 import { ApiEntryRow } from "./api-entry-row";
 import { encode } from "./documents";
 
@@ -196,4 +197,31 @@ it.each([
   expect(screen.getAllByText(status).length).toBeGreaterThan(0);
   expect(f.read).toHaveBeenCalledTimes(1);
   expect(f.callbacks.manage).not.toHaveBeenCalled();
+});
+
+it("updates the retained usage disclosure without extra reads, focus changes or new navigation bounds", async () => {
+  const f = fixture();
+  f.data.totals!.responses = 1;
+  f.data.estimates!.currencies[0].knownAmount = "12345678901234567890.0000123400";
+  f.row.documentJson = encode({ alias: "My original API account", type: "api", enabled: true, health: "unverified", quota: [{ id: "Original window", state: "observed", remaining: 0.5, observed_at: "2026-10-06T01:02:03.123456789+09:00", reset_at: "2026-10-07T01:02:03.123456789+09:00" }] });
+  render(f.view());
+  await screen.findByText("1 observed response");
+  const details = screen.getByRole("button", { name: "Details" });
+  fireEvent.click(details); details.focus();
+  const article = details.closest("article");
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("button", { name: "상세" })).toBe(details);
+  expect(details.closest("article")).toBe(article);
+  expect(details.getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement).toBe(details);
+  expect(screen.getByText("My original API account")).toBeTruthy();
+  expect(screen.getByText("관측된 응답 1개")).toBeTruthy();
+  expect(screen.getByText(formatNumber(18446744073709551614n))).toBeTruthy();
+  expect(screen.getAllByText("USD 12,345,678,901,234,567,890.0000123400").length).toBeGreaterThan(0);
+  expect(screen.getByText(formatTimestamp("2026-10-07T01:02:03.123456789+09:00"))).toBeTruthy();
+  expect(screen.getByText(formatTimestamp(new Date(Number(f.data.untilUnixMs)).toISOString()))).toBeTruthy();
+  expect(f.read).toHaveBeenCalledTimes(1);
+  for (const callback of Object.values(f.callbacks)) expect(callback).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "사용량 보기" }));
+  expect(f.callbacks.openUsage).toHaveBeenCalledWith({ key: expect.any(String), accountId: f.id, fromUnixMs: f.data.fromUnixMs, untilUnixMs: f.data.untilUnixMs });
 });

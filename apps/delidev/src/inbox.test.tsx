@@ -1,9 +1,9 @@
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EntityKind, InboxReadState, InboxService, InboxSource, InboxViewSchema, InteractionService, ResourceSchema, ResourceService, newRequestId, type InboxView } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
 import { Inbox } from "./inbox";
@@ -21,15 +21,163 @@ function fixture() {
   const get = vi.fn(async (request: { id?: string }) => ({ view: request.id === terminalEntry.id ? terminalView : questionView }));
   const setRead = vi.fn((_request: unknown) => ({ view: questionView, requestId: newRequestId(), replayed: false }));
   const answer = vi.fn((_request: unknown) => ({ interaction }));
+  const readSignals: AbortSignal[] = [];
   const transport = createRouterTransport((router) => {
-    router.service(InboxService, { listInbox: list, getInboxEntry: get, setInboxReadState: setRead });
+    router.service(InboxService, { listInbox: list, getInboxEntry: (request, context) => { readSignals.push(context.signal); return get(request); }, setInboxReadState: setRead });
     router.service(ResourceService, { listResources: () => ({ resources: [] }) });
     router.service(InteractionService, { respondQuestion: answer });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
   const renderInbox = (props: { active?: boolean; notificationId?: string; notificationActivation?: number } = {}) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Inbox active={props.active ?? true} open={() => {}} notificationId={props.notificationId} notificationActivation={props.notificationActivation} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { entry, interaction, questionView, session, terminalEntry, list, get, setRead, answer, renderInbox };
+  return { entry, interaction, questionView, session, terminalEntry, list, get, setRead, answer, readSignals, renderInbox };
 }
+
+describe("selected Inbox background refresh", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  async function advance(milliseconds: number) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds); });
+  }
+
+  async function selectQuestion(value: ReturnType<typeof fixture>) {
+    vi.useFakeTimers();
+    const rendered = render(value.renderInbox());
+    await advance(1);
+    fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
+    await advance(1);
+    return rendered;
+  }
+
+  function delayedView(view: InboxView, milliseconds = 6000) {
+    return async () => {
+      await new Promise<void>((resolve) => { window.setTimeout(resolve, milliseconds); });
+      return { view };
+    };
+  }
+
+  it("allows a six-second initial read to finish without cancellation at the five-second tick", async () => {
+    const value = fixture();
+    value.get.mockImplementationOnce(delayedView(value.questionView));
+    await selectQuestion(value);
+    expect(value.get).toHaveBeenCalledTimes(1);
+    await advance(5000);
+    expect(value.get).toHaveBeenCalledTimes(1);
+    expect(value.readSignals[0]?.aborted).toBe(false);
+    expect(screen.queryByText("Which methods should be supported?")).toBeNull();
+    await advance(1000);
+    expect(screen.getByText("Which methods should be supported?")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Mark read" }) as HTMLButtonElement).disabled).toBe(false);
+    await advance(4000);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(value.setRead).not.toHaveBeenCalled();
+    expect(value.answer).not.toHaveBeenCalled();
+  });
+
+  it("retains the validated view as read-only throughout a slow periodic refresh", async () => {
+    const value = fixture();
+    await selectQuestion(value);
+    expect(screen.getByText("Which methods should be supported?")).toBeTruthy();
+    value.get.mockImplementationOnce(delayedView(value.questionView));
+    await advance(5000);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Which methods should be supported?")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Mark read" }) as HTMLButtonElement).disabled).toBe(true);
+    await advance(5000);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(value.readSignals[1]?.aborted).toBe(false);
+    expect(screen.getByText("Which methods should be supported?")).toBeTruthy();
+    await advance(1000);
+    expect((screen.getByRole("button", { name: "Mark read" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(value.setRead).not.toHaveBeenCalled();
+    expect(value.answer).not.toHaveBeenCalled();
+  });
+
+  it("replaces a slow read when selection changes and fences its late result", async () => {
+    const value = fixture();
+    value.get.mockImplementationOnce(delayedView(value.questionView));
+    await selectQuestion(value);
+    fireEvent.click(screen.getByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
+    await advance(1);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Original terminal observation")).toBeTruthy();
+    await advance(6000);
+    expect(screen.getByText("Original terminal observation")).toBeTruthy();
+    expect(screen.queryByText("Which methods should be supported?")).toBeNull();
+  });
+
+  it("replaces a pending notification read without allowing old completion to release the new read", async () => {
+    const value = fixture();
+    const freshInteraction = create(ResourceSchema, { ...value.interaction, revision: 4n, documentJson: encode({ ...document(value.interaction), questions: { questions: [{ id: "method", header: "Authentication", text: "Fresh question", secret: false, other: true, options: [] }] } }) });
+    const freshView = create(InboxViewSchema, { entry: value.entry, session: value.session, interaction: freshInteraction });
+    value.get.mockImplementationOnce(delayedView(value.questionView)).mockImplementationOnce(delayedView(freshView, 12000));
+    vi.useFakeTimers();
+    const rendered = render(value.renderInbox({ notificationId: value.entry.id, notificationActivation: 1 }));
+    await advance(1000);
+    expect(value.get).toHaveBeenCalledTimes(1);
+    rendered.rerender(value.renderInbox({ notificationId: value.entry.id, notificationActivation: 2 }));
+    await advance(1);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(value.readSignals[0]?.aborted).toBe(true);
+    await advance(11000);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(value.readSignals[1]?.aborted).toBe(false);
+    expect(screen.queryByText("Which methods should be supported?")).toBeNull();
+    await advance(1000);
+    expect(screen.getByText("Fresh question")).toBeTruthy();
+    expect(value.setRead).not.toHaveBeenCalled();
+    expect(value.answer).not.toHaveBeenCalled();
+  });
+
+  it.each(["surface", "window"])("pauses polling while the %s is hidden and coalesces return events", async (hidden) => {
+    const value = fixture();
+    const rendered = await selectQuestion(value);
+    const visibility = vi.spyOn(window.document, "visibilityState", "get");
+    if (hidden === "surface") rendered.rerender(value.renderInbox({ active: false }));
+    else { visibility.mockReturnValue("hidden"); fireEvent(window.document, new Event("visibilitychange")); }
+    await advance(15000);
+    expect(value.get).toHaveBeenCalledTimes(1);
+    value.get.mockImplementationOnce(delayedView(value.questionView));
+    if (hidden === "surface") rendered.rerender(value.renderInbox({ active: true }));
+    else { visibility.mockReturnValue("visible"); fireEvent(window.document, new Event("visibilitychange")); }
+    await advance(1);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    fireEvent(window, new Event("focus"));
+    await advance(5000);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(value.readSignals[1]?.aborted).toBe(false);
+    await advance(1000);
+    expect(screen.getByText("Which methods should be supported?")).toBeTruthy();
+  });
+
+  it.each([Code.PermissionDenied, Code.Unauthenticated, Code.NotFound])("discards retained content after a slow inaccessible read (%s)", async (code) => {
+    const value = fixture();
+    await selectQuestion(value);
+    value.get.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { window.setTimeout(resolve, 6000); });
+      throw new ConnectError("Fixture entry unavailable", code);
+    });
+    await advance(11000);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/This item is unavailable/)).toBeTruthy();
+    expect(screen.queryByText("Which methods should be supported?")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mark read" })).toBeNull();
+    expect(value.setRead).not.toHaveBeenCalled();
+    expect(value.answer).not.toHaveBeenCalled();
+  });
+
+  it("discards retained controls when a periodic read joins a foreign source", async () => {
+    const value = fixture();
+    await selectQuestion(value);
+    const foreignInteraction = create(ResourceSchema, { ...value.interaction, sessionId: newRequestId() });
+    value.get.mockImplementationOnce(delayedView(create(InboxViewSchema, { entry: value.entry, session: value.session, interaction: foreignInteraction })));
+    await advance(11000);
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/This item is unavailable/)).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Your answer" })).toBeNull();
+    expect(value.setRead).not.toHaveBeenCalled();
+    expect(value.answer).not.toHaveBeenCalled();
+  });
+});
 
 it("starts with server All/All filters, selects an exact source read, and keeps row navigation read-only", async () => {
   const value = fixture();

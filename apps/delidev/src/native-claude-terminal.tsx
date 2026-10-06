@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
 enum ResultKind { Success = "success", Error = "error_during_execution", Turns = "error_max_turns", Budget = "error_max_budget_usd", Structured = "error_max_structured_output_retries" }
@@ -21,15 +22,16 @@ function outcome(progress: Document): string | undefined {
 }
 
 export function NativeClaudeTerminal({ progress }: { progress: Document }) {
+  useLocale();
   if (progress.claude_terminal == null) return null;
   const result = outcome(progress), v = object(progress.claude_terminal);
-  if (!result) return <p>The retained Claude terminal evidence is unavailable or inconsistent.</p>;
-  return <section aria-label="Claude original input outcome">
-    <h4>Original Claude input result</h4>
-    <dl><dt>Native input outcome</dt><dd>{result === "succeeded" ? "Succeeded" : result === "stopped" ? "Stopped" : "Failed"}</dd>
-      <dt>Native result reason</dt><dd>{v.reason as string}</dd><dt>Native command</dt><dd>{v.command === "completed" ? "Completed" : "Cancelled"}</dd>
-      <dt>Native loop</dt><dd>Idle observed</dd><dt>Owned process and workspace cleanup</dt><dd>{progress.cleanup_verified === true ? "Confirmed" : "Not confirmed"}</dd>
+  if (!result) return <p>{copy("native-claude-terminal.theRetainedClaudeTerminalEvidenceIs_351997")}</p>;
+  return <section aria-label={copy("native-claude-terminal.claudeOriginalInputOutcome_d261e9")}>
+    <h4>{copy("native-claude-terminal.originalClaudeInputResult_4d612d")}</h4>
+    <dl><dt>{copy("native-claude-terminal.nativeInputOutcome_15e4d4")}</dt><dd>{result === "succeeded" ? copy("native-claude-terminal.succeeded_6d9a6f") : result === "stopped" ? copy("native-claude-terminal.stopped_1a4f63") : copy("native-claude-terminal.failed_031a8f")}</dd>
+      <dt>{copy("native-claude-terminal.nativeResultReason_8974b9")}</dt><dd>{v.reason as string}</dd><dt>{copy("native-claude-terminal.nativeCommand_29f746")}</dt><dd>{v.command === "completed" ? copy("native-claude-terminal.completed_22a970") : copy("native-claude-terminal.cancelled_d353a9")}</dd>
+      <dt>{copy("native-claude-terminal.nativeLoop_fec242")}</dt><dd>{copy("native-claude-terminal.idleObserved_34b00d")}</dd><dt>{copy("native-claude-terminal.ownedProcessAndWorkspaceCleanup_7844eb")}</dt><dd>{progress.cleanup_verified === true ? copy("native-claude-terminal.confirmed_fe00b6") : copy("native-claude-terminal.notConfirmed_bc1c29")}</dd>
     </dl>
-    <p>This records the original input outcome. Session Stop or recovery remains separate. Completion does not authorize another input.</p>
+    <p>{copy("native-claude-terminal.thisRecordsTheOriginalInputOutcome_3a83a3")}</p>
   </section>;
 }

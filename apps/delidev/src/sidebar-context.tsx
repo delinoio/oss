@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { createContext, useContext, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -10,12 +11,14 @@ interface SidebarOutlet {
 const SidebarOutletContext = createContext<SidebarOutlet>({ target: null, closeDrawer: () => undefined, drawerOpen: false });
 
 export function SidebarOutletProvider({ target, closeDrawer, drawerOpen, children }: SidebarOutlet & { children: ReactNode }) {
+  useLocale();
   return <SidebarOutletContext.Provider value={{ target, closeDrawer, drawerOpen }}>{children}</SidebarOutletContext.Provider>;
 }
 
 export function SidebarSurface({ active, title, children, className = "" }: { active: boolean; title: string; children: ReactNode; className?: string }) {
+  useLocale();
   const { target } = useContext(SidebarOutletContext);
-  const panel = <section className={`sidebar-surface-content${className ? ` ${className}` : ""}`} aria-label={`${title} navigation and filters`} hidden={!active}>
+  const panel = <section className={`sidebar-surface-content${className ? ` ${className}` : ""}`} aria-label={copy("sidebar-context.navigationAndFilters_2aa4c3", { v0: title })} hidden={!active}>
     <h2>{title}</h2>
     {children}
   </section>;

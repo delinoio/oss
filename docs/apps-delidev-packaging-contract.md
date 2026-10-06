@@ -66,6 +66,11 @@ identity and complete packaged notice bytes are checked; the report also records
 the Chromium credits SHA-256. Ordinary `bundle:native` is development packaging;
 only the verified dry-run path currently assembles the complete native notice set.
 
+
+### Localization resources
+
+English/Korean presentation follows [the localization contract](apps-delidev-localization-contract.md). The independent device Language controller and protected preference stay above connection and Settings visit ownership. Preserve stable category/enum/RPC values, drafts, focus, exact operation identities and original technical evidence. Native/widget catalogs generate typed resources during preparation, tests and packaging; widget language publication never advances server observation timestamps. App body language follows the saved device choice; OS-owned standard UI and widget gallery/selection guidance follow native localization. Fixture/build/package results remain distinct from actual platform and provisioned WidgetKit acceptance.
+
 ## Storage
 
 Verified artifacts live under `target/delidev-dry-run/<target>/<source-commit>/`

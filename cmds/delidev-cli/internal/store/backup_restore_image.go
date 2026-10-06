@@ -67,6 +67,8 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		// Installation state is current once-only authority, never historical configuration.
 		"DELETE FROM entities WHERE kind IN ('ssh_setup','update')",
 		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind IN ('ssh_setup','update')",
+		"DELETE FROM account_oauth_credentials",
+		"INSERT INTO account_oauth_credentials SELECT * FROM current_state.account_oauth_credentials",
 		"DELETE FROM account_oauth_attempts",
 		"INSERT INTO account_oauth_attempts SELECT * FROM current_state.account_oauth_attempts",
 		// Preserve the coupled account/provider from the current safety image;

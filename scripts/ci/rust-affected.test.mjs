@@ -62,7 +62,7 @@ test("PR merge manifest differences select the merged workspace baseline", t => 
   f.git("merge", "--no-ff", "feature", "-m", "fixture merge");
   const result = select(f, { event: Event.PullRequest, range: f.range(f.base, head) }); assert.equal(result.reason, "merge-graph"); assert.deepEqual(result.packages, all);
 });
-for (const [path, reason] of [["Cargo.toml", "shared-input"], [".cargo/config.toml", "shared-input"], ["rust-toolchain.toml", "shared-input"], ["packages/devhud-api-client/fixture.txt", "external-input"]]) test(`${path} retains the full Rust baseline`, t => {
+for (const [path, reason] of [["Cargo.toml", "shared-input"], [".cargo/config.toml", "shared-input"], [".cargo/.config.toml", "shared-input"], ["rust-toolchain.toml", "shared-input"], ["packages/devhud-api-client/fixture.txt", "external-input"], ["packages/devhud-api-client/.npmrc", "external-input"]]) test(`${path} retains the full Rust baseline`, t => {
   const f = rustFixture(t); f.write(path, path === "Cargo.toml" ? f.read(path) + "\n# fixture\n" : "fixture"); f.commit();
   const result = select(f); assert.equal(result.reason, reason); assert.deepEqual(result.packages, all);
 });
