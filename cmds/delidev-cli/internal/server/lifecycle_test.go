@@ -57,7 +57,7 @@ func TestStopCommitsSuppressionBeforeAcknowledgement(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("stop did not complete")
 	}
-	if err := Serve(ctx, Config{DataDir: root, Listen: "127.0.0.1:0", AllowedOrigins: []string{"tauri://localhost"}, StartupID: before.Generation}, nil); domain.SafeError(err).Code != domain.Conflict {
+	if err := Serve(ctx, Config{disableKnownModelMaintenance: true, DataDir: root, Listen: "127.0.0.1:0", AllowedOrigins: []string{"tauri://localhost"}, StartupID: before.Generation}, nil); domain.SafeError(err).Code != domain.Conflict {
 		t.Fatal("late start ignored stop", err)
 	}
 	restarted, owner, shutdown, finished := runTestServer(t, root)
@@ -85,7 +85,7 @@ func TestLifecycleRejectsCorruptionAndSupersededStartup(t *testing.T) {
 	if err := security.PrivateDir(root); err != nil {
 		t.Fatal(err)
 	}
-	config := Config{DataDir: root, Listen: "127.0.0.1:0"}
+	config := Config{disableKnownModelMaintenance: true, DataDir: root, Listen: "127.0.0.1:0"}
 	first, err := WriteRunning(root, config)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestCompletedServiceStopPreservesReplacementGeneration(t *testing.T) {
 	if err := security.PrivateDir(root); err != nil {
 		t.Fatal(err)
 	}
-	config := Config{DataDir: root, Listen: "127.0.0.1:0"}
+	config := Config{disableKnownModelMaintenance: true, DataDir: root, Listen: "127.0.0.1:0"}
 	first, err := WriteRunning(root, config)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestHTTPReadinessReleasesStartupLifecycleOwnership(t *testing.T) {
 	handler := &blockedReadyLog{Handler: slog.NewTextHandler(io.Discard, nil), entered: make(chan struct{}), release: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(ctx, Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(handler), disableCatalogMaintenance: true}, nil)
+		done <- Serve(ctx, Config{disableKnownModelMaintenance: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(handler), disableCatalogMaintenance: true}, nil)
 	}()
 	defer func() {
 		close(handler.release)

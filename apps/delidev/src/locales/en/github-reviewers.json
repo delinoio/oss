@@ -1,0 +1,22 @@
+{
+  "github-reviewers.feedbackAuthorVerification_38b5dc": "Feedback author verification",
+  "github-reviewers.identitiesAndRepositoryPermissionsWereChecked_491376": "Identities and repository permissions were checked for this observation. Automatic handling must verify them again before execution. Public repository visibility is not a collaborator permission.",
+  "github-reviewers.currentFeedbackAuthorIdentitiesAndPermissions_043223": "Current feedback author identities and permissions",
+  "github-reviewers.author_d95082": "Author",
+  "github-reviewers.identity_999f23": "Identity",
+  "github-reviewers.repositoryPermission_3ee488": "Repository permission",
+  "github-reviewers.verifiedIdentity_07c340": "Verified identity",
+  "github-reviewers.noCollaboratorGrant_f595d5": "No collaborator grant",
+  "github-reviewers.verifiedUncertain_43eb21": "{{v0}} verified; {{v1}} uncertain",
+  "github-reviewers.role_fe5230": " · Role: <s0/>",
+  "github-reviewers.noIdentifiableFeedbackAuthorsWereReturned_efba93": "No identifiable feedback authors were returned.",
+  "github-reviewers.githubAppAttributionForEachFeedback_24a5d7": "GitHub App attribution for each feedback entry",
+  "github-reviewers.onlyGithubSExplicitAttributionIdentifies_313607": "Only GitHub's explicit attribution identifies an App. A bot name or another comment's App cannot supply missing attribution.",
+  "github-reviewers.originalFeedbackAppAttribution_86d055": "Original feedback App attribution",
+  "github-reviewers.feedback_aac77d": "Feedback",
+  "github-reviewers.appAttribution_c427b6": "App attribution",
+  "github-reviewers.app_077060": "{{v0}} · App {{v1}} · {{v2}}",
+  "github-reviewers.githubReportsNoAppAttribution_9f3c38": "GitHub reports no App attribution",
+  "github-reviewers.appNotVerified_ad3966": "App not verified · {{v0}}",
+  "github-reviewers.extra.064effacbffd": "Numeric ID unavailable"
+}

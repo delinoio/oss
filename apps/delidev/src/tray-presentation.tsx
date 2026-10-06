@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -7,6 +8,7 @@ import { TrayDestination, TrayPublisher, traySummary, type TraySummary } from ".
 
 const polling = { refetchInterval: 15000, refetchIntervalInBackground: true };
 export function TrayPresentation({ navigate }: { navigate: (destination: TrayDestination, inboxId?: string) => void }) {
+  useLocale();
   const enabled = isTauri();
   const overview = useQuery(SystemQuery.getOverview, {}, { ...polling, enabled });
   const usage = useQuery(UsageQuery.getUsageSummary, { fromUnixMs: overview.data?.todayFromUnixMs ?? 0n, untilUnixMs: overview.data?.todayUntilUnixMs ?? 0n }, { ...polling, enabled: enabled && Boolean(overview.data) && !overview.isError });
@@ -56,5 +58,5 @@ export function TrayPresentation({ navigate }: { navigate: (destination: TrayDes
     return () => { canceled = true; if (retryTimer) clearTimeout(retryTimer); unlisten?.(); value.close(); if (publisher.current === value) publisher.current = undefined; };
   }, [enabled]);
   useEffect(() => { publisher.current?.update(summary); }, [summary]);
-  return failed ? <p role="status">Tray status is unavailable. Sessions and inbox requests remain available in this window.</p> : null;
+  return failed ? <p role="status">{copy("tray-presentation.trayStatusIsUnavailableSessionsAnd_7fdf0e")}</p> : null;
 }

@@ -48,6 +48,41 @@ function namedStep(job, name) {
   return job.steps.find((candidate) => candidate.name === name);
 }
 
+test("rustfmt runs the uncached real cache regression with the pinned formatter", () => {
+  const job = workflow.jobs["rust-fmt"];
+  const graph = jobTaskGraph(job);
+  const fixture = graph.get("@delinoio/ci#ci:rust:fmt-fixture");
+  assert.ok(fixture);
+  assert.equal(fixture.task.cache, false);
+  assert.deepEqual(fixture.task.dependsOn, []);
+  assert.match(fixture.command, /node --test scripts\/ci\/rustfmt-cache\.fixture\.mjs/u);
+  const setup = job.steps.findIndex(({ uses }) => uses === "dtolnay/rust-toolchain@v1");
+  assert.equal(job.steps[setup].with.toolchain, readFileSync(`${root}/rust-toolchain`, "utf8").trim());
+  assert.equal(job.steps[setup].with.components, "rustfmt");
+  assert.ok(setup < job.steps.findIndex(({ run }) => run?.includes("ci:rust:fmt-fixture")));
+});
+
+test("protocol launcher fixtures run uncached on every native CI contract host", () => {
+  const job = workflow.jobs["ci-contracts"];
+  assert.equal(job["runs-on"], "${{ matrix.os }}");
+  assert.equal(job.strategy["fail-fast"], false);
+  assert.deepEqual(job.strategy.matrix.os, ["ubuntu-22.04", "macos-latest", "windows-latest"]);
+  for (const name of ["Setup Go", "Validate workflow syntax", "Validate CI contracts and affected behavior"]) {
+    assert.equal(namedStep(job, name).if, "${{ runner.os == 'Linux' }}");
+  }
+  assert.ok(namedStep(job, "Save Go cache after successful main validation").if.includes("steps.ci-go.outcome == 'success'"));
+  const native = namedStep(job, "Validate protocol launcher on native host");
+  assert.equal(native.if, "${{ runner.os != 'Linux' }}");
+  assert.equal(native.run, "node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:launcher");
+  assert.deepEqual(native.env, { FORCE_RUN: "true" });
+  const config = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8"));
+  assert.equal(config.tasks["ci:proto:launcher"].cache, false);
+  assert.deepEqual(config.tasks["ci:proto:launcher"].dependsOn, []);
+  const manifest = JSON.parse(readFileSync(`${root}/scripts/ci/package.json`, "utf8"));
+  assert.match(manifest.scripts["ci:contracts"], /scripts\/ci\/\*\.test\.mjs/u);
+  assert.equal(manifest.scripts["ci:proto:launcher"], "node from-root.mjs node --test scripts/ci/protocol-launcher.test.mjs");
+});
+
 test("cache setup receives workflow variables through composite inputs and retains fallback", () => {
   const source = readFileSync(`${root}/.github/actions/setup-turbo-cache/action.yml`, "utf8");
   // The runner's action-manifest context excludes vars even though workflow
@@ -150,6 +185,22 @@ test("every step reaching shared protocol breaking checks carries the event base
   assert.ok(consumers.length >= 4, "Inventory must include protocol, bindings and async-commit-hook steps");
   const config = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8"));
   assert.ok(config.tasks["ci:proto:breaking"].passThroughEnv.includes("DEVHUD_PROTO_BASELINE"));
+});
+
+test("DevHud generated-only plans reach the shared uncached freshness command", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const plan = planJobs(event, ["packages/devhud-api-client/src/gen/devhud/v1/common_pb.ts"]);
+    assert.equal(plan.jobs["async-commit-hook"], true, event);
+    const job = workflow.jobs["async-commit-hook"];
+    const validation = namedStep(job, "Validate package tasks");
+    assert.equal(validation.env.FORCE_RUN, "true");
+    const graph = jobTaskGraph(job);
+    assert.ok(graph.has("@delinoio/ci#ci:proto:check"), event);
+    const fresh = graph.get("@delinoio/ci#ci:proto:fresh");
+    assert.ok(fresh, event);
+    assert.equal(fresh.task.cache, false);
+    assert.equal(fresh.command, "node from-root.mjs node scripts/ci/protocol-fresh.mjs");
+  }
 });
 
 test("CI keeps every legacy check and aggregates every required job", () => {
@@ -318,6 +369,28 @@ test("DeliDev schema validation preserves shared freshness without client or des
   assert.equal(job.steps.filter(({ run }) => run?.includes("pnpm install")).length, 1);
 });
 
+test("DevHud signature fixtures run on Windows without release authority", () => {
+  const job = workflow.jobs["devhud-supply-chain"];
+  assert.equal(job["runs-on"], "${{ matrix.os }}");
+  assert.deepEqual(job.strategy.matrix.os, ["ubuntu-22.04", "windows-latest"]);
+  assert.equal(job.strategy["fail-fast"], false);
+  const setup = namedStep(job, "Setup Go for native signature fixture");
+  const native = namedStep(job, "Validate Windows signature failure and success fixtures");
+  assert.equal(setup.if, "${{ runner.os == 'Windows' }}");
+  assert.equal(setup.uses, "./.github/actions/setup-ci-go");
+  assert.ok(job.steps.indexOf(setup) < job.steps.indexOf(native));
+  assert.equal(native.if, "${{ runner.os == 'Windows' }}");
+  assert.equal(native.env.FORCE_RUN, "true");
+  assert.equal(namedStep(job, "Validate installer, SPDX, provenance, updater, and key-rotation fixtures").if, "${{ runner.os != 'Windows' }}");
+  const task = jobTaskGraph(job).get("@delinoio/ci#ci:windows-signature");
+  assert.equal(task.command, "node from-root.mjs node --test scripts/release/devhud-private-workflow.test.mjs");
+  assert.equal(task.task.cache, false);
+  assert.equal(job.environment, undefined);
+  assert.equal(job.permissions.contents, "read");
+  assert.equal(job.permissions["id-token"], "write");
+  assert.doesNotMatch(JSON.stringify(job), /secrets\./u);
+});
+
 test("implemented DevHud conformance commands are wired to their owning jobs", () => {
   const commands = new Map([
     ["delidev-protocol", ["proto:check", "go test ./protos/"]],
@@ -467,7 +540,7 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   assert.equal(packages["package.json"].scripts["proto:fresh"], "turbo run ci:proto:fresh --filter=@delinoio/ci");
   const ciTasks = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8")).tasks;
   assert.equal(ciTasks["ci:proto:fresh"].cache, false);
-  assert.match(readFileSync(`${root}/scripts/ci/protocol-fresh.mjs`, "utf8"), /run\("buf", \["generate"\]\)/u);
+  assert.match(readFileSync(`${root}/scripts/ci/protocol-fresh.mjs`, "utf8"), /run\("node", \["node_modules\/@bufbuild\/buf\/bin\/buf", "generate"\]\)/u);
   const adminScripts = packages["apps/devhud-admin/package.json"].scripts;
   for (const task of ["build:embedded", "verify:embedded"]) {
     assert.match(adminScripts[task], /^pnpm --filter @delinoio\/devhud-api-client build && pnpm build &&/u, task);
@@ -477,10 +550,11 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   }
   assert.deepEqual(extensionTurbo.extends, ["//"]);
   // Both build:test and the clean-build regression replace the same outputs.
-  // Keep their writers ordered before checking the final ZIP bytes.
-  assert.deepEqual(extensionTurbo.tasks["test:package"].dependsOn, ["build:test"]);
+  // Finish the regression before the final build or cached output restoration.
+  assert.deepEqual(extensionTurbo.tasks["test:package"].dependsOn, []);
   assert.equal(extensionTurbo.tasks["test:package"].cache, false);
-  assert.deepEqual(extensionTurbo.tasks["ci:zip"].dependsOn, ["test:package"]);
+  assert.deepEqual(extensionTurbo.tasks["build:test"].dependsOn, ["test:package"]);
+  assert.deepEqual(extensionTurbo.tasks["ci:zip"].dependsOn, ["build:test"]);
   for (const output of ["dist/**", "build/**", "artifacts/**"]) {
     assert.ok(extensionTurbo.tasks["build:test"].outputs.includes(output), output);
   }
@@ -599,7 +673,13 @@ test("React Forge validates its supported runtime without scene-specific CI test
   const release = load(readFileSync(`${root}/.github/workflows/release-react-forge.yml`, "utf8"));
   assert.equal(release.jobs.build.steps.find(({ name }) => name === "Validate native engine, installed CLI, renders, and benchmark")?.run, 'bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"');
   const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
-  for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
+  for (const name of ["build", "test", "test:render", "benchmark", "ci:host"]) assert.equal(tasks[name].cache, false, name);
+  assert.deepEqual(tasks["ci:host"].dependsOn, ["build", "typecheck", "lint", "test", "typecheck:examples"]);
+  assert.equal(job.env.CARGO_TARGET_DIR, "${{ github.workspace }}/target/react-forge");
+  const rustCache = job.steps.find(({ uses }) => uses?.startsWith("Swatinem/rust-cache@"));
+  assert.equal(rustCache.with.workspaces.trim(), ". -> target/react-forge");
+  assert.equal(rustCache.with["save-if"], "${{ github.ref == 'refs/heads/main' }}");
+  assert.equal(rustCache.with["cache-on-failure"], false);
   assert.ok(tasks.test.passThroughEnv.includes("REACT_FORGE_SKIP_SCENE_TESTS"));
 });
 

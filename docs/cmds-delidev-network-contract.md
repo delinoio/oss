@@ -1,5 +1,18 @@
 # DeliDev explicit outbound network contract
 
+## Known model catalog downloads
+
+The advisory subscription catalog is an explicit server outbound operation under
+[the catalog contract](cmds-delidev-catalog-contract.md#known-subscription-model-suggestions).
+Use the existing outbound resolver for one immutable route per attempt, including
+its protected proxy credential handling and independent route failures. The only
+destination is the compiled HTTPS repository-main raw catalog URL. No client URL,
+redirect, environment proxy, native credential, inference call or direct fallback
+is accepted. Bound HTTP to 15 seconds/1 MiB and cancel/join on server shutdown.
+Structured logs contain catalog version/date and stable failure codes only;
+responses, transport errors, proxy addresses and secrets never enter logs.
+
+
 ## Scope
 Issues #1084 and #1085 own explicit server/Worker routing, recipient-encrypted bootstrap and authenticated generation reconciliation. Issue #1209 owns the separately leased Codex API tunnel in `internal/nativeproxy`; native subscription traffic retains its independent original-owner scope.
 

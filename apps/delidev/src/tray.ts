@@ -7,7 +7,7 @@ interface TrayQuota { state: TrayQuotaState; remaining_basis_points: number | nu
 export interface TraySummary {
   overview: { observed_at: string; stale: boolean; active_sessions: string; pending_interactions: string; registered_workers: string; connected_workers: string } | null;
   usage: { known_tokens: string | null; incomplete: boolean; estimates: { currency: string; known_amount: string | null }[] } | null;
-  accounts: { entries: { alias: string; windows: TrayQuota[]; more: boolean }[]; more: boolean } | null;
+  accounts: { entries: { alias: string; alias_hidden?: boolean; windows: TrayQuota[]; more: boolean }[]; more: boolean } | null;
 }
 export const unavailableTray = (): TraySummary => ({ overview: null, usage: null, accounts: null });
 const decimal = /^(0|[1-9][0-9]{0,79})$/;
@@ -52,7 +52,7 @@ export function traySummary(overview: GetOverviewResponse | undefined, overviewF
         return { state, remaining_basis_points: remaining, observed_at, reset_at };
       });
       // Do not send an email-shaped user alias to native presentation at all.
-      entries.push({ alias: alias.includes("@") ? "Account alias hidden" : alias, windows, more: quotas.length > 8 });
+      entries.push({ alias: alias.includes("@") ? "Account alias hidden" : alias, ...(alias.includes("@") ? { alias_hidden: true } : {}), windows, more: quotas.length > 8 });
     }
     summary.accounts = { entries, more: Boolean(accounts.nextPageToken) };
   }

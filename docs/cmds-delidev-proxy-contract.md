@@ -27,6 +27,17 @@ Responses `previous_response_id` and `conversation` references require an execut
 
 Successful bounded JSON and LF/CRLF SSE preserve native bytes except that native diagnostic error objects are replaced with safe protocol-shaped errors. Native machine codes from a closed allowlist also pass the protected-value check, including non-200 responses; a colliding native code falls back to the local error classification, and a colliding local body is omitted while retaining failure status. Non-colliding codes retain distinctions needed for context limits, authorization, rate limits and overload. Native streaming ends only on its protocol terminal event; truncated/invalid streams abort the downstream response without forged completion or proxy retries. Native harness retry decisions remain the harness's responsibility. HTTP 4xx/5xx status and a bounded `Retry-After` survive; provider cookies, redirect locations, diagnostic messages, challenges and request identifiers do not.
 
+Responses creation SSE `type: error` events decode the closed native code from
+the top-level `code` field. Their sanitized frame retains `event: error` and
+top-level `type`, `code`, `message`, `param` and `sequence_number` fields. The
+message is local and redacted; `param` is always null. A nonnegative integer
+sequence number up to `9007199254740991` is retained; missing, malformed or larger
+values use zero. Unknown codes use the safe `Unavailable` classification and
+local code. Protected native codes fall back to the local code; an unsafe local
+event aborts delivery. The error is terminal and settles the original diagnostic
+and lease once. HTTP error JSON, Chat and Anthropic errors, and nested
+`response.failed` errors retain their existing envelopes.
+
 There are at most 16 concurrent authorized requests, with no wait queue; request/JSON/frame limits are 32 MiB, total SSE is 256 MiB, and the request deadline is 15 minutes. Request-body reads and each downstream write have 30-second deadlines. Dial/TLS handshakes are bounded to 10 seconds; inference response headers have a 10-minute deadline and a 32 KiB limit. Native error JSON inspection is separately bounded to 64 KiB and two seconds. Bounds are operational limits, not permission to replay a possibly accepted request.
 
 ## Storage
@@ -44,6 +55,8 @@ SSE field-name bytes use a separate bounded cross-frame matcher, including unkno
 Decoded JSON object names also enter independent global and parent-path matchers before JSON-pointer escaping. Thus repeated enclosing keys cannot hide fragmented nested names, and escaped raw/Base64 credential fragments are checked before any original frame is released. Numeric JSON values enter their original value-path matcher without rounding or normalizing their native spelling, including large integers and exponents. These states share the existing active-path and pending-byte bounds.
 
 HTTP-200 standalone error envelopes use the same protected-code/local-body fallback as non-200 errors before returning a synthesized HTTP 502 response. A successful transport status cannot bypass protected-value checks.
+
+Every locally generated error body uses the protected-value guard once the execution credential or selected account key is available. This includes keys returned together with an error, diagnostic publication failures, upstream request/transport failures, rejected JSON and failures before SSE output starts. If the fixed local body also collides, retain the failure status and safe correlation/security headers with an empty body. Pre-key denials never read a credential solely to construct an error. A failure after SSE output starts still aborts the original response without appending a local error, forging completion or retrying the provider. Key acquisition, upstream dispatch and lease release remain once-only.
 
 Cancellation may abort the original downstream response, but every started
 body/deadline cancellation callback is joined before the HTTP handler returns.

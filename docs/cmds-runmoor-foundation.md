@@ -102,6 +102,15 @@ configuration has an installed service. An unreachable manager does not start a
 stopped service. Stable SemVer triplets compare numerically; equal/newer managers
 reload configuration without changing their service definition or downgrading.
 
+Without a pending recovery journal, failed native PID inspection falls back to
+ordinary reload of the authenticated socket peer. Bind that request to the PID
+observed by status and return its result unchanged, including candidate-validation
+and Stop errors. This fallback acquires no service lock, writes no definition or
+journal, and performs no native mutation. A changed or unreachable peer remains
+an error. Log only a structured diagnostic with the platform and safe error code;
+omit raw native errors and output. Pending-journal recovery retains its native
+inspection requirements and fails closed when inspection is unavailable.
+
 Before replacement, the newer CLI reads state without migration and applies the
 same whole-candidate capacity, backend and remote validation as manager reload.
 Managed pools defer image preparation as before. Verify the installed executable
@@ -113,6 +122,18 @@ and service reload. A private `.runmoor-service-reload.json` journals the
 installation, configuration/storage references, original/target definitions and
 file identities, native process identity, UUID-v7 token and typed operation stage.
 It contains no credentials and adds no public field or SQLite migration.
+
+The journal records the reload CLI's PID and process-start identity as its
+completion owner. While holding the service-operation lock, an authenticated
+retry atomically replaces that identity with its own verified identity through
+the exact-record private-file checks. Transfer ownership before resumed native
+actions, replacement readiness checks or completion, including when the target
+is already ready. Identity or journal-update failure preserves recovery intent
+and permits no native mutation. Replacement startup retains the journal while
+the current owner is live. A confirmed exited owner permits reclamation; legacy
+records without an initiator remain conservative until recovery claims them.
+The retry removes its journal only after readiness and final normal reload
+acceptance succeed.
 
 Linux atomically publishes the target definition, performs `daemon-reload`,
 revalidates the original active invocation against its captured definition, and
@@ -141,6 +162,26 @@ boundaries. A final normal reload revalidates and atomically accepts the candida
 The existing two-minute CLI context covers preflight, native replacement,
 readiness and configuration acceptance. Success requires the new native
 invocation, matching live socket peer/version, and non-stopping status.
+
+After an interrupted replacement honors Stop and exits, one later explicit
+`service start` must resume the inactive target service. Under the existing
+service-operation lock, verify the private journal, matching installed CLI,
+installation, configuration/storage references and exact target definition
+contents/file identity. Confirm the reload initiator has exited or its PID now
+has a different nonempty process-start identity; permission errors, unreadable
+identities and legacy journals without initiator authority do not confirm exit.
+Acquire exclusive manager-state ownership without creating or migrating the
+database, then require durable Stop and complete runner, image, artifact and
+host cleanup through the existing completed-stop boundaries. Recheck native
+inactivity, initiator and definition authority before exact-record journal
+retirement. Retire before native Start so ordinary startup acceptance clears
+Stop on the first attempt while retaining pool/global pauses. Active services,
+unknown ownership, changed definitions and pending cleanup fail closed before
+native mutation and preserve recovery intent and reservations. Generic manager
+startup must never clear Stop merely because the initiating CLI disappeared.
+Structured recovery logs use safe event names and codes without private paths
+or native output. This recovery behavior is part of the unreleased service
+version reload workflow and adds no public field or migration.
 
 Persist intent before native actions. After interruption, observe a matching
 replacement or the journaled helper before continuing; never blindly repeat a
