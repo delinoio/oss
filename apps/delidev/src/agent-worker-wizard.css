@@ -18,6 +18,21 @@
 .worker-wizard small { color: var(--muted); overflow-wrap: anywhere; }
 .worker-wizard nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .worker-wizard button { min-height: 40px; }
+.worker-harness-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.settings-content[aria-label] .worker-wizard .worker-harness-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; min-height: 176px; padding: 24px; border: 2px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); text-align: left; }
+.settings-content[aria-label] .worker-wizard .worker-harness-card:enabled:hover { border-color: var(--control-border); background: var(--surface-subtle); }
+.settings-content[aria-label] .worker-wizard .worker-harness-card[aria-checked="true"] { border-color: var(--accent); background: var(--selected-background); }
+.worker-harness-mark { display: block; flex: 0 0 48px; width: 48px; height: 48px; margin-bottom: 16px; background: var(--text); mask: var(--worker-harness-mark) center / contain no-repeat; }
+.worker-harness-mark-codex { --worker-harness-mark: url("/subscription-marks/openai.svg"); }
+.worker-harness-mark-claude-code { --worker-harness-mark: url("/subscription-marks/claude.svg"); }
+.worker-harness-mark-opencode { --worker-harness-mark: url("/subscription-marks/opencode.svg"); }
+.worker-harness-mark-grok-build { --worker-harness-mark: url("/subscription-marks/grok.svg"); }
+.worker-harness-name { font-size: 16px; line-height: 24px; font-weight: 600; }
+.worker-harness-card small { margin-top: 4px; font-size: 12px; line-height: 18px; }
+.worker-harness-indicator { position: absolute; top: 24px; right: 24px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--control-border); border-radius: 50%; color: var(--on-accent); }
+.worker-harness-card[aria-checked="true"] .worker-harness-indicator { border-color: var(--accent); background: var(--accent); }
+.worker-harness-indicator svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@container (width < 640px) { .worker-harness-grid { grid-template-columns: minmax(0, 1fr); } }
 .worker-routing, .worker-summary { border-top: 1px solid var(--border); margin-top: 24px; padding: 16px 0; }
 .worker-routing > summary { cursor: pointer; min-height: 40px; }
 .worker-routing summary small { display: block; margin-top: 6px; }
