@@ -15,7 +15,8 @@ import { validRepositoryInspection, selectedInspectionRemote } from "./repositor
 const metadata = { root: "/canonical/oss", name: "oss", remotes: ["origin", "upstream"], default_refs: { origin: "main" }, github_repositories: { origin: { owner: "delinoio", name: "oss" }, upstream: { owner: "another", name: "repo" } } };
 function row(kind: EntityKind, value: Document): Resource { return create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode(value) }); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
-function fixture(output: Document = metadata, cloneCapabilities = false, remoteCapabilities = true, pagedProfiles = false) {
+function fixture(output: Document = metadata, cloneCapabilities = false, remoteCapabilities = true, pagedProfiles = false, statusError?: ConnectError) {
+  let currentStatusError = statusError;
   const machine = row(EntityKind.MACHINE, { name: "Runner", worker_capabilities: cloneCapabilities ? ["repository-clone-v1"] : [], last_seen: new Date().toISOString() });
   const resources = new Map<string, Resource>([[machine.id, machine]]);
   const jobs: Resource[] = [];
@@ -40,7 +41,7 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
   });
   const transport = createRouterTransport(router => {
     router.service(WorkerService, { inspectRepository: inspected, cloneRepository: clone });
-    router.service(SystemService, { getStatus: () => ({ capabilities: [...(remoteCapabilities ? [SystemCapability.REMOTE_REPOSITORIES_V1] : []), ...(cloneCapabilities ? [SystemCapability.REPOSITORY_CLONE_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] : [])] }) });
+    router.service(SystemService, { getStatus: () => { if (currentStatusError) throw currentStatusError; return ({ capabilities: [...(remoteCapabilities ? [SystemCapability.REMOTE_REPOSITORIES_V1] : []), ...(cloneCapabilities ? [SystemCapability.REPOSITORY_CLONE_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] : [])] }); } });
     router.service(IntegrationService, { listGitHubRepositories: repositories });
     router.service(ConfigurationService, { saveConfiguration: save });
     router.service(ResourceService, { listResources, getResource });
@@ -56,8 +57,17 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
     if (local) fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
   };
   const chooseAndReview = async () => { await add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByRole("region", { name: "Repository detected" }); await waitFor(() => expect((within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(false)); };
-  return { machine, resources, jobs, clone, repositories, listResources, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource };
+  return { machine, resources, jobs, clone, repositories, listResources, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource, clearStatusError: () => { currentStatusError = undefined; } };
 }
+
+it("retries a transient capability read without losing the registration draft", async () => {
+  const f = fixture(metadata, false, true, false, new ConnectError("status unavailable", Code.Unavailable)); f.mount(); await f.add();
+  const url = screen.getByRole("textbox", { name: "Git URL" }) as HTMLInputElement;
+  expect(await screen.findByRole("button", { name: "Retry server capability check" })).toBeTruthy();
+  f.clearStatusError(); fireEvent.click(screen.getByRole("button", { name: "Retry server capability check" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry server capability check" })).toBeNull());
+  expect(url.value).toBe("https://github.com/delinoio/oss.git");
+});
 
 it("registers the canonical checkout using folder selection and Add repository only", async () => {
   const f = fixture(); f.mount(); await f.chooseAndReview();

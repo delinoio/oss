@@ -231,6 +231,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
         <p>The selected Runner Device clones this repository when a Worktree session starts.</p>
         {!remoteSupported ? <p role="status">Update the selected server to add repositories by URL.</p> : null}
         <Problem error={status.error} />
+        {status.error ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry server capability check</button> : null}
       </section>
       <button type="button" disabled={blocked} aria-expanded={connectFolder} onClick={() => setConnectFolder(value => !value)}>Connect a Local folder (optional)</button>
       {connectFolder ? <>
