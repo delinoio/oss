@@ -1027,7 +1027,39 @@ mod tests {
     }
 }
 
-fn subscription_authorization(raw: &str) -> Result<Zeroizing<String>, NativeFailure> {
+#[derive(Clone, Copy)]
+enum SubscriptionCallback {
+    Localhost,
+    Ipv4,
+}
+
+impl SubscriptionCallback {
+    fn parse(uri: &str) -> Result<Self, NativeFailure> {
+        match uri {
+            "http://localhost:1457/auth/callback" => Ok(Self::Localhost),
+            "http://127.0.0.1:1457/auth/callback" => Ok(Self::Ipv4),
+            _ => Err(NativeFailure::InvalidInput),
+        }
+    }
+
+    fn uri(self) -> &'static str {
+        match self {
+            Self::Localhost => "http://localhost:1457/auth/callback",
+            Self::Ipv4 => "http://127.0.0.1:1457/auth/callback",
+        }
+    }
+
+    fn authority(self) -> &'static str {
+        match self {
+            Self::Localhost => "localhost:1457",
+            Self::Ipv4 => "127.0.0.1:1457",
+        }
+    }
+}
+
+fn subscription_authorization(
+    raw: &str,
+) -> Result<(Zeroizing<String>, SubscriptionCallback), NativeFailure> {
     if raw.len() > 8192 || raw.chars().any(char::is_control) {
         return Err(NativeFailure::InvalidInput);
     }
@@ -1052,19 +1084,22 @@ fn subscription_authorization(raw: &str) -> Result<Zeroizing<String>, NativeFail
             return Err(NativeFailure::InvalidInput);
         }
     }
+    let callback = SubscriptionCallback::parse(
+        fields
+            .get("redirect_uri")
+            .ok_or(NativeFailure::InvalidInput)?,
+    )?;
     let state = fields.remove("state").ok_or(NativeFailure::InvalidInput)?;
     if !(16..=512).contains(&state.len())
         || !state
             .bytes()
             .all(|v| v.is_ascii_alphanumeric() || v == b'-' || v == b'_')
-        || fields.get("redirect_uri").map(String::as_str)
-            != Some("http://localhost:1457/auth/callback")
         || fields.get("code_challenge_method").map(String::as_str) != Some("S256")
         || fields.get("response_type").map(String::as_str) != Some("code")
     {
         return Err(NativeFailure::InvalidInput);
     }
-    Ok(Zeroizing::new(state))
+    Ok((Zeroizing::new(state), callback))
 }
 
 fn begin_subscription(
@@ -1073,7 +1108,7 @@ fn begin_subscription(
     authorization: &str,
     local: bool,
 ) -> Result<Attempt, NativeFailure> {
-    let state = subscription_authorization(authorization)?;
+    let (state, callback) = subscription_authorization(authorization)?;
     let shared = Arc::new(Shared {
         expected_state: Some(state),
         bound: AtomicBool::new(true),
@@ -1107,7 +1142,7 @@ fn begin_subscription(
                             {
                                 handle_request(
                                     &mut stream,
-                                    "localhost:1457",
+                                    callback.authority(),
                                     "/auth/callback",
                                     &control,
                                 );
@@ -1122,7 +1157,7 @@ fn begin_subscription(
     Ok(Attempt {
         scope,
         generation: uuid::Uuid::now_v7().to_string(),
-        callback: "http://localhost:1457/auth/callback".into(),
+        callback: callback.uri().into(),
         attempt: attempt_id.into(),
         authorization: Zeroizing::new(authorization.into()),
         until,
@@ -1135,6 +1170,48 @@ fn begin_subscription(
 mod subscription_tests {
     use super::*;
     const AUTH: &str = "https://auth.openai.com/oauth/authorize?state=fixture-original-state-123456&redirect_uri=http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback&response_type=code&code_challenge_method=S256";
+    fn authorization_for(callback: SubscriptionCallback) -> String {
+        AUTH.replace("localhost", callback.authority().split(':').next().unwrap())
+    }
+
+    #[test]
+    fn subscription_authorization_accepts_only_registered_original_callbacks() {
+        for callback in [SubscriptionCallback::Localhost, SubscriptionCallback::Ipv4] {
+            let (state, parsed) = subscription_authorization(&authorization_for(callback)).unwrap();
+            assert_eq!(state.as_str(), "fixture-original-state-123456");
+            assert_eq!(parsed.uri(), callback.uri());
+        }
+        for callback in [
+            "http://127.1:1457/auth/callback",
+            "http://2130706433:1457/auth/callback",
+            "http://[::1]:1457/auth/callback",
+            "http://localhost:1455/auth/callback",
+            "http://127.0.0.1:1457/other",
+            "https://localhost:1457/auth/callback",
+            "http://localhost.evil.invalid:1457/auth/callback",
+            "http://user@localhost:1457/auth/callback",
+            "http://localhost:1457/auth/callback#fragment",
+        ] {
+            let mut authorization = url::Url::parse(AUTH).unwrap();
+            authorization
+                .query_pairs_mut()
+                .clear()
+                .append_pair("state", "fixture-original-state-123456")
+                .append_pair("redirect_uri", callback)
+                .append_pair("response_type", "code")
+                .append_pair("code_challenge_method", "S256");
+            assert!(subscription_authorization(authorization.as_str()).is_err());
+        }
+        for authorization in [
+            format!("{AUTH}&redirect_uri=http%3A%2F%2F127.0.0.1%3A1457%2Fauth%2Fcallback"),
+            format!("{AUTH}&state=fixture-original-state-123456"),
+            AUTH.replace("fixture-original-state-123456", "short"),
+            AUTH.replace("fixture-original-state-123456", "invalid.state-value-1234"),
+        ] {
+            assert!(subscription_authorization(&authorization).is_err());
+        }
+    }
+
     fn scope() -> OAuthScope {
         OAuthScope {
             window: "main".into(),
@@ -1146,99 +1223,122 @@ mod subscription_tests {
     }
     #[test]
     fn local_browser_binding_replays_once_and_reopens_only_original() {
-        let host = OAuthHost::default();
-        let scope = scope();
-        let operation = uuid::Uuid::now_v7().to_string();
-        let opened = std::sync::atomic::AtomicUsize::new(0);
-        let opener = |url: &str, _: &AtomicBool| {
-            assert_eq!(url, AUTH);
-            opened.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        };
-        let first = host
-            .control_with_browser(
-                scope.clone(),
-                OAuthAction::SubscriptionOpen,
-                "",
-                &operation,
-                AUTH,
-                true,
-                opener,
-            )
-            .unwrap();
-        let replay = host
-            .control_with_browser(
-                scope.clone(),
-                OAuthAction::SubscriptionOpen,
-                "",
-                &operation,
-                AUTH,
-                true,
-                opener,
-            )
-            .unwrap();
-        assert_eq!(first.generation, replay.generation);
-        assert_eq!(opened.load(Ordering::SeqCst), 1);
-        assert!(
+        for callback in [SubscriptionCallback::Localhost, SubscriptionCallback::Ipv4] {
+            let auth = authorization_for(callback);
+            let host = OAuthHost::default();
+            let scope = scope();
+            let operation = uuid::Uuid::now_v7().to_string();
+            let opened = std::sync::atomic::AtomicUsize::new(0);
+            let opener = |url: &str, _: &AtomicBool| {
+                assert_eq!(url, &auth);
+                opened.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            };
+            let first = host
+                .control_with_browser(
+                    scope.clone(),
+                    OAuthAction::SubscriptionOpen,
+                    "",
+                    &operation,
+                    &auth,
+                    true,
+                    opener,
+                )
+                .unwrap();
+            let replay = host
+                .control_with_browser(
+                    scope.clone(),
+                    OAuthAction::SubscriptionOpen,
+                    "",
+                    &operation,
+                    &auth,
+                    true,
+                    opener,
+                )
+                .unwrap();
+            assert_eq!(first.generation, replay.generation);
+            assert_eq!(opened.load(Ordering::SeqCst), 1);
+            let replacement = auth.replace(
+                callback.authority().split(':').next().unwrap(),
+                match callback {
+                    SubscriptionCallback::Localhost => "127.0.0.1",
+                    SubscriptionCallback::Ipv4 => "localhost",
+                },
+            );
+            assert!(
+                host.control_with_browser(
+                    scope.clone(),
+                    OAuthAction::SubscriptionReopen,
+                    "",
+                    &operation,
+                    &replacement,
+                    true,
+                    opener
+                )
+                .is_err()
+            );
+
+            assert!(
+                host.control_with_browser(
+                    scope.clone(),
+                    OAuthAction::SubscriptionOpen,
+                    "",
+                    &uuid::Uuid::now_v7().to_string(),
+                    &auth,
+                    true,
+                    opener
+                )
+                .is_err()
+            );
             host.control_with_browser(
                 scope.clone(),
-                OAuthAction::SubscriptionOpen,
-                "",
-                &uuid::Uuid::now_v7().to_string(),
-                AUTH,
-                true,
-                opener
-            )
-            .is_err()
-        );
-        host.control_with_browser(
-            scope.clone(),
-            OAuthAction::Reopen,
-            &first.generation,
-            &operation,
-            "",
-            true,
-            opener,
-        )
-        .unwrap();
-        assert_eq!(opened.load(Ordering::SeqCst), 2);
-        host.control_with_browser(
-            scope.clone(),
-            OAuthAction::SubscriptionReopen,
-            "",
-            &operation,
-            AUTH,
-            true,
-            opener,
-        )
-        .unwrap();
-        assert_eq!(opened.load(Ordering::SeqCst), 3);
-        assert!(
-            host.control(
-                scope.clone(),
-                OAuthAction::Take,
+                OAuthAction::Reopen,
                 &first.generation,
                 &operation,
-                ""
+                "",
+                true,
+                opener,
             )
-            .unwrap()
-            .code
-            .is_none()
-        );
-        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
             .unwrap();
-        assert!(
+            assert_eq!(opened.load(Ordering::SeqCst), 2);
             host.control_with_browser(
-                scope,
-                OAuthAction::SubscriptionOpen,
+                scope.clone(),
+                OAuthAction::SubscriptionReopen,
                 "",
                 &operation,
-                AUTH,
+                &auth,
                 true,
-                opener
+                opener,
             )
-            .is_err()
-        );
+            .unwrap();
+            assert_eq!(opened.load(Ordering::SeqCst), 3);
+            assert!(
+                host.control(
+                    scope.clone(),
+                    OAuthAction::Take,
+                    &first.generation,
+                    &operation,
+                    ""
+                )
+                .unwrap()
+                .code
+                .is_none()
+            );
+            host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+                .unwrap();
+            assert!(
+                host.control_with_browser(
+                    scope,
+                    OAuthAction::SubscriptionOpen,
+                    "",
+                    &operation,
+                    &auth,
+                    true,
+                    opener
+                )
+                .is_err()
+            );
+        }
     }
     #[test]
     fn subscription_query_requires_original_state_closed_keys_and_framing() {
@@ -1287,60 +1387,79 @@ mod subscription_tests {
     }
     #[test]
     fn remote_receiver_delivers_once_and_joins_on_disposal() {
-        let host = OAuthHost::default();
-        let scope = scope();
-        let operation = uuid::Uuid::now_v7().to_string();
-        let first = host
-            .control_with_browser(
-                scope.clone(),
-                OAuthAction::SubscriptionOpen,
-                "",
-                &operation,
-                AUTH,
-                false,
-                |_, _| Ok(()),
-            )
-            .unwrap();
-        let callback = || {
-            let mut stream = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, 1457)).unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
+        for callback in [SubscriptionCallback::Localhost, SubscriptionCallback::Ipv4] {
+            let auth = authorization_for(callback);
+            let host = OAuthHost::default();
+            let scope = scope();
+            let operation = uuid::Uuid::now_v7().to_string();
+            let first = host
+                .control_with_browser(
+                    scope.clone(),
+                    OAuthAction::SubscriptionOpen,
+                    "",
+                    &operation,
+                    &auth,
+                    false,
+                    |_, _| Ok(()),
+                )
                 .unwrap();
-            stream.write_all(b"GET /auth/callback?code=fixture&state=fixture-original-state-123456 HTTP/1.1\r\nHost: localhost:1457\r\n\r\n").unwrap();
-            let mut result = String::new();
-            stream.read_to_string(&mut result).unwrap();
-            result
-        };
-        assert!(callback().starts_with("HTTP/1.1 303"));
-        let result = host
-            .control(
-                scope.clone(),
-                OAuthAction::Take,
-                &first.generation,
-                &operation,
-                "",
-            )
-            .unwrap();
-        assert_eq!(
-            result.code.as_ref().unwrap(),
-            b"code=fixture&state=fixture-original-state-123456"
-        );
-        assert!(
-            host.control(
-                scope.clone(),
-                OAuthAction::Take,
-                &first.generation,
-                &operation,
-                ""
-            )
-            .unwrap()
-            .code
-            .is_none()
-        );
-        assert!(callback().starts_with("HTTP/1.1 400"));
-        host.control(scope, OAuthAction::Dispose, "", "", "")
-            .unwrap();
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 1457)).unwrap();
-        drop(listener);
+            let receive = |peer: std::net::IpAddr, authority: &str| {
+                let mut stream = std::net::TcpStream::connect((peer, 1457)).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                stream
+                    .write_all(
+                        format!(
+                            "GET /auth/callback?code=fixture&state=fixture-original-state-123456 \
+                             HTTP/1.1\r\nHost: {authority}\r\n\r\n"
+                        )
+                        .as_bytes(),
+                    )
+                    .unwrap();
+                let mut result = String::new();
+                stream.read_to_string(&mut result).unwrap();
+                result
+            };
+            let v4 = std::net::IpAddr::V4(Ipv4Addr::LOCALHOST);
+            let v6 = std::net::IpAddr::V6(Ipv6Addr::LOCALHOST);
+            let other_authority = match callback {
+                SubscriptionCallback::Localhost => "127.0.0.1:1457",
+                SubscriptionCallback::Ipv4 => "localhost:1457",
+            };
+            assert!(receive(v4, other_authority).starts_with("HTTP/1.1 400"));
+            assert!(receive(v6, callback.authority()).starts_with("HTTP/1.1 303"));
+            let result = host
+                .control(
+                    scope.clone(),
+                    OAuthAction::Take,
+                    &first.generation,
+                    &operation,
+                    "",
+                )
+                .unwrap();
+            assert_eq!(
+                result.code.as_ref().unwrap(),
+                b"code=fixture&state=fixture-original-state-123456"
+            );
+            assert!(
+                host.control(
+                    scope.clone(),
+                    OAuthAction::Take,
+                    &first.generation,
+                    &operation,
+                    ""
+                )
+                .unwrap()
+                .code
+                .is_none()
+            );
+            assert!(receive(v4, callback.authority()).starts_with("HTTP/1.1 400"));
+            host.control(scope, OAuthAction::Dispose, "", "", "")
+                .unwrap();
+            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 1457)).unwrap();
+            drop(listener);
+            drop(TcpListener::bind((Ipv6Addr::LOCALHOST, 1457)).unwrap());
+        }
     }
 }
