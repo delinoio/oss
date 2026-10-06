@@ -10,6 +10,7 @@
   "settings.edit_464c4f": "편집",
   "settings.new_18fdd5": "새로 만들기",
   "settings.configureTheEssentialsThenCustomizeOnly_a8beda": "필수 사항을 구성한 후 필요한 부분만 사용자 지정하세요.",
+  "settings.accountPreferencesCouldNotBeSavedReopen_4a7c1b": "계정 환경설정을 저장할 수 없습니다. 현재 항목을 다시 연 후 저장하세요.",
   "settings.thisEntryChangedElsewhereYourDraft_106fa0": "이 항목이 다른 곳에서 변경되었습니다. 초안은 유지됩니다. 편집을 취소하고 최신 항목을 다시 연 후 저장하세요.",
   "settings.subscriptionProvidersMustUseNativeSubscription_8e47b2": "구독 제공업체는 native-subscription 프로토콜, 구독 인증과 빈 엔드포인트를 사용해야 합니다.",
   "settings.cancelEdit_6fa271": "편집 취소",

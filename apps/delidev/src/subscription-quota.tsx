@@ -6,7 +6,8 @@ import { useRetainSettingsTask } from "./settings-task-context";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, SubscriptionObservationAction, SubscriptionQuery, SystemCapability, SystemQuery, EntityKind, isEntityId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
-import { document, encode, object, text } from "./documents";
+import { document, object, text } from "./documents";
+import { accountPreferencesDocument } from "./account-preferences";
 import { serviceAccount } from "./subscription-accounts";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
@@ -32,6 +33,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const data = document(current), state = object(data.subscription), connection = text(object(data.connection).id), generation = text(state.generation), observation = object(state.observation), inventory = object(state.reset_credits);
   const ownerMachine = quotaObservationMachine(state, machine);
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
+  const [preferenceProblem, setPreferenceProblem] = useState("");
   const observe = useRetainedMutation("subscription:observe:" + current.id, SubscriptionQuery.requestSubscriptionObservation, (result) => { if (result.account) accepted(result.account); setConfirmation(undefined); }, (result, request) => result.operationId === request.mutation?.requestId && serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
   const reconcile = useRetainedMutation("subscription:credit:reconcile:" + current.id, SubscriptionQuery.reconcileSubscriptionCredit, (result) => { if (result.account) accepted(result.account); }, (result, request) => serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
   const preferences = useRetainedMutation("subscription:quota:preferences:" + current.id, ConfigurationQuery.saveConfiguration, (result) => { if (result.resource) accepted(result.resource); }, (result, request) => serviceAccount(result.resource, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
@@ -51,10 +53,18 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
     setConfirmation({ account: current, creditId, next, inventoryId: text(inventory.observation_id), connection, generation });
   };
   const exactConfirmation = confirmation && confirmation.account.revision === current.revision && confirmation.connection === connection && confirmation.generation === generation && confirmation.inventoryId === inventory.observation_id;
+  const saveRecoveryNotifications = (enabled: boolean) => {
+    let documentJson: Uint8Array;
+    try { documentJson = accountPreferencesDocument(current, { recovery_notifications: enabled }); }
+    catch { setPreferenceProblem(copy("subscription-quota.accountPreferencesCouldNotBeSavedReload_0d91a4")); return; }
+    setPreferenceProblem("");
+    void preferences.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson });
+  };
   return <section aria-label={copy("subscription-quota.nativeQuotaAndResetCredits_8a07a3")}>
     <h3>{copy("subscription-quota.quota_6c105c")}</h3>
     {!quotaSupported ? <p role="status">{copy("subscription-quota.updateTheServerAndRunnerDevice_57363b")}</p> : <><p><LocalizedText id="subscription-quota.lastSuccessfulObservation_836238" components={{ s0: <>{formatTimestamp(text(state.quota_observed_at)) || copy("subscription-quota.extra.ca1844969742")}</>, s1: <>{state.quota_state === "failed" ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e") : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}</> }} /></p><button type="button" disabled={!ready || originalActive} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: ownerMachine, action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation })}>{copy("subscription-quota.refreshQuota_3e8708")}</button></>}
-    <label className="checkbox"><input type="checkbox" checked={data.recovery_notifications === true} disabled={!active || !quotaSupported || busy} onChange={(event) => void preferences.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson: encode({ ...data, recovery_notifications: event.target.checked }) })} />{copy("subscription-quota.notifyMeOfObservedQuotaRecovery_b8f166")}</label>
+    <label className="checkbox"><input type="checkbox" checked={data.recovery_notifications === true} disabled={!active || !quotaSupported || busy} onChange={(event) => saveRecoveryNotifications(event.target.checked)} />{copy("subscription-quota.notifyMeOfObservedQuotaRecovery_b8f166")}</label>
+    {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
     <h3>{copy("subscription-quota.resetCredits_321f63")}</h3>
     {!creditsSupported ? <p role="status">{copy("subscription-quota.resetCreditConsumptionIsUnavailableOn_9c9ea3")}</p> : <><p>{countValid ? copy("subscription-quota.availableResetCredits_d85d49", { v0: count }) : copy("subscription-quota.availableCreditCountUnknown_4e840a")}{countValid && details === null ? copy("subscription-quota.individualCreditDetailsUnavailable_50e212") : credits ? copy("subscription-quota.returnedDetails_0ebcde", { v0: credits.length }) : ""}.</p>{selectable.map((credit) => <button key={text(credit.id)} type="button" disabled={!ready || originalActive || !inventoryFresh} onClick={() => confirmCredit(text(credit.id), false)}><LocalizedText id="subscription-quota.reviewResetCredit_f3c5d5" components={{ s0: <>{text(credit.id)}</> }} /></button>)}{countValid && details === null && BigInt(count) > 0n ? <button type="button" disabled={!ready || originalActive || !inventoryFresh} onClick={() => confirmCredit("", true)}>{copy("subscription-quota.reviewNativeNextCreditSelection_778df5")}</button> : null}</>}
     {confirmation ? <section aria-label={copy("subscription-quota.confirmResetCreditConsumption_1ce436")}><p><LocalizedText id="subscription-quota.forThisAccountThisConsumesA_488945" components={{ s0: <>{confirmation.next ? copy("subscription-quota.letCodexSelectItsNextAvailable_be8c4e") : copy("subscription-quota.consumeResetCredit_7eb25b", { v0: confirmation.creditId })}</> }} /></p>{!exactConfirmation ? <p role="alert">{copy("subscription-quota.theAccountOrInventoryChangedRefresh_e2f6b9")}</p> : null}<div className="actions"><button type="button" disabled={!ready || originalActive || !exactConfirmation || !inventoryFresh} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: ownerMachine, action: SubscriptionObservationAction.RESET_CREDIT, connectionId: confirmation.connection, generationId: confirmation.generation, creditsObservationId: confirmation.inventoryId, creditId: confirmation.creditId, nextCredit: confirmation.next, confirmed: true })}>{copy("subscription-quota.confirmCreditConsumption_251822")}</button><button type="button" disabled={busy} onClick={() => setConfirmation(undefined)}>{copy("subscription-quota.keepCredit_53e67f")}</button></div></section> : null}

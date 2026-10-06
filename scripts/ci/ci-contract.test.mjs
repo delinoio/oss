@@ -306,6 +306,28 @@ test("DeliDev schema validation preserves shared freshness without client or des
   assert.equal(job.steps.filter(({ run }) => run?.includes("pnpm install")).length, 1);
 });
 
+test("DevHud signature fixtures run on Windows without release authority", () => {
+  const job = workflow.jobs["devhud-supply-chain"];
+  assert.equal(job["runs-on"], "${{ matrix.os }}");
+  assert.deepEqual(job.strategy.matrix.os, ["ubuntu-22.04", "windows-latest"]);
+  assert.equal(job.strategy["fail-fast"], false);
+  const setup = namedStep(job, "Setup Go for native signature fixture");
+  const native = namedStep(job, "Validate Windows signature failure and success fixtures");
+  assert.equal(setup.if, "${{ runner.os == 'Windows' }}");
+  assert.equal(setup.uses, "./.github/actions/setup-ci-go");
+  assert.ok(job.steps.indexOf(setup) < job.steps.indexOf(native));
+  assert.equal(native.if, "${{ runner.os == 'Windows' }}");
+  assert.equal(native.env.FORCE_RUN, "true");
+  assert.equal(namedStep(job, "Validate installer, SPDX, provenance, updater, and key-rotation fixtures").if, "${{ runner.os != 'Windows' }}");
+  const task = jobTaskGraph(job).get("@delinoio/ci#ci:windows-signature");
+  assert.equal(task.command, "node from-root.mjs node --test scripts/release/devhud-private-workflow.test.mjs");
+  assert.equal(task.task.cache, false);
+  assert.equal(job.environment, undefined);
+  assert.equal(job.permissions.contents, "read");
+  assert.equal(job.permissions["id-token"], "write");
+  assert.doesNotMatch(JSON.stringify(job), /secrets\./u);
+});
+
 test("implemented DevHud conformance commands are wired to their owning jobs", () => {
   const commands = new Map([
     ["delidev-protocol", ["proto:check", "go test ./protos/"]],
@@ -588,7 +610,13 @@ test("React Forge validates its supported runtime without scene-specific CI test
   const release = load(readFileSync(`${root}/.github/workflows/release-react-forge.yml`, "utf8"));
   assert.equal(release.jobs.build.steps.find(({ name }) => name === "Validate native engine, installed CLI, renders, and benchmark")?.run, 'bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"');
   const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
-  for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
+  for (const name of ["build", "test", "test:render", "benchmark", "ci:host"]) assert.equal(tasks[name].cache, false, name);
+  assert.deepEqual(tasks["ci:host"].dependsOn, ["build", "typecheck", "lint", "test", "typecheck:examples"]);
+  assert.equal(job.env.CARGO_TARGET_DIR, "${{ github.workspace }}/target/react-forge");
+  const rustCache = job.steps.find(({ uses }) => uses?.startsWith("Swatinem/rust-cache@"));
+  assert.equal(rustCache.with.workspaces.trim(), ". -> target/react-forge");
+  assert.equal(rustCache.with["save-if"], "${{ github.ref == 'refs/heads/main' }}");
+  assert.equal(rustCache.with["cache-on-failure"], false);
   assert.ok(tasks.test.passThroughEnv.includes("REACT_FORGE_SKIP_SCENE_TESTS"));
 });
 

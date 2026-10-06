@@ -16,6 +16,7 @@ import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
+import { accountPreferencesDocument } from "./account-preferences";
 import { ConfigurationFields, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { JobState, TrackedJob } from "./jobs";
@@ -119,7 +120,17 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h1><LocalizedText id="settings.saveAccepted_51c311" components={{ s0: <>{kindLabel}</> }} /></h1><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : <h3><LocalizedText id="settings.saveAccepted_51c311" components={{ s0: <>{kindLabel}</> }} /></h3>}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><button onClick={saved}>{copy("settings.done_11a676")}</button></> : state === JobState.Failed || state === JobState.Canceled ? <button onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</button> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
   const saveDisabled = blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
-  return <form id={formId} ref={form} aria-label={inline ? "Server preferences form" : undefined} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); if (saveDisabled) return; void mutation.send({ mutation: { id: source?.id ?? "", expectedRevision: source?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: configurationSchemaVersion(kind, data), documentJson: encode(data) }); }}>
+  const submit = () => {
+    if (saveDisabled) return;
+    let documentJson: Uint8Array;
+    try {
+      documentJson = kind === EntityKind.ACCOUNT && source ? accountPreferencesDocument(source, { alias: text(data.alias), enabled: data.enabled === true, exclude_automatic: data.exclude_automatic === true, recovery_notifications: data.recovery_notifications === true }) : encode(data);
+    } catch {
+      setProblem(copy("settings.accountPreferencesCouldNotBeSavedReopen_4a7c1b")); return;
+    }
+    void mutation.send({ mutation: { id: source?.id ?? "", expectedRevision: source?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: configurationSchemaVersion(kind, data), documentJson });
+  };
+  return <form id={formId} ref={form} aria-label={inline ? "Server preferences form" : undefined} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); submit(); }}>
     {inline ? null : isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? copy("settings.editPreferences_00b4cc") : copy("settings.newAiApiKeyEntry_5f978c")}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : <h3 hidden={inTask}>{initial ? copy("settings.edit_464c4f") : copy("settings.new_18fdd5")} {kindLabel}</h3>}
     {kind === EntityKind.AGENT && !initial ? <p className="agent-subtitle">{copy("settings.configureTheEssentialsThenCustomizeOnly_a8beda")}</p> : null}
     <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>

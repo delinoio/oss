@@ -10,6 +10,7 @@
   "settings.edit_464c4f": "Edit",
   "settings.new_18fdd5": "New",
   "settings.configureTheEssentialsThenCustomizeOnly_a8beda": "Configure the essentials, then customize only what you need.",
+  "settings.accountPreferencesCouldNotBeSavedReopen_4a7c1b": "Account preferences could not be saved. Reopen the current entry before saving.",
   "settings.thisEntryChangedElsewhereYourDraft_106fa0": "This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.",
   "settings.subscriptionProvidersMustUseNativeSubscription_8e47b2": "Subscription providers must use native-subscription protocol, subscription authentication and an empty endpoint.",
   "settings.cancelEdit_6fa271": "Cancel edit",

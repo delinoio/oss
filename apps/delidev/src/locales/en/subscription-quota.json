@@ -32,5 +32,6 @@
   "subscription-quota.retryOriginalQuotaOrCreditRequest_071535": "Retry original quota or credit request",
   "subscription-quota.retryOriginalCreditReconciliationRequest_1dd094": "Retry original credit reconciliation request",
   "subscription-quota.retryOriginalRecoveryPreference_fa3cb3": "Retry original recovery preference",
-  "subscription-quota.extra.ca1844969742": "Unavailable"
+  "subscription-quota.extra.ca1844969742": "Unavailable",
+  "subscription-quota.accountPreferencesCouldNotBeSavedReload_0d91a4": "Account preferences could not be saved. Reload the current account before saving."
 }

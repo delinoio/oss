@@ -156,6 +156,16 @@ Those same jobs build the DevHud frontend only when `devhud` is selected, and th
 
 CI never builds a signed private candidate and never publishes.
 
+The read-only `devhud-supply-chain` job uses Ubuntu 22.04 for the existing
+installer, SBOM, provenance and updater fixtures and Windows for
+`ci:windows-signature`, an uncached Turbo task. Windows prepares the pinned Go
+toolchain to build a temporary native SignTool stub, then executes the private
+workflow's PowerShell validation prefix. MSI and NSIS fixtures require nonzero
+verification status to stop before installation, SBOM, evidence or upload
+sentinels; zero status reaches every sentinel. Both rows remain required by
+`CI Result`, without release credentials or publication authority. These fixtures
+do not establish actual certificate verification or signed-package acceptance.
+
 Changes to the shared checksum generator select the DevHud supply-chain fixture job that exercises it, including on pull requests where desktop packaging is skipped.
 
 Forge uses `forge-test` on Linux, macOS, and Windows for its three private Rust crates, DSL, preservation, state and official MCP-client tests. `forge-render` installs LibreOffice Impress and Poppler on Linux and explicitly runs the normally ignored renderer integration test, retaining PNG/PDF evidence for seven days. Both jobs participate in central path selection and `CI Result`; neither publishes packages or artifacts outside the workflow run.
@@ -204,6 +214,8 @@ credential-free native dry runs, production signing restrictions and event-based
 packaging skips remain unchanged.
 
 The `node-public-docs-test` job owns the consolidated root and subpath publication checks. Its path rule includes `packages/docs-site-switcher/**` and `docs/apps-react-forge-docs-foundation.md`; the latter contract alone forces the job. Its public-docs test boundary runs the shared selector interaction suite before building the assembled site, so changes to the shared navigation cannot bypass documentation CI.
+
+Public-docs owns package-local external installer inputs for cached `build`, `build:frontend`, and `ci:routes` tasks. Each hashes `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}`; build overrides use `$TURBO_EXTENDS$` to retain root inputs and leave generated outputs intact. Forced job selection does not bypass cache reads. `scripts/ci/public-docs-cache.test.mjs`, included in `pnpm ci:contracts`, checks all eight independent source mutations, complete cold/warm build and route validation, unchanged output restoration, and stale-asset failure with a frozen producer. It uses disposable source/output and local-only cache storage; hosted cache acceptance and production deployment remain separate.
 
 The `node-pnport-test` job owns pnport launcher, packaging, installer and fail-closed release fixtures on affected PRs and main pushes. The four-host `pnport-native` job runs native execution, TypeScript, installed npm/Yarn PnP consumer, archive and direct-installer checks on macOS/glibc Linux x64/arm64 for 0.1.0 on affected main pushes and manual CI; PRs skip that native matrix. Both CI and release derive their matrices from the package-owned target registry. Release Project does not wait for this CI matrix. The separate pnport tag workflow independently requires its four-host gate before publication. Windows x64/arm64 is deferred to 0.2.0 with the same complete acceptance requirements.
 

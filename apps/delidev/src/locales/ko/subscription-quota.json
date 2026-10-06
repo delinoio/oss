@@ -32,5 +32,6 @@
   "subscription-quota.retryOriginalQuotaOrCreditRequest_071535": "기존 할당량 또는 크레딧 요청 다시 시도",
   "subscription-quota.retryOriginalCreditReconciliationRequest_1dd094": "기존 크레딧 조정 요청 다시 시도",
   "subscription-quota.retryOriginalRecoveryPreference_fa3cb3": "기존 복구 환경설정 다시 시도",
-  "subscription-quota.extra.ca1844969742": "확인할 수 없음"
+  "subscription-quota.extra.ca1844969742": "확인할 수 없음",
+  "subscription-quota.accountPreferencesCouldNotBeSavedReload_0d91a4": "계정 환경설정을 저장할 수 없습니다. 현재 계정을 새로 고친 후 저장하세요."
 }
