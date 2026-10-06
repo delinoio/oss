@@ -1,0 +1,9 @@
+{
+  "startup-rejection.startupRejectionDetailsAreUnavailableKeep_780ffd": "Startup rejection details are unavailable. Keep this input paused while its original state is checked.",
+  "startup-rejection.agentStartupRejection_27a3f8": "Agent startup rejection",
+  "startup-rejection.agentDidNotStart_32a1e1": "Agent did not start",
+  "startup-rejection.theOriginalInputRemainsInHistory_e7a561": "The original input remains in history. Review the PR and Worker Git access before starting a new fix.",
+  "startup-rejection.recordedThisSessionRemainsPaused_ed54d8": "Recorded <s0/> · This session remains paused.",
+  "startup-rejection.theOriginalStartupRejectionCouldNot_fff807": "The original startup rejection could not be verified from the retained session.",
+  "startup-rejection.rejectedBeforeAgentStartupThisInput_9b8fc2": "Rejected before agent startup. This input is retained in history and will not be sent again."
+}

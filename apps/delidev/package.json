@@ -6,16 +6,16 @@
   "type": "module",
   "scripts": {
     "dev:frontend": "rsbuild dev",
-    "build": "rsbuild build",
-    "build:frontend": "rsbuild build",
+    "build": "pnpm prepare:localization && rsbuild build",
+    "build:frontend": "pnpm prepare:localization && rsbuild build",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
     "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && vitest run && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm test:widget && pnpm build",
     "test:unit": "vitest run",
-    "prepare:assets": "node scripts/prepare-assets.mjs",
+    "prepare:assets": "pnpm prepare:localization && node scripts/prepare-assets.mjs",
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
-    "prepare:widget": "node scripts/build-widget.mjs",
-    "test:widget": "node scripts/test-widget.mjs",
+    "prepare:widget": "pnpm prepare:localization && node scripts/build-widget.mjs",
+    "test:widget": "pnpm prepare:localization && node scripts/test-widget.mjs",
     "build:native": "pnpm prepare:assets && pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && pnpm prepare:widget && cargo build --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop",
     "dev:desktop": "node scripts/run-desktop.mjs",
     "bundle:native": "pnpm prepare:assets && pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && pnpm prepare:widget && node ../../scripts/tauri-cli.mjs -- build --features desktop-host,custom-protocol",
@@ -23,7 +23,9 @@
     "bundle:dry-run": "node scripts/bundle-native-dry-run.mjs",
     "test:bundle-dry-run": "node --test scripts/bundle-macos-dry-run.test.mjs scripts/native-package.test.mjs scripts/bundle-updater-dry-run.test.mjs",
     "test:desktop-launch": "node --test scripts/run-desktop.test.mjs scripts/prepare-assets.test.mjs",
-    "bundle:updater-dry-run": "node scripts/bundle-updater-dry-run.mjs"
+    "bundle:updater-dry-run": "node scripts/bundle-updater-dry-run.mjs",
+    "prepare:localization": "node scripts/generate-localization.mjs",
+    "test:localization": "node scripts/generate-localization.mjs --check && node --test scripts/localization.test.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
@@ -33,7 +35,9 @@
     "@tanstack/react-query": "5.101.4",
     "@tauri-apps/api": "2.11.1",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "i18next": "26.4.2",
+    "react-i18next": "17.0.15"
   },
   "devDependencies": {
     "@rsbuild/core": "2.1.10",

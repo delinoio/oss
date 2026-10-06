@@ -1,3 +1,4 @@
+import { copy } from "./localization";
 import { object, text, type Document } from "./documents";
 
 export enum SessionTitleState {
@@ -12,14 +13,14 @@ export enum SessionTitleState {
 }
 
 const labels: Record<SessionTitleState, string> = {
-  [SessionTitleState.Waiting]: "Title waits for the first completed turn",
-  [SessionTitleState.Queued]: "Title queued",
-  [SessionTitleState.Running]: "Generating title",
-  [SessionTitleState.Succeeded]: "Title generated",
-  [SessionTitleState.Skipped]: "Title skipped",
-  [SessionTitleState.Failed]: "Title generation failed",
-  [SessionTitleState.Unsupported]: "Title generation unsupported",
-  [SessionTitleState.Uncertain]: "Title outcome uncertain",
+  get [SessionTitleState.Waiting]() { return copy("session-title.titleWaitsForTheFirstCompleted_11677c"); },
+  get [SessionTitleState.Queued]() { return copy("session-title.titleQueued_b44555"); },
+  get [SessionTitleState.Running]() { return copy("session-title.generatingTitle_d25441"); },
+  get [SessionTitleState.Succeeded]() { return copy("session-title.titleGenerated_1e4690"); },
+  get [SessionTitleState.Skipped]() { return copy("session-title.titleSkipped_958887"); },
+  get [SessionTitleState.Failed]() { return copy("session-title.titleGenerationFailed_ffe5d8"); },
+  get [SessionTitleState.Unsupported]() { return copy("session-title.titleGenerationUnsupported_419b31"); },
+  get [SessionTitleState.Uncertain]() { return copy("session-title.titleOutcomeUncertain_3cc9af"); },
 };
 
 const reasons: Record<string, string> = {

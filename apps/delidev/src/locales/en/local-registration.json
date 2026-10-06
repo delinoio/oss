@@ -1,0 +1,16 @@
+{
+  "local-registration.desktopRegistration_65a097": "Desktop registration",
+  "local-registration.checkDesktopRegistration_a540c5": "Check desktop registration",
+  "local-registration.thisDesktopRegistrationIsAuthorized_f356ec": "This desktop registration is authorized.",
+  "local-registration.thisDesktopRegistrationWasRevokedYou_1f8ea7": "This desktop registration was revoked. You can explicitly register this desktop again using this computer's server owner access.",
+  "local-registration.aDesktopRegistrationRecoveryIsPending_de3baf": "A desktop registration recovery is pending. Continue its original request.",
+  "local-registration.continueDesktopRecovery_250cf5": "Continue desktop recovery",
+  "local-registration.reRegisterThisDesktop_405621": "Re-register this desktop",
+  "local-registration.thisCreatesANewDesktopRegistration_0adc71": "This creates a new desktop registration. The original registration stays revoked. Your server, saved sessions, account settings and Workers are preserved.",
+  "local-registration.switchingToTheNewRegistrationClears_d3ec15": "Switching to the new registration clears this window's unsent drafts and pending app actions. Sessions are not automatically resumed.",
+  "local-registration.theOriginalRecoveryRequestIsRetained_a082ac": "The original recovery request is retained. Closing this dialog does not cancel an accepted registration.",
+  "local-registration.recovering_959bdc": "Recovering…",
+  "local-registration.retryOriginalDesktopRecovery_3b14fa": "Retry original desktop recovery",
+  "local-registration.confirmDesktopReRegistration_d9ee3f": "Confirm desktop re-registration",
+  "local-registration.close_7d9eb7": "Close"
+}

@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, EntityKind, ResourceQuery, newRequestId } from "@delinoio/delidev-api-client";
@@ -92,6 +93,7 @@ export function formatConfigurationReview(raw: string): string {
 // The original JSON bytes, not a JS number round trip, are the export/import
 // authority. Parsed objects below are display-only; revisions use bigint.
 export function ConfigurationTransfer({ active, showCategoryIntro = true, onWorkflowReadyChange }: { active: boolean; showCategoryIntro?: boolean; onWorkflowReadyChange?: (active: boolean) => void }) {
+  useLocale();
   const [exported, setExported] = useState("");
   const [draft, setDraft] = useState("");
   const [loaded, setLoaded] = useState<{ raw: string; bundle: Bundle }>();
@@ -162,28 +164,28 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     finally { previewRead.reset(); gate.current = false; }
   };
   const stage = preview || report || mutation.uncertain ? TransferStage.Review : loaded ? TransferStage.Map : TransferStage.Load;
-  return <section className="configuration-transfer" aria-label="Portable configuration">
-    {showCategoryIntro ? <header className="transfer-intro"><div><h1 aria-live="polite" aria-atomic="true">Import / Export</h1><p>Move configuration between DeliDev servers.</p></div></header> : null}
+  return <section className="configuration-transfer" aria-label={copy("configuration-transfer.portableConfiguration_ca3e8a")}>
+    {showCategoryIntro ? <header className="transfer-intro"><div><h1 aria-live="polite" aria-atomic="true">{copy("configuration-transfer.importExport_6e061f")}</h1><p>{copy("configuration-transfer.moveConfigurationBetweenDelidevServers_749ed7")}</p></div></header> : null}
     <section className="transfer-panel" aria-labelledby="transfer-export-heading">
       <header className="transfer-export-header">
-        <div><h2 id="transfer-export-heading">Export configuration</h2><p>Copy a portable JSON document from the selected server.</p></div>
-        <button disabled={blocked || !active} onClick={() => void exportNow()}>Export configuration</button>
+        <div><h2 id="transfer-export-heading">{copy("configuration-transfer.exportConfiguration_0657bc")}</h2><p>{copy("configuration-transfer.copyAPortableJsonDocumentFrom_777321")}</p></div>
+        <button disabled={blocked || !active} onClick={() => void exportNow()}>{copy("configuration-transfer.exportConfiguration_0657bc")}</button>
       </header>
-      <p className="transfer-scope">Includes providers, models, account preferences, Agent Workers, instructions, repositories, projects and server preferences.</p>
-      {exported ? <><label>Exported configuration<textarea ref={exportText} readOnly value={exported} rows={6} spellCheck={false} /></label><button onClick={() => { exportText.current?.focus(); exportText.current?.select(); }}>Select export for copying</button></> : null}
+      <p className="transfer-scope">{copy("configuration-transfer.includesProvidersModelsAccountPreferencesAgent_57f3ec")}</p>
+      {exported ? <><label>{copy("configuration-transfer.exportedConfiguration_9e0e54")}<textarea ref={exportText} readOnly value={exported} rows={6} spellCheck={false} /></label><button onClick={() => { exportText.current?.focus(); exportText.current?.select(); }}>{copy("configuration-transfer.selectExportForCopying_2d205e")}</button></> : null}
     </section>
     <section className="transfer-panel" aria-labelledby="transfer-import-heading">
-      <h2 id="transfer-import-heading">Import configuration</h2>
-      <p>Choose a JSON file or paste an exported configuration.</p>
-      <ol className="transfer-stages" aria-label="Configuration import stages">
+      <h2 id="transfer-import-heading">{copy("configuration-transfer.importConfiguration_8a507f")}</h2>
+      <p>{copy("configuration-transfer.chooseAJsonFileOrPaste_3d11c9")}</p>
+      <ol className="transfer-stages" aria-label={copy("configuration-transfer.configurationImportStages_9980b1")}>
         {transferStages.map((item) => <li key={item.stage} aria-current={stage === item.stage ? "step" : undefined}>
           <span className="transfer-stage-number" aria-hidden="true">{item.stage}</span><span>{item.label}</span>
-          {stage === item.stage ? <span className="transfer-current-stage">Current stage</span> : null}
+          {stage === item.stage ? <span className="transfer-current-stage">{copy("configuration-transfer.currentStage_91766a")}</span> : null}
         </li>)}
       </ol>
       <fieldset disabled={blocked}>
-        <legend className="transfer-input-legend">Choose an export</legend>
-        <label>Configuration file<input type="file" accept=".json,application/json" aria-describedby="transfer-file-help" onChange={(event) => {
+        <legend className="transfer-input-legend">{copy("configuration-transfer.chooseAnExport_270d3d")}</legend>
+        <label>{copy("configuration-transfer.configurationFile_f1c216")}<input type="file" accept=".json,application/json" aria-describedby="transfer-file-help" onChange={(event) => {
           const file = event.target.files?.[0]; event.target.value = "";
           if (!file || gate.current) return;
           invalidate(); setLoaded(undefined);
@@ -191,37 +193,37 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
           gate.current = true; setLoading(true);
           void file.arrayBuffer().then((buffer) => { if (alive.current) { const raw = decoder.decode(buffer); setDraft(raw); load(raw); } }).catch(() => { if (alive.current) setProblem("The configuration file could not be read as UTF-8."); }).finally(() => { gate.current = false; if (alive.current) setLoading(false); });
         }} /></label>
-        <p id="transfer-file-help" className="transfer-helper">JSON · UTF-8 · Up to 384 KiB</p>
-        <label>Configuration JSON<textarea className="transfer-json-input" value={draft} rows={6} spellCheck={false} placeholder="Paste a DeliDev configuration export…" onChange={(event) => { if (encoder.encode(event.target.value).byteLength > bundleLimit) { setProblem("Use an export of at most 384 KiB."); return; } invalidate(); setLoaded(undefined); setDraft(event.target.value); }} /></label>
-        <button className="primary" disabled={!draft} onClick={() => load(draft)}>Load configuration document</button>
+        <p id="transfer-file-help" className="transfer-helper">{copy("configuration-transfer.jsonUtf8UpTo384_4d57fb")}</p>
+        <label>{copy("configuration-transfer.configurationJson_1d1271")}<textarea className="transfer-json-input" value={draft} rows={6} spellCheck={false} placeholder={copy("configuration-transfer.pasteADelidevConfigurationExport_fcd57c")} onChange={(event) => { if (encoder.encode(event.target.value).byteLength > bundleLimit) { setProblem("Use an export of at most 384 KiB."); return; } invalidate(); setLoaded(undefined); setDraft(event.target.value); }} /></label>
+        <button className="primary" disabled={!draft} onClick={() => load(draft)}>{copy("configuration-transfer.loadConfigurationDocument_afae0a")}</button>
       </fieldset>
-      <p className="transfer-load-guidance">You will map resources and review changes before applying.</p>
+      <p className="transfer-load-guidance">{copy("configuration-transfer.youWillMapResourcesAndReview_44f7cd")}</p>
     </section>
-    {loading || exportRead.isPending || previewRead.isPending || mutation.busy ? <p role="status">{loading ? "Reading configuration file…" : exportRead.isPending ? "Exporting configuration…" : previewRead.isPending ? "Loading configuration change preview…" : "Sending configuration import request…"}</p> : null}
+    {loading || exportRead.isPending || previewRead.isPending || mutation.busy ? <p role="status">{loading ? copy("configuration-transfer.readingConfigurationFile_9ae6ad") : exportRead.isPending ? copy("configuration-transfer.exportingConfiguration_340dcb") : previewRead.isPending ? copy("configuration-transfer.loadingConfigurationChangePreview_7826df") : copy("configuration-transfer.sendingConfigurationImportRequest_f2dc3b")}</p> : null}
     {loaded ? <fieldset className="transfer-panel transfer-mapping" disabled={blocked}>
-      <legend>Map imported configuration</legend>
-      <p>New entries keep their original contents and relationships. Reuse requires identical values after mapping. Only server preferences can replace an existing entry, and replacement requires its current revision.</p>
-      {loaded.bundle.machines.map((machine) => <section key={machine.id}><p>Source machine: {machine.name} · {machine.os} / {machine.architecture}</p><ResourceChoice label={`Target for ${machine.name}`} kind={EntityKind.MACHINE} value={machines[machine.id] ?? ""} required active={active} disabled={blocked} change={(id) => { invalidate(); setMachines((values) => ({ ...values, [machine.id]: id })); }} /></section>)}
+      <legend>{copy("configuration-transfer.mapImportedConfiguration_d0218d")}</legend>
+      <p>{copy("configuration-transfer.newEntriesKeepTheirOriginalContents_63b0dc")}</p>
+      {loaded.bundle.machines.map((machine) => <section key={machine.id}><p><LocalizedText id="configuration-transfer.sourceMachine_b09a79" components={{ s0: <>{machine.name}</>, s1: <>{machine.os}</>, s2: <>{machine.architecture}</> }} /></p><ResourceChoice label={copy("configuration-transfer.targetFor_183f6f", { v0: machine.name })} kind={EntityKind.MACHINE} value={machines[machine.id] ?? ""} required active={active} disabled={blocked} change={(id) => { invalidate(); setMachines((values) => ({ ...values, [machine.id]: id })); }} /></section>)}
       {loaded.bundle.entries.map((entry) => {
         const binding = bindings[entry.id] ?? { action: ImportAction.Create, target: "" };
         return <section key={entry.id}><h4>{name(entry)} · {entry.kind}</h4>
-          {entry.kind === "account" ? <p>A new, disconnected account will be created. Authentication must be configured again.</p> : <><label>{`Action for ${name(entry)}`}<select value={binding.action} onChange={(event) => { invalidate(); setBindings((values) => ({ ...values, [entry.id]: { action: event.target.value as ImportAction, target: "" } })); }}><option value={ImportAction.Create}>Create new</option><option value={ImportAction.Reuse}>Reuse identical existing entry</option>{entry.kind === "settings" ? <option value={ImportAction.Replace}>Replace existing server preferences</option> : null}</select></label>{binding.action !== ImportAction.Create ? <ResourceChoice label={`Existing ${name(entry)}`} kind={kinds[entry.kind]!} value={binding.target} required active={active} disabled={blocked} change={(id, _data, resource) => { invalidate(); setBindings((values) => ({ ...values, [entry.id]: { action: binding.action, target: id, revision: resource?.revision } })); }} /> : null}</>}
+          {entry.kind === "account" ? <p>{copy("configuration-transfer.aNewDisconnectedAccountWillBe_cd1542")}</p> : <><label>{copy("configuration-transfer.actionFor_428793", { v0: name(entry) })}<select value={binding.action} onChange={(event) => { invalidate(); setBindings((values) => ({ ...values, [entry.id]: { action: event.target.value as ImportAction, target: "" } })); }}><option value={ImportAction.Create}>{copy("configuration-transfer.createNew_9f3df7")}</option><option value={ImportAction.Reuse}>{copy("configuration-transfer.reuseIdenticalExistingEntry_7bdfe4")}</option>{entry.kind === "settings" ? <option value={ImportAction.Replace}>{copy("configuration-transfer.replaceExistingServerPreferences_ff7572")}</option> : null}</select></label>{binding.action !== ImportAction.Create ? <ResourceChoice label={copy("configuration-transfer.existing_35e8bd", { v0: name(entry) })} kind={kinds[entry.kind]!} value={binding.target} required active={active} disabled={blocked} change={(id, _data, resource) => { invalidate(); setBindings((values) => ({ ...values, [entry.id]: { action: binding.action, target: id, revision: resource?.revision } })); }} /> : null}</>}
           {entry.kind === "repository" ? items(entry.document.checkouts).map(object).map((checkout) => {
             const source = text(checkout.machine_id), key = `${entry.id}:${source}`;
             const machine = loaded.bundle.machines.find((value) => value.id === source);
-            return <div key={source}><p>Source checkout: {text(checkout.path)}</p><TextField label={`Target checkout for ${name(entry)} on ${machine?.name ?? source}`} value={paths[key] ?? ""} max={4096} required change={(path) => { invalidate(); setPaths((values) => ({ ...values, [key]: path })); }} /></div>;
+            return <div key={source}><p><LocalizedText id="configuration-transfer.sourceCheckout_dc8c12" components={{ s0: <>{text(checkout.path)}</> }} /></p><TextField label={copy("configuration-transfer.targetCheckoutForOn_27ac75", { v0: name(entry), v1: machine?.name ?? source })} value={paths[key] ?? ""} max={4096} required change={(path) => { invalidate(); setPaths((values) => ({ ...values, [key]: path })); }} /></div>;
           }) : null}
         </section>;
       })}
-      <button disabled={!active} onClick={() => void inspect()}>Preview configuration changes</button>
+      <button disabled={!active} onClick={() => void inspect()}>{copy("configuration-transfer.previewConfigurationChanges_97d7ba")}</button>
     </fieldset> : null}
-    {preview ? <section className="transfer-panel" aria-label="Configuration change preview"><h3>Review changes before applying</h3><p>New repository paths must pass validation on every selected Worker before any settings are applied. Conflicts preserve existing configuration. Review full access permissions, provider endpoints and instruction contents below.</p>{preview.machines.map((machine) => <p key={text(machine.id)}>Target Worker: {text(machine.name)} · {text(machine.os)} / {text(machine.architecture)} · {text(machine.id)}</p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || "Server preferences"} · {text(change.kind)}</h4><p>Target: {text(change.id)}</p><p>{change.before ? "Current and imported values are both included in the complete change details." : "New values are included in the complete change details."}</p></article>)}<label>Complete change details<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active} onClick={() => { if (!blocked) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>Apply reviewed configuration</button></section> : null}
-    {mutation.uncertain ? <section className="transfer-panel" aria-label="Uncertain configuration import"><button disabled={mutation.busy || !active} onClick={mutation.retry}>Retry the same configuration import</button></section> : null}
-    {report ? <section className="transfer-panel" aria-label="Configuration import result"><p role="status">{state === JobState.Succeeded ? "Configuration import completed. Connect each imported account before execution." : state === JobState.Failed || state === JobState.Canceled ? "Configuration import failed. Existing configuration was preserved." : state === JobState.Queued || state === JobState.Claimed ? "Import accepted. Waiting for confirmation of every repository validation." : "The import outcome is unavailable. Inspect the original operation before trying another import."}</p>{jobId ? <><small>{jobId}</small><button disabled={job.isFetching || !active} onClick={() => void job.refetch()}>Refresh configuration import</button></> : null}{text(importProblem.message) ? <p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setReport(undefined); invalidate(); }}>Return to retained import document</button> : null}</section> : null}
+    {preview ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationChangePreview_226628")}><h3>{copy("configuration-transfer.reviewChangesBeforeApplying_294dcf")}</h3><p>{copy("configuration-transfer.newRepositoryPathsMustPassValidation_178644")}</p>{preview.machines.map((machine) => <p key={text(machine.id)}><LocalizedText id="configuration-transfer.targetWorker_aa1b09" components={{ s0: <>{text(machine.name)}</>, s1: <>{text(machine.os)}</>, s2: <>{text(machine.architecture)}</>, s3: <>{text(machine.id)}</> }} /></p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || "Server preferences"} · {text(change.kind)}</h4><p><LocalizedText id="configuration-transfer.target_8daa2b" components={{ s0: <>{text(change.id)}</> }} /></p><p>{change.before ? copy("configuration-transfer.currentAndImportedValuesAreBoth_99d4dd") : copy("configuration-transfer.newValuesAreIncludedInThe_88d082")}</p></article>)}<label>{copy("configuration-transfer.completeChangeDetails_79b757")}<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active} onClick={() => { if (!blocked) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>{copy("configuration-transfer.applyReviewedConfiguration_1229a2")}</button></section> : null}
+    {mutation.uncertain ? <section className="transfer-panel" aria-label={copy("configuration-transfer.uncertainConfigurationImport_4b21c6")}><button disabled={mutation.busy || !active} onClick={mutation.retry}>{copy("configuration-transfer.retryTheSameConfigurationImport_9d3291")}</button></section> : null}
+    {report ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationImportResult_7c1375")}><p role="status">{state === JobState.Succeeded ? copy("configuration-transfer.configurationImportCompletedConnectEachImported_2af629") : state === JobState.Failed || state === JobState.Canceled ? copy("configuration-transfer.configurationImportFailedExistingConfigurationWas_c7e5ad") : state === JobState.Queued || state === JobState.Claimed ? copy("configuration-transfer.importAcceptedWaitingForConfirmationOf_8ed561") : copy("configuration-transfer.theImportOutcomeIsUnavailableInspect_7a2ebb")}</p>{jobId ? <><small>{jobId}</small><button disabled={job.isFetching || !active} onClick={() => void job.refetch()}>{copy("configuration-transfer.refreshConfigurationImport_e42bc3")}</button></> : null}{text(importProblem.message) ? <p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setReport(undefined); invalidate(); }}>{copy("configuration-transfer.returnToRetainedImportDocument_9a833a")}</button> : null}</section> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
     <aside className="transfer-guidance" aria-labelledby="transfer-guidance-heading">
-      <h2 id="transfer-guidance-heading">Before you transfer</h2>
-      <ul><li>Imported accounts are disconnected and need a new connection.</li><li>Authentication, device registrations, observed quotas, discovered model evidence and session history are excluded.</li></ul>
+      <h2 id="transfer-guidance-heading">{copy("configuration-transfer.beforeYouTransfer_1de385")}</h2>
+      <ul><li>{copy("configuration-transfer.importedAccountsAreDisconnectedAndNeed_2a3422")}</li><li>{copy("configuration-transfer.authenticationDeviceRegistrationsObservedQuotasDiscovered_57d141")}</li></ul>
     </aside>
   </section>;
 }

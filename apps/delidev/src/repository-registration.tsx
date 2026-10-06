@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { copy, useLocale } from "./localization";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
@@ -54,10 +54,12 @@ export function validRepositoryInspection(output: Document): boolean {
 }
 
 function InspectionCompletion({ state, output, completed }: { state: string; output: Document; completed: (output: Document) => void }) {
+  useLocale();
   useEffect(() => { if (state === JobState.Succeeded) completed(output); }, [state, output, completed]);
   return null;
 }
 function SaveCompletion({ state, saved }: { state: string; saved: () => void }) {
+  useLocale();
   useEffect(() => { if (state === JobState.Succeeded) saved(); }, [state, saved]);
   return null;
 }
@@ -65,6 +67,7 @@ function SaveCompletion({ state, saved }: { state: string; saved: () => void }) 
 export function RepositoryRegistration({ active, readLocalWorker, controlLocalWorker, chooseFolder, saved, cancel }: {
   active: boolean; readLocalWorker?: ReadLocalWorkerProof; controlLocalWorker?: ControlLocalWorker; chooseFolder?: ChooseRepositoryFolder; saved: () => void; cancel: () => void;
 }) {
+  useLocale();
   const opening = useSettingsOpening();
   const alive = useRef(false), gate = useRef(false), initialAction = useRef<HTMLButtonElement>(null);
   const [data, setData] = useState<Document>(() => newConfiguration(EntityKind.REPOSITORY));
@@ -163,27 +166,27 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     const checkout = object(raw);
     return checkout.machine_id === primaryCheckout.machine_id && checkout.path === primaryCheckout.path;
   }));
-  return <section className="repository-registration" aria-label="Add repository">
-    <button type="button" disabled={blocked} onClick={cancel}>Back to repositories</button>
-    <h2>Add repository</h2>
-    {saveJob ? <><h3>Repository save accepted</h3>{saveJob === "unknown" ? <p role="alert">The save was acknowledged without a readable job. Inspect its receipt before another save.</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>Return to current draft</button> : null}</>}</TrackedJob>}</> : <>
-      {summary ? <section className="repository-summary" aria-label="Repository detected">
-        <div className="repository-summary-heading"><div><h3>{text(data.name)}</h3><p>Repository detected</p></div><button type="button" disabled={blocked} onClick={() => void start(true)}>Change folder</button></div>
+  return <section className="repository-registration" aria-label={copy("repository-registration.addRepository_2eda4d")}>
+    <button type="button" disabled={blocked} onClick={cancel}>{copy("repository-registration.backToRepositories_92a79b")}</button>
+    <h2>{copy("repository-registration.addRepository_2eda4d")}</h2>
+    {saveJob ? <><h3>{copy("repository-registration.repositorySaveAccepted_495665")}</h3>{saveJob === "unknown" ? <p role="alert">{copy("repository-registration.theSaveWasAcknowledgedWithoutA_186074")}</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setSaveJob(undefined)}>{copy("repository-registration.returnToCurrentDraft_0d5f4c")}</button> : null}</>}</TrackedJob>}</> : <>
+      {summary ? <section className="repository-summary" aria-label={copy("repository-registration.repositoryDetected_998040")}>
+        <div className="repository-summary-heading"><div><h3>{text(data.name)}</h3><p>{copy("repository-registration.repositoryDetected_998040")}</p></div><button type="button" disabled={blocked} onClick={() => void start(true)}>{copy("repository-registration.changeFolder_0eb4a7")}</button></div>
         <p className="repository-path">{text(summary.output.root)}</p>
-        <dl><div><dt>Computer</dt><dd>{summary.source.name}</dd></div><div><dt>Git remote</dt><dd>{remote || "Unavailable"}</dd></div><div><dt>Default branch</dt><dd>{text(object(summary.output.default_refs)[remote]) || "Unavailable locally"}</dd></div><div><dt>GitHub</dt><dd>{text(github.owner) && text(github.name) ? `${text(github.owner)}/${text(github.name)}` : "Unavailable"}</dd></div></dl>
-        <p>GitHub detection is metadata only. Select a profile in Optional settings to configure access.</p>
-      </section> : <section className="repository-folder-card"><h3>Choose your repository folder</h3><p>Select an existing Git repository on this computer.</p><button ref={initialAction} type="button" className="primary" disabled={blocked || !chooseFolder} onClick={() => void start(true)}>Choose folder</button><button type="button" disabled={blocked} aria-expanded={manual} onClick={() => setManual(value => !value)}>Enter a path…</button><p>This computer</p></section>}
-      {summary && !manual ? <button type="button" disabled={blocked} onClick={() => setManual(true)}>Enter a path…</button> : null}
-      {manual || (!summary && path) ? <fieldset disabled={blocked}><legend>Repository folder</legend><label>Computer<select value={computer} onChange={event => setComputer(event.target.value as Computer)}><option value={Computer.Local}>This computer</option><option value={Computer.Remote}>Another computer</option></select></label>{computer === Computer.Remote ? <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine} active={active} showStatus change={(id, value, resource) => { setMachine(id); setMachineName(resource ? resourceName(resource) : text(value?.name)); }} /> : null}<TextField label="Absolute checkout path" value={path} max={4096} change={setPath} /><button type="button" disabled={!path || (computer === Computer.Remote && !machine)} onClick={() => void start(false)}>Inspect folder</button></fieldset> : null}
-      {inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <><InspectionCompletion state={state} output={output} completed={completeInspection} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setInspection(undefined)}>Return to selected folder</button> : null}</>}</TrackedJob> : null}
-      {busy || inspect.busy ? <p role="status">{busy ? "Selecting folder and verifying this computer…" : "Inspecting repository…"}</p> : null}
-      {offline ? <p role="status">The selected Worker is registered; its server heartbeat is offline. Keep this folder and check Runner Devices before retrying.</p> : null}
+        <dl><div><dt>{copy("repository-registration.computer_76ed42")}</dt><dd>{summary.source.name}</dd></div><div><dt>{copy("repository-registration.gitRemote_915936")}</dt><dd>{remote || "Unavailable"}</dd></div><div><dt>{copy("repository-registration.defaultBranch_411aa6")}</dt><dd>{text(object(summary.output.default_refs)[remote]) || "Unavailable locally"}</dd></div><div><dt>{copy("repository-registration.github_f911e4")}</dt><dd>{text(github.owner) && text(github.name) ? copy("repository-registration.message_37651e", { v0: text(github.owner), v1: text(github.name) }) : copy("repository-registration.unavailable_ca1844")}</dd></div></dl>
+        <p>{copy("repository-registration.githubDetectionIsMetadataOnlySelect_8699ce")}</p>
+      </section> : <section className="repository-folder-card"><h3>{copy("repository-registration.chooseYourRepositoryFolder_6b70c3")}</h3><p>{copy("repository-registration.selectAnExistingGitRepositoryOn_bbdcf5")}</p><button ref={initialAction} type="button" className="primary" disabled={blocked || !chooseFolder} onClick={() => void start(true)}>{copy("repository-registration.chooseFolder_3db741")}</button><button type="button" disabled={blocked} aria-expanded={manual} onClick={() => setManual(value => !value)}>{copy("repository-registration.enterAPath_fe3f3a")}</button><p>{copy("repository-registration.thisComputer_26f9f9")}</p></section>}
+      {summary && !manual ? <button type="button" disabled={blocked} onClick={() => setManual(true)}>{copy("repository-registration.enterAPath_fe3f3a")}</button> : null}
+      {manual || (!summary && path) ? <fieldset disabled={blocked}><legend>{copy("repository-registration.repositoryFolder_26c354")}</legend><label>{copy("repository-registration.computer_76ed42")}<select value={computer} onChange={event => setComputer(event.target.value as Computer)}><option value={Computer.Local}>{copy("repository-registration.thisComputer_26f9f9")}</option><option value={Computer.Remote}>{copy("repository-registration.anotherComputer_e97a34")}</option></select></label>{computer === Computer.Remote ? <ResourceChoice label={copy("repository-registration.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus change={(id, value, resource) => { setMachine(id); setMachineName(resource ? resourceName(resource) : text(value?.name)); }} /> : null}<TextField label={copy("repository-registration.absoluteCheckoutPath_a88fe7")} value={path} max={4096} change={setPath} /><button type="button" disabled={!path || (computer === Computer.Remote && !machine)} onClick={() => void start(false)}>{copy("repository-registration.inspectFolder_83fcd0")}</button></fieldset> : null}
+      {inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <><InspectionCompletion state={state} output={output} completed={completeInspection} />{state === JobState.Failed || state === JobState.Canceled ? <button type="button" onClick={() => setInspection(undefined)}>{copy("repository-registration.returnToSelectedFolder_275370")}</button> : null}</>}</TrackedJob> : null}
+      {busy || inspect.busy ? <p role="status">{busy ? copy("repository-registration.selectingFolderAndVerifyingThisComputer_88e910") : copy("repository-registration.inspectingRepository_ca1086")}</p> : null}
+      {offline ? <p role="status">{copy("repository-registration.theSelectedWorkerIsRegisteredIts_7f0382")}</p> : null}
       {serverMachine.error ? <Problem error={serverMachine.error} /> : null}
-      {unknown ? <p role="alert">Inspection was acknowledged without a readable result. Observe the original operation before another request.</p> : null}
-      {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
+      {unknown ? <p role="alert">{copy("repository-registration.inspectionWasAcknowledgedWithoutAReadable_28ee95")}</p> : null}
+      {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>{copy("repository-registration.optionalSettings_e88b5c")}</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error} />
-      {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
-      <div className="actions">{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</div>
+      {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>{copy("repository-registration.retryTheSameInspection_8ce3eb")}</button> : null}
+      <div className="actions">{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>{copy("repository-registration.addRepository_2eda4d")}</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>{copy("repository-registration.retryTheSameRepositorySave_b78084")}</button> : null}</div>
     </>}
   </section>;
 }

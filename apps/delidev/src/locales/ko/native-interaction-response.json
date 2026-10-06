@@ -1,0 +1,21 @@
+{
+  "native-interaction-response.answerOriginalOpencodeQuestions_872727": "Answer original OpenCode questions",
+  "native-interaction-response.duplicateNativeOptionLabelsCannotBe_a1c083": "Duplicate native option labels cannot be selected unambiguously.",
+  "native-interaction-response.useACustomAnswer_862089": "Use a custom answer",
+  "native-interaction-response.customAnswerForQuestion_76fa79": "Custom answer for question <s0/>",
+  "native-interaction-response.leaveQuestionUnanswered_c5d878": "Leave question <s0/> unanswered",
+  "native-interaction-response.sendAnswers_8a7856": "답변 전송",
+  "native-interaction-response.rejectQuestionRequest_d50673": "Reject question request",
+  "native-interaction-response.useValidDistinctAnswersThatMatch_1fc0d6": "Use valid, distinct answers that match each original question.",
+  "native-interaction-response.theCompleteResponseIsTooLarge_fbbffb": "The complete response is too large. Shorten it without omitting question rows.",
+  "native-interaction-response.retryTheSameResponseRequest_ebd80d": "Retry the same response request",
+  "native-interaction-response.respondToOriginalOpencodePermission_78b0d2": "Respond to original OpenCode permission",
+  "native-interaction-response.sessionAllowanceUsesTheNativePatterns_2193c7": "Session allowance uses the native patterns listed above and applies only to this native session.",
+  "native-interaction-response.allowOnce_168511": "한 번 허용",
+  "native-interaction-response.allowForThisNativeSession_76b040": "Allow for this native session",
+  "native-interaction-response.includeCorrectionFeedbackWithRejection_199c84": "Include correction feedback with rejection",
+  "native-interaction-response.correctionFeedback_c92684": "Correction feedback",
+  "native-interaction-response.nonemptyFeedbackLetsThisToolRejection_8284bd": "Nonempty feedback lets this tool rejection continue. Other pending requests may also be rejected and stop the native run.",
+  "native-interaction-response.rejectPermissionRequest_3b124c": "Reject permission request",
+  "native-interaction-response.keepValidCorrectionFeedbackWithin64_ca809b": "Keep valid correction feedback within 64 KiB and the complete response within 256 KiB."
+}

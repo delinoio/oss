@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { copy, useLocale } from "./localization";
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import type { PairingAuthority } from "./pairing-grant";
 import { useSettingsOpening } from "./settings-lifetime";
@@ -6,8 +6,10 @@ import { encryptedInput, workerRecipient, type WorkerRecipient } from "./worker-
 export enum WorkerNetworkAction { Prepare = "prepare", Import = "import", Status = "status" }
 export type ControlWorkerNetwork = (machine: string, action: WorkerNetworkAction, ciphertext: Uint8Array, digest: string) => Promise<unknown>;
 const Context = createContext<ControlWorkerNetwork | undefined>(undefined);
-export function WorkerNetworkControlProvider({ control, children }: { control: ControlWorkerNetwork; children: ReactNode }) { return <Context.Provider value={control}>{children}</Context.Provider>; }
+export function WorkerNetworkControlProvider({ control, children }: { control: ControlWorkerNetwork; children: ReactNode }) {
+  useLocale(); return <Context.Provider value={control}>{children}</Context.Provider>; }
 export function WorkerNetworkNative({ machine, authority, prepared }: { machine: string; authority: PairingAuthority; prepared: (recipient: WorkerRecipient) => void }) {
+  useLocale();
   const control = useContext(Context), opening = useSettingsOpening();
   const [busy, setBusy] = useState(false), [problem, setProblem] = useState(""), [outcome, setOutcome] = useState("");
   const [ciphertext, setCiphertext] = useState(""), [digest, setDigest] = useState(""), [confirm, setConfirm] = useState(false);
@@ -25,10 +27,10 @@ export function WorkerNetworkNative({ machine, authority, prepared }: { machine:
     } catch { if (!opening?.disposed) setProblem("The original same-computer Worker operation could not be verified. Inspect its registration and current route. An import may have committed; retain the original encrypted input and digest for explicit reconciliation."); }
     finally { pending.current = false; if (!opening?.disposed) setBusy(false); }
   };
-  return <section aria-label="This computer's Worker network"><h4>This computer's matching Worker</h4><p>These controls use only the already registered Worker for this server on this computer. Remote Runner Devices prepare and import through their own DeliDev CLI. Preparing a new recipient requires encrypted import and an explicit Worker restart before new work can continue.</p>
-    {!control ? <p>Open the trusted desktop app to prepare or import this computer's Worker configuration.</p> : <>
-      <button disabled={busy} onClick={() => void run(WorkerNetworkAction.Prepare)}>Prepare protected recipient</button><button disabled={busy} onClick={() => void run(WorkerNetworkAction.Status)}>Inspect original public recipient</button>
-      <label>Encrypted bundle to import (Base64)<textarea rows={4} maxLength={131072} spellCheck={false} disabled={busy} value={ciphertext} onChange={event => { setCiphertext(event.target.value); setConfirm(false); }} /></label><label>Separately authenticated digest<input maxLength={64} disabled={busy} value={digest} onChange={event => { setDigest(event.target.value); setConfirm(false); }} /></label><label><input type="checkbox" disabled={busy} checked={confirm} onChange={event => setConfirm(event.target.checked)} />I verified this digest independently and intend to import into this Worker's original protected recipient.</label><button disabled={busy || !confirm} onClick={() => void run(WorkerNetworkAction.Import)}>Import confirmed encrypted configuration</button>
+  return <section aria-label={copy("worker-network-native.thisComputerSWorkerNetwork_ddbb96")}><h4>{copy("worker-network-native.thisComputerSMatchingWorker_0db01d")}</h4><p>{copy("worker-network-native.theseControlsUseOnlyTheAlready_4de670")}</p>
+    {!control ? <p>{copy("worker-network-native.openTheTrustedDesktopAppTo_dce615")}</p> : <>
+      <button disabled={busy} onClick={() => void run(WorkerNetworkAction.Prepare)}>{copy("worker-network-native.prepareProtectedRecipient_5b5127")}</button><button disabled={busy} onClick={() => void run(WorkerNetworkAction.Status)}>{copy("worker-network-native.inspectOriginalPublicRecipient_579cd7")}</button>
+      <label>{copy("worker-network-native.encryptedBundleToImportBase64_db23d6")}<textarea rows={4} maxLength={131072} spellCheck={false} disabled={busy} value={ciphertext} onChange={event => { setCiphertext(event.target.value); setConfirm(false); }} /></label><label>{copy("worker-network-native.separatelyAuthenticatedDigest_be070a")}<input maxLength={64} disabled={busy} value={digest} onChange={event => { setDigest(event.target.value); setConfirm(false); }} /></label><label><input type="checkbox" disabled={busy} checked={confirm} onChange={event => setConfirm(event.target.checked)} />{copy("worker-network-native.iVerifiedThisDigestIndependentlyAnd_638722")}</label><button disabled={busy || !confirm} onClick={() => void run(WorkerNetworkAction.Import)}>{copy("worker-network-native.importConfirmedEncryptedConfiguration_30d15e")}</button>
     </>}{outcome ? <p role="status">{outcome}</p> : null}{problem ? <p role="alert">{problem}</p> : null}
   </section>;
 }

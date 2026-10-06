@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef } from "react";
 import { CodexDiagnosticPhase, FailureCode, isEntityId, type CodexDiagnostic } from "@delinoio/delidev-api-client";
 import "./subscription-onboarding.css";
@@ -39,6 +39,7 @@ export function subscriptionNameValid(name: string): boolean {
 // Presentation has no login side effects. The owning controller starts only
 // from an explicit Add event and supplies the original operation's progress.
 export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
+  useLocale();
   const { stage, serviceName, active, busy } = props;
   const naming = stage === SubscriptionOnboardingStage.Naming;
   const nameInput = useRef<HTMLInputElement>(null);
@@ -61,49 +62,49 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
     [SubscriptionOnboardingStage.Recovery]: "The original login result requires recovery",
     [SubscriptionOnboardingStage.Failed]: "Login could not be completed",
   }[stage];
-  return <section className="subscription-account-create subscription-onboarding" aria-label={`Add ${serviceName} account`}>
-    <button type="button" className="subscription-onboarding-back" disabled={!active} onClick={props.leave}>Back to AI Subscription</button>
-    <h2>Add {serviceName} account</h2>
-    <ol className="subscription-onboarding-steps" aria-label="Account setup progress">
-      <li aria-current={!naming ? "step" : undefined}>{naming ? <span aria-hidden="true">✓ </span> : null}Sign in</li>
+  return <section className="subscription-account-create subscription-onboarding" aria-label={copy("subscription-onboarding.addAccount_8403fa", { v0: serviceName })}>
+    <button type="button" className="subscription-onboarding-back" disabled={!active} onClick={props.leave}>{copy("subscription-onboarding.backToAiSubscription_224262")}</button>
+    <h2><LocalizedText id="subscription-onboarding.addAccount_2c24d0" components={{ s0: <>{serviceName}</> }} /></h2>
+    <ol className="subscription-onboarding-steps" aria-label={copy("subscription-onboarding.accountSetupProgress_269e63")}>
+      <li aria-current={!naming ? "step" : undefined}><LocalizedText id="subscription-onboarding.signIn_b011b4" components={{ s0: <>{naming ? <span aria-hidden="true">✓ </span> : null}</> }} /></li>
       <li aria-hidden="true">→</li>
-      <li aria-current={naming ? "step" : undefined}>Account name</li>
+      <li aria-current={naming ? "step" : undefined}>{copy("subscription-onboarding.accountName_a704d8")}</li>
     </ol>
     <p className={`subscription-onboarding-status${naming ? " subscription-onboarding-success" : ""}`} role="status">
       {stage === SubscriptionOnboardingStage.Preparing || stage === SubscriptionOnboardingStage.Waiting ? <span className="subscription-onboarding-spinner" aria-hidden="true" /> : null}
       {naming ? <span aria-hidden="true">✓</span> : null}{status}
     </p>
     {failed ? <div role="alert" className="subscription-onboarding-diagnostic">
-      <p>{diagnostic?.message ?? props.problem ?? "The server did not report native failure details."}</p>
+      <p>{diagnostic?.message ?? props.problem ?? copy("subscription-onboarding.theServerDidNotReportNative_923694")}</p>
       <dl>
-        <div><dt>Codex version:</dt><dd>{diagnostic ? diagnostic.version || "Not detected" : "Not reported"}</dd></div>
-        <div><dt>Minimum version:</dt><dd>{diagnostic?.minimum ?? "Not reported"}</dd></div>
-        <div><dt>Failed step:</dt><dd>{diagnostic?.phase ?? "Not reported"}</dd></div>
-        <div><dt>Error code:</dt><dd>{diagnostic?.code ?? "Not reported"}</dd></div>
-        {diagnostic?.correlation ? <div><dt>Reference:</dt><dd>{diagnostic.correlation}</dd></div> : null}
+        <div><dt>{copy("subscription-onboarding.codexVersion_072e4d")}</dt><dd>{diagnostic ? diagnostic.version || "Not detected" : copy("subscription-onboarding.notReported_adadfa")}</dd></div>
+        <div><dt>{copy("subscription-onboarding.minimumVersion_3cab5a")}</dt><dd>{diagnostic?.minimum ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
+        <div><dt>{copy("subscription-onboarding.failedStep_0ed199")}</dt><dd>{diagnostic?.phase ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
+        <div><dt>{copy("subscription-onboarding.errorCode_2c35f6")}</dt><dd>{diagnostic?.code ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
+        {diagnostic?.correlation ? <div><dt>{copy("subscription-onboarding.reference_44dc4a")}</dt><dd>{diagnostic.correlation}</dd></div> : null}
       </dl>
-      {stage === SubscriptionOnboardingStage.Recovery ? <p>The original sign-in result requires recovery.</p> : null}
-      <p>Check Connection &amp; diagnostics before starting another sign-in.</p>
+      {stage === SubscriptionOnboardingStage.Recovery ? <p>{copy("subscription-onboarding.theOriginalSignInResultRequires_136770")}</p> : null}
+      <p>{copy("subscription-onboarding.checkConnectionDiagnosticsBeforeStartingAnother_3836fd")}</p>
     </div> : null}
     {naming ? <form onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
-      <label htmlFor="subscription-onboarding-name">Account name</label>
+      <label htmlFor="subscription-onboarding-name">{copy("subscription-onboarding.accountName_a704d8")}</label>
       <input id="subscription-onboarding-name" ref={nameInput} autoComplete="off" required value={props.name} disabled={!active || busy} onChange={(event) => props.changeName(event.target.value)} aria-describedby="subscription-onboarding-name-help" />
-      <p id="subscription-onboarding-name-help">{props.suggested ? "Suggested from your signed-in account. You can change it." : "Choose a name for your signed-in account."}</p>
-      <div className="actions"><button className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>Save account name</button><button type="button" disabled={!active} onClick={props.leave}>Later</button></div>
+      <p id="subscription-onboarding-name-help">{props.suggested ? copy("subscription-onboarding.suggestedFromYourSignedInAccount_5ddc0f") : copy("subscription-onboarding.chooseANameForYourSigned_6ec79b")}</p>
+      <div className="actions"><button className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>{copy("subscription-onboarding.saveAccountName_7c6744")}</button><button type="button" disabled={!active} onClick={props.leave}>{copy("subscription-onboarding.later_73b6e4")}</button></div>
     </form> : <>
-      {stage === SubscriptionOnboardingStage.Waiting && !props.problem ? <p>Your browser has opened for sign-in. Return here after you finish.</p> : null}
+      {stage === SubscriptionOnboardingStage.Waiting && !props.problem ? <p>{copy("subscription-onboarding.yourBrowserHasOpenedForSign_7b9723")}</p> : null}
       <div className="actions">
-        {props.canReopen ? <button type="button" className="primary" disabled={!active || busy} onClick={props.reopen}>Open browser again</button> : null}
-        {props.canCancel ? <button type="button" disabled={!active || busy} onClick={props.cancel}>Cancel login</button> : null}
+        {props.canReopen ? <button type="button" className="primary" disabled={!active || busy} onClick={props.reopen}>{copy("subscription-onboarding.openBrowserAgain_63833e")}</button> : null}
+        {props.canCancel ? <button type="button" disabled={!active || busy} onClick={props.cancel}>{copy("subscription-onboarding.cancelLogin_8304c3")}</button> : null}
       </div>
     </>}
     {props.problem && !failed ? <p role="alert">{props.problem}</p> : null}
-    {(stage !== SubscriptionOnboardingStage.Unsupported || failed) ? <p className="subscription-onboarding-footer">{naming ? "Your signed-in account is kept if you leave this screen." : "Leaving this screen keeps the account and its current sign-in state."}</p> : null}
+    {(stage !== SubscriptionOnboardingStage.Unsupported || failed) ? <p className="subscription-onboarding-footer">{naming ? copy("subscription-onboarding.yourSignedInAccountIsKept_1d2f83") : copy("subscription-onboarding.leavingThisScreenKeepsTheAccount_e209d9")}</p> : null}
   </section>;
 }
 
 const phaseNames: Partial<Record<CodexDiagnosticPhase, string>> = {
- [CodexDiagnosticPhase.DISCOVERY]:"Executable discovery", [CodexDiagnosticPhase.VERSION]:"Version validation", [CodexDiagnosticPhase.PROFILE]:"Profile validation", [CodexDiagnosticPhase.RUNTIME]:"Runtime preparation", [CodexDiagnosticPhase.LAUNCH]:"Native launch", [CodexDiagnosticPhase.INITIALIZE]:"Initialization", [CodexDiagnosticPhase.CONFIRM]:"Initialization confirmation", [CodexDiagnosticPhase.LOGIN]:"Sign-in", [CodexDiagnosticPhase.MODELS]:"Model discovery", [CodexDiagnosticPhase.EXECUTION]:"Execution", [CodexDiagnosticPhase.HISTORY]:"History verification", [CodexDiagnosticPhase.CLEANUP]:"Cleanup",
+ get [CodexDiagnosticPhase.DISCOVERY]() { return copy("subscription-onboarding.executableDiscovery_774792"); }, get [CodexDiagnosticPhase.VERSION]() { return copy("subscription-onboarding.versionValidation_95b337"); }, get [CodexDiagnosticPhase.PROFILE]() { return copy("subscription-onboarding.profileValidation_b201db"); }, get [CodexDiagnosticPhase.RUNTIME]() { return copy("subscription-onboarding.runtimePreparation_2bdb24"); }, get [CodexDiagnosticPhase.LAUNCH]() { return copy("subscription-onboarding.nativeLaunch_4979af"); }, get [CodexDiagnosticPhase.INITIALIZE]() { return copy("subscription-onboarding.initialization_8be62f"); }, get [CodexDiagnosticPhase.CONFIRM]() { return copy("subscription-onboarding.initializationConfirmation_1e895c"); }, get [CodexDiagnosticPhase.LOGIN]() { return copy("subscription-onboarding.signIn_5bbbe5"); }, get [CodexDiagnosticPhase.MODELS]() { return copy("subscription-onboarding.modelDiscovery_3c49ba"); }, get [CodexDiagnosticPhase.EXECUTION]() { return copy("subscription-onboarding.execution_a45cd4"); }, get [CodexDiagnosticPhase.HISTORY]() { return copy("subscription-onboarding.historyVerification_97b291"); }, get [CodexDiagnosticPhase.CLEANUP]() { return copy("subscription-onboarding.cleanup_9f1b23"); },
 };
 const versionText = (value: string) => value.length <= 256 && /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/.test(value);
 // Reconstruct text from closed metadata, never provider/native message strings.

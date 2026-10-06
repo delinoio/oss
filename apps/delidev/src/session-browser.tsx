@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke } from "@tauri-apps/api/core";
@@ -27,6 +28,7 @@ function browserState(value: BrowserState): BrowserState {
   return value;
 }
 export function SessionBrowser({ session, accountId, close }: { session: Resource; accountId: string; close: () => void }) {
+  useLocale();
   const [address, setAddress] = useState("");
   const [profileId, setProfileId] = useState<string>();
   const [state, setState] = useState<BrowserState>();
@@ -130,19 +132,19 @@ export function SessionBrowser({ session, accountId, close }: { session: Resourc
     finally { if (alive.current) setBusy(false); }
   };
   const blocked = busy || registration.busy || registration.uncertain || state?.removal_pending;
-  return <section className="session-browser" aria-label="Session browser">
-    <header><h3>Browser</h3><button onClick={close}>Close browser</button></header>
-    <p>Shared with this account's sessions on this computer. Tabs, cookies, history and browser credentials stay local.</p>
-    {!profileId ? <><p>Enter a web address, then open a profile for this session's selected AI account.</p><button disabled={blocked || !supported || !idPattern.test(accountId) || !validAddress(address)} onClick={() => void registration.send({ session: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() }, accountId })}>Open account browser</button>{registration.uncertain ? <button disabled={registration.busy} onClick={registration.retry}>Retry the same registration</button> : null}<Problem error={registration.error} /></> : null}
-    {!supported ? <p>Protected browser profiles are unavailable until the selected server confirms support.</p> : null}
+  return <section className="session-browser" aria-label={copy("session-browser.sessionBrowser_47d746")}>
+    <header><h3>{copy("session-browser.browser_d31de1")}</h3><button onClick={close}>{copy("session-browser.closeBrowser_dd3303")}</button></header>
+    <p>{copy("session-browser.sharedWithThisAccountSSessions_361a18")}</p>
+    {!profileId ? <><p>{copy("session-browser.enterAWebAddressThenOpen_60a48b")}</p><button disabled={blocked || !supported || !idPattern.test(accountId) || !validAddress(address)} onClick={() => void registration.send({ session: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() }, accountId })}>{copy("session-browser.openAccountBrowser_6ee5d1")}</button>{registration.uncertain ? <button disabled={registration.busy} onClick={registration.retry}>{copy("session-browser.retryTheSameRegistration_c86ef9")}</button> : null}<Problem error={registration.error} /></> : null}
+    {!supported ? <p>{copy("session-browser.protectedBrowserProfilesAreUnavailableUntil_033b80")}</p> : null}
     <Problem error={capabilities.error} />
     {failure ? <p role="alert">{failure}</p> : null}
-    {state?.removal_pending ? <p role="alert">This account was deleted. Its profile is closed; cleanup remains pending until the desktop finishes shutting down.</p> : null}
+    {state?.removal_pending ? <p role="alert">{copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")}</p> : null}
     <form onSubmit={(event) => { event.preventDefault(); void control(BrowserAction.Navigate); }} className="browser-address">
-      <label>Address<input ref={addressInput} value={address} maxLength={8192} onChange={(event) => setAddress(event.target.value)} placeholder="https://example.com/" /></label><button disabled={!profileId || blocked}>Go</button>
+      <label>{copy("session-browser.address_56ef8f")}<input ref={addressInput} value={address} maxLength={8192} onChange={(event) => setAddress(event.target.value)} placeholder="https://example.com/" /></label><button disabled={!profileId || blocked}>{copy("session-browser.go_6cc851")}</button>
     </form>
-    {profileId ? <><div className="actions"><button disabled={blocked} onClick={() => void control(BrowserAction.Back)}>Back</button><button disabled={blocked} onClick={() => void control(BrowserAction.Forward)}>Forward</button><button disabled={blocked} onClick={() => void control(BrowserAction.Reload)}>Reload</button><button disabled={blocked || (state?.tabs.tabs.length ?? 0) >= 16} onClick={() => void control(BrowserAction.NewTab)}>New tab</button><button disabled={blocked} onClick={() => { setFailure(undefined); setRetry((n) => n + 1); }}>Retry native view</button></div><ul aria-label="Browser tabs" className="browser-tabs">{state?.tabs.tabs.map((tab, index) => <li key={tab.id}><button disabled={blocked} aria-current={state.tabs.selected === tab.id ? "page" : undefined} onClick={() => void control(BrowserAction.SelectTab, tab.id)}>Tab {index + 1} · {tab.url}</button><button disabled={blocked} aria-label={`Close tab ${index + 1}`} onClick={() => void control(BrowserAction.CloseTab, tab.id)}>×</button></li>)}</ul><p className="browser-current-address">{state?.tabs.tabs.find((t) => t.id === state.tabs.selected)?.url}</p></> : null}
-    <div ref={viewport} className="browser-viewport" aria-label="Untrusted browser content" />
+    {profileId ? <><div className="actions"><button disabled={blocked} onClick={() => void control(BrowserAction.Back)}>{copy("session-browser.back_76900f")}</button><button disabled={blocked} onClick={() => void control(BrowserAction.Forward)}>{copy("session-browser.forward_f1c65e")}</button><button disabled={blocked} onClick={() => void control(BrowserAction.Reload)}>{copy("session-browser.reload_bdc090")}</button><button disabled={blocked || (state?.tabs.tabs.length ?? 0) >= 16} onClick={() => void control(BrowserAction.NewTab)}>{copy("session-browser.newTab_1e08fd")}</button><button disabled={blocked} onClick={() => { setFailure(undefined); setRetry((n) => n + 1); }}>{copy("session-browser.retryNativeView_0d84d0")}</button></div><ul aria-label={copy("session-browser.browserTabs_3e94f1")} className="browser-tabs">{state?.tabs.tabs.map((tab, index) => <li key={tab.id}><button disabled={blocked} aria-current={state.tabs.selected === tab.id ? "page" : undefined} onClick={() => void control(BrowserAction.SelectTab, tab.id)}><LocalizedText id="session-browser.tab_eb3a73" components={{ s0: <>{index + 1}</>, s1: <>{tab.url}</> }} /></button><button disabled={blocked} aria-label={copy("session-browser.closeTab_bc9560", { v0: index + 1 })} onClick={() => void control(BrowserAction.CloseTab, tab.id)}>×</button></li>)}</ul><p className="browser-current-address">{state?.tabs.tabs.find((t) => t.id === state.tabs.selected)?.url}</p></> : null}
+    <div ref={viewport} className="browser-viewport" aria-label={copy("session-browser.untrustedBrowserContent_9c54bc")} />
   </section>;
 }
 // Keep DOM access distinct from the versioned resource-document decoder.

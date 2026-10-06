@@ -1,0 +1,21 @@
+{
+  "github-feedback.publishedPrFeedback_ae2ab7": "Published PR feedback",
+  "github-feedback.unsubmittedDraftsExcluded_cfcf2f": " · {{v0}} unsubmitted drafts excluded",
+  "github-feedback.publishedFeedbackEntriesReviewThreads_08c0b6": "<s0/> published feedback entries · <s1/> review threads<s2/>",
+  "github-feedback.approvedAndDismissedReviewsRemainVisible_18cf11": "Approved and dismissed reviews remain visible. GitHub review dismissal is separate from handling feedback in DeliDev. Author identity alone does not verify a GitHub App or current repository permission.",
+  "github-feedback.noPublishedFeedbackWasReturned_d30a4a": "No published feedback was returned.",
+  "github-feedback.edited_01b606": " · 편집됨 {{v0}}",
+  "github-feedback.message_2fa20b": " · {{v0}}",
+  "github-feedback.review_741980": " · 검토 {{v0}}",
+  "github-feedback.published_3e1d2d": "Published <s0/><s1/><s2/><s3/>",
+  "github-feedback.threadResolvedOnGithub_0cf45e": "Thread resolved on GitHub",
+  "github-feedback.threadUnresolvedOnGithub_2d3df9": "Thread unresolved on GitHub",
+  "github-feedback.outdatedCodePosition_881964": " · Outdated code position",
+  "github-feedback.codeContext_df3a2f": "Code context · <s0/>",
+  "github-feedback.unavailable_ca1844": "확인할 수 없음",
+  "github-feedback.currentLineOriginalLine_72e6d7": "Current line: <s0/> · Original line: <s1/>",
+  "github-feedback.feedbackIdentityAndContentVersion_56157d": "Feedback identity and content version",
+  "github-feedback.githubAddress_e2d25b": "GitHub address: <s0/>",
+  "github-feedback.originalId_b7f034": "Original ID: <s0/> · <s1/>",
+  "github-feedback.contentVersion_0bc2d3": "Content version: <s0/>"
+}

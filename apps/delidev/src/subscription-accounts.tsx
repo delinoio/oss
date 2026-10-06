@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -18,6 +18,7 @@ import { QuotaObservationState, SubscriptionOperationState, SubscriptionConnecti
 export { serviceAccount } from "./subscription-resource";
 
 export function ManagedSubscriptionAccount({ initial, active, close }: { initial: Resource; active: boolean; close: () => void }) {
+  useLocale();
   const service = subscriptionService(document(initial).subscription_service)!;
   const [quotaBusy, setQuotaBusy] = useState(false);
   const [logoutConfirmation, setLogoutConfirmation] = useState<Resource>();
@@ -43,22 +44,23 @@ export function ManagedSubscriptionAccount({ initial, active, close }: { initial
     void operation.send({ mutation: { id: current.id, expectedRevision: current.revision, requestId: newRequestId() }, action });
   };
   if (flow.body) return flow.body;
-  return <section className="subscription-account-create" aria-label={`Manage subscription ${resourceName(current)}`}>
-    <h2>{resourceName(current)}</h2><p>{subscriptionServiceNames[service]} · {connected ? "Connected" : "Disconnected"}</p>
-    {!supported ? <p role="status">Native login for this service is unavailable in this server profile.</p> : null}
-    {state.recovery_required === true ? <p role="alert">The original credential owner requires recovery. Inspect Connection & diagnostics before starting another operation.</p> : null}
-    <div className="actions">{!connected ? <button type="button" disabled={!ready || !flow.available} onClick={() => flow.begin(service, current)}>Sign in to {subscriptionServiceNames[service]}</button> : <><button type="button" disabled={!ready} onClick={() => request(SubscriptionAction.REFRESH)}>Refresh login</button><button type="button" disabled={!logoutReady} onClick={() => setLogoutConfirmation(current)}>Log out</button></>}</div>
-    {logoutConfirmation ? <section aria-label="Confirm subscription logout"><p>Log out {resourceName(logoutConfirmation)}? Active executions are canceled and credentials are removed after original native cleanup. Preferences and history remain.</p>{current.revision !== logoutConfirmation.revision ? <p role="alert">The account changed. Inspect it and confirm the current account again.</p> : null}<div className="actions"><button type="button" disabled={!logoutReady || current.revision !== logoutConfirmation.revision} onClick={() => { request(SubscriptionAction.LOGOUT); setLogoutConfirmation(undefined); }}>Confirm logout</button><button type="button" disabled={blocked} onClick={() => setLogoutConfirmation(undefined)}>Keep account connected</button></div></section> : null}
-    {pendingID ? <p role="status">{text(pending.action)} · {pending.canceled === true ? "Cancellation requested; waiting for original cleanup" : text(pending.phase)}</p> : null}
-    {!validRead ? <p role="alert">The current account could not be verified. Refresh it before another operation.</p> : null}
+  return <section className="subscription-account-create" aria-label={copy("subscription-accounts.manageSubscription_5ac1d0", { v0: resourceName(current) })}>
+    <h2>{resourceName(current)}</h2><p>{subscriptionServiceNames[service]} · {connected ? copy("subscription-accounts.connected_229655") : copy("subscription-accounts.disconnected_04dfac")}</p>
+    {!supported ? <p role="status">{copy("subscription-accounts.nativeLoginForThisServiceIs_09b215")}</p> : null}
+    {state.recovery_required === true ? <p role="alert">{copy("subscription-accounts.theOriginalCredentialOwnerRequiresRecovery_4da135")}</p> : null}
+    <div className="actions">{!connected ? <button type="button" disabled={!ready || !flow.available} onClick={() => flow.begin(service, current)}><LocalizedText id="subscription-accounts.signInTo_fa4edf" components={{ s0: <>{subscriptionServiceNames[service]}</> }} /></button> : <><button type="button" disabled={!ready} onClick={() => request(SubscriptionAction.REFRESH)}>{copy("subscription-accounts.refreshLogin_85188a")}</button><button type="button" disabled={!logoutReady} onClick={() => setLogoutConfirmation(current)}>{copy("subscription-accounts.logOut_496161")}</button></>}</div>
+    {logoutConfirmation ? <section aria-label={copy("subscription-accounts.confirmSubscriptionLogout_1d058a")}><p><LocalizedText id="subscription-accounts.logOutActiveExecutionsAreCanceled_dc5bf0" components={{ s0: <>{resourceName(logoutConfirmation)}</> }} /></p>{current.revision !== logoutConfirmation.revision ? <p role="alert">{copy("subscription-accounts.theAccountChangedInspectItAnd_316118")}</p> : null}<div className="actions"><button type="button" disabled={!logoutReady || current.revision !== logoutConfirmation.revision} onClick={() => { request(SubscriptionAction.LOGOUT); setLogoutConfirmation(undefined); }}>{copy("subscription-accounts.confirmLogout_2e9d08")}</button><button type="button" disabled={blocked} onClick={() => setLogoutConfirmation(undefined)}>{copy("subscription-accounts.keepAccountConnected_00ae06")}</button></div></section> : null}
+    {pendingID ? <p role="status">{text(pending.action)} · {pending.canceled === true ? copy("subscription-accounts.cancellationRequestedWaitingForOriginalCleanup_4f54b9") : text(pending.phase)}</p> : null}
+    {!validRead ? <p role="alert">{copy("subscription-accounts.theCurrentAccountCouldNotBe_9c686a")}</p> : null}
     <Problem error={read.error || operation.error || status.error} />
-    {operation.uncertain ? <button type="button" disabled={operation.busy} onClick={operation.retry}>Retry original subscription operation</button> : null}
+    {operation.uncertain ? <button type="button" disabled={operation.busy} onClick={operation.retry}>{copy("subscription-accounts.retryOriginalSubscriptionOperation_691fa2")}</button> : null}
     {serviceSupported && connected ? <SubscriptionQuotaControls current={current} machine={quotaObservationMachine(state)} active={active && validRead} accepted={setAccepted} busyChanged={setQuotaBusy} /> : null}
-    <div className="actions"><button type="button" disabled={blocked} onClick={() => void read.refetch()}>Refresh account status</button><button type="button" disabled={blocked} onClick={close}>Back to subscriptions</button></div>
+    <div className="actions"><button type="button" disabled={blocked} onClick={() => void read.refetch()}>{copy("subscription-accounts.refreshAccountStatus_fa2870")}</button><button type="button" disabled={blocked} onClick={close}>{copy("subscription-accounts.backToSubscriptions_257d53")}</button></div>
   </section>;
 }
 
 export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWorkflowReadyChange }: { active: boolean; editAccount: (resource: Resource) => void; deleteAccount: (resource: Resource) => void; onWorkflowReadyChange?: (active: boolean) => void }) {
+  useLocale();
   const [page, setPage] = useState("");
   const [selected, setSelected] = useState<Resource>();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
@@ -91,12 +93,12 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
   if (flow.body) return flow.body;
   if (selected) return <ManagedSubscriptionAccount key={selected.id} initial={selected} active={active} close={() => { setSelected(undefined); void rows.refetch(); }} />;
   return <>
-    <SubscriptionSettingsView refreshAll={quotaSupported && !blocked ? ()=>void refreshAll.send({requestId:newRequestId()}) : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} />{!validPage ? <p role="alert">The server returned an unsupported subscription account page.</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
+    <SubscriptionSettingsView refreshAll={quotaSupported && !blocked ? ()=>void refreshAll.send({requestId:newRequestId()}) : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} />{!validPage ? <p role="alert">{copy("subscription-accounts.theServerReturnedAnUnsupportedSubscription_ac7e8b")}</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
       lifecycleUnavailable="ChatGPT sign-in opens your browser and is independent of Runner Devices. Claude Code and Grok sign-in are not supported yet. Quota refresh requires an existing native observation owner."
       selectService={capable && loginCapable && flow.available && !blocked ? (brand) => { const service = subscriptionService(brand); if (service) flow.begin(service); } : undefined}
       serviceLoginAvailable={(brand) => brand === SubscriptionBrand.ChatGPT}
-      pagination={page || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label="Subscription account pages"><button type="button" disabled={!page || rows.isFetching || workflow} onClick={() => setPage("")}>First page</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching || workflow} onClick={() => setPage(rows.data!.nextPageToken)}>Next page</button></nav> : null}
-      advanced={<p>Service identity is independent of API providers. Edit preferences from the account menu. Recovery notifications start disabled. Retired legacy configurations retain historical attribution and require explicit Agent Worker and schedule reconfiguration.</p>} />
-    <Problem error={quota.error || refreshAll.error} />{quota.uncertain ? <button type="button" disabled={quota.busy} onClick={quota.retry}>Retry original quota refresh</button> : null}
+      pagination={page || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label={copy("subscription-accounts.subscriptionAccountPages_6c8f61")}><button type="button" disabled={!page || rows.isFetching || workflow} onClick={() => setPage("")}>{copy("subscription-accounts.firstPage_0bdbb7")}</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching || workflow} onClick={() => setPage(rows.data!.nextPageToken)}>{copy("subscription-accounts.nextPage_c08ac7")}</button></nav> : null}
+      advanced={<p>{copy("subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6")}</p>} />
+    <Problem error={quota.error || refreshAll.error} />{quota.uncertain ? <button type="button" disabled={quota.busy} onClick={quota.retry}>{copy("subscription-accounts.retryOriginalQuotaRefresh_8a9eca")}</button> : null}
   </>;
 }

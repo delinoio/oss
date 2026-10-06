@@ -9,6 +9,7 @@
     "core:event:allow-unlisten",
     "github-presentation",
     "device-appearance",
+    "device-language",
     "browser-presentation",
     "repository-folder",
     "worker-network"

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { copy, useLocale } from "./localization";
 import { createContext, useCallback, useId, useState, type ReactNode, type SyntheticEvent } from "react";
 import { items, object, type Document } from "./documents";
 import "./agent-configuration.css";
@@ -23,6 +23,7 @@ function retainedSummary(value: unknown, inherited: string) {
 }
 
 function SectionIcon({ section }: { section: AgentSection }) {
+  useLocale();
   const paths: Record<AgentSection, string> = {
     [AgentSection.Reasoning]: "M9 18h6M10 21h4M8 14a6 6 0 1 1 8 0l-1 2H9l-1-2Z",
     [AgentSection.Accounts]: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-4",
@@ -33,13 +34,14 @@ function SectionIcon({ section }: { section: AgentSection }) {
 }
 
 function Disclosure({ section, summary, children, invalidValue = false, note }: { section: AgentSection; summary: string; children: ReactNode; invalidValue?: boolean; note?: string }) {
+  useLocale();
   const [reads, setReads] = useState<Record<string, boolean>>({});
   const [invalid, setInvalid] = useState(false);
   const reportRead = useCallback((label: string, problem: boolean) => setReads(current => current[label] === problem ? current : { ...current, [label]: problem }), []);
   const problem = invalid || invalidValue || Object.values(reads).some(Boolean);
   return <div className="agent-optional-section">
     <details className="agent-disclosure" onInvalidCapture={event => { event.currentTarget.open = true; setInvalid(true); }} onChangeCapture={event => setInvalid(Boolean(firstInvalidControl(event.currentTarget)))}>
-      <summary><SectionIcon section={section} /><span className="agent-section-copy"><span className="agent-section-title">{section}{problem ? <span className="agent-section-problem" role="status">Needs attention</span> : null}</span><span className="agent-section-summary">{summary}</span></span><svg className="agent-chevron" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m9 5 7 7-7 7" /></svg></summary>
+      <summary><SectionIcon section={section} /><span className="agent-section-copy"><span className="agent-section-title">{section}{problem ? <span className="agent-section-problem" role="status">{copy("agent-configuration.needsAttention_c1ebc7")}</span> : null}</span><span className="agent-section-summary">{summary}</span></span><svg className="agent-chevron" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m9 5 7 7-7 7" /></svg></summary>
       <div className="agent-section-fields"><AgentReadProblem.Provider value={reportRead}>{children}</AgentReadProblem.Provider></div>
     </details>
     {note ? <p className="agent-section-note">{note}</p> : null}
@@ -47,6 +49,7 @@ function Disclosure({ section, summary, children, invalidValue = false, note }: 
 }
 
 export function AgentConfiguration({ data, core, permissions, reasoning, accounts, instructions, native, routingProblem }: { data: Document; core: ReactNode; permissions: ReactNode; reasoning: ReactNode; accounts: ReactNode; instructions: ReactNode; native: ReactNode; routingProblem: boolean }) {
+  useLocale();
   const coreId = useId();
   const optionalId = useId();
   const links = items(data.accounts);
@@ -55,8 +58,8 @@ export function AgentConfiguration({ data, core, permissions, reasoning, account
   const invalidConcurrency = concurrency !== undefined && (typeof concurrency !== "number" || !Number.isInteger(concurrency) || concurrency < 0 || concurrency > 64);
   const invalidWeight = links.some(link => { const weight = object(link).weight; return typeof weight !== "number" || !Number.isInteger(weight) || weight < 1 || weight > 1000; });
   return <>
-    <section className="agent-core" aria-labelledby={coreId}><header><h4 id={coreId}>Core settings</h4><p>Required fields are marked *</p></header>{core}<div className="agent-permissions">{permissions}</div></section>
-    <section className="agent-optional" aria-labelledby={optionalId}><header><h4 id={optionalId}>Optional settings</h4><p>Leave these unchanged to keep the current defaults.</p></header>
+    <section className="agent-core" aria-labelledby={coreId}><header><h4 id={coreId}>{copy("agent-configuration.coreSettings_3f8268")}</h4><p>{copy("agent-configuration.requiredFieldsAreMarked_a99eff")}</p></header>{core}<div className="agent-permissions">{permissions}</div></section>
+    <section className="agent-optional" aria-labelledby={optionalId}><header><h4 id={optionalId}>{copy("agent-configuration.optionalSettings_e88b5c")}</h4><p>{copy("agent-configuration.leaveTheseUnchangedToKeepThe_73a428")}</p></header>
       <Disclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, "Native default")} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</Disclosure>
       <Disclosure section={AgentSection.Accounts} summary={`${links.length} accounts · ${retainedSummary(data.routing, "Server default")}`} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? "Can be saved without accounts; execution requires an eligible account." : undefined}>{accounts}</Disclosure>
       <Disclosure section={AgentSection.Instructions} summary={`${items(data.templates).length} templates`}>{instructions}</Disclosure>

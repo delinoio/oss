@@ -1,0 +1,21 @@
+{
+  "machine-settings.backToRunnerDevices_3af74a": "Back to Runner Devices",
+  "machine-settings.worker_5b4b08": "<s0/> · <s1/> · Worker <s2/>",
+  "machine-settings.disabled_3c6ef5": " · 비활성화됨",
+  "machine-settings.lastObserved_f1bd8c": "Last observed: <s0/><s1/>",
+  "machine-settings.checksRunOnThisWorkerDelidev_36310f": "Checks run on this Worker. DeliDev does not install harnesses. Version detection, native protocol verification and account execution readiness are separate.",
+  "machine-settings.version_2da6f2": "<s0/> · Version: <s1/>",
+  "machine-settings.selectedPath_bb3534": "Selected path: <s0/>",
+  "machine-settings.resolvedPath_5d2ab1": "Resolved path: <s0/>",
+  "machine-settings.nativeProtocol_4de6c7": "Native protocol: <s0/>",
+  "machine-settings.discoveryWasAcknowledgedWithoutAReadable_b1200f": "Discovery was acknowledged without a readable job. Inspect the original request before starting another check.",
+  "machine-settings.finishInspection_c3611c": "확인 완료",
+  "machine-settings.theseSelectionsReplaceAllFourHarness_a99040": "These selections replace all four harness paths. Empty paths explicitly use this Worker's PATH.",
+  "machine-settings.executablePath_327ca6": "{{v0}} executable path",
+  "machine-settings.discardPathEdits_906d0c": "경로 편집 버리기",
+  "machine-settings.editExecutablePaths_5868fb": "Edit executable paths",
+  "machine-settings.verifyTheInstalledNativeProtocolWithout_0ea550": "Verify the installed native protocol without login or inference",
+  "machine-settings.checkInstalledHarnesses_c38636": "Check installed harnesses",
+  "machine-settings.workerConfigurationChangedElsewhereYourPath_34c382": "Worker configuration changed elsewhere. Your path draft is retained; discard it and reopen the latest paths before saving.",
+  "machine-settings.retryTheSameHarnessCheck_7aa9ae": "Retry the same harness check"
+}

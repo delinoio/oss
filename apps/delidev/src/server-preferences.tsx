@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { copy, useLocale } from "./localization";
 import { type SyntheticEvent } from "react";
 import { type Resource } from "@delinoio/delidev-api-client";
 import { Routing } from "./configuration-fields";
@@ -19,28 +19,30 @@ export function readableServerPreferences(row: Resource): boolean {
 }
 
 export function ServerPreferencesEmpty() {
-  return <section className="server-preferences-panel" aria-label="No saved server preferences">
-    <h2>No saved server preferences</h2>
-    <p>Review the defaults, then save one preference set for this server.</p>
-    <section className="server-preference-section"><h3>Account routing</h3><p>Choose the default policy for Agent Workers that inherit server routing.</p></section>
-    <section className="server-preference-section"><h3>Worktree fetch</h3><p>Allow fetching before Worktree preparation. Repository preferences also apply.</p></section>
-    <section className="server-preference-section"><h3>Pull request remediation</h3><p>Configure bounded automatic fixes for linked pull requests. All automatic policies default off.</p></section>
-    <p className="server-preferences-footnote">Choose New Server preferences to review and save.</p>
+  useLocale();
+  return <section className="server-preferences-panel" aria-label={copy("server-preferences.noSavedServerPreferences_6b56a2")}>
+    <h2>{copy("server-preferences.noSavedServerPreferences_6b56a2")}</h2>
+    <p>{copy("server-preferences.reviewTheDefaultsThenSaveOne_2fb225")}</p>
+    <section className="server-preference-section"><h3>{copy("server-preferences.accountRouting_0c3707")}</h3><p>{copy("server-preferences.chooseTheDefaultPolicyForAgent_fbb9a2")}</p></section>
+    <section className="server-preference-section"><h3>{copy("server-preferences.worktreeFetch_0d4c18")}</h3><p>{copy("server-preferences.allowFetchingBeforeWorktreePreparationRepository_e71fc1")}</p></section>
+    <section className="server-preference-section"><h3>{copy("server-preferences.pullRequestRemediation_4cded4")}</h3><p>{copy("server-preferences.configureBoundedAutomaticFixesForLinked_c08378")}</p></section>
+    <p className="server-preferences-footnote">{copy("server-preferences.chooseNewServerPreferencesToReview_3a11af")}</p>
   </section>;
 }
 
 export function ServerPreferencesSummary({ row }: { row: Resource }) {
+  useLocale();
   const data = document(row), policy = object(data.remediation);
-  return <article className="server-preferences-panel" aria-label="Saved server preferences">
-    <h2>Saved server preferences</h2><small className="server-preferences-id">{row.id}</small>
+  return <article className="server-preferences-panel" aria-label={copy("server-preferences.savedServerPreferences_8341c8")}>
+    <h2>{copy("server-preferences.savedServerPreferences_8341c8")}</h2><small className="server-preferences-id">{row.id}</small>
     {readableServerPreferences(row) ? <>
-      <section className="server-preference-section"><h3>Account routing</h3><dl><dt>Default account routing</dt><dd>{text(data.default_routing)}</dd></dl></section>
-      <section className="server-preference-section"><h3>Worktree fetch</h3><dl><dt>Automatic fetch before Worktree preparation</dt><dd>{data.automatic_fetch ? "Allowed" : "Disabled"}</dd></dl></section>
-      <section className="server-preference-section"><h3>Pull request remediation</h3>
-        <p>Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.</p>
-        <dl>{[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{policy[key] ? "On" : "Off"}</dd></div>)}</dl>
+      <section className="server-preference-section"><h3>{copy("server-preferences.accountRouting_0c3707")}</h3><dl><dt>{copy("server-preferences.defaultAccountRouting_bb44ea")}</dt><dd>{text(data.default_routing)}</dd></dl></section>
+      <section className="server-preference-section"><h3>{copy("server-preferences.worktreeFetch_0d4c18")}</h3><dl><dt>{copy("server-preferences.automaticFetchBeforeWorktreePreparation_510043")}</dt><dd>{data.automatic_fetch ? copy("server-preferences.allowed_1bb201") : copy("server-preferences.disabled_75081b")}</dd></dl></section>
+      <section className="server-preference-section"><h3>{copy("server-preferences.pullRequestRemediation_4cded4")}</h3>
+        <p>{copy("server-preferences.enabledPoliciesRunBoundedFixesFor_2758c5")}</p>
+        <dl>{[["ci_failure", "Automatically fix required CI failures"], ["review_feedback", "Automatically handle matching published feedback"], ["merge_conflict", "Automatically resolve verified merge conflicts"]].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{policy[key] ? copy("server-preferences.on_130011") : copy("server-preferences.off_ca7981")}</dd></div>)}</dl>
       </section>
-    </> : <p role="status">{row.schemaVersion !== 1 ? "Unsupported server preferences schema. Policy values are unavailable." : "Server preferences are unreadable or contain unsupported policy values. Policy values are unavailable."}</p>}
+    </> : <p role="status">{row.schemaVersion !== 1 ? copy("server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f") : copy("server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc")}</p>}
   </article>;
 }
 

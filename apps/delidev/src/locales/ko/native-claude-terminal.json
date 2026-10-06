@@ -1,0 +1,19 @@
+{
+  "native-claude-terminal.theRetainedClaudeTerminalEvidenceIs_351997": "The retained Claude terminal evidence is unavailable or inconsistent.",
+  "native-claude-terminal.claudeOriginalInputOutcome_d261e9": "Claude original input outcome",
+  "native-claude-terminal.originalClaudeInputResult_4d612d": "Original Claude input result",
+  "native-claude-terminal.nativeInputOutcome_15e4d4": "Native input outcome",
+  "native-claude-terminal.succeeded_6d9a6f": "성공",
+  "native-claude-terminal.stopped_1a4f63": "중지됨",
+  "native-claude-terminal.failed_031a8f": "실패",
+  "native-claude-terminal.nativeResultReason_8974b9": "Native result reason",
+  "native-claude-terminal.nativeCommand_29f746": "네이티브 명령",
+  "native-claude-terminal.completed_22a970": "완료됨",
+  "native-claude-terminal.cancelled_d353a9": "취소됨",
+  "native-claude-terminal.nativeLoop_fec242": "네이티브 루프",
+  "native-claude-terminal.idleObserved_34b00d": "유휴 상태 관측됨",
+  "native-claude-terminal.ownedProcessAndWorkspaceCleanup_7844eb": "Owned process and workspace cleanup",
+  "native-claude-terminal.confirmed_fe00b6": "확정됨",
+  "native-claude-terminal.notConfirmed_bc1c29": "확정되지 않음",
+  "native-claude-terminal.thisRecordsTheOriginalInputOutcome_3a83a3": "This records the original input outcome. Session Stop or recovery remains separate. Completion does not authorize another input."
+}

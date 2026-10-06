@@ -1,0 +1,23 @@
+{
+  "native-read.pending_331551": "대기 중",
+  "native-read.running_f4ccae": "실행 중",
+  "native-read.completed_22a970": "완료됨",
+  "native-read.failed_031a8f": "실패",
+  "native-read.requestedPath_a7d291": "요청한 경로",
+  "native-read.requestedOffset_262ecb": "요청한 오프셋",
+  "native-read.requestedLimit_ee2a77": "요청한 한도",
+  "native-read.readUnavailable_c88714": "Read · Unavailable",
+  "native-read.theRetainedReadOperationIsUnavailable_1b346a": "The retained Read operation is unavailable or inconsistent.",
+  "native-read.read_b6b49e": "읽기 · <s0/>",
+  "native-read.readResult_7000d0": "읽기 결과",
+  "native-read.readError_dbb719": "읽기 오류",
+  "native-read.theNativeReadResultIsTruncated_827385": "The native Read result is truncated.",
+  "native-read.theNativeReadResultIsNot_846aa5": "The native Read result is not truncated.",
+  "native-read.observed_64fa8a": "관측됨",
+  "native-read.notObserved_1d3efc": "관측되지 않음",
+  "native-read.nativeInterruption_edde92": "Native interruption: <s0/>",
+  "native-read.originalProposalAndObservations_8d63b6": "Original proposal and observations",
+  "native-read.message_2fa20b": " · {{v0}}",
+  "native-read.nativePreview_31ab5c": "네이티브 미리보기",
+  "native-read.loadedInstructionFiles_2266b4": "Loaded instruction files: <s0/>"
+}

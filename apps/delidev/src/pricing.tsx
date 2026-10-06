@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { subscriptionServiceLabel, InputPricingMode, UsageQuery, newRequestId, type PricingVersion, type Resource, type TokenPricing } from "@delinoio/delidev-api-client";
@@ -6,12 +7,13 @@ import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 
 export function PricingBasis({ value }: { value: PricingVersion }) {
+  useLocale();
   const p = value.basis;
-  if (!p) return <p>Pricing basis unavailable.</p>;
-  return <div className="pricing-basis"><dl><dt>Source</dt><dd>{p.source}</dd><dt>As of</dt><dd>{p.asOf}</dd><dt>Currency</dt><dd>{p.currency}</dd><dt>Input pricing</dt><dd>{p.inputMode === InputPricingMode.UNIFORM ? "Uniform input (cache included)" : p.inputMode === InputPricingMode.CACHED_DISCOUNT ? "Separate uncached input and cached reads" : "Unknown mode"}</dd><dt>Input / million</dt><dd>{p.inputPerMillion ?? "Unavailable"}</dd>{p.inputMode === InputPricingMode.CACHED_DISCOUNT ? <><dt>Cached input / million</dt><dd>{p.cachedInputPerMillion ?? "Unavailable"}</dd></> : null}<dt>Output / million</dt><dd>{p.outputPerMillion ?? "Unavailable"}</dd></dl>
-    {p.exclusions.length ? <><h4>Declared exclusions</h4><ul>{p.exclusions.map((value, index) => <li key={index}>{value}</li>)}</ul></> : null}
-    <p>Only observed token categories are covered. Provider fees, taxes, currency conversion and unobserved usage are excluded. This is not actual spend or a billing ceiling.</p>
-    <small>Version {value.revision.toString()} · {value.id}</small><small>Original model {value.modelId} · {value.subscriptionService ? `subscription service ${subscriptionServiceLabel(value.subscriptionService)}` : `provider ${value.providerId}`}</small>
+  if (!p) return <p>{copy("pricing.pricingBasisUnavailable_1b8fe3")}</p>;
+  return <div className="pricing-basis"><dl><dt>{copy("pricing.source_0e570c")}</dt><dd>{p.source}</dd><dt>{copy("pricing.asOf_431575")}</dt><dd>{p.asOf}</dd><dt>{copy("pricing.currency_3ac1a9")}</dt><dd>{p.currency}</dd><dt>{copy("pricing.inputPricing_a2d912")}</dt><dd>{p.inputMode === InputPricingMode.UNIFORM ? copy("pricing.uniformInputCacheIncluded_420f49") : p.inputMode === InputPricingMode.CACHED_DISCOUNT ? copy("pricing.separateUncachedInputAndCachedReads_c91ad9") : copy("pricing.unknownMode_892fdb")}</dd><dt>{copy("pricing.inputMillion_fb54c1")}</dt><dd>{p.inputPerMillion ?? copy("pricing.unavailable_ca1844")}</dd>{p.inputMode === InputPricingMode.CACHED_DISCOUNT ? <><dt>{copy("pricing.cachedInputMillion_187c72")}</dt><dd>{p.cachedInputPerMillion ?? copy("pricing.unavailable_ca1844")}</dd></> : null}<dt>{copy("pricing.outputMillion_bd8cb4")}</dt><dd>{p.outputPerMillion ?? copy("pricing.unavailable_ca1844")}</dd></dl>
+    {p.exclusions.length ? <><h4>{copy("pricing.declaredExclusions_dc075b")}</h4><ul>{p.exclusions.map((value, index) => <li key={index}>{value}</li>)}</ul></> : null}
+    <p>{copy("pricing.onlyObservedTokenCategoriesAreCovered_783253")}</p>
+    <small><LocalizedText id="pricing.version_4fda4a" components={{ s0: <>{value.revision.toString()}</>, s1: <>{value.id}</> }} /></small><small><LocalizedText id="pricing.originalModel_62c471" components={{ s0: <>{value.modelId}</>, s1: <>{value.subscriptionService ? copy("pricing.subscriptionService_596422", { v0: subscriptionServiceLabel(value.subscriptionService) }) : copy("pricing.provider_28af03", { v0: value.providerId })}</> }} /></small>
   </div>;
 }
 interface Draft { currency: string; source: string; asOf: string; inputMode: InputPricingMode; input: string; cached: string; output: string; exclusions: string }
@@ -33,6 +35,7 @@ function priceInput(draft: Draft) {
   return basis;
 }
 function PricingEditor({ model, initial, modelRevision, current, readError, saved, cancel }: { model: Resource; initial?: PricingVersion; modelRevision: bigint; current?: { pricing?: PricingVersion; modelRevision: bigint }; readError?: unknown; saved: (value?: PricingVersion) => void; cancel: () => void }) {
+  useLocale();
   const [draft, setDraft] = useState(() => draftPrice(initial?.basis));
   const [problem, setProblem] = useState("");
   const mutation = useRetainedMutation(`pricing:${model.id}`, UsageQuery.setModelPricing, (value) => saved(value.pricing));
@@ -43,34 +46,35 @@ function PricingEditor({ model, initial, modelRevision, current, readError, save
     event.preventDefault(); if (blocked || stale || readError || !current) return;
     try { const basis = priceInput(draft); setProblem(""); void mutation.send({ mutation: { id: model.id, expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, expectedModelRevision: modelRevision, basis }); }
     catch (error) { setProblem(error instanceof Error ? error.message : "Review the pricing fields."); }
-  }}><h4>New pricing version</h4><fieldset disabled={blocked}>
-    <label>Currency<input value={draft.currency} maxLength={3} placeholder="USD" onChange={(event) => change("currency", event.target.value)} /></label>
-    <label>Pricing source<textarea value={draft.source} maxLength={2048} onChange={(event) => change("source", event.target.value)} /></label>
-    <label>As-of date<input type="date" value={draft.asOf} onChange={(event) => change("asOf", event.target.value)} /></label>
-    <label>Input pricing mode<select value={draft.inputMode} onChange={(event) => change("inputMode", Number(event.target.value) as InputPricingMode)}><option value={InputPricingMode.UNIFORM}>Uniform input (cache included)</option><option value={InputPricingMode.CACHED_DISCOUNT}>Separate cached-read rate</option></select></label>
-    <label>Input rate per million<input inputMode="decimal" value={draft.input} onChange={(event) => change("input", event.target.value)} /></label>
-    {draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? <label>Cached-input rate per million<input inputMode="decimal" value={draft.cached} onChange={(event) => change("cached", event.target.value)} /></label> : null}
-    <label>Output rate per million<input inputMode="decimal" value={draft.output} onChange={(event) => change("output", event.target.value)} /></label>
-    <label>Exclusions (one per line)<textarea value={draft.exclusions} onChange={(event) => change("exclusions", event.target.value)} /></label>
-  </fieldset><p>Leave unavailable rates blank. Enter 0 only for an explicitly zero rate. New prices apply to future recorded responses; previous estimates keep their original basis.</p>
-    {draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? <p>Input/cache estimates require consistent native cache-read counts and explicitly zero cache writes. Missing or unsupported breakdowns remain unavailable.</p> : null}
-    {stale ? <p role="alert">The model or price changed elsewhere. Your draft is retained. Cancel this edit and reopen current pricing before saving.</p> : null}
+  }}><h4>{copy("pricing.newPricingVersion_cd6ddf")}</h4><fieldset disabled={blocked}>
+    <label>{copy("pricing.currency_3ac1a9")}<input value={draft.currency} maxLength={3} placeholder={copy("pricing.usd_a26cdf")} onChange={(event) => change("currency", event.target.value)} /></label>
+    <label>{copy("pricing.pricingSource_c4d80f")}<textarea value={draft.source} maxLength={2048} onChange={(event) => change("source", event.target.value)} /></label>
+    <label>{copy("pricing.asOfDate_6983bc")}<input type="date" value={draft.asOf} onChange={(event) => change("asOf", event.target.value)} /></label>
+    <label>{copy("pricing.inputPricingMode_d6c996")}<select value={draft.inputMode} onChange={(event) => change("inputMode", Number(event.target.value) as InputPricingMode)}><option value={InputPricingMode.UNIFORM}>{copy("pricing.uniformInputCacheIncluded_420f49")}</option><option value={InputPricingMode.CACHED_DISCOUNT}>{copy("pricing.separateCachedReadRate_75f7c6")}</option></select></label>
+    <label>{copy("pricing.inputRatePerMillion_5e6658")}<input inputMode="decimal" value={draft.input} onChange={(event) => change("input", event.target.value)} /></label>
+    {draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? <label>{copy("pricing.cachedInputRatePerMillion_2be047")}<input inputMode="decimal" value={draft.cached} onChange={(event) => change("cached", event.target.value)} /></label> : null}
+    <label>{copy("pricing.outputRatePerMillion_d1dea9")}<input inputMode="decimal" value={draft.output} onChange={(event) => change("output", event.target.value)} /></label>
+    <label>{copy("pricing.exclusionsOnePerLine_7cdb99")}<textarea value={draft.exclusions} onChange={(event) => change("exclusions", event.target.value)} /></label>
+  </fieldset><p>{copy("pricing.leaveUnavailableRatesBlankEnter0_1a6a0a")}</p>
+    {draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? <p>{copy("pricing.inputCacheEstimatesRequireConsistentNative_33a2eb")}</p> : null}
+    {stale ? <p role="alert">{copy("pricing.theModelOrPriceChangedElsewhere_c5c5d8")}</p> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={readError || mutation.error} />
-    <div className="actions"><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>Save pricing version</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same price</button> : null}<button type="button" disabled={blocked} onClick={cancel}>Cancel pricing edit</button></div>
+    <div className="actions"><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>{copy("pricing.savePricingVersion_5baab6")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("pricing.retryTheSamePrice_de1e7a")}</button> : null}<button type="button" disabled={blocked} onClick={cancel}>{copy("pricing.cancelPricingEdit_dc5004")}</button></div>
   </form>;
 }
 export function ModelPricing({ model, active, close }: { model: Resource; active: boolean; close: () => void }) {
+  useLocale();
   const current = useQuery(UsageQuery.getModelPricing, { modelId: model.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [editing, setEditing] = useState<{ initial?: PricingVersion; modelRevision: bigint }>();
   const [accepted, setAccepted] = useState<PricingVersion>();
   const [missingResult, setMissingResult] = useState(false);
   const data = current.data;
-  return <section><header><h3>Token pricing · {resourceName(model)}</h3><button disabled={current.isFetching} onClick={() => void current.refetch()}>Refresh pricing</button></header>
-    <p>Enter a source-backed estimate basis for this model. Rates are not fetched or verified automatically.</p>
-    {accepted ? <p role="status">Accepted pricing version {accepted.revision.toString()}. Current selection is shown after refresh.</p> : null}
-    {missingResult ? <p role="alert">The server acknowledged the price without a readable version. Inspect current pricing before starting another save.</p> : null}
-    {editing ? <PricingEditor model={model} initial={editing.initial} modelRevision={editing.modelRevision} current={data} readError={current.error} saved={(value) => { setEditing(undefined); setAccepted(value); setMissingResult(!value); void current.refetch(); }} cancel={() => setEditing(undefined)} /> : <><Problem error={current.error} />{data && current.error ? <p>The last retrieved pricing may be stale.</p> : null}{data?.pricing ? <PricingBasis value={data.pricing} /> : data ? <p>No pricing basis has been configured. Earlier responses stay unpriced.</p> : <p role="status">Loading pricing…</p>}
-    {data && data.modelRevision !== model.revision ? <p role="alert">The model configuration changed. Return to Models and refresh before editing its pricing.</p> : null}
-    <div className="actions"><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>Edit token pricing</button><button onClick={close}>Back to Models</button></div></>}
+  return <section><header><h3><LocalizedText id="pricing.tokenPricing_537ed0" components={{ s0: <>{resourceName(model)}</> }} /></h3><button disabled={current.isFetching} onClick={() => void current.refetch()}>{copy("pricing.refreshPricing_880e13")}</button></header>
+    <p>{copy("pricing.enterASourceBackedEstimateBasis_fa3472")}</p>
+    {accepted ? <p role="status"><LocalizedText id="pricing.acceptedPricingVersionCurrentSelectionIs_5b49f3" components={{ s0: <>{accepted.revision.toString()}</> }} /></p> : null}
+    {missingResult ? <p role="alert">{copy("pricing.theServerAcknowledgedThePriceWithout_617a41")}</p> : null}
+    {editing ? <PricingEditor model={model} initial={editing.initial} modelRevision={editing.modelRevision} current={data} readError={current.error} saved={(value) => { setEditing(undefined); setAccepted(value); setMissingResult(!value); void current.refetch(); }} cancel={() => setEditing(undefined)} /> : <><Problem error={current.error} />{data && current.error ? <p>{copy("pricing.theLastRetrievedPricingMayBe_b7ff30")}</p> : null}{data?.pricing ? <PricingBasis value={data.pricing} /> : data ? <p>{copy("pricing.noPricingBasisHasBeenConfigured_e602ce")}</p> : <p role="status">{copy("pricing.loadingPricing_856f08")}</p>}
+    {data && data.modelRevision !== model.revision ? <p role="alert">{copy("pricing.theModelConfigurationChangedReturnTo_063c62")}</p> : null}
+    <div className="actions"><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>{copy("pricing.editTokenPricing_44ae61")}</button><button onClick={close}>{copy("pricing.backToModels_a28c02")}</button></div></>}
   </section>;
 }

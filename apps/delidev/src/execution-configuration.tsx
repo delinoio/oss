@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeGrokToolsTerminal } from "./native-grok-interactions";
 import { NativeGrokTerminal, NativeGrokStop } from "./native-grok";
 import { type Resource } from "@delinoio/delidev-api-client";
@@ -24,29 +25,30 @@ function grokContext(value: unknown): string {
 }
 
 function NativeObservations({ progress, selection, harness }: { progress: Document; selection: Document; harness: unknown }) {
+  useLocale();
   const native = object(progress.observed);
   const available = Boolean(text(progress.execution_id) && text(progress.input_id) && text(progress.native_thread_id) && text(native.model));
   const current = available && progress.execution_id === selection.id && progress.input_id === selection.input_id;
-  return <section aria-label="Native execution observations">
-    <h3>Native observations</h3>
-    {!available ? <p>No native settings have been observed for this execution.</p> : <>
-      {!current ? <p className="notice">These retained observations belong to an earlier execution. The selected execution has no matching observations yet.</p> : null}
-      <p>Observed execution: {text(progress.execution_id)} · Input: {text(progress.input_id)}</p>
+  return <section aria-label={copy("execution-configuration.nativeExecutionObservations_f1235b")}>
+    <h3>{copy("execution-configuration.nativeObservations_e8b2af")}</h3>
+    {!available ? <p>{copy("execution-configuration.noNativeSettingsHaveBeenObserved_053128")}</p> : <>
+      {!current ? <p className="notice">{copy("execution-configuration.theseRetainedObservationsBelongToAn_a47a6f")}</p> : null}
+      <p><LocalizedText id="execution-configuration.observedExecutionInput_e6a4af" components={{ s0: <>{text(progress.execution_id)}</>, s1: <>{text(progress.input_id)}</> }} /></p>
       <dl>
-        <dt>Observed model</dt><dd>{observed(native.model)}</dd>
-        <dt>Observed reasoning effort</dt><dd>{observed(native.effort)}</dd>
-        <dt>Observed service tier</dt><dd>{observed(native.service_tier)}</dd>
-        {harness === Harness.Codex ? <><dt>Observed sandbox</dt><dd>{observed(native.permission)}</dd><dt>Observed approval policy</dt><dd>{observed(native.approval_policy)}</dd></> : null}
-        {harness === Harness.Claude ? <><dt>Observed Claude permission</dt><dd>{observed(native.claude_permission)}</dd></> : null}
-        {harness === Harness.OpenCode ? <><dt>Observed OpenCode primary agent</dt><dd>{observed(native.opencode_agent)}</dd><dt>Observed permission selection</dt><dd>{observed(native.permission)}</dd></> : null}
-        {harness === Harness.Grok ? <><dt>Observed Grok current mode</dt><dd>{observed(progress.grok_current_mode)}</dd><dt>Observed Grok initial mode</dt><dd>{observed(native.grok_mode)}</dd><dt>Observed Grok context window</dt><dd>{grokContext(native.grok_context_tokens)}</dd></> : null}
+        <dt>{copy("execution-configuration.observedModel_11caed")}</dt><dd>{observed(native.model)}</dd>
+        <dt>{copy("execution-configuration.observedReasoningEffort_9f998e")}</dt><dd>{observed(native.effort)}</dd>
+        <dt>{copy("execution-configuration.observedServiceTier_e525bf")}</dt><dd>{observed(native.service_tier)}</dd>
+        {harness === Harness.Codex ? <><dt>{copy("execution-configuration.observedSandbox_2dccbb")}</dt><dd>{observed(native.permission)}</dd><dt>{copy("execution-configuration.observedApprovalPolicy_5aef26")}</dt><dd>{observed(native.approval_policy)}</dd></> : null}
+        {harness === Harness.Claude ? <><dt>{copy("execution-configuration.observedClaudePermission_d99838")}</dt><dd>{observed(native.claude_permission)}</dd></> : null}
+        {harness === Harness.OpenCode ? <><dt>{copy("execution-configuration.observedOpencodePrimaryAgent_0cf8a6")}</dt><dd>{observed(native.opencode_agent)}</dd><dt>{copy("execution-configuration.observedPermissionSelection_4bd92e")}</dt><dd>{observed(native.permission)}</dd></> : null}
+        {harness === Harness.Grok ? <><dt>{copy("execution-configuration.observedGrokCurrentMode_3ced65")}</dt><dd>{observed(progress.grok_current_mode)}</dd><dt>{copy("execution-configuration.observedGrokInitialMode_0ede1b")}</dt><dd>{observed(native.grok_mode)}</dd><dt>{copy("execution-configuration.observedGrokContextWindow_6bc29e")}</dt><dd>{grokContext(native.grok_context_tokens)}</dd></> : null}
       </dl>
       {harness === Harness.Claude ? <NativeClaudePermissionProgress progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeTerminal progress={progress} /> : null}
       {harness === Harness.Grok ? <><NativeGrokToolsTerminal progress={progress}/><NativeGrokTerminal progress={progress} /><NativeGrokStop progress={progress} /></> : null}
       {harness === Harness.Claude ? <NativeClaudeStop progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeDenialCompletion progress={progress} /> : null}
-      <p>Observations describe this recorded execution. Missing values remain unavailable.</p>
+      <p>{copy("execution-configuration.observationsDescribeThisRecordedExecutionMissing_bc0495")}</p>
     </>}
   </section>;
 }
@@ -68,41 +70,41 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
   const accounts = items(configuration.accounts);
   const ready = Boolean(text(initial.id) && text(configuration.agent_id) && text(configuration.native_model));
   return <details className="execution-configuration">
-    <summary>Execution configuration and instructions</summary>
-    {resource.schemaVersion !== 1 ? <p>This session document version is not supported by this app.</p> : !ready ? <p>{data.initial_execution == null ? "No accepted execution configuration is available yet. Current Agent settings are not an execution snapshot." : "The saved execution configuration is incomplete or unavailable."}</p> : <>
-      <section aria-label="Saved execution configuration">
-        <h3>Saved configuration</h3>
-        <p>Captured when the first execution was accepted. Later Agent, model and template edits do not change these saved choices.</p>
+    <summary>{copy("execution-configuration.executionConfigurationAndInstructions_2a7935")}</summary>
+    {resource.schemaVersion !== 1 ? <p>{copy("execution-configuration.thisSessionDocumentVersionIsNot_9413f8")}</p> : !ready ? <p>{data.initial_execution == null ? copy("execution-configuration.noAcceptedExecutionConfigurationIsAvailable_17c6b2") : copy("execution-configuration.theSavedExecutionConfigurationIsIncomplete_2c32e0")}</p> : <>
+      <section aria-label={copy("execution-configuration.savedExecutionConfiguration_2d8ee9")}>
+        <h3>{copy("execution-configuration.savedConfiguration_d194b3")}</h3>
+        <p>{copy("execution-configuration.capturedWhenTheFirstExecutionWas_e736dd")}</p>
         <dl>
-          <dt>Harness</dt><dd>{text(configuration.harness) || "Unavailable"}</dd>
-          <dt>Requested model</dt><dd>{text(configuration.native_model)}</dd>
-          {configuration.harness === Harness.Grok ? <><dt>Saved Grok context window</dt><dd>{contextSource === "Unavailable" ? "Unavailable" : grokContext(context.tokens)}</dd><dt>Saved context source</dt><dd>{contextSource}</dd></> : null}
-          <dt>Requested reasoning effort</dt><dd>{requested(configuration.effort)}</dd>
-          <dt>Saved permission selection</dt><dd>{requested(options.permission)}</dd>
-          {configuration.harness === Harness.Claude || options.claude_permission !== undefined ? <><dt>Saved Claude permission</dt><dd>{requested(options.claude_permission)}</dd></> : null}
-          <dt>Requested approval policy</dt><dd>{requested(options.approval_policy)}</dd>
-          <dt>Requested subagent model</dt><dd>{requested(options.subagent_model)}</dd>
-          {text(childModel.model_id) ? <><dt>Saved child model identity</dt><dd>{text(childModel.model_id)} · revision {integer(childModel.model_revision)}</dd></> : null}
-          <dt>Requested subagent effort</dt><dd>{requested(options.subagent_effort)}</dd>
-          <dt>Requested concurrency</dt><dd>{options.max_concurrency === undefined || options.max_concurrency === 0 ? "Native default requested" : integer(options.max_concurrency)}</dd>
-          <dt>Requested approval review model</dt><dd>{requested(options.approval_review_model)}</dd>
-          <dt>Requested service tier</dt><dd>{requested(options.service_tier)}</dd>
-          <dt>Account routing</dt><dd>{text(configuration.routing) || "Unavailable"}</dd>
-          <dt>First account</dt><dd>{text(initial.initial_account_id) || "Unavailable"}</dd>
-          <dt>Selected execution account</dt><dd>{text(selection.account_id) || "Unavailable"}</dd>
+          <dt>{copy("execution-configuration.harness_e3b5b4")}</dt><dd>{text(configuration.harness) || "Unavailable"}</dd>
+          <dt>{copy("execution-configuration.requestedModel_b36591")}</dt><dd>{text(configuration.native_model)}</dd>
+          {configuration.harness === Harness.Grok ? <><dt>{copy("execution-configuration.savedGrokContextWindow_df1d70")}</dt><dd>{contextSource === "Unavailable" ? copy("execution-configuration.unavailable_ca1844") : grokContext(context.tokens)}</dd><dt>{copy("execution-configuration.savedContextSource_adf512")}</dt><dd>{contextSource}</dd></> : null}
+          <dt>{copy("execution-configuration.requestedReasoningEffort_dc59bb")}</dt><dd>{requested(configuration.effort)}</dd>
+          <dt>{copy("execution-configuration.savedPermissionSelection_abd7db")}</dt><dd>{requested(options.permission)}</dd>
+          {configuration.harness === Harness.Claude || options.claude_permission !== undefined ? <><dt>{copy("execution-configuration.savedClaudePermission_0741e2")}</dt><dd>{requested(options.claude_permission)}</dd></> : null}
+          <dt>{copy("execution-configuration.requestedApprovalPolicy_617392")}</dt><dd>{requested(options.approval_policy)}</dd>
+          <dt>{copy("execution-configuration.requestedSubagentModel_cbe7e9")}</dt><dd>{requested(options.subagent_model)}</dd>
+          {text(childModel.model_id) ? <><dt>{copy("execution-configuration.savedChildModelIdentity_be5624")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(childModel.model_id)}</>, s1: <>{integer(childModel.model_revision)}</> }} /></dd></> : null}
+          <dt>{copy("execution-configuration.requestedSubagentEffort_bb821c")}</dt><dd>{requested(options.subagent_effort)}</dd>
+          <dt>{copy("execution-configuration.requestedConcurrency_406d92")}</dt><dd>{options.max_concurrency === undefined || options.max_concurrency === 0 ? copy("execution-configuration.nativeDefaultRequested_6a1fdb") : integer(options.max_concurrency)}</dd>
+          <dt>{copy("execution-configuration.requestedApprovalReviewModel_136d13")}</dt><dd>{requested(options.approval_review_model)}</dd>
+          <dt>{copy("execution-configuration.requestedServiceTier_14f88a")}</dt><dd>{requested(options.service_tier)}</dd>
+          <dt>{copy("execution-configuration.accountRouting_0c3707")}</dt><dd>{text(configuration.routing) || "Unavailable"}</dd>
+          <dt>{copy("execution-configuration.firstAccount_2896cc")}</dt><dd>{text(initial.initial_account_id) || "Unavailable"}</dd>
+          <dt>{copy("execution-configuration.selectedExecutionAccount_012de8")}</dt><dd>{text(selection.account_id) || "Unavailable"}</dd>
         </dl>
-        {Object.keys(options).some((key) => !knownOptions.has(key)) ? <p className="notice">This snapshot contains additional options that this app version cannot display.</p> : null}
-        <details><summary>Snapshot references and account order</summary>
-          <dl><dt>First execution</dt><dd>{text(initial.id)}</dd><dt>Selected execution</dt><dd>{text(selection.id)}</dd><dt>Agent Worker</dt><dd>{text(configuration.agent_id)} · revision {integer(configuration.agent_revision)}</dd><dt>Model</dt><dd>{text(configuration.model_id)} · revision {integer(configuration.model_revision)}</dd><dt>Provider</dt><dd>{text(configuration.provider_id)}</dd><dt>Accepted at</dt><dd>{text(initial.accepted_at) || "Unavailable"}</dd></dl>
-          {Array.isArray(configuration.accounts) ? <ol aria-label="Saved account order">{accounts.map((value, index) => { const account = object(value); return <li key={index}>{text(account.id) || "Unavailable account"} · weight {integer(account.weight)}</li>; })}</ol> : <p>Saved account order is unavailable.</p>}
+        {Object.keys(options).some((key) => !knownOptions.has(key)) ? <p className="notice">{copy("execution-configuration.thisSnapshotContainsAdditionalOptionsThat_76c12b")}</p> : null}
+        <details><summary>{copy("execution-configuration.snapshotReferencesAndAccountOrder_513309")}</summary>
+          <dl><dt>{copy("execution-configuration.firstExecution_5294a1")}</dt><dd>{text(initial.id)}</dd><dt>{copy("execution-configuration.selectedExecution_c6fa3c")}</dt><dd>{text(selection.id)}</dd><dt>{copy("execution-configuration.agentWorker_a4caa7")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(configuration.agent_id)}</>, s1: <>{integer(configuration.agent_revision)}</> }} /></dd><dt>{copy("execution-configuration.model_5e2c61")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(configuration.model_id)}</>, s1: <>{integer(configuration.model_revision)}</> }} /></dd><dt>{copy("execution-configuration.provider_472590")}</dt><dd>{text(configuration.provider_id)}</dd><dt>{copy("execution-configuration.acceptedAt_1b8950")}</dt><dd>{text(initial.accepted_at) || "Unavailable"}</dd></dl>
+          {Array.isArray(configuration.accounts) ? <ol aria-label={copy("execution-configuration.savedAccountOrder_c00a0a")}>{accounts.map((value, index) => { const account = object(value); return <li key={index}><LocalizedText id="execution-configuration.weight_0d7216" components={{ s0: <>{text(account.id) || "Unavailable account"}</>, s1: <>{integer(account.weight)}</> }} /></li>; })}</ol> : <p>{copy("execution-configuration.savedAccountOrderIsUnavailable_e54c4a")}</p>}
         </details>
       </section>
       <NativeObservations progress={object(data.execution)} selection={selection} harness={configuration.harness} />
-      <section aria-label="Applied DeliDev instructions">
-        <h3>Applied DeliDev instructions</h3>
-        <p>Read-only additional instructions from this session's saved templates. Internal harness prompts are not shown.</p>
-        {typeof configuration.instructions !== "string" ? <p>Applied instruction text is unavailable.</p> : configuration.instructions === "" ? <p>No additional DeliDev instructions were selected.</p> : <pre aria-label="Combined applied instructions">{configuration.instructions}</pre>}
-        {Array.isArray(configuration.templates) ? <ol aria-label="Applied instruction template order">{templates.map((value, index) => { const template = object(value); return <li key={index}><details><summary>Template {index + 1} · {text(template.id) || "Unavailable reference"} · revision {integer(template.revision)}</summary>{typeof template.contents === "string" ? <pre>{template.contents}</pre> : <p>Saved template text is unavailable.</p>}</details></li>; })}</ol> : <p>Applied template order is unavailable.</p>}
+      <section aria-label={copy("execution-configuration.appliedDelidevInstructions_f2bcde")}>
+        <h3>{copy("execution-configuration.appliedDelidevInstructions_f2bcde")}</h3>
+        <p>{copy("execution-configuration.readOnlyAdditionalInstructionsFromThis_8850cd")}</p>
+        {typeof configuration.instructions !== "string" ? <p>{copy("execution-configuration.appliedInstructionTextIsUnavailable_b0a185")}</p> : configuration.instructions === "" ? <p>{copy("execution-configuration.noAdditionalDelidevInstructionsWereSelected_7b2306")}</p> : <pre aria-label="Combined applied instructions">{configuration.instructions}</pre>}
+        {Array.isArray(configuration.templates) ? <ol aria-label={copy("execution-configuration.appliedInstructionTemplateOrder_be0ff4")}>{templates.map((value, index) => { const template = object(value); return <li key={index}><details><summary><LocalizedText id="execution-configuration.templateRevision_10577b" components={{ s0: <>{index + 1}</>, s1: <>{text(template.id) || "Unavailable reference"}</>, s2: <>{integer(template.revision)}</> }} /></summary>{typeof template.contents === "string" ? <pre>{template.contents}</pre> : <p>{copy("execution-configuration.savedTemplateTextIsUnavailable_95e25e")}</p>}</details></li>; })}</ol> : <p>{copy("execution-configuration.appliedTemplateOrderIsUnavailable_02e090")}</p>}
       </section>
     </>}
   </details>;

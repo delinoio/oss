@@ -1,3 +1,4 @@
+import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, EntityKind, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
@@ -24,22 +25,24 @@ function sameFilters(left: Filters, right: Filters): boolean {
 
 function measure(value?: UsageMeasure): string {
   if (!value || value.measuredResponses === 0 || !/^\d+$/.test(value.knownTotal)) return "Unavailable";
-  return BigInt(value.knownTotal).toLocaleString();
+  return BigInt(value.knownTotal).toLocaleString(displayLocale());
 }
 
 const primaryMeasures = [["Known total tokens", "total"], ["Input tokens", "input"], ["Output tokens", "output"]] as const;
 const secondaryMeasures = [["Cached input", "cachedInput"], ["Cache-write input", "cacheWriteInput"], ["Reasoning output", "reasoningOutput"]] as const;
 
 function MeasureCard({ label, value, primary = false }: { label: string; value?: UsageMeasure; primary?: boolean }) {
-  return <div className={primary ? "usage-metric usage-metric-primary" : "usage-metric usage-metric-secondary"}><dt>{label}</dt><dd>{measure(value)}</dd><small>{value?.measuredResponses ?? 0} measured · {value?.unavailableResponses ?? 0} unavailable responses</small></div>;
+  useLocale();
+  return <div className={primary ? "usage-metric usage-metric-primary" : "usage-metric usage-metric-secondary"}><dt>{label}</dt><dd>{measure(value)}</dd><small><LocalizedText id="usage.measuredUnavailableResponses_5145e5" components={{ s0: <>{value?.measuredResponses ?? 0}</>, s1: <>{value?.unavailableResponses ?? 0}</> }} /></small></div>;
 }
 
 function Measures({ value }: { value?: UsageTotals }) {
+  useLocale();
   return <dl className="usage-row-measures">{[...primaryMeasures, ...secondaryMeasures].map(([label, key]) => <MeasureCard key={label} label={label} value={value?.[key]} />)}</dl>;
 }
 
 function formatAppliedTime(milliseconds: bigint, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, { timeZone, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "shortOffset" }).format(new Date(Number(milliseconds)));
+  return new Intl.DateTimeFormat(displayLocale(), { timeZone, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "shortOffset" }).format(new Date(Number(milliseconds)));
 }
 
 function pendingRange(selection: ReturnType<typeof request>): string {
@@ -63,6 +66,7 @@ function appliedFilters(selection: ReturnType<typeof request>): string[] {
 }
 
 export function Usage({ active, open }: { active: boolean; open: (id: string) => void }) {
+  useLocale();
   const [draft, setDraft] = useState<Filters>(emptyFilters);
   const [appliedDraft, setAppliedDraft] = useState<Filters>(emptyFilters);
   const [selection, setSelection] = useState(() => request(emptyFilters, detectDeviceTimeZone()));
@@ -104,49 +108,49 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
   const draftChanged = !sameFilters(draft, appliedDraft);
 
   return <>
-    <SidebarSurface active={active} title="Usage">
-      <p>Last 30 days by default · Times use {detectedTimeZone}.</p>
+    <SidebarSurface active={active} title={copy("usage.usage_8d5982")}>
+      <p><LocalizedText id="usage.last30DaysByDefaultTimes_70537d" components={{ s0: <>{detectedTimeZone}</> }} /></p>
       <form className="sidebar-form" onSubmit={(event) => { event.preventDefault(); apply(); }}>
-        <label>From ({detectedTimeZone} time)<input type="datetime-local" value={draft.from} onChange={(event) => change("from", event.target.value)} /></label>
-        <label>Until ({detectedTimeZone} time, exclusive)<input type="datetime-local" value={draft.until} onChange={(event) => change("until", event.target.value)} /></label>
-        <ResourceChoice label="Session" kind={EntityKind.SESSION} value={draft.sessionId} change={(id) => change("sessionId", id)} active={active} />
-        <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={draft.projectId} change={(id) => change("projectId", id)} active={active} disabled={draft.generalChat} />
-        <ResourceChoice label="Account" kind={EntityKind.ACCOUNT} value={draft.accountId} change={(id) => change("accountId", id)} active={active} />
-        <ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => setDraft((current) => ({ ...current, providerId: id, subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED }))} active={active} />
-        <label>Subscription service<select disabled={!nativeFilters} value={draft.subscriptionService} onChange={(event) => setDraft((current) => ({ ...current, providerId: "", subscriptionService: Number(event.target.value) as SubscriptionServiceIdentity }))}><option value={SubscriptionServiceIdentity.UNSPECIFIED}>All services</option><option value={SubscriptionServiceIdentity.CHATGPT}>ChatGPT</option><option value={SubscriptionServiceIdentity.CLAUDE}>Claude</option><option value={SubscriptionServiceIdentity.GROK}>Grok</option></select></label>
-        <ResourceChoice label="Model" kind={EntityKind.MODEL} value={draft.modelId} change={(id) => change("modelId", id)} active={active} />
-        <label className="checkbox"><input type="checkbox" checked={draft.generalChat} onChange={(event) => setDraft((current) => ({ ...current, generalChat: event.target.checked, projectId: event.target.checked ? "" : current.projectId }))} />General Chat only</label>
+        <label><LocalizedText id="usage.fromTime_b9f8b1" components={{ s0: <>{detectedTimeZone}</> }} /><input type="datetime-local" value={draft.from} onChange={(event) => change("from", event.target.value)} /></label>
+        <label><LocalizedText id="usage.untilTimeExclusive_4c9f27" components={{ s0: <>{detectedTimeZone}</> }} /><input type="datetime-local" value={draft.until} onChange={(event) => change("until", event.target.value)} /></label>
+        <ResourceChoice label={copy("usage.session_6959b4")} kind={EntityKind.SESSION} value={draft.sessionId} change={(id) => change("sessionId", id)} active={active} />
+        <ResourceChoice label={copy("usage.project_985959")} kind={EntityKind.PROJECT} value={draft.projectId} change={(id) => change("projectId", id)} active={active} disabled={draft.generalChat} />
+        <ResourceChoice label={copy("usage.account_7e1b0d")} kind={EntityKind.ACCOUNT} value={draft.accountId} change={(id) => change("accountId", id)} active={active} />
+        <ResourceChoice label={copy("usage.provider_472590")} kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => setDraft((current) => ({ ...current, providerId: id, subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED }))} active={active} />
+        <label>{copy("usage.subscriptionService_0e16df")}<select disabled={!nativeFilters} value={draft.subscriptionService} onChange={(event) => setDraft((current) => ({ ...current, providerId: "", subscriptionService: Number(event.target.value) as SubscriptionServiceIdentity }))}><option value={SubscriptionServiceIdentity.UNSPECIFIED}>{copy("usage.allServices_5b9809")}</option><option value={SubscriptionServiceIdentity.CHATGPT}>{copy("usage.chatgpt_50a412")}</option><option value={SubscriptionServiceIdentity.CLAUDE}>{copy("usage.claude_061557")}</option><option value={SubscriptionServiceIdentity.GROK}>{copy("usage.grok_dca61d")}</option></select></label>
+        <ResourceChoice label={copy("usage.model_5e2c61")} kind={EntityKind.MODEL} value={draft.modelId} change={(id) => change("modelId", id)} active={active} />
+        <label className="checkbox"><input type="checkbox" checked={draft.generalChat} onChange={(event) => setDraft((current) => ({ ...current, generalChat: event.target.checked, projectId: event.target.checked ? "" : current.projectId }))} />{copy("usage.generalChatOnly_9032cc")}</label>
         {invalid ? <p role="alert">{invalid}</p> : null}
-        <div className="actions"><button type="submit" className="primary">Apply filters</button><button type="button" onClick={reset}>Reset to last 30 days</button></div>
+        <div className="actions"><button type="submit" className="primary">{copy("usage.applyFilters_d80ab1")}</button><button type="button" onClick={reset}>{copy("usage.resetToLast30Days_a15ab6")}</button></div>
       </form>
     </SidebarSurface>
     <section hidden={!active} className="page usage-page" aria-busy={result.isFetching}>
-    <header className="usage-header"><div><h1>Token Usage</h1><p>DeliDev activity only · Archived sessions included</p></div><div className="usage-header-actions"><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh</button></div></header>
-    <div className="usage-applied" role="group" aria-label="Applied conditions"><strong>Applied conditions</strong><span>{data ? `${formatAppliedTime(data.fromUnixMs, appliedZone)} – ${formatAppliedTime(data.untilUnixMs, appliedZone)} (exclusive)` : pendingRange(selection)}</span><span>Timezone: {appliedZone}</span><span>Response times show when the server first retained each response, not provider execution time.</span>{conditions.length ? <span>{conditions.join(" · ")}</span> : <span>All sessions, accounts, APIs and models</span>}{draftChanged ? <span className="usage-draft-state">Unapplied filter edits</span> : null}</div>
-    {draftChanged ? <p className="usage-draft-state" role="status">Unapplied filter edits are in the Usage sidebar.</p> : null}<Problem error={result.error} />
-    {result.isFetching ? <p className="usage-loading" role="status">{data ? "Refreshing this applied range…" : "Loading token usage…"}</p> : null}
-    {data && result.error ? <p className="notice">The refresh failed. These are the last successfully retrieved values for this applied range; the displayed data is stale.</p> : null}
+    <header className="usage-header"><div><h1>{copy("usage.tokenUsage_00f594")}</h1><p>{copy("usage.delidevActivityOnlyArchivedSessionsIncluded_09c1fa")}</p></div><div className="usage-header-actions"><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("usage.refresh_0e9161")}</button></div></header>
+    <div className="usage-applied" role="group" aria-label={copy("usage.appliedConditions_bc3af3")}><strong>{copy("usage.appliedConditions_bc3af3")}</strong><span>{data ? copy("usage.exclusive_fd9e0a", { v0: formatAppliedTime(data.fromUnixMs, appliedZone), v1: formatAppliedTime(data.untilUnixMs, appliedZone) }) : pendingRange(selection)}</span><span><LocalizedText id="usage.timezone_9229e0" components={{ s0: <>{appliedZone}</> }} /></span><span>{copy("usage.responseTimesShowWhenTheServer_c28198")}</span>{conditions.length ? <span>{conditions.join(" · ")}</span> : <span>{copy("usage.allSessionsAccountsApisAndModels_d7b7c7")}</span>}{draftChanged ? <span className="usage-draft-state">{copy("usage.unappliedFilterEdits_f387c1")}</span> : null}</div>
+    {draftChanged ? <p className="usage-draft-state" role="status">{copy("usage.unappliedFilterEditsAreInThe_b69e11")}</p> : null}<Problem error={result.error} />
+    {result.isFetching ? <p className="usage-loading" role="status">{data ? copy("usage.refreshingThisAppliedRange_349e6c") : copy("usage.loadingTokenUsage_ded2ab")}</p> : null}
+    {data && result.error ? <p className="notice">{copy("usage.theRefreshFailedTheseAreThe_a67de1")}</p> : null}
     {!data && result.isPending ? <div className="usage-skeletons" aria-hidden="true"><div /><div /><div /><div /></div> : null}
     {data ? <>
-      <section className="usage-summary" aria-labelledby="usage-summary-title"><h2 id="usage-summary-title">Known token totals</h2><p>{data.totals?.responses.toLocaleString() ?? "0"} distinct responses recorded</p>
+      <section className="usage-summary" aria-labelledby="usage-summary-title"><h2 id="usage-summary-title">{copy("usage.knownTokenTotals_17a07e")}</h2><p><LocalizedText id="usage.distinctResponsesRecorded_baaa83" components={{ s0: <>{data.totals?.responses.toLocaleString(displayLocale()) ?? "0"}</> }} /></p>
         <dl className="usage-metrics-primary">{primaryMeasures.map(([label, key]) => <MeasureCard key={label} primary label={label} value={data.totals?.[key]} />)}</dl>
         <dl className="usage-metrics-secondary">{secondaryMeasures.map(([label, key]) => <MeasureCard key={label} label={label} value={data.totals?.[key]} />)}</dl>
-        <p className="usage-subset-note">Cached input is part of input, and reasoning output is part of output. These subsets are not added again to known total tokens.</p>
+        <p className="usage-subset-note">{copy("usage.cachedInputIsPartOfInput_fa92e1")}</p>
       </section>
-      <div className="usage-coverage"><strong>Incomplete coverage</strong><span>{data.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES ? "Observed root responses only. Missing, older, resumed-conversation, child and unsupported harness telemetry is unavailable, not zero." : "This server's telemetry coverage is unknown."}</span><span>{data.acceptedExecutionsWithoutResponse.toLocaleString()} accepted executions have no response usage recorded in this range. This does not establish zero actual usage.</span><span>{data.acceptedCompactionsWithoutResponse.toLocaleString()} native context actions have no exact response usage recorded in this range.</span></div>
-      {result.error ? <p className="usage-stale-indicator" role="status">Stale values from the last successful read</p> : null}
-      {responseAnalytics?.granularity === UsageTimeGranularity.DAY ? <UsageCharts analytics={responseAnalytics} timeZone={appliedZone} /> : <p className="usage-charts-unavailable" role="status">Daily and model charts are unavailable from this server version. Update the DeliDev server to view analytics; the current summary and detail data remain available.</p>}
-      <section className="usage-detail" aria-labelledby="usage-detail-title"><h2 id="usage-detail-title">Session, model and account details</h2>
-        {responseGroups.length ? <div className="usage-table" role="region" aria-label="Session, model and account usage table; scroll horizontally to inspect all details" tabIndex={0}><table><caption>Known response subtotals with original session, project, account, API and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th><th scope="col">Token-price estimate</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${subscriptionServiceLabel(group.subscriptionService)}:${group.modelId}`}>
-          <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || `Project ${group.projectId}` : "General Chat"}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
+      <div className="usage-coverage"><strong>{copy("usage.incompleteCoverage_0922dc")}</strong><span>{data.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES ? copy("usage.observedRootResponsesOnlyMissingOlder_ae66ec") : copy("usage.thisServerSTelemetryCoverageIs_d25728")}</span><span><LocalizedText id="usage.acceptedExecutionsHaveNoResponseUsage_9f2beb" components={{ s0: <>{data.acceptedExecutionsWithoutResponse.toLocaleString(displayLocale())}</> }} /></span><span><LocalizedText id="usage.nativeContextActionsHaveNoExact_9bc220" components={{ s0: <>{data.acceptedCompactionsWithoutResponse.toLocaleString(displayLocale())}</> }} /></span></div>
+      {result.error ? <p className="usage-stale-indicator" role="status">{copy("usage.staleValuesFromTheLastSuccessful_26becd")}</p> : null}
+      {responseAnalytics?.granularity === UsageTimeGranularity.DAY ? <UsageCharts analytics={responseAnalytics} timeZone={appliedZone} /> : <p className="usage-charts-unavailable" role="status">{copy("usage.dailyAndModelChartsAreUnavailable_a70ff8")}</p>}
+      <section className="usage-detail" aria-labelledby="usage-detail-title"><h2 id="usage-detail-title">{copy("usage.sessionModelAndAccountDetails_778c53")}</h2>
+        {responseGroups.length ? <div className="usage-table" role="region" aria-label={copy("usage.sessionModelAndAccountUsageTable_fc350c")} tabIndex={0}><table><caption>{copy("usage.knownResponseSubtotalsWithOriginalSession_e1cb71")}</caption><thead><tr><th scope="col">{copy("usage.sessionProject_59a44c")}</th><th scope="col">{copy("usage.account_7e1b0d")}</th><th scope="col">{copy("usage.modelApi_6a8129")}</th><th scope="col">{copy("usage.tokens_a039df")}</th><th scope="col">{copy("usage.tokenPriceEstimate_ed3009")}</th></tr></thead><tbody>{responseGroups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${subscriptionServiceLabel(group.subscriptionService)}:${group.modelId}`}>
+          <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || `Project ${group.projectId}` : copy("usage.generalChat_f634bc")}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>
           <td><span>{group.accountName || "Retained account"}</span><small>{group.accountId}</small></td>
-          <td><span>{group.modelName || "Retained model"}</span><small>{group.modelId}</small><p>{group.subscriptionService ? `Subscription service ${subscriptionServiceLabel(group.subscriptionService)}` : group.providerName || `API ${group.providerId}`}</p><small>{group.providerId}</small></td>
-          <td><strong>{measure(group.totals?.total)}</strong><p>{group.totals?.responses.toLocaleString()} responses{group.totals?.total?.unavailableResponses ? ` · ${group.totals.total.unavailableResponses} unavailable` : ""}</p><details><summary>Token breakdown</summary><Measures value={group.totals} /></details></td><td><EstimateAmounts value={group.estimates} /></td>
-        </tr>)}</tbody></table></div> : <p>No exact response usage is recorded for these filters. This does not mean zero usage or zero cost.</p>}
+          <td><span>{group.modelName || "Retained model"}</span><small>{group.modelId}</small><p>{group.subscriptionService ? copy("usage.subscriptionService_67a163", { v0: subscriptionServiceLabel(group.subscriptionService) }) : group.providerName || `API ${group.providerId}`}</p><small>{group.providerId}</small></td>
+          <td><strong>{measure(group.totals?.total)}</strong><p><LocalizedText id="usage.responses_5238cc" components={{ s0: <>{group.totals?.responses.toLocaleString(displayLocale())}</>, s1: <>{group.totals?.total?.unavailableResponses ? copy("usage.unavailable_e4701b", { v0: group.totals.total.unavailableResponses }) : ""}</> }} /></p><details><summary>{copy("usage.tokenBreakdown_c7576a")}</summary><Measures value={group.totals} /></details></td><td><EstimateAmounts value={group.estimates} /></td>
+        </tr>)}</tbody></table></div> : <p>{copy("usage.noExactResponseUsageIsRecorded_d85b24")}</p>}
       </section>
       <GrokAccounting data={data} open={open} />
       <NativeAccounting data={data} open={open} />
-      <section className="usage-costs" aria-labelledby="usage-cost-title"><h2 id="usage-cost-title">Cost evidence</h2><p><strong>Actual API cost:</strong> Unavailable — no verified attributable charge is supplied by the current telemetry.</p><EstimateCosts totals={data.estimates} pricing={data.pricing} /><p>Complete token-price categories do not establish complete telemetry, billed spend, a billing ceiling or budget compliance. Historical estimates remain separated by currency and original price basis.</p></section>
+      <section className="usage-costs" aria-labelledby="usage-cost-title"><h2 id="usage-cost-title">{copy("usage.costEvidence_9ab3af")}</h2><p><LocalizedText id="usage.unavailableNoVerifiedAttributableChargeIs_35ada6" components={{ s0: <strong>{copy("usage.actualApiCost_c88286")}</strong> }} /></p><EstimateCosts totals={data.estimates} pricing={data.pricing} /><p>{copy("usage.completeTokenPriceCategoriesDoNot_ddbf3a")}</p></section>
     </> : null}
   </section></>;
 }

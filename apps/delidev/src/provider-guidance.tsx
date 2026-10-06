@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 export enum ProviderGuidanceAction { Documentation = "documentation", ApiKeys = "api-keys" }
 export function ProviderGuidance({ preset, documentation, keyCreation }: { preset?: string; documentation: string; keyCreation?: string }) {
+  useLocale();
   const [busy, setBusy] = useState(false), [status, setStatus] = useState("");
   const owner = useRef(0), pending = useRef(false);
   useEffect(() => { owner.current++; pending.current = false; setBusy(false); setStatus(""); return () => { owner.current++; }; }, [preset]);
@@ -20,9 +21,9 @@ export function ProviderGuidance({ preset, documentation, keyCreation }: { prese
   };
   return <div>
     {preset && isTauri() ? <div className="actions">
-      {keyCreation ? <button type="button" disabled={busy} onClick={() => void open(ProviderGuidanceAction.ApiKeys)}>Open official key creation</button> : null}
-      {documentation ? <button type="button" disabled={busy} onClick={() => void open(ProviderGuidanceAction.Documentation)}>Open provider documentation</button> : null}
-    </div> : <>{keyCreation ? <p>Official key creation: <code>{keyCreation}</code></p> : null}{documentation ? <p>Provider documentation: <code>{documentation}</code></p> : null}</>}
+      {keyCreation ? <button type="button" disabled={busy} onClick={() => void open(ProviderGuidanceAction.ApiKeys)}>{copy("provider-guidance.openOfficialKeyCreation_1c1c04")}</button> : null}
+      {documentation ? <button type="button" disabled={busy} onClick={() => void open(ProviderGuidanceAction.Documentation)}>{copy("provider-guidance.openProviderDocumentation_9682aa")}</button> : null}
+    </div> : <>{keyCreation ? <p><LocalizedText id="provider-guidance.officialKeyCreation_adef05" components={{ s0: <code>{keyCreation}</code> }} /></p> : null}{documentation ? <p><LocalizedText id="provider-guidance.providerDocumentation_7eeff8" components={{ s0: <code>{documentation}</code> }} /></p> : null}</>}
     {status ? <p role="status">{status}</p> : null}
   </div>;
 }

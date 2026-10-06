@@ -1,0 +1,20 @@
+{
+  "native-claude-interaction.claudeRequestUnavailable_ae878e": "Claude request unavailable",
+  "native-claude-interaction.theRetainedClaudeRequestIsUnavailable_240920": "The retained Claude request is unavailable or inconsistent.",
+  "native-claude-interaction.originalClaudeRequest_acfe41": "Original Claude request",
+  "native-claude-interaction.userQuestion_c49daf": "사용자 질문",
+  "native-claude-interaction.planApproval_2df6eb": "계획 승인",
+  "native-claude-interaction.toolPermission_8bfc4d": "도구 권한",
+  "native-claude-interaction.multipleSelectionsOffered_be4e07": "Multiple selections offered",
+  "native-claude-interaction.singleSelectionOffered_fb90f6": "Single selection offered",
+  "native-claude-interaction.nativePlanPath_94127a": "Native plan path: <s0/>",
+  "native-claude-interaction.originalCallbackInput_7f60bc": "Original callback input",
+  "native-claude-interaction.originalCallbackMetadata_b7c760": "Original callback metadata",
+  "native-claude-interaction.claudeProcessedTheOriginalCallbackTool_ec8044": "Claude processed the original callback. Tool outcome and execution outcome remain separate.",
+  "native-claude-interaction.theOriginalNativeRequestWasCanceled_35a80b": "The original native request was canceled. Cancellation does not prove that a response was accepted.",
+  "native-claude-interaction.theResponseIsRetainedTransmissionAnd_d838b2": "The response is retained. Transmission and native acceptance are separate observations.",
+  "native-claude-interaction.theOriginalRequestIsWaitingFor_e922dd": "The original request is waiting for a response.",
+  "native-claude-interaction.claudeEchoedTheOriginalResponseThis_509c6a": "Claude echoed the original response. This does not prove that the tool or plan ran, or that the answer was accepted.",
+  "native-claude-interaction.retainedResponse_690778": "보존된 응답",
+  "native-claude-interaction.nativeSuggestionsDoNotGrantAccess_c03ab1": "Native suggestions do not grant access or change saved permissions."
+}

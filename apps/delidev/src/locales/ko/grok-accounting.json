@@ -1,0 +1,21 @@
+{
+  "grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890": "Verified Grok input accounting is unavailable from this server version. Update the server to view it.",
+  "grok-accounting.verifiedGrokClosedInputs_f343dd": "Verified Grok closed inputs",
+  "grok-accounting.closedInputsKnownTotalTokens_a55f2e": "{{v0}} closed inputs · {{v1}} known total tokens",
+  "grok-accounting.noVerifiedGrokClosedInputsAre_244c3c": "No verified Grok closed inputs are recorded for these filters. This does not establish zero usage.",
+  "grok-accounting.eachInputRequiresMatchingOriginalHistory_2f9fce": "Each input requires matching original history, native closure and confirmed cleanup. Response dimensions are retained separately in the session. These totals are separate from Codex response totals; pricing, actual cost and estimated-budget contribution are unavailable.",
+  "grok-accounting.grokInputTimesUseTheServer_55cef2": "Grok input times use the server's first retention of verified completion after confirmed cleanup. Filters and daily buckets use that time.",
+  "grok-accounting.verifiedGrokInputAccountingTables_ee8ebe": "Verified Grok input accounting tables",
+  "grok-accounting.grokInputsByOriginalSessionAccount_d2226c": "Grok inputs by original session, account and model",
+  "grok-accounting.sessionProject_59a44c": "세션 / 프로젝트",
+  "grok-accounting.account_7e1b0d": "계정",
+  "grok-accounting.modelApi_6a8129": "모델 / API",
+  "grok-accounting.closedInputs_85c5d8": "종료된 입력",
+  "grok-accounting.knownTokens_682912": "확인된 토큰",
+  "grok-accounting.generalChat_f634bc": "일반 대화",
+  "grok-accounting.dailyVerifiedGrokInputs_fc1da8": "Daily verified Grok inputs (<s0/>)",
+  "grok-accounting.from_218197": "시작",
+  "grok-accounting.until_7caf85": "종료",
+  "grok-accounting.exclusive_b71bef": "(종료 시각 제외)",
+  "grok-accounting.verifiedGrokInputsByModel_1eac37": "Verified Grok inputs by model"
+}

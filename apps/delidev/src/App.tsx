@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import type { ServerPresentation } from "./server-presentation";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -31,6 +32,7 @@ import { SessionStorageProvider } from "./session-storage";
 import { PRWorkflowProvider } from "./pr-workflow";
 
 function Shell({ localServer, serverPresentation, connectionReady, connectionSettings, connectionTarget, readLocalWorker, controlLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; chooseRepositoryFolder?: ChooseRepositoryFolder; localServer?: ReactNode; serverPresentation?: ServerPresentation; connectionReady: boolean; connectionSettings?: ReactNode; connectionTarget?: HTMLElement; readLocalWorker?: ReadLocalWorkerProof }) {
+  useLocale();
   const [surface, setSurface] = useState(Surface.Sessions);
   const pendingFocusDestination = useRef<Surface>(undefined);
   const main = useRef<HTMLElement>(null);
@@ -96,8 +98,8 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     const target = compact ? contextOpener.current : main.current;
     if (target && !target.closest("[hidden], [inert]")) target.focus({ preventScroll: true });
   }, [surface, drawerOpen, settingsEntry]);
-  return <SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">Skip to content</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>Open {surfaceName}</button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
-    <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><Prerequisites active={surface === Surface.Sessions} openSettings={openSettings} /><Problem error={status.error} /></section>}</div>
+  return <SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+    <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Prerequisites active={surface === Surface.Sessions} openSettings={openSettings} /><Problem error={status.error} /></section>}</div>
     <NewSession active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionActivation} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
     <Search active={surface === Surface.Search} open={open} />
     <Activity active={surface === Surface.Activity} open={open} />
@@ -113,6 +115,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
 // even when authentication creates a replacement transport. Selecting another
 // identity creates a fresh query, draft and mutation scope.
 export function App({ transport, localServer, serverPresentation, connectionSettings, connectionTarget, connectionReady = true, connectionEpoch = 0, readLocalWorker, controlLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; chooseRepositoryFolder?: ChooseRepositoryFolder; readLocalWorker?: ReadLocalWorkerProof; transport: Transport; localServer?: ReactNode; serverPresentation?: ServerPresentation; connectionSettings?: ReactNode; connectionTarget?: HTMLElement; connectionReady?: boolean; connectionEpoch?: number }) {
+  useLocale();
   const connectionIdentity = pairingAuthority && currentDeviceId ? JSON.stringify([pairingAuthority.endpoint, pairingAuthority.serverId, currentDeviceId]) : transport;
   const connection = useMemo(() => ({ id: newRequestId(), ...connectionQueryClient() }), [connectionIdentity]);
   const client = connection.client;

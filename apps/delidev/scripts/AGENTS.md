@@ -1,4 +1,6 @@
 # DeliDev scripts ownership
+- English/Korean desktop, native and widget presentation follows `docs/apps-delidev-localization-contract.md`. Keep the device Language controller above connection/Settings visits, use bundled typed catalogs, preserve exact machine values, user/native content, draft/focus/query/request lifetimes and original server details, and never replay work on language change. Protect independent `language.json` and App Group preference storage with revision/atomic-write/uncertainty rules. Generate Swift/native resources from reconciled source catalogs during preparation/tests/packaging, and keep real platform/WidgetKit acceptance separate from fixtures and builds.
+
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 

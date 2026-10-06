@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { copy, useLocale } from "./localization";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -12,7 +12,8 @@ export interface OAuthNativeResult { generation: string; callback_url?: string; 
 export type OAuthNativeControl = (opening: string, action: OAuthNativeAction, generation: string, attempt: string, authorization: string) => Promise<OAuthNativeResult>;
 const NativeContext = createContext<OAuthNativeControl | undefined>(undefined);
 export const useOAuthNativeControl = () => useContext(NativeContext);
-export function OAuthNativeProvider({ control, children }: { control: OAuthNativeControl; children: ReactNode }) { return <NativeContext.Provider value={control}>{children}</NativeContext.Provider>; }
+export function OAuthNativeProvider({ control, children }: { control: OAuthNativeControl; children: ReactNode }) {
+  useLocale(); return <NativeContext.Provider value={control}>{children}</NativeContext.Provider>; }
 enum Stage { Starting, Awaiting, Exchanging, Saving, Canceling, Recovering, Connected, Canceled, Expired, Interrupted, Recovery }
 interface View { provider: AccountProviderSummary; stage: Stage; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string; openFailed?: boolean }
 interface Pending {
@@ -201,6 +202,7 @@ export function useOpenRouterOAuth() {
 export type OpenRouterOAuthFlow = ReturnType<typeof useOpenRouterOAuth>;
 
 export function OpenRouterOAuth({ flow, back, manual, edit, manage, done }: { flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; edit: (account: Resource) => void; manage: (account: Resource) => void; done: () => void }) {
+  useLocale();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
   useEffect(() => { heading.current?.focus(); }, [view?.provider.providerId]);
   if (!view) return null;
@@ -210,16 +212,16 @@ export function OpenRouterOAuth({ flow, back, manual, edit, manage, done }: { fl
   const progress = view.stage === Stage.Starting ? "Preparing authorization…" : view.stage === Stage.Exchanging ? "Exchanging authorization…" : view.stage === Stage.Saving ? "Saving your connection…" : view.stage === Stage.Canceling ? "Confirming cancellation and cleanup…" : view.stage === Stage.Recovering ? "Recovering the original saved result…" : connected ? "OpenRouter connected" : waiting ? "Waiting for authorization…" : view.stage === Stage.Expired ? "Authorization expired" : view.stage === Stage.Interrupted ? "Authorization was interrupted" : view.stage === Stage.Canceled ? "Connection canceled" : "Connection requires recovery";
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());
   return <section className="api-keys-view account-oauth-card" aria-labelledby="account-oauth-title">
-    <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>Connect OpenRouter</h2>
-    <p className="account-oauth-subheading">Complete sign-in in your browser</p>
-    <p>Approve access on OpenRouter. DeliDev will finish connecting automatically.</p>
+    <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>{copy("account-oauth.connectOpenrouter_6c38bc")}</h2>
+    <p className="account-oauth-subheading">{copy("account-oauth.completeSignInInYourBrowser_64e524")}</p>
+    <p>{copy("account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0")}</p>
     <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div>
     {view.problem ? <p role="alert">{view.problem}</p> : null}
-    {connected ? <div className="actions"><button onClick={() => leave(false, () => edit(connected))}>Edit account</button><button onClick={() => leave(false, () => manage(connected))}>Manage account</button><button onClick={() => leave(false, done)}>Done</button></div> : <>
-      <div className="actions"><button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>Open browser again</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>Cancel</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>Back to providers</button></div>
-      <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>Use an API key instead</button>
-      {view.problem ? <div className="actions"><button onClick={flow.observe} disabled={!view.attempt}>Inspect original attempt</button>{!view.attempt ? <button onClick={flow.retryStart}>Retry original start</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>Recover saved result</button> : null}</div> : null}
+    {connected ? <div className="actions"><button onClick={() => leave(false, () => edit(connected))}>{copy("account-oauth.editAccount_ab6a16")}</button><button onClick={() => leave(false, () => manage(connected))}>{copy("account-oauth.manageAccount_ddb585")}</button><button onClick={() => leave(false, done)}>{copy("account-oauth.done_11a676")}</button></div> : <>
+      <div className="actions"><button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></div>
+      <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>{copy("account-oauth.useAnApiKeyInstead_b728ab")}</button>
+      {view.problem ? <div className="actions"><button onClick={flow.observe} disabled={!view.attempt}>{copy("account-oauth.inspectOriginalAttempt_887b78")}</button>{!view.attempt ? <button onClick={flow.retryStart}>{copy("account-oauth.retryOriginalStart_eefc3a")}</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>{copy("account-oauth.recoverSavedResult_3cb5e6")}</button> : null}</div> : null}
     </>}
-    <footer><p>Your credential will be stored securely on the selected server.</p><p>You can validate your account after connecting.</p></footer>
+    <footer><p>{copy("account-oauth.yourCredentialWillBeStoredSecurely_26be74")}</p><p>{copy("account-oauth.youCanValidateYourAccountAfter_70f97e")}</p></footer>
   </section>;
 }

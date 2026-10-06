@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { SettingsHeading } from "./settings-presentation";
 import "./doctor.css";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -9,62 +9,68 @@ import { Problem } from "./ui";
 
 enum DiagnosticState { Observed = "observed", Unavailable = "unavailable", Unconfigured = "unconfigured", NotApplicable = "not-applicable", Failed = "failed", Superseded = "superseded" }
 const stateNames: Record<DiagnosticState, string> = {
-  [DiagnosticState.Observed]: "Observed", [DiagnosticState.Unavailable]: "Unavailable", [DiagnosticState.Unconfigured]: "Not configured", [DiagnosticState.NotApplicable]: "Not applicable", [DiagnosticState.Failed]: "Failed", [DiagnosticState.Superseded]: "Connection changed during inspection",
+  get [DiagnosticState.Observed]() { return copy("doctor.observed_64fa8a"); }, get [DiagnosticState.Unavailable]() { return copy("doctor.unavailable_ca1844"); }, get [DiagnosticState.Unconfigured]() { return copy("doctor.notConfigured_dd1841"); }, get [DiagnosticState.NotApplicable]() { return copy("doctor.notApplicable_5237c9"); }, get [DiagnosticState.Failed]() { return copy("doctor.failed_031a8f"); }, get [DiagnosticState.Superseded]() { return copy("doctor.connectionChangedDuringInspection_419fb5"); },
 };
 const ownerCaveat = "Owner credential availability does not verify protected account storage, account readiness or quota.";
 function observation(value: unknown, success = "Observed") {
   const result = object(value), state = text(result.state);
   const name = Object.hasOwn(stateNames, state) ? stateNames[state as DiagnosticState] : "Unknown";
-  return <div className="diagnostics-result"><strong>{state === DiagnosticState.Observed ? success : name}</strong>{text(result.code) ? ` · ${text(result.code)}` : ""}{text(result.guidance) ? <p>{text(result.guidance)}</p> : null}</div>;
+  return <div className="diagnostics-result"><strong>{state === DiagnosticState.Observed ? success : name}</strong>{text(result.code) ? copy("doctor.message_2fa20b", { v0: text(result.code) }) : ""}{text(result.guidance) ? <p>{text(result.guidance)}</p> : null}</div>;
 }
 function decimal(value: unknown): string | undefined {
   if (typeof value !== "string" || !/^(0|[1-9][0-9]{0,19})$/.test(value)) return;
   const number = BigInt(value);
   if (number > 18446744073709551615n) return;
-  return number.toLocaleString();
+  return number.toLocaleString(displayLocale());
 }
 function bytes(value: unknown) { const number = decimal(value); return number === undefined ? "Unavailable" : `${number} bytes`; }
 function completeness(more: unknown, kind: string) {
-  if (more === true) return <p className="notice">Only the first 50 {kind} are included. Open their settings to inspect the remaining records.</p>;
-  return more === false ? null : <p>Inventory completeness is unknown.</p>;
+  if (more === true) return <p className="notice"><LocalizedText id="doctor.onlyTheFirst50AreIncluded_eb0ea8" components={{ s0: <>{kind}</> }} /></p>;
+  return more === false ? null : <p>{copy("doctor.inventoryCompletenessIsUnknown_44746c")}</p>;
 }
 function Disclosure({ title, children }: { title: string; children: ReactNode }) {
+  useLocale();
   return <details className="diagnostics-disclosure"><summary>{title}</summary>{children}</details>;
 }
 function Storage({ value }: { value: Document }) {
+  useLocale();
   const resources = Array.isArray(value.resources) ? value.resources : undefined;
-  return <section className="diagnostics-panel" aria-label="Storage diagnostics">
-    <h2>Server storage</h2>{observation(value.result)}
-    <dl className="diagnostics-facts"><dt>Database file</dt><dd>{bytes(value.database_bytes)}</dd><dt>Write-ahead log</dt><dd>{bytes(value.wal_bytes)}</dd><dt>Logical database size</dt><dd>{bytes(value.logical_database_bytes)}</dd><dt>Filesystem capacity</dt><dd>{bytes(value.volume_capacity_bytes)}</dd><dt>Available to the server</dt><dd>{bytes(value.volume_available_bytes)}</dd></dl>
-    <p>Sizes are sampled separately. They cannot be added together or treated as reclaimable space.</p>
-    {resources ? resources.length ? null : <p>No retained resources were counted.</p> : <p>Resource counts are unavailable.</p>}
-    <Disclosure title="Retained resources">{resources?.length ? <ul>{resources.slice(0, 100).map((entry, index) => { const count = object(entry); return <li key={index}>{text(count.kind) || "Unknown resource"}: {decimal(count.count) ?? "Unknown"}</li>; })}</ul> : null}</Disclosure>
+  return <section className="diagnostics-panel" aria-label={copy("doctor.storageDiagnostics_fe1577")}>
+    <h2>{copy("doctor.serverStorage_3e7362")}</h2>{observation(value.result)}
+    <dl className="diagnostics-facts"><dt>{copy("doctor.databaseFile_812d99")}</dt><dd>{bytes(value.database_bytes)}</dd><dt>{copy("doctor.writeAheadLog_ccc16f")}</dt><dd>{bytes(value.wal_bytes)}</dd><dt>{copy("doctor.logicalDatabaseSize_e1995b")}</dt><dd>{bytes(value.logical_database_bytes)}</dd><dt>{copy("doctor.filesystemCapacity_b12161")}</dt><dd>{bytes(value.volume_capacity_bytes)}</dd><dt>{copy("doctor.availableToTheServer_c4503b")}</dt><dd>{bytes(value.volume_available_bytes)}</dd></dl>
+    <p>{copy("doctor.sizesAreSampledSeparatelyTheyCannot_10fb3e")}</p>
+    {resources ? resources.length ? null : <p>{copy("doctor.noRetainedResourcesWereCounted_24a23d")}</p> : <p>{copy("doctor.resourceCountsAreUnavailable_55abbd")}</p>}
+    <Disclosure title={copy("doctor.retainedResources_0846dd")}>{resources?.length ? <ul>{resources.slice(0, 100).map((entry, index) => { const count = object(entry); return <li key={index}>{text(count.kind) || "Unknown resource"}: {decimal(count.count) ?? copy("doctor.unknown_b764cd")}</li>; })}</ul> : null}</Disclosure>
   </section>;
 }
 const installationStates: Record<string, string> = { unchecked: "Not checked", detected: "Version detected", missing: "Executable missing", "permission-denied": "Permission denied", incompatible: "Incompatible", failed: "Probe failed" };
 function Installation({ value, secondary = false }: { value: Document; secondary?: boolean }) {
-  if (secondary) return <li><strong>{text(value.harness) || "Unknown harness"}</strong><p>Last discovery: {text(value.observed_at) || "Not observed"}</p><p>Reported capabilities: {items(value.capabilities).map(text).filter(Boolean).join(", ") || "None"}</p></li>;
+  useLocale();
+  if (secondary) return <li><strong>{text(value.harness) || "Unknown harness"}</strong><p><LocalizedText id="doctor.lastDiscovery_d132d5" components={{ s0: <>{text(value.observed_at) || "Not observed"}</> }} /></p><p><LocalizedText id="doctor.reportedCapabilities_24b97b" components={{ s0: <>{items(value.capabilities).map(text).filter(Boolean).join(", ") || "None"}</> }} /></p></li>;
   const protocol = value.protocol_verified === true && value.protocol_state === "verified" ? "Handshake verified" : value.protocol_state === "failed" ? "Handshake failed" : value.protocol_state === "unsupported" ? "Unsupported protocol" : value.protocol_verified === false && !value.protocol_state ? "Handshake not checked" : "Unknown protocol state";
   const state = text(value.state);
-  return <li><strong>{text(value.harness) || "Unknown harness"}</strong>: {Object.hasOwn(installationStates, state) ? installationStates[state] : "Unknown installation state"}{text(value.version) ? ` · ${text(value.version)}` : ""}<p>{protocol}</p>{text(value.problem_code) ? <p>{text(value.problem_code)}</p> : null}{text(value.guidance) ? <p>{text(value.guidance)}</p> : null}</li>;
+  return <li><strong>{text(value.harness) || "Unknown harness"}</strong>: {Object.hasOwn(installationStates, state) ? installationStates[state] : copy("doctor.unknownInstallationState_648bed")}{text(value.version) ? copy("doctor.message_2fa20b", { v0: text(value.version) }) : ""}<p>{protocol}</p>{text(value.problem_code) ? <p>{text(value.problem_code)}</p> : null}{text(value.guidance) ? <p>{text(value.guidance)}</p> : null}</li>;
 }
 type RecordKey = (record: Document, identity: string) => string;
 function Workers({ report, recordKey }: { report: Document; recordKey: RecordKey }) {
-  return <section className="diagnostics-panel diagnostics-wide" aria-label="Worker diagnostics"><h2>Runner Devices</h2><p>These are retained Worker reports and a connection snapshot. Discovery does not run during this check. A verified handshake does not establish account readiness or native process cleanup.</p>{completeness(report.more_machines, "Workers")}{Array.isArray(report.machines) ? report.machines.length ? <div className="diagnostics-records">{report.machines.slice(0, 50).map((entry) => {
+  useLocale();
+  return <section className="diagnostics-panel diagnostics-wide" aria-label={copy("doctor.workerDiagnostics_9e4c35")}><h2>{copy("doctor.runnerDevices_a176a8")}</h2><p>{copy("doctor.theseAreRetainedWorkerReportsAnd_c6d5b0")}</p>{completeness(report.more_machines, "Workers")}{Array.isArray(report.machines) ? report.machines.length ? <div className="diagnostics-records">{report.machines.slice(0, 50).map((entry) => {
     const machine = object(entry), installations = items(machine.installations).slice(0, 4);
-    return <article className="diagnostics-record" key={recordKey(machine, text(machine.machine_id))}><h3>{text(machine.name) || "Unnamed Worker"}</h3><p>Reported version: {text(machine.version) || "Unknown"} · {text(machine.os) || "Unknown OS"} / {text(machine.architecture) || "Unknown architecture"}</p><p>{machine.active_stream === true ? "Connected at observation" : machine.active_stream === false ? "No active stream observed" : "Connection unknown"} · {machine.disabled === true ? "Disabled" : machine.disabled === false ? "Enabled" : "Availability unknown"}</p><p>Last contact: {text(machine.last_seen) && !text(machine.last_seen).startsWith("0001-") ? text(machine.last_seen) : "Not observed"}</p>
+    return <article className="diagnostics-record" key={recordKey(machine, text(machine.machine_id))}><h3>{text(machine.name) || "Unnamed Worker"}</h3><p><LocalizedText id="doctor.reportedVersion_e37bb8" components={{ s0: <>{text(machine.version) || "Unknown"}</>, s1: <>{text(machine.os) || "Unknown OS"}</>, s2: <>{text(machine.architecture) || "Unknown architecture"}</> }} /></p><p>{machine.active_stream === true ? copy("doctor.connectedAtObservation_2685ce") : machine.active_stream === false ? copy("doctor.noActiveStreamObserved_57ef54") : copy("doctor.connectionUnknown_e68b86")} · {machine.disabled === true ? copy("doctor.disabled_75081b") : machine.disabled === false ? copy("doctor.enabled_92c1cd") : copy("doctor.availabilityUnknown_2e0078")}</p><p><LocalizedText id="doctor.lastContact_052200" components={{ s0: <>{text(machine.last_seen) && !text(machine.last_seen).startsWith("0001-") ? text(machine.last_seen) : copy("doctor.notObserved_1d3efc")}</> }} /></p>
       <ul className="diagnostics-installations">{installations.map((value, key) => <Installation key={key} value={object(value)} />)}</ul>
-      <Disclosure title="Installation details"><p>Machine identity: {text(machine.machine_id) || "Unknown machine"}</p><ul>{installations.map((value, key) => <Installation key={key} value={object(value)} secondary />)}</ul></Disclosure>
+      <Disclosure title={copy("doctor.installationDetails_7ee3b5")}><p><LocalizedText id="doctor.machineIdentity_a4bfec" components={{ s0: <>{text(machine.machine_id) || "Unknown machine"}</> }} /></p><ul>{installations.map((value, key) => <Installation key={key} value={object(value)} secondary />)}</ul></Disclosure>
     </article>;
-  })}</div> : <p>No Workers are registered.</p> : <p>Worker observations are unavailable.</p>}</section>;
+  })}</div> : <p>{copy("doctor.noWorkersAreRegistered_9b7693")}</p> : <p>{copy("doctor.workerObservationsAreUnavailable_ef7c26")}</p>}</section>;
 }
 function Credentials({ report, recordKey }: { report: Document; recordKey: RecordKey }) {
-  return <section className="diagnostics-panel diagnostics-wide" aria-label="Protected credential diagnostics"><h2>Protected account storage</h2><p>Only each current account connection's exact saved credential is checked. Store access does not verify provider authentication, execution readiness or quota.</p>{completeness(report.more_credentials, "accounts")}{Array.isArray(report.credentials) ? report.credentials.length ? <div className="diagnostics-records">{report.credentials.slice(0, 50).map((entry) => {
+  useLocale();
+  return <section className="diagnostics-panel diagnostics-wide" aria-label={copy("doctor.protectedCredentialDiagnostics_8f870f")}><h2>{copy("doctor.protectedAccountStorage_fd07a5")}</h2><p>{copy("doctor.onlyEachCurrentAccountConnectionS_aa0ac9")}</p>{completeness(report.more_credentials, "accounts")}{Array.isArray(report.credentials) ? report.credentials.length ? <div className="diagnostics-records">{report.credentials.slice(0, 50).map((entry) => {
     const credential = object(entry), account = text(credential.account_id), connection = text(credential.connection_id);
-    return <article className="diagnostics-record" key={recordKey(credential, account && connection ? JSON.stringify([account, connection]) : "")}><h3>Account: {account || "Unknown"}</h3>{observation(credential.result, "Saved credential readable")}{connection ? <Disclosure title="Connection identity"><p>Connection: {connection}</p></Disclosure> : null}</article>;
-  })}</div> : <p>No accounts are configured; credential-store health was not probed.</p> : <p>Protected storage observations are unavailable.</p>}</section>;
+    return <article className="diagnostics-record" key={recordKey(credential, account && connection ? JSON.stringify([account, connection]) : "")}><h3><LocalizedText id="doctor.account_e07497" components={{ s0: <>{account || "Unknown"}</> }} /></h3>{observation(credential.result, "Saved credential readable")}{connection ? <Disclosure title={copy("doctor.connectionIdentity_527d26")}><p><LocalizedText id="doctor.connection_654eff" components={{ s0: <>{connection}</> }} /></p></Disclosure> : null}</article>;
+  })}</div> : <p>{copy("doctor.noAccountsAreConfiguredCredentialStore_7a1e48")}</p> : <p>{copy("doctor.protectedStorageObservationsAreUnavailable_d6d0ba")}</p>}</section>;
 }
 function Report({ report }: { report: Document }) {
+  useLocale();
   // Missing identities get response-object keys, so a replacement cannot inherit
   // another record's native disclosure state. Known identities survive reorder.
   const missingKeys = useRef(new WeakMap<Document, string>()), nextKey = useRef(0);
@@ -76,20 +82,21 @@ function Report({ report }: { report: Document }) {
   };
   const expanded = report.schema_version === 2;
   return <>
-    {expanded ? <p className="diagnostics-observed">Observed at <span>{text(report.observed_at) || "Unknown"}</span></p> : null}
+    {expanded ? <p className="diagnostics-observed"><LocalizedText id="doctor.observedAt_2044a6" components={{ s0: <span>{text(report.observed_at) || "Unknown"}</span> }} /></p> : null}
     <div className="diagnostics-observations">
-      <section className="diagnostics-panel diagnostics-observation"><h2>Database read check</h2><p><span className={report.database === "ready" ? "diagnostics-success" : "diagnostics-symbol"} aria-hidden="true">{report.database === "ready" ? "✓" : "?"}</span>{report.database === "ready" ? "Read succeeded" : report.database === "failed" ? "Read failed — inspect server storage and its private structured log." : "Unknown"}</p></section>
-      <section className="diagnostics-panel diagnostics-observation"><h2>Owner credential</h2><p><span className="diagnostics-symbol" aria-hidden="true">ⓘ</span>{report.credential_store === "owner-credential-ready" ? "Server owner credential loaded" : "Unknown"}</p></section>
-      <section className="diagnostics-panel diagnostics-observation"><h2>Inference probes</h2><p><span className="diagnostics-neutral" aria-hidden="true">−</span>{report.inference_probes === false ? "Not performed" : "Unknown"}</p></section>
+      <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.databaseReadCheck_465f92")}</h2><p><span className={report.database === "ready" ? "diagnostics-success" : "diagnostics-symbol"} aria-hidden="true">{report.database === "ready" ? "✓" : "?"}</span>{report.database === "ready" ? copy("doctor.readSucceeded_14f977") : report.database === "failed" ? copy("doctor.readFailedInspectServerStorageAnd_06b368") : copy("doctor.unknown_b764cd")}</p></section>
+      <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.ownerCredential_028058")}</h2><p><span className="diagnostics-symbol" aria-hidden="true">ⓘ</span>{report.credential_store === "owner-credential-ready" ? copy("doctor.serverOwnerCredentialLoaded_ed8968") : copy("doctor.unknown_b764cd")}</p></section>
+      <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.inferenceProbes_3cbb76")}</h2><p><span className="diagnostics-neutral" aria-hidden="true">−</span>{report.inference_probes === false ? copy("doctor.notPerformed_c48729") : copy("doctor.unknown_b764cd")}</p></section>
     </div>
     <div className="diagnostics-sections">
-      <section className="diagnostics-panel" aria-label="Server information"><h2>Server information</h2><dl className="diagnostics-facts"><dt>Server version</dt><dd>{text(report.version) || "Unknown"}</dd>{expanded ? <><dt>Server platform</dt><dd>{text(report.os) || "Unknown"} / {text(report.architecture) || "Unknown"}</dd><dt>Protocol version</dt><dd>{Number.isSafeInteger(report.protocol_version) && Number(report.protocol_version) > 0 ? Number(report.protocol_version) : "Unknown"}</dd><dt>Database schema</dt><dd>{Number.isSafeInteger(report.database_schema_version) && Number(report.database_schema_version) > 0 ? Number(report.database_schema_version) : "Unknown"}</dd></> : null}<dt>Bound endpoint</dt><dd>{text(report.listener) || "Unknown"}</dd></dl><p>{ownerCaveat}</p><Disclosure title="Server identity"><p>{text(report.server_id) || "Unknown"}</p></Disclosure></section>
-      {expanded ? <><Storage value={object(report.storage)} /><Workers report={report} recordKey={recordKey} /><Credentials report={report} recordKey={recordKey} /></> : <p>This server returned a legacy report. Capacity and protected-storage health are not yet reported.</p>}
+      <section className="diagnostics-panel" aria-label={copy("doctor.serverInformation_078792")}><h2>{copy("doctor.serverInformation_078792")}</h2><dl className="diagnostics-facts"><dt>{copy("doctor.serverVersion_3f34bb")}</dt><dd>{text(report.version) || "Unknown"}</dd>{expanded ? <><dt>{copy("doctor.serverPlatform_9d0c00")}</dt><dd>{text(report.os) || "Unknown"} / {text(report.architecture) || "Unknown"}</dd><dt>{copy("doctor.protocolVersion_cdd735")}</dt><dd>{Number.isSafeInteger(report.protocol_version) && Number(report.protocol_version) > 0 ? Number(report.protocol_version) : copy("doctor.unknown_b764cd")}</dd><dt>{copy("doctor.databaseSchema_bf3efc")}</dt><dd>{Number.isSafeInteger(report.database_schema_version) && Number(report.database_schema_version) > 0 ? Number(report.database_schema_version) : copy("doctor.unknown_b764cd")}</dd></> : null}<dt>{copy("doctor.boundEndpoint_5501d6")}</dt><dd>{text(report.listener) || "Unknown"}</dd></dl><p>{ownerCaveat}</p><Disclosure title={copy("doctor.serverIdentity_fa4fb0")}><p>{text(report.server_id) || "Unknown"}</p></Disclosure></section>
+      {expanded ? <><Storage value={object(report.storage)} /><Workers report={report} recordKey={recordKey} /><Credentials report={report} recordKey={recordKey} /></> : <p>{copy("doctor.thisServerReturnedALegacyReport_0a90d0")}</p>}
     </div>
   </>;
 }
 export enum DoctorTitle { Diagnostics = "Diagnostics", ConnectionDiagnostics = "Connection & diagnostics" }
 export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics, connectionControls }: { active: boolean; visible?: boolean; title?: DoctorTitle; connectionControls?: ReactNode }) {
+  useLocale();
   const result = useQuery(SystemQuery.getDoctor, {}, { enabled: active });
   const [opening, setOpening] = useState(0);
   useEffect(() => {
@@ -112,10 +119,10 @@ export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics
   const unknownServer = useRef({ report, key: 0 });
   if (unknownServer.current.report !== report) unknownServer.current = { report, key: unknownServer.current.key + 1 };
   return <section className="diagnostics">
-    <SettingsHeading title={title} description="Read-only observations from the selected server." scope="This check does not repair state, connect an account or run model inference." actions={<button disabled={!active || result.isFetching} onClick={() => void result.refetch()}>Refresh diagnostics</button>} />
-    {connectionControls ? <section aria-label="Connection"><h2>Connection</h2>{connectionControls}</section> : null}
-    <Problem error={result.error} />{result.isFetching && active ? <p role="status">Reading server diagnostics…</p> : null}{result.error && report ? <p role="alert">Refresh failed. The report below is the last returned observation.</p> : null}
-    {report ? <Report key={JSON.stringify([opening, text(report.server_id) || unknownServer.current.key])} report={report} /> : result.data ? <p role="alert">{unsupported ? "This diagnostic report version is unsupported. No health result can be inferred." : "The diagnostic report is unavailable or malformed. No health result can be inferred."}</p> : null}
-    <p className="diagnostics-guidance">{ownerCaveat} Use AI accounts for validation and Runner Devices for discovery and connection recovery.</p>
+    <SettingsHeading title={title} description={copy("doctor.readOnlyObservationsFromTheSelected_9e6c27")} scope="This check does not repair state, connect an account or run model inference." actions={<button disabled={!active || result.isFetching} onClick={() => void result.refetch()}>{copy("doctor.refreshDiagnostics_7bce98")}</button>} />
+    {connectionControls ? <section aria-label={copy("doctor.connection_639a40")}><h2>{copy("doctor.connection_639a40")}</h2>{connectionControls}</section> : null}
+    <Problem error={result.error} />{result.isFetching && active ? <p role="status">{copy("doctor.readingServerDiagnostics_f724cd")}</p> : null}{result.error && report ? <p role="alert">{copy("doctor.refreshFailedTheReportBelowIs_f8d24e")}</p> : null}
+    {report ? <Report key={JSON.stringify([opening, text(report.server_id) || unknownServer.current.key])} report={report} /> : result.data ? <p role="alert">{unsupported ? copy("doctor.thisDiagnosticReportVersionIsUnsupported_46df0e") : copy("doctor.theDiagnosticReportIsUnavailableOr_c9eb5b")}</p> : null}
+    <p className="diagnostics-guidance"><LocalizedText id="doctor.useAiAccountsForValidationAnd_7713b8" components={{ s0: <>{ownerCaveat}</> }} /></p>
   </section>;
 }

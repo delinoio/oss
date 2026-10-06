@@ -1,0 +1,21 @@
+{
+  "integration-access.repositoryGithubAccess_c34944": "Repository GitHub access",
+  "integration-access.theseAreFreshReadsUsingThis_c5a236": "These are fresh reads using this repository's selected profile. API availability does not mean CI passed, that rules are satisfied, or that another reviewer has been verified.",
+  "integration-access.refreshGithubAccess_7c6810": "Refresh GitHub access",
+  "integration-access.inspectingGithubReadAccess_1c79bc": "Inspecting GitHub read access…",
+  "integration-access.theAccessObservationDoesNotMatch_bfb142": "The access observation does not match this repository revision. Refresh repository settings before inspecting again.",
+  "integration-access.previousObservation_1bd8a6": "Previous observation",
+  "integration-access.observed_64fa8a": "관측됨",
+  "integration-access.authenticatedAs_cbb51c": "Authenticated as <s0/>",
+  "integration-access.private_c63eb6": "비공개",
+  "integration-access.public_591935": "공개",
+  "integration-access.defaultBranch_7e2236": " · default branch {{v0}}",
+  "integration-access.observedDefaultBranchCommit_952af4": "Observed default-branch commit: <s0/>",
+  "integration-access.accessToThisRepositorySRead_5e16b2": "Access to this repository's read endpoints",
+  "integration-access.feature_3d377a": "기능",
+  "integration-access.access_ec5ba0": "접근",
+  "integration-access.details_45989d": "상세 정보",
+  "integration-access.closeGithubAccess_d2bb98": "Close GitHub access",
+  "integration-access.inspectGithubAccess_6b8ce0": "Inspect GitHub access",
+  "integration-access.setTheGithubOwnerRepositoryName_fcad01": "Set the GitHub owner, repository name and profile to inspect access."
+}

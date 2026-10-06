@@ -1,0 +1,23 @@
+{
+  "github-pr-observations.prHeadObservation_fb3487": "PR head observation",
+  "github-pr-observations.observedPrHead_875e1e": "Observed PR head: <s0/>",
+  "github-pr-observations.theseResultsDoNotEvaluateActive_0543cb": "These results do not evaluate active rulesets or the commit GitHub evaluates for required CI. Missing, pending or unknown results do not establish passing CI.",
+  "github-pr-observations.immutableBaseSha256_8e86c8": "Immutable base: <s0/> · SHA-256: <s1/>",
+  "github-pr-observations.githubLatestCheckFilterReportedCheck_76a03d": "GitHub latest-check filter · <s0/> reported check runs",
+  "github-pr-observations.checkRunsForTheObservedHead_7e63cd": "Check runs for the observed head",
+  "github-pr-observations.check_9d6084": "Check",
+  "github-pr-observations.status_920e41": "Status",
+  "github-pr-observations.conclusion_89db2a": "Conclusion",
+  "github-pr-observations.application_e7ad52": "Application",
+  "github-pr-observations.unknown_92d909": " (unknown)",
+  "github-pr-observations.app_9fefc2": "{{v0}} · App {{v1}}",
+  "github-pr-observations.appIdentityUnavailable_5d83a1": "App identity unavailable",
+  "github-pr-observations.noCheckRunsOnThisReturned_46ed3f": "No check runs on this returned page.",
+  "github-pr-observations.githubCombinedCommitStatusReportedContexts_ffd610": "GitHub combined commit status: <s0/><s1/> · <s2/> reported contexts",
+  "github-pr-observations.commitStatusContextsForTheObserved_bc40a8": "Commit status contexts for the observed head",
+  "github-pr-observations.context_a6e600": "Context",
+  "github-pr-observations.state_a3b50c": "State",
+  "github-pr-observations.description_526e00": "Description",
+  "github-pr-observations.creator_88447b": "Creator",
+  "github-pr-observations.noCommitStatusContextsOnThis_b459e0": "No commit status contexts on this returned page."
+}

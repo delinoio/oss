@@ -1,0 +1,18 @@
+{
+  "native-changes.snapshotReference_7c953a": "Snapshot reference",
+  "native-changes.changedFileReferences_9d7464": "Changed file references",
+  "native-changes.stepStartSnapshot_d9105a": "Step start snapshot",
+  "native-changes.stepFinishSnapshot_835810": "Step finish snapshot",
+  "native-changes.nativeRevisionUnavailable_5ba088": "Native revision · Unavailable",
+  "native-changes.theRetainedRevisionObservationIsIncomplete_cf4770": "The retained revision observation is incomplete or inconsistent.",
+  "native-changes.originalNativeReference_bbb471": "Original native reference: <s0/>",
+  "native-changes.theOriginalFileListIsEmpty_e072b3": "The original file list is empty.",
+  "native-changes.nativeChangesUnavailable_06d3fa": "Native changes · Unavailable",
+  "native-changes.theRetainedChangeObservationIsUnavailable_2cf048": "The retained change observation is unavailable or inconsistent.",
+  "native-changes.nativeSessionDiff_dd228a": "Native session diff",
+  "native-changes.nativeInputChangeSummary_a7b5ad": "Native input change summary",
+  "native-changes.fileUnavailable_b3b9ef": "파일을 확인할 수 없음",
+  "native-changes.statusUnavailable_7eb5af": "Status unavailable",
+  "native-changes.patchUnavailable_87d458": "Patch unavailable.",
+  "native-changes.theOriginalDiffListIsEmpty_078d07": "The original diff list is empty."
+}

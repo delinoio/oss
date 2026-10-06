@@ -1,0 +1,13 @@
+{
+  "native-claude-interruption.claudeInterruptionUnavailable_b7e91c": "Claude interruption unavailable",
+  "native-claude-interruption.theRetainedClaudeInterruptionIsUnavailable_5eeb04": "The retained Claude interruption is unavailable or inconsistent.",
+  "native-claude-interruption.claudeInterruptionObservation_9e2876": "Claude interruption observation",
+  "native-claude-interruption.claudeInterruption_665b83": "Claude interruption",
+  "native-claude-interruption.originalContext_3b390a": "원래 컨텍스트",
+  "native-claude-interruption.sessionResultObserved_7e1175": "Session result observed",
+  "native-claude-interruption.claudeAddedThisContextAfterProcessing_fad43c": "Claude added this context after processing the original denial.",
+  "native-claude-interruption.claudeStoppedAfterTheDeniedRequest_c27488": "Claude stopped after the denied request. It did not report an input result identity.",
+  "native-claude-interruption.thisSessionResultObservationDoesNot_14e92c": "This session-result observation does not establish input completion or process cleanup. See the separate execution cleanup report.",
+  "native-claude-interruption.nativeSessionResultUsage_1cb51d": "Native session-result usage",
+  "native-claude-interruption.theseOverlappingNativeReportsDoNot_a741ea": "These overlapping native reports do not establish billed cost or an input outcome. Cumulative values belong to the original runtime."
+}

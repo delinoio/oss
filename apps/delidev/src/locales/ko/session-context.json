@@ -1,0 +1,20 @@
+{
+  "session-context.sessionContext_93a2ab": "세션 컨텍스트",
+  "session-context.context_a6e600": "컨텍스트",
+  "session-context.updateTheServerAndOriginalWorker_00f78a": "Update the server and original Worker to use native context compaction.",
+  "session-context.refreshContext_f79efc": "컨텍스트 새로고침",
+  "session-context.notReported_adadfa": "보고되지 않음",
+  "session-context.currentContextTokens_2fb474": "Current context tokens: <s0/>",
+  "session-context.compactionOperation_22b764": "Compaction operation",
+  "session-context.compactionOperation_42746a": "Compaction operation: <s0/>",
+  "session-context.theNativeContextWasCompactedAnd_c4307f": "The native context was compacted and its history and cleanup were verified.",
+  "session-context.reported_34540b": "보고됨",
+  "session-context.notReportedByTheNativeProcess_e76117": "Not reported by the native process",
+  "session-context.retainedCompactionsResponseCounters_8201cb": "Retained compactions: <s0/>. Response counters: <s1/>.",
+  "session-context.retainedCompactionsNativeStepCounters_5af773": "Retained compactions: <s0/>. Native step counters: <s1/>.",
+  "session-context.thisActionRequiresReconciliationPreserveThe_8ba4a5": "This action requires reconciliation. Preserve the original operation; a new request cannot resolve it.",
+  "session-context.compactTheNativeWorkingContextAt_69b0dd": "Compact the native working context at a completed boundary. The retained conversation and pending input remain available.",
+  "session-context.compactContext_afbbb8": "컨텍스트 압축",
+  "session-context.compactionRequiresASupportedHarnessAnd_ae76ff": "Compaction requires a supported harness and Worker at an eligible settled boundary.",
+  "session-context.retryTheSameCompactionRequest_12667c": "Retry the same compaction request"
+}

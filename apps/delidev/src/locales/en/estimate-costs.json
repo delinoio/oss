@@ -1,0 +1,21 @@
+{
+  "estimate-costs.unavailableNoEstimateEvidenceWasReturned_ef74c0": "Unavailable — no estimate evidence was returned.",
+  "estimate-costs.responsesWithCompleteTokenPriceCategories_c0673b": "<s0/> responses with complete token-price categories · <s1/> partial · <s2/> unavailable.",
+  "estimate-costs.unavailableNoMatchingHistoricalPricingBasis_b5d88c": "Unavailable — no matching historical pricing basis.",
+  "estimate-costs.responsesHaveNoMatchingHistoricalPrice_cb4664": "<s0/> responses have no matching historical price.",
+  "estimate-costs.unavailable_ca1844": "Unavailable",
+  "estimate-costs.pricedMissingPriceMissingUsageUnsupported_f37de2": "{{v0}} priced · {{v1}} missing price · {{v2}} missing usage · {{v3}} unsupported breakdown · {{v4}} not applicable",
+  "estimate-costs.historicalTokenPriceEstimates_3eb47a": "Historical token-price estimates",
+  "estimate-costs.tokenPriceEstimate_580be5": "Token-price estimate:",
+  "estimate-costs.knownSubtotalsWithIncompleteTelemetry_9a1323": "Known subtotals, with incomplete telemetry.",
+  "estimate-costs.unavailableForThisSelection_4ad32a": "Unavailable for this selection.",
+  "estimate-costs.currenciesAreSeparateCompleteTokenPrice_8dc932": "Currencies are separate. Complete token-price categories do not establish complete native usage, actual spend or budget compliance. Configure future prices in Settings → Models → Token pricing.",
+  "estimate-costs.unknownCurrency_4d3dc3": "Unknown currency",
+  "estimate-costs.unknown_b23a6a": "unknown",
+  "estimate-costs.historicalBasisVersion_0fade6": "Historical basis · <s0/> · version <s1/> · <s2/>",
+  "estimate-costs.coveredTokenPriceCategoriesInThis_db110c": "Covered token-price categories in this selection",
+  "estimate-costs.category_292c06": "Category",
+  "estimate-costs.pricedTokens_37b8cd": "Priced tokens",
+  "estimate-costs.knownAmount_7ef51e": "Known amount",
+  "estimate-costs.responseEvidence_cb3bca": "Response evidence"
+}

@@ -1,0 +1,22 @@
+{
+  "github-rules.activePrBaseRules_707652": "Active PR base rules",
+  "github-rules.activeRulesForAtBase_116160": "Active rules for <s0/> at base <s1/>.",
+  "github-rules.theseRulesDescribeRequiredChecksThey_d1ba1d": "These rules describe required checks. They do not establish which commit GitHub evaluates or whether CI passes.",
+  "github-rules.noActiveRulesWereReturnedFor_72967c": "No active rules were returned for this PR base. Classic branch protection is not included.",
+  "github-rules.unknownSourceType_5f3c59": " · Unknown source type",
+  "github-rules.ruleset_d1d0bf": "<s0/>: <s1/> · Ruleset <s2/><s3/>",
+  "github-rules.thisRuleIncludesUnrecognizedParametersCi_e5756c": "This rule includes unrecognized parameters; CI evaluation is unknown.",
+  "github-rules.yes_85a39a": "예",
+  "github-rules.no_1ea442": "아니요",
+  "github-rules.requireAnUpToDateBranch_cade59": "Require an up-to-date branch: <s0/>",
+  "github-rules.requiredStatusChecksRuleset_f7be98": "Required status checks · ruleset <s0/>",
+  "github-rules.contextOrCheckName_177862": "Context or check name",
+  "github-rules.requiredApp_3802d1": "필수 앱",
+  "github-rules.noAppRestrictionReported_39534b": "No App restriction reported",
+  "github-rules.providerReported0Unresolved_3b4b8d": "Provider reported 0 · unresolved",
+  "github-rules.app_915609": "앱 {{v0}}",
+  "github-rules.thisRuleListsNoRequiredStatus_16ad10": "This rule lists no required status checks.",
+  "github-rules.requiredWorkflows_49dd4c": "Required workflows",
+  "github-rules.noImmutableSourceShaEvaluationRemains_48550b": "No immutable source SHA; evaluation remains unknown",
+  "github-rules.repository_edbad0": "Repository <s0/> · <s1/> · <s2/>"
+}

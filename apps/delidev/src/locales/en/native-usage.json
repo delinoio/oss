@@ -1,0 +1,18 @@
+{
+  "native-usage.theRetainedNativeUsageObservationIs_bbd973": "The retained native usage observation is unavailable or inconsistent.",
+  "native-usage.completedNativeStep_81d2fc": "Completed native step",
+  "native-usage.finalizedAssistantMessage_15531a": "Finalized assistant message",
+  "native-usage.source_590a7b": "Source: <s0/>",
+  "native-usage.reportedTotal_30b27c": "Reported total",
+  "native-usage.unavailable_ca1844": "Unavailable",
+  "native-usage.nativeEstimateCurrencyUnspecified_62f71a": "Native estimate · currency unspecified",
+  "native-usage.stepAndMessageObservationsOverlapOpencode_023a82": "Step and message observations overlap. OpenCode can replace missing counters with zero. These values are not added to billed usage, price estimates or session budgets.",
+  "native-usage.nativeUsageObservation_6d9842": "Native usage observation",
+  "native-usage.refreshFailedAnyDisplayedObservationIs_9ff040": "Refresh failed. Any displayed observation is retained data.",
+  "native-usage.noNativeUsageHasBeenRetained_f51bbb": "No native usage has been retained for this execution.",
+  "native-usage.loadingNativeUsage_976abd": "Loading native usage…",
+  "native-usage.theMatchingNativeUsageObservationIs_14a62c": "The matching native usage observation is unavailable.",
+  "native-usage.recordedExecution_2fdcd7": "Recorded execution: <s0/>",
+  "native-usage.thisObservationBelongsToAPreceding_165fda": "This observation belongs to a preceding execution.",
+  "native-usage.refreshNativeUsage_4fc93f": "Refresh native usage"
+}

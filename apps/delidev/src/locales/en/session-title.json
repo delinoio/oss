@@ -1,0 +1,10 @@
+{
+  "session-title.titleWaitsForTheFirstCompleted_11677c": "Title waits for the first completed turn",
+  "session-title.titleQueued_b44555": "Title queued",
+  "session-title.generatingTitle_d25441": "Generating title",
+  "session-title.titleGenerated_1e4690": "Title generated",
+  "session-title.titleSkipped_958887": "Title skipped",
+  "session-title.titleGenerationFailed_ffe5d8": "Title generation failed",
+  "session-title.titleGenerationUnsupported_419b31": "Title generation unsupported",
+  "session-title.titleOutcomeUncertain_3cc9af": "Title outcome uncertain"
+}

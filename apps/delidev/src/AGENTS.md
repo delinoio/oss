@@ -1,4 +1,6 @@
 # DeliDev src ownership
+- English/Korean desktop, native and widget presentation follows `docs/apps-delidev-localization-contract.md`. Keep the device Language controller above connection/Settings visits, use bundled typed catalogs, preserve exact machine values, user/native content, draft/focus/query/request lifetimes and original server details, and never replay work on language change. Protect independent `language.json` and App Group preference storage with revision/atomic-write/uncertainty rules. Generate Swift/native resources from reconciled source catalogs during preparation/tests/packaging, and keep real platform/WidgetKit acceptance separate from fixtures and builds.
+
 
 - `subscription-onboarding.tsx` and its stylesheet own the pure login-first account body under the subscription Settings contract. Supply confirmed progress from the owning controller; render performs no login, account creation or browser opening. Preserve once-only name focus, edited values, the UTF-8 name bound, existing Settings tokens and departure callbacks without business cancellation.
 

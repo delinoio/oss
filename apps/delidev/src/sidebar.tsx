@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -27,6 +28,7 @@ enum ArchiveStatus {
 type TooltipPosition = { left: number; top: number };
 
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
+  useLocale();
   const common = { "aria-hidden": true as const, className: `sidebar-icon ${className}`, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (name) {
     case "sessions": return <svg {...common}><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M9 20v-6h6v6"/></svg>;
@@ -52,6 +54,7 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
 }
 
 function SidebarButton({ label, icon, current, onClick, className = "" }: { label: string; icon: string; current?: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void; className?: string }) {
+  useLocale();
   return <button type="button" aria-label={label} aria-current={current ? "page" : undefined} className={`sidebar-rail-button ${className}`} onClick={onClick}>
     <Icon name={icon} /><span className="sidebar-rail-tooltip" aria-hidden="true">{label}</span>
   </button>;
@@ -59,17 +62,19 @@ function SidebarButton({ label, icon, current, onClick, className = "" }: { labe
 
 type NavigationQuery = ReturnType<typeof useNavigationQuery>;
 function QueryProblem({ query, label, retryLabel }: { query: NavigationQuery; label: string; retryLabel: string }) {
+  useLocale();
   if (!query.error) return null;
   const { failure, stalled } = query.error;
   const reload = failure.code === FailureCode.CursorExpired || stalled;
   const message = reload ? `${label}: ${stalled ? "The list continuation did not advance." : "The list cursor expired."}` : query.loaded ? `Could not ${query.error.stage === ReadStage.Additional ? "load more" : "refresh"} ${label}. Previous data is shown.` : failure.code === FailureCode.PermissionDenied ? `You do not have permission to view ${label}.` : `Could not connect to load ${label}.`;
   return <div className="sidebar-query-problem">
-    <span role="status">{message}{failure.correlationId ? ` Correlation: ${failure.correlationId}` : ""}</span>
-    <button type="button" aria-label={reload ? `Reload ${label} list` : retryLabel} disabled={Boolean(query.loading)} onClick={reload ? query.reload : query.retry}>{reload ? "Reload list" : "Retry"}</button>
+    <span role="status">{message}{failure.correlationId ? copy("sidebar.correlation_3851eb", { v0: failure.correlationId }) : ""}</span>
+    <button type="button" aria-label={reload ? copy("sidebar.reloadList_83b8c9", { v0: label }) : retryLabel} disabled={Boolean(query.loading)} onClick={reload ? query.reload : query.retry}>{reload ? copy("sidebar.reloadList_095352") : copy("sidebar.retry_942087")}</button>
   </div>;
 }
 
 function Continuation({ query, label, root, active }: { query: NavigationQuery; label: string; root: RefObject<HTMLDivElement | null>; active: boolean }) {
+  useLocale();
   const anchor = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const container = root.current, element = anchor.current;
@@ -88,7 +93,7 @@ function Continuation({ query, label, root, active }: { query: NavigationQuery; 
     check();
     return () => { observer?.disconnect(); resize?.disconnect(); container.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
   }, [query, root, active]);
-  return <div ref={anchor} className="sidebar-continuation" data-continuation={label}>{query.loading === ReadStage.Additional ? <span role="status">Loading more {label}…</span> : null}</div>;
+  return <div ref={anchor} className="sidebar-continuation" data-continuation={label}>{query.loading === ReadStage.Additional ? <span role="status"><LocalizedText id="sidebar.loadingMore_33652b" components={{ s0: <>{label}</> }} /></span> : null}</div>;
 }
 
 function workspaceLabel(raw: string): string {
@@ -105,6 +110,7 @@ function archiveLabel(raw: string): string {
 }
 
 function StatusGlyph({ outcome, archive }: { outcome: string; archive: string }) {
+  useLocale();
   let execution: ReactNode;
   switch (outcome as ExecutionStatus) {
     case ExecutionStatus.NotStarted: execution = <svg className="sidebar-status-glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="8" cy="8" r="5.25"/></svg>; break;
@@ -122,6 +128,7 @@ function StatusGlyph({ outcome, archive }: { outcome: string; archive: string })
 }
 
 function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boolean; open: (id: string) => void }) {
+  useLocale();
   const tooltipId = useId();
   const element = useRef<HTMLButtonElement>(null);
   const [tooltip, setTooltip] = useState<TooltipPosition>();
@@ -165,23 +172,25 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
 function ProjectSessions({ projectId, label, fallback = false, fallbackRows, home, includeArchived, selected, open, active, root }: {
   projectId: string; label: string; fallback?: boolean; fallbackRows: NavigationRow[]; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
 }) {
+  useLocale();
   const sessions = useNavigationQuery(home.project(projectId), HomeScope.Sessions, projectId, includeArchived, active && !fallback);
   const rows = fallback || !sessions.loaded ? fallbackRows : sessions.rows;
   return <div className="sidebar-project-sessions">
-    {!fallback ? <QueryProblem query={sessions} label={`${label} sessions`} retryLabel={`Retry ${label} sessions`} /> : null}
-    {fallback ? <p className="sidebar-fallback-explanation">Project details are not in the loaded project catalog.</p> : null}
-    {!fallback && !sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">Loading {label} sessions…</p> : null}
+    {!fallback ? <QueryProblem query={sessions} label={copy("sidebar.sessions_f70c94", { v0: label })} retryLabel={copy("sidebar.retrySessions_66ea21", { v0: label })} /> : null}
+    {fallback ? <p className="sidebar-fallback-explanation">{copy("sidebar.projectDetailsAreNotInThe_ba6cdd")}</p> : null}
+    {!fallback && !sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status"><LocalizedText id="sidebar.loadingSessions_bd5fbc" components={{ s0: <>{label}</> }} /></p> : null}
     {rows.map((row) => <SessionRow key={row.id} row={row} selected={selected === row.id} open={open} />)}
-    {!fallback && sessions.loaded && !sessions.error && rows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">No conversations loaded.</p> : null}
-    <Continuation query={sessions} label={`${label} sessions`} root={root} active={active && !fallback} />
+    {!fallback && sessions.loaded && !sessions.error && rows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">{copy("sidebar.noConversationsLoaded_b94bd7")}</p> : null}
+    <Continuation query={sessions} label={copy("sidebar.sessions_f70c94", { v0: label })} root={root} active={active && !fallback} />
   </div>;
 }
 
 function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, home, includeArchived, selected, open, active, root }: {
   projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
 }) {
+  useLocale();
   return <section className="sidebar-project-group" data-project-id={projectId}>
-    <button type="button" className="sidebar-project-row" title={label} aria-label={`${label}. Project ID: ${projectId}`} aria-expanded={expanded} onClick={toggle}>
+    <button type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: projectId })} aria-expanded={expanded} onClick={toggle}>
       <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span><Icon name="chevron" className={`sidebar-disclosure ${expanded ? "is-expanded" : ""}`} />
     </button>
     {expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} open={open} active={active} root={root} /> : null}
@@ -192,6 +201,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
+  useLocale();
   const [compact, setCompact] = useState(false);
   const drawer = useRef<HTMLDialogElement>(null);
   const rail = useRef<HTMLElement>(null);
@@ -341,52 +351,52 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   };
 
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
-  return <aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label="Application sidebar">
-    <nav ref={rail} className="sidebar-rail" aria-label="Primary navigation">
-      <SidebarButton label="Sessions" icon="sessions" current={sessionNavigation} onClick={() => navigate(Surface.Sessions)} />
-      <SidebarButton label="Pull requests" icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigate(Surface.PullRequests)} />
-      <SidebarButton label="Usage" icon="usage" current={surface === Surface.Usage} onClick={() => navigate(Surface.Usage)} />
-      <SidebarButton label="Schedules" icon="schedules" current={surface === Surface.Schedules} onClick={() => navigate(Surface.Schedules)} />
-      <SidebarButton label="Activity" icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
+  return <aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
+    <nav ref={rail} className="sidebar-rail" aria-label={copy("sidebar.primaryNavigation_e1bfe7")}>
+      <SidebarButton label={copy("sidebar.sessions_6fa3cb")} icon="sessions" current={sessionNavigation} onClick={() => navigate(Surface.Sessions)} />
+      <SidebarButton label={copy("sidebar.pullRequests_d9e3f2")} icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigate(Surface.PullRequests)} />
+      <SidebarButton label={copy("sidebar.usage_8d5982")} icon="usage" current={surface === Surface.Usage} onClick={() => navigate(Surface.Usage)} />
+      <SidebarButton label={copy("sidebar.schedules_221ff1")} icon="schedules" current={surface === Surface.Schedules} onClick={() => navigate(Surface.Schedules)} />
+      <SidebarButton label={copy("sidebar.activity_38da15")} icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
       <span className="sidebar-rail-spacer" />
-      <SidebarButton label="Settings" icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
+      <SidebarButton label={copy("sidebar.settings_74a883")} icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
-    <dialog ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? "DeliDev navigation" : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
+    <dialog ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? copy("sidebar.delidevNavigation_a550af") : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
     <div className={`sidebar-pane${sessionNavigation ? " is-home" : ""}`}>
       <header className="sidebar-header">
-        <h1>DeliDev</h1>
+        <h1>{copy("sidebar.delidev_44fcad")}</h1>
         {sessionNavigation ? <div className="sidebar-header-actions">
-          <button type="button" className="sidebar-header-button" aria-label="Inbox" onClick={() => navigateHeader(Surface.Inbox)}><Icon name="inbox" /></button>
-          <button type="button" className="sidebar-header-button" aria-label="Search" onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
+          <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.inbox_94835e")} onClick={() => navigateHeader(Surface.Inbox)}><Icon name="inbox" /></button>
+          <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.search_49c266")} onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
         </div> : null}
       </header>
-      <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>Close navigation</button>
-      {sessionNavigation ? <button type="button" className="sidebar-new-session" aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />New session</button> : null}
-      <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? "Project and session navigation" : "Menu navigation and filters"}>
+      <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>{copy("sidebar.closeNavigation_99904d")}</button>
+      {sessionNavigation ? <button type="button" className="sidebar-new-session" aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />{copy("sidebar.newSession_cffdba")}</button> : null}
+      <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? copy("sidebar.projectAndSessionNavigation_ccbca5") : copy("sidebar.menuNavigationAndFilters_b5a21d")}>
         <div hidden={!sessionNavigation}>
-        <header className="sidebar-projects-heading"><h2>Projects</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label="New project" onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label="Project and conversation options" aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label="Project and conversation options" className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />Include archived</label></div> : null}</header>
-        {sessionNavigation && newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>New project</div>, window.document.body) : null}
-        {includeArchived ? <p className="sidebar-archive-indicator">Archived included</p> : null}
-        <QueryProblem query={projects} label="projects" retryLabel="Retry project catalog" />
-        <QueryProblem query={sessions} label="sessions" retryLabel="Retry global sessions" />
-        {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">Loading projects…</p> : null}
-        {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>No projects loaded.</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}>Create a project</button></div> : null}
+        <header className="sidebar-projects-heading"><h2>{copy("sidebar.projects_04e2a9")}</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label={copy("sidebar.newProject_a41eb2")} onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />{copy("sidebar.includeArchived_b6c334")}</label></div> : null}</header>
+        {sessionNavigation && newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>{copy("sidebar.newProject_a41eb2")}</div>, window.document.body) : null}
+        {includeArchived ? <p className="sidebar-archive-indicator">{copy("sidebar.archivedIncluded_5c65cb")}</p> : null}
+        <QueryProblem query={projects} label={copy("sidebar.projects_2577c0")} retryLabel={copy("sidebar.retryProjectCatalog_6fc560")} />
+        <QueryProblem query={sessions} label={copy("sidebar.sessions_1225ae")} retryLabel={copy("sidebar.retryGlobalSessions_4d93c1")} />
+        {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingProjects_6970a1")}</p> : null}
+        {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>{copy("sidebar.noProjectsLoaded_9b9e01")}</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}>{copy("sidebar.createAProject_c52af0")}</button></div> : null}
         {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: `Project · ${id}`, fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
-        <Continuation query={projects} label="projects" root={list} active={active} />
+        <Continuation query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat">
-          <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">General Chat</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>
+          <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>
           {generalExpanded ? <>
-            {!sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">Loading sessions…</p> : null}
+            {!sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingSessions_c4141f")}</p> : null}
             {generalRows.map((row) => <SessionRow key={row.id} row={row} selected={selectedSessionId === row.id} open={chooseSession} />)}
-            {sessions.loaded && !sessions.error && generalRows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">No conversations loaded.</p> : null}
-            <Continuation query={sessions} label="sessions" root={list} active={active && generalExpanded} />
+            {sessions.loaded && !sessions.error && generalRows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">{copy("sidebar.noConversationsLoaded_b94bd7")}</p> : null}
+            <Continuation query={sessions} label={copy("sidebar.sessions_1225ae")} root={list} active={active && generalExpanded} />
           </> : null}
         </section>
         </div>
         <div className="sidebar-surface-outlet" ref={setContextTarget} />
       </div>
       <footer className="sidebar-footer">
-        <p role="status">{serverName} · {status.error || !connectionReady || status.data?.stopping ? "Disconnected · previous data may be stale" : status.data ? "Connected" : status.isPending ? "Connecting…" : "Disconnected"}</p>
+        <p role="status">{serverName} · {status.error || !connectionReady || status.data?.stopping ? copy("sidebar.disconnectedPreviousDataMayBeStale_359e28") : status.data ? copy("sidebar.connected_229655") : status.isPending ? copy("sidebar.connecting_72021e") : copy("sidebar.disconnected_04dfac")}</p>
       </footer>
     </div>
     </dialog>

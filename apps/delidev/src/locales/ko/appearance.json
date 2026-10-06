@@ -1,0 +1,21 @@
+{
+  "appearance.appearanceStorageIsUnavailableOpenThe_3e97e6": "Appearance storage is unavailable. Open the desktop app and check this computer’s configuration access.",
+  "appearance.theSavedAppearanceCouldNotBe_845d8f": "The saved appearance could not be read. The last known theme remains active. Check configuration access, then reload appearance.",
+  "appearance.theSavedAppearanceIsInvalidSystem_84b3f1": "The saved appearance is invalid. System is the fallback. The original file is preserved; repair or remove it before reloading appearance.",
+  "appearance.theSavedAppearanceUsesAnUnsupported_ddd79c": "The saved appearance uses an unsupported version. System is the fallback. The original file is preserved; use a compatible app or repair it before reloading appearance.",
+  "appearance.theThemeCouldNotBeSaved_fb5c7d": "The theme could not be saved. The last committed selection remains active. Check configuration access, then reload appearance before trying again.",
+  "appearance.theSaveOutcomeIsUnknownReload_ef1864": "The save outcome is unknown. Reload appearance to inspect the committed selection before trying again.",
+  "appearance.appearanceChangedElsewhereReloadAppearanceBefore_c210e8": "Appearance changed elsewhere. Reload appearance before choosing again.",
+  "appearance.appearance_463630": "외관: <s0/>",
+  "appearance.deviceAppearance_880cb9": "기기 외관",
+  "appearance.theme_efb52e": "테마",
+  "appearance.system_6725e7": "시스템",
+  "appearance.light_dbcd5e": "라이트",
+  "appearance.dark_60acc5": "다크",
+  "appearance.systemFollowsThisComputerSAppearance_edf3db": "System follows this computer’s appearance. Theme changes save automatically and apply to every DeliDev window.",
+  "appearance.readingAppearance_04736c": "Reading appearance…",
+  "appearance.savingTheme_26a81f": "테마를 저장하는 중…",
+  "appearance.appearanceIsNotSavedInspectThe_76382e": "Appearance is not saved. Inspect the saved selection before trying again.",
+  "appearance.themeSaved_5d20dd": "테마를 저장했습니다.",
+  "appearance.reloadAppearance_c3f2b4": "외관 다시 읽기"
+}

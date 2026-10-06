@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
@@ -24,6 +24,7 @@ export class TerminalText {
 }
 
 export function SessionTerminals({ session, close }: { session: Resource; close: () => void }) {
+  useLocale();
   const [shell, setShell] = useState("");
   const [selected, setSelected] = useState("");
   const [createdTerminal, setCreatedTerminal] = useState<Resource>();
@@ -36,23 +37,24 @@ export function SessionTerminals({ session, close }: { session: Resource; close:
   // The accepted resource can be beyond the first history page. Retain just
   // that one selection so creation immediately attaches to the original shell.
   const resource = supported ? list.data?.resources.find((value) => value.id === selected) ?? (createdTerminal?.id === selected ? createdTerminal : undefined) : undefined;
-  return <aside className="session-files" aria-label="Session terminals">
-    <header><h3>Terminals</h3><button onClick={close}>Hide terminals</button></header>
-    <p>Terminals run on this session's Worker in its primary workspace. Agent Stop preserves them. Archive closes their owned processes.</p>
+  return <aside className="session-files" aria-label={copy("session-terminals.sessionTerminals_db991c")}>
+    <header><h3>{copy("session-terminals.terminals_7482c4")}</h3><button onClick={close}>{copy("session-terminals.hideTerminals_522e2b")}</button></header>
+    <p>{copy("session-terminals.terminalsRunOnThisSessionS_0699b6")}</p>
     <form onSubmit={(event) => { event.preventDefault(); void create.send({ mutation: { requestId: newRequestId(), id: session.id, expectedRevision: session.revision }, shellOverride: shell, rows: 24, columns: 80 }); }}>
-      <label>Worker shell override<input value={shell} onChange={(event) => setShell(event.target.value)} placeholder="Worker account default shell" disabled={blocked} autoComplete="off" spellCheck={false} /></label>
-      <button disabled={blocked}>Create terminal</button>
+      <label>{copy("session-terminals.workerShellOverride_b27d25")}<input value={shell} onChange={(event) => setShell(event.target.value)} placeholder={copy("session-terminals.workerAccountDefaultShell_2fd88a")} disabled={blocked} autoComplete="off" spellCheck={false} /></label>
+      <button disabled={blocked}>{copy("session-terminals.createTerminal_747b98")}</button>
     </form>
-    {!supported ? <p role="status">Waiting for a server that supports session terminals.</p> : null}
-    <Problem error={create.error} />{create.uncertain ? <button disabled={create.busy} onClick={create.retry}>Retry the same terminal creation</button> : null}
-    <Problem error={supported ? list.error : undefined} /><button disabled={!supported || list.isFetching} onClick={() => { if (supported) void list.refetch(); }}>Refresh terminals</button>
-    <ul>{supported ? list.data?.resources.map((value, index) => <li key={value.id}><button aria-pressed={selected === value.id} onClick={() => setSelected(value.id)}>Terminal {index + 1} · {text(document(value).state)}</button></li>) : null}</ul>
-    <nav aria-label="Terminal history pages"><button disabled={!supported || !page} onClick={() => { setPage(""); setSelected(""); }}>First page</button><button disabled={!supported || !list.data?.nextPageToken} onClick={() => { setPage(list.data!.nextPageToken); setSelected(""); }}>Next page</button></nav>
+    {!supported ? <p role="status">{copy("session-terminals.waitingForAServerThatSupports_e0becc")}</p> : null}
+    <Problem error={create.error} />{create.uncertain ? <button disabled={create.busy} onClick={create.retry}>{copy("session-terminals.retryTheSameTerminalCreation_bc3946")}</button> : null}
+    <Problem error={supported ? list.error : undefined} /><button disabled={!supported || list.isFetching} onClick={() => { if (supported) void list.refetch(); }}>{copy("session-terminals.refreshTerminals_6e87f2")}</button>
+    <ul>{supported ? list.data?.resources.map((value, index) => <li key={value.id}><button aria-pressed={selected === value.id} onClick={() => setSelected(value.id)}><LocalizedText id="session-terminals.terminal_8058ce" components={{ s0: <>{index + 1}</>, s1: <>{text(document(value).state)}</> }} /></button></li>) : null}</ul>
+    <nav aria-label={copy("session-terminals.terminalHistoryPages_2ace98")}><button disabled={!supported || !page} onClick={() => { setPage(""); setSelected(""); }}>{copy("session-terminals.firstPage_0bdbb7")}</button><button disabled={!supported || !list.data?.nextPageToken} onClick={() => { setPage(list.data!.nextPageToken); setSelected(""); }}>{copy("session-terminals.nextPage_c08ac7")}</button></nav>
     {resource ? <TerminalView key={resource.id} resource={resource} refresh={() => { if (supported) void list.refetch(); }} /> : null}
   </aside>;
 }
 
 function TerminalView({ resource, refresh }: { resource: Resource; refresh: () => void }) {
+  useLocale();
   const transport = useTransport();
   const [observed, setObserved] = useState(resource);
   const [output, setOutput] = useState("");
@@ -100,25 +102,25 @@ function TerminalView({ resource, refresh }: { resource: Resource; refresh: () =
     if (!inputBlocked) input.current?.focus();
   }, [inputBlocked]);
   const send = (action: TerminalAction, input = new Uint8Array()) => void control.send({ mutation: { id: terminal.id, expectedRevision: terminal.revision, requestId: newRequestId() }, action, input, rows: action === TerminalAction.RESIZE ? rows : 0, columns: action === TerminalAction.RESIZE ? columns : 0 });
-  return <section aria-label="Attached terminal">
-    <p role="status">{state} · {text(data.state)}{data.cleanup_verified ? " · Process cleanup verified" : " · Process cleanup pending"}</p>
-    <p>Worker {text(data.machine_id)}<br />{text(data.shell)}<br />{text(data.cwd)}</p>
-    <Problem error={error} />{state === OutputState.Detached ? <button onClick={() => setRestart((value) => value + 1)}>Reattach original terminal</button> : null}
+  return <section aria-label={copy("session-terminals.attachedTerminal_19246e")}>
+    <p role="status">{state} · {text(data.state)}{data.cleanup_verified ? copy("session-terminals.processCleanupVerified_024000") : copy("session-terminals.processCleanupPending_efa78d")}</p>
+    <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{text(data.machine_id)}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>
+    <Problem error={error} />{state === OutputState.Detached ? <button onClick={() => setRestart((value) => value + 1)}>{copy("session-terminals.reattachOriginalTerminal_b22f08")}</button> : null}
     <pre className="terminal-output" tabIndex={0} aria-label="Terminal output">{output || "Waiting for terminal output…"}</pre>
-    <p>Text output view. Use terminal byte input for interactive controls; full-screen application display is not emulated here.</p>
+    <p>{copy("session-terminals.textOutputViewUseTerminalByte_d43051")}</p>
     <form onSubmit={(event) => { event.preventDefault(); send(TerminalAction.INPUT, lineInput); }}>
-      <label>Terminal input<textarea ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={inputBlocked} rows={2} autoComplete="off" spellCheck={false} /></label>
-      <button disabled={inputBlocked || lineInput.length > 32768}>Send line</button>
-      <button type="button" disabled={inputBlocked} onClick={() => send(TerminalAction.INPUT, new Uint8Array([3]))}>Interrupt (Ctrl+C)</button>
-      <button type="button" disabled={inputBlocked} onClick={() => send(TerminalAction.INPUT, new Uint8Array([4]))}>End input (Ctrl+D)</button>
+      <label>{copy("session-terminals.terminalInput_32822e")}<textarea ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={inputBlocked} rows={2} autoComplete="off" spellCheck={false} /></label>
+      <button disabled={inputBlocked || lineInput.length > 32768}>{copy("session-terminals.sendLine_f42bd3")}</button>
+      <button type="button" disabled={inputBlocked} onClick={() => send(TerminalAction.INPUT, new Uint8Array([3]))}>{copy("session-terminals.interruptCtrlC_ca181f")}</button>
+      <button type="button" disabled={inputBlocked} onClick={() => send(TerminalAction.INPUT, new Uint8Array([4]))}>{copy("session-terminals.endInputCtrlD_3eac1b")}</button>
     </form>
     <form onSubmit={(event) => { event.preventDefault(); send(TerminalAction.RESIZE); }}>
-      <label>Terminal rows<input type="number" min={1} max={500} required value={rows} onChange={(event) => setRows(Number(event.target.value))} /></label>
-      <label>Terminal columns<input type="number" min={1} max={1000} required value={columns} onChange={(event) => setColumns(Number(event.target.value))} /></label>
-      <button disabled={inputBlocked}>Resize terminal</button>
+      <label>{copy("session-terminals.terminalRows_93046b")}<input type="number" min={1} max={500} required value={rows} onChange={(event) => setRows(Number(event.target.value))} /></label>
+      <label>{copy("session-terminals.terminalColumns_d1fc09")}<input type="number" min={1} max={1000} required value={columns} onChange={(event) => setColumns(Number(event.target.value))} /></label>
+      <button disabled={inputBlocked}>{copy("session-terminals.resizeTerminal_4b104d")}</button>
     </form>
-    <button disabled={control.busy || control.uncertain || !!data.cleanup_verified || !!data.close_request_id} onClick={() => send(TerminalAction.CLOSE)}>Close terminal</button>
-    <Problem error={control.error} />{control.uncertain ? <button disabled={control.busy} onClick={control.retry}>Retry the same terminal operation</button> : null}
+    <button disabled={control.busy || control.uncertain || !!data.cleanup_verified || !!data.close_request_id} onClick={() => send(TerminalAction.CLOSE)}>{copy("session-terminals.closeTerminal_7d02fb")}</button>
+    <Problem error={control.error} />{control.uncertain ? <button disabled={control.busy} onClick={control.retry}>{copy("session-terminals.retryTheSameTerminalOperation_92eff7")}</button> : null}
     {object(data.problem).message ? <p role="alert">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p> : null}
   </section>;
 }

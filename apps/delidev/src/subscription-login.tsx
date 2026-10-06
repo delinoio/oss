@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { copy } from "./localization";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -203,6 +203,6 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     }, "The account name could not be saved. Your edit is kept; check the current account and save again.");
   };
   const p = pending.current;
-  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={view.problem} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? "The original request could not be confirmed."); }}>Retry original request</button> : null}</> : null;
+  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={view.problem} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? "The original request could not be confirmed."); }}>{copy("subscription-login.retryOriginalRequest_008780")}</button> : null}</> : null;
   return { begin, body, workflow: Boolean(view), available: Boolean(native), leave };
 }

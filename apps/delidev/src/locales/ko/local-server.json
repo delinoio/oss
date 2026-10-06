@@ -1,0 +1,16 @@
+{
+  "local-server.checkingLocalServer_c92e51": "Checking local server…",
+  "local-server.localServerReady_18acea": "Local server ready",
+  "local-server.automaticRestartIsStopped_f8e4c7": "Automatic restart is stopped",
+  "local-server.localServerUnavailableAttemptRetryDelay_9f679d": "Local server unavailable · attempt {{v0}} · retry delay up to {{v1}} seconds",
+  "local-server.localServerNeedsAttentionCheckIts_b02a69": "Local server needs attention · check its version, configuration and private state",
+  "local-server.localServer_caf011": "로컬 서버",
+  "local-server.starting_bbe5fc": "시작하는 중…",
+  "local-server.startLocalServer_4d64e3": "Start local server",
+  "local-server.stopAcceptedWaitingForShutdownSession_631795": "Stop accepted. Waiting for shutdown; session cleanup is not yet confirmed.",
+  "local-server.stoppingTheServerDisconnectsAllClients_c28c49": "Stopping the server disconnects all clients and Workers. Retained sessions stay saved; automatic restart stays stopped until you explicitly start it.",
+  "local-server.confirmServerStop_61a825": "Confirm server stop",
+  "local-server.keepServerRunning_60fe0a": "Keep server running",
+  "local-server.stopLocalServer_c1eeb5": "로컬 서버 중지",
+  "local-server.retryTheSameServerStop_b047eb": "Retry the same server stop"
+}

@@ -10,6 +10,7 @@ use std::{
 
 use delidev_desktop::{
     NativeFailure,
+    localization::{Message, format as translated, number, text},
     presentation::{TrayDestination, TraySummary, menu_alias},
 };
 use tauri::{
@@ -279,7 +280,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     menu.append(&MenuItem::with_id(
         app,
         "tray-show",
-        "Show DeliDev",
+        text(Message::Show),
         true,
         None::<&str>,
     )?)?;
@@ -287,7 +288,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     labels.sort();
     for label in labels {
         let (name, instance) = if label == "main" {
-            ("This computer".to_owned(), None)
+            (text(Message::Computer).to_owned(), None)
         } else {
             let Some(binding) = saved.get(&label).filter(|v| !v.closing) else {
                 continue;
@@ -320,9 +321,9 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
                 app,
                 &submenu,
                 if stale {
-                    "Connection status stale"
+                    text(Message::ConnectionStale)
                 } else {
-                    "Connected"
+                    text(Message::Connected)
                 },
                 None,
                 &mut state,
@@ -330,17 +331,26 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
             append(
                 app,
                 &submenu,
-                &format!("Updated {}", overview.observed_at),
+                &translated(Message::Updated, &[("at", &overview.observed_at)]),
                 None,
                 &mut state,
             )?;
             append(
                 app,
                 &submenu,
-                &format!(
-                    "{} active sessions{}",
-                    overview.active_sessions,
-                    if stale { " · stale" } else { "" }
+                &translated(
+                    Message::ActiveSessions,
+                    &[
+                        ("count", &number(&overview.active_sessions)),
+                        (
+                            "stale",
+                            if stale {
+                                text(Message::StaleSuffix)
+                            } else {
+                                ""
+                            },
+                        ),
+                    ],
                 ),
                 action(TrayDestination::Sessions),
                 &mut state,
@@ -348,10 +358,19 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
             append(
                 app,
                 &submenu,
-                &format!(
-                    "{} pending requests{}",
-                    overview.pending_interactions,
-                    if stale { " · stale" } else { "" }
+                &translated(
+                    Message::PendingRequests,
+                    &[
+                        ("count", &number(&overview.pending_interactions)),
+                        (
+                            "stale",
+                            if stale {
+                                text(Message::StaleSuffix)
+                            } else {
+                                ""
+                            },
+                        ),
+                    ],
                 ),
                 action(TrayDestination::Inbox),
                 &mut state,
@@ -359,11 +378,20 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
             append(
                 app,
                 &submenu,
-                &format!(
-                    "Workers: {} / {} connected{}",
-                    overview.connected_workers,
-                    overview.registered_workers,
-                    if stale { " · stale" } else { "" }
+                &translated(
+                    Message::Workers,
+                    &[
+                        ("connected", &number(&overview.connected_workers)),
+                        ("registered", &number(&overview.registered_workers)),
+                        (
+                            "stale",
+                            if stale {
+                                text(Message::StaleSuffix)
+                            } else {
+                                ""
+                            },
+                        ),
+                    ],
                 ),
                 action(TrayDestination::Settings),
                 &mut state,
@@ -372,37 +400,50 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
             append(
                 app,
                 &submenu,
-                "Connection status unavailable",
+                text(Message::ConnectionUnavailable),
                 None,
                 &mut state,
             )?;
             append(
                 app,
                 &submenu,
-                "Sessions",
+                text(Message::Sessions),
                 action(TrayDestination::Sessions),
                 &mut state,
             )?;
             append(
                 app,
                 &submenu,
-                "Inbox",
+                text(Message::Inbox),
                 action(TrayDestination::Inbox),
                 &mut state,
             )?;
         }
         let usage = summary.as_ref().and_then(|v| v.usage.as_ref());
         let usage_text = match usage.and_then(|v| v.known_tokens.as_deref()) {
-            Some(tokens) => format!(
-                "Today (UTC): {tokens} known tokens{}{}",
-                if usage.is_some_and(|v| v.incomplete) {
-                    " · incomplete"
-                } else {
-                    ""
-                },
-                if stale { " · stale" } else { "" }
+            Some(tokens) => translated(
+                Message::TodayTokens,
+                &[
+                    ("tokens", &number(tokens)),
+                    (
+                        "incomplete",
+                        if usage.is_some_and(|v| v.incomplete) {
+                            text(Message::IncompleteSuffix)
+                        } else {
+                            ""
+                        },
+                    ),
+                    (
+                        "stale",
+                        if stale {
+                            text(Message::StaleSuffix)
+                        } else {
+                            ""
+                        },
+                    ),
+                ],
             ),
-            None => "Today (UTC): usage unavailable".into(),
+            None => text(Message::TodayUnavailable).into(),
         };
         append(
             app,
@@ -414,41 +455,73 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
         let accounts = Submenu::new(
             app,
             if stale {
-                "Account quotas · stale"
+                text(Message::AccountQuotasStale)
             } else {
-                "Account quotas"
+                text(Message::AccountQuotas)
             },
             true,
         )?;
         if let Some(values) = summary.as_ref().and_then(|v| v.accounts.as_ref()) {
             if values.entries.is_empty() {
-                append(app, &accounts, "No configured accounts", None, &mut state)?;
+                append(app, &accounts, text(Message::NoAccounts), None, &mut state)?;
             }
             for account in &values.entries {
-                let quota = Submenu::new(app, menu_alias(&account.alias), true)?;
+                let quota = Submenu::new(
+                    app,
+                    if account.alias_hidden {
+                        text(Message::AliasHidden).to_owned()
+                    } else {
+                        menu_alias(&account.alias)
+                    },
+                    true,
+                )?;
                 if account.windows.is_empty() {
-                    append(app, &quota, "Quota unavailable", None, &mut state)?;
+                    append(
+                        app,
+                        &quota,
+                        text(Message::QuotaUnavailable),
+                        None,
+                        &mut state,
+                    )?;
                 }
                 for (index, window) in account.windows.iter().enumerate() {
                     append(
                         app,
                         &quota,
-                        &format!("Window {}: {}", index + 1, window.label()),
+                        &translated(
+                            Message::QuotaWindow,
+                            &[
+                                ("number", &(index + 1).to_string()),
+                                ("quota", &window.label()),
+                            ],
+                        ),
                         None,
                         &mut state,
                     )?;
                     if let Some(at) = &window.observed_at {
-                        append(app, &quota, &format!("Observed {at}"), None, &mut state)?;
+                        append(
+                            app,
+                            &quota,
+                            &translated(Message::ObservedAt, &[("at", at)]),
+                            None,
+                            &mut state,
+                        )?;
                     }
                     if let Some(at) = &window.reset_at {
-                        append(app, &quota, &format!("Reset {at}"), None, &mut state)?;
+                        append(
+                            app,
+                            &quota,
+                            &translated(Message::ResetAt, &[("at", at)]),
+                            None,
+                            &mut state,
+                        )?;
                     }
                 }
                 if account.more {
                     append(
                         app,
                         &quota,
-                        "More windows in account settings",
+                        text(Message::MoreWindows),
                         action(TrayDestination::Settings),
                         &mut state,
                     )?;
@@ -459,7 +532,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
                 append(
                     app,
                     &accounts,
-                    "More accounts in Settings",
+                    text(Message::MoreAccounts),
                     action(TrayDestination::Settings),
                     &mut state,
                 )?;
@@ -468,7 +541,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
             append(
                 app,
                 &accounts,
-                "Account quotas unavailable",
+                text(Message::QuotasUnavailable),
                 None,
                 &mut state,
             )?;
@@ -477,7 +550,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
         append(
             app,
             &submenu,
-            "Worker and account settings",
+            text(Message::WorkerSettings),
             action(TrayDestination::Settings),
             &mut state,
         )?;
@@ -486,7 +559,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     menu.append(&MenuItem::with_id(
         app,
         "tray-quit",
-        "Quit DeliDev",
+        text(Message::Quit),
         true,
         None::<&str>,
     )?)?;
@@ -603,7 +676,7 @@ impl TrayHost {
         menu.append(&MenuItem::with_id(
             app,
             "tray-show",
-            "Show DeliDev",
+            text(Message::Show),
             true,
             None::<&str>,
         )?)?;
@@ -740,4 +813,10 @@ mod tests {
         state.acknowledge("main", "newer");
         assert!(!state.pending.contains_key("main"));
     }
+}
+
+// A language change repaints retained observations without another RPC or
+// scope.
+pub fn refresh(app: &AppHandle<CefRuntime>) {
+    schedule(app);
 }

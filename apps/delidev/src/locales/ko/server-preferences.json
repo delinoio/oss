@@ -1,0 +1,21 @@
+{
+  "server-preferences.noSavedServerPreferences_6b56a2": "No saved server preferences",
+  "server-preferences.reviewTheDefaultsThenSaveOne_2fb225": "Review the defaults, then save one preference set for this server.",
+  "server-preferences.accountRouting_0c3707": "계정 라우팅",
+  "server-preferences.chooseTheDefaultPolicyForAgent_fbb9a2": "Choose the default policy for Agent Workers that inherit server routing.",
+  "server-preferences.worktreeFetch_0d4c18": "Worktree 가져오기",
+  "server-preferences.allowFetchingBeforeWorktreePreparationRepository_e71fc1": "Allow fetching before Worktree preparation. Repository preferences also apply.",
+  "server-preferences.pullRequestRemediation_4cded4": "Pull request remediation",
+  "server-preferences.configureBoundedAutomaticFixesForLinked_c08378": "Configure bounded automatic fixes for linked pull requests. All automatic policies default off.",
+  "server-preferences.chooseNewServerPreferencesToReview_3a11af": "Choose New Server preferences to review and save.",
+  "server-preferences.savedServerPreferences_8341c8": "Saved server preferences",
+  "server-preferences.defaultAccountRouting_bb44ea": "Default account routing",
+  "server-preferences.automaticFetchBeforeWorktreePreparation_510043": "Automatic fetch before Worktree preparation",
+  "server-preferences.allowed_1bb201": "허용됨",
+  "server-preferences.disabled_75081b": "비활성화됨",
+  "server-preferences.enabledPoliciesRunBoundedFixesFor_2758c5": "Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.",
+  "server-preferences.on_130011": "켬",
+  "server-preferences.off_ca7981": "끔",
+  "server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f": "Unsupported server preferences schema. Policy values are unavailable.",
+  "server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc": "Server preferences are unreadable or contain unsupported policy values. Policy values are unavailable."
+}

@@ -1,0 +1,22 @@
+{
+  "session-browser.sessionBrowser_47d746": "세션 브라우저",
+  "session-browser.browser_d31de1": "브라우저",
+  "session-browser.closeBrowser_dd3303": "브라우저 닫기",
+  "session-browser.sharedWithThisAccountSSessions_361a18": "Shared with this account's sessions on this computer. Tabs, cookies, history and browser credentials stay local.",
+  "session-browser.enterAWebAddressThenOpen_60a48b": "Enter a web address, then open a profile for this session's selected AI account.",
+  "session-browser.openAccountBrowser_6ee5d1": "Open account browser",
+  "session-browser.retryTheSameRegistration_c86ef9": "Retry the same registration",
+  "session-browser.protectedBrowserProfilesAreUnavailableUntil_033b80": "Protected browser profiles are unavailable until the selected server confirms support.",
+  "session-browser.thisAccountWasDeletedItsProfile_4cf6fc": "This account was deleted. Its profile is closed; cleanup remains pending until the desktop finishes shutting down.",
+  "session-browser.address_56ef8f": "주소",
+  "session-browser.go_6cc851": "이동",
+  "session-browser.back_76900f": "뒤로",
+  "session-browser.forward_f1c65e": "전달",
+  "session-browser.reload_bdc090": "다시 읽기",
+  "session-browser.newTab_1e08fd": "새 탭",
+  "session-browser.retryNativeView_0d84d0": "네이티브 보기 다시 시도",
+  "session-browser.browserTabs_3e94f1": "브라우저 탭",
+  "session-browser.tab_eb3a73": "탭 <s0/> · <s1/>",
+  "session-browser.closeTab_bc9560": "{{v0}} 탭 닫기",
+  "session-browser.untrustedBrowserContent_9c54bc": "Untrusted browser content"
+}

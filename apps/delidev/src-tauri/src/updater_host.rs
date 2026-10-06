@@ -203,11 +203,12 @@ pub async fn desktop_update_native(
         return Err(NativeFailure::InvalidEvidence);
     }
     let approved = rfd::AsyncMessageDialog::new()
-        .set_title("Install DeliDev update")
-        .set_description(format!(
-            "Install DeliDev {} on this computer? Running servers and sessions keep their own \
-             processes. Restart the desktop after installation.",
-            prepared.release_version
+        .set_title(delidev_desktop::localization::text(
+            delidev_desktop::localization::Message::InstallTitle,
+        ))
+        .set_description(delidev_desktop::localization::format(
+            delidev_desktop::localization::Message::InstallBody,
+            &[("version", &prepared.release_version)],
         ))
         .set_buttons(rfd::MessageButtons::YesNo)
         .show()

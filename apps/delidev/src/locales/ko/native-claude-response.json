@@ -1,0 +1,16 @@
+{
+  "native-claude-response.respondToOriginalClaudeRequest_566f4d": "Respond to original Claude request",
+  "native-claude-response.denyThisRequest_b31c70": "이 요청 거부",
+  "native-claude-response.reasonForDenial_2060f4": "거부 이유",
+  "native-claude-response.alsoInterruptThisClaudeRun_01c924": "Also interrupt this Claude run",
+  "native-claude-response.claudeWillStopAfterThisDenial_ed455d": "Claude will stop after this denial. Further input remains paused until the original execution is reconciled.",
+  "native-claude-response.useAnExactCustomAnswerFor_e60759": "Use an exact custom answer for question <s0/>",
+  "native-claude-response.customAnswerForQuestion_76fa79": "Custom answer for question <s0/>",
+  "native-claude-response.leaveQuestionUnanswered_c5d878": "Leave question <s0/> unanswered",
+  "native-claude-response.allowThisOriginalRequestWithIts_2a5592": "Allow this original request with its unchanged input.",
+  "native-claude-response.sendDenialToClaude_8203ab": "Send denial to Claude",
+  "native-claude-response.sendAnswersToClaude_e80585": "Send answers to Claude",
+  "native-claude-response.allowThisClaudeRequest_940805": "Allow this Claude request",
+  "native-claude-response.keepTheCompleteResponseWithin256_7a7390": "Keep the complete response within 256 KiB and a nonempty denial reason within 4 KiB, using valid text.",
+  "native-claude-response.retryTheSameResponseRequest_ebd80d": "Retry the same response request"
+}

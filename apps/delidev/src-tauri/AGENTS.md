@@ -1,4 +1,6 @@
 # DeliDev src-tauri ownership
+- English/Korean desktop, native and widget presentation follows `docs/apps-delidev-localization-contract.md`. Keep the device Language controller above connection/Settings visits, use bundled typed catalogs, preserve exact machine values, user/native content, draft/focus/query/request lifetimes and original server details, and never replay work on language change. Protect independent `language.json` and App Group preference storage with revision/atomic-write/uncertainty rules. Generate Swift/native resources from reconciled source catalogs during preparation/tests/packaging, and keep real platform/WidgetKit acceptance separate from fixtures and builds.
+
 
 - Provider help accepts only a closed canonical preset/action on an original trusted main or saved-window instance. Use Go-generated `provider-guidance.generated.json`, never RPC/renderer-selected URLs, and preserve regional key guidance. `browser_opener.rs` is an internal bounded OS dispatcher for separately validated OAuth/help callers, with minimal environment, silent streams and joined cancellation; it is not a generic native capability. Follow the provider and desktop contracts.
 

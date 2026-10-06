@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { newRequestId } from "@delinoio/delidev-api-client";
@@ -25,6 +26,7 @@ function recoveryProblem(error: unknown) {
 }
 
 export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = true }: { active?: boolean; busy: boolean; setBusy: (value: boolean) => void; recovered: (connection: NativeConnection) => Promise<void> }) {
+  useLocale();
   const [status, setStatus] = useState<DesktopRegistration>();
   const [confirm, setConfirm] = useState(false);
   const [pending, setPending] = useState<RecoveryRequest>();
@@ -61,18 +63,18 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
     } catch (reason) { setError(reason); }
     finally { operating.current = false; setBusy(false); }
   };
-  return <section aria-label="Desktop registration">
-    <button disabled={busy} onClick={() => void inspect()}>Check desktop registration</button>
-    {status ? <p role="status">{status.state === RegistrationState.Authorized ? "This desktop registration is authorized." : status.state === RegistrationState.Revoked ? "This desktop registration was revoked. You can explicitly register this desktop again using this computer's server owner access." : "A desktop registration recovery is pending. Continue its original request."}</p> : null}
-    {status && (status.state !== RegistrationState.Authorized || pending) ? <button disabled={busy} onClick={() => setConfirm(true)}>{pending ? "Continue desktop recovery" : "Re-register this desktop"}</button> : null}
+  return <section aria-label={copy("local-registration.desktopRegistration_65a097")}>
+    <button disabled={busy} onClick={() => void inspect()}>{copy("local-registration.checkDesktopRegistration_a540c5")}</button>
+    {status ? <p role="status">{status.state === RegistrationState.Authorized ? copy("local-registration.thisDesktopRegistrationIsAuthorized_f356ec") : status.state === RegistrationState.Revoked ? copy("local-registration.thisDesktopRegistrationWasRevokedYou_1f8ea7") : copy("local-registration.aDesktopRegistrationRecoveryIsPending_de3baf")}</p> : null}
+    {status && (status.state !== RegistrationState.Authorized || pending) ? <button disabled={busy} onClick={() => setConfirm(true)}>{pending ? copy("local-registration.continueDesktopRecovery_250cf5") : copy("local-registration.reRegisterThisDesktop_405621")}</button> : null}
     {error && !confirm ? <p role="alert">{recoveryProblem(error)}</p> : null}
-    <Modal title="Re-register this desktop" visible={confirm && active} close={() => setConfirm(false)}>
-      <p>This creates a new desktop registration. The original registration stays revoked. Your server, saved sessions, account settings and Workers are preserved.</p>
-      <p>Switching to the new registration clears this window's unsent drafts and pending app actions. Sessions are not automatically resumed.</p>
-      {pending ? <p>The original recovery request is retained. Closing this dialog does not cancel an accepted registration.</p> : null}
+    <Modal title={copy("local-registration.reRegisterThisDesktop_405621")} visible={confirm && active} close={() => setConfirm(false)}>
+      <p>{copy("local-registration.thisCreatesANewDesktopRegistration_0adc71")}</p>
+      <p>{copy("local-registration.switchingToTheNewRegistrationClears_d3ec15")}</p>
+      {pending ? <p>{copy("local-registration.theOriginalRecoveryRequestIsRetained_a082ac")}</p> : null}
       {error ? <p role="alert">{recoveryProblem(error)}</p> : null}
-      <button disabled={busy || !status} onClick={() => void recover()}>{busy ? "Recovering…" : pending ? "Retry original desktop recovery" : "Confirm desktop re-registration"}</button>
-      <button onClick={() => setConfirm(false)}>Close</button>
+      <button disabled={busy || !status} onClick={() => void recover()}>{busy ? copy("local-registration.recovering_959bdc") : pending ? copy("local-registration.retryOriginalDesktopRecovery_3b14fa") : copy("local-registration.confirmDesktopReRegistration_d9ee3f")}</button>
+      <button onClick={() => setConfirm(false)}>{copy("local-registration.close_7d9eb7")}</button>
     </Modal>
   </section>;
 }

@@ -1,0 +1,11 @@
+{
+  "pr-fix.fixAttemptOwnsThisPrInspect_85a121": "Fix attempt <s0/> owns this PR. Inspect its retained history before another fix.",
+  "pr-fix.fixNow_879349": "지금 수정",
+  "pr-fix.retryOriginalFixRequest_3ecf60": "Retry original fix request",
+  "pr-fix.manualPrFix_5b64d4": "수동 PR 수정",
+  "pr-fix.fixProject_e1ce32": "프로젝트 수정",
+  "pr-fix.theServerReusesTheMostRecent_add8ed": "The server reuses the most recent eligible linked session or prepares a new PR-head workspace with its configured Codex Agent and Worker. Paused and archived sessions stay paused. The execution Worker uses its prepared Git identity.",
+  "pr-fix.thisServerHasNoSupportedManual_5d3d3f": "This server has no supported manual PR fix profile.",
+  "pr-fix.startFix_039be8": "수정 시작",
+  "pr-fix.cancel_19766e": "취소"
+}

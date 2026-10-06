@@ -1,0 +1,23 @@
+{
+  "native-builtin.write_3f0092": "쓰기",
+  "native-builtin.edit_464c4f": "편집",
+  "native-builtin.applyPatch_01bcfe": "패치 적용",
+  "native-builtin.glob_18d00f": "Glob",
+  "native-builtin.grep_16970e": "Grep",
+  "native-builtin.questionTool_1a05b1": "질문 도구",
+  "native-builtin.foregroundTask_168e9c": "포그라운드 작업",
+  "native-builtin.nativeToolUnavailable_efe84c": "Native tool · Unavailable",
+  "native-builtin.theRetainedNativeOperationIsUnavailable_ed146e": "The retained native operation is unavailable or inconsistent.",
+  "native-builtin.originalNativeInput_b3b718": "Original native input",
+  "native-builtin.nativeToolResult_1cf5a0": "Native tool result",
+  "native-builtin.nativeToolError_440d26": "네이티브 도구 오류",
+  "native-builtin.originalNativeMetadata_d7e8f9": "Original native metadata",
+  "native-builtin.originalProposalAndObservations_8d63b6": "Original proposal and observations",
+  "native-builtin.nativeFileEdited_132303": "Native file edited",
+  "native-builtin.nativeFileAdded_82ed0c": "네이티브 파일 추가됨",
+  "native-builtin.nativeFileChanged_05aac0": "Native file changed",
+  "native-builtin.nativeFileUnlinked_b796f3": "Native file unlinked",
+  "native-builtin.nativeWorkspaceEventUnavailable_904936": "Native workspace event · Unavailable",
+  "native-builtin.theRetainedFileNotificationIsUnavailable_ebdf4c": "The retained file notification is unavailable or inconsistent.",
+  "native-builtin.thisNativeWorkspaceNotificationDoesNot_5280e0": "This native workspace notification does not identify a tool or prove the current file state."
+}

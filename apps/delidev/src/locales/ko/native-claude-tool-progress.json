@@ -1,0 +1,15 @@
+{
+  "native-claude-tool-progress.tool_2e53bd": "도구",
+  "native-claude-tool-progress.task_4bc74b": "작업",
+  "native-claude-tool-progress.reportedElapsedSeconds_b10c17": "Reported elapsed seconds",
+  "native-claude-tool-progress.heartbeat_9df894": "주기 확인",
+  "native-claude-tool-progress.notReported_adadfa": "보고되지 않음",
+  "native-claude-tool-progress.reported_34540b": "보고됨",
+  "native-claude-tool-progress.explicitlyFalse_ae527b": "명시적인 false",
+  "native-claude-tool-progress.originalHeartbeatReferences_7ce3e3": "Original heartbeat references",
+  "native-claude-tool-progress.progressIdentity_280f08": "진행 상황 식별 정보",
+  "native-claude-tool-progress.owningToolIdentity_ed9c5e": "Owning tool identity",
+  "native-claude-tool-progress.toolProgressDoesNotConfirmCompletion_43ed36": "Tool progress does not confirm completion, approval or execution success.",
+  "native-claude-tool-progress.originalToolSummary_064588": "Original tool summary",
+  "native-claude-tool-progress.thisSummaryDoesNotConfirmTool_e61647": "This summary does not confirm tool completion or approval."
+}

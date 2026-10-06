@@ -1,0 +1,20 @@
+{
+  "language.title": "언어",
+  "language.scope": "기본값은 시스템 언어입니다. 변경하면 모든 DeliDev 창에 바로 적용됩니다.",
+  "language.system": "시스템",
+  "language.english": "English",
+  "language.korean": "한국어",
+  "language.reading": "언어 설정을 읽는 중…",
+  "language.saving": "언어를 저장하는 중…",
+  "language.saved": "언어를 저장했습니다.",
+  "language.notSaved": "언어 설정을 저장하지 못했습니다. 다시 시도하기 전에 저장된 선택을 확인하세요.",
+  "language.reload": "언어 설정 다시 읽기",
+  "language.unavailable": "언어 설정 저장소를 사용할 수 없습니다. 데스크톱 앱에서 이 컴퓨터의 설정 접근 권한을 확인하세요.",
+  "language.readFailed": "저장된 언어 설정을 읽지 못했습니다. 마지막으로 확인한 언어를 유지합니다. 설정 접근 권한을 확인한 다음 언어 설정을 다시 읽으세요.",
+  "language.invalidDocument": "저장된 언어 설정이 유효하지 않아 시스템 언어를 사용합니다. 원본 파일은 보존됩니다. 파일을 복구하거나 제거한 다음 언어 설정을 다시 읽으세요.",
+  "language.unsupportedVersion": "저장된 언어 설정의 버전을 지원하지 않아 시스템 언어를 사용합니다. 원본 파일은 보존됩니다. 호환되는 앱을 사용하거나 파일을 복구한 다음 언어 설정을 다시 읽으세요.",
+  "language.writeFailed": "언어 설정을 저장하지 못했습니다. 마지막으로 저장한 선택을 유지합니다. 설정 접근 권한을 확인하고 언어 설정을 다시 읽은 다음 다시 시도하세요.",
+  "language.outcomeUnknown": "저장 결과를 확인할 수 없습니다. 다시 시도하기 전에 언어 설정을 다시 읽어 저장된 선택을 확인하세요.",
+  "language.changed": "다른 곳에서 언어 설정을 변경했습니다. 다시 선택하기 전에 언어 설정을 다시 읽으세요.",
+  "language.widgetFailed": "언어를 저장했지만 위젯 언어를 동기화하지 못했습니다. 언어 설정을 다시 읽어 위젯 동기화를 다시 시도하세요."
+}

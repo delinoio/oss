@@ -1,0 +1,17 @@
+{
+  "account-oauth.connectOpenrouter_6c38bc": "OpenRouter 연결",
+  "account-oauth.completeSignInInYourBrowser_64e524": "Complete sign-in in your browser",
+  "account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0": "Approve access on OpenRouter. DeliDev will finish connecting automatically.",
+  "account-oauth.editAccount_ab6a16": "계정 편집",
+  "account-oauth.manageAccount_ddb585": "계정 관리",
+  "account-oauth.done_11a676": "완료",
+  "account-oauth.openBrowserAgain_63833e": "Open browser again",
+  "account-oauth.cancel_19766e": "취소",
+  "account-oauth.backToProviders_efe541": "제공자로 돌아가기",
+  "account-oauth.useAnApiKeyInstead_b728ab": "Use an API key instead",
+  "account-oauth.inspectOriginalAttempt_887b78": "Inspect original attempt",
+  "account-oauth.retryOriginalStart_eefc3a": "Retry original start",
+  "account-oauth.recoverSavedResult_3cb5e6": "Recover saved result",
+  "account-oauth.yourCredentialWillBeStoredSecurely_26be74": "Your credential will be stored securely on the selected server.",
+  "account-oauth.youCanValidateYourAccountAfter_70f97e": "You can validate your account after connecting."
+}

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, useLocale } from "./localization";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -22,13 +22,13 @@ const nativeBridge: AppearanceBridge = {
   subscribe: async (changed) => isTauri() ? listen<unknown>("appearance-changed", (event) => changed(event.payload)) : () => {},
 };
 const problemMessages: Record<AppearanceProblem, string> = {
-  [AppearanceProblem.Unavailable]: "Appearance storage is unavailable. Open the desktop app and check this computer’s configuration access.",
-  [AppearanceProblem.ReadFailed]: "The saved appearance could not be read. The last known theme remains active. Check configuration access, then reload appearance.",
-  [AppearanceProblem.InvalidDocument]: "The saved appearance is invalid. System is the fallback. The original file is preserved; repair or remove it before reloading appearance.",
-  [AppearanceProblem.UnsupportedVersion]: "The saved appearance uses an unsupported version. System is the fallback. The original file is preserved; use a compatible app or repair it before reloading appearance.",
-  [AppearanceProblem.WriteFailed]: "The theme could not be saved. The last committed selection remains active. Check configuration access, then reload appearance before trying again.",
-  [AppearanceProblem.OutcomeUnknown]: "The save outcome is unknown. Reload appearance to inspect the committed selection before trying again.",
-  [AppearanceProblem.Changed]: "Appearance changed elsewhere. Reload appearance before choosing again.",
+  get [AppearanceProblem.Unavailable]() { return copy("appearance.appearanceStorageIsUnavailableOpenThe_3e97e6"); },
+  get [AppearanceProblem.ReadFailed]() { return copy("appearance.theSavedAppearanceCouldNotBe_845d8f"); },
+  get [AppearanceProblem.InvalidDocument]() { return copy("appearance.theSavedAppearanceIsInvalidSystem_84b3f1"); },
+  get [AppearanceProblem.UnsupportedVersion]() { return copy("appearance.theSavedAppearanceUsesAnUnsupported_ddd79c"); },
+  get [AppearanceProblem.WriteFailed]() { return copy("appearance.theThemeCouldNotBeSaved_fb5c7d"); },
+  get [AppearanceProblem.OutcomeUnknown]() { return copy("appearance.theSaveOutcomeIsUnknownReload_ef1864"); },
+  get [AppearanceProblem.Changed]() { return copy("appearance.appearanceChangedElsewhereReloadAppearanceBefore_c210e8"); },
 };
 
 export function parseAppearance(value: unknown): AppearanceSnapshot {
@@ -48,6 +48,7 @@ interface AppearanceController {
 const AppearanceContext = createContext<AppearanceController>({ snapshot: defaultSnapshot, select: () => {}, reload: () => {} });
 
 export function AppearanceProvider({ children, bridge = nativeBridge }: { children: ReactNode; bridge?: AppearanceBridge }) {
+  useLocale();
   const [snapshot, setSnapshot] = useState(defaultSnapshot);
   const current = useRef(defaultSnapshot);
   const [operation, setOperation] = useState<AppearanceOperation | undefined>(AppearanceOperation.Reading);
@@ -131,22 +132,23 @@ export function AppearanceProvider({ children, bridge = nativeBridge }: { childr
   }, [bridge]);
   return <AppearanceContext.Provider value={{ snapshot, operation, select: (theme) => { void run(theme); }, reload: () => { void run(); } }}>
     {children}
-    {!operation && snapshot.problem ? <p className="appearance-notice" role="alert">Appearance: {problemMessages[snapshot.problem]}</p> : null}
+    {!operation && snapshot.problem ? <p className="appearance-notice" role="alert"><LocalizedText id="appearance.appearance_463630" components={{ s0: <>{problemMessages[snapshot.problem]}</> }} /></p> : null}
   </AppearanceContext.Provider>;
 }
 
 export function AppearanceSettings() {
+  useLocale();
   const { snapshot, operation, select, reload } = useContext(AppearanceContext);
-  return <section className="appearance-settings" aria-label="Device appearance">
+  return <section className="appearance-settings" aria-label={copy("appearance.deviceAppearance_880cb9")}>
     <fieldset disabled={Boolean(operation || snapshot.problem)} aria-describedby="appearance-scope">
-      <legend>Theme</legend>
+      <legend>{copy("appearance.theme_efb52e")}</legend>
       <div className="appearance-choices">{[Theme.System, Theme.Light, Theme.Dark].map((theme) => <label className="appearance-choice" key={theme}>
         <input type="radio" name="device-theme" value={theme} checked={snapshot.theme === theme} onChange={() => select(theme)} />
-        <span className="appearance-miniature" data-preview={theme} aria-hidden="true" /><span>{theme === Theme.System ? "System" : theme === Theme.Light ? "Light" : "Dark"}</span>
+        <span className="appearance-miniature" data-preview={theme} aria-hidden="true" /><span>{theme === Theme.System ? copy("appearance.system_6725e7") : theme === Theme.Light ? copy("appearance.light_dbcd5e") : copy("appearance.dark_60acc5")}</span>
       </label>)}</div>
     </fieldset>
-    <p id="appearance-scope">System follows this computer’s appearance. Theme changes save automatically and apply to every DeliDev window.</p>
-    <p role="status" aria-live="polite">{operation === AppearanceOperation.Reading ? "Reading appearance…" : operation === AppearanceOperation.Saving ? "Saving theme…" : snapshot.problem ? "Appearance is not saved. Inspect the saved selection before trying again." : "Theme saved."}</p>
-    {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><button type="button" disabled={Boolean(operation)} onClick={reload}>Reload appearance</button></> : null}
+    <p id="appearance-scope">{copy("appearance.systemFollowsThisComputerSAppearance_edf3db")}</p>
+    <p role="status" aria-live="polite">{operation === AppearanceOperation.Reading ? copy("appearance.readingAppearance_04736c") : operation === AppearanceOperation.Saving ? copy("appearance.savingTheme_26a81f") : snapshot.problem ? copy("appearance.appearanceIsNotSavedInspectThe_76382e") : copy("appearance.themeSaved_5d20dd")}</p>
+    {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><button type="button" disabled={Boolean(operation)} onClick={reload}>{copy("appearance.reloadAppearance_c3f2b4")}</button></> : null}
   </section>;
 }

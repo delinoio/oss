@@ -1,0 +1,20 @@
+{
+  "native-claude-usage.mainLoopUsageUnavailable_8890bb": "Main-loop usage unavailable.",
+  "native-claude-usage.unavailable_ca1844": "Unavailable",
+  "native-claude-usage.nativeUsageDetails_c90c8b": "Native usage details",
+  "native-claude-usage.nativeProviderUsageUnavailable_e70578": "Native provider usage unavailable.",
+  "native-claude-usage.theRetainedClaudeUsageObservationIs_5789fe": "The retained Claude usage observation is unavailable or inconsistent.",
+  "native-claude-usage.claudeNativeUsage_53a311": "Claude native usage",
+  "native-claude-usage.originalInputResult_8746ee": "Original input result",
+  "native-claude-usage.providerMessageStart_1f2c60": "Provider message start",
+  "native-claude-usage.completedNativeBlock_9f2f2e": "Completed native block {{v0}}",
+  "native-claude-usage.providerMessageMetadata_9b71ca": "Provider message metadata",
+  "native-claude-usage.source_590a7b": "Source: <s0/>",
+  "native-claude-usage.nativeReportsOverlapMainLoopUsage_9fa040": "Native reports overlap. Main-loop usage excludes auxiliary and subagent calls; cumulative model values belong to the original native runtime. Output includes thinking. These reports and native estimates are not added to billed usage, price estimates or session budgets.",
+  "native-claude-usage.theRetainedClaudeResultUsageIs_c820c7": "The retained Claude result usage is unavailable or inconsistent.",
+  "native-claude-usage.claudeResultUsage_3e6c8f": "Claude result usage",
+  "native-claude-usage.nativeMainLoopTurn_7fae43": "Native main-loop turn",
+  "native-claude-usage.nativeCumulativeModelLedger_46974a": "Native cumulative model ledger",
+  "native-claude-usage.noModelEntriesReported_d168a7": "No model entries reported.",
+  "native-claude-usage.nativeCumulativeUsdEstimate_f82a7c": "Native cumulative USD estimate"
+}

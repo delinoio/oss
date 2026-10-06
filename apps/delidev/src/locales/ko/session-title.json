@@ -1,0 +1,10 @@
+{
+  "session-title.titleWaitsForTheFirstCompleted_11677c": "Title waits for the first completed turn",
+  "session-title.titleQueued_b44555": "제목 생성 대기 중",
+  "session-title.generatingTitle_d25441": "제목 생성 중",
+  "session-title.titleGenerated_1e4690": "제목 생성됨",
+  "session-title.titleSkipped_958887": "제목 생성 건너뜀",
+  "session-title.titleGenerationFailed_ffe5d8": "Title generation failed",
+  "session-title.titleGenerationUnsupported_419b31": "Title generation unsupported",
+  "session-title.titleOutcomeUncertain_3cc9af": "Title outcome uncertain"
+}

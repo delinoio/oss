@@ -1,0 +1,16 @@
+{
+  "notification-presentation.desktopNotificationsCouldNotBeConfirmed_8b02e8": "Desktop notifications could not be confirmed. Requests remain in the inbox; notification settings show native availability.",
+  "notification-presentation.onThisComputer_e6af7e": "On this computer",
+  "notification-presentation.refreshStatusForNativeNotifications_6d39c7": "Refresh status for native notifications",
+  "notification-presentation.refreshStatus_442c4b": "Refresh status",
+  "notification-presentation.openDelidevOnYourDesktopTo_7da841": "Open DeliDev on your desktop to manage native notifications.",
+  "notification-presentation.nativeNotificationPermissionCouldNotBe_1d14b3": "Native notification permission could not be confirmed.",
+  "notification-presentation.checkingNativeNotificationAvailability_b63c11": "Checking native notification availability…",
+  "notification-presentation.notificationPermissionHasNotBeenRequested_e0df38": "Notification permission has not been requested.",
+  "notification-presentation.notificationsAreDisabledEnableDelidevIn_6e5797": "Notifications are disabled. Enable DeliDev in your operating system's notification settings.",
+  "notification-presentation.notificationsAllowed_675cad": "Notifications allowed",
+  "notification-presentation.theDesktopNotificationServiceSupportsActions_aec2f5": "The desktop notification service supports actions. This service does not report user permission or whether a banner was shown.",
+  "notification-presentation.focusOrDoNotDisturbMay_42e527": "Focus or Do Not Disturb may still suppress banners.",
+  "notification-presentation.allowDesktopNotifications_c30c0d": "Allow desktop notifications",
+  "notification-presentation.permissionIsSharedByDelidevWindows_5376fc": "Permission is shared by DeliDev windows on this computer."
+}

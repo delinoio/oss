@@ -1,0 +1,23 @@
+{
+  "local-worker-controls.registeredOnThisComputerNotStarted_429f06": "Registered on this computer; not started yet.",
+  "local-worker-controls.startingWaitingForTheServerTo_5d140b": "Starting; waiting for the server to accept this Worker. A previous connection lease can delay readiness.",
+  "local-worker-controls.workerControllerRunningServerConnectivityAnd_d14dd1": "Worker controller running. Server connectivity and harness readiness are shown separately below.",
+  "local-worker-controls.stopIntentSavedWaitingForThe_bbbf38": "Stop intent saved; waiting for the original Worker controller to exit.",
+  "local-worker-controls.workerControllerExitedExistingSessionCleanup_a58050": "Worker controller exited. Existing session cleanup and recovery remain separate.",
+  "local-worker-controls.workerExitIsUnconfirmedInspectIts_ed152e": "Worker exit is unconfirmed. Inspect its private log and original session recovery before explicitly replacing the controller.",
+  "local-worker-controls.workerOnThisComputer_53d365": "Worker on this computer",
+  "local-worker-controls.thisComputerSWorker_80a5ac": "This computer's Worker",
+  "local-worker-controls.registrationIsSeparateFromStartupThe_f724cc": "Registration is separate from startup. The Worker continues after you quit DeliDev. Harnesses must already be installed.",
+  "local-worker-controls.executionMachine_37d7c0": "Execution machine: <s0/>",
+  "local-worker-controls.refreshLocalWorker_167e1d": "Refresh local Worker",
+  "local-worker-controls.registerThisComputer_cbad75": "Register this computer",
+  "local-worker-controls.startLocalWorker_9c00b5": "Start local Worker",
+  "local-worker-controls.stopLocalWorker_0e4a48": "로컬 워커 중지",
+  "local-worker-controls.stoppingThisWorkerInterruptsItsActive_09fca2": "Stopping this Worker interrupts its active work and prevents this controller from reconnecting. Sessions remain saved and may require recovery.",
+  "local-worker-controls.theWorkerGenerationChangedRefreshAnd_62391f": "The Worker generation changed. Refresh and select its current generation before a new stop.",
+  "local-worker-controls.confirmWorkerStop_c7e9d5": "Confirm Worker stop",
+  "local-worker-controls.keepWorkerRunning_6abcfd": "Keep Worker running",
+  "local-worker-controls.theRetainedStopTargetsOnlyIts_b08b1d": "The retained stop targets only its original generation.",
+  "local-worker-controls.retryOriginalWorkerStop_70aea2": "Retry original Worker stop",
+  "local-worker-controls.acknowledgeRefreshedWorkerState_afc0fe": "Acknowledge refreshed Worker state"
+}
