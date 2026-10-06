@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { renameSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { Event } from "./plan.mjs";
@@ -16,9 +16,24 @@ test("independent edits select one package across a multi-commit push", t => {
   assert.deepEqual(result.packages, ["unrelated"]); assert.equal(result.mode, "affected");
   assert.equal(f.git("worktree", "list", "--porcelain").split("worktree ").length, 2);
 });
-test("shared changes retain the CLI's normal, optional, build, dev and target dependents", t => {
+test("an initial empty Rust plan never prepares or invokes the selector", t => {
+  const f = rustFixture(t);
+  const result = select(f, { binary: undefined, plan: { jobs: { "rust-test": false, "rust-clippy": false }, forced: {} }, run: () => { throw new Error("unexpected invocation"); } });
+  assert.deepEqual(result.packages, []); assert.equal(result.reason, "no-rust-jobs");
+});
+test("shared changes retain transitive, normal, optional, build, dev and target dependents", t => {
   const f = rustFixture(t); f.write("core-lib/fixture.txt", "change"); f.commit();
   assert.deepEqual(select(f).packages, [...consumers, "core-lib"].sort());
+});
+test("metadata lockfile mutation fails planning and cleans the worktree", t => {
+  const f = rustFixture(t); f.write("unrelated/fixture.txt", "change"); f.commit();
+  const run = (...args) => {
+    const result = f.run(...args);
+    if (args[1].includes("list")) writeFileSync(join(args[2], "Cargo.lock"), "mutated lockfile\n");
+    return result;
+  };
+  assert.throws(() => select(f, { run }));
+  assert.equal(f.git("worktree", "list", "--porcelain").split("worktree ").length, 2);
 });
 test("default AGENTS exclusion and scene exclusion produce authorized empty jobs", t => {
   for (const path of ["unrelated/AGENTS.md", "forge-scene/fixture.txt"]) {

@@ -8,7 +8,7 @@ import { consumers, rustFixture } from "./rust-affected-fixture.mjs";
 // Ordinary contract tests are offline. The changes job supplies the verified
 // public executable and must execute these fixtures before package selection.
 const binary = process.env.CARGO_MONO_TEST_BINARY;
-test("published CLI selects every manifest dependency kind and runs only those targets", { skip: !binary }, t => {
+test("published CLI selects transitive dependents and every dependency kind, then runs only those targets", { skip: !binary }, t => {
   const f = rustFixture(t);
   const previousLog = process.env.RUST_LOG;
   process.env.RUST_LOG = "cargo_mono=info";

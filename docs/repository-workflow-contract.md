@@ -100,7 +100,7 @@ runner temporary storage; no binary cache or source-build fallback is used.
 This repository utility release is separate from the Tauri producer recipe lock.
 
 The published executable must pass offline temporary-workspace fixtures for
-normal, optional, build, dev and target-specific path dependents, rename owners,
+transitive, normal, optional, build, dev and target-specific path dependents, rename owners,
 empty selection, and the pnport runtime relationship before repository planning.
 Those Linux fixtures also execute the selected test and all-features Clippy
 commands. Ordinary `pnpm ci:contracts` skips these two live tests when no verified
