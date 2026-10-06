@@ -149,7 +149,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(name);
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
-  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
   fireEvent.click(screen.getByRole("button", { name: `Delete ${name}` }));
   expect(screen.getByText("Schedules using this configuration will be disabled for future runs. Already accepted sessions are retained.")).toBeTruthy();
@@ -210,7 +210,7 @@ it("retains an Agent draft at its captured revision when a peer changes the entr
   expect(value.save).not.toHaveBeenCalled();
 });
 
-it("retains exact Agent save bytes and navigation locks through reflow and reconnect", async () => {
+it("retains exact Agent save bytes through reflow and reconnect with navigation available", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "Fixture Provider", enabled: true });
   const model = resource(EntityKind.MODEL, { name: "Fixture Model", provider_id: provider.id });
   const agent = resource(EntityKind.AGENT, { name: "Original Agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } }, 3n);
@@ -225,8 +225,8 @@ it("retains exact Agent save bytes and navigation locks through reflow and recon
   fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: model.id } });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
-  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole("button", { name: "Instructions" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Instructions" }) as HTMLButtonElement).disabled).toBe(false);
   const replacementSave = vi.fn();
   const replacement: Transport = { ...value.transport, unary: (...args) => { if (args[0].name === "SaveConfiguration") replacementSave(); return value.transport.unary(...args); } };
   view.rerender(<TransportProvider transport={replacement}><QueryClientProvider client={value.client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
@@ -355,7 +355,6 @@ it("retains the exact first-activation retry after inventory reveals the saved p
   expect(savedSwitch).toBe(originalSwitch);
   expect((savedSwitch as HTMLButtonElement).disabled).toBe(true);
   expect(value.save).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Models" }));
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same change" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
@@ -383,7 +382,7 @@ it("uses server-owned preset key guidance and inert documentation in the API acc
   expect(screen.queryByRole("link", { name: "https://developers.openai.com/api/reference/overview" })).toBeNull();
 });
 
-it("discards account filters, later pages, wizard input and configuration deletion confirmations on close", async () => {
+it.each(["close", "category change"])("discards account filters, later pages, wizard input and deletion confirmations on %s", async departure => {
   const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true });
   const instructions = resource(EntityKind.TEMPLATE, { name: "Saved instructions", contents: "Server contents" });
   const entry = create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName: "OpenAI", enabled: true, provider, accountCountsAvailable: true });
@@ -393,6 +392,10 @@ it("discards account filters, later pages, wizard input and configuration deleti
     return { resources: kind === EntityKind.TEMPLATE ? [instructions] : [] };
   } });
   const view = render(value.view(<Settings />));
+  const leave = () => {
+    if (departure === "category change") fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    else { view.rerender(value.view(<Settings visible={false} />)); view.rerender(value.view(<Settings />)); }
+  };
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   const next = await screen.findByRole("button", { name: "Next page" });
@@ -403,8 +406,7 @@ it("discards account filters, later pages, wizard input and configuration deleti
   fireEvent.click(await screen.findByRole("button", { name: "OpenAI API key" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Entry name" }), { target: { value: "Abandoned account" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-transient-key" } });
-  view.rerender(value.view(<Settings visible={false} />));
-  view.rerender(value.view(<Settings />));
+  leave();
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Clear provider filter" })).toBeNull();
@@ -414,8 +416,7 @@ it("discards account filters, later pages, wizard input and configuration deleti
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
   fireEvent.click(await screen.findByRole("button", { name: "Delete Saved instructions" }));
   expect(screen.getByRole("button", { name: "Confirm configuration deletion" })).toBeTruthy();
-  view.rerender(value.view(<Settings visible={false} />));
-  view.rerender(value.view(<Settings />));
+  leave();
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
   expect(await screen.findByRole("button", { name: "Delete Saved instructions" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Confirm configuration deletion" })).toBeNull();
@@ -852,7 +853,7 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   fireEvent.click(await screen.findByRole("button", { name: "Manage AI API Keys" }));
   await screen.findByText("Provider: Exact provider");
   const accountRead = () => value.list.mock.calls.map(([request]) => request).filter((request) => request.filter?.kind === EntityKind.ACCOUNT).at(-1);
-  expect(accountRead()).toMatchObject({ providerId: provider.id, accountType: 1, filter: { pageToken: "", pageSize: 50 } });
+  await waitFor(() => expect(accountRead()).toMatchObject({ providerId: provider.id, accountType: 1, filter: { pageToken: "", pageSize: 50 } }));
   fireEvent.click(await screen.findByRole("button", { name: "Next page" }));
   await screen.findByRole("button", { name: "First page" });
   expect(accountRead()).toMatchObject({ providerId: provider.id, filter: { pageToken: "api-page-2" } });
@@ -862,15 +863,14 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   fireEvent.click(screen.getByRole("button", { name: "AI Subscription" }));
   expect(screen.queryByLabelText("Search providers")).toBeNull();
   expect(screen.queryByLabelText("Filter accounts by provider")).toBeNull();
-  expect(advanced.open).toBe(true);
+  expect(screen.getByText("Advanced settings").closest("details")!.open).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
-  expect((screen.getByLabelText("Search API providers") as HTMLInputElement).value).toBe("Exact");
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
-  expect(requests.filter((request) => !request.enabledOnly && request.query === "Exact").at(-1)).toMatchObject({ query: "Exact", pageToken: "provider-page-2" });
+  expect((screen.getByLabelText("Search API providers") as HTMLInputElement).value).toBe("");
+  await waitFor(() => expect(requests.filter(request => !request.enabledOnly).at(-1)).toMatchObject({ query: "", pageToken: "" }));
   expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
 });
 
-it("scopes Transfer presentation and retains its navigation locks until the Settings visit is discarded", async () => {
+it("scopes Transfer presentation and discards it on category departure", async () => {
   const value = fixture([]);
   const rendered = render(value.view(<Settings visible />));
   fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
@@ -884,7 +884,7 @@ it("scopes Transfer presentation and retains its navigation locks until the Sett
   const json = screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement;
   const raw = '{"version":1,"entries":[],"machines":[]}';
   fireEvent.change(json, { target: { value: raw } });
-  for (const button of within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")) expect((button as HTMLButtonElement).disabled).toBe(true);
+  for (const button of within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")) expect((button as HTMLButtonElement).disabled).toBe(false);
   expect(screen.queryByRole("combobox", { name: "Settings category" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Load configuration document" }));
   rendered.rerender(value.view(<Settings visible />));
@@ -892,9 +892,7 @@ it("scopes Transfer presentation and retains its navigation locks until the Sett
   expect(json.value).toBe(raw);
   fireEvent.keyDown(json, { key: "Escape" });
   expect(screen.getByRole("textbox", { name: "Configuration JSON" })).toBe(json);
-  rendered.rerender(value.view(<Settings visible={false} />));
-  rendered.rerender(value.view(<Settings visible />));
-  expect(screen.getByRole("heading", { name: "AI Subscription", level: 1 })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
   fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
   expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe("");
   expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();

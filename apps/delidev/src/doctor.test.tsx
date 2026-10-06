@@ -88,7 +88,7 @@ for (const counter of ["0", "9007199254740993", "18446744073709551615", undefine
   expect(screen.getByText(`session: ${valid ? BigInt(counter as string).toLocaleString() : "Unknown"}`)).toBeTruthy();
 });
 
-it("keeps query gating and identity-bound native disclosures through category changes, reorder and replacement", async () => {
+it("resets disclosures on category departure and preserves their identities through refresh", async () => {
   const data = report(), machines = data.machines as Document[], credentials = data.credentials as Document[];
   machines.push({ ...machines[0], machine_id: newRequestId(), name: "Second Worker" });
   credentials.push({ ...credentials[0], account_id: newRequestId(), connection_id: newRequestId() });
@@ -106,7 +106,9 @@ it("keeps query gating and identity-bound native disclosures through category ch
   await act(async () => { await value.client.invalidateQueries(); });
   expect(value.doctor).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" })); await screen.findByText("First Worker");
-  expect(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details").open).toBe(true);
+  allClosed(view.container);
+  toggle(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details"));
+  toggle(disclosure(screen.getByText(`Account: ${credentials[0].account_id}`).closest("article")!, "Connection identity"));
   value.state.report = { ...data, machines: [...machines].reverse(), credentials: [...credentials].reverse() };
   await refresh();
   expect(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details").open).toBe(true);
