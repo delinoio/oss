@@ -14,6 +14,7 @@
   "usage.claude_061557": "Claude",
   "usage.grok_dca61d": "Grok",
   "usage.model_5e2c61": "모델",
+  "usage.modelDetailsAndTokenPricing": "모델 상세 및 토큰 가격",
   "usage.generalChatOnly_9032cc": "일반 대화만",
   "usage.applyFilters_d80ab1": "필터 적용",
   "usage.resetToLast30Days_a15ab6": "최근 30일로 초기화",

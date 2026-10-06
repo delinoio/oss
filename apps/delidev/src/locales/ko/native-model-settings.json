@@ -6,6 +6,8 @@
   "native-model-settings.observationScope_329506": "관측 범위",
   "native-model-settings.runnerDevice_37efe3": "실행 장치",
   "native-model-settings.connectedAccount_3903f0": "연결된 계정",
+  "native-model-settings.connectedSelectedAccount": "연결된 계정",
+  "native-model-settings.selectAccount": "계정 선택",
   "native-model-settings.includeHiddenModels_64799e": " 숨겨진 모델 포함",
   "native-model-settings.observeModels_cf8865": "모델 관측",
   "native-model-settings.retryTheSameObservationRequest_0b6c58": "동일한 관측 요청 다시 시도",
@@ -24,6 +26,7 @@
   "native-model-settings.visible_8411f5": "표시됨",
   "native-model-settings.reasoningInputServiceTiers_aa5c58": "추론: <s0/>. 입력: <s1/>. 서비스 등급: <s2/>. <s3/>.",
   "native-model-settings.register_55d230": "<s0/> 등록…",
+  "native-model-settings.useModel": "모델 사용",
   "native-model-settings.firstObservationPage_e0db18": "첫 관측 페이지",
   "native-model-settings.extra.ca1844969742": "확인할 수 없음"
 }

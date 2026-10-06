@@ -8,7 +8,6 @@ import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { ServiceProblem, More, Problem  } from "./ui";
 
-export function NativeModelSettings({ active, createModel }: { active: boolean; createModel: (data: Document) => void }) {
 export function NativeModelSettings({ active, createModel, selectedAccounts, pendingOperation }: { active: boolean; createModel: (data: Document) => void; selectedAccounts?: Resource[]; pendingOperation?: (pending: boolean) => void }) {
   useLocale();
   const [opened, setOpened] = useState(false);

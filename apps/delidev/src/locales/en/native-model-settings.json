@@ -6,6 +6,8 @@
   "native-model-settings.observationScope_329506": "Observation scope",
   "native-model-settings.runnerDevice_37efe3": "Runner Device",
   "native-model-settings.connectedAccount_3903f0": "Connected account",
+  "native-model-settings.connectedSelectedAccount": "Connected account",
+  "native-model-settings.selectAccount": "Select account",
   "native-model-settings.includeHiddenModels_64799e": " Include hidden models",
   "native-model-settings.observeModels_cf8865": "Observe models",
   "native-model-settings.retryTheSameObservationRequest_0b6c58": "Retry the same observation request",
@@ -24,6 +26,7 @@
   "native-model-settings.visible_8411f5": "Visible",
   "native-model-settings.reasoningInputServiceTiers_aa5c58": "Reasoning: <s0/>. Input: <s1/>. Service tiers: <s2/>. <s3/>.",
   "native-model-settings.register_55d230": "Register <s0/>…",
+  "native-model-settings.useModel": "Use model",
   "native-model-settings.firstObservationPage_e0db18": "First observation page",
   "native-model-settings.extra.ca1844969742": "Unavailable"
 }

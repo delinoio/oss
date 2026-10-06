@@ -11,6 +11,7 @@
   "server-preferences.savedServerPreferences_8341c8": "저장된 서버 환경 설정",
   "server-preferences.defaultAccountRouting_bb44ea": "기본 계정 라우팅",
   "server-preferences.automaticFetchBeforeWorktreePreparation_510043": "Worktree 준비 전에 자동 fetch",
+  "server-preferences.repositoryPreferencesAlsoApply": "저장소 환경설정도 적용됩니다.",
   "server-preferences.allowed_1bb201": "허용됨",
   "server-preferences.disabled_75081b": "비활성화됨",
   "server-preferences.enabledPoliciesRunBoundedFixesFor_2758c5": "활성 정책은 에이전트, 실행 장치와 현재 근거가 조건을 충족하면 연결된 풀 리퀘스트에 제한된 수정 작업을 실행합니다.",

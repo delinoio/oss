@@ -11,6 +11,7 @@
   "server-preferences.savedServerPreferences_8341c8": "Saved server preferences",
   "server-preferences.defaultAccountRouting_bb44ea": "Default account routing",
   "server-preferences.automaticFetchBeforeWorktreePreparation_510043": "Automatic fetch before Worktree preparation",
+  "server-preferences.repositoryPreferencesAlsoApply": "Repository preferences also apply.",
   "server-preferences.allowed_1bb201": "Allowed",
   "server-preferences.disabled_75081b": "Disabled",
   "server-preferences.enabledPoliciesRunBoundedFixesFor_2758c5": "Enabled policies run bounded fixes for linked pull requests when the Agent, Runner Device, and current evidence are eligible.",

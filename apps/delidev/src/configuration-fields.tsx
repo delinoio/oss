@@ -161,9 +161,8 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   if (kind === EntityKind.SETTINGS) return <>
     {serverPreferenceSection !== ServerPreferenceSection.GitWorkflow ? <section className="server-preference-section"><h4>{copy("configuration-fields.accountRouting_0c3707")}</h4><div className="server-routing-field"><Choice label={copy("configuration-fields.defaultAccountRouting_bb44ea")} value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>{copy("configuration-fields.usedByAgentWorkersThatInherit_4e05b2")}</p></div></section> : null}
     {serverPreferenceSection !== ServerPreferenceSection.AccountRouting ? <>
-    <section className="server-preference-section"><h4>{copy("configuration-fields.worktreePreparation_24002c")}</h4><Check label={copy("configuration-fields.allowAutomaticFetchBeforeWorktreePreparation_6c9a8c")} value={data.automatic_fetch} change={field("automatic_fetch")} /><p>{copy("configuration-fields.fetchingRequiresBothThisServerPreference_10697f")}</p></section>
-    </> : null}
-    <section className="server-preference-section"><RemediationFields value={object(data.remediation)} change={field("remediation")} active={active} presentation={RemediationDetailPresentation.Collapsible} /></section>
+      <section className="server-preference-section"><h4>{copy("configuration-fields.worktreePreparation_24002c")}</h4><Check label={copy("configuration-fields.allowAutomaticFetchBeforeWorktreePreparation_6c9a8c")} value={data.automatic_fetch} change={field("automatic_fetch")} /><p>{copy("configuration-fields.fetchingRequiresBothThisServerPreference_10697f")}</p></section>
+      <section className="server-preference-section"><RemediationFields value={object(data.remediation)} change={field("remediation")} active={active} presentation={RemediationDetailPresentation.Collapsible} /></section>
     </> : null}
   </>;
   if (kind === EntityKind.PROJECT) return <ProjectFields {...props} />;

@@ -14,6 +14,7 @@
   "usage.claude_061557": "Claude",
   "usage.grok_dca61d": "Grok",
   "usage.model_5e2c61": "Model",
+  "usage.modelDetailsAndTokenPricing": "Model details and token pricing",
   "usage.generalChatOnly_9032cc": "General Chat only",
   "usage.applyFilters_d80ab1": "Apply filters",
   "usage.resetToLast30Days_a15ab6": "Reset to last 30 days",

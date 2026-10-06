@@ -222,7 +222,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
     <SidebarSurface active title={copy("settings.settings_74a883")} className="settings-navigation">
       <nav aria-label={copy("settings.settingsCategories_b9ed95")}>
         {settingsGroups.map(group => <section className="settings-nav-group" key={group.label}>
-          <h2>{copy(group.label === SettingsGroup.AiAgents ? "settings.group.aiAgents" : group.label === SettingsGroup.Workspace ? "settings.group.workspace" : "settings.group.system")}</h2>
+          <h2>{copy(group.label === SettingsGroup.Ai ? "settings.group.aiAgents" : group.label === SettingsGroup.Coding ? "settings.group.coding" : group.label === SettingsGroup.Devices ? "settings.group.devices" : "settings.group.system")}</h2>
           {group.categories.map(category => <button type="button" className="settings-category-button" key={category} data-settings-category={category} aria-current={selection.category === category ? "page" : undefined} aria-pressed={selection.category === category} onClick={() => navigate(category)}>
             <SettingsIcon category={category} /><span>{settingsCategories[category].label}</span>
           </button>)}
@@ -367,8 +367,6 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
             <button type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? copy("settings.gitWorkflow") : undefined} onClick={() => void result.refetch()}>{isGitWorkflow ? copy("settings.refresh_0e9161") : copy("settings.refreshSettings_65dbd6")}</button>
             {isPairedDevices && pairingAuthority ? <span ref={setPairingTriggerContainer} /> : null}
             {serverSingleton ? <button type="button" className="primary" disabled={!readableServerPreferences(serverSingleton)} onClick={() => setEditing({ initial: serverSingleton, key: newRequestId() })}>{copy("settings.editServerPreferences_355948")}</button> : null}
-            {editableKinds.includes(kind) && (kind !== EntityKind.SETTINGS || !result.data?.resources.length)
-              ? <button type="button" className="primary" disabled={kind === EntityKind.SETTINGS && (!successfulEmptyFirstPage || result.isFetching)} onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>{kind === EntityKind.REPOSITORY ? copy("settings.addRepository_2eda4d") : copy("settings.new_077d61", { v0: kindNames[kind] })}</button>
             {editableKinds.includes(kind) && (kind !== EntityKind.SETTINGS || !result.data?.resources.length)
               ? <button type="button" className="primary" disabled={kind === EntityKind.SETTINGS && (!successfulEmptyFirstPage || result.isFetching)} onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>{kind === EntityKind.REPOSITORY ? copy("settings.addRepository_2eda4d") : copy("settings.new_077d61", { v0: kind === EntityKind.SETTINGS ? preferenceLabel : kindNames[kind] })}</button>
               : null}
