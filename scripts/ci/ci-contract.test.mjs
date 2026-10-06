@@ -45,6 +45,26 @@ function namedStep(job, name) {
   return job.steps.find((candidate) => candidate.name === name);
 }
 
+test("protocol launcher fixtures run uncached on every native CI contract host", () => {
+  const job = workflow.jobs["ci-contracts"];
+  assert.equal(job["runs-on"], "${{ matrix.os }}");
+  assert.equal(job.strategy["fail-fast"], false);
+  assert.deepEqual(job.strategy.matrix.os, ["ubuntu-22.04", "macos-latest", "windows-latest"]);
+  for (const name of ["Setup Go", "Validate workflow syntax", "Validate CI contracts and affected behavior"]) {
+    assert.equal(namedStep(job, name).if, "${{ runner.os == 'Linux' }}");
+  }
+  const native = namedStep(job, "Validate protocol launcher on native host");
+  assert.equal(native.if, "${{ runner.os != 'Linux' }}");
+  assert.equal(native.run, "node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:launcher");
+  assert.deepEqual(native.env, { FORCE_RUN: "true" });
+  const config = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8"));
+  assert.equal(config.tasks["ci:proto:launcher"].cache, false);
+  assert.deepEqual(config.tasks["ci:proto:launcher"].dependsOn, []);
+  const manifest = JSON.parse(readFileSync(`${root}/scripts/ci/package.json`, "utf8"));
+  assert.match(manifest.scripts["ci:contracts"], /scripts\/ci\/\*\.test\.mjs/u);
+  assert.equal(manifest.scripts["ci:proto:launcher"], "node from-root.mjs node --test scripts/ci/protocol-launcher.test.mjs");
+});
+
 test("cache setup receives workflow variables through composite inputs and retains fallback", () => {
   const source = readFileSync(`${root}/.github/actions/setup-turbo-cache/action.yml`, "utf8");
   // The runner's action-manifest context excludes vars even though workflow
@@ -418,7 +438,7 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   assert.equal(packages["package.json"].scripts["proto:fresh"], "turbo run ci:proto:fresh --filter=@delinoio/ci");
   const ciTasks = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8")).tasks;
   assert.equal(ciTasks["ci:proto:fresh"].cache, false);
-  assert.match(readFileSync(`${root}/scripts/ci/protocol-fresh.mjs`, "utf8"), /run\("buf", \["generate"\]\)/u);
+  assert.match(readFileSync(`${root}/scripts/ci/protocol-fresh.mjs`, "utf8"), /run\("node", \["node_modules\/@bufbuild\/buf\/bin\/buf", "generate"\]\)/u);
   const adminScripts = packages["apps/devhud-admin/package.json"].scripts;
   for (const task of ["build:embedded", "verify:embedded"]) {
     assert.match(adminScripts[task], /^pnpm --filter @delinoio\/devhud-api-client build && pnpm build &&/u, task);
