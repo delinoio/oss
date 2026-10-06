@@ -2,19 +2,45 @@
 // Explicit browser validation; Playwright is supplied by the validation host,
 // without adding a product/workspace dependency. All data is synthetic.
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const playwright = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
+const screenshots = process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR;
+const checkout = resolve(app, "..", "..");
+
+const resolveDestination = async value => {
+  let candidate = resolve(value);
+  const missingParts = [];
+  while (true) {
+    try {
+      const existing = await realpath(candidate);
+      return resolve(existing, ...missingParts.reverse());
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      const parent = dirname(candidate);
+      if (parent === candidate) throw error;
+      missingParts.push(basename(candidate));
+      candidate = parent;
+    }
+  }
+};
+
+const screenshotDirectory = screenshots ? await resolveDestination(screenshots) : null;
+if (screenshotDirectory) {
+  const relativePath = relative(checkout, screenshotDirectory);
+  const insideCheckout = relativePath === "" || (!isAbsolute(relativePath) && relativePath !== ".." && !relativePath.startsWith(`..${sep}`));
+  if (insideCheckout) throw new Error("DELIDEV_LAYOUT_SCREENSHOT_DIR must resolve outside the repository checkout");
+}
+
 const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
-const screenshots = process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR;
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [1280,800], [960,640], [640,480]];
@@ -85,12 +111,12 @@ try {
       });
       assert.equal(selection.background, selection.selected, "Selected card retains its semantic fill on hover");
       assert.equal(selection.border, selection.accent, "Selected card retains its accent border on hover");
-      if (screenshots) {
-        await mkdir(resolve(screenshots), { recursive: true });
+      if (screenshotDirectory) {
+        await mkdir(screenshotDirectory, { recursive: true });
         await codex.click();
         await form.scrollIntoViewIfNeeded();
         const viewport = page.viewportSize(), theme = await page.locator("html").getAttribute("data-theme");
-        await page.screenshot({ path: join(resolve(screenshots), `harness-${theme}-${viewport.width}x${viewport.height}.png`) });
+        await page.screenshot({ path: join(screenshotDirectory, `harness-${theme}-${viewport.width}x${viewport.height}.png`) });
       }
       harnessChecks++;
     }
