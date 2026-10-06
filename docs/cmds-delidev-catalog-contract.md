@@ -12,6 +12,49 @@ unknown quota cannot authorize fallback. Observed quota recovery restores source
 priority for later new sessions. Existing sessions keep their selected account
 and model. Reservations alone grant no support and introduce no migration.
 
+## Known subscription model suggestions
+
+`internal/knownmodels` owns the versioned, embedded `catalog.json`, the validated
+private download cache and one joined server refresh loop. Its immutable fetch
+URL is `https://raw.githubusercontent.com/delinoio/oss/main/cmds/delidev-cli/internal/knownmodels/catalog.json`.
+Only reviewed main data reaches installed servers. A single app/server upgrade
+adds the feature; later catalog changes need no release. No SQLite migration is
+introduced. Cache publication uses the existing atomic private-file writer.
+
+Schema 1 includes a semantic SHA-256 catalog version, reviewed-data date, source
+URLs/revisions/digests, and exactly ChatGPT, Claude and Grok in that order. Each
+service has 1–200 unique exact native IDs with display name, order and source keys.
+Known minimum harness versions and definite retirement dates are retained. A
+retirement date removes a new suggestion on that UTC date, including offline use.
+Unknown fields/schema, duplicate keys/IDs, invalid dates/digests, empty or oversized
+inventories and incomplete provenance cannot replace the last valid catalog.
+
+`ProviderService.ListKnownSubscriptionModels(subscription_service)` requires
+owner or paired-client role plus current store authorization. It returns at most
+200 candidates, catalog version/date and BUNDLED, CACHE or ONLINE source. Worker
+credentials are denied. The read neither downloads data nor reads account secrets,
+starts native tools or creates saved models. Initial reads use the embedded or
+valid private cached catalog. Successful server downloads refresh after 24 hours;
+failures retain the last valid catalog and retry after one hour. Restart retains
+the last successful download deadline. Each request has a 15-second deadline and
+1 MiB body limit. Redirects, ambient proxies and route fallback are forbidden;
+server shutdown cancels and joins the request and maintenance owner.
+
+Known metadata is separate from native discovery, credential/account entitlement,
+readiness and canonical saved-model authority. Known selections use the existing
+atomic Worker native-ID save. Saved selections retain exact model ID/revision
+checks. Removal from recommendations never removes saved models, configurations
+or immutable historical execution attribution. API endpoint discovery is unchanged.
+
+The collector uses the revision-pinned official Codex `models-manager/models.json`
+(public visibility and nonempty subscription plans), official Codex retirement
+notices, Claude Code family/selection instructions plus the current official
+model table, and the Grok Build recommended coding default. API-only inventory,
+hidden models and arbitrary configuration examples are excluded. A failed or
+empty extraction is fatal. Source-only/date-only reads preserve reviewed bytes;
+changes to IDs, display names, order or model metadata produce a review PR under
+[the workflow contract](repository-workflow-contract.md#delidev-known-model-catalog).
+
 
 ## Scope
 

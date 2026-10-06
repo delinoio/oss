@@ -1,3 +1,5 @@
+- Known subscription model suggestions follow `docs/cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. PR #1370 established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
+
 # Workflow contracts
 
 - DeliDev checks use separate `delidev-protocol`, `delidev-client` and `delidev-frontend` jobs. Select schemas/generated freshness, client and dependent desktop checks by their inputs, exclude DevHud-only inputs, and require all planned results through `CI Result`. Shared `pnpm proto:check` remains repository-wide; follow `docs/repository-workflow-contract.md`.

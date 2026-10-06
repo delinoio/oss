@@ -1,5 +1,28 @@
 # Repository Workflow Contract
 
+## DeliDev known model catalog
+
+`.github/workflows/delidev-known-models.yml` runs daily at 04:17 Asia/Seoul
+(`17 19 * * *` UTC) and supports manual dispatch on main in `delinoio/oss`.
+Its public-source collector and fixtures validate all three service inventories
+before issuing any write token. Reuse the existing release-bot GitHub App, scoped
+to `oss` with contents and pull-requests write permissions only. Checkout keeps no
+credential. Raw upstream responses and secret values are excluded from logs.
+
+Use one bot branch and one open review PR. Catalog/date/source-byte-only equality
+creates no PR. A candidate model or related metadata change records additions,
+changes, removals, source revision/digest, validation commands/results and account,
+native/platform limits in the PR and CI summary. An unchanged source revision is
+required at publication. Every branch-only commit must belong to the bot and every
+changed path to the catalog. A human edit or incomplete ownership inspection stops
+publication. Exact old-ref force-with-lease protects against a concurrent human
+push; credentials exist only in ephemeral Git configuration environment. Existing
+PRs are edited, and no automatic merge or automatic publication retry is enabled.
+Only a person-merged main catalog is consumed by installed servers. GitHub schedule
+delivery is best effort; manual dispatch can recover a missed run. A real workflow
+run and App permission acceptance are separate from local fixture validation.
+
+
 DeliDev source decomposition, independent evidence and stable numeric reservations
 follow [the structure contract](cmds-delidev-structure-contract.md). These are source
 ownership changes; existing required checks and repository rulesets remain intact.

@@ -26,7 +26,7 @@ func runTestServer(t *testing.T, root string) (Endpoint, security.Identity, cont
 	ready := make(chan Endpoint, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(ctx, Config{DataDir: root, Listen: "127.0.0.1:0", AllowedOrigins: []string{"tauri://localhost"}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, func(endpoint Endpoint) { ready <- endpoint })
+		done <- Serve(ctx, Config{disableKnownModelMaintenance: true, DataDir: root, Listen: "127.0.0.1:0", AllowedOrigins: []string{"tauri://localhost"}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, func(endpoint Endpoint) { ready <- endpoint })
 	}()
 	t.Cleanup(cancel)
 	select {

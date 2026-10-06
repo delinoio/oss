@@ -1,6 +1,6 @@
 - Agent Worker source routes reserve System capability 36 and SaveAgentWorkerRequest.route_models field 5 under issue #964. Establish both on main before activation; reuse AgentWorkerModelSelection and the save acknowledgement. Preserve the legacy single-model request and capability 35. Reservations add no migration or routing capability.
 
-- Known subscription model suggestions under issue #964 reserve System capability 35 and the new catalog-source enum/model/list declarations. Establish these allocations on main before dependent implementation. Reservations grant no known-model retrieval, native discovery, account entitlement or execution capability and add no migration. Follow the catalog, protocol and structure contracts.
+- Known subscription model suggestions follow `docs/cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. PR #1370 established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
 
 # DeliDev delidev ownership
 

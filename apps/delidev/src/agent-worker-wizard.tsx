@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { AccountTypeFilter, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SubscriptionServiceIdentity, SystemCapability, SystemQuery, newRequestId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { AccountTypeFilter, KnownSubscriptionModelCatalogSource, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SubscriptionServiceIdentity, SystemCapability, SystemQuery, newRequestId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationFields, Harness, Routing, newConfiguration } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -14,6 +14,8 @@ import "./agent-worker-wizard.css";
 enum Step { Harness = 1, Accounts, Model, Configure }
 enum SourceKind { Api = "api", Subscription = "subscription" }
 enum AccountHealth { Disconnected = "disconnected", Unverified = "unverified", Ready = "ready", Expired = "expired", Revoked = "revoked", Failed = "failed" }
+enum SuggestionKind { Known = "Known", Saved = "Saved" }
+interface ModelSuggestion { nativeId: string; name: string; kind: SuggestionKind; resource?: Resource }
 interface Source { kind: SourceKind; id: string }
 const steps = [Step.Harness, Step.Accounts, Step.Model, Step.Configure];
 const stepNames = { [Step.Harness]: "Harness", [Step.Accounts]: "Accounts", [Step.Model]: "Model", [Step.Configure]: "Configure" };
@@ -89,7 +91,10 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: source?.kind === SourceKind.Api ? source.id : "" }, { enabled: active && supported && source?.kind === SourceKind.Api });
   const accountRows = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: accountPage }, providerId: source?.kind === SourceKind.Api ? source.id : "", accountType: source?.kind === SourceKind.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION, subscriptionService: wireService(source) }, { enabled: active && supported && Boolean(source) });
   const query = useDeferredValue(input);
-  const models = useQuery(ProviderQuery.searchModels, { query, providerId: source?.kind === SourceKind.Api ? source.id : "", subscriptionService: wireService(source), includeHidden: true, enabledProvidersOnly: true, pageSize: 50, pageToken: modelPage }, { enabled: active && supported && Boolean(source) && step === Step.Model });
+  const models = useQuery(ProviderQuery.searchModels, { query, providerId: source?.kind === SourceKind.Api ? source.id : "", subscriptionService: wireService(source), includeHidden: true, enabledProvidersOnly: true, pageSize: 50, pageToken: modelPage }, { enabled: active && supported && Boolean(source) && step === Step.Model, placeholderData: previous => previous });
+  const knownSupported = status.data?.capabilities.includes(SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1) === true;
+  const known = useQuery(ProviderQuery.listKnownSubscriptionModels, { subscriptionService: wireService(source) }, { enabled: active && supported && knownSupported && source?.kind === SourceKind.Subscription && step === Step.Model });
+  const knownValid = source?.kind === SourceKind.Subscription && known.data?.subscriptionService === wireService(source) && known.data.models.length <= 200 && /^sha256:[a-f0-9]{64}$/.test(known.data.catalogVersion) && /^\d{4}-\d{2}-\d{2}$/.test(known.data.updatedAt) && [KnownSubscriptionModelCatalogSource.BUNDLED, KnownSubscriptionModelCatalogSource.CACHE, KnownSubscriptionModelCatalogSource.ONLINE].includes(known.data.source) && known.data.models.every(row => row.nativeId && row.displayName) && new Set(known.data.models.map(row => row.nativeId)).size === known.data.models.length;
   const currentModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: model?.id ?? "" }, { enabled: active && supported && Boolean(model), refetchInterval: active && model ? 5000 : false });
   const accountPageValid = accountRows.data?.resources.every(row => sameSource(row, source));
   const accountChoices = accountPageValid ? accountRows.data!.resources.filter(showAccountChoice) : [];
@@ -162,11 +167,17 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     if (ids.some(id => !knownAccounts[id] || !sameSource(knownAccounts[id]!, source))) fail(Step.Accounts, "A selected account is unavailable or changed source. Refresh and explicitly select current accounts.", "source");
     else if (model && (currentModel.error || currentModel.data?.resource && currentModel.data.resource.revision !== model.revision)) fail(Step.Model, "The selected model is unavailable or changed. Reload the catalog and explicitly select its current revision, or enter an exact model ID.", "model");
   }, [active, mutation.error, mutation.uncertain, step, data.accounts, knownAccounts, source, model, currentModel.data, currentModel.error]);
-  const pick = (row?: Resource) => { setModelPage(""); if (row && row.id === model?.id) void currentModel.refetch(); setModel(row); if (row) setInput(text(document(row).native_id)); setPopup(false); setHighlight(-1); setProblem(""); };
-  const suggestions = modelPageValid ? models.data!.models : [];
+  const pick = (row?: ModelSuggestion) => { setModelPage(""); if (row?.resource && row.resource.id === model?.id) void currentModel.refetch(); setModel(row?.resource); if (row) setInput(row.nativeId); setPopup(false); setHighlight(-1); setProblem(""); };
+  const suggestions: ModelSuggestion[] = modelPageValid ? models.data!.models.map(resource => ({ nativeId: text(document(resource).native_id), name: resourceName(resource), kind: SuggestionKind.Saved, resource })) : [];
+  const savedIDs = new Set(suggestions.map(row => row.nativeId));
+  const search = query.trim().toLocaleLowerCase();
+  if (knownValid) for (const row of known.data!.models) {
+    if (!savedIDs.has(row.nativeId) && (!search || `${row.displayName} ${row.nativeId}`.toLocaleLowerCase().includes(search))) suggestions.push({ nativeId: row.nativeId, name: row.displayName, kind: SuggestionKind.Known });
+  }
+  const catalogDate = knownValid ? new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${known.data!.updatedAt}T00:00:00Z`)) : "";
   useLayoutEffect(() => {
     if (active && popup && highlight >= 0) (suggestionList.current?.children.item(highlight) as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
-  }, [active, popup, highlight, models.data]);
+  }, [active, popup, highlight, models.data, known.data]);
   const refreshAccount = selectedRows.find(row => Boolean(document(row).connection) && document(row).enabled !== false && !document(row).removal);
   const providerEntries = providers.data?.entries.filter(entry => entry.enabled && entry.providerId) ?? [];
   const advance = () => { if (validate(step)) { setStep(step + 1); setFocusField(""); setProblem(""); } };
@@ -239,22 +250,22 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
       </section>
       <section hidden={step !== Step.Model}>
         <p>{harnessNames[data.harness as Harness]} · {sourceLabel} · {ids.length} accounts</p>
-        <h4>Choose a model</h4><p>Search the saved catalog or enter an exact model ID.</p>
+        <h4>Choose a model</h4><p>Search known and saved models, or enter an exact model ID.</p>
         <div className="worker-model-combobox"><label htmlFor={`${listID}-input`}>Model</label><input id={`${listID}-input`} data-wizard-field="model" role="combobox" aria-autocomplete="list" aria-expanded={popup} aria-controls={listID} aria-activedescendant={popup && highlight >= 0 && highlight < suggestions.length + (input.trim() ? 1 : 0) ? `${listID}-${highlight}` : undefined} value={input} maxLength={256} autoComplete="off" onFocus={() => setPopup(true)} onBlur={() => setPopup(false)} onChange={event => { setInput(event.target.value); setModel(undefined); setModelPage(""); setPopup(true); setHighlight(-1); setProblem(""); }} onKeyDown={event => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setPopup(true); const count = suggestions.length + (input.trim() ? 1 : 0); setHighlight(value => count === 0 ? -1 : event.key === "ArrowDown" ? Math.min(value + 1, count - 1) : value <= 0 ? count - 1 : value - 1); }
           else if (event.key === "Escape" && popup) { event.preventDefault(); event.stopPropagation(); setPopup(false); }
           else if (event.key === "Enter" && popup) { event.preventDefault(); pick(suggestions[highlight]); }
         }} />
-          {popup ? <ul ref={suggestionList} id={listID} role="listbox" aria-label="Model suggestions">{suggestions.map((row, index) => <li id={`${listID}-${index}`} key={row.id} role="option" aria-selected={highlight >= 0 ? highlight === index : model?.id === row.id} onMouseDown={event => event.preventDefault()} onClick={() => pick(row)}><strong>{resourceName(row)}</strong><small>{text(document(row).native_id)}{document(row).hidden === true ? " · Hidden" : ""}</small></li>)}{input.trim() ? <li id={`${listID}-${suggestions.length}`} role="option" aria-selected={highlight === suggestions.length} onMouseDown={event => event.preventDefault()} onClick={() => pick()}>Use exact ID “{input.trim()}”</li> : null}</ul> : null}
+          {popup ? <ul ref={suggestionList} id={listID} role="listbox" aria-label="Model suggestions">{suggestions.map((row, index) => <li id={`${listID}-${index}`} key={`${row.kind}:${row.resource?.id ?? row.nativeId}`} role="option" aria-selected={highlight >= 0 ? highlight === index : Boolean(row.resource && model?.id === row.resource.id)} onMouseDown={event => event.preventDefault()} onClick={() => pick(row)}><div className="worker-model-heading"><strong>{row.name}</strong><span className="worker-model-origin">{row.kind}</span></div><small>{row.nativeId}{row.resource && document(row.resource).hidden === true ? " · Hidden" : ""}</small></li>)}{input.trim() ? <li id={`${listID}-${suggestions.length}`} role="option" aria-selected={highlight === suggestions.length} onMouseDown={event => event.preventDefault()} onClick={() => pick()}>Use exact ID “{input.trim()}”</li> : null}</ul> : null}
         </div>
-        {models.isLoading ? <p role="status">Loading model catalog…</p> : models.isFetching ? <p role="status">Refreshing saved catalog…</p> : null}<Problem error={models.error} />
+        {models.isLoading || known.isLoading ? <p role="status">Loading models…</p> : models.isFetching || known.isFetching ? <p role="status">Refreshing models…</p> : null}<Problem error={models.error || known.error} />
         {models.data && !modelPageValid ? <p role="alert">This catalog page includes unsupported or mismatched source data. Reload the saved catalog or enter an exact model ID.</p> : null}
-        {models.error ? <p role="status">Catalog lookup failed. {models.data ? "The displayed results may be stale. " : ""}You can enter an exact model ID.</p> : models.data?.models.length === 0 ? <p>{modelPage ? "No models on this page." : "No saved models match. Enter an exact model ID."}</p> : null}
-        <nav aria-label="Model catalog pages"><button type="button" disabled={!modelPage || models.isFetching} onClick={() => setModelPage("")}>First model page</button><button type="button" disabled={!models.data?.nextPageToken || models.isFetching} onClick={() => setModelPage(models.data!.nextPageToken)}>Next model page</button><button type="button" disabled={models.isFetching} onClick={() => { void models.refetch(); if (model) void currentModel.refetch(); }}>Reload saved catalog</button></nav>
-        {source?.kind === SourceKind.Subscription ? <p>Subscription model discovery is unsupported. Use the saved catalog or enter an exact model ID.</p> : <><button type="button" disabled={blocked || !refreshAccount || document(selectedProvider.data?.resource).discovery !== true || document(selectedProvider.data?.resource).enabled === false} onClick={() => { if (refreshAccount) void discovery.send({ mutation: { requestId: newRequestId(), id: refreshAccount.id, expectedRevision: refreshAccount.revision } }); }}>Refresh models from endpoint</button><p>Uses the first connected selected account. Discovery is separate from execution eligibility.</p></>}
+        {models.error || known.error ? <p role="status">Catalog lookup failed. {models.data || known.data ? "Showing the last successfully loaded models. " : ""}You can enter an exact model ID.</p> : !models.isLoading && !known.isLoading && suggestions.length === 0 ? <p>{modelPage ? "No models on this page." : source?.kind === SourceKind.Subscription ? "No models match. Enter an exact model ID." : "No saved models match. Enter an exact model ID."}</p> : null}
+        <nav aria-label="Model catalog pages">{modelPage ? <button type="button" disabled={models.isFetching} onClick={() => setModelPage("")}>First model page</button> : null}{models.data?.nextPageToken ? <button type="button" disabled={models.isFetching} onClick={() => setModelPage(models.data!.nextPageToken)}>Next model page</button> : null}<button type="button" disabled={models.isFetching || known.isFetching} onClick={() => { void models.refetch(); if (source?.kind === SourceKind.Subscription && knownSupported) void known.refetch(); if (model) void currentModel.refetch(); }}>Reload models</button></nav>
+        {source?.kind === SourceKind.Subscription ? <>{knownValid ? <p>Known models · Catalog updated {catalogDate}{known.data!.source === KnownSubscriptionModelCatalogSource.CACHE ? " · Cached catalog" : known.data!.source === KnownSubscriptionModelCatalogSource.BUNDLED ? " · Built-in catalog" : ""}</p> : known.data ? <p role="alert">The known model catalog is unavailable. Reload models or enter an exact model ID.</p> : null}{status.data && !knownSupported ? <p>Update the server to search known models. Saved models and exact model IDs remain available.</p> : null}</> : <><button type="button" disabled={blocked || !refreshAccount || document(selectedProvider.data?.resource).discovery !== true || document(selectedProvider.data?.resource).enabled === false} onClick={() => { if (refreshAccount) void discovery.send({ mutation: { requestId: newRequestId(), id: refreshAccount.id, expectedRevision: refreshAccount.revision } }); }}>Refresh models from endpoint</button><p>Uses the first connected selected account. Discovery is separate from execution eligibility.</p></>}
         <Problem error={discovery.error} />{discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>Retry the same model refresh</button> : null}
         {data.harness === Harness.Codex && source?.kind === SourceKind.Api ? <NativeModelSettings active={active && step === Step.Model} selectedAccounts={selectedRows} pendingOperation={setNativePending} createModel={value => { setInput(text(value.native_id)); setModel(undefined); setModelPage(""); setPopup(false); setHighlight(-1); setProblem(""); }} /> : null}
-        <p>Model availability and saving this configuration do not establish execution readiness.</p>
+        <p>{source?.kind === SourceKind.Subscription ? "Availability depends on your plan and installed harness." : "Model availability and saving this configuration do not establish execution readiness."}</p>
         <Problem error={currentModel.error} />
       </section>
       <fieldset hidden={step !== Step.Configure} disabled={step !== Step.Configure}>

@@ -9,6 +9,13 @@ Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows Con
 
 Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Schema allocations reach main before activation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
 
+Known subscription model suggestions share the catalog, protocol, desktop and
+network contracts. The server owns bounded public repository-main downloads and
+a private offline cache; daily review PR automation is repository-owned. Main-first
+allocations landed in PR #1370 before capability 35 activation. Known metadata
+never grants subscription entitlement/native readiness or removes historical
+saved identities. Subsequent person-merged catalog changes require no release.
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
 

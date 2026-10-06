@@ -14,7 +14,7 @@ sessions retain their selected account/model and immutable attribution.
 
 
 
-## Known subscription model reservations
+## Known subscription model allocation and activation
 
 Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
 and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
@@ -23,9 +23,14 @@ UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
 reserves native ID/display name/order/minimum harness version/retirement date
 fields 1–5. The request reserves subscription service field 1; the response
 reserves subscription service/models/catalog version/updated at/source fields 1–5.
-Establish these allocations on main before dependent implementation. Reservations
-grant no catalog retrieval, authentication, account entitlement, native discovery
-or execution capability. No database migration is introduced.
+These allocations reached main in PR #1370 before dependent activation. The
+complete feature activates capability 35 and the owner/client read-only RPC in
+provider.proto; generated bindings use the normal compatibility pipeline.
+Reservations alone grant no feature support. The active advisory read grants no
+authentication, account entitlement, native discovery or execution capability.
+The response echoes the exact closed service, includes at most 200 models and
+uses BUNDLED/CACHE/ONLINE provenance; unsupported service values fail. No database
+migration is introduced. Follow the catalog, desktop and network contracts.
 
 ## Scope
 

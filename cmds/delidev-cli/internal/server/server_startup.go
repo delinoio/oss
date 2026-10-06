@@ -198,6 +198,16 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		}
 	}()
 	defer func() { stopCatalog(); <-catalogDone }()
+	knownCtx, stopKnown := context.WithCancel(child)
+	knownDone := make(chan struct{})
+	go func() {
+		defer close(knownDone)
+		if !config.disableKnownModelMaintenance {
+			service.knownSubscriptionModels().Run(knownCtx)
+		}
+	}()
+	defer func() { stopKnown(); <-knownDone }()
+
 	dispatchCtx, stopDispatch := context.WithCancel(child)
 	dispatchDone := make(chan struct{})
 	go func() {

@@ -1,5 +1,34 @@
 # DeliDev desktop client
 
+## Known subscription model autocomplete
+
+The Agent Worker wizard keeps the existing Model heading, Choose a model heading,
+Model form label, 720px column, 40px controls, theme and footer structure. Its helper
+is `Search known and saved models, or enter an exact model ID.` System capability
+`KNOWN_SUBSCRIPTION_MODELS_V1 = 35` independently enables the known-model read. An
+older server retains saved/direct selection and shows server-update guidance.
+
+Focus opens a keyboard-operated listbox with names, exact IDs and Known/Saved
+labels. Name/ID search filters the bounded complete known list; saved resources
+use the existing source-scoped server search and pagination. A saved same-service
+native ID takes precedence in the displayed candidate set. Known selection keeps
+only the native ID until the existing atomic Worker save; saved selection retains
+its exact ID/revision. Queries never register models. Escape dismisses the list;
+arrow/Enter selection, accessible active descendants and narrow-width wrapping
+remain intact. Source/harness changes clear incompatible selections.
+
+Show `Known models · Catalog updated {date}` with built-in/cached source when
+applicable, and `Availability depends on your plan and installed harness.` Remove
+the unsupported subscription-discovery warning. `Reload models` rereads known
+and saved server state; it does not force an external download. Show saved-list
+page controls only when a continuation or current page exists. Loading/failure
+keeps typed input and the last successful same-source candidates; no-match states
+retain exact-ID entry. Invalid service echoes cannot become candidates. Existing
+API discovery and saved-model stale-revision guards remain unchanged. Recommendation
+removal cannot delete saved configurations or execution history. These browser
+interactions do not establish installed native/account/platform acceptance.
+
+
 ## In-app toast notifications
 
 `src/toast-notifications.tsx`, `src/toast-store.ts` and the static scoped stylesheet own transient in-app notifications. Each authenticated connection mounts one `NotificationProvider` inside its existing connection identity boundary. `useNotifications()` exposes `notify({ kind, message, id?, durationMs? }): string` and `dismiss(id)`. `ToastKind` is the closed success/info/warning/error enum. Publishing updates only the viewport subscription, not conversation/query consumers. Isolated consumers without a provider receive an inert controller; missing optional presentation cannot turn an acknowledged business operation into a failed mutation.

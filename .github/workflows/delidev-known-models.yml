@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Update DeliDev known subscription models
+on:
+  schedule:
+    # 04:17 Asia/Seoul, every day.
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: delidev-known-subscription-model-catalog
+  cancel-in-progress: false
+jobs:
+  catalog:
+    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate collector fixtures
+        run: node --test scripts/ci/delidev-known-models.test.mjs
+      - name: Collect and validate public metadata
+        id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/delidev/known-subscription-models.mjs | tee "$RUNNER_TEMP/known-model-report.json"
+          node scripts/delidev/known-subscription-models.mjs --validate
+          if git diff --quiet -- cmds/delidev-cli/internal/knownmodels/catalog.json; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "Source revision: $GITHUB_SHA"
+            echo 'Collector fixtures and candidate validation: passed.'
+            echo 'Validation commands: node --test scripts/ci/delidev-known-models.test.mjs; node scripts/delidev/known-subscription-models.mjs --validate'
+            cat "$RUNNER_TEMP/known-model-report.json"
+            echo 'Source revision/digest provenance:'
+            node --input-type=module -e 'import {readFileSync} from "node:fs"; const c=JSON.parse(readFileSync("cmds/delidev-cli/internal/knownmodels/catalog.json")); for(const s of c.sources) console.log(JSON.stringify(s));'
+            echo 'Limits: public metadata and parser fixtures only; no real subscription/native execution verification.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Create repository-scoped write token after validation
+        if: steps.collect.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: oss
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Create or update the review PR
+        if: steps.collect.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node scripts/delidev/known-subscription-models-pr.mjs

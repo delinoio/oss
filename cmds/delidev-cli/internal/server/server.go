@@ -6,6 +6,7 @@ import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/knownmodels"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
@@ -21,18 +22,19 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
-	releaseVerifier           func([]byte, string, time.Time) (updates.Verified, error)
-	releaseFactory            func() (releaseClient, error)
-	userServiceBackend        userservice.Backend
-	StartupID                 domain.ID
-	DataDir                   string
-	Listen                    string
-	TLSCertificate            string
-	TLSKey                    string
-	AllowedOrigins            []string
-	Logger                    *slog.Logger
-	accountSecrets            accountSecrets
-	disableCatalogMaintenance bool
+	releaseVerifier              func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory               func() (releaseClient, error)
+	userServiceBackend           userservice.Backend
+	StartupID                    domain.ID
+	DataDir                      string
+	Listen                       string
+	TLSCertificate               string
+	TLSKey                       string
+	AllowedOrigins               []string
+	Logger                       *slog.Logger
+	accountSecrets               accountSecrets
+	disableCatalogMaintenance    bool
+	disableKnownModelMaintenance bool
 }
 
 type Endpoint struct {
@@ -46,6 +48,8 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	knownModelsOnce sync.Once
+	knownModels     *knownmodels.Manager
 	releaseVerifier func([]byte, string, time.Time) (updates.Verified, error)
 	releaseFactory  func() (releaseClient, error)
 	delidevv1connect.UnimplementedInstallationServiceHandler
