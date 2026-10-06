@@ -15,7 +15,7 @@ const playwright = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
 const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
-const categories = ["AI Subscription", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Runner Devices", "Appearance", "Paired devices", "Server preferences", "Integrations", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+const categories = ["AI Subscription", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [960,640], [640,480]];
 let checked = 0, formsChecked = 0;
 try {
@@ -48,6 +48,7 @@ try {
     await page.emulateMedia({ colorScheme: theme === "system" ? "dark" : theme });
     await page.goto(`${origin}/?theme=${theme}&populated=${populated}`);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
+    assert.deepEqual(await page.locator(".settings-nav-group h2").allTextContents(), ["AI", "Coding", "Device management", "System"]);
     for (const category of categories) {
       await select(category);
       const layout = await page.locator(".settings-content").evaluate(root => {
@@ -67,8 +68,19 @@ try {
       checked++;
     }
     if (!populated) {
-      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "New Repository"], ["Server preferences", "New Server preferences"], ["Models", "New Model"], ["Integrations", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
+      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", "New Server preferences"], ["Git", "New Git workflow"], ["Models", "New Model"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
         await select(category); await page.getByRole("button", { name: action, exact: true }).click();
+        if (category === "Repositories") {
+          // Registration first inspects a folder before exposing saved fields.
+          // Exercise its manual entry without inventing native folder authority.
+          await page.getByRole("button", { name: "Enter a path…", exact: true }).click();
+          await page.getByRole("textbox", { name: "Absolute checkout path", exact: true }).waitFor();
+          assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Repository registration overflow");
+          assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
+          formsChecked++;
+          await page.getByRole("button", { name: "Back to repositories", exact: true }).click();
+          continue;
+        }
         if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
         const form = page.locator(".settings-content form:visible"); await form.waitFor();
         assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
@@ -89,7 +101,7 @@ try {
     await page.setViewportSize({ width: width / 2, height: height / 2 });
     for (const category of categories) { await select(category); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
   }
-  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, themes: 3, inventories: 2, viewports: 6, effectiveZoomChecks: 102, nativeAcceptance: "not-performed" }));
+  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, themes: 3, inventories: 2, viewports: 6, effectiveZoomChecks: categories.length * viewports.length, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));
