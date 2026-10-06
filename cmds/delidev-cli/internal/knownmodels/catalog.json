@@ -5,7 +5,7 @@
   "sources": [
     {
       "key": "codex",
-      "url": "https://github.com/openai/codex/blob/822e58cc3d666166c7446c5b1ea2e52f5d09594c/codex-rs/models-manager/models.json",
+      "url": "https://raw.githubusercontent.com/openai/codex/822e58cc3d666166c7446c5b1ea2e52f5d09594c/codex-rs/models-manager/models.json",
       "revision": "822e58cc3d666166c7446c5b1ea2e52f5d09594c",
       "sha256": "943ca7fe1d19ed019054158303f0dbbd80b3bef43b3aa425a71aa7cb3fb52c2b"
     },

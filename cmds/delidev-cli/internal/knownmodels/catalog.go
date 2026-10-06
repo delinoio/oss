@@ -64,12 +64,12 @@ var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 var keyPattern = regexp.MustCompile(`^[a-z-]+$`)
 var ErrInvalid = errors.New("invalid known subscription model catalog")
-var sourceHosts = map[string]string{
-	"codex":             "github.com",
-	"openai-retirement": "learn.chatgpt.com",
-	"claude-code":       "code.claude.com",
-	"claude-models":     "platform.claude.com",
-	"grok-build":        "docs.x.ai",
+var sourceHosts = map[string]map[string]bool{
+	"codex":             {"github.com": true, "raw.githubusercontent.com": true},
+	"openai-retirement": {"learn.chatgpt.com": true},
+	"claude-code":       {"code.claude.com": true},
+	"claude-models":     {"platform.claude.com": true},
+	"grok-build":        {"docs.x.ai": true},
 }
 
 // Strict JSON rejects duplicate keys as well as unknown fields and trailing
@@ -172,7 +172,7 @@ func Decode(raw []byte) (Catalog, error) {
 		if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" {
 			return Catalog{}, ErrInvalid
 		}
-		if expectedHost, ok := sourceHosts[source.Key]; !ok || parsed.Hostname() != expectedHost {
+		if hosts, ok := sourceHosts[source.Key]; !ok || !hosts[parsed.Hostname()] {
 			return Catalog{}, ErrInvalid
 		}
 		if !keyPattern.MatchString(source.Key) || keys[source.Key] || source.Revision == "" || len(source.Revision) > 128 || !digestPattern.MatchString(source.SHA256) {

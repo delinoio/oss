@@ -3,18 +3,17 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { execFileSync } from "node:child_process";
 
 // Match Go's sorted-key JSON encoding, including its HTML/line-separator escapes.
 export const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item).replace(/[<>&\u2028\u2029]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
 export const catalogPath = "cmds/delidev-cli/internal/knownmodels/catalog.json";
 export const services = ["chatgpt", "claude", "grok"];
 const sourceHosts = new Map([
-  ["codex", "github.com"],
-  ["openai-retirement", "learn.chatgpt.com"],
-  ["claude-code", "code.claude.com"],
-  ["claude-models", "platform.claude.com"],
-  ["grok-build", "docs.x.ai"],
+  ["codex", new Set(["github.com", "raw.githubusercontent.com"])],
+  ["openai-retirement", new Set(["learn.chatgpt.com"])],
+  ["claude-code", new Set(["code.claude.com"])],
+  ["claude-models", new Set(["platform.claude.com"])],
+  ["grok-build", new Set(["docs.x.ai"])],
 ]);
 const digest = value => createHash("sha256").update(value).digest("hex");
 const fail = reason => { throw new Error(`Known-model validation failed: ${reason}`); };
@@ -41,7 +40,7 @@ export function validateCatalog(value) {
     exactKeys(source, ["key", "url", "revision", "sha256"]);
     if (!/^[a-z-]+$/.test(source.key) || keys.has(source.key) || typeof source.revision !== "string" || !source.revision || source.revision.length > 128 || !/^[a-f0-9]{64}$/.test(source.sha256)) fail("source identity");
     const url = new URL(source.url);
-    if (url.protocol !== "https:" || url.username || url.password || sourceHosts.get(source.key) !== url.hostname) fail("source URL");
+    if (url.protocol !== "https:" || url.username || url.password || !sourceHosts.get(source.key)?.has(url.hostname)) fail("source URL");
     keys.add(source.key);
   }
   if (keys.size !== sourceHosts.size) fail("incomplete source provenance");
@@ -112,6 +111,21 @@ export function extractClaude(config, overview) {
     return row.split("|").slice(2, -1).map(cell => cell.trim());
   };
   const names = cells("Feature"), ids = cells("Claude API ID");
+  const retirementRow = table.split("\n").find(line => line.startsWith("|") && line.split("|")[1].trim() === "Retirement");
+  const retirements = retirementRow ? retirementRow.split("|").slice(2, -1).map(cell => cell.trim()) : [];
+  if (retirements.length && retirements.length !== names.length) fail("Claude retirement columns");
+  const retirementDate = value => {
+    if (!value || /(?:not|no)\s+sooner|at\s+least|estimated|approximately/i.test(value)) return undefined;
+    const named = value.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})\b/i);
+    const numeric = value.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+    if (!named && !numeric) return undefined;
+    const month = named ? ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"].indexOf(named[1].toLowerCase()) + 1 : Number(numeric[2]);
+    const year = named ? Number(named[3]) : Number(numeric[1]);
+    const day = named ? Number(named[2]) : Number(numeric[3]);
+    const date = utcDate(year, month, day);
+    if (!date) fail("Claude retirement date");
+    return date.toISOString().slice(0, 10);
+  };
   if (names.length !== ids.length || names.length < 3) fail("Claude table columns");
   const result = names.map((name, i) => {
     const family = name.match(/^Claude (\w+) \d+(?:\.\d+)*$/)?.[1]?.toLowerCase();
@@ -120,7 +134,8 @@ export function extractClaude(config, overview) {
     if (!id || !id.startsWith(`claude-${family}-`)) fail("Claude exact ID");
     const version = name.slice("Claude ".length).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const minimum = config.match(new RegExp(`${version} requires (?:Claude Code )?v(\\d+\\.\\d+\\.\\d+) or later`))?.[1];
-    return { native_id: id, display_name: name, source_keys: ["claude-code", "claude-models"], ...(minimum ? { minimum_harness_version: minimum } : {}) };
+    const retirement = retirementDate(retirements[i]);
+    return { native_id: id, display_name: name, source_keys: ["claude-code", "claude-models"], ...(minimum ? { minimum_harness_version: minimum } : {}), ...(retirement ? { retirement_date: retirement } : {}) };
   });
   // Only explicit native selection instructions qualify; arbitrary examples and
   // the API overview's legacy inventory do not become subscription suggestions.
@@ -156,8 +171,8 @@ export function changes(previous, next) {
     retired: [...before.keys()].filter(key => !after.has(key)),
   };
 }
-async function fetchText(url) {
-  const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(15000) });
+async function fetchText(url, headers = {}) {
+  const response = await fetch(url, { headers, redirect: "error", signal: AbortSignal.timeout(15000) });
   if (!response.ok) fail("official source unavailable");
   const reader = response.body.getReader(); const chunks = []; let size = 0;
   try {
@@ -165,12 +180,19 @@ async function fetchText(url) {
   } finally { await reader.cancel(); }
   return Buffer.concat(chunks).toString("utf8");
 }
+async function fetchJSON(url) {
+  try { return JSON.parse(await fetchText(url, { Accept: "application/vnd.github+json", "User-Agent": "delidev-known-models-collector" })); }
+  catch { fail("public GitHub source unavailable"); }
+}
 export async function collect() {
-  // GitHub reads use gh; the immutable revision binds the upstream JSON bytes.
-  const sha = execFileSync("gh", ["api", "repos/openai/codex/commits/main", "--jq", ".sha"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  // The repository-scoped workflow token cannot read openai/codex. Use bounded
+  // unauthenticated public requests so collection remains independent of the
+  // later repository-scoped write token.
+  const commit = await fetchJSON("https://api.github.com/repos/openai/codex/commits/main");
+  const sha = commit?.sha;
   if (!/^[a-f0-9]{40}$/.test(sha)) fail("Codex revision");
   const definitions = [
-    ["codex", `https://github.com/openai/codex/blob/${sha}/codex-rs/models-manager/models.json`, sha],
+    ["codex", `https://raw.githubusercontent.com/openai/codex/${sha}/codex-rs/models-manager/models.json`, sha],
     ["openai", "https://learn.chatgpt.com/docs/models.md", "content-digest"],
     ["claude", "https://code.claude.com/docs/en/model-config.md", "content-digest"],
     ["overview", "https://platform.claude.com/docs/en/models/overview.md", "content-digest"],
@@ -178,7 +200,7 @@ export async function collect() {
   ];
   const inputs = {}; const sources = [];
   for (const [key, url, revision] of definitions) {
-    const raw = key === "codex" ? execFileSync("gh", ["api", `repos/openai/codex/contents/codex-rs/models-manager/models.json?ref=${sha}`, "-H", "Accept: application/vnd.github.raw+json"], { encoding: "utf8", maxBuffer: 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }) : await fetchText(url);
+    const raw = await fetchText(url);
     inputs[key] = raw;
     sources.push({ key: { openai: "openai-retirement", claude: "claude-code", overview: "claude-models", grok: "grok-build" }[key] ?? key, url, revision, sha256: digest(raw) });
   }

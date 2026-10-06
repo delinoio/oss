@@ -465,6 +465,18 @@ it("prefers a saved subscription model over its known duplicate and retains its 
   expect(value.save.mock.calls[0][0].model).toMatchObject({ selection: { case: "modelId", value: saved.id }, expectedModelRevision: 4n });
 });
 
+it("drops saved IDs that disappear after a model reload", async () => {
+  const value = fixture();
+  const saved = create(ResourceSchema, { kind: EntityKind.MODEL, schemaVersion: 2, id: newRequestId(), revision: 4n, documentJson: encode({ name: "Saved GPT", native_id: "gpt-known-current", source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["codex"], hidden: false }) });
+  value.records.push(saved);
+  value.search.mockResolvedValue({ models: [saved], providers: [], nextPageToken: "" });
+  const input = await subscriptionModels(value); fireEvent.focus(input);
+  await screen.findByRole("option", { name: /Saved GPT.*Saved/ });
+  value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
+  fireEvent.click(screen.getByRole("button", { name: "Reload models" }));
+  await screen.findByRole("option", { name: /GPT Known Current.*Known/ });
+});
+
 it("does not offer a known duplicate before all saved pages are visited", async () => {
   const value = fixture();
   const first = create(ResourceSchema, { kind: EntityKind.MODEL, schemaVersion: 2, id: newRequestId(), revision: 2n, documentJson: encode({ name: "First saved", native_id: "saved-first", source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["codex"], hidden: false }) });

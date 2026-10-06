@@ -18,7 +18,7 @@ const inputs = {
   ] }),
   openai: "## Deprecated Codex models\n\nGPT Old retired on September 14, 2026. Replace `gpt-old` with `gpt-current`.\n\nGPT Future retires on October 14, 2026. Replace `gpt-future` with `gpt-current`.",
   claude: "### Model aliases\n| **`opus`** | native |\n| **`sonnet`** | native |\n| **`haiku`** | native |\n\n## Versions\nSonnet 5.5 requires Claude Code v2.1.284 or later, and Opus 5.5 requires v2.1.280 or later.",
-  overview: "## Compare models\n| Feature | Claude Opus 5.5 | Claude Sonnet 5.5 | Claude Haiku 4.5 |\n| Claude API ID | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-4-5-20251001` |\n| Claude API alias | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-4-5` |\n| Retirement | Not sooner than Oct 15 | | |",
+  overview: "## Compare models\n| Feature | Claude Opus 5.5 | Claude Sonnet 5.5 | Claude Haiku 4.5 |\n| Claude API ID | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-4-5-20251001` |\n| Claude API alias | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-4-5` |\n| Retirement | Not sooner than Oct 15 | October 20, 2026 | |",
   grok: '[models]\ndefault = "grok-build" # recommended for coding / agent sessions\nweb_search = "grok-api-example"\n[model."grok-api-example"]\nmodel = "grok-api-example"',
 };
 const fixture = () => buildCatalog(inputs, sources.map(source => ({ ...source })), "2026-10-06");
@@ -29,6 +29,7 @@ test("official-shaped extraction excludes hidden, API-only, retired and arbitrar
   assert.equal(value.services[0].models[1].retirement_date, "2026-10-14");
   assert.equal(value.services[1].models[0].minimum_harness_version, "2.1.280");
   assert.equal(value.services[1].models[1].minimum_harness_version, "2.1.284");
+  assert.equal(value.services[1].models[1].retirement_date, "2026-10-20");
   assert.equal(value.services[1].models[2].retirement_date, undefined);
   assert.deepEqual(value.services[2].models.map(row => row.native_id), ["grok-build"]);
   assert.equal(extractChatGPT(inputs.codex, inputs.openai, "2026-10-14").length, 1);
@@ -45,6 +46,7 @@ test("retirement subjects require an exact model name or ID, not a family prefix
   input.models.push({ slug: "gpt", display_name: "GPT", visibility: "list", available_in_plans: ["plus"], priority: 6 });
   assert.ok(extractChatGPT(JSON.stringify(input), inputs.openai, "2026-10-14").some(row => row.native_id === "gpt"));
   assert.throws(() => extractChatGPT(inputs.codex, inputs.openai.replace("September 14", "February 30"), "2026-10-06"));
+  assert.throws(() => extractClaude(inputs.claude, inputs.overview.replace("October 20, 2026", "February 30, 2026")));
   assert.equal(canonical({ display_name: "<&>\u2028\u2029" }), '{"display_name":"\\u003c\\u0026\\u003e\\u2028\\u2029"}');
 });
 test("duplicate models, invalid dates/versions, unbound sources and over-limit pages fail", () => {
@@ -103,10 +105,13 @@ test("a manually closed review suppresses the same candidate until metadata chan
 test("daily workflow validates before a narrowly scoped write token and protects review ownership", async () => {
   const workflow = await readFile(".github/workflows/delidev-known-models.yml", "utf8");
   const publisher = await readFile("scripts/delidev/known-subscription-models-pr.mjs", "utf8");
+  const collector = await readFile("scripts/delidev/known-subscription-models.mjs", "utf8");
   assert.match(workflow, /cron: '17 19 \* \* \*'/); assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /permissions:\n  contents: read/); assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /repositories: oss/); assert.match(workflow, /permission-pull-requests: write/);
   assert.ok(workflow.indexOf("--validate") < workflow.indexOf("actions/create-github-app-token"));
+  assert.doesNotMatch(workflow.slice(workflow.indexOf("- name: Collect and validate public metadata"), workflow.indexOf("- name: Create repository-scoped write token")), /GH_TOKEN/);
+  assert.doesNotMatch(collector, /execFileSync|GH_TOKEN/);
   assert.equal((publisher.match(/const branch =/g) ?? []).length, 1); assert.ok(branch.startsWith("kdy1/"));
   assert.match(publisher, /--force-with-lease=refs\/heads/); assert.match(publisher, /--body-file/);
   assert.match(publisher, /current.catalog_version === candidate.catalog_version && pulls.length/);
