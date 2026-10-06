@@ -12,3 +12,5 @@
 
 - CI task setup must resolve Go cache paths before strict environment filtering and install the pinned Rust toolchain before shared-target native validation. Retain the ordered DevHud capture, shortcut, IPC and updater dependency chain.
 - Changes to the shared legacy CLI publisher select `devhud-release-contracts`, which owns its top-level release fixtures. Keep this input edge in `job-paths.json` and the planner tests when changing release-helper ownership.
+
+- Go timing reports retain source revision, commands, phase times and top-level test metadata only. Keep raw output and dynamic subtest names out of artifacts. Preserve failure status, native affected selection and exhaustive shard coverage when changing instrumentation. Windows workspace tests run on their own runner and use the retained 45-minute fixture watchdog.

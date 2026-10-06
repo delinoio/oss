@@ -237,6 +237,7 @@ jobs:
           - { os: windows-latest, shard: server, label: "windows-latest, server" }
           - { os: windows-latest, shard: harness, label: "windows-latest, harness" }
           - { os: windows-latest, shard: worker, label: "windows-latest, worker" }
+          - { os: windows-latest, shard: workspace, label: "windows-latest, workspace" }
     permissions:
       contents: read
       pull-requests: read
@@ -253,6 +254,7 @@ jobs:
         uses: ./.github/actions/setup-ci-go
         with:
           cache-scope: ${{ format('go-test-{0}', matrix.shard) }}
+          cache-fallback-scope: ${{ matrix.shard == 'workspace' && 'go-test-worker' || '' }}
 
       - name: Setup Node.js
         id: ci-node
@@ -280,6 +282,20 @@ jobs:
           CI_GO_MODE: ${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-test'] && 'affected' || 'full' }}
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
+
+      - name: Summarize Go test timings
+        if: ${{ always() && hashFiles('.turbo/go-test/*.json') != '' }}
+        run: node scripts/ci/go-test-report.mjs --summary ".turbo/go-test/${{ matrix.shard }}.json"
+
+      - name: Preserve Go test timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-test-timings-${{ runner.os }}-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: .turbo/go-test/*.json
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}

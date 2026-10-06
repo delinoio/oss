@@ -90,27 +90,33 @@ function mock(discovery = {}, selectedPath = "cmds/delidev-cli/internal/apiproxy
     if (command === "gofmt") return { status: 0, stdout: "" };
     return { status: 0 };
   };
-  return { calls, events, options: { mode: "affected", base: "a".repeat(40), head: "b".repeat(40), run, log: (line) => events.push(JSON.parse(line)) } };
+  return { calls, events, options: { mode: "affected", base: "a".repeat(40), head: "b".repeat(40), run, runTests: run, saveReport() {}, log: (line) => events.push(JSON.parse(line)) } };
 }
 
-test("empty affected Windows shards succeed without compiling or running fixtures", () => {
+test("empty affected Windows shards succeed without compiling or running fixtures", async () => {
   const fixture = mock();
-  assert.equal(runGoTests(GoTestShard.Core, fixture.options), 0);
+  assert.equal(await runGoTests(GoTestShard.Core, fixture.options), 0);
   assert.equal(fixture.events.at(-1).event, "ci_go_test_empty");
   assert.ok(!fixture.calls.some((call) => call.args[0] === "test"));
+  const emptyWorkspace = mock();
+  assert.equal(await runGoTests(GoTestShard.Workspace, emptyWorkspace.options), 0);
+  assert.ok(!emptyWorkspace.calls.some((call) => call.args[0] === "test"));
+  const workspace = mock({}, "cmds/delidev-cli/internal/workspace/claim_test.go");
+  assert.equal(await runGoTests(GoTestShard.Workspace, workspace.options), 0);
+  assert.deepEqual(workspace.calls.at(-1).args, ["test", "-json", "-p=1", "-timeout=45m", path("cmds/delidev-cli/internal/workspace")]);
   const worker = mock();
-  assert.equal(runGoTests(GoTestShard.Worker, { ...worker.options, platform: "win32" }), 0);
+  assert.equal(await runGoTests(GoTestShard.Worker, { ...worker.options, platform: "win32" }), 0);
   assert.deepEqual(worker.calls.at(-2).args.slice(0, 4), ["test", "-c", "-o", "NUL"]);
-  assert.deepEqual(worker.calls.at(-1).args.slice(0, 3), ["test", "-p=1", "-timeout=45m"]);
+  assert.deepEqual(worker.calls.at(-1).args.slice(0, 4), ["test", "-json", "-p=1", "-timeout=45m"]);
   const unix = mock();
-  assert.equal(runGoTests(GoTestShard.All, unix.options), 0);
-  assert.deepEqual(unix.calls.at(-1).args.slice(0, 2), ["test", "-timeout=20m"]);
+  assert.equal(await runGoTests(GoTestShard.All, unix.options), 0);
+  assert.deepEqual(unix.calls.at(-1).args.slice(0, 3), ["test", "-json", "-timeout=20m"]);
 });
 
-test("bad comparisons, discovery errors and partial inventories cannot silently pass", () => {
+test("bad comparisons, discovery errors and partial inventories cannot silently pass", async () => {
   for (const base of [undefined, "", "--help", "0".repeat(40)]) assert.throws(() => affectedGoPackages({ ...mock().options, base }));
   for (const result of [{ status: 2, stdout: "partial" }, { status: null, signal: "SIGTERM" }, { error: new Error("spawn failed") }]) {
-    assert.throws(() => runGoTests(GoTestShard.All, mock({}, undefined, { command: "go", action: "list", result }).options));
+    await assert.rejects(() => runGoTests(GoTestShard.All, mock({}, undefined, { command: "go", action: "list", result }).options));
   }
   assert.throws(() => selectionOptions({ CI_GO_MODE: "unknown" }));
   assert.equal(selectionOptions({}).mode, "full");
@@ -131,7 +137,7 @@ test("Go quality preserves empty selection and propagates formatting/vet failure
   assert.ok(calls.every((call) => call.options.shell === false));
 });
 
-test("real native Go discovery respects OS files, test imports and exact Git changes", (t) => {
+test("real native Go discovery respects OS files, test imports and exact Git changes", async (t) => {
   const cwd = mkdtempSync(join(tmpdir(), "ci-go-affected-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -148,7 +154,7 @@ test("real native Go discovery respects OS files, test imports and exact Git cha
   git("add", "."); git("commit", "--quiet", "-m", "fixture change"); const head = git("rev-parse", "HEAD");
   const result = affectedGoPackages({ base, head, cwd, log() {} });
   assert.deepEqual(result.packages, [path("cmds/sample/consumer"), path("cmds/sample/leaf")]);
-  assert.equal(runGoTests(GoTestShard.All, { mode: "affected", base, head, cwd, log() {} }), 0);
+  assert.equal(await runGoTests(GoTestShard.All, { mode: "affected", base, head, cwd, log() {} }), 0);
   const native = spawnSync("go", ["list", "-mod=readonly", "-f", "{{join .GoFiles \",\"}}", "./cmds/sample/native"], { cwd, encoding: "utf8" });
   assert.equal(native.status, 0, native.stderr);
   assert.equal(native.stdout.trim(), process.platform === "win32" ? "native_windows.go" : "native_unix.go");
