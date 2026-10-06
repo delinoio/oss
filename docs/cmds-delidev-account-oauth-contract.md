@@ -56,6 +56,42 @@ approved 760px width, 20px padding, 12px radius, theme, wrapped actions, keyboar
 focus, status announcements, narrow-window and 200% zoom behavior. Switch to an
 API key only after cancellation is confirmed; success never auto-validates.
 
+## Common lifecycle and Hugging Face
+
+The common implementation activates migration 31 after real 26–30. The private
+`account_oauth_credentials` table retains exact account, immutable connection,
+provider/preset, client-profile digest, expiry, token-generation reference,
+refresh claim and cleanup references. No account foreign key can erase an orphan
+claim. Vault entries alone contain bounded access/refresh token envelopes. Restore
+retains the current table; unresolved claims or cleanup block restore. Refresh
+commits a claim before HTTP, serializes concurrent requests by connection, swaps
+the protected reference atomically, then removes prior generations. Lost HTTP or
+Vault acknowledgement leaves recovery/denied authority and cannot resend refresh.
+Inspection and execution resolve the same current credential; doctor reads only.
+
+The Hugging Face adapter uses the exact managed `https://router.huggingface.co/v1`
+profile, public-client PKCE, `inference-api` scope and the registered localhost
+`/oauth/hugging-face/callback` path with a canonical ephemeral port. Native and Go
+both bind the original state. A state-bound empty code records an access-denied
+receipt without HTTP. Duplicate completion replays the original receipt; explicit
+code-free recovery reads only original protected local material. Start alone
+returns authorization URLs. The common card uses the selected provider's title,
+progress and recovery text and retains unverified success.
+
+`cmds/delidev-cli/internal/providers/oauth_clients.json` is compiled public release
+registration metadata shared by Go and native. A profile requires its DeliDev
+client ID, `registered` status and ordinary API `accepted` status. Native profile
+inventory and server capability 6 must agree before a new browser option appears;
+older native hosts retain OpenRouter behavior. Current new registrations remain
+pending/unverified. Implemented fixture paths do not establish activation or real
+account/native acceptance. Gemini and Baseten adapters remain subsequent work.
+
+CLI Start accepts `--callback-url`; Hugging Face requires the registered callback.
+OpenRouter alone retains no-callback headless mode. `--callback-stdin` accepts a
+bounded protobuf JSON envelope containing only base64 `authorizationCode` and
+`authorizationState`. Mutation identity comes from original CLI flags, never the
+callback. `--code-stdin` and explicit original `--recover` remain supported.
+
 ## OpenRouter account OAuth PKCE (issue #1146)
 
 ## Status and ownership
@@ -188,3 +224,11 @@ Callback polling rechecks captured Go-verified local connection authority agains
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
 
 If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
+
+Durable completion and recovery recheck the original adapter as well as provider
+identity and revision. Version-1 attempts belong only to OpenRouter; version-2
+attempts retain their original preset. Before a protected token is read for local
+recovery or used to publish a connection, its private metadata must match the
+original account/connection/provider, client digest, quota project, staging token
+ID and idle refresh state. A changed app registration cannot adopt an earlier
+protected result. Explicit cancellation remains available for its original cleanup.

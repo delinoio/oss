@@ -95,7 +95,7 @@ CLI framing/authentication and command groups have separate files. They retain
 existing order, authorization, cleanup and output behavior.
 
 The original structural change retained schema 24. The current executable registry
-implements real migrations through 30; later reserved versions remain inactive. Versioned migration
+implements real migrations through 31; later reserved versions remain inactive. Versioned migration
 definitions share creation and upgrade paths while retaining backup-first atomic
 upgrade and all recognized historical layout repairs. Historical migration tests
 start from fixed historical SQL, not a newer schema with an expanding drop list.

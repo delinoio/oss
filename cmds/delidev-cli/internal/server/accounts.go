@@ -373,6 +373,9 @@ func (s *Service) finishAccountRemoval(ctx context.Context, accepted accountRece
 		if account.Connection != nil || account.Removal == nil || account.Removal.RequestID != requestID {
 			return nil, domain.Fail(domain.Conflict, "The account cleanup generation changed.", "Read current account status.")
 		}
+		if err := tx.RetireAccountOAuthCredentials(accepted.ID); err != nil {
+			return nil, err
+		}
 		account.Removal = nil
 		if _, err = tx.Put(domain.AccountKind, accepted.ID, record.Revision, "", "", account); err != nil {
 			return nil, err
