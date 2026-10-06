@@ -166,6 +166,20 @@ func TestRemoteWorkspaceSelectionPinsURLAndIgnoresCheckout(t *testing.T) {
 	}); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("unsupported Worker accepted managed clone", err)
 	}
+	f.mutate(t, func(tx *store.Tx) error {
+		r, err := tx.Get(domain.RepositoryKind, f.repository)
+		if err != nil {
+			return err
+		}
+		repository, _ := store.Decode[domain.Repository](r)
+		repository.RemoteURL = ""
+		repository.Checkouts = []domain.Checkout{{MachineID: f.machine, Path: local.Repositories[0].Checkout}}
+		_, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", repository)
+		return err
+	})
+	if _, err := read(domain.Local); domain.SafeError(err).Code != domain.InvalidArgument {
+		t.Fatal("new Local preparation accepted an absent URL", err)
+	}
 }
 
 func TestRemoteForkResultRequiresIndependentSourceAndImmutableURL(t *testing.T) {
