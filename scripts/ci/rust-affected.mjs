@@ -110,16 +110,19 @@ export function selectRustPackages({ event, range, plan, cwd = process.cwd(), bi
   }
 }
 
-export function runRustCheck(command, packages, { run = spawnSync, cwd = process.cwd() } = {}) {
+export function runRustCheck(command, packages, { run = spawnSync, cwd = process.cwd(), stepSummary = process.env.GITHUB_STEP_SUMMARY } = {}) {
   if (!["test", "clippy"].includes(command)) throw new Error("Expected Rust test or clippy command");
   validateRustPackages(packages);
   if (!packages.length) throw new Error("A scheduled Rust job requires a nonempty package selection");
   const args = [command, "--locked", ...packages.flatMap(name => ["-p", name]), "--all-targets", ...(command === "clippy" ? ["--all-features", "--", "-D", "warnings"] : [])];
-  console.log(JSON.stringify({ event: "ci_rust_check", command, revision: git(cwd, "rev-parse", "HEAD").trim(), packages, args, result: "started" }));
+  const revision = git(cwd, "rev-parse", "HEAD").trim();
+  console.log(JSON.stringify({ event: "ci_rust_check", command, revision, packages, args, result: "started" }));
   const result = run("cargo", args, { cwd, stdio: "inherit", shell: false });
-  if (result.error) throw result.error;
   const status = result.status ?? 1;
-  console.log(JSON.stringify({ event: "ci_rust_check", command, result: status === 0 ? "success" : "failure", status, signal: result.signal ?? null }));
+  const outcome = !result.error && status === 0 ? "success" : "failure";
+  console.log(JSON.stringify({ event: "ci_rust_check", command, result: outcome, status, signal: result.signal ?? null }));
+  if (stepSummary) appendFileSync(stepSummary, `\n## Rust ${command} result\n\nValidation revision: ${revision}\n\nPackages: ${packages.join(", ")}\n\nCommand: \`cargo ${args.join(" ")}\`\n\nResult: ${outcome}; exit status: ${status}; signal: ${result.signal ?? "none"}\n`);
+  if (result.error) throw result.error;
   return status;
 }
 

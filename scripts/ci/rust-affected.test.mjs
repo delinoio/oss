@@ -74,11 +74,15 @@ for (const [name, update] of [
 });
 test("Rust checks preserve flags, literal arguments and Cargo failures", t => {
   const f = rustFixture(t);
+  const stepSummary = join(f.cwd, "check-summary.md");
   for (const command of ["test", "clippy"]) {
     let invocation;
-    const status = runRustCheck(command, ["app", "core-lib"], { cwd: f.cwd, run: (...args) => { invocation = args; return { status: 42 }; } });
+    const status = runRustCheck(command, ["app", "core-lib"], { cwd: f.cwd, stepSummary, run: (...args) => { invocation = args; return { status: 42 }; } });
     assert.equal(status, 42); assert.equal(invocation[0], "cargo"); assert.equal(invocation[2].shell, false);
     assert.deepEqual(invocation[1], [command, "--locked", "-p", "app", "-p", "core-lib", "--all-targets", ...(command === "clippy" ? ["--all-features", "--", "-D", "warnings"] : [])]);
+    assert.match(f.read("check-summary.md"), new RegExp(`Command: .*cargo ${command} --locked -p app -p core-lib --all-targets`));
+    assert.match(f.read("check-summary.md"), /Result: failure; exit status: 42/u);
   }
+  assert.throws(() => runRustCheck("test", ["app"], { cwd: f.cwd, stepSummary, run: () => ({ error: new Error("spawn failed"), status: null }) }), /spawn failed/u);
   for (const packages of [[], ["--workspace"], ["forge-scene"], ["app", "app"]]) assert.throws(() => runRustCheck("test", packages));
 });
