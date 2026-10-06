@@ -241,4 +241,6 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Server subscription failures retain actual Codex version and the first safe native failure separately from cleanup/recovery. Login logs use original operation correlation without account identifiers. Publish diagnostics only to the original authenticated actor/operation and preserve uncertain ownership without resending work. Follow the subscription and protocol contracts.
 
+- Subscription cleanup failures log only closed native-process/auth-file/runtime stage and reason enums, the original operation reference and bounded inventory counters/limits. Preserve the public recovery classification, auth-file comparison, original process joins, directory identity, symlink refusal and existing 2,048-file/64 MiB limits. Runtime diagnostics contain no paths, native output, file content or credentials; they cannot clear existing recovery fences.
+
 - Remote repository saves accept credential-free URLs with no checkout or Worker validation child. Pin URL/source enum in session and schedule requests. Require capability 19 at managed-clone and independent-Fork admission and assignment; validate independent Fork results without acquiring the parent Git lifetime. Follow the workspace/protocol contracts.
