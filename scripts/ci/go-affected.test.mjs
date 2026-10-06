@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, win32 } from "node:path";
 import test from "node:test";
 import { affectedGoPackages, commandConsumers, parseInventory, selectAffected, selectionOptions } from "./go-affected.mjs";
+import { runTestJson } from "./go-test-report.mjs";
 import { GoTestShard, runGoTests, shardForPackage } from "./go-test.mjs";
 import { runGoQuality } from "./go-quality.mjs";
 
@@ -29,7 +30,7 @@ test("source changes include reverse and subprocess consumers without unrelated 
   assert.ok(commandConsumers.some((item) => item.command === "cmds/runmoor"));
 });
 
-test("affected Go tests execute subprocess consumers despite seeded successful results", (t) => {
+test("affected Go tests execute subprocess consumers despite seeded successful results", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "ci-go-test-cache-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const cwd = join(directory, "checkout");
@@ -97,11 +98,16 @@ func TestHelper(t *testing.T) {
     assert.match(cached.stdout, /integration\s+\(cached\)/u);
     assert.equal(executions(), before, "the seed must actually reuse Go's result cache");
 
-    const run = (head) => {
+    const run = async (head) => {
       const calls = [], events = [];
-      const status = runGoTests(shard, { mode: "affected", base, head, cwd, log: (line) => events.push(JSON.parse(line)), run(command, args, options) {
+      const status = await runGoTests(shard, { mode: "affected", base, head, cwd, log: (line) => events.push(JSON.parse(line)), run(command, args, options) {
         const result = spawnSync(command, args, { ...options, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
         calls.push({ command, args, result });
+        return result;
+      }, async runTests(command, args, options, { log }) {
+        const output = [];
+        const result = await runTestJson(command, args, { ...options, env, encoding: "utf8" }, { log, output: (text) => output.push(text) });
+        calls.push({ command, args, result: { ...result, stdout: output.join("") } });
         return result;
       } });
       assert.deepEqual(events.find((event) => event.event === "ci_go_affected").packages, selected);
@@ -119,7 +125,7 @@ func TestHelper(t *testing.T) {
     assert.equal(stale.status, 0, stale.stdout + stale.stderr);
     assert.match(stale.stdout, /integration\s+\(cached\)/u);
     assert.equal(executions(), before, "changed subprocess source must leave the seeded result reusable");
-    const broken = run(brokenHead);
+    const broken = await run(brokenHead);
     assert.notEqual(broken.status, 0, `${shard} must execute the changed command`);
     assert.match(broken.result.stdout, /expected good, got bad/u);
     assert.doesNotMatch(broken.result.stdout, /\(cached\)/u);
@@ -129,7 +135,7 @@ func TestHelper(t *testing.T) {
 
     // Repeated valid runs must execute TestMain while retaining compiled objects.
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const fresh = run(goodHead);
+      const fresh = await run(goodHead);
       assert.equal(fresh.status, 0, fresh.result.stdout + fresh.result.stderr);
       assert.doesNotMatch(fresh.result.stdout, /\(cached\)/u);
       assert.equal(executions(), before + 1 + attempt);
@@ -280,28 +286,34 @@ function mock(discovery = {}, selectedPath = "cmds/delidev-cli/internal/apiproxy
     if (command === "gofmt") return { status: 0, stdout: "" };
     return { status: 0 };
   };
-  return { calls, events, options: { mode: "affected", base: "a".repeat(40), head: "b".repeat(40), run, log: (line) => events.push(JSON.parse(line)) } };
+  return { calls, events, options: { mode: "affected", base: "a".repeat(40), head: "b".repeat(40), run, runTests: run, saveReport() {}, log: (line) => events.push(JSON.parse(line)) } };
 }
 
-test("empty affected Windows shards succeed without compiling or running fixtures", () => {
+test("empty affected Windows shards succeed without compiling or running fixtures", async () => {
   const fixture = mock();
-  assert.equal(runGoTests(GoTestShard.Core, fixture.options), 0);
+  assert.equal(await runGoTests(GoTestShard.Core, fixture.options), 0);
   assert.equal(fixture.events.at(-1).event, "ci_go_test_empty");
   assert.ok(!fixture.calls.some((call) => call.args[0] === "test"));
+  const emptyWorkspace = mock();
+  assert.equal(await runGoTests(GoTestShard.Workspace, emptyWorkspace.options), 0);
+  assert.ok(!emptyWorkspace.calls.some((call) => call.args[0] === "test"));
+  const workspace = mock({}, "cmds/delidev-cli/internal/workspace/claim_test.go");
+  assert.equal(await runGoTests(GoTestShard.Workspace, workspace.options), 0);
+  assert.deepEqual(workspace.calls.at(-1).args, ["test", "-count=1", "-json", "-p=1", "-timeout=45m", path("cmds/delidev-cli/internal/workspace")]);
   const worker = mock();
-  assert.equal(runGoTests(GoTestShard.Worker, { ...worker.options, platform: "win32" }), 0);
+  assert.equal(await runGoTests(GoTestShard.Worker, { ...worker.options, platform: "win32" }), 0);
   assert.deepEqual(worker.calls.at(-2).args.slice(0, 4), ["test", "-c", "-o", "NUL"]);
-  assert.deepEqual(worker.calls.at(-1).args.slice(0, 4), ["test", "-count=1", "-p=1", "-timeout=45m"]);
+  assert.deepEqual(worker.calls.at(-1).args.slice(0, 5), ["test", "-count=1", "-json", "-p=1", "-timeout=45m"]);
   const unix = mock();
-  assert.equal(runGoTests(GoTestShard.All, unix.options), 0);
-  assert.deepEqual(unix.calls.at(-1).args.slice(0, 3), ["test", "-count=1", "-timeout=20m"]);
+  assert.equal(await runGoTests(GoTestShard.All, unix.options), 0);
+  assert.deepEqual(unix.calls.at(-1).args.slice(0, 4), ["test", "-count=1", "-json", "-timeout=20m"]);
   assert.deepEqual(unix.calls.find((call) => call.command === "go" && call.args[0] === "list").args, ["list", "-mod=readonly", "-test", "-json", "./..."]);
 });
 
-test("bad comparisons, discovery errors and partial inventories cannot silently pass", () => {
+test("bad comparisons, discovery errors and partial inventories cannot silently pass", async () => {
   for (const base of [undefined, "", "--help", "0".repeat(40)]) assert.throws(() => affectedGoPackages({ ...mock().options, base }));
   for (const result of [{ status: 2, stdout: "partial" }, { status: null, signal: "SIGTERM" }, { error: new Error("spawn failed") }]) {
-    assert.throws(() => runGoTests(GoTestShard.All, mock({}, undefined, { command: "go", action: "list", result }).options));
+    await assert.rejects(() => runGoTests(GoTestShard.All, mock({}, undefined, { command: "go", action: "list", result }).options));
   }
   assert.throws(() => selectionOptions({ CI_GO_MODE: "unknown" }));
   assert.equal(selectionOptions({}).mode, "full");
@@ -322,7 +334,7 @@ test("Go quality preserves empty selection and propagates formatting/vet failure
   assert.ok(calls.every((call) => call.options.shell === false));
 });
 
-test("real native Go discovery respects OS files, test imports and exact Git changes", (t) => {
+test("real native Go discovery respects OS files, test imports and exact Git changes", async (t) => {
   const cwd = mkdtempSync(join(tmpdir(), "ci-go-affected-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -339,7 +351,7 @@ test("real native Go discovery respects OS files, test imports and exact Git cha
   git("add", "."); git("commit", "--quiet", "-m", "fixture change"); const head = git("rev-parse", "HEAD");
   const result = affectedGoPackages({ base, head, cwd, log() {} });
   assert.deepEqual(result.packages, [path("cmds/sample/consumer"), path("cmds/sample/leaf")]);
-  assert.equal(runGoTests(GoTestShard.All, { mode: "affected", base, head, cwd, log() {} }), 0);
+  assert.equal(await runGoTests(GoTestShard.All, { mode: "affected", base, head, cwd, log() {} }), 0);
   const native = spawnSync("go", ["list", "-mod=readonly", "-f", "{{join .GoFiles \",\"}}", "./cmds/sample/native"], { cwd, encoding: "utf8" });
   assert.equal(native.status, 0, native.stderr);
   assert.equal(native.stdout.trim(), process.platform === "win32" ? "native_windows.go" : "native_unix.go");
