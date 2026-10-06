@@ -12,6 +12,9 @@
 .worker-wizard label { display: grid; gap: 8px; margin: 16px 0; }
 .worker-wizard input:not([type="checkbox"]), .worker-wizard select { min-height: 40px; border-radius: 8px; width: 100%; }
 .worker-account-list { border-top: 1px solid var(--border); margin-top: 24px; }
+.worker-account-empty { padding: 16px 0; }
+.worker-account-empty p { margin: 0; }
+.worker-account-empty p + p { margin-top: 4px; color: var(--muted); }
 .worker-wizard .worker-account-row { display: flex; gap: 14px; align-items: flex-start; margin: 0; padding: 16px 0; border-bottom: 1px solid var(--border); }
 .worker-account-row > input { margin-top: 4px; flex-shrink: 0; }
 .worker-account-row > span { display: grid; gap: 4px; }

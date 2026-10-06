@@ -485,6 +485,25 @@ through existing APIs, but need an account before wizard resaving. Retired model
 remain inert; affected Workers require explicit current account and model
 reconfiguration without rewriting historical executions.
 
+The Accounts choice list displays only accounts with connection metadata, saved
+health `ready` or `unverified`, and no pending credential removal. Hide disconnected,
+failed, expired, revoked and unknown-health choices from both the visual list and
+keyboard/accessibility navigation. Account enablement and execution eligibility
+remain independent. Validate the complete source page before applying this
+wizard-only presentation rule; preserve the server page, cursor and all account
+metadata without automatic continuation reads. Account management lists retain
+their server-side filters before pagination.
+
+Already selected accounts retain their IDs, order and weights when hidden,
+including during edit and refresh. Routing options still exposes their names and
+explicit removal; stage and save validation do not acquire a health gate. A
+successfully loaded valid nonempty page with no visible choices displays **No
+accounts to select on this page.** and **Connect an account in AI Subscription or
+AI API Keys, then refresh.** Preserve First/Next/Refresh controls and the selected
+count. Loading, failed reads and invalid source pages never display this notice;
+genuinely empty pages retain their existing inventory guidance. This changes no
+RPC, capability, migration, authentication or execution authority.
+
 The Model step uses source-scoped server catalog autocomplete and permits exact
 native ID input after loading, empty, failed or unsupported discovery results.
 Typing never contacts a provider endpoint. Endpoint refresh uses the deliberate
