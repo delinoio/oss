@@ -9,6 +9,13 @@ import { execFileSync } from "node:child_process";
 export const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item).replace(/[<>&\u2028\u2029]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
 export const catalogPath = "cmds/delidev-cli/internal/knownmodels/catalog.json";
 export const services = ["chatgpt", "claude", "grok"];
+const sourceHosts = new Map([
+  ["codex", "github.com"],
+  ["openai-retirement", "learn.chatgpt.com"],
+  ["claude-code", "code.claude.com"],
+  ["claude-models", "platform.claude.com"],
+  ["grok-build", "docs.x.ai"],
+]);
 const digest = value => createHash("sha256").update(value).digest("hex");
 const fail = reason => { throw new Error(`Known-model validation failed: ${reason}`); };
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -19,15 +26,16 @@ const exactKeys = (value, required, optional = []) => {
 export function validateCatalog(value) {
   exactKeys(value, ["schema_version", "catalog_version", "updated_at", "sources", "services"]);
   if (value.schema_version !== 1 || !/^sha256:[a-f0-9]{64}$/.test(value.catalog_version) || !validDate(value.updated_at)) fail("version or date");
-  if (!Array.isArray(value.sources) || !value.sources.length || value.sources.length > 10) fail("sources");
+  if (!Array.isArray(value.sources) || value.sources.length !== sourceHosts.size) fail("sources");
   const keys = new Set();
   for (const source of value.sources) {
     exactKeys(source, ["key", "url", "revision", "sha256"]);
     if (!/^[a-z-]+$/.test(source.key) || keys.has(source.key) || typeof source.revision !== "string" || !source.revision || source.revision.length > 128 || !/^[a-f0-9]{64}$/.test(source.sha256)) fail("source identity");
     const url = new URL(source.url);
-    if (url.protocol !== "https:" || url.username || url.password || !["github.com", "learn.chatgpt.com", "code.claude.com", "platform.claude.com", "docs.x.ai"].includes(url.hostname)) fail("source URL");
+    if (url.protocol !== "https:" || url.username || url.password || sourceHosts.get(source.key) !== url.hostname) fail("source URL");
     keys.add(source.key);
   }
+  if (keys.size !== sourceHosts.size) fail("incomplete source provenance");
   if (!Array.isArray(value.services) || value.services.length !== services.length) fail("service inventory");
   for (const [index, entry] of value.services.entries()) {
     exactKeys(entry, ["service", "models"]);
@@ -37,7 +45,7 @@ export function validateCatalog(value) {
       exactKeys(model, ["native_id", "display_name", "order", "source_keys"], ["minimum_harness_version", "retirement_date"]);
       if (typeof model.native_id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/.test(model.native_id) || ids.has(model.native_id) || typeof model.display_name !== "string" || !model.display_name.trim() || Buffer.byteLength(model.display_name) > 256 || /[\x00-\x1f\x7f]/.test(model.display_name) || model.order !== order) fail("model identity or order");
       if (!Array.isArray(model.source_keys) || !model.source_keys.length || new Set(model.source_keys).size !== model.source_keys.length || model.source_keys.some(key => !keys.has(key))) fail("model provenance");
-      if (model.minimum_harness_version !== undefined && (model.minimum_harness_version.length > 32 || !/^\d+\.\d+\.\d+$/.test(model.minimum_harness_version))) fail("minimum version");
+      if (model.minimum_harness_version !== undefined && (typeof model.minimum_harness_version !== "string" || model.minimum_harness_version.length > 32 || !/^\d+\.\d+\.\d+$/.test(model.minimum_harness_version))) fail("minimum version");
       if (model.retirement_date !== undefined && !validDate(model.retirement_date)) fail("retirement date");
       ids.add(model.native_id);
     }

@@ -267,6 +267,11 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	}
 	stopCatalog()
 	<-catalogDone
+	// Catalog refresh may be resolving the account-backed outbound route. Join
+	// it before releasing account secrets so no maintenance request can touch a
+	// closed vault during the explicit shutdown path.
+	stopKnown()
+	<-knownDone
 	stopRemediation()
 	<-remediationDone
 	stopDispatch()

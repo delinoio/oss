@@ -6,7 +6,8 @@ import { buildCatalog, validateCatalog, reconcile, changes, extractChatGPT, extr
 import { createHash } from "node:crypto";
 import { assertBotBranch, describeUpdate, branch } from "../delidev/known-subscription-models-pr.mjs";
 
-const sources = ["codex", "openai-retirement", "claude-code", "claude-models", "grok-build"].map(key => ({ key, url: "https://docs.x.ai/build/settings", revision: "fixture", sha256: "a".repeat(64) }));
+const sourceHosts = { codex: "github.com", "openai-retirement": "learn.chatgpt.com", "claude-code": "code.claude.com", "claude-models": "platform.claude.com", "grok-build": "docs.x.ai" };
+const sources = Object.entries(sourceHosts).map(([key, host]) => ({ key, url: `https://${host}/fixture`, revision: "fixture", sha256: "a".repeat(64) }));
 const inputs = {
   codex: JSON.stringify({ models: [
     { slug: "gpt-current", display_name: "GPT Current", visibility: "list", available_in_plans: ["plus"], priority: 1, minimal_client_version: "0.153.0" },
@@ -20,7 +21,7 @@ const inputs = {
   overview: "## Compare models\n| Feature | Claude Opus 5.5 | Claude Sonnet 5.5 | Claude Haiku 4.5 |\n| Claude API ID | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-4-5-20251001` |\n| Claude API alias | `claude-opus-5-5` | `claude-sonnet-5-5` | `claude-haiku-4-5` |\n| Retirement | Not sooner than Oct 15 | | |",
   grok: '[models]\ndefault = "grok-build" # recommended for coding / agent sessions\nweb_search = "grok-api-example"\n[model."grok-api-example"]\nmodel = "grok-api-example"',
 };
-const fixture = () => buildCatalog(inputs, sources, "2026-10-06");
+const fixture = () => buildCatalog(inputs, sources.map(source => ({ ...source })), "2026-10-06");
 const rehash = catalog => { catalog.catalog_version = `sha256:${createHash("sha256").update(canonical(catalog.services)).digest("hex")}`; return catalog; };
 test("official-shaped extraction excludes hidden, API-only, retired and arbitrary examples", () => {
   const value = fixture();
@@ -52,6 +53,20 @@ test("duplicate models, invalid dates/versions, unbound sources and over-limit p
   mutate(value => value.schema_version = 2);
   mutate(value => value.services[0].models[0].source_keys = ["missing"]);
   mutate(value => value.services[0].models = Array.from({ length: 201 }, (_, order) => ({ ...value.services[0].models[0], native_id: `fixture-${order}`, order })));
+});
+test("catalog provenance requires every fixed source key and its host", () => {
+  const incomplete = fixture();
+  incomplete.sources = [incomplete.sources.find(source => source.key === "grok-build")];
+  for (const entry of incomplete.services) for (const model of entry.models) model.source_keys = ["grok-build"];
+  assert.throws(() => validateCatalog(rehash(incomplete)));
+  const wrongHost = fixture();
+  wrongHost.sources.find(source => source.key === "codex").url = "https://docs.x.ai/build/settings.md";
+  assert.throws(() => validateCatalog(rehash(wrongHost)));
+});
+test("minimum harness versions must be scalar strings", () => {
+  const value = JSON.parse(inputs.codex);
+  value.models[0].minimal_client_version = ["0.153.0"];
+  assert.throws(() => buildCatalog({ ...inputs, codex: JSON.stringify(value) }, sources));
 });
 test("daily date/digest-only reads retain reviewed bytes; model metadata changes report a diff", () => {
   const previous = fixture(); const next = fixture(); next.updated_at = "2026-10-07"; next.sources[0].sha256 = "b".repeat(64);

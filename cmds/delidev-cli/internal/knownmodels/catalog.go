@@ -64,6 +64,13 @@ var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 var keyPattern = regexp.MustCompile(`^[a-z-]+$`)
 var ErrInvalid = errors.New("invalid known subscription model catalog")
+var sourceHosts = map[string]string{
+	"codex":             "github.com",
+	"openai-retirement": "learn.chatgpt.com",
+	"claude-code":       "code.claude.com",
+	"claude-models":     "platform.claude.com",
+	"grok-build":        "docs.x.ai",
+}
 
 // Strict JSON rejects duplicate keys as well as unknown fields and trailing
 // documents. A partial or ambiguous catalog can never replace a valid one.
@@ -165,15 +172,16 @@ func Decode(raw []byte) (Catalog, error) {
 		if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" {
 			return Catalog{}, ErrInvalid
 		}
-		switch parsed.Hostname() {
-		case "github.com", "learn.chatgpt.com", "code.claude.com", "platform.claude.com", "docs.x.ai":
-		default:
+		if expectedHost, ok := sourceHosts[source.Key]; !ok || parsed.Hostname() != expectedHost {
 			return Catalog{}, ErrInvalid
 		}
 		if !keyPattern.MatchString(source.Key) || keys[source.Key] || source.Revision == "" || len(source.Revision) > 128 || !digestPattern.MatchString(source.SHA256) {
 			return Catalog{}, ErrInvalid
 		}
 		keys[source.Key] = true
+	}
+	if len(keys) != len(sourceHosts) {
+		return Catalog{}, ErrInvalid
 	}
 	for index, service := range catalog.Services {
 		if service.Service != []string{"chatgpt", "claude", "grok"}[index] || len(service.Models) == 0 || len(service.Models) > 200 {

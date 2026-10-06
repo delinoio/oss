@@ -160,6 +160,30 @@ func TestExactSchemaKeysAndRequiredModelMetadata(t *testing.T) {
 		t.Fatal("canonical escaped metadata rejected", err)
 	}
 }
+func TestCatalogRequiresCompleteSourceProvenance(t *testing.T) {
+	missing := changedFixture(t, func(v map[string]any) {
+		sources := v["sources"].([]any)
+		v["sources"] = []any{sources[len(sources)-1]}
+		for _, entry := range v["services"].([]any) {
+			for _, model := range entry.(map[string]any)["models"].([]any) {
+				model.(map[string]any)["source_keys"] = []any{"grok-build"}
+			}
+		}
+	})
+	if _, err := Decode(missing); err == nil {
+		t.Fatal("accepted incomplete source provenance")
+	}
+	wrongHost := changedFixture(t, func(v map[string]any) {
+		for _, source := range v["sources"].([]any) {
+			if source.(map[string]any)["key"] == "codex" {
+				source.(map[string]any)["url"] = "https://docs.x.ai/build/settings.md"
+			}
+		}
+	})
+	if _, err := Decode(wrongHost); err == nil {
+		t.Fatal("accepted source key on the wrong host")
+	}
+}
 func TestFixedRequestAndJoinedCancellation(t *testing.T) {
 	started := make(chan struct{})
 	stopped := make(chan struct{})
