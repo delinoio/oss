@@ -109,9 +109,9 @@ it("removes the list-only scope for machine detail and other categories", async 
   expect(content.classList.contains("settings-runner-devices")).toBe(false); expect(screen.queryByRole("heading", { name: "Saved runner devices" })).toBeNull();
   expect(screen.getByText(/Checks run on this Worker/)).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Back to Runner Devices" }));
   expect(content.classList.contains("settings-runner-devices")).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Instructions" })); expect(content.classList.contains("settings-runner-devices")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-runner-devices")).toBe(false);
 });
-it("keeps an uncertain Start through category reflow and same-identity transport reconnect without replay", async () => {
+it("observes an accepted Start after category return without restoring uncertainty or replaying it", async () => {
   const value = fixture(); let current: LocalWorkerStatus = { ...status(LocalWorkerState.NotStarted), generation: undefined };
   const control = vi.fn(async (action: LocalWorkerAction): Promise<LocalWorkerStatus> => {
     if (action === LocalWorkerAction.Start) { current = { ...status(LocalWorkerState.Starting), controller_active: true }; throw new Error("unknown launch"); }
@@ -121,8 +121,8 @@ it("keeps an uncertain Start through category reflow and same-identity transport
   fireEvent.click(await screen.findByRole("button", { name: "Start local Worker" })); await screen.findByText("Starting");
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
   view.rerender(value.view(<Settings controlLocalWorker={control} />, fixture().transport));
-  expect(screen.getByText("Starting")).toBeTruthy();
-  expect(screen.getByRole("alert").textContent).toContain("The local Worker action is unconfirmed.");
+  await screen.findByText("Starting");
+  expect(screen.queryByRole("alert")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Refresh local Worker" }));
   await waitFor(() => expect(control.mock.calls.filter(([action]) => action === LocalWorkerAction.Start)).toHaveLength(1));
 });
