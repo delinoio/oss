@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -80,13 +80,23 @@ test("environment checker invalidates a warm cache when its development graph ch
   git("add", "--all");
   git("commit", "-m", "fixture");
   const linkNodeModules = () => {
-    const link = join(cwd, "node_modules");
-    rmSync(link, { recursive: true, force: true });
-    symlinkSync(
-      join(repositoryRoot, "node_modules"),
-      link,
-      process.platform === "win32" ? "junction" : "dir",
-    );
+    const nodeModules = join(cwd, "node_modules");
+    // Do not junction the fixture to the checkout on Windows. Turbo can walk
+    // that junction and observe host package-manager state as fixture input.
+    rmSync(nodeModules, { recursive: true, force: true });
+    const bin = join(nodeModules, ".bin");
+    mkdirSync(bin, { recursive: true });
+    if (process.platform === "win32") {
+      writeFileSync(
+        join(bin, "turbo.cmd"),
+        `@echo off\r\n"${process.execPath}" "${turbo}" %*\r\n`,
+      );
+    } else {
+      const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+      const launcher = join(bin, "turbo");
+      writeFileSync(launcher, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(turbo)} "$@"\n`);
+      chmodSync(launcher, 0o755);
+    }
   };
   linkNodeModules();
   const restoreFixture = () => {
