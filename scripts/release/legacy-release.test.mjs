@@ -19,14 +19,30 @@ for (const project of projects) test(`${project} permits only absent or matching
   const source = input(project);
   const tag = `${project}@v${source.requestedVersion}`;
   for (const event of [source, { ...source, event: "push", ref: `refs/tags/${tag}` }]) {
-    for (const result of [{ status: 404 }, commit(build)]) {
+    for (const result of [{ tag: { status: 404 }, release: { status: 404 } }, { tag: commit(build) }]) {
       const routes = [];
-      const plan = await legacyReleaseMetadata(event, read, async (route) => { routes.push(route); return result; });
-      assert.deepEqual(routes, [`/repos/delinoio/oss/git/ref/tags/${encodeURIComponent(tag)}`]);
+      const plan = await legacyReleaseMetadata(event, read, async (route) => {
+        routes.push(route);
+        return route.includes("/releases/") ? result.release : result.tag;
+      });
+      const tagRoute = `/repos/delinoio/oss/git/ref/tags/${encodeURIComponent(tag)}`;
+      const releaseRoute = `/repos/delinoio/oss/releases/tags/${encodeURIComponent(tag)}`;
+      assert.deepEqual(routes, result.release ? [tagRoute, releaseRoute] : [tagRoute]);
       assert.deepEqual(plan, { version: source.requestedVersion, tag, dry_run: "false", revision: build, target_commitish: build });
     }
     await assert.rejects(legacyReleaseMetadata(event, read, async () => commit(historical)), /different commit/u);
   }
+});
+
+test("orphaned GitHub releases block publication when their tag ref is absent", async () => {
+  const tag = `${Project.Binpm}@v${readVersion(Project.Binpm, read)}`;
+  const routes = [];
+  await assert.rejects(legacyReleaseMetadata(input(Project.Binpm), read, async (route) => {
+    routes.push(route);
+    if (route.includes("/git/ref/")) return { status: 404 };
+    return { status: 200, body: { id: 123, tag_name: tag } };
+  }), /no verified tag target/u);
+  assert.deepEqual(routes, [`/repos/delinoio/oss/git/ref/tags/${encodeURIComponent(tag)}`, `/repos/delinoio/oss/releases/tags/${encodeURIComponent(tag)}`]);
 });
 
 test("historical tags and uncertain lookups stop all signing, publication and tap side effects", async () => {
@@ -99,7 +115,8 @@ test("actual workflow command pins the checkout and emits no outputs after a rej
   let attempt = 0;
   const run = (result, extra = {}) => {
     const output = path.join(directory, `output-${attempt++}`);
-    const preload = `globalThis.fetch = async () => ({ status: ${result.status}, json: async () => (${JSON.stringify(result.body ?? null)}) });`;
+    const responses = Array.isArray(result) ? result : [result];
+    const preload = `const responses = ${JSON.stringify(responses)}; globalThis.fetch = async () => { const response = responses.shift() ?? responses.at(-1) ?? { status: 404 }; return { status: response.status, json: async () => (response.body ?? null) }; };`;
     const command = spawnSync(process.execPath, ["--import", `data:text/javascript,${encodeURIComponent(preload)}`, "scripts/release/project.mjs", "legacy-source"], {
       cwd: root, encoding: "utf8",
       env: { PATH: process.env.PATH, GH_TOKEN: "fixture-only", GITHUB_OUTPUT: output, GITHUB_REPOSITORY: "delinoio/oss", GITHUB_SHA: revision, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/main", RELEASE_PROJECT: Project.CargoMono, REQUESTED_VERSION: readVersion(Project.CargoMono, read), REQUESTED_DRY_RUN: "false", ...extra },
@@ -111,7 +128,7 @@ test("actual workflow command pins the checkout and emits no outputs after a rej
   assert.ok(accepted.outputs.includes(`target_commitish=${revision}\n`));
   assert.ok(accepted.outputs.includes(`revision=${revision}\n`));
   assert.match(accepted.stderr, /"outcome":"verified"/u);
-  for (const rejected of [run(commit(historical)), run({ status: 500 }), run({ status: 404 }, { GITHUB_SHA: historical }), run({ status: 404 }, { GITHUB_REPOSITORY: "untrusted/oss" })]) {
+  for (const rejected of [run(commit(historical)), run({ status: 500 }), run([{ status: 404 }, { status: 200, body: { id: 123 } }]), run({ status: 404 }, { GITHUB_SHA: historical }), run({ status: 404 }, { GITHUB_REPOSITORY: "untrusted/oss" })]) {
     assert.equal(rejected.status, 1);
     assert.equal(rejected.outputs, "");
     assert.doesNotMatch(rejected.stderr, /fixture-only/u);

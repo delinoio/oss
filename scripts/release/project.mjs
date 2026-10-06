@@ -301,7 +301,13 @@ export async function legacyReleaseMetadata({ revision, ...input }, read, reques
   const metadata = sourceMetadata(input, read);
   if (metadata.dry_run === "false") {
     const existing = await tagRevision(metadata.tag, request);
-    requireValue(existing === null || existing === revision, "Existing release tag belongs to a different commit");
+    if (existing === null) {
+      // A deleted tag can leave a GitHub Release behind. The release uploader
+      // reuses that release, so a missing ref is publishable only when the
+      // release-by-tag lookup is also absent.
+      const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(metadata.tag)}`);
+      requireValue(release.status === 404, "Existing GitHub release has no verified tag target");
+    } else requireValue(existing === revision, "Existing release tag belongs to a different commit");
   }
   // Always use the immutable build SHA, including when the tag is absent and
   // main advances between validation and GitHub's release/tag creation.
