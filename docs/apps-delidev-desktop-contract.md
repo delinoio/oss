@@ -1154,6 +1154,10 @@ The original `question` tool has its own collapsed native lifecycle disclosure, 
 
 Original Stop closures explain that the unanswered request was canceled after verified process cleanup, without an answer or rejection. Validate the exact proposal, distinct request/input UUIDs, native part/final assistant, lowercase history digest, terminal/idle/pending/cleanup facts and original interruption or HTTP-acknowledged cancellation. Validate bounded unique retry notifications and their separate canceled-backoff flag without inferring a native error. Reject mixed policy/Stop proofs and claimed, transmitted or accepted responses disguised as cancellation before rendering original content or controls. These retained views do not enable unfinished public OpenCode execution dispatch.
 
+### Native AppImage update correlation
+
+The [signed update contract](cmds-delidev-updates-contract.md) owns desktop installation. Linux compares the decoded kernel mount-point and source fields with the original APPDIR and APPIMAGE in one bounded mountinfo record. Decode space, tab, newline, backslash and source `#` octal escapes once, rejecting malformed or unsupported escapes. Preserve exact mounted-executable correlation, absolute paths, regular-file and symlink safeguards. Parser/build evidence remains separate from a running supported Linux package.
+
 ## Security
 Only trusted app content receives native capabilities. Renderer/server calls require exact allowed origins and the explicitly selected connection. Account credentials and GitHub PATs must never enter read responses. Never expose a shell, arbitrary executable/file reader, network proxy, or secret-bearing diagnostic object to the renderer.
 

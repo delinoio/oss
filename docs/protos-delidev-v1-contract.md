@@ -131,6 +131,18 @@ ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
 
+The additional shared RPC closure records PR #1221's existing
+`CompactSessionRequest` and `CompactSessionResponse` assignments in the immutable
+baseline, then reserves `CompactSessionRequest.expected_execution_id = 2` and
+`CompactSessionResponse.session = 4` under issue #1203 with #1093/#1202 as shared
+consumers. Establish these reservations on main before adding active fields or
+generated bindings. The expected execution must join the exact original source
+at acceptance and remain part of the actor-bound receipt identity. The response
+must join the current session and original job in one authorized read, including
+reference-only replay; its existing `request_id` remains the original action ID.
+Current native compaction support does not imply these additional fields exist.
+The reservation change adds no capability or migration.
+
 Issue #1206's [native Codex model observation contract](cmds-delidev-native-models-contract.md)
 activates main-established server capability 16 and Worker capability 7.
 `native_models.proto` owns the owner/client-only NativeModelService acceptance,

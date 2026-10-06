@@ -890,6 +890,14 @@ deletion use the same ownership-specific rule. This finite exception can be
 removed only after immutable original evidence is stored by reference; it grants
 no new filesystem, execution, replay or inferred cleanup authority.
 
+Primary WatchWork inspects storage inputs through the owning typed decoder both
+before and inside claim admission. Its strict claim-receipt decoder reserves
+1 KiB for Record metadata separately from the unchanged job bound, then selects
+the recovery, compaction or ordinary job decoder. Unknown fields, duplicate keys,
+trailing documents, malformed exceptions and oversized ordinary jobs remain
+rejected. Same-instance reconnect delivers the original claimed ID, revision and
+input bytes without another claim mutation or native effect.
+
 Storage observations preserve the exact accepted snapshot ID, session, machine,
 digest, byte size, creation instant and repository count. Successful original
 deletion changes only its Deleted tombstone. Failed inspect/restore/delete recovery
