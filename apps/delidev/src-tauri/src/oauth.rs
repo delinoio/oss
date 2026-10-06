@@ -654,6 +654,7 @@ fn decode_code(raw: &str) -> Option<Zeroizing<Vec<u8>>> {
 fn parse_request(raw: &[u8], host: &str, path: &str) -> Option<Option<Zeroizing<Vec<u8>>>> {
     parse_request_mode(raw, host, path, None)
 }
+#[cfg(test)]
 fn parse_request_mode(
     raw: &[u8],
     host: &str,

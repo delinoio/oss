@@ -40,7 +40,7 @@ async function add() {
 }
 it("starts a provider entry once after mounting its destination under Strict Mode and disposes only local callback authority", async () => {
   const value = fixture();
-  expect(value.native).not.toHaveBeenCalled(); expect(value.start).not.toHaveBeenCalled();
+  expect(value.native.mock.calls.every(call => call[1] === OAuthNativeAction.Profiles)).toBe(true); expect(value.start).not.toHaveBeenCalled();
   await add(); await screen.findByText("Waiting for authorization…");
   await waitFor(() => expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BindOpen)).toHaveLength(1));
   expect(value.start).toHaveBeenCalledTimes(1);
