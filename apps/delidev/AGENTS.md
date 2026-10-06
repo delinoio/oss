@@ -2,6 +2,9 @@
 
 # DeliDev desktop
 
+- Parallel browser QA follows `docs/apps-delidev-qa-contract.md`. Keep its entry and host outside product builds, use real per-environment Go servers/Workers, and preserve pending product/credential cleanup before deleting owned temporary state. Browser evidence cannot establish native-window or real-account acceptance.
+- In-app toast presentation follows the desktop contract and scoped source ownership. Mount its provider within the existing connection boundary, preserve Settings disposal and native notification/Inbox authority, and keep layout/component evidence separate from native platform acceptance.
+- Form controls use the shared desktop focus treatment in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`: inputs, textareas and selects keep their ordinary boundaries and keyboard behavior without pointer or keyboard focus rings. Other focusable controls retain their existing focus indicators.
 - In-app toast presentation follows the desktop contract and scoped source ownership. Mount its provider within the existing connection boundary, preserve Settings disposal and native notification/Inbox authority, and keep layout/component evidence separate from native platform acceptance.
 - Form controls use the shared desktop focus treatment in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`: inputs, textareas and selects keep their ordinary boundaries and keyboard behavior without pointer or keyboard focus rings. Other focusable controls retain their existing focus indicators.
 

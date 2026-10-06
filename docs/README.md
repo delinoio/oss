@@ -42,6 +42,7 @@ Each project must have one project index document and one or more domain contrac
 ## Project Catalog
 
 ### delidev
+- [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Protected account browser](cmds-delidev-browser-contract.md)

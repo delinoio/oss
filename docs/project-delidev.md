@@ -23,6 +23,7 @@ New schedule creation adds frequency presets and a creation-only three-section l
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.
 
 ## Domain Contract Documents
+- [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Protected account browser](cmds-delidev-browser-contract.md)
