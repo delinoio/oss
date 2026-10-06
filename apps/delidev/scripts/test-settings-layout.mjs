@@ -183,8 +183,18 @@ try {
       formsChecked += 4;
     }
     if (!populated) {
-      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", "New Server preferences"], ["Git", "New Git workflow"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
-        await select(category); await page.getByRole("button", { name: action, exact: true }).click();
+      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", null], ["Git", "New Git workflow"], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
+        await select(category); if (action) await page.getByRole("button", { name: action, exact: true }).click();
+        if (category === "Server preferences") {
+          const form = page.getByRole("form", { name: "Server preferences form", exact: true }); await form.waitFor();
+          assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
+          assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
+          assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
+          assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
+          assert(await page.getByRole("button", { name: "Save changes", exact: true }).isDisabled());
+          formsChecked++;
+          continue;
+        }
         if (category === "Repositories") {
           // Registration first inspects a folder before exposing saved fields.
           // Exercise its manual entry without inventing native folder authority.

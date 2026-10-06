@@ -6,6 +6,7 @@
 
 # DeliDev desktop
 
+- Server preferences opens a direct singleton form under the desktop contract and scoped source rules. Use explicit Discard changes/Save changes with header-only Refresh; preserve exact document/revision/retry authority and Settings lifetime. Network settings remains an independent collapsed workspace below the form.
 - Frontend validation in `vitest.config.ts` uses at most four jsdom workers. Preserve focus/lifetime test deadlines and product deadlines independently; raise concurrency only after validating those suites under peak concurrent native-build load. Record results in PRs/issues/CI rather than repository evidence documents.
 
 - Parallel browser QA follows `docs/apps-delidev-qa-contract.md`. Keep its entry and host outside product builds, use real per-environment Go servers/Workers, and preserve pending product/credential cleanup before deleting owned temporary state. Browser evidence cannot establish native-window or real-account acceptance.
