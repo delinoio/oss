@@ -9,6 +9,7 @@ service ProviderService {
   rpc ListProviderPresets(ListProviderPresetsRequest) returns (ListProviderPresetsResponse);
   rpc ListProviderInventory(ListProviderInventoryRequest) returns (ListProviderInventoryResponse);
   rpc DiscoverModels(DiscoverModelsRequest) returns (DiscoverModelsResponse);
+  rpc ListKnownSubscriptionModels(ListKnownSubscriptionModelsRequest) returns (ListKnownSubscriptionModelsResponse);
   rpc SearchModels(SearchModelsRequest) returns (SearchModelsResponse);
   rpc ResolveModel(ResolveModelRequest) returns (ResolveModelResponse);
 }
@@ -59,6 +60,7 @@ enum ProviderInventoryCapability {
   PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER = 3;
   PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER = 4;
   PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1 = 5;
+  PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1 = 6;
 }
 
 message ListProviderInventoryRequest {
@@ -136,4 +138,31 @@ enum ProviderConnectionMethod {
   PROVIDER_CONNECTION_METHOD_API_KEY = 1;
   PROVIDER_CONNECTION_METHOD_OAUTH_PKCE = 2;
   PROVIDER_CONNECTION_METHOD_KEYLESS = 3;
+  PROVIDER_CONNECTION_METHOD_OAUTH_DEVICE = 4;
+}
+
+// Advisory metadata only; no saved model, account or execution authority.
+enum KnownSubscriptionModelCatalogSource {
+  KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_UNSPECIFIED = 0;
+  KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_BUNDLED = 1;
+  KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_CACHE = 2;
+  KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_ONLINE = 3;
+}
+message KnownSubscriptionModel {
+  string native_id = 1;
+  string display_name = 2;
+  uint32 order = 3;
+  string minimum_harness_version = 4;
+  // A definite retirement date, YYYY-MM-DD; empty when not established.
+  string retirement_date = 5;
+}
+message ListKnownSubscriptionModelsRequest {
+  SubscriptionServiceIdentity subscription_service = 1;
+}
+message ListKnownSubscriptionModelsResponse {
+  SubscriptionServiceIdentity subscription_service = 1;
+  repeated KnownSubscriptionModel models = 2;
+  string catalog_version = 3;
+  string updated_at = 4;
+  KnownSubscriptionModelCatalogSource source = 5;
 }

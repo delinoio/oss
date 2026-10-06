@@ -9,6 +9,10 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
+// CreatePrivateDirExclusive creates only the final component and never adopts
+// an existing directory. Callers retain ownership evidence before using it.
+func CreatePrivateDirExclusive(path string) error { return createPrivateDirectory(path) }
+
 // PrivateDir owns only its final component. Existing shared directories are
 // rejected rather than silently changing another application's permissions.
 func PrivateDir(path string) error {

@@ -16,16 +16,20 @@ pub enum NotificationKind {
 impl NotificationKind {
     pub fn title(self) -> &'static str {
         match self {
-            Self::Request => "DeliDev needs your input",
-            Self::Succeeded => "DeliDev execution completed",
-            Self::Failed => "DeliDev execution failed",
-            Self::Stopped => "DeliDev execution stopped",
-            Self::SubscriptionRecovery => "DeliDev quota recovered",
+            Self::Request => crate::localization::text(crate::localization::Message::RequestTitle),
+            Self::Succeeded => {
+                crate::localization::text(crate::localization::Message::SucceededTitle)
+            }
+            Self::Failed => crate::localization::text(crate::localization::Message::FailedTitle),
+            Self::Stopped => crate::localization::text(crate::localization::Message::StoppedTitle),
+            Self::SubscriptionRecovery => {
+                crate::localization::text(crate::localization::Message::RecoveryTitle)
+            }
         }
     }
 
     pub fn body(self) -> &'static str {
-        "Open the current inbox item in DeliDev."
+        crate::localization::text(crate::localization::Message::NoticeBody)
     }
 }
 

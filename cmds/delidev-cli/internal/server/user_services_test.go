@@ -56,7 +56,7 @@ func TestUserServiceConnectAuthorizationRevisionsReplayAndRedaction(t *testing.T
 	ready := make(chan Endpoint, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(ctx, Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), userServiceBackend: backend}, func(e Endpoint) { ready <- e })
+		done <- Serve(ctx, Config{disableKnownModelMaintenance: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), userServiceBackend: backend}, func(e Endpoint) { ready <- e })
 	}()
 	var endpoint Endpoint
 	select {

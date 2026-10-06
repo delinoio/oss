@@ -1,0 +1,22 @@
+{
+  "local-registration.desktopRegistration_65a097": "데스크톱 등록",
+  "local-registration.checkDesktopRegistration_a540c5": "데스크톱 등록 확인",
+  "local-registration.thisDesktopRegistrationIsAuthorized_f356ec": "이 데스크톱 등록이 승인되었습니다.",
+  "local-registration.thisDesktopRegistrationWasRevokedYou_1f8ea7": "이 데스크톱 등록이 해제되었습니다. 이 컴퓨터의 서버 소유자 접근 권한으로 데스크톱을 직접 다시 등록할 수 있습니다.",
+  "local-registration.aDesktopRegistrationRecoveryIsPending_de3baf": "데스크톱 등록 복구가 대기 중입니다. 원래 요청을 계속하세요.",
+  "local-registration.continueDesktopRecovery_250cf5": "데스크톱 복구 계속",
+  "local-registration.reRegisterThisDesktop_405621": "이 데스크톱 다시 등록",
+  "local-registration.thisCreatesANewDesktopRegistration_0adc71": "새 데스크톱 등록을 만듭니다. 원래 등록은 해제 상태를 유지합니다. 서버, 저장된 세션, 계정 설정과 워커는 보존됩니다.",
+  "local-registration.switchingToTheNewRegistrationClears_d3ec15": "새 등록으로 전환하면 이 창의 미전송 초안과 대기 중인 앱 동작을 지웁니다. 세션은 자동으로 재개하지 않습니다.",
+  "local-registration.theOriginalRecoveryRequestIsRetained_a082ac": "원래 복구 요청을 유지합니다. 이 대화상자를 닫아도 접수된 등록은 취소되지 않습니다.",
+  "local-registration.recovering_959bdc": "복구하는 중…",
+  "local-registration.retryOriginalDesktopRecovery_3b14fa": "기존 데스크톱 복구 다시 시도",
+  "local-registration.confirmDesktopReRegistration_d9ee3f": "데스크톱 재등록 확인",
+  "local-registration.close_7d9eb7": "닫기",
+  "local-registration.extra.26ef939a1688": "접근이 거부되었습니다. 선택한 기기가 인증되었는지, DeliDev 비공개 데이터 디렉터리와 등록 파일이 본인 계정 소유이며 본인만 접근할 수 있는지 확인하세요. macOS/Linux에서는 비공개 디렉터리에 0700, 비공개 파일에 0600 권한을 설정한 후 다시 시도하세요. 기존 데이터는 보존하세요.",
+  "local-registration.extra.4dd6b9aec612": "원래 소유자 또는 대체 자격 증명을 사용할 수 없습니다. 다시 시도하기 전에 원래 소유자 접근 권한을 복원하세요. 자동 등록은 수행하지 않습니다.",
+  "local-registration.extra.9de930e2084f": "원래 등록 또는 복구 파일이 변경되었거나 불완전합니다. 확인을 위해 보존하세요. 복구를 안전하게 계속할 수 없습니다.",
+  "local-registration.extra.0052bdc7399b": "다른 작업 또는 변경된 등록으로 이 요청이 차단되었습니다. 데스크톱 등록을 확인하고 원래 복구 요청을 유지하세요.",
+  "local-registration.extra.c2c03db23ff0": "원래 로컬 서버와 호환되는 데스크톱 버전을 사용하세요.",
+  "local-registration.extra.881bd1533eb2": "작업을 확인하지 못했습니다. 데스크톱 등록을 확인하거나 같은 복구를 다시 시도하세요. 서버를 초기화하지 마세요."
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -31,6 +32,75 @@ func writeUsageAt(t *testing.T, s *Store, record domain.ResponseUsageRecord, obs
 func usageCounts(input, output, total int64) *domain.NativeTokenCounts {
 	cached, reasoning := int64(0), int64(0)
 	return &domain.NativeTokenCounts{Input: &input, Cached: &cached, Output: &output, Reasoning: &reasoning, Total: &total}
+}
+
+func TestUsageSummaryDailyAttributionAcrossMissingMidnight(t *testing.T) {
+	for _, scenario := range []struct {
+		name  string
+		zone  string
+		from  string
+		next  string
+		until string
+	}{
+		{name: "Santiago", zone: "America/Santiago", from: "2026-09-05T04:00:00Z", next: "2026-09-06T04:00:00Z", until: "2026-09-07T03:00:00Z"},
+		{name: "Havana", zone: "America/Havana", from: "2026-03-07T05:00:00Z", next: "2026-03-08T05:00:00Z", until: "2026-03-09T04:00:00Z"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			s, _ := openTest(t)
+			fixture := seedSearch(t, s, "source", domain.Archived)
+			parse := func(value string) time.Time {
+				t.Helper()
+				parsed, err := time.Parse(time.RFC3339, value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return parsed
+			}
+			from, next, until := parse(scenario.from), parse(scenario.next), parse(scenario.until)
+			for i, observation := range []struct {
+				at     time.Time
+				counts *domain.NativeTokenCounts
+			}{
+				{at: from.Add(-time.Millisecond), counts: usageCounts(100, 0, 100)},
+				{at: next.Add(-30 * time.Minute), counts: usageCounts(math.MaxInt64, 0, math.MaxInt64)},
+				{at: next, counts: usageCounts(10, 7, 17)},
+				{at: next.Add(30 * time.Minute)},
+				{at: until, counts: usageCounts(100, 0, 100)},
+			} {
+				record := responseRecord(fixture)
+				record.Sequence = uint64(i + 1)
+				record.Usage.ResponseDigest = fmt.Sprintf("%064x", i+1)
+				record.Usage.Counts = observation.counts
+				writeUsageAt(t, s, record, observation.at)
+			}
+			selection := domain.UsageSelection{From: from, Until: until, Granularity: domain.UsageTimeGranularityDay, TimeZone: scenario.zone}
+			summary, err := readUsage(s, selection)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if summary.Analytics == nil || len(summary.Analytics.Days) != 2 {
+				t.Fatalf("missing daily analytics: %+v", summary.Analytics)
+			}
+			days := summary.Analytics.Days
+			if !days[0].From.Equal(from) || !days[0].Until.Equal(next) || !days[1].From.Equal(next) || !days[1].Until.Equal(until) || days[0].Until.Sub(days[0].From) != 24*time.Hour || days[1].Until.Sub(days[1].From) != 23*time.Hour {
+				t.Fatalf("wrong midnight-gap boundaries: %+v", days)
+			}
+			if days[0].Totals.Responses != 1 || days[0].Totals.Total.KnownTotal != "9223372036854775807" || days[1].Totals.Responses != 2 || days[1].Totals.Total.KnownTotal != "17" || days[1].Totals.Total.UnavailableResponses != 1 {
+				t.Fatalf("response assigned to another civil date: %+v", days)
+			}
+			var combined domain.UsageTotals
+			for _, day := range days {
+				combined.Merge(day.Totals)
+			}
+			if !reflect.DeepEqual(combined, summary.Totals) || summary.Totals.Responses != 3 || summary.Totals.Total.KnownTotal != "9223372036854775824" || summary.Totals.Total.MeasuredResponses != 2 || summary.Totals.Total.UnavailableResponses != 1 {
+				t.Fatalf("daily and overall totals differ: %+v %+v", combined, summary.Totals)
+			}
+			legacy, err := readUsage(s, domain.UsageSelection{From: from, Until: until})
+			if err != nil || !reflect.DeepEqual(legacy.Totals, summary.Totals) {
+				t.Fatalf("daily attribution changed overall totals: %+v %v", legacy.Totals, err)
+			}
+		})
+	}
 }
 
 func TestUsageSummaryDailyAndModelAnalyticsShareRetentionSnapshot(t *testing.T) {

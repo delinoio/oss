@@ -1,0 +1,16 @@
+{
+  "backup-job.tracked_7031a7": "Tracked {{v0}} {{v1}}",
+  "backup-job.backup_181f9b": "Backup <s0/>",
+  "backup-job.jobRevision_b89f71": "Job <s0/> · revision <s1/>",
+  "backup-job.completed_4ddb3e": "completed",
+  "backup-job.failed_5d28a9": "failed",
+  "backup-job.pending_62a2fe": "pending",
+  "backup-job.statusUnavailable_180119": "status unavailable",
+  "backup-job.accepted_e5e744": "Accepted <s0/> <s1/>",
+  "backup-job.operationNeedsAttention_bfbf09": "Operation needs attention: <s0/>",
+  "backup-job.theLastObservationIsStaleCurrent_4263e8": "The last observation is stale; current job status is unavailable.",
+  "backup-job.refreshTracked_d1e282": "Refresh tracked {{v0}} {{v1}}",
+  "backup-job.refresh_0e9161": "Refresh",
+  "backup-job.dismissTrackingForCompleted_90b8ac": "Dismiss tracking for completed {{v0}} {{v1}}",
+  "backup-job.dismissTracking_12e6bb": "Dismiss tracking"
+}

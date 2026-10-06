@@ -1,0 +1,13 @@
+{
+  "native-claude-denial-completion.theRetainedClaudeDenialCleanupIs_81b06b": "유지된 Claude 거부 정리를 확인할 수 없거나 일관되지 않습니다.",
+  "native-claude-denial-completion.claudeOriginalDenialCleanup_b0c03b": "Claude 원래 거부 정리",
+  "native-claude-denial-completion.claudeStoppedAfterDenial_2ef315": "거부 후 Claude 중지됨",
+  "native-claude-denial-completion.theOriginalDenialWasProcessedAnd_2d5a72": "원래 거부가 처리되어 명령이 취소되었습니다. Claude가 입력 결과 ID 없이 세션 결과를 보고했습니다.",
+  "native-claude-denial-completion.nativeLoop_fec242": "네이티브 루프",
+  "native-claude-denial-completion.idleObserved_34b00d": "유휴 상태 관측됨",
+  "native-claude-denial-completion.ownedNativeProcessCleanup_05bea7": "소유한 네이티브 프로세스 정리",
+  "native-claude-denial-completion.confirmed_fe00b6": "확정됨",
+  "native-claude-denial-completion.workerWorkspaceCleanupReport_e52033": "워커 작업공간 정리 보고서",
+  "native-claude-denial-completion.notConfirmed_bc1c29": "확정되지 않음",
+  "native-claude-denial-completion.historyReconciliationIsStillRequiredBefore_5f5801": "추가 입력 전에 기록 조정이 필요합니다. 이 정리는 재개 권한을 부여하지 않습니다."
+}

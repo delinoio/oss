@@ -10,6 +10,14 @@ Go and the execution machine's installed Git. No harness or Git installation is 
 The single-user server submits validated workspace jobs to the selected Worker. Local workspace identity is the actual originating machine, not the computer currently viewing a session.
 
 ## Interfaces and Contracts
+### Repository clone ownership
+
+Repository Clone accepts only credential-free HTTPS, `ssh://` and SCP-style SSH URLs and one portable folder name. Reject passwords/tokens, query/fragment, controls, local paths and external Git helper transports. The ten-minute deadline covers Clone, validation and publication. Execute Git with argv through the existing owned process boundary, the computer's existing Git credentials/SSH keys and no server PAT. Select `origin` explicitly so global Git Clone defaults cannot change the remote required for registration. Disable hooks through the platform null-device path, use a separate empty template, and disable recursive submodules and optional LFS smudging; retain full Git history without shallow/filter options. LFS payload hydration and submodule initialization remain explicit later Git operations.
+
+Create an exclusive private staging wrapper in the canonical selected parent, then create the empty staging checkout and synchronize a separate original-job/request-digest/parent-inode/staging-inode/checkout-inode claim before launching Git. Generic Worker execution journals independently prevent a second Clone after restart or uncertainty. Recheck the original parent, wrapper and checkout before and after Git; a replacement cannot become completion authority. Validate the canonical checkout and publish it through the existing platform no-replace primitive; an existing destination, including an empty directory, is a conflict. Recheck original parent/staging and published checkout identity around publication and synchronize before success.
+
+Failure cleanup requires the original durable claim and independently joined original processes. Claim the original staging name through a no-replace private removal rename, verify its native identity, and walk/remove through anchored directory handles without following links. Changed/missing ownership, incomplete process termination or cleanup retains files and recovery ownership. Publication transfers the final checkout to user-owned Local lifetime: registration failure, job retry and repository configuration deletion cannot remove or replace it. This staging exception grants no session/snapshot cleanup authority. System capability 31 and Worker capability 18 negotiate the complete durable flow after the main-first allocation prerequisites. The server rechecks original local Worker/device and selected profile authority at claim and registration. Its original report transaction publishes repository registration and the job result together, without a frontend save. Failed registration retains the published canonical checkout metadata. Bounded private Git diagnostics distinguish authentication failure and timeout without retaining stderr or URLs.
+
 Inspection accepts an absolute root, subdirectory, or linked worktree and resolves its canonical working-tree root, display name, remote names, and locally recorded remote defaults. It neither fetches nor returns remote URLs. An invalid preferred remote fails. Default reference selection uses the configured preferred remote, otherwise `origin`, otherwise the sole remote; missing or ambiguous defaults require input.
 
 ### Negotiated repository metadata
@@ -20,11 +28,45 @@ Enrichment uses the existing owned Git command boundary for `git remote get-url 
 
 Server-side repository validation accepts Unix absolute paths even on Windows and Windows drive-absolute paths even on Unix. It preserves those remote path bytes without local normalization or filesystem access; the owning Worker remains responsible for native absolute-path, canonical-root and Git validation before configuration publication.
 
-Worktree preparation resolves each repository's independently configured base and starting references. Automatic fetch updates the exact selected remote branch before resolving its commit; a failure blocks preparation without stale fallback. Explicitly disabled fetch uses the stored tracking ref. New worktrees are detached at the resolved commit, with no working branch creation. Identical base/starting references share the same resolved commit.
+Current checkout-based Worktree preparation resolves each repository's independently configured base and starting references. Automatic fetch updates the exact selected remote branch before resolving its commit; a failure blocks preparation without stale fallback. Explicitly disabled fetch uses the stored tracking ref. New worktrees are detached at the resolved commit, with no working branch creation. Identical base/starting references share the same resolved commit.
 
 Local preparation uses existing checkouts and their current HEAD/tree, including a valid unborn branch before the first commit, with no fetch, branch change, commit creation, or worktree creation. It requires matching execution/origin machine IDs derived by the server from the creation client's secondary paired Worker authentication. General Chat creates an independent session-owned directory without Git. The primary path is the designated primary repository or the General Chat directory.
 
 Preparation serializes by session while independent sessions can proceed concurrently. Git work is bounded and occurs outside database transactions. A durable ownership manifest is written before side effects; readiness is published only after every repository succeeds. Identical retries reuse a ready manifest; changed input cannot overwrite it. Partial preparation rolls back only newly owned worktrees. Failed cleanup retains a recoverable manifest; explicit retry cannot delete a ready workspace. Session Stop/Archive now cancel queued or claimed preparation through the owning job and retain ready workspaces. Active harness lifecycle and snapshot cleanup use separate product operations. Failure to acquire/inspect an existing ownership scope or persist its initial journal is uncertainty, not proof that cleanup completed; only confirmed rollback may permit another preparation attempt.
+
+### Reserved remote-first workspace source
+
+The approved remote-first extension reserves System 37 (`REMOTE_REPOSITORIES_V1`)
+and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`) under the [protocol contract](protos-delidev-v1-contract.md#remote-first-repository-reservations).
+Establish both allocations on main before dependent implementation. Reservations
+grant no URL registration, Git, filesystem or execution capability and add no
+migration. The checkout inspection and Worktree preparation above remain current
+behavior; this section defines the future source boundary.
+
+Future URL-only owner/client registration will require no Worker admission or
+checkout inspection. The configured remote URL will be the repository source,
+retained as the immutable source for managed Worktree preparation on the selected
+Worker under Worker 19's separate remote-clone authority. An optional checkout
+connection will supply only explicit Local execution with its original
+authenticated machine authority. Connecting a checkout cannot replace the remote
+Worktree source or grant deletion ownership over that original Local checkout.
+See the [desktop registration owner](apps-delidev-desktop-contract.md#reserved-remote-first-repository-registration).
+
+Configured remote-source metadata is distinct from raw URLs read during Worker
+inspection. The inspection privacy rules above and the Security/Logging rules
+below still exclude raw inspected URLs, credentials and native output from
+publication and diagnostics. Worker Git authentication remains Worker-local;
+server GitHub PATs never enter workspace jobs. System 31/32 and Worker 18 retain
+their separate immediate-clone/listing contracts.
+
+The complete implementation must compose repository saving, session/schedule
+admission, Worker preparation, native ownership, recovery, snapshots, Fork,
+Sidechat and deletion under the [structure contract](cmds-delidev-structure-contract.md#repository-addition-prerequisites).
+That composition must preserve immutable source attribution, deletion-owned
+managed paths, original Local checkout protection and the existing independent
+ownership/cleanup gates. These reservations activate no schemas, generated
+clients, save behavior, workspace code or migrations and establish no native,
+Git, account or platform acceptance.
 
 ## Preparation recovery
 `Manager.Recover` inspects the original session preparation under its per-session lock; it never repeats preparation or fetches. The Worker first verifies the exact original claimed job/revision/instance/digest against the private execution journal, with server evidence from its immutable assignment record. A missing or mismatched journal cannot authorize native work.

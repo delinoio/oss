@@ -245,17 +245,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 				continue
 			}
-			if filepath.Dir(path) == filepath.Join(root, "snapshot-staging") || filepath.Dir(path) == filepath.Join(root, "workspace-removals") || filepath.Dir(path) == filepath.Join(root, "workspace-removal-roots") {
-				// Workspace cleanup already checked the original native staging,
-				// public removal, or final-root identity. A later replacement or an
-				// old name without a published proof remains protected here. The
-				// generic session remover must never acquire authority over it.
-				if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
-					return domain.SessionDeletionPending()
-				}
-				continue
-			}
-			if e := removeSessionTree(ctx, root, path); e != nil {
+			if e := removeSessionCopy(ctx, root, path); e != nil {
 				return e
 			}
 		}
@@ -271,6 +261,23 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}
 	proof.Complete = true
 	return proof, writeJSON(path, proof)
+}
+
+// Workspace cleanup already validated original storage namespace ownership.
+// Reappearance cannot give the generic copy remover new traversal authority.
+func removeSessionCopy(ctx context.Context, root, path string) error {
+	parent := filepath.Dir(path)
+	if parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") {
+		// Workspace cleanup already checked the original native staging,
+		// public removal, or final-root identity. A later replacement or an
+		// old name without a published proof remains protected here. The
+		// generic session remover must never acquire authority over it.
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+		return nil
+	}
+	return removeSessionTree(ctx, root, path)
 }
 
 // Walk first without following symlinks, then remove deepest paths first. Each

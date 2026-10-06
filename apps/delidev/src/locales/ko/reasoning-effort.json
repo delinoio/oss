@@ -1,0 +1,10 @@
+{
+  "reasoning-effort.nativeDefault": "네이티브 기본값",
+  "reasoning-effort.useNativeDefault": "네이티브 기본값 사용",
+  "reasoning-effort.noMatchingSuggestions": "일치하는 제안이 없습니다. 계속 입력할 수 있습니다.",
+  "reasoning-effort.noEffortSuggestions": "이 하네스에는 추론 노력 제안이 없습니다.",
+  "reasoning-effort.chooseSuggestionOrType": "제안을 선택하거나 값을 입력하세요. 네이티브 기본값을 사용하려면 비워 두세요.",
+  "reasoning-effort.show": "표시",
+  "reasoning-effort.hide": "숨기기",
+  "reasoning-effort.suggestions": "제안"
+}

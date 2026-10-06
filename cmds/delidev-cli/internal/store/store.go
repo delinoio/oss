@@ -23,7 +23,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 30
+const SchemaVersion = 31
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -290,6 +290,12 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	if version >= 30 {
 		var layout string
 		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='provider_presets_layout'").Scan(&layout); err != nil || layout != "hosted-additions-26-v1" {
+			return corrupt()
+		}
+	}
+	if version >= 31 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='account_oauth_credentials_layout'").Scan(&layout); err != nil || layout != "token-generations-v1" {
 			return corrupt()
 		}
 	}
