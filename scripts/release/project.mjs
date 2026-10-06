@@ -262,19 +262,22 @@ export async function prepareRelease({ directory, project, bump, runId, name, em
   return { ...identity, resumed: false };
 }
 
-export async function githubRequest(route) {
+export async function githubRequest(route, { method = "GET", body } = {}) {
   requireValue(route.startsWith(`/repos/${repository}/`) || route === `/users/${encodeURIComponent(botName)}`, "Unsupported GitHub API route");
+  requireValue(["GET", "POST"].includes(method), "Unsupported GitHub API method");
+  requireValue(body === undefined || method === "POST", "GitHub request body requires POST");
   requireValue(Boolean(process.env.GH_TOKEN), "A scoped GitHub token is required");
   let response;
   try {
+    const headers = { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
     response = await fetch(`https://api.github.com${route}`, {
-      headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
-      redirect: "error", signal: AbortSignal.timeout(30000),
+      method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(30000),
     });
   } catch { throw new Error("GitHub API transport failed"); }
-  requireValue([200, 404].includes(response.status), `GitHub API failed with HTTP ${response.status}`);
-  if (response.status === 404) return { status: 404, body: null };
-  try { return { status: 200, body: await response.json() }; }
+  requireValue([200, 201, 404, 422].includes(response.status), `GitHub API failed with HTTP ${response.status}`);
+  if ([404, 422].includes(response.status)) return { status: response.status, body: null };
+  try { return { status: response.status, body: await response.json() }; }
   catch { throw new Error("Invalid GitHub API response"); }
 }
 
@@ -293,6 +296,21 @@ export async function tagRevision(tag, request) {
   return object.sha;
 }
 
+export async function releaseExists(tag, request) {
+  const published = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`);
+  if (published.status === 200) return true;
+  requireValue(published.status === 404, "Cannot establish release ownership");
+  for (let page = 1; ; page++) {
+    const result = await request(`/repos/${repository}/releases?per_page=100&page=${page}`);
+    requireValue(result.status === 200 && Array.isArray(result.body) && result.body.length <= 100
+      && result.body.every((release) => Number.isSafeInteger(release?.id) && release.id > 0 && typeof release.tag_name === "string"), "Cannot establish release ownership");
+    if (result.body.some((release) => release.tag_name === tag)) return true;
+    if (result.body.length < 100) return false;
+    // Bound a broken or repeating pagination response without treating it as absence.
+    requireValue(page < 1000, "Release pagination limit reached; cannot establish release ownership");
+  }
+}
+
 // These older publishers also support manual main releases. Version agreement
 // alone cannot authorize attaching a new build to an existing historical tag.
 export async function legacyReleaseMetadata({ revision, ...input }, read, request) {
@@ -302,16 +320,25 @@ export async function legacyReleaseMetadata({ revision, ...input }, read, reques
   if (metadata.dry_run === "false") {
     const existing = await tagRevision(metadata.tag, request);
     if (existing === null) {
-      // A deleted tag can leave a GitHub Release behind. The release uploader
-      // reuses that release, so a missing ref is publishable only when the
-      // release-by-tag lookup is also absent.
-      const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(metadata.tag)}`);
-      requireValue(release.status === 404, "Existing GitHub release has no verified tag target");
+      // A deleted tag can leave a published or draft GitHub Release behind.
+      // The release uploader reuses that release, so a missing ref is
+      // publishable only when every release listing is also absent.
+      requireValue(!(await releaseExists(metadata.tag, request)), "Existing GitHub release has no verified tag target");
     } else requireValue(existing === revision, "Existing release tag belongs to a different commit");
   }
   // Always use the immutable build SHA, including when the tag is absent and
   // main advances between validation and GitHub's release/tag creation.
   return { ...metadata, revision, target_commitish: revision };
+}
+
+export async function createLegacyReleaseTag({ tag, revision, request }) {
+  const existing = await tagRevision(tag, request);
+  if (existing === null) {
+    const created = await request(`/repos/${repository}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: revision } });
+    requireValue(created.status === 201, created.status === 422 ? "Release tag appeared during atomic creation" : "Release tag creation failed");
+  } else requireValue(existing === revision, "Existing release tag belongs to a different commit");
+  requireValue(await tagRevision(tag, request) === revision, "Remote release tag verification failed");
+  return { tag, revision, target_commitish: revision };
 }
 
 export async function reactForgeVersionPublished(version, request = fetch) {
@@ -334,8 +361,7 @@ export async function preflightVersion(plan, request, reactForgePublished = reac
     requireValue(await reactForgePublished(plan.previous_version), "A failed React Forge release requires the next patch version");
   }
   requireValue(await tagRevision(plan.tag, request) === null, "Next version tag already exists");
-  const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(plan.tag)}`);
-  requireValue(release.status === 404, "Next version release already exists or cannot be checked");
+  requireValue(!(await releaseExists(plan.tag, request)), "Next version release already exists or cannot be checked");
 }
 
 export async function pushReleaseTag({ directory, identity, request }) {
@@ -364,11 +390,15 @@ function workflowContext() {
 }
 
 export async function main(command) {
-  if (command === "legacy-source") {
+  if (["legacy-source", "legacy-tag"].includes(command)) {
     const revision = process.env.GITHUB_SHA;
     requireValue(process.env.GITHUB_REPOSITORY === repository, "Legacy release requires delinoio/oss");
     requireValue(shaPattern.test(revision ?? "") && git(root, ["rev-parse", "HEAD"]) === revision, "Checkout is not the workflow source revision");
     const metadata = await legacyReleaseMetadata({ project: process.env.RELEASE_PROJECT, revision, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, (file) => readFileSync(path.join(root, file), "utf8"), githubRequest);
+    if (command === "legacy-tag") {
+      requireValue(metadata.dry_run === "false", "Release tag creation requires a real publication");
+      await createLegacyReleaseTag({ tag: metadata.tag, revision, request: githubRequest });
+    }
     log({ phase: command, project: process.env.RELEASE_PROJECT, tag: metadata.tag, revision, dry_run: metadata.dry_run, outcome: "verified" });
     output(metadata);
     return;

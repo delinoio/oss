@@ -45,7 +45,7 @@ for (const project of ["binpm", "cargo-mono", "nodeup", "with-watch", "derun"]) 
     assert.deepEqual(publish.permissions, { contents: "write", "id-token": "write" });
     const steps = publish.steps;
     const index = (name) => { const i = steps.findIndex((step) => step.name === name); assert.ok(i >= 0, name); return i; };
-    const checks = ["Verify release tag before signing", "Verify release tag before publication"];
+    const checks = ["Verify release tag before signing", "Create and verify release tag before publication"];
     assert.ok(index(checks[0]) < index("Install cosign"));
     assert.ok(index(checks[0]) < index("Generate checksums and signatures"));
     assert.ok(index("Generate checksums and signatures") < index(checks[1]));
@@ -64,7 +64,7 @@ for (const project of ["binpm", "cargo-mono", "nodeup", "with-watch", "derun"]) 
       const check = steps[index(name)];
       assert.equal(check.if, undefined);
       assert.equal(check["continue-on-error"], undefined);
-      assert.equal(check.run, "node scripts/release/project.mjs legacy-source");
+      assert.equal(check.run, `node scripts/release/project.mjs ${name === checks[1] ? "legacy-tag" : "legacy-source"}`);
       assert.deepEqual(check.env, { GH_TOKEN: "${{ github.token }}", RELEASE_PROJECT: project, REQUESTED_VERSION: "${{ needs.prepare.outputs.version }}", REQUESTED_DRY_RUN: "false" });
     }
     assert.deepEqual(workflow.jobs["linux-packages"].needs, ["prepare", "publish"]);

@@ -279,14 +279,14 @@ jobs:
         shell: bash
         run: bash scripts/release/generate-checksums.sh --artifacts-dir dist
 
-      - name: Verify release tag before publication
+      - name: Create and verify release tag before publication
         id: release-source
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_PROJECT: with-watch
           REQUESTED_VERSION: ${{ needs.prepare.outputs.version }}
           REQUESTED_DRY_RUN: "false"
-        run: node scripts/release/project.mjs legacy-source
+        run: node scripts/release/project.mjs legacy-tag
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
