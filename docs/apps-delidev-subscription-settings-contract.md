@@ -42,11 +42,11 @@ Each window preserves its ID, order, remaining fraction, observation time and re
 
 ## Storage
 
-All state belongs to the current Settings visit. Filters, details, Advanced state, drafts, confirmations and retry presentation survive category changes within that visit and are discarded on navigation away under #1138. Accepted server/Worker effects continue; visit disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
+All presentation state belongs to the active Settings category. Filters, details, Advanced state, drafts, confirmations and retry presentation survive reflow, same-category reselection and same-identity reconnect, and are discarded on category departure or leaving Settings under the desktop contract. Accepted server/Worker effects continue; category disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
 
 ## Security
 
-No credentials, login URLs/codes, identity fixtures or quota values enter query keys, logs, browser storage or analytics. Only active original login/status reads poll; Settings disposal drops scoped presentation and never cancels or repeats accepted native work. Settings itself has no modal focus or Escape-to-leave behavior. Actual child dialogs and the shared compact navigation drawer retain their own focus containment, Escape and opener restoration; ellipsis/confirmation Escape is handled locally; icon actions have accessible labels.
+No credentials, login URLs/codes, identity fixtures or quota values enter query keys, logs, browser storage or analytics. Only active original login/status reads poll; category departure or leaving Settings drops scoped presentation and never cancels or repeats accepted native work. Settings itself has no modal focus or Escape-to-leave behavior. Actual child dialogs and the shared compact navigation drawer retain their own focus containment, Escape and opener restoration; ellipsis/confirmation Escape is handled locally; icon actions have accessible labels.
 
 ## Logging
 
