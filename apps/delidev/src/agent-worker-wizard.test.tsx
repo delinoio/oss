@@ -233,3 +233,33 @@ it("returns a changed canonical model to its input before saving", async () => {
   expect(screen.getByText(/The selected model is unavailable or changed/)).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
 }, 15000);
+
+it("rejects a mismatched source page as a whole instead of filtering a loaded page", async () => {
+  const value = fixture();
+  value.list.mockImplementation(request => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? [value.accounts[0], value.subscription] : value.records.filter(row => row.kind === request.filter?.kind), nextPageToken: "" }));
+  await start(value); next();
+  await screen.findByRole("option", { name: "OpenAI API" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  await screen.findByText(/This account page includes unsupported or mismatched source data/);
+  expect(screen.queryByRole("checkbox", { name: /Personal API/ })).toBeNull();
+  next();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("refreshes and focuses a model changed between the last read and server save", async () => {
+  const value = fixture(); await start(value); await accounts(value);
+  fireEvent.focus(screen.getByRole("combobox", { name: "Model" }));
+  fireEvent.click(await screen.findByRole("option", { name: /Example A/ })); next();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Concurrent model revision" } });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
+  value.save.mockImplementationOnce(async () => {
+    value.get.mockImplementation(request => ({ resource: request.id === value.models[0].id ? create(ResourceSchema, { ...value.models[0], revision: 2n }) : value.records.find(row => row.id === request.id) }));
+    throw new ConnectError("Revision conflict", Code.Aborted);
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await screen.findByRole("heading", { name: "Model", level: 3 });
+  expect(globalThis.document.activeElement).toBe(screen.getByRole("combobox", { name: "Model" }));
+  expect(value.save).toHaveBeenCalledTimes(1);
+  expect(value.discover).not.toHaveBeenCalled();
+}, 15000);

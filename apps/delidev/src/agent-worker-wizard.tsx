@@ -28,21 +28,22 @@ function wireService(source?: Source) {
 }
 function sameSource(row: Resource, source?: Source) {
   const data = document(row);
-  return supportsResourceSchema(row) && data.retired !== true && (source?.kind === SourceKind.Subscription
+  return row.kind === EntityKind.ACCOUNT && supportsResourceSchema(row) && data.retired !== true && (source?.kind === SourceKind.Subscription
     ? data.type === "subscription" && data.subscription_service === source.id && !data.provider_id
     : source?.kind === SourceKind.Api && data.type === "api" && data.provider_id === source.id);
 }
 function modelSource(row: Resource): Source | undefined {
   const data = document(row);
-  if (data.retired === true || !supportsResourceSchema(row)) return undefined;
+  if (row.kind !== EntityKind.MODEL || data.retired === true || !supportsResourceSchema(row)) return undefined;
   if (data.source_kind === "subscription" && subscriptionService(data.subscription_service)) return { kind: SourceKind.Subscription, id: text(data.subscription_service) };
   return text(data.provider_id) ? { kind: SourceKind.Api, id: text(data.provider_id) } : undefined;
 }
 
 // Off-page selections keep their original identity and are read independently
 // of the bounded source page. No list fallback can substitute another account.
-function SelectedAccount({ id, active, read }: { id: string; active: boolean; read: (id: string, row?: Resource) => void }) {
+function SelectedAccount({ id, active, refresh, read }: { id: string; active: boolean; refresh: number; read: (id: string, row?: Resource) => void }) {
   const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.ACCOUNT, id }, { enabled: active, refetchInterval: active ? 5000 : false });
+  useEffect(() => { if (active && refresh) void current.refetch(); }, [active, refresh, current.refetch]);
   useEffect(() => { if (current.data || current.error) read(id, current.error ? undefined : current.data?.resource); }, [current.data, current.error, id, read]);
   return <><Problem error={current.error} />{!current.data && !current.error ? <p role="status">Loading selected account…</p> : null}</>;
 }
@@ -55,6 +56,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const [accountPage, setAccountPage] = useState("");
   const [modelPage, setModelPage] = useState("");
   const [knownAccounts, setKnownAccounts] = useState<Record<string, Resource | undefined>>({});
+  const [accountRefresh, setAccountRefresh] = useState(0);
   const [model, setModel] = useState<Resource>();
   const [input, setInput] = useState("");
   const [popup, setPopup] = useState(false);
@@ -78,10 +80,12 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const query = useDeferredValue(input);
   const models = useQuery(ProviderQuery.searchModels, { query, providerId: source?.kind === SourceKind.Api ? source.id : "", subscriptionService: wireService(source), includeHidden: true, enabledProvidersOnly: true, pageSize: 50, pageToken: modelPage }, { enabled: active && supported && Boolean(source) && step === Step.Model });
   const currentModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: model?.id ?? "" }, { enabled: active && supported && Boolean(model), refetchInterval: active && model ? 5000 : false });
+  const accountPageValid = accountRows.data?.resources.every(row => sameSource(row, source));
+  const modelPageValid = models.data?.models.every(row => supportsResourceSchema(row) && sourceKey(modelSource(row)) === sourceKey(source));
   const links = items(data.accounts).map(object);
   const ids = links.map(link => text(link.id));
   const remember = useCallback((id: string, row?: Resource) => setKnownAccounts(previous => previous[id] === row ? previous : { ...previous, [id]: row }), []);
-  useEffect(() => { for (const row of accountRows.data?.resources ?? []) remember(row.id, row); }, [accountRows.data, remember]);
+  useEffect(() => { if (accountPageValid) for (const row of accountRows.data?.resources ?? []) remember(row.id, row); }, [accountRows.data, accountPageValid, remember]);
   useEffect(() => {
     if (initialized.current || !originalModel.data?.resource) return;
     initialized.current = true;
@@ -130,8 +134,19 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     if (through >= Step.Configure && (!text(data.name).trim() || new TextEncoder().encode(text(data.name)).byteLength > 256)) { fail(Step.Configure, "Enter a name of at most 256 UTF-8 bytes.", "name"); return false; }
     return true;
   };
+  useEffect(() => {
+    if (!active || !mutation.error || mutation.uncertain) return;
+    if (model) void currentModel.refetch();
+    if (initial) void current.refetch();
+    setAccountRefresh(value => value + 1);
+  }, [active, mutation.error, mutation.uncertain, model?.id, initial?.id, currentModel.refetch, current.refetch]);
+  useEffect(() => {
+    if (!active || !mutation.error || mutation.uncertain || step !== Step.Configure) return;
+    if (ids.some(id => !knownAccounts[id] || !sameSource(knownAccounts[id]!, source))) fail(Step.Accounts, "A selected account is unavailable or changed source. Refresh and explicitly select current accounts.", "source");
+    else if (model && (currentModel.error || currentModel.data?.resource && currentModel.data.resource.revision !== model.revision)) fail(Step.Model, "The selected model is unavailable or changed. Reload the catalog and explicitly select its current revision, or enter an exact model ID.", "model");
+  }, [active, mutation.error, mutation.uncertain, step, data.accounts, knownAccounts, source, model, currentModel.data, currentModel.error]);
   const pick = (row?: Resource) => { setModelPage(""); if (row && row.id === model?.id) void currentModel.refetch(); setModel(row); if (row) setInput(text(document(row).native_id)); setPopup(false); setHighlight(-1); setProblem(""); };
-  const suggestions = (models.data?.models ?? []).filter(row => supportsResourceSchema(row) && sourceKey(modelSource(row)) === sourceKey(source));
+  const suggestions = modelPageValid ? models.data!.models : [];
   const refreshAccount = selectedRows.find(row => Boolean(document(row).connection) && document(row).enabled !== false && !document(row).removal);
   const providerEntries = providers.data?.entries.filter(entry => entry.enabled && entry.providerId) ?? [];
   const advance = () => { if (validate(step)) { setStep(step + 1); setFocusField(""); setProblem(""); } };
@@ -165,11 +180,12 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
         <Problem error={accountRows.error} />
         {source && accountRows.isLoading ? <p role="status">Loading accounts…</p> : null}
         {accountRows.error && accountRows.data ? <p role="status">Refresh failed. Showing the last successfully loaded accounts.</p> : null}
-        <div className="worker-account-list">{accountRows.data?.resources.filter(row => sameSource(row, source)).map(row => { const value = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" checked={ids.includes(row.id)} onChange={event => change({ ...data, accounts: event.target.checked ? [...links, { id: row.id, weight: 1 }] : links.filter(link => link.id !== row.id) })} /><span><strong>{resourceName(row)}</strong><small>Connection: {value.connection ? "Connected" : "Disconnected"} · Health: {text(value.health) || "Unavailable"}</small><small>Execution eligibility: {value.enabled === false ? "Disabled" : value.removal ? "Removal pending" : "Checked when execution starts"}</small></span></label>; })}</div>
+        {accountRows.data && !accountPageValid ? <p role="alert">This account page includes unsupported or mismatched source data. Refresh accounts before selecting it.</p> : null}
+        <div className="worker-account-list">{accountPageValid ? accountRows.data!.resources.map(row => { const value = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" checked={ids.includes(row.id)} onChange={event => change({ ...data, accounts: event.target.checked ? [...links, { id: row.id, weight: 1 }] : links.filter(link => link.id !== row.id) })} /><span><strong>{resourceName(row)}</strong><small>Connection: {value.connection ? "Connected" : "Disconnected"} · Health: {text(value.health) || "Unavailable"}</small><small>Execution eligibility: {value.enabled === false ? "Disabled" : value.removal ? "Removal pending" : "Checked when execution starts"}</small></span></label>; }) : null}</div>
         {source && accountRows.data?.resources.length === 0 && !accountRows.error ? <p>{accountPage ? "No accounts on this page." : "No accounts for this source. Add an account in AI Subscription or AI API Keys."}</p> : null}
         {source ? <nav aria-label="Account pages"><button type="button" disabled={!accountPage || accountRows.isFetching} onClick={() => setAccountPage("")}>First account page</button><button type="button" disabled={!accountRows.data?.nextPageToken || accountRows.isFetching} onClick={() => setAccountPage(accountRows.data!.nextPageToken)}>Next account page</button><button type="button" disabled={accountRows.isFetching} onClick={() => void accountRows.refetch()}>Refresh accounts</button></nav> : null}
         <p>{ids.length} accounts selected</p><p>All selected accounts must use the same subscription service or API provider.</p>
-        {ids.map(id => <SelectedAccount key={id} id={id} active={active && supported} read={remember} />)}
+        {ids.map(id => <SelectedAccount key={id} id={id} active={active && supported} refresh={accountRefresh} read={remember} />)}
         <details className="worker-routing"><summary>Routing options <small>{text(data.routing) || "Server default"} · {links.every(link => link.weight === 1) ? "equal weights" : "custom weights"}</small></summary>
           <label>Account routing<select data-wizard-field="routing" value={text(data.routing)} onChange={event => { const next = { ...data }; if (event.target.value) next.routing = event.target.value; else delete next.routing; change(next); }}><option value="">Server default</option>{Object.values(Routing).map(value => <option key={value} value={value} disabled={value === Routing.Fixed && ids.length !== 1}>{value}</option>)}</select></label>
           <ol>{links.map((link, index) => <li key={text(link.id)}><strong>{knownAccounts[text(link.id)] ? resourceName(knownAccounts[text(link.id)]) : text(link.id)}</strong><label>Weight for account {index + 1}<input type="number" min={1} max={1000} value={Number(link.weight)} onChange={event => change({ ...data, accounts: links.map((value, i) => i === index ? { ...value, weight: Number(event.target.value) } : value) })} /></label><div className="actions"><button type="button" disabled={index === 0} aria-label={`Move account ${index + 1} up`} onClick={() => { const next = [...links]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; change({ ...data, accounts: next }); }}>Up</button><button type="button" aria-label={`Remove account ${index + 1}`} onClick={() => change({ ...data, accounts: links.filter((_, i) => i !== index) })}>Remove</button></div></li>)}</ol>
@@ -186,6 +202,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
           {popup ? <ul id={listID} role="listbox" aria-label="Model suggestions">{suggestions.map((row, index) => <li id={`${listID}-${index}`} key={row.id} role="option" aria-selected={highlight === index || model?.id === row.id} onMouseDown={event => event.preventDefault()} onClick={() => pick(row)}><strong>{resourceName(row)}</strong><small>{text(document(row).native_id)}{document(row).hidden === true ? " · Hidden" : ""}</small></li>)}{input.trim() ? <li id={`${listID}-${suggestions.length}`} role="option" aria-selected={highlight === suggestions.length} onMouseDown={event => event.preventDefault()} onClick={() => pick()}>Use exact ID “{input.trim()}”</li> : null}</ul> : null}
         </div>
         {models.isLoading ? <p role="status">Loading model catalog…</p> : models.isFetching ? <p role="status">Refreshing saved catalog…</p> : null}<Problem error={models.error} />
+        {models.data && !modelPageValid ? <p role="alert">This catalog page includes unsupported or mismatched source data. Reload the saved catalog or enter an exact model ID.</p> : null}
         {models.error ? <p role="status">Catalog lookup failed. {models.data ? "The displayed results may be stale. " : ""}You can enter an exact model ID.</p> : models.data?.models.length === 0 ? <p>{modelPage ? "No models on this page." : "No saved models match. Enter an exact model ID."}</p> : null}
         <nav aria-label="Model catalog pages"><button type="button" disabled={!modelPage || models.isFetching} onClick={() => setModelPage("")}>First model page</button><button type="button" disabled={!models.data?.nextPageToken || models.isFetching} onClick={() => setModelPage(models.data!.nextPageToken)}>Next model page</button><button type="button" disabled={models.isFetching} onClick={() => { void models.refetch(); if (model) void currentModel.refetch(); }}>Reload saved catalog</button></nav>
         {source?.kind === SourceKind.Subscription ? <p>Subscription model discovery is unsupported. Use the saved catalog or enter an exact model ID.</p> : <><button type="button" disabled={blocked || !refreshAccount || document(selectedProvider.data?.resource).discovery !== true || document(selectedProvider.data?.resource).enabled === false} onClick={() => { if (refreshAccount) void discovery.send({ mutation: { requestId: newRequestId(), id: refreshAccount.id, expectedRevision: refreshAccount.revision } }); }}>Refresh models from endpoint</button><p>Uses the first connected selected account. Discovery is separate from execution eligibility.</p></>}

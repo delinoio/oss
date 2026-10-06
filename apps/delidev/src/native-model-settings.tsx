@@ -41,7 +41,8 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
     } catch { malformed = true; }
   }
   const observedScope = object(document(models.data?.job).input);
-  const canRegister = (!selectedAccounts || selectedAccounts.some(row => row.id === account?.id)) && observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
+  const accountSelected = !selectedAccounts || selectedAccounts.some(row => row.id === account?.id);
+  const canRegister = accountSelected && observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
   const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain;
   useEffect(() => { pendingOperation?.(blocked); return () => pendingOperation?.(false); }, [blocked, pendingOperation]);
   const reset = () => { setJobID(""); setObservationID(""); setPage(""); };
@@ -55,7 +56,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
       <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setMachine(row); reset(); }} />
       {selectedAccounts ? <label>Connected selected account<select value={account?.id ?? ""} onChange={event => { setAccount(selectedAccounts.find(row => row.id === event.target.value)); reset(); }}><option value="">Select account</option>{selectedAccounts.map(row => <option key={row.id} value={row.id}>{text(document(row).alias) || row.id}</option>)}</select></label> : <ResourceChoice label="Connected account" kind={EntityKind.ACCOUNT} value={account?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setAccount(row); reset(); }} />}
       <label><input type="checkbox" checked={hidden} onChange={(event) => { setHidden(event.target.checked); reset(); }} /> Include hidden models</label>
-      <button type="button" disabled={!machine || !account || !document(account).connection} onClick={() => void discovery.send({ mutation: { requestId: newRequestId(), id: machine!.id, expectedRevision: machine!.revision }, accountId: account!.id, accountRevision: account!.revision, includeHidden: hidden })}>Observe models</button>
+      <button type="button" disabled={!machine || !account || !accountSelected || !document(account).connection} onClick={() => void discovery.send({ mutation: { requestId: newRequestId(), id: machine!.id, expectedRevision: machine!.revision }, accountId: account!.id, accountRevision: account!.revision, includeHidden: hidden })}>Observe models</button>
     </fieldset>
     <Problem error={discovery.error} />
     {discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>Retry the same observation request</button> : null}
