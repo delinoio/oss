@@ -89,6 +89,33 @@ func errorBody(protocol domain.APIProtocol, code domain.Code, correlation string
 	raw, _ := json.Marshal(value)
 	return raw
 }
+
+func responseStreamErrorBody(object map[string]json.RawMessage, code domain.Code, correlation, nativeCode string, guard secretGuard) []byte {
+	// Retain only a nonnegative, exactly representable JSON sequence number.
+	// Missing or malformed sequence metadata gets a bounded local default.
+	var sequence uint64
+	if json.Unmarshal(object["sequence_number"], &sequence) != nil || sequence > 1<<53-1 {
+		sequence = 0
+	}
+	build := func(nativeCode string) []byte {
+		var fields map[string]any
+		_ = json.Unmarshal(nativeErrorValue(domain.OpenAIResponses, code, correlation, nativeCode), &fields)
+		fields["type"] = "error"
+		fields["sequence_number"] = sequence
+		// The local error value supplies the redacted message and null param;
+		// upstream parameter names can contain request data or protected values.
+		raw, _ := json.Marshal(fields)
+		return raw
+	}
+	raw := build(nativeCode)
+	if guard.contains(string(raw)) {
+		// Closed native codes can still collide with the selected credential.
+		// Use the local classification; the caller rejects an unsafe fallback.
+		raw = build("")
+	}
+	return raw
+}
+
 func writeError(w http.ResponseWriter, status int, protocol domain.APIProtocol, code domain.Code, correlation string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
