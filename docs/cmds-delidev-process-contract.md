@@ -20,6 +20,13 @@ Linux uses a dedicated re-executed subreaper per process scope; its kernel child
 
 A Unix stdout/stderr pipe setup failure after the start barrier but before command launch persists completed ownership before supervisor exit. Failure to persist that proof retains recovery uncertainty; native-started failures still require descendant reconciliation.
 
+Unix reconciliation atomically persists completion when the current boot identity
+differs from the valid original journal. Preserve the original owner, process birth,
+boot identity and kernel metadata; a failed publication remains a recovery error.
+The existing owner maintenance and released-controller checks retire that completed
+scope on a later scan. Same-boot supervisor death and missing, invalid or mismatched
+ownership still cannot supply reboot completion proof.
+
 The private supervisor transport is internal local IPC only and adds no remotely reachable Worker listener. A dropped control connection cancels the owned scope. Supervisor startup has a deadline, output is bounded by synchronous consumption, and slow/broken consumers cannot authorize duplicate execution.
 
 ## Storage
