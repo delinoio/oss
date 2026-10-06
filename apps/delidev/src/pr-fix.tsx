@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
+import { type MessageShape } from "@bufbuild/protobuf";
 import { EntityKind, PullRequestFixProfile, PullRequestFixQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, object, text, type Document } from "./documents";
 import { uuid } from "./github-query-model";
@@ -9,18 +10,24 @@ import { readRemediationAttempt, readRemediationChain } from "./pr-remediation-m
 import { readPRProblemSet, type PRProblemSelection } from "./pr-problems";
 import { Problem } from "./ui";
 
-export function PRFixAction({ row, set, value, selection, disabled, refreshed }: { row: Resource; set: Resource; value: Document; selection: PRProblemSelection; disabled: boolean; refreshed: () => void }) {
- const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useState("");
- const fix = useRetainedMutation(`pr-fix:${selection.remoteRepositoryId}:${selection.pullRequestId}`, PullRequestFixQuery.requestPullRequestFix, (response) => {
-  setNotice(`Fix accepted in session ${response.session!.id}. Evidence changes to handled only after a verified push.`); setOpen(false); refreshed();
- }, (response, request) => {
+// Retain only the original identity, never the row, set or GitHub observation.
+function fixAcknowledgement({ repositoryId, remoteRepositoryId, pullRequestId, number }: PRProblemSelection) {
+ const selection = { repositoryId, remoteRepositoryId, pullRequestId, number };
+ return (response: MessageShape<typeof PullRequestFixQuery.requestPullRequestFix.output>, request: MessageShape<typeof PullRequestFixQuery.requestPullRequestFix.input>) => {
   const original = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(request.documentJson)) as Document;
   const attempt = response.attempt, inventory = response.problemSet, session = response.session;
   const v = attempt && inventory && readPRProblemSet(inventory, selection) && readRemediationAttempt(attempt, inventory);
   const refs = v && Array.isArray(v.problems) ? v.problems as Document[] : [];
   const expected = Array.isArray(original.problems) ? original.problems as Document[] : [];
   return Boolean(v && session && response.requestId === request.requestId && object(v.reserved).request_id === request.requestId && v.set_id === original.set_id && v.project_id === original.project_id && session.kind === EntityKind.SESSION && session.id === v.session_id && session.sessionId === session.id && session.projectId === original.project_id && session.schemaVersion === 1 && session.revision > 0n && uuid(session.id) && document(session).project_id === original.project_id && refs.length === expected.length && refs.every((ref, i) => ref.id === expected[i].id && ref.content_version === expected[i].content_version) && object(object(v.git_target).target).repository_id === original.repository_id);
- });
+ };
+}
+
+export function PRFixAction({ row, set, value, selection, disabled, refreshed }: { row: Resource; set: Resource; value: Document; selection: PRProblemSelection; disabled: boolean; refreshed: () => void }) {
+ const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useState("");
+ const fix = useRetainedMutation(`pr-fix:${selection.remoteRepositoryId}:${selection.pullRequestId}`, PullRequestFixQuery.requestPullRequestFix, (response) => {
+  setNotice(`Fix accepted in session ${response.session!.id}. Evidence changes to handled only after a verified push.`); setOpen(false); refreshed();
+ }, fixAcknowledgement(selection));
  const chain = readRemediationChain(document(set).remediation);
  const owner = text(chain?.active_attempt_id);
  const blocked = disabled || fix.busy || fix.uncertain || Boolean(owner);
