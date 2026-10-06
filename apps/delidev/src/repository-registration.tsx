@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskActions } from "./settings-task";
+import { useRetainSettingsTask, useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
@@ -233,7 +235,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {ready ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error || clone.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
-      <SettingsTaskActions>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : !summary ? <button type="button" className="primary" disabled={blocked || !cloneReady} onClick={() => void startClone()}>Clone &amp; add repository</button> : null}{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
+      <SettingsTaskActions><button type="button" data-settings-task-cancel onClick={cancelTask}>Cancel</button>{ready ? <button type="button" className="primary" disabled={blocked} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button> : !summary ? <button type="button" className="primary" disabled={blocked || !cloneReady} onClick={() => void startClone()}>Clone &amp; add repository</button> : null}{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
     </>}
   </section>;
 }
