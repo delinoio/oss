@@ -1,5 +1,7 @@
 # DeliDev domain ownership
 
+- Usage day boundaries follow the usage contract: resolve the first real instant of the next existing civil date through timezone transitions. Missing midnight must not normalize into the previous date; repeated midnight uses its first occurrence. Preserve skipped dates, clipped endpoints, exact totals, positive contiguous buckets and the 370-bucket bound.
+
 - Sidechat uses a closed Codex read-only overlay of the complete original API account snapshot, with no child-account or permission expansion. Preserve the separate parent snapshot, version-3 fork seed and ordinary omitted-purpose bytes; follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
