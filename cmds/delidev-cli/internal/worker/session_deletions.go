@@ -249,6 +249,16 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				return e
 			}
 		}
+		// Re-inventory dynamic storage namespaces at the completion boundary. A
+		// final root published after the first inventory is absence-only: never
+		// let the generic remover adopt it, and keep the deletion recoverable.
+		remaining, e := workspace.SessionStorageRemnantPaths(ctx, root, w)
+		if e != nil {
+			return e
+		}
+		if len(remaining) != 0 {
+			return domain.SessionDeletionPending()
+		}
 		return nil
 	})
 	if e != nil {

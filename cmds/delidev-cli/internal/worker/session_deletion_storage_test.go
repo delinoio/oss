@@ -342,6 +342,27 @@ func TestSessionDeletionPreservesOldRemovalNameWithoutFinalRootProof(t *testing.
 	}
 }
 
+func TestSessionDeletionReinventorySeesNewFinalRoot(t *testing.T) {
+	config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	jobID := domain.NewID()
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: jobID, Type: domain.WorkspaceStorageJob})
+	parent := filepath.Join(config.Root, "workspace-removal-roots")
+	if err := security.PrivateDir(parent); err != nil {
+		t.Fatal(err)
+	}
+	if paths, err := workspace.SessionStorageRemnantPaths(context.Background(), config.Root, work); err != nil || len(paths) != 0 {
+		t.Fatal("initial final-root inventory was not empty", paths, err)
+	}
+	path := filepath.Join(parent, string(jobID)+"-"+string(domain.NewID()))
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionStorageRemnantPaths(context.Background(), config.Root, work)
+	if err != nil || len(paths) != 1 || paths[0] != path {
+		t.Fatal("final-root reinventory missed the new absence-only name", paths, err)
+	}
+}
+
 func TestSessionDeletionPreservesForeignRemovalAfterRealCleanup(t *testing.T) {
 	config, work, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
 	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
