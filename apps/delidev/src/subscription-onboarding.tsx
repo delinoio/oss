@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useRef } from "react";
+import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
+import { SettingsTaskActions } from "./settings-task";
+import { useEffect, useRef , useId } from "react";
 import { CodexDiagnosticPhase, FailureCode, isEntityId, type CodexDiagnostic } from "@delinoio/delidev-api-client";
 import "./subscription-onboarding.css";
 
@@ -39,16 +41,17 @@ export function subscriptionNameValid(name: string): boolean {
 // Presentation has no login side effects. The owning controller starts only
 // from an explicit Add event and supplies the original operation's progress.
 export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
+  const taskFormId = useId(), visible = useSettingsTaskVisible(), leave = useCloseSettingsTask(props.leave), inTask = useInSettingsTask();
   const { stage, serviceName, active, busy } = props;
   const naming = stage === SubscriptionOnboardingStage.Naming;
   const nameInput = useRef<HTMLInputElement>(null);
   const focused = useRef(false);
   useEffect(() => {
-    if (active && naming && !busy && !focused.current && nameInput.current) {
+    if (visible && active && naming && !busy && !focused.current && nameInput.current) {
       focused.current = true;
       nameInput.current.focus({ preventScroll: true });
     }
-  }, [active, naming, busy]);
+  }, [active, naming, busy, visible]);
   const failed = serviceName === "ChatGPT" && [SubscriptionOnboardingStage.Unsupported, SubscriptionOnboardingStage.Failed, SubscriptionOnboardingStage.Recovery, SubscriptionOnboardingStage.Expired].includes(stage);
   const diagnostic = safeDiagnostic(props.diagnostic);
   const status = failed ? "ChatGPT sign-in failed" : {
@@ -62,8 +65,8 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
     [SubscriptionOnboardingStage.Failed]: "Login could not be completed",
   }[stage];
   return <section className="subscription-account-create subscription-onboarding" aria-label={`Add ${serviceName} account`}>
-    <button type="button" className="subscription-onboarding-back" disabled={!active} onClick={props.leave}>Back to AI Subscription</button>
-    <h2>Add {serviceName} account</h2>
+    <button type="button" className="subscription-onboarding-back" disabled={!active} onClick={leave}>Back to AI Subscription</button>
+    <h2 hidden={inTask}>Add {serviceName} account</h2>
     <ol className="subscription-onboarding-steps" aria-label="Account setup progress">
       <li aria-current={!naming ? "step" : undefined}>{naming ? <span aria-hidden="true">✓ </span> : null}Sign in</li>
       <li aria-hidden="true">→</li>
@@ -85,17 +88,17 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
       {stage === SubscriptionOnboardingStage.Recovery ? <p>The original sign-in result requires recovery.</p> : null}
       <p>Check Connection &amp; diagnostics before starting another sign-in.</p>
     </div> : null}
-    {naming ? <form onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
+    {naming ? <form id={`${taskFormId}-1`} onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
       <label htmlFor="subscription-onboarding-name">Account name</label>
       <input id="subscription-onboarding-name" ref={nameInput} autoComplete="off" required value={props.name} disabled={!active || busy} onChange={(event) => props.changeName(event.target.value)} aria-describedby="subscription-onboarding-name-help" />
       <p id="subscription-onboarding-name-help">{props.suggested ? "Suggested from your signed-in account. You can change it." : "Choose a name for your signed-in account."}</p>
-      <div className="actions"><button className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>Save account name</button><button type="button" disabled={!active} onClick={props.leave}>Later</button></div>
+      <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>Save account name</button><button type="button" disabled={!active} onClick={leave}>Later</button></SettingsTaskActions>
     </form> : <>
       {stage === SubscriptionOnboardingStage.Waiting && !props.problem ? <p>Your browser has opened for sign-in. Return here after you finish.</p> : null}
-      <div className="actions">
+      <SettingsTaskActions className="">
         {props.canReopen ? <button type="button" className="primary" disabled={!active || busy} onClick={props.reopen}>Open browser again</button> : null}
         {props.canCancel ? <button type="button" disabled={!active || busy} onClick={props.cancel}>Cancel login</button> : null}
-      </div>
+      </SettingsTaskActions>
     </>}
     {props.problem && !failed ? <p role="alert">{props.problem}</p> : null}
     {(stage !== SubscriptionOnboardingStage.Unsupported || failed) ? <p className="subscription-onboarding-footer">{naming ? "Your signed-in account is kept if you leave this screen." : "Leaving this screen keeps the account and its current sign-in state."}</p> : null}

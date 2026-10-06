@@ -407,6 +407,34 @@ edit. They may open independently and retain mounted controls and queries:
 | 2 | Instructions | Template count; all ordered reference operations |
 | 3 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
 
+Reasoning effort and Subagent effort use the shared editable combobox in
+`apps/delidev/src/reasoning-effort-field.tsx` and its static stylesheet. These
+harness-level hints do not establish selected-model or execution support:
+
+| Harness | Reasoning effort hints | Subagent effort hints |
+| --- | --- | --- |
+| Codex | none, minimal, low, medium, high, xhigh, max, ultra, persistent | The same nine values |
+| Claude Code | low, medium, high, xhigh, max | None |
+| OpenCode / Grok Build | None | None |
+
+Focus or the list button opens the in-flow list, capped at 280px with scrolling.
+Filter hints by a case-insensitive prefix; trim only the search comparison, never
+the stored input. Use native default remains the first option and explicitly
+passes an empty string. Direct input remains editable, including unknown values;
+existing server validation and errors remain authoritative. Opening, closing or
+changing harness never writes an effort value or adds an omitted field. A harness
+change replaces hints and clears keyboard selection while retaining both drafts.
+
+Arrow keys move the active option and keep it visible. Enter selects that option;
+with no active option it closes the open list and retains direct input without
+submitting. Escape, Tab and focus departure close without selecting. Composition
+keys are left to the IME. Each input has a unique combobox/listbox identity,
+active-descendant and help association. Use the existing semantic themes, 40px
+controls, 8px corners and responsive form width, without extra panels or input
+focus rings. Preserve Codex child capability-disabled values and ancestor form
+locks for both the input and custom list actions. The component adds no query,
+RPC, discovery, persistence, public schema or native execution authority.
+
 Accounts & routing moves to Accounts, retaining ordered weighted links and all
 add/move/remove operations. The legacy configuration RPC and shared field seam
 still permit accountless Workers; existing records remain valid. The wizard
@@ -449,13 +477,25 @@ Notifications renders saved Enabled/Disabled values as noninteractive label/valu
 
 Use existing semantic light/dark/System tokens and system font; no external assets/fonts/dependencies, inline styles, gradients, transparency, blur or CSP exceptions. Preserve full wrapping identities/names/bytes/timestamps and keyboard/focus semantics. Presentation validation must cover all 17 synthetic empty/populated categories at 1920×1080, 1440×1000, 1440×900, 1280×820, 960×640, 640×480 and effective 200% CSS layouts. Fixture/browser/build/package checks remain distinct from actual browser chrome zoom, packaged CEF, macOS/Windows/X11, screen-reader, real-account and OS banner acceptance. Record revision/commands/results/limits in PRs/issues/CI artifacts, never repository evidence documents.
 
+### Settings task dialogs
+
+Settings keeps all 17 category lists and their owning controllers mounted when an operation opens. `settings-task.tsx`, `settings-task-context.ts` and `settings-task.css` add a Settings shell over the shared native `DialogSurface` in `ui.tsx`. Other dialogs retain their presentation. Appearance immediate choices, Import / Export, Connection & diagnostics, backup operation history and short Details disclosures stay in the category page. Search, page tokens, disclosures and scroll position survive opening and closing a task.
+
+Use the closed size enum: 480px confirmations for configuration deletion, account disconnect/logout, device revocation and network-profile/backup deletion; 768px forms for Project, Provider, Model, account preferences and GitHub-profile create/edit, pricing, routing preview and notification edits; 960px workflows for Agent Workers, Instructions, repository editing/registration, account creation/connection/management, SSH setup, Runner Device details, network settings, pairing documents and backup inspection. Width never exceeds viewport minus 32px; height never exceeds viewport minus 48px. Use 16px outer corners, 20px titles, 16px section titles, 14px body and 12px hints/scope, existing theme tokens and 40px controls with 8px corners. Header and action footer remain fixed; only the body scrolls. Narrow forms stack and wrap full identifiers/actions. These task rules supersede the ordinary-flow action and page-form geometry above only while a task is open.
+
+X, Escape and local Cancel dismiss presentation; backdrop clicks do not dismiss it. Before submission, dispose drafts and secret inputs. Pending or unconfirmed submissions instead hide the same mounted task controller, retain its original immutable request, receipt/job/operation identity and necessary transient authority within the current category, and expose a status plus View original operation in the list. Block replacement submissions; an uncertain write has only its existing exact original retry. Clear editable secret inputs on dismissal while preserving any credential bytes already owned by an authorized original request. Same-computer encrypted imports retain their exact ciphertext/digest for explicit retry; dismissal clears editable copies and cannot prepare a replacement protected recipient during uncertainty. SSH start keeps its original setup ID, blocks replacement host inspection and is never resubmitted after an ambiguous start. Dismissal never calls server/Worker cancellation or OAuth Cancel. Explicit business cancellation remains a separate operation. Confirmed saves use the existing completion and list refresh; accepted jobs retain their existing observation and Done flow. Late hidden results cannot reopen a dialog, navigate or take focus.
+
+Internal workflow and confirmation steps share one native modal surface, keeping their parent controllers mounted rather than stacking dialogs. The dialog has no separate Settings lifetime. Category departure and Settings exit retain the disposal rules below, including original native/account ownership and detached work. The native modal makes the background inert and contains Tab/Shift+Tab. Creation focuses its first input, long details focus their title and destructive confirmations focus the least destructive Cancel/Keep action. Restore focus only to a connected visible opener; otherwise use that category's primary action/title. Do not overwrite a deliberate focus transfer or restore a departed category. Closing a compact category drawer precedes opening its task. Follow the [W3C modal Dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
+
+Validation covers open/close/save/failure/denial, unchanged list position, discarded drafts/secrets, pending close, exact uncertain retry, duplicate blocking, hidden late results and departure, X/Escape/Tab/Shift+Tab/return focus, drawer handoff, Strict Mode and same-server reconnect. The frontend jsdom suite uses at most four workers to preserve timer responsiveness during concurrent native builds; test and product deadlines remain independent and unchanged. Raise concurrency only after verifying those suites under peak shared-host load. Browser fixtures cover light/dark at 1440×900, 1280×820, 960×640, 640×480 and effective 200% layouts. Keep those checks separate from actual packaged CEF keyboard/zoom and account/platform acceptance. Prepare required generated clients and hydrated LFS assets, run `pnpm test` in `apps/delidev`, and remove generated `dist` directories after validation. No RPC, schema, migration or dependency changes are required.
+
 ### Settings screen and visit lifetime (issue #1236)
 
 Settings selects the internal `Surface.Settings` destination and renders its category content inside `#main`. The bottom Settings rail item has `aria-current="page"`; all ordinary application navigation remains usable. Categories use the shared sidebar outlet and its 52px rail/288px context pane, contracting to 256px at widths up to and including 1100px. Below 760 CSS pixels, **Open settings categories** opens the existing shared navigation drawer. Settings has no outer dialog, modal header, Close action, Escape hint, backdrop, background inertness, focus trap or opener restoration. Escape does not leave this page; actual child dialogs and the compact drawer retain their own dismissal and focus behavior. No native window geometry changes.
 
 The 17 independent category screens appear in this order: AI (AI Subscription, AI API Keys, API Providers, Agent Workers, Instructions), Coding (Projects, Repositories, Git Profiles, Git), Device management (Runner Devices, Paired devices), and System (Appearance, Server preferences, Connection & diagnostics, Notifications, Import / Export, Backups). All existing category IDs remain stable. Git Profiles renames the former Integrations presentation while retaining `integrations`; Git adds `git-workflow`. Each menu opens its own screen without a Git tab container. Git owns global Worktree fetch and PR remediation presentation; Server preferences retains account routing and the existing separately owned Network settings. Navigation appears once in the shared pane/drawer; there is no separate Settings sidebar or compact category select. Content uses the shared issue #1256 padding: 32px at >=1100px, 24px at 760–1099px and 24px vertical/16px horizontal below 760px. The shared pane and main scroll independently and reflow at 200% zoom without clipping controls or focus outlines. AI Subscription remains `subscription-accounts`, with the same label in navigation and heading.
 
-Edit/account/delete/routing/Worker/device/pricing and child-workflow state never locks category navigation. Selecting another category disposes the previous category and opens the target with fresh presentation state. Same-category reselection preserves its current state. Operation-local validation, revision, busy and exact-retry guards remain authoritative. Category selection exposes current state and visible focus; the active category is announced. A visit is uninterrupted time on Settings. Reselecting its active rail item preserves the current visit, selected category and current workflow. Category changes, responsive changes and same-identity reconnect retain that visit. A fresh ordinary visit starts at AI Subscription. Home **New project** and **Create a project** enter Projects creation with once-only Name focus; Pull requests **Repository settings** enters Repositories. Prerequisite, New session guidance and tray entries continue to enter Settings. Entry focus transfers after destination commit/drawer close to visible main or the compact opener, with explicit Name focus remaining authoritative.
+Retained edit/account/delete/routing/Worker/device/pricing and child-workflow state does not lock category navigation after its task is hidden. An open native task temporarily makes the background inert. Selecting another category disposes the previous category and opens the target with fresh presentation state. Same-category reselection preserves its current state. Operation-local validation, revision, busy and exact-retry guards remain authoritative. Category selection exposes current state and visible focus; the active category is announced. A visit is uninterrupted time on Settings. Reselecting its active rail item preserves the current visit, selected category and current workflow. Category changes, responsive changes and same-identity reconnect retain that visit. A fresh ordinary visit starts at AI Subscription. Home **New project** and **Create a project** enter Projects creation with once-only Name focus; Pull requests **Repository settings** enters Repositories. Prerequisite, New session guidance and tray entries continue to enter Settings. Entry focus transfers after destination commit/drawer close to visible main or the compact opener, with explicit Name focus remaining authoritative.
 
 Issue #1236 changes navigation and supersedes the modality from #1045 while retaining the #1138 disposal safeguards. Changing categories unmounts the category-owned tree and discards filters/cursors, details, editors, wizard steps, drafts, confirmations, secrets/disclosures, pending category entry, pending client waits and uncertain retry presentation. Leaving Settings also discards category selection. It never restores a former modal opener. There is no discard confirmation, recovery banner, implicit save, abandoned replay, server/native cancellation or rollback. The device-owned Appearance controller remains above connection state; its committed selection and pending native saves survive Settings presentation disposal and connection changes. Persisted settings, accepted server/native effects and receipts, authorization, selected conversation/composer, New session drafts and sibling workflows remain authoritative and intact.
 
@@ -997,6 +1037,30 @@ Original Stop closures explain that the unanswered request was canceled after ve
 ## Security
 Only trusted app content receives native capabilities. Renderer/server calls require exact allowed origins and the explicitly selected connection. Account credentials and GitHub PATs must never enter read responses. Never expose a shell, arbitrary executable/file reader, network proxy, or secret-bearing diagnostic object to the renderer.
 
+### Development browser storage
+
+Only macOS native builds with `debug_assertions` select CEF `SecretStorage::Mock`.
+Every other native build selects `SecretStorage::System`. The mode is compiled,
+not selected by a renderer, environment variable or application argument.
+The embedded development launch enables `custom-protocol`; at the pinned Tauri
+revision that makes `Auto` select System even in a debug build, so both modes
+must be selected explicitly. Mock avoids Chromium Safe Storage Keychain prompts
+after ad-hoc rebuilds without an Apple developer account or signing certificate.
+It encrypts cookies with a public test key and provides no meaningful protection
+at rest. Emit one bounded development notice and the closed mode classification,
+never cookie bytes, URLs, native errors or private filesystem paths.
+
+The original `browser-data` remains the System CEF root. Development uses its
+owner-private `development` child for CEF and external request-context data.
+Shared tabs, profile-removal journals and forgotten-connection markers remain in
+their original locations. Neither mode copies or re-encrypts existing cookies;
+the first development launch uses a fresh cookie jar. Existing configuration,
+account identity, Go protected credentials and runtime pins remain unchanged.
+Follow the [browser contract](cmds-delidev-browser-contract.md) for exact
+mode-specific paths, the shared process lease and deletion of both copies.
+Development Mock is a contributor workflow exception; it does not satisfy
+production Keychain, responsive native shutdown or release acceptance.
+
 ## Logging
 Expose typed safe problems and correlation IDs, plus independent connection/retry state. Never log input, resource documents, tokens, native output or account locators. Native logs use stable operation/failure classifications.
 
@@ -1388,6 +1452,10 @@ could not bind the occupied default port, so it provides no new connected-server
 retention acceptance. Preserve the original pin and encryption; do not use a
 mock Keychain, force-exit success or unseen prompt handling as a fix.
 
+The development storage exception above does not resolve this production/native
+acceptance gap. Any new development observation must remain separate from that
+original System-storage evidence and its unresolved shutdown requirements.
+
 
 ### Combined desktop navigation and backup surfaces
 
@@ -1569,7 +1637,7 @@ AI Subscription uses System capability 17 and schema-v2 service-native accounts 
 
 ### Network routing settings
 
-Server preferences and each Runner Device inspection provide a collapsed Network settings workspace under the existing categories. Use authenticated generated Network/Resource queries, exact revision selection and explicit uncertainty controls for profile writes/deletion. Preserve write-only proxy credentials, profile pagination and the distinct desired/effective/native route states from the [network contract](cmds-delidev-network-contract.md). A current control generation never implies native use, inference or account readiness.
+Server preferences and each Runner Device inspection open a Network settings task dialog under the existing categories. Use authenticated generated Network/Resource queries, exact revision selection and explicit uncertainty controls for profile writes/deletion. Preserve write-only proxy credentials, profile pagination and the distinct desired/effective/native route states from the [network contract](cmds-delidev-network-contract.md). A current control generation never implies native use, inference or account readiness.
 
 Encrypted Worker export starts from its bounded original public recipient and separately displays authenticated ciphertext digest. Ciphertext is transient presentation, not persistent query state. Prepare/Import/Status on this computer reaches a closed trusted-window bridge for only its already registered matching Worker; Go performs protected storage and cryptography. Other Runner Devices use their equivalent CLI. Preparation/import does not register, start, stop or replace a Worker. All asynchronous file/native/RPC results belong to the current Settings opening; leaving disposes local presentation without replay or implicit native cancellation.
 

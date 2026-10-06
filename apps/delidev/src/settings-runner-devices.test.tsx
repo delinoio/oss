@@ -102,11 +102,11 @@ it.each([false, true])("retains the previous observation on failed refresh (empt
   expect(screen.getByRole("alert").textContent).toContain(problem.correlationId);
   expect(control.mock.calls).toHaveLength(calls);
 });
-it("removes the list-only scope for machine detail and other categories", async () => {
+it("retains the Runner Devices list beneath detail and removes its scope for other categories", async () => {
   const row = machine("Detail machine"), value = fixture([row]); open(value);
   const content = screen.getByRole("region", { name: "Settings content" }); expect(content.classList.contains("settings-runner-devices")).toBe(true);
   fireEvent.click(await screen.findByRole("button", { name: "Inspect installed harnesses" }));
-  expect(content.classList.contains("settings-runner-devices")).toBe(false); expect(screen.queryByRole("heading", { name: "Saved runner devices" })).toBeNull();
+  expect(content.classList.contains("settings-runner-devices")).toBe(true); expect(screen.getByRole("heading", { name: "Saved runner devices", hidden: true })).toBeTruthy();
   expect(screen.getByText(/Checks run on this Worker/)).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Back to Runner Devices" }));
   expect(content.classList.contains("settings-runner-devices")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-runner-devices")).toBe(false);
