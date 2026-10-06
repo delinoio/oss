@@ -163,6 +163,26 @@ The existing two-minute CLI context covers preflight, native replacement,
 readiness and configuration acceptance. Success requires the new native
 invocation, matching live socket peer/version, and non-stopping status.
 
+After an interrupted replacement honors Stop and exits, one later explicit
+`service start` must resume the inactive target service. Under the existing
+service-operation lock, verify the private journal, matching installed CLI,
+installation, configuration/storage references and exact target definition
+contents/file identity. Confirm the reload initiator has exited or its PID now
+has a different nonempty process-start identity; permission errors, unreadable
+identities and legacy journals without initiator authority do not confirm exit.
+Acquire exclusive manager-state ownership without creating or migrating the
+database, then require durable Stop and complete runner, image, artifact and
+host cleanup through the existing completed-stop boundaries. Recheck native
+inactivity, initiator and definition authority before exact-record journal
+retirement. Retire before native Start so ordinary startup acceptance clears
+Stop on the first attempt while retaining pool/global pauses. Active services,
+unknown ownership, changed definitions and pending cleanup fail closed before
+native mutation and preserve recovery intent and reservations. Generic manager
+startup must never clear Stop merely because the initiating CLI disappeared.
+Structured recovery logs use safe event names and codes without private paths
+or native output. This recovery behavior is part of the unreleased service
+version reload workflow and adds no public field or migration.
+
 Persist intent before native actions. After interruption, observe a matching
 replacement or the journaled helper before continuing; never blindly repeat a
 kill/bootstrap or operate on another generation. Failures retain the last

@@ -70,6 +70,14 @@ new running version and configuration acceptance. Keep state and managed data;
 never use an older binary with a newer database. The drained backup and rollback
 procedure below remains available.
 
+In this unreleased workflow, if Stop completed after an interrupted reload,
+wait for the reload command to finish and run `runmoor service start` with the
+same installed CLI and configuration. One Start resumes the verified inactive
+service after cleanup completes and preserves pause decisions. If Runmoor cannot
+verify ownership or cleanup is unfinished, Start reports a recovery error.
+Preserve the service definition, recovery files, state and managed data while
+you resolve that error; do not delete recovery files to force a start.
+
 ## Recover an Ubuntu user service
 
 Run these checks as the Runmoor user in a working login session, without
