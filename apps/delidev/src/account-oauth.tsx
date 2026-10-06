@@ -76,7 +76,7 @@ export function useAccountOAuth() {
     opening?.controller.signal.addEventListener("abort", close, { once: true });
     return () => { alive.current = false; opening?.controller.signal.removeEventListener("abort", close); close(); };
   }, [opening, native]);
-  const failure = (value: Pending, message: string) => { value.problem = message; if (current(value)) setView(previous => ({ provider: value.provider, stage: previous?.stage ?? Stage.Recovery, attempt: value.attempt, account: previous?.account, problem: message, openFailed: previous?.openFailed })); };
+  const failure = (value: Pending, message: string) => { value.problem = message; if (current(value)) setView(previous => ({ provider: value.provider, stage: previous?.stage ?? Stage.Recovery, attempt: value.attempt, account: previous?.account, userCode: value.userCode, problem: message, openFailed: previous?.openFailed })); };
   const accept = (value: Pending, result: CompleteAccountOAuthResponse | CancelAccountOAuthResponse | GetAccountOAuthStatusResponse, deviceReceipt = false) => {
     const attempt = checkedAttempt(result.attempt, value), account = checkedAccount(result.account, value);
     if (deviceReceipt && profileOf(value.provider) === AccountOAuthProfile.Baseten && result.requestId && validId(result.requestId)) {

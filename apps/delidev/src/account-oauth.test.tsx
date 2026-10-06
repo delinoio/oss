@@ -252,3 +252,17 @@ it("recovers the original protected Device receipt without a callback or poll di
  expect(f.complete.mock.calls[0][0].mutation?.expectedRevision).toBe(1n);
  expect(f.native.mock.calls.some(call => call[1]===OAuthNativeAction.Take)).toBe(false);
 });
+
+it("retains the Device approval code when native browser opening fails", async () => {
+ const generation=newRequestId();
+ const f=fixture({baseten:true,native:async (_opening,action) => {
+  if(action===OAuthNativeAction.Profiles) return {generation:"",profiles:[AccountOAuthProfile.Baseten]};
+  if(action===OAuthNativeAction.BindOpen) throw new Error("synthetic opener failure");
+  return {generation};
+ }});
+ await waitFor(() => expect(f.native.mock.calls.some(call=>call[1]===OAuthNativeAction.Profiles)).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
+ expect((await screen.findByRole("alert")).textContent).toContain("browser could not be opened");
+ expect(screen.getByText("ABCD-EFGH")).toBeTruthy();
+ expect(f.complete).not.toHaveBeenCalled();
+});
