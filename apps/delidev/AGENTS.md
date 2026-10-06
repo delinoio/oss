@@ -6,6 +6,8 @@
 
 # DeliDev desktop
 
+- Widget persistence follows issue #1410 and `docs/apps-delidev-widget-contract.md`: use the process-owned bounded FIFO worker, recheck original window/scope/revision and oldest-ready ownership before storage, and never hold tray/window/queue locks across disk I/O. Quit closes admission on the UI loop and joins all presentation tasks plus final stale publication on its tracked worker. Native Exit performs no storage or task joins; fixtures remain separate from native/platform acceptance.
+
 - Multiple product windows follow `docs/apps-delidev-desktop-contract.md#multiple-product-windows`: retain one process-owned launch/supervisor, exact native Local/Saved role and instance admission, independent renderer memory and original callback epochs. New Window uses one native app menu handler; only the last product window hides to tray. Saved profile removal blocks and closes all its views. Names update monotonically; Widget publication has one oldest-ready writer per profile. Never transfer drafts, replay startup/pairing, persist window inventory or grant authority from a label pattern alone.
 - Server preferences opens a direct singleton form under the desktop contract and scoped source rules. Use explicit Discard changes/Save changes with header-only Refresh; preserve exact document/revision/retry authority and Settings lifetime. Network settings remains an independent collapsed workspace below the form.
 - Frontend validation in `vitest.config.ts` uses at most four jsdom workers. Preserve focus/lifetime test deadlines and product deadlines independently; raise concurrency only after validating those suites under peak concurrent native-build load. Record results in PRs/issues/CI rather than repository evidence documents.

@@ -190,6 +190,16 @@ Normal Quit immediately fences fresh starts and supervision. A tracked blocking 
 
 The sidecar shutdown deadline is 35 seconds from the native request, separate from startup and existing server/native cleanup deadlines. At expiry, native code kills only the retained original child and waits for its actual exit. Reuse never grants authority over a server endpoint or a discovered PID; an old child cannot stop a replacement. Repeated Quit shares one off-UI-thread operation, and native exit remains gated by both sidecar completion and existing raw-browser close proofs. Title-bar close-to-tray preserves the app and sidecar. Normal setup/return failures also join owned children; panic/crash/forced desktop termination preserves their independent running lifetime.
 
+The same tracked Quit operation joins window actions, OAuth cleanup, notifications
+and the tray timer outside the native UI loop. Widget admission closes immediately;
+its ordered persistence worker drains accepted operations and publishes final stale
+state before its join completes. A stalled write keeps Quit pending while native
+events and tray rendering remain available. No tray/window lock spans storage,
+and the Exit callback performs native close requests and records the Exit event
+without performing task joins or snapshot persistence. Widget final-write failures
+retain a closed uncertainty diagnostic, distinct from observed runtime return and
+sidecar/native cleanup evidence. Follow the [widget contract](apps-delidev-widget-contract.md).
+
 Structured logs distinguish request, restart suppression, joined server cleanup, force request and confirmed/unconfirmed process exit. Forced process exit does not prove native/session cleanup; original data, protected ownership and recovery state remain authoritative. Failure to force or observe exit retains original handles and reports uncertainty without a PID fallback. Actual macOS/Windows/Linux Quit and packaged CEF shutdown remain separate acceptance from controlled process fixtures and compilation. Record validation in PRs/issues and CI logs/artifacts, never repository evidence documents.
 
 The 16 Settings categories are retained; Diagnostics is displayed as **Connection & diagnostics**. Its labelled Connection subsection opens the same persistent native connection panel used before transport. Local lifecycle controls, registration inspection/recovery and Saved servers live there. The panel and connection-scoped Stop mutation registry stay mounted outside the disposable Settings visit, so original confirmations and uncertain request bytes survive hiding and category/navigation changes. Registration confirmation visibility follows the panel without discarding its identity. Native dialogs retain Escape, contained focus and opener restoration. Doctor has its own read-only diagnostics subsection; selecting it never repairs or mutates. Saved windows place their verification and Show local window controls in their own advanced panel and remain connect-only.

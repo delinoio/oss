@@ -23,6 +23,11 @@ New schedule creation adds frequency presets and a creation-only three-section l
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.
 
 ## Domain Contract Documents
+Issue #1410 keeps [widget persistence](apps-delidev-widget-contract.md) on an ordered,
+joined worker and all Quit task joins off the native UI loop. The desktop retains
+one Quit operation and final-stale ordering independently of sidecar ownership;
+controlled writer fixtures remain separate from packaged native/platform acceptance.
+
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
