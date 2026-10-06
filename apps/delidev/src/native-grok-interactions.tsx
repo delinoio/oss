@@ -2,7 +2,7 @@ import { InteractionQuery, newRequestId, type Resource } from "@delinoio/delidev
 import { object, encode, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
-import { InteractionDraftKind, GrokDraftOutcome as Outcome, GrokDraftFileDecision as FileDecision, GrokDraftPlanDecision as PlanDecision, useEditableInteractionDraft, type GrokDraftDecision, type InteractionDraftState } from "./inbox-drafts";
+import { InteractionDraftKind, GrokDraftOutcome as Outcome, GrokDraftFileDecision as FileDecision, GrokDraftPlanDecision as PlanDecision, interactionRequestIdentity, useEditableInteractionDraft, type GrokDraftDecision, type InteractionDraftState } from "./inbox-drafts";
 import { nativeResponseByteLength, nativeResponseLimit, nativeResponseOverflow } from "./native-response-bounds";
 
 enum Method { Update = "session/update", Notification = "_x.ai/session_notification", File = "session/request_permission", Question = "_x.ai/ask_user_question", Plan = "_x.ai/exit_plan_mode" }
@@ -58,7 +58,7 @@ export function NativeGrokInteraction({data, resource, accepted, draft, saveDraf
  <details><summary>Original native request</summary><pre>{JSON.stringify(v, null, 2)}</pre></details>
  <p>{response.state === "accepted" ? "Grok resolved this response and reported the original tool result." : response.state === "transmitted" ? "The response was transmitted. Native acceptance remains unconfirmed." : response.state === "uncertain" ? "Response delivery is uncertain; execution remains paused for recovery." : data.closure !== "open" ? "The original request is closed." : "The original request is waiting for a response."} Tool result, execution outcome and cleanup remain separate.</p>
  {response.input !== undefined ? <details><summary>Retained response</summary><pre>{JSON.stringify(response.input, null, 2)}</pre></details> : null}
- {resource && accepted ? <GrokResponse key={resource.id} resource={resource} original={original} accepted={accepted} draft={draft} saveDraft={saveDraft} closed={data.closure !== "open" || response.input !== undefined} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : null}
+ {resource && accepted ? <GrokResponse key={interactionRequestIdentity(resource)} resource={resource} original={original} accepted={accepted} draft={draft} saveDraft={saveDraft} closed={data.closure !== "open" || response.input !== undefined} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : null}
  </section>;
 }
 function GrokResponse({resource,original,accepted,draft,saveDraft,closed,submissionAllowed,receiptRetryAllowed}: {resource:Resource;original:NonNullable<ReturnType<typeof request>>;accepted:(r?:Resource)=>void;draft?:InteractionDraftState;saveDraft?:(v:InteractionDraftState)=>void;closed:boolean;submissionAllowed:boolean;receiptRetryAllowed:boolean}) {
