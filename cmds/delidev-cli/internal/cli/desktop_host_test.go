@@ -275,6 +275,11 @@ func TestDesktopHostBrokenStandardPipesPreserveAdmittedServer(t *testing.T) {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
+	select {
+	case <-done:
+		t.Fatal("lost desktop pipes terminated the admitted server")
+	case <-time.After(250 * time.Millisecond):
+	}
 	for _, action := range []string{"status", "stop"} {
 		if code := Run(context.Background(), []string{"--data-dir", root, "server", action}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != 0 {
 			t.Fatal("admitted server was unavailable after losing desktop pipes")
