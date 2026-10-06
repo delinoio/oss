@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
-import { cacheContext, cachePolicy } from "./cache-context.mjs";
+import { cacheContext, cachePolicy, toolCacheContexts } from "./cache-context.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -15,6 +15,7 @@ if (process.env.FORCE_RUN !== "true") {
   args.push("--affected");
 }
 process.env.CI_CACHE_CONTEXT = cacheContext();
+Object.assign(process.env, toolCacheContexts());
 const policy = cachePolicy();
 if (policy) args.push(`--cache=${policy}`, "--summarize");
 console.log(JSON.stringify({ event: "ci_workspace", workspace, tasks, forced: process.env.FORCE_RUN === "true", cache: policy ?? "configured-local-development", remoteAuth: process.env.TURBO_REMOTE_CACHE_AUTH === "true" }));

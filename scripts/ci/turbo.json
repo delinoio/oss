@@ -20,7 +20,8 @@
       ],
       "outputs": [],
       "env": [
-        "CI_CACHE_CONTEXT"
+        "CI_CACHE_CONTEXT",
+        "CI_GO_CACHE_CONTEXT"
       ],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -226,7 +227,8 @@
       ],
       "outputs": [],
       "env": [
-        "CI_CACHE_CONTEXT"
+        "CI_CACHE_CONTEXT",
+        "CI_GO_CACHE_CONTEXT"
       ],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -324,7 +326,8 @@
       ],
       "outputs": [],
       "env": [
-        "CI_CACHE_CONTEXT"
+        "CI_CACHE_CONTEXT",
+        "CI_RUST_CACHE_CONTEXT"
       ],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -340,11 +343,7 @@
     },
     "ci:rust:clippy": {
       "cache": false,
-      "dependsOn": [
-        "devhud#ci:build:frontend",
-        "delidev-desktop#build:frontend",
-        "delidev-desktop#prepare:sidecar"
-      ],
+      "dependsOn": [],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -367,7 +366,9 @@
         "CARGO_NET_OFFLINE",
         "npm_execpath",
         "RUNNER_TEMP",
-        "GITHUB_SHA"
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
       ]
     },
     "ci:pnport:companion": {
@@ -400,12 +401,7 @@
     },
     "ci:rust:test": {
       "cache": false,
-      "dependsOn": [
-        "devhud#ci:build:frontend",
-        "delidev-desktop#build:frontend",
-        "delidev-desktop#prepare:sidecar",
-        "ci:pnport:companion"
-      ],
+      "dependsOn": [],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -428,7 +424,9 @@
         "CARGO_NET_OFFLINE",
         "npm_execpath",
         "RUNNER_TEMP",
-        "GITHUB_SHA"
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
       ]
     },
     "ci:forge:test": {
@@ -535,7 +533,8 @@
       ],
       "outputs": [],
       "env": [
-        "CI_CACHE_CONTEXT"
+        "CI_CACHE_CONTEXT",
+        "CI_PROTO_CACHE_CONTEXT"
       ],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -568,7 +567,8 @@
       ],
       "outputs": [],
       "env": [
-        "CI_CACHE_CONTEXT"
+        "CI_CACHE_CONTEXT",
+        "CI_PROTO_CACHE_CONTEXT"
       ],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -813,6 +813,228 @@
         "ci:proto:check",
         "ci:ach:release",
         "ci:ach:package"
+      ]
+    },
+    "ci:rust:test:devhud": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:delidev": {
+      "cache": false,
+      "dependsOn": [
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:pnport": {
+      "cache": false,
+      "dependsOn": [
+        "ci:pnport:companion"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:devhud-delidev": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend",
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:devhud-pnport": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend",
+        "ci:pnport:companion"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:delidev-pnport": {
+      "cache": false,
+      "dependsOn": [
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar",
+        "ci:pnport:companion"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:test:devhud-delidev-pnport": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend",
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar",
+        "ci:pnport:companion"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:clippy:devhud": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:clippy:delidev": {
+      "cache": false,
+      "dependsOn": [
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:clippy:devhud-delidev": {
+      "cache": false,
+      "dependsOn": [
+        "devhud#ci:build:frontend",
+        "delidev-desktop#build:frontend",
+        "delidev-desktop#prepare:sidecar"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA",
+        "RUST_PACKAGES",
+        "GITHUB_STEP_SUMMARY"
+      ]
+    },
+    "ci:rust:selection-fixture": {
+      "cache": false,
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CARGO_NET_OFFLINE",
+        "CARGO_MONO_TEST_BINARY"
       ]
     }
   }

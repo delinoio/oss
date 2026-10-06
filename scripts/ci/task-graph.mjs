@@ -34,6 +34,14 @@ export function jobTaskGraph(job) {
   for (const { run } of job.steps) {
     const match = run?.match(/^node scripts\/ci\/run-affected\.mjs (\S+) (.+)$/u);
     if (match) for (const name of match[2].split(" ")) visit(match[1], name);
+    const rust = run?.match(/^node scripts\/ci\/run-rust\.mjs (test|clippy)$/u);
+    if (rust) {
+      // Inventory includes every explicit selection variant. Runtime selects
+      // exactly one after validating the central package list.
+      for (const name of Object.keys(workspaces.get("@delinoio/ci").manifest.scripts)) {
+        if (name === `ci:rust:${rust[1]}` || name.startsWith(`ci:rust:${rust[1]}:`)) visit("@delinoio/ci", name);
+      }
+    }
   }
   return graph;
 }

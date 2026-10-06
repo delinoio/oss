@@ -522,7 +522,7 @@ test("Rust CI consumes one verified prebuilt selection and gates native preparat
   const live = namedStep(changes, "Verify published cargo-mono selection behavior");
   const selection = namedStep(changes, "Select final Rust packages and jobs");
   assert.equal(prepare.run, "node scripts/ci/cargo-mono-prebuilt.mjs");
-  assert.equal(live.run, "node --test scripts/ci/rust-affected-live.test.mjs");
+  assert.equal(live.run, "node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:selection-fixture");
   assert.equal(selection.run, "node scripts/ci/rust-affected.mjs plan");
   assert.equal(prepare.if, selection.if);
   assert.ok(changes.steps.indexOf(prepare) < changes.steps.indexOf(live));

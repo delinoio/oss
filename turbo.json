@@ -26,7 +26,8 @@
         "packages/delidev-api-client/src/gen/**"
       ],
       "env": [
-        "CI_CACHE_CONTEXT"
+        "CI_CACHE_CONTEXT",
+        "CI_PROTO_CACHE_CONTEXT"
       ]
     },
     "dev": {

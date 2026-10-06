@@ -1,13 +1,34 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { cachePolicy } from "./cache-context.mjs";
+import { cacheContext, cachePolicy, toolCacheContexts } from "./cache-context.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+
+test("tool hashes are separate from JS hashes and metadata never installs compilers", () => {
+  const context = JSON.parse(cacheContext(root));
+  assert.equal(context.node, process.version);
+  assert.equal(context.os, process.platform);
+  assert.equal(context.arch, process.arch);
+  for (const tool of ["go", "rust", "buf"]) assert.equal(context[tool], undefined);
+  const calls = [];
+  const versions = toolCacheContexts(root, (command, args, options) => {
+    calls.push({ command, args, options });
+    return { status: 0, stdout: `${command}-fixture-version\n` };
+  });
+  assert.equal(versions.CI_GO_CACHE_CONTEXT, "go-fixture-version");
+  assert.equal(versions.CI_RUST_CACHE_CONTEXT, "rustup-fixture-version");
+  assert.equal(versions.CI_PROTO_CACHE_CONTEXT, "buf-fixture-version");
+  assert.equal(calls.find(call => call.command === "go").options.env.GOTOOLCHAIN, "local");
+  const rust = calls.find(call => call.command === "rustup");
+  assert.deepEqual(rust.args, ["run", readFileSync(join(root, "rust-toolchain"), "utf8").trim(), "rustc", "--version"]);
+  assert.equal(rust.args.includes("--install"), false);
+});
 
 test("remote writes belong to authenticated main runs, while PRs read and missing auth stays local", () => {
   const trusted = { CI: "true", TURBO_TOKEN: "fixture", TURBO_TEAM: "delino", TURBO_REMOTE_CACHE_AUTH: "true" };
@@ -58,11 +79,19 @@ test("cold/warm runs restore output, invalidate owned inputs/options/tools/depen
   const manifest = JSON.parse(readFileSync(join(cwd, "packages/data/package.json"), "utf8"));
   manifest.devDependencies = { "fixture-tool": "2.0.0" };
   write("packages/data/package.json", JSON.stringify(manifest));
-  write("pnpm-lock.yaml", "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  packages/data:\n    devDependencies:\n      fixture-tool: {specifier: 2.0.0, version: 2.0.0}\npackages:\n  fixture-tool@2.0.0: {}\nsnapshots:\n  fixture-tool@2.0.0: {}\n");
+  const integrity = `sha512-${createHash("sha512").update("fixture-tool").digest("base64")}`;
+  write("pnpm-lock.yaml", `lockfileVersion: '9.0'\nimporters:\n  .: {}\n  packages/data:\n    devDependencies:\n      fixture-tool: {specifier: 2.0.0, version: 2.0.0}\npackages:\n  fixture-tool@2.0.0:\n    resolution: {integrity: ${integrity}}\nsnapshots:\n  fixture-tool@2.0.0: {}\n`);
   pass(); assert.equal(count("ran"), beforeDependency + 1);
   const beforeOption = count("ran"); pass({ BUILD_OPTION: "release" }); assert.equal(count("ran"), beforeOption + 1);
   assert.match(readFileSync(join(cwd, "packages/data/dist/output"), "utf8"), /:release$/u);
   const failed = run({ BUILD_OPTION: "release", CHECK_FAIL: "true" }); assert.notEqual(failed.status, 0); assert.match(failed.stdout + failed.stderr, /cache hit/u);
   write("packages/data/fresh-input", "stale generated contract");
   const stale = run({ BUILD_OPTION: "release" }); assert.notEqual(stale.status, 0, stale.stdout + stale.stderr); assert.match(stale.stdout + stale.stderr, /cache hit/u);
+  write("packages/data/fresh-input", "up-to-date");
+  const beforeOutage = count("ran");
+  const outage = pass({ BUILD_OPTION: "remote-outage", TURBO_REMOTE_CACHE_AUTH: "true", TURBO_TEAM: "delino", TURBO_TOKEN: "fixture", TURBO_API: "http://127.0.0.1:1", GITHUB_REF: "refs/heads/fixture", GITHUB_EVENT_NAME: "pull_request" });
+  assert.equal(count("ran"), beforeOutage + 1);
+  assert.match(outage.stdout, /local:rw,remote:r/u);
+  t.diagnostic(`Expected remote outage: ${outage.stderr.trim()}`);
+  assert.match(outage.stderr, /Remote caching unavailable.*Could not connect/iu);
 });

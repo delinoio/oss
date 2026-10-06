@@ -52,11 +52,19 @@ jobs:
         if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
         id: cargo-mono
         run: node scripts/ci/cargo-mono-prebuilt.mjs
+      - name: Setup Node.js for Turbo planning fixtures
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Install planning fixture dependencies
+        if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify published cargo-mono selection behavior
         if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
         env:
           CARGO_MONO_TEST_BINARY: ${{ steps.cargo-mono.outputs.binary }}
-        run: node --test scripts/ci/rust-affected-live.test.mjs
+          FORCE_RUN: 'true'
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:selection-fixture
       - name: Select final Rust packages and jobs
         if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
         id: rust
@@ -67,6 +75,20 @@ jobs:
           CI_FORCED: ${{ steps.plan.outputs.forced }}
           CARGO_MONO_BINARY: ${{ steps.cargo-mono.outputs.binary }}
         run: node scripts/ci/rust-affected.mjs plan
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outcome == 'success' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-changes-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
 
   ci-contracts:
     name: CI contracts and workflow syntax

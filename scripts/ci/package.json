@@ -16,9 +16,9 @@
     "ci:go:vet": "node from-root.mjs go vet ./...",
     "ci:go:test": "node from-root.mjs node scripts/ci/go-test.mjs",
     "ci:rust:fmt": "node from-root.mjs cargo fmt --all --check",
-    "ci:rust:clippy": "node from-root.mjs cargo clippy --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets --all-features -- -D warnings",
+    "ci:rust:clippy": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
     "ci:pnport:companion": "node from-root.mjs cargo build --locked -p pnport -p pnport-preload",
-    "ci:rust:test": "node from-root.mjs cargo test --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets",
+    "ci:rust:test": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
     "ci:forge:test": "node from-root.mjs cargo test -p forge-tree-doc -p forge-pptx -p delino-forge",
     "ci:forge:clippy": "node from-root.mjs cargo clippy -p forge-tree-doc -p forge-pptx -p delino-forge --all-targets -- -D warnings",
     "ci:forge:render": "node from-root.mjs cargo test -p delino-forge --test render -- --ignored",
@@ -31,6 +31,17 @@
     "ci:runner": "node from-root.mjs node --test scripts/ci/run-affected.test.mjs",
     "ci:ach:native": "node from-root.mjs go test -race ./cmds/async-commit-hook/...",
     "ci:ach:release": "node from-root.mjs node --test scripts/release/async-commit-hook.test.mjs",
-    "ci:ach:package": "node from-root.mjs python3 scripts/release/build-async-commit-hook.py --output \"$RUNNER_TEMP/ach-release\""
+    "ci:ach:package": "node from-root.mjs python3 scripts/release/build-async-commit-hook.py --output \"$RUNNER_TEMP/ach-release\"",
+    "ci:rust:test:devhud": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
+    "ci:rust:test:delidev": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
+    "ci:rust:test:pnport": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
+    "ci:rust:test:devhud-delidev": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
+    "ci:rust:test:devhud-pnport": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
+    "ci:rust:test:delidev-pnport": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
+    "ci:rust:test:devhud-delidev-pnport": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
+    "ci:rust:clippy:devhud": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
+    "ci:rust:clippy:delidev": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
+    "ci:rust:clippy:devhud-delidev": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
+    "ci:rust:selection-fixture": "node from-root.mjs node --test scripts/ci/rust-affected-live.test.mjs"
   }
 }
