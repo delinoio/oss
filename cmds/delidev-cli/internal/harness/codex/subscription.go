@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -19,6 +20,77 @@ type ManagedLoginProgress struct {
 	LoginID  string `json:"login_id"`
 	URL      string `json:"url"`
 	UserCode string `json:"user_code,omitempty"`
+}
+
+type managedFailureStage string
+
+const (
+	managedLoginStartStage      managedFailureStage = "login-start"
+	managedLoginCompletionStage managedFailureStage = "login-completion"
+	managedLoginCancelStage     managedFailureStage = "login-cancel"
+	managedAccountReadStage     managedFailureStage = "account-read"
+	managedBundleStage          managedFailureStage = "bundle-validation"
+	managedLogoutStage          managedFailureStage = "local-logout"
+)
+
+type managedAccountRoutingOverride string
+
+const (
+	managedRoutingUnconstrained managedAccountRoutingOverride = "NO_CONSTRAINT"
+	managedRoutingUS            managedAccountRoutingOverride = "us"
+	managedRoutingUSCR          managedAccountRoutingOverride = "us_cr"
+)
+
+type managedWorkspaceRouting struct {
+	Account string                        `json:"chatgptAccountId"`
+	Origin  string                        `json:"backendOrigin"`
+	Policy  managedAccountRoutingOverride `json:"accountRoutingOverride"`
+}
+
+func (r *managedWorkspaceRouting) valid() bool {
+	if r == nil {
+		return true
+	}
+	if r.Account == "" || len(r.Account) > 24<<10 || strings.ContainsAny(r.Account, "\x00\r\n\t ") || len(r.Origin) > 8192 {
+		return false
+	}
+	switch r.Policy {
+	case managedRoutingUnconstrained, managedRoutingUS, managedRoutingUSCR:
+	default:
+		return false
+	}
+	u, err := url.Parse(r.Origin)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Opaque != "" ||
+		u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || strings.Contains(r.Origin, "#") || strings.HasSuffix(u.Host, ":") {
+		return false
+	}
+	if port := u.Port(); port != "" {
+		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+type managedAccountReadResponse struct {
+	// Retain explicit null separately from an omitted account for logout proof.
+	Account          json.RawMessage          `json:"account"`
+	RequiresAuth     bool                     `json:"requiresOpenaiAuth"`
+	WorkspaceRouting *managedWorkspaceRouting `json:"workspaceRouting"`
+}
+
+func (c *Client) readManagedAccount(ctx context.Context, refresh bool) (managedAccountReadResponse, error) {
+	var result managedAccountReadResponse
+	if err := c.managedCall(ctx, "account/read", map[string]bool{"refreshToken": refresh}, &result); err != nil {
+		return managedAccountReadResponse{}, err
+	}
+	// Codex 0.159.2 serializes workspaceRouting even without experimentalApi.
+	// Validate this known metadata while retaining strict unknown-field checks.
+	// It never selects a Go endpoint or supplies authentication authority.
+	if len(result.Account) == 0 || !result.RequiresAuth || !result.WorkspaceRouting.valid() {
+		return managedAccountReadResponse{}, subscription.Invalid()
+	}
+	return result, nil
 }
 
 func (c *Client) managedCall(ctx context.Context, method string, input any, output any) error {
@@ -72,7 +144,7 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 }
 
 func (c *Client) StartManagedLogin(ctx context.Context, device bool) (diagnosticResult ManagedLoginProgress, returned error) {
-	defer c.recordFailure(ctx, domain.CodexLogin, &returned)
+	defer c.recordFailureAtStage(ctx, domain.CodexLogin, managedLoginStartStage, &returned)
 	var p ManagedLoginProgress
 	if c.mode != SubscriptionProtocol {
 		return p, incompatible()
@@ -119,7 +191,7 @@ type managedOnboardingEntrypoint string
 const managedLifeSciencesOnboarding managedOnboardingEntrypoint = "life_sciences"
 
 func (c *Client) WaitManagedLogin(ctx context.Context, loginID string) (returned error) {
-	defer c.recordFailure(ctx, domain.CodexLogin, &returned)
+	defer c.recordFailureAtStage(ctx, domain.CodexLogin, managedLoginCompletionStage, &returned)
 	if c.mode != SubscriptionProtocol || !nativeLoginID.MatchString(loginID) {
 		return incompatible()
 	}
@@ -154,7 +226,7 @@ func (c *Client) WaitManagedLogin(ctx context.Context, loginID string) (returned
 }
 
 func (c *Client) CancelManagedLogin(ctx context.Context, loginID string) (returned error) {
-	defer c.recordFailure(ctx, domain.CodexCleanup, &returned)
+	defer c.recordFailureAtStage(ctx, domain.CodexCleanup, managedLoginCancelStage, &returned)
 	var result struct {
 		Status string `json:"status"`
 	}
@@ -168,7 +240,8 @@ func (c *Client) CancelManagedLogin(ctx context.Context, loginID string) (return
 }
 
 func (c *Client) ManagedBundle(ctx context.Context, refresh bool) (diagnosticResult []byte, returned error) {
-	defer c.recordFailure(ctx, domain.CodexLogin, &returned)
+	stage := managedBundleStage
+	defer func() { c.recordFailureAtStage(ctx, domain.CodexLogin, stage, &returned) }()
 	var before []byte
 	if refresh {
 		var err error
@@ -178,30 +251,31 @@ func (c *Client) ManagedBundle(ctx context.Context, refresh bool) (diagnosticRes
 		}
 		defer clear(before)
 	}
-	var result struct {
-		Account *struct {
-			Type  string  `json:"type"`
-			Email *string `json:"email"`
-			Plan  string  `json:"planType"`
-		} `json:"account"`
-		RequiresAuth bool `json:"requiresOpenaiAuth"`
-	}
-	if err := c.managedCall(ctx, "account/read", map[string]bool{"refreshToken": refresh}, &result); err != nil {
+	stage = managedAccountReadStage
+	result, err := c.readManagedAccount(ctx, refresh)
+	if err != nil {
 		return nil, err
 	}
-	if result.Account == nil || result.Account.Type != "chatgpt" || !result.RequiresAuth {
+	var account struct {
+		Type  string  `json:"type"`
+		Email *string `json:"email"`
+		Plan  string  `json:"planType"`
+	}
+	if domain.Decode(result.Account, &account) != nil || account.Type != "chatgpt" {
 		return nil, subscription.Invalid()
 	}
+	stage = managedBundleStage
 	raw, err := security.ReadPrivate(filepath.Join(c.managedHome, "auth.json"), subscription.MaxBundle)
 	if err != nil {
 		return nil, subscription.Invalid()
 	}
 	_, identity, err := subscription.Parse(raw)
 	email := ""
-	if result.Account.Email != nil {
-		email = *result.Account.Email
+	if account.Email != nil {
+		email = *account.Email
 	}
-	if err != nil || email != identity.Email || result.Account.Plan != identity.Plan {
+	if err != nil || email != identity.Email || account.Plan != identity.Plan ||
+		(result.WorkspaceRouting != nil && result.WorkspaceRouting.Account != identity.Account) {
 		clear(raw)
 		return nil, subscription.Invalid()
 	}
@@ -217,21 +291,21 @@ func (c *Client) ManagedBundle(ctx context.Context, refresh bool) (diagnosticRes
 // Logout proves native local removal only. Upstream revocation is best-effort
 // and no RPC acknowledgment establishes revocation of every provider session.
 func (c *Client) LogoutManaged(ctx context.Context) (returned error) {
-	defer c.recordFailure(ctx, domain.CodexLogin, &returned)
+	stage := managedLogoutStage
+	defer func() { c.recordFailureAtStage(ctx, domain.CodexLogin, stage, &returned) }()
 	var result struct{}
 	if err := c.managedCall(ctx, "account/logout", nativewire.OmittedParams{}, &result); err != nil {
 		return err
 	}
-	var read struct {
-		Account      json.RawMessage `json:"account"`
-		RequiresAuth bool            `json:"requiresOpenaiAuth"`
-	}
-	if err := c.managedCall(ctx, "account/read", map[string]bool{"refreshToken": false}, &read); err != nil {
+	stage = managedAccountReadStage
+	read, err := c.readManagedAccount(ctx, false)
+	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(string(read.Account)) != "null" {
+	if strings.TrimSpace(string(read.Account)) != "null" || read.WorkspaceRouting != nil {
 		return subscription.Invalid()
 	}
+	stage = managedBundleStage
 	if _, err := os.Lstat(filepath.Join(c.managedHome, "auth.json")); !os.IsNotExist(err) {
 		return subscription.Invalid()
 	}
