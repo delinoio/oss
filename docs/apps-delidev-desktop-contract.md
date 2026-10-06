@@ -527,6 +527,47 @@ historical attribution. Source-scoped server catalog queries supply autocomplete
 
 ### Agent Worker wizard
 
+The current single-source wizard uses System `AGENT_WORKER_WIZARD_V1 = 33`
+and the singular `SaveAgentWorkerRequest.model`. The source-route extension below
+is reserved and pending implementation; capability 33 does not enable it.
+
+#### Reserved source-route extension
+
+PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5` on main before dependent implementation.
+Follow the [catalog](cmds-delidev-catalog-contract.md#planned-agent-worker-source-routes),
+[protocol](protos-delidev-v1-contract.md#agent-worker-source-route-reservations) and
+[structure](cmds-delidev-structure-contract.md#agent-worker-source-route-reservations)
+contracts. System capability 35 retains its independent known-subscription-model
+ownership. These reservations grant no routing, catalog retrieval, native discovery,
+authentication, account entitlement or execution support. They add no migration
+and do not change active schemas, generated bindings or runtime advertisements.
+
+The planned extension retains one Harness and ordered source groups. Each group
+contains at least one account from one subscription service or API provider and
+one typed model selection for that source. Accounts and models remain aligned
+within their own group. The Model stage will select one model per group; Configure
+will review all groups in their saved order. The repeated `route_models` field
+reuses `AgentWorkerModelSelection`, with exactly one entry per source group in the
+same order, and cannot coexist with the legacy singular `model`. Go will validate
+every group's source membership and atomically reuse/create all selected models
+and save the Worker under the original revision and UUID-v7 receipt. A failed save
+must roll back the complete model/Worker mutation. Exact uncertain requests and
+the existing visit, reconnect and late-response guards remain authoritative.
+
+Source fallback will apply only at the first execution of a new session. Every
+account in each preceding group must have confirmed quota exhaustion before a
+later group can be selected. Unknown quota, disconnection, authentication failure
+or incompatibility cannot authorize fallback. Observed quota recovery restores
+the earlier group's priority for subsequent new sessions. Existing sessions keep
+their selected account/model and immutable historical attribution. Configuration
+and quota observations remain separate from execution eligibility and native
+support. The capability-33 singular flow, legacy APIs and historical records
+remain compatible. This reservation correction selects no new visual design and
+implements no controls or routing.
+
+#### Current capability-33 flow
+
 Creation and editing use the same four steps: Harness, Accounts, Model, Configure.
 Fill existing values on edit. Stage navigation never saves. Choose a supported
 harness, then one subscription service or API provider and at least one account.
