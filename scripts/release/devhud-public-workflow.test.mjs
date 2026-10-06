@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -366,6 +367,71 @@ test("independent verification requeries every exact store before GA", () => {
   assert.match(verification, /for provider in apple google-play chrome-web-store/u);
   assert.match(verification, /devhud-store-release\.mjs status "\$provider"/u);
   assert.match(verification, /\.status == "public"/u);
+});
+
+test("Google rollout verification errors stop publication, GA reverification, and cleanup shell gates", () => {
+  const storeModule = new URL("devhud-store-release.mjs", import.meta.url).href;
+  const googleScript = `
+    import { generateKeyPairSync } from "node:crypto";
+    import { run } from ${JSON.stringify(storeModule)};
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const environment = {
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: "io.delino.devhud",
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: "fixture@example.test",
+      DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({
+        client_email: "fixture@example.test", token_uri: "https://oauth2.example.test/token",
+        private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
+      }),
+    };
+    const fetchImpl = async (url) => new Response(JSON.stringify(
+      String(url) === "https://oauth2.example.test/token" ? { access_token: "fixture-token" } : {
+        releases: [{ releaseLifecycleState: "RELEASE_LIFECYCLE_STATE_PUBLISHED", activeArtifacts: [{ versionCode: 1 }] }],
+      }
+    ), { headers: { "content-type": "application/json" } });
+    try { await run(process.argv[1], process.argv[2], {}, environment, fetchImpl); }
+    catch (error) { process.stderr.write(error.message + "\\n"); process.exitCode = 1; }
+  `;
+  for (const [name, stepName, jqStatus] of [
+    ["stores_public", "Re-query exact public versions after operator publishes Play changes", "0"],
+    ["verify_all", "Reverify every exact store version remains public", "0"],
+    ["ga", "Reverify every exact store version after GA approval", "0"],
+    ["rollback_pre_store", "Confirm no exact store version became public", "1"],
+    ["rollback_pre_store", "Verify protected Google Play withdrawal and cancel Apple and Chrome submissions", "0"],
+  ]) {
+    const current = job(name);
+    const step = current.split("\n      - ").find((value) => value.startsWith(`name: ${stepName}\n`));
+    assert.ok(step, `missing ${stepName}`);
+    assert.doesNotMatch(current, /continue-on-error:/u);
+    const script = step.slice(step.indexOf("run: |\n") + "run: |\n".length).trimEnd()
+      .split("\n").map((line) => line.slice(10)).join("\n");
+    // Execute the actual workflow shell. Other providers succeed; Google runs
+    // the real adapter with synthetic credentials and a read-only summary.
+    const result = spawnSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail"], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 30_000,
+      env: { PATH: process.env.PATH, FIXTURE_NODE: process.execPath, FIXTURE_GOOGLE_SCRIPT: googleScript, FIXTURE_JQ_STATUS: jqStatus },
+      input: `
+        node() {
+          printf '%s %s\\n' "$2" "$3"
+          if [ "$1" = scripts/release/devhud-store-release.mjs ] && [ "$3" = google-play ]; then
+            "$FIXTURE_NODE" --input-type=module -e "$FIXTURE_GOOGLE_SCRIPT" "$2" "$3"
+          fi
+        }
+        jq() { return "$FIXTURE_JQ_STATUS"; }
+        ${script}
+        printf 'downstream mutation\\n'
+      `,
+    });
+    assert.equal(result.error, undefined, `${stepName}: ${result.stderr}`);
+    assert.equal(result.status, 1, stepName);
+    assert.equal(result.stderr.trim(), "Google Play published release summary cannot verify a full rollout; release advancement and automatic cleanup are blocked");
+    assert.doesNotMatch(result.stdout, /downstream mutation|status chrome-web-store|withdraw apple|withdraw chrome-web-store/u);
+  }
+  for (const [name, predecessor] of [["github_release", "stores_public"], ["updater_public", "github_release"], ["ga", "verify_all"]]) {
+    assert.match(job(name), new RegExp(`needs: [^\\n]*${predecessor}`, "u"));
+    assert.doesNotMatch(job(name), /always\(\)|continue-on-error:/u);
+  }
 });
 
 test("GA repeats every public-channel verification after approval and before mutation", () => {

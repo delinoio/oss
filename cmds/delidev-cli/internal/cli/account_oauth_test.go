@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -103,4 +104,22 @@ func oauthCLIJSON(t *testing.T, value any) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func TestOAuthCallbackEnvelopeIsBoundedAndExcludesMutationAuthority(t *testing.T) {
+	for _, raw := range []string{`{"authorizationState":"c3RhdGU="}`, `{"mutation":{},"authorizationCode":"Y29kZQ==","authorizationState":"` + strings.Repeat("c3Nz", 14) + `"}`, `{"authorizationCode":"Y29kZQ==","authorizationState":"` + strings.Repeat("c3Nz", 14) + `","extra":"ignored"}`, strings.Repeat("x", 16385)} {
+		code, state, e := readOAuthCallback(strings.NewReader(raw))
+		clear(code)
+		clear(state)
+		if e == nil {
+			t.Fatal("invalid callback envelope admitted")
+		}
+	}
+	raw := `{"authorizationCode":"Y29kZQ==","authorizationState":"` + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("s", 43))) + `"}`
+	code, state, e := readOAuthCallback(strings.NewReader(raw))
+	defer clear(code)
+	defer clear(state)
+	if e != nil || string(code) != "code" || string(state) != strings.Repeat("s", 43) {
+		t.Fatal("original callback bytes changed")
+	}
 }

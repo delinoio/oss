@@ -10,7 +10,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -369,18 +368,36 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		if err != nil {
 			return nil, err
 		}
-		defer unlock()
+		locked := true
+		defer func() {
+			if locked {
+				unlock()
+			}
+		}()
 		if leaseContext.Err() != nil {
 			return nil, executionDenied()
 		}
 		if _, err := a.resolve(ctx, grant); err != nil {
 			return nil, err
 		}
-		vault, err := a.service.secrets()
+
+		unlock()
+		locked = false
+		// Refresh owns its own gate and performs HTTP outside it. Recheck the
+		// original execution immediately before and after that operation.
+		credential, err := a.service.resolveAPICredential(ctx, scope.AccountID, scope.ConnectionID, scope.ProviderID)
 		if err != nil {
 			return nil, err
 		}
-		return vault.Get(ctx, credentials.Ref{Owner: scope.AccountID, ID: scope.ConnectionID, Purpose: credentials.AccountAPI})
+		if leaseContext.Err() != nil {
+			clear(credential.key)
+			return nil, executionDenied()
+		}
+		if _, err = a.resolve(ctx, grant); err != nil {
+			clear(credential.key)
+			return nil, err
+		}
+		return credential.key, nil
 	}
 	if scope.Purpose != domain.SessionTitleUsage && scope.Provider.Protocol == domain.OpenAIResponses {
 		lease.ObserveHistory = func(ctx context.Context, accountBound bool) error {

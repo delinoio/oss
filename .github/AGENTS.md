@@ -2,7 +2,11 @@
 
 # Workflow contracts
 
+- The five legacy CLI release workflows use `scripts/release/legacy-cli-release.mjs` before Homebrew credentials or writes. Follow the repository workflow contract: reuse only a complete public inventory with exact retained bytes and source-bound signatures; never sign, delete, replace, upload or edit on that path. Reject conflicting/incomplete public inventories. Fresh and owned partial drafts upload only missing assets and require complete signed readback before publication. Keep unsigned dry runs, exact tag/source checks and downstream job ordering.
+
 - DeliDev checks use separate `delidev-protocol`, `delidev-client` and `delidev-frontend` jobs. Select schemas/generated freshness, client and dependent desktop checks by their inputs, exclude DevHud-only inputs, and require all planned results through `CI Result`. Shared `pnpm proto:check` remains repository-wide; follow `docs/repository-workflow-contract.md`.
+
+- The `async-commit-hook` job owns shared protocol freshness for DevHud schemas, Go bindings and `packages/devhud-api-client/src/gen/**` on PRs and main pushes. Preserve DevHud consumer selection, exclude DevHud-only inputs from DeliDev jobs, and run the uncached `ci:proto:fresh` leaf through `ci:proto:check` even with a warm cache. Handwritten DevHud client changes do not select this shared protocol owner.
 
 - Generic Rust CI uses the single verified prebuilt cargo-mono selection and exact comparison/fallback policy in `docs/repository-workflow-contract.md`. Validate the published executable with offline live fixtures before planning; no source fallback or binary cache. Preserve final package/job agreement, pnport runtime ownership, scene exclusions, conditional native preparation, full manual/shared-input checks and independent project validation.
 
