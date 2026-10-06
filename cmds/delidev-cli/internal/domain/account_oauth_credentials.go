@@ -3,6 +3,7 @@ package domain
 
 import (
 	"encoding/hex"
+	"regexp"
 	"time"
 )
 
@@ -38,7 +39,7 @@ func (v AccountOAuthCredential) Validate() error {
 	if digestErr != nil || len(digest) != 32 || hex.EncodeToString(digest) != v.ClientDigest {
 		return Fail(RecoveryRequired, "OAuth client binding is invalid.", "Preserve the original credential profile.")
 	}
-	if v.Preset != PresetGemini && v.QuotaProject != "" {
+	if v.Preset != PresetGemini && v.QuotaProject != "" || v.Preset == PresetGemini && !ValidGoogleProjectID(v.QuotaProject) {
 		return Fail(RecoveryRequired, "OAuth project ownership is invalid.", "Preserve the original provider attribution.")
 	}
 	if v.AccountID.Validate() != nil || v.ConnectionID.Validate() != nil || v.ProviderID.Validate() != nil || v.TokenID.Validate() != nil || v.Revision == 0 || v.ExpiresAt.IsZero() || len(v.ClientDigest) != 64 || len(v.Cleanup) > 32 {
@@ -71,3 +72,7 @@ func (v AccountOAuthCredential) Validate() error {
 	}
 	return nil
 }
+
+var googleProjectID = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+
+func ValidGoogleProjectID(value string) bool { return googleProjectID.MatchString(value) }

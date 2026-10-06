@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { matchesGlob, resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
 
@@ -12,7 +12,18 @@ const rustfmtConfiguration = new Set([".rustfmt.toml", "rustfmt.toml"]);
 // Git reports POSIX paths. Filename ownership also covers hidden directories,
 // which node:path's recursive globs do not match.
 const isRustfmtConfiguration = (path) => rustfmtConfiguration.has(path.slice(path.lastIndexOf("/") + 1));
-const matches = (path, patterns) => patterns.some((pattern) => matchesGlob(path, pattern));
+export function matchesPath(path, pattern) {
+  // Node's matcher excludes leading dots at every wildcard boundary and has no
+  // dot option. Prefix each segment on both sides without removing filename
+  // characters; keep pattern globstars bare for zero-or-more-directory matching.
+  // Git paths use POSIX separators on every host. Remove this adapter when Node
+  // supports dot-aware matching that passes the same path fixtures.
+  const visiblePath = path.split("/").map((segment) => `x${segment}`).join("/");
+  const visiblePattern = pattern.split("/").map((segment) => segment === "**" ? segment : `x${segment}`).join("/");
+  return posix.matchesGlob(visiblePath, visiblePattern);
+}
+
+const matches = (path, patterns) => patterns.some((pattern) => matchesPath(path, pattern));
 
 function ruleSignature(rule) {
   if (!rule) return null;

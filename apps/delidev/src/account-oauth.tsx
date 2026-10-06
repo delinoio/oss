@@ -9,17 +9,17 @@ import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
 
-export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", Profiles = "profiles", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
-export enum AccountOAuthProfile { OpenRouter = "openrouter", HuggingFace = "hugging-face" }
+export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", BeginGoogleGemini = "begin-google-gemini", Profiles = "profiles", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
+export enum AccountOAuthProfile { OpenRouter = "openrouter", HuggingFace = "hugging-face", GoogleGemini = "google-gemini" }
 export interface OAuthNativeResult { generation: string; callback_url?: string; code?: number[]; state?: number[]; profiles?: AccountOAuthProfile[]; denied?: boolean }
 export type OAuthNativeControl = (opening: string, action: OAuthNativeAction, generation: string, attempt: string, authorization: string) => Promise<OAuthNativeResult>;
 const NativeContext = createContext<OAuthNativeControl | undefined>(undefined);
 export const useOAuthNativeControl = () => useContext(NativeContext);
 export function OAuthNativeProvider({ control, children }: { control: OAuthNativeControl; children: ReactNode }) { return <NativeContext.Provider value={control}>{children}</NativeContext.Provider>; }
-enum Stage { Starting, Awaiting, Exchanging, Saving, Canceling, Recovering, Connected, Canceled, Expired, Interrupted, Recovery }
+enum Stage { Configure, Starting, Awaiting, Exchanging, Saving, Canceling, Recovering, Connected, Canceled, Expired, Interrupted, Recovery }
 interface View { provider: AccountProviderSummary; stage: Stage; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string; openFailed?: boolean }
 interface Pending {
-  provider: AccountProviderSummary; nativeOpening: string; generation: string; callback: string; startId: string;
+  provider: AccountProviderSummary; quotaProject?: string; nativeOpening: string; generation: string; callback: string; startId: string;
   attempt?: AccountOAuthAttempt; completion?: Mutation; cancel?: Mutation; problem?: string; openFailed?: boolean; bound: boolean; serverStartDispatched: boolean; polling: boolean; busy: boolean; disposed: boolean;
 }
 const validId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
@@ -59,7 +59,7 @@ export function useAccountOAuth() {
     let active = true;
     // This is an inventory read. It creates no listener and opens no browser.
     void native(newRequestId(), OAuthNativeAction.Profiles, "", "", "").then(result => {
-      if (active && !opening?.disposed) setProfiles((result.profiles ?? []).filter(profile => profile === AccountOAuthProfile.OpenRouter || profile === AccountOAuthProfile.HuggingFace));
+      if (active && !opening?.disposed) setProfiles((result.profiles ?? []).filter(profile => profile === AccountOAuthProfile.OpenRouter || profile === AccountOAuthProfile.HuggingFace || profile === AccountOAuthProfile.GoogleGemini));
     }).catch(() => { if (active) setProfiles([]); });
     return () => { active = false; };
   }, [native, opening]);
@@ -103,13 +103,13 @@ export function useAccountOAuth() {
     value.busy = true;
     try {
       if (!value.generation) {
-        const result = await native(value.nativeOpening, profileOf(value.provider) === AccountOAuthProfile.HuggingFace ? OAuthNativeAction.BeginHuggingFace : OAuthNativeAction.Begin, "", "", "");
+        const result = await native(value.nativeOpening, profileOf(value.provider) === AccountOAuthProfile.HuggingFace ? OAuthNativeAction.BeginHuggingFace : profileOf(value.provider) === AccountOAuthProfile.GoogleGemini ? OAuthNativeAction.BeginGoogleGemini : OAuthNativeAction.Begin, "", "", "");
         if (!current(value)) { disposeNative(value); return; }
         if (!validId(result.generation) || !result.callback_url) throw new Error("callback");
         value.generation = result.generation; value.callback = result.callback_url;
       }
       value.serverStartDispatched = true;
-      const result = await service.startAccountOAuth({ provider: { id: value.provider.providerId, expectedRevision: value.provider.provider.revision, requestId: value.startId }, callbackUrl: value.callback });
+      const result = await service.startAccountOAuth({ provider: { id: value.provider.providerId, expectedRevision: value.provider.provider.revision, requestId: value.startId }, callbackUrl: value.callback, google: value.quotaProject ? { quotaProjectId: value.quotaProject } : undefined });
       if (!current(value)) return;
       if (result.requestId !== value.startId) throw new Error("start receipt");
       value.attempt = checkedAttempt(result.attempt, value);
@@ -133,7 +133,9 @@ export function useAccountOAuth() {
   const start = (provider: AccountProviderSummary) => {
     if (!native || pending.current || opening?.disposed || !supports(provider) || !provider.enabled) return;
     const value: Pending = { provider, nativeOpening: newRequestId(), generation: "", callback: "", startId: newRequestId(), bound: false, serverStartDispatched: false, polling: false, busy: false, disposed: false };
-    pending.current = value; setView({ provider, stage: Stage.Starting }); void startOriginal(value);
+    pending.current = value;
+    if (profileOf(provider) === AccountOAuthProfile.GoogleGemini) setView({ provider, stage: Stage.Configure });
+    else { setView({ provider, stage: Stage.Starting }); void startOriginal(value); }
   };
   const observe = async (value: Pending) => {
     if (!current(value) || !value.attempt) return;
@@ -216,14 +218,21 @@ export function useAccountOAuth() {
     catch { failure(value, recoveryMessage(value.provider)); }
     finally { value.busy = false; }
   };
-  return { view, available: Boolean(native), supports, start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
+  const continueInBrowser = (project: string) => {
+    const value = pending.current;
+    if (!value || !current(value) || value.serverStartDispatched || value.busy || value.quotaProject) return;
+    if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)) { failure(value,"Enter a valid Google Cloud project ID (6–30 lowercase letters, digits or hyphens)."); return; }
+    value.quotaProject = project;
+    setView({ provider: value.provider, stage: Stage.Starting }); void startOriginal(value);
+  };
+  return { view, continueInBrowser, available: Boolean(native), supports, start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
 }
 export const useOpenRouterOAuth = useAccountOAuth;
 export type AccountOAuthFlow = ReturnType<typeof useAccountOAuth>;
 export type OpenRouterOAuthFlow = AccountOAuthFlow;
 function profileOf(provider: AccountProviderSummary): AccountOAuthProfile | undefined {
   const preset = provider.presetId ?? document(provider.provider).preset_id;
-  return preset === AccountOAuthProfile.OpenRouter ? AccountOAuthProfile.OpenRouter : preset === AccountOAuthProfile.HuggingFace ? AccountOAuthProfile.HuggingFace : undefined;
+  return preset === AccountOAuthProfile.OpenRouter ? AccountOAuthProfile.OpenRouter : preset === AccountOAuthProfile.HuggingFace ? AccountOAuthProfile.HuggingFace : preset === "gemini" ? AccountOAuthProfile.GoogleGemini : undefined;
 }
 function providerServiceName(provider: AccountProviderSummary): string {
   return profileOf(provider) === AccountOAuthProfile.HuggingFace ? "Hugging Face" : provider.displayName;
@@ -235,26 +244,29 @@ function recoveryMessage(provider: AccountProviderSummary): string {
 export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; edit: (account: Resource) => void; manage: (account: Resource) => void; done: () => void }) {
   const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
+  const [project, setProject] = useState("");
   useRetainSettingsTask(Boolean(view));
   useEffect(() => { if (visible) heading.current?.focus(); }, [view?.provider.providerId, visible]);
   if (!view) return null;
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;
   const connected = view.stage === Stage.Connected && view.account;
   const waiting = view.stage === Stage.Awaiting;
+  const configuring = view.stage === Stage.Configure;
   const progress = view.stage === Stage.Starting ? "Preparing authorization…" : view.stage === Stage.Exchanging ? "Exchanging authorization…" : view.stage === Stage.Saving ? "Saving your connection…" : view.stage === Stage.Canceling ? "Confirming cancellation and cleanup…" : view.stage === Stage.Recovering ? "Recovering the original saved result…" : connected ? `${view.provider.displayName} connected` : waiting ? "Waiting for authorization…" : view.stage === Stage.Expired ? "Authorization expired" : view.stage === Stage.Interrupted ? "Authorization was interrupted" : view.stage === Stage.Canceled ? "Connection canceled" : "Connection requires recovery";
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());
   return <section className="api-keys-view account-oauth-card" aria-labelledby="account-oauth-title">
     <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>Connect {view.provider.displayName}</h2>
-    <p className="account-oauth-subheading">Complete sign-in in your browser</p>
-    <p>Approve access on {providerServiceName(view.provider)}. DeliDev will finish connecting automatically.</p>
-    <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div>
+    <p className="account-oauth-subheading">{configuring ? "Choose your Google Cloud project" : "Complete sign-in in your browser"}</p>
+    {configuring ? <p>Use the Google Cloud project that will pay for API usage.</p> : <p>Approve access on {providerServiceName(view.provider)}. DeliDev will finish connecting automatically.</p>}
+    {configuring ? <label className="account-oauth-project">Google Cloud project ID<input value={project} maxLength={30} autoComplete="off" spellCheck={false} onChange={event => setProject(event.target.value)} /></label> : null}
+    {!configuring ? <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div> : null}
     {view.problem ? <p role="alert">{view.problem}</p> : null}
     {connected ? <SettingsTaskActions><button onClick={() => leave(false, () => edit(connected))}>Edit account</button><button onClick={() => leave(false, () => manage(connected))}>Manage account</button><button onClick={() => leave(false, done)}>Done</button></SettingsTaskActions> : <>
-      <SettingsTaskActions><button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>Open browser again</button><button data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>Cancel</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>Back to providers</button></SettingsTaskActions>
+      <SettingsTaskActions>{configuring ? <button onClick={() => flow.continueInBrowser(project)}>Continue in browser</button> : <button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>Open browser again</button>}<button hidden={configuring} data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>Cancel</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>Back to providers</button></SettingsTaskActions>
       <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>Use an API key instead</button>
-      {view.problem ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>Inspect original attempt</button>{!view.attempt ? <button onClick={flow.retryStart}>Retry original start</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>Recover saved result</button> : null}</SettingsTaskActions> : null}
+      {view.problem && !configuring ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>Inspect original attempt</button>{!view.attempt ? <button onClick={flow.retryStart}>Retry original start</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>Recover saved result</button> : null}</SettingsTaskActions> : null}
     </>}
-    <footer><p>Your credential will be stored securely on the selected server.</p><p>You can validate your account after connecting.</p></footer>
+    <footer><p>Your credential will be stored securely on the selected server.</p>{!configuring ? <p>You can validate your account after connecting.</p> : null}</footer>
   </section>;
 }
 
