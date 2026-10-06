@@ -202,7 +202,10 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
   const savedIDs = new Set([...Object.keys(cachedSavedModels), ...pageSuggestions.map(row => row.nativeId)]);
   const suggestions: ModelSuggestion[] = [...pageSuggestions];
   const search = query.trim().toLocaleLowerCase();
-  if (knownValid) for (const row of known.data!.models) {
+  // Known candidates are advisory only. Wait for the terminal saved-model page so an
+  // unvisited saved duplicate cannot bypass its exact revision check.
+  const savedCatalogComplete = Boolean(models.data && !models.data.nextPageToken);
+  if (knownValid && savedCatalogComplete) for (const row of known.data!.models) {
     if (!savedIDs.has(row.nativeId) && (!search || `${row.displayName} ${row.nativeId}`.toLocaleLowerCase().includes(search))) suggestions.push({ nativeId: row.nativeId, name: row.displayName, kind: SuggestionKind.Known });
   }
   const catalogDate = knownValid ? new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${known.data!.updatedAt}T00:00:00Z`)) : "";

@@ -465,13 +465,14 @@ it("prefers a saved subscription model over its known duplicate and retains its 
   expect(value.save.mock.calls[0][0].model).toMatchObject({ selection: { case: "modelId", value: saved.id }, expectedModelRevision: 4n });
 });
 
-it("keeps saved-model precedence after a duplicate appears on a later page", async () => {
+it("does not offer a known duplicate before all saved pages are visited", async () => {
   const value = fixture();
   const first = create(ResourceSchema, { kind: EntityKind.MODEL, schemaVersion: 2, id: newRequestId(), revision: 2n, documentJson: encode({ name: "First saved", native_id: "saved-first", source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["codex"], hidden: false }) });
   const later = create(ResourceSchema, { kind: EntityKind.MODEL, schemaVersion: 2, id: newRequestId(), revision: 4n, documentJson: encode({ name: "Saved GPT", native_id: "gpt-known-current", source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["codex"], hidden: false }) });
   value.records.push(first, later); value.search.mockImplementation(async request => ({ models: request.pageToken ? [later] : [first], providers: [], nextPageToken: request.pageToken ? "" : "model-page-2" }));
   const input = await subscriptionModels(value); fireEvent.focus(input);
-  await screen.findByRole("option", { name: /GPT Known Current.*Known/ });
+  await screen.findByRole("option", { name: /First saved.*Saved/ });
+  expect(screen.queryByRole("option", { name: /GPT Known Current.*Known/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Next model page" }));
   await screen.findByRole("option", { name: /Saved GPT.*Saved/ });
   expect(screen.queryByRole("option", { name: /GPT Known Current.*Known/ })).toBeNull();
