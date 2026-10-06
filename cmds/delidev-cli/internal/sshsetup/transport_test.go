@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	"golang.org/x/crypto/ssh"
@@ -389,7 +390,11 @@ func TestActualSSHSetupEffectsRetainRecoveryAfterDeadline(t *testing.T) {
 	if err := document.Validate(); err != nil {
 		t.Fatal("Invalid setup fixture", err)
 	}
-	source := filepath.Join(t.TempDir(), "worker")
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "worker")
 	if err := os.WriteFile(source, data, 0600); err != nil {
 		t.Fatal(err)
 	}
