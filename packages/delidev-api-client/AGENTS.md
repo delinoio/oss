@@ -84,3 +84,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
 
 - General API OAuth preserves original capability 5 and adds main-reserved capability 6, flow enum, Google options and write-only completion state. Authorization code/state never enter cached Connect Query/mutation variables. Temporary device approval codes belong only to Start responses. Follow `docs/cmds-delidev-account-oauth-contract.md`.
+
+- Device approval reuses the existing OAuth RPCs. Only Start returns the temporary user code. Status exposes the original Go completion request ID after its sole claim; code-free local recovery uses that receipt and original expected revision 1. Public Complete grants no Device polling authority.

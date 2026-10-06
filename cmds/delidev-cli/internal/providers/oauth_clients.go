@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"net/url"
 	"strings"
 	"unicode"
 )
@@ -31,10 +32,11 @@ const (
 )
 
 type OAuthRegistration struct {
-	ClientID      string                  `json:"client_id"`
-	RedirectURI   string                  `json:"redirect_uri"`
-	Registration  OAuthRegistrationState  `json:"registration"`
-	Compatibility OAuthCompatibilityState `json:"api_compatibility"`
+	ClientID        string                  `json:"client_id"`
+	VerificationURI string                  `json:"verification_uri,omitempty"`
+	RedirectURI     string                  `json:"redirect_uri"`
+	Registration    OAuthRegistrationState  `json:"registration"`
+	Compatibility   OAuthCompatibilityState `json:"api_compatibility"`
 }
 
 func (r OAuthRegistration) Accepted() bool {
@@ -46,4 +48,11 @@ func OAuthRegistrations() map[domain.ProviderPresetID]OAuthRegistration {
 		return nil
 	}
 	return profiles
+}
+
+// Registration must pin the provider-approved browser path before activation.
+// The pending release deliberately has no guessed approval URI.
+func ValidBasetenVerificationURI(raw string) bool {
+	u, e := url.Parse(raw)
+	return e == nil && u.Scheme == "https" && u.Host == "app.baseten.co" && u.User == nil && u.Path != "" && u.Path != "/" && u.RawPath == "" && u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" && u.String() == raw && !strings.Contains(u.Path, "..")
 }

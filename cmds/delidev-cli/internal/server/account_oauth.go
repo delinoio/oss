@@ -28,6 +28,7 @@ type oauthLive struct {
 	profile       oauthProfile
 	callback      string
 	state         []byte
+	userCode      []byte
 }
 type oauthExchange interface {
 	Exchange(context.Context, []byte, []byte) ([]byte, error)
@@ -62,6 +63,9 @@ func (s *Service) oauthCommitment(kind string, id domain.ID, value []byte) strin
 // accountGate owns ephemeral state. Initialization never recovers a verifier or
 // sends HTTP; a new lifetime only interrupts prior private dispatch authority.
 func (s *Service) initializeOAuthLocked(ctx context.Context) error {
+	if s.oauthClosing {
+		return domain.Fail(domain.Unavailable, "OAuth is shutting down.", "Use the next admitted server lifetime.")
+	}
 	if s.oauthGeneration != "" {
 		return nil
 	}
@@ -108,6 +112,7 @@ func (s *Service) clearOAuthLive(id domain.ID) {
 	if live := s.oauthLive[id]; live != nil {
 		clear(live.verifier)
 		clear(live.state)
+		clear(live.userCode)
 		live.callback = ""
 		live.authorization = ""
 		delete(s.oauthLive, id)
@@ -138,7 +143,12 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	defer unlock()
+	locked := true
+	defer func() {
+		if locked {
+			unlock()
+		}
+	}()
 	if err = s.initializeOAuthLocked(ctx); err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -220,6 +230,12 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 					q.Set("prompt", "consent")
 				}
 				live.authorization = profile.authorization + "?" + q.Encode()
+				if profile.preset == domain.PresetBaseten {
+					a.DeviceRequestID = domain.NewID()
+					clear(live.verifier)
+					live.verifier = nil
+					live.authorization = ""
+				}
 			}
 			if err := tx.ExpireAccountOAuth(now); err != nil {
 				return nil, err
@@ -257,6 +273,33 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	if a.Preset == domain.PresetBaseten && original != "" && !replayed {
+		work := domain.WithPrincipal(context.Background(), actor)
+		jobCtx, cancel := context.WithDeadline(work, a.ExpiresAt)
+		checkCtx, finish, e := s.startAccountCheck(jobCtx, a.AccountID, a.DeviceRequestID, a.ProviderID, oauthInspection)
+		if e != nil {
+			cancel()
+			s.oauthRecoveryLocked(a, oauthProblemFor(a))
+		} else {
+			profile := live.profile
+			s.oauthDeviceJobs.Add(1)
+			unlock()
+			locked = false
+			e = s.authorizeOAuthDevice(checkCtx, a, profile, actor, func() { finish(); cancel(); s.oauthDeviceJobs.Done() })
+			unlock, err = s.lockAccounts(ctx)
+			if err != nil {
+				return nil, rpc.Error(err, c)
+			}
+			locked = true
+			if e != nil {
+				return nil, rpc.Error(e, c)
+			}
+		}
+		a, err = s.oauthRead(ctx, a.ID)
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
+	}
 	// Replay preserves the original attempt but cannot recover browser authority
 	// after its provider was edited or disabled.
 	if a.State == domain.OAuthAwaiting {
@@ -278,11 +321,18 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 			}
 		}
 	}
-	response := &pb.StartAccountOAuthResponse{Attempt: oauthProjection(a), RequestId: m.RequestId, Replayed: result.Replayed}
+	response := &pb.StartAccountOAuthResponse{Attempt: oauthProjection(a), RequestId: m.RequestId, Replayed: result.Replayed, Flow: pb.AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_PKCE}
+	if a.Preset == domain.PresetBaseten {
+		response.Flow = pb.AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_DEVICE
+	}
 	if a.State == domain.OAuthAwaiting && a.Generation == s.oauthGeneration && time.Now().Before(a.ExpiresAt) {
 		if live := s.oauthLive[a.ID]; live != nil {
 			response.AuthorizationUrl = live.authorization
 			response.Flow = pb.AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_PKCE
+			if a.Preset == domain.PresetBaseten {
+				response.Flow = pb.AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_DEVICE
+				response.UserCode = string(live.userCode)
+			}
 		}
 	}
 	s.logger.InfoContext(ctx, "account_oauth_started", "attempt_id", a.ID, "state", a.State, "replayed", result.Replayed, "correlation_id", c)
@@ -303,6 +353,9 @@ func oauthProjection(a domain.AccountOAuthAttempt) *pb.AccountOAuthAttempt {
 	return r
 }
 func (s *Service) oauthResponse(ctx context.Context, a domain.AccountOAuthAttempt, request string, replayed bool) (*pb.CompleteAccountOAuthResponse, error) {
+	if request == "" && a.Preset == domain.PresetBaseten {
+		request = string(a.CompletionRequestID)
+	}
 	r := &pb.CompleteAccountOAuthResponse{Attempt: oauthProjection(a), RequestId: request, Replayed: replayed}
 	if a.State == domain.OAuthConnected || a.StagingClaimed {
 		row, err := s.accountRecord(ctx, a.AccountID)
@@ -539,6 +592,10 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	deviceResult, serverDevice := ctx.Value(deviceOAuthResultKey{}).(deviceOAuthResult)
+	if a.Preset == domain.PresetBaseten && (!serverDevice || deviceResult.attempt != a.ID) && (len(req.Msg.AuthorizationCode) != 0 || len(req.Msg.AuthorizationState) != 0 || a.CompletionRequestID != domain.ID(m.RequestId)) {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Device approval is owned by the original server operation.", "Observe Status. Recover only its already protected original completion receipt."), c)
+	}
 	commitment := a.CodeCommitment
 	if len(req.Msg.AuthorizationCode) > 0 || a.Version == 2 && a.State == domain.OAuthAwaiting {
 		commitment = s.oauthCommitment("code", domain.ID(m.RequestId), req.Msg.AuthorizationCode)
@@ -572,7 +629,11 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 			return nil, rpc.Error(oauthProblem(), c)
 		}
 		if a.State == domain.OAuthExchanging {
-			check, active := s.accountChecks[a.AccountID][a.CompletionRequestID]
+			checkID := a.CompletionRequestID
+			if a.Preset == domain.PresetBaseten {
+				checkID = a.DeviceRequestID
+			}
+			check, active := s.accountChecks[a.AccountID][checkID]
 			if a.Generation != s.oauthGeneration || !active || check.operation != oauthInspection {
 				// A committed dispatch claim without its original live owner is
 				// uncertain even in this process. Observation cannot dispatch it.
@@ -651,7 +712,16 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		s.clearOAuthLive(a.ID)
 		return respond(a, false)
 	}
-	checkCtx, finish, err := s.startAccountCheck(ctx, a.AccountID, domain.ID(m.RequestId), a.ProviderID, oauthInspection)
+	checkCtx := ctx
+	finish := func() {}
+	if !serverDevice {
+		checkCtx, finish, err = s.startAccountCheck(ctx, a.AccountID, domain.ID(m.RequestId), a.ProviderID, oauthInspection)
+	} else {
+		check, active := s.accountChecks[a.AccountID][a.DeviceRequestID]
+		if !active || check.operation != oauthInspection || ctx.Err() != nil {
+			err = oauthCredentialProblem()
+		}
+	}
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -706,7 +776,10 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 	var key []byte
 	var exchangeErr error
 	var tokenResult oauthTokenResult
-	if a.Version == 1 {
+	if serverDevice && a.Preset == domain.PresetBaseten {
+		tokenResult = deviceResult.result
+		key = tokenResult.tokens.Access
+	} else if a.Version == 1 {
 		key, exchangeErr = exchange.Exchange(checkCtx, req.Msg.AuthorizationCode, verifier)
 	} else {
 		client := s.oauthTokenClient

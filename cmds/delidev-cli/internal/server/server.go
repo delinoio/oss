@@ -88,6 +88,9 @@ type Service struct {
 	oauthGeneration               domain.ID
 	oauthLive                     map[domain.ID]*oauthLive
 	oauthRegistrations            map[domain.ProviderPresetID]providers.OAuthRegistration
+	oauthDeviceJobs               sync.WaitGroup
+	oauthClosing                  bool
+	oauthDeviceClient             oauthDeviceClient
 	oauthTokenClient              oauthTokenClient
 	oauthRefreshMu                sync.Mutex
 	oauthRefreshes                map[domain.ID]chan struct{}

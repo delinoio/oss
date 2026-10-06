@@ -127,3 +127,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Codex diagnostics are optional bounded existing-document metadata with closed phases/codes and locally reconstructed safe text. Validate actual version attribution and original operation correlation; no diagnostic grants native/account authority or requires a SQLite migration.
 
 - New API OAuth attempt version 2 retains preset and original state commitment; credential metadata validates canonical profile digest and unique cleanup references. Preserve immutable account/connection/provider identity and closed refresh states without exposing tokens in domain resources. Follow `docs/cmds-delidev-account-oauth-contract.md`.
+
+- Baseten version-2 OAuth attempts alone may retain the private unique Device dispatch UUID. It grants only the original ephemeral server job, never reconstructed Device bytes, callbacks or retries. The original attempt remains at revision 1 until its sole protected completion claim.

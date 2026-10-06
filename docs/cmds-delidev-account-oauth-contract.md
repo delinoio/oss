@@ -251,3 +251,52 @@ Callback polling rechecks captured Go-verified local connection authority agains
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
 
 If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
+
+## Baseten Device OAuth
+
+Baseten uses the server-owned Device adapter only for its exact enabled managed
+OpenAI Chat/Bearer preset at `https://inference.baseten.co/v1`. The fixed management
+endpoints are `https://api.baseten.co/v1/users/auth/device/authorize` and
+`https://api.baseten.co/v1/users/auth/device/token`. These endpoints follow the
+[official Baseten CLI source](https://github.com/basetenlabs/baseten-cli/blob/326725fdd72e6cf1862722602b29eb18a5aa8769/internal/cmd/command_context.go).
+DeliDev does not use the CLI's client ID. Its compiled public client, registered
+approval URI, and ordinary inference compatibility must all be accepted before
+capability 6 or connection method 4 is advertised. The pending release leaves the
+approval URI empty; fixture paths are synthetic and do not establish its real path.
+
+Start commits its original attempt and private Device dispatch UUID before its
+once-only authorize request. Device codes remain owned byte buffers in the Go job.
+Only a successful Start or exact live Start replay returns the bounded temporary
+user code and the exact registered HTTPS approval URI. Status never returns either
+code or URL and cannot send requests, recover a token, or create an account.
+The optional complete verification URL is ignored; DeliDev opens the registered
+plain approval URI and displays the user code separately.
+
+The Go job belongs to the original actor, account, provider revision, server
+lifetime, and dispatch UUID. It checks that authority before every poll, waits the
+provider's interval, and increases that interval by five seconds on `slow_down`.
+Only explicit HTTP 400 `authorization_pending` and `slow_down` permit another
+poll. Lost, malformed, redirected, unknown, or ambiguous results stop in recovery.
+Denied or expired authorization terminates without a connection. The shorter of
+the provider expiry and the existing ten-minute attempt lifetime bounds the job.
+Cancel, provider mutation, actor revocation, or shutdown closes dispatch authority;
+late tokens cannot publish a connection. Restart interrupts the original pending
+attempt and never reconstructs a Device code or restarts polling.
+
+A successfully received token enters the common protected completion path through
+a private Go context that public Complete cannot construct. The original attempt
+stays at revision 1 until this sole completion claim. After that claim, Device
+Status's existing `request_id` field identifies the original server completion
+receipt. Explicit code-free recovery uses that receipt and expected revision 1;
+it can finish only its already protected local result and never polls again.
+Cancellation responses still identify their own mutation receipts. Account,
+connection, token refresh, deletion and cleanup retain the common immutable rules.
+
+Native BeginBaseten owns the original window/server/opening epoch and a generation
+without binding any socket or creating a callback listener. BindOpen accepts only
+the compiled registered plain approval URI and original attempt; exact binding
+replay does not open another browser. Reopen is deliberate. Take is unavailable.
+The common account card shows a selectable readonly user code only while waiting,
+clears it after settlement/disposal, and observes the Go job with Status. Codes,
+authorization URLs and tokens never enter React Query caches. Success remains
+unverified and validation/model discovery require a separate user action.
