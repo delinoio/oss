@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
 enum ToolState { Pending = "pending", Running = "running", Completed = "completed", Failed = "failed" }
@@ -68,31 +69,34 @@ function retained(tool: Record<string, unknown>, state: string): Snapshot[] | un
   }
   return snapshots;
 }
-const statusLabels: Record<TodoStatus, string> = { pending: "Pending", in_progress: "In progress", completed: "Completed", cancelled: "Cancelled" };
+const statusLabels: Record<TodoStatus, string> = { get pending() { return copy("native-todo.pending_331551"); }, get in_progress() { return copy("native-todo.inProgress_c1f88e"); }, get completed() { return copy("native-todo.completed_22a970"); }, get cancelled() { return copy("native-todo.cancelled_d353a9"); } };
 function TodoList({ todos }: { todos: Todo[] }) {
-  if (todos.length === 0) return <p>The native list is empty.</p>;
-  return <ol>{todos.map((todo, index) => <li key={index}><pre>{todo.content}</pre><p>Status: {Object.hasOwn(statusLabels, todo.status) ? statusLabels[todo.status as TodoStatus] : todo.status} · Priority: {todo.priority}</p></li>)}</ol>;
+  useLocale();
+  if (todos.length === 0) return <p>{copy("native-todo.theNativeListIsEmpty_d85594")}</p>;
+  return <ol>{todos.map((todo, index) => <li key={index}><pre>{todo.content}</pre><p><LocalizedText id="native-todo.statusPriority_069eae" components={{ s0: <>{Object.hasOwn(statusLabels, todo.status) ? statusLabels[todo.status as TodoStatus] : todo.status}</>, s1: <>{todo.priority}</> }} /></p></li>)}</ol>;
 }
 
 // These are independent native session observations, never editable checkboxes
 // or a synthesized completion percentage. Unknown string values stay visible.
 export function NativeTodoProgress({ progress, state }: { progress: Record<string, unknown>; state: string }) {
+  useLocale();
   const todo = object(progress.todo);
-  if (state !== "complete" || progress.kind !== "opencode-todo" || progress.workspace != null || progress.changes != null || progress.plan != null || progress.diff != null || !shape(progress.todo, ["native_event_id", "todos"]) || typeof todo.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(todo.native_event_id) || !list(todo.todos)) return <details><summary>Todo progress · Unavailable</summary><p>The retained Todo progress is unavailable or inconsistent.</p></details>;
-  return <details open><summary>Todo progress</summary><TodoList todos={todo.todos} /><p>This list is an original native observation; it does not establish session completion.</p></details>;
+  if (state !== "complete" || progress.kind !== "opencode-todo" || progress.workspace != null || progress.changes != null || progress.plan != null || progress.diff != null || !shape(progress.todo, ["native_event_id", "todos"]) || typeof todo.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(todo.native_event_id) || !list(todo.todos)) return <details><summary>{copy("native-todo.todoProgressUnavailable_9bbed9")}</summary><p>{copy("native-todo.theRetainedTodoProgressIsUnavailable_67a7c6")}</p></details>;
+  return <details open><summary>{copy("native-todo.todoProgress_d14a6c")}</summary><TodoList todos={todo.todos} /><p>{copy("native-todo.thisListIsAnOriginalNative_a9e1fd")}</p></details>;
 }
 
 export function NativeTodo({ tool, state }: { tool: Record<string, unknown>; state: string }) {
+  useLocale();
   const snapshots = retained(tool, state), latest = snapshots?.at(-1);
-  if (!snapshots || !latest) return <details><summary>Todo update · Unavailable</summary><p>The retained Todo operation is unavailable or inconsistent.</p></details>;
-  return <details><summary>Todo update · {latest.status}</summary>
-    {latest.todos !== undefined ? <TodoList todos={latest.todos} /> : <p>The native proposal has no applied list yet.</p>}
+  if (!snapshots || !latest) return <details><summary>{copy("native-todo.todoUpdateUnavailable_aabc67")}</summary><p>{copy("native-todo.theRetainedTodoOperationIsUnavailable_f3c01c")}</p></details>;
+  return <details><summary><LocalizedText id="native-todo.todoUpdate_23ea76" components={{ s0: <>{latest.status}</> }} /></summary>
+    {latest.todos !== undefined ? <TodoList todos={latest.todos} /> : <p>{copy("native-todo.theNativeProposalHasNoApplied_e4bc45")}</p>}
     {latest.title !== undefined ? <p>{latest.title}</p> : null}
-    {latest.output !== undefined ? <details><summary>Original native result</summary><pre>{latest.output}</pre></details> : null}
-    {latest.error !== undefined ? <section aria-label="Todo error"><pre>{latest.error}</pre></section> : null}
-    {latest.truncated !== undefined ? <p>{latest.truncated ? "The native result is truncated." : "The native result is not truncated."}</p> : null}
-    {latest.outputPath !== undefined ? <p>Native saved output path: <code>{latest.outputPath}</code></p> : null}
-    {latest.interrupted !== undefined ? <p>Native interruption: {latest.interrupted ? "Observed" : "Not observed"}</p> : null}
-    <details><summary>Original proposal and observations</summary><ol>{snapshots.map((s, i) => <li key={i}><details><summary>{s.status}</summary>{s.todos !== undefined ? <TodoList todos={s.todos} /> : null}{s.raw !== undefined ? <pre>{s.raw}</pre> : null}{s.result !== undefined ? <section aria-label="Observed native list"><TodoList todos={s.result} /></section> : null}</details></li>)}</ol></details>
+    {latest.output !== undefined ? <details><summary>{copy("native-todo.originalNativeResult_0b43e3")}</summary><pre>{latest.output}</pre></details> : null}
+    {latest.error !== undefined ? <section aria-label={copy("native-todo.todoError_8b3b5e")}><pre>{latest.error}</pre></section> : null}
+    {latest.truncated !== undefined ? <p>{latest.truncated ? copy("native-todo.theNativeResultIsTruncated_a74cd4") : copy("native-todo.theNativeResultIsNotTruncated_b9c5cf")}</p> : null}
+    {latest.outputPath !== undefined ? <p><LocalizedText id="native-todo.nativeSavedOutputPath_8c8556" components={{ s0: <code>{latest.outputPath}</code> }} /></p> : null}
+    {latest.interrupted !== undefined ? <p><LocalizedText id="native-todo.nativeInterruption_edde92" components={{ s0: <>{latest.interrupted ? copy("native-todo.observed_64fa8a") : copy("native-todo.notObserved_1d3efc")}</> }} /></p> : null}
+    <details><summary>{copy("native-todo.originalProposalAndObservations_8d63b6")}</summary><ol>{snapshots.map((s, i) => <li key={i}><details><summary>{s.status}</summary>{s.todos !== undefined ? <TodoList todos={s.todos} /> : null}{s.raw !== undefined ? <pre>{s.raw}</pre> : null}{s.result !== undefined ? <section aria-label={copy("native-todo.observedNativeList_5e0e77")}><TodoList todos={s.result} /></section> : null}</details></li>)}</ol></details>
   </details>;
 }

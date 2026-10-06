@@ -2498,6 +2498,20 @@
         "SUBSCRIPTION_ACTION_EXECUTE": 4
       }
     },
+    "CompactSessionRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1
+      }
+    },
+    "CompactSessionResponse": {
+      "kind": "message",
+      "members": {
+        "job": 1,
+        "request_id": 2,
+        "replayed": 3
+      }
+    },
     "SessionContextCapability": {
       "kind": "enum",
       "members": {
@@ -6798,6 +6812,28 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1",
       "number": 19
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "message",
+      "declaration": "CompactSessionRequest",
+      "member": "expected_execution_id",
+      "number": 2
+    },
+    {
+      "issue": 1203,
+      "sharedIssues": [
+        1093,
+        1202
+      ],
+      "kind": "message",
+      "declaration": "CompactSessionResponse",
+      "member": "session",
+      "number": 4
     }
   ]
 }

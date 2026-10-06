@@ -1,3 +1,4 @@
+import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize } from "./settings-task";
 import { useEffect, useLayoutEffect, useRef, useState, useId } from "react";
 import { createPortal } from "react-dom";
@@ -20,6 +21,7 @@ function grantDetails(resource: Resource | undefined, attempt: Attempt) {
 // Raw grant material stays in one opening-owned component, never mutation
 // variables, query keys, Web Storage or logs. Only the digest crosses CreatePairing.
 export function PairingGrant({ authority, active, triggerContainer }: { authority: PairingAuthority; active: boolean; triggerContainer?: HTMLElement | null }) {
+  useLocale();
   const [editing, setEditing] = useState(false), [name, setName] = useState("");
   const [kind, setKind] = useState(PairingKind.Client);
   const [attempt, setAttempt] = useState<Attempt>();
@@ -27,7 +29,7 @@ export function PairingGrant({ authority, active, triggerContainer }: { authorit
   const original = useRef<Attempt>(undefined);
   const [accepted, setAccepted] = useState<Resource | "unknown">();
   const [revealed, setRevealed] = useState(false), [preparing, setPreparing] = useState(false);
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useProductMessage("");
   const [now, setNow] = useState(Date.now);
   const alive = useRef(false), gate = useRef(false);
   const output = useRef<HTMLTextAreaElement>(null);
@@ -67,8 +69,8 @@ export function PairingGrant({ authority, active, triggerContainer }: { authorit
   const revealable = active && initial && latest && !changed && !inconsistent && !current.error && !expired && !used && Boolean(attempt?.code);
   const submit = async () => {
     if (gate.current || attempt || !active || !alive.current) return;
-    if (!name || new TextEncoder().encode(name).byteLength > 256 || name.includes("\0")) { setProblem("Enter a device name of at most 256 UTF-8 bytes without NUL characters."); return; }
-    if (!canonicalId.test(authority.serverId)) { setProblem("Verify the selected server before creating a pairing document."); return; }
+    if (!name || new TextEncoder().encode(name).byteLength > 256 || name.includes("\0")) { setProblem(ownedMessage("pairing-grant.extra.f8ed54ba4886")); return; }
+    if (!canonicalId.test(authority.serverId)) { setProblem(ownedMessage("pairing-grant.extra.13e686c6b6c8")); return; }
     gate.current = true; setPreparing(true); setProblem("");
     try {
       const random = crypto.getRandomValues(new Uint8Array(32));
@@ -79,20 +81,20 @@ export function PairingGrant({ authority, active, triggerContainer }: { authorit
       const value: Attempt = { requestId: newRequestId(), name, type: kind === PairingKind.Client ? DeviceType.CLIENT : DeviceType.WORKER, code, authority: { ...authority } };
       original.current = value; setAttempt(value);
       await mutation.send({ requestId: value.requestId, name: value.name, type: value.type, codeDigest: digest });
-    } catch { if (alive.current) setProblem("Secure pairing material could not be prepared. Use the trusted desktop app and try again."); }
+    } catch { if (alive.current) setProblem(ownedMessage("pairing-grant.extra.25c7a1082af4")); }
     finally { gate.current = false; if (alive.current) setPreparing(false); }
   };
   const discard = () => { original.current = undefined; setAttempt(undefined); setAccepted(undefined); setRevealed(false); setName(""); setProblem(""); focusTrigger.current = true; setEditing(false); };
   const json = revealable && attempt && initial ? JSON.stringify({ version: 1, pairing_id: initial.id, server_id: attempt.authority.serverId, endpoint: attempt.authority.endpoint, code: attempt.code }, null, 2) : "";
-  const createAction = <button type="button" ref={trigger} className="primary" onClick={() => { focusName.current = true; setEditing(true); }}><span aria-hidden="true">+ </span>Create pairing document</button>;
-  return <section aria-label="Device pairing" className={editing ? "paired-device-form" : undefined}>
+  const createAction = <button type="button" ref={trigger} className="primary" onClick={() => { focusName.current = true; setEditing(true); }}><LocalizedText id="pairing-grant.createPairingDocument_888619" components={{ s0: <span aria-hidden="true">+ </span> }} /></button>;
+  return <section aria-label={copy("pairing-grant.devicePairing_8e0d01")} className={editing ? "paired-device-form" : undefined}>
     {triggerContainer === undefined ? createAction : triggerContainer ? createPortal(createAction, triggerContainer) : null}
-    {editing ? <SettingsTaskDialog title="Pair another device" size={SettingsDialogSize.Wide} retained={preparing || mutation.busy || mutation.uncertain || Boolean(attempt || accepted)} onDismiss={() => setRevealed(false)} close={discard}>
-      <h3>Pair another device</h3><p>This single-use document authorizes one desktop client or manually installed Worker. Share it only with your intended device; it expires five minutes after server issuance.</p><p>Server: {authority.endpoint}</p>
-      {!accepted ? <form id={formId} onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked || Boolean(attempt)}><label>Device name<input ref={nameInput} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label><label>Device type<select value={kind} onChange={(event) => setKind(event.target.value as PairingKind)}><option value={PairingKind.Client}>Desktop client</option><option value={PairingKind.Worker}>Worker</option></select></label></fieldset><SettingsTaskActions form={formId}><button className="primary" disabled={blocked || Boolean(attempt) || changed}>Issue single-use document</button></SettingsTaskActions></form> : null}
-      {accepted === "unknown" ? <p role="alert">Issuance was acknowledged without a matching grant. Inspect the original pairing request; no replacement was issued.</p> : initial ? <><p>Expires: {initial.expiresAt}</p><p role="status">{used ? "Pairing document was used. Its private code has been cleared." : expired ? "Pairing document expired. Its private code has been cleared." : latest && !current.error && !inconsistent ? "Single-use grant issued; the latest read has no paired device." : "Grant issued; current use status is unavailable."}</p><Problem error={current.error} />{inconsistent ? <p role="alert">The grant observation no longer matches the original issuance.</p> : null}<button disabled={current.isFetching} onClick={() => void current.refetch()}>Refresh pairing status</button>{revealable ? <button onClick={() => setRevealed((value) => !value)}>{revealed ? "Hide private document" : "Reveal private document"}</button> : null}{revealed && revealable ? <><label>Private pairing document<textarea ref={output} readOnly value={json} rows={8} spellCheck={false} /></label><button onClick={() => { output.current?.focus(); output.current?.select(); }}>Select private document</button><p>Copy the selected document to the intended device. It remains private when this settings area closes.</p></> : null}</> : null}
-      {changed ? <p role="alert">The selected server changed. This original grant cannot be shared or retried through another connection.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
-      <SettingsTaskActions>{mutation.uncertain ? <button disabled={mutation.busy || changed} onClick={mutation.retry}>Retry original pairing issuance</button> : null}<button disabled={blocked} onClick={discard}>{attempt ? "Discard private pairing document" : "Cancel pairing"}</button></SettingsTaskActions>{attempt ? <p>Discarding clears this window's private copy; an already-issued grant remains valid until used or expired. Closing this server window also discards the copy.</p> : null}
+    {editing ? <SettingsTaskDialog title={copy("pairing-grant.pairAnotherDevice_7ceef1")} size={SettingsDialogSize.Wide} retained={preparing || mutation.busy || mutation.uncertain || Boolean(attempt || accepted)} onDismiss={() => setRevealed(false)} close={discard}>
+      <h3>{copy("pairing-grant.pairAnotherDevice_7ceef1")}</h3><p>{copy("pairing-grant.thisSingleUseDocumentAuthorizesOne_61614e")}</p><p><LocalizedText id="pairing-grant.server_90ff00" components={{ s0: <>{authority.endpoint}</> }} /></p>
+      {!accepted ? <form id={formId} onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked || Boolean(attempt)}><label>{copy("pairing-grant.deviceName_155106")}<input ref={nameInput} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label><label>{copy("pairing-grant.deviceType_8562a3")}<select value={kind} onChange={(event) => setKind(event.target.value as PairingKind)}><option value={PairingKind.Client}>{copy("pairing-grant.desktopClient_cfe9ad")}</option><option value={PairingKind.Worker}>{copy("pairing-grant.worker_a67b04")}</option></select></label></fieldset><SettingsTaskActions form={formId}><button className="primary" disabled={blocked || Boolean(attempt) || changed}>{copy("pairing-grant.issueSingleUseDocument_376ab7")}</button></SettingsTaskActions></form> : null}
+      {accepted === "unknown" ? <p role="alert">{copy("pairing-grant.issuanceWasAcknowledgedWithoutAMatching_647b8d")}</p> : initial ? <><p><LocalizedText id="pairing-grant.expires_7c578e" components={{ s0: <>{initial.expiresAt}</> }} /></p><p role="status">{used ? copy("pairing-grant.pairingDocumentWasUsedItsPrivate_ff1ab5") : expired ? copy("pairing-grant.pairingDocumentExpiredItsPrivateCode_63e0c9") : latest && !current.error && !inconsistent ? copy("pairing-grant.singleUseGrantIssuedTheLatest_d0a05f") : copy("pairing-grant.grantIssuedCurrentUseStatusIs_9d25c2")}</p><Problem error={current.error} />{inconsistent ? <p role="alert">{copy("pairing-grant.theGrantObservationNoLongerMatches_e3cf5d")}</p> : null}<button disabled={current.isFetching} onClick={() => void current.refetch()}>{copy("pairing-grant.refreshPairingStatus_08e298")}</button>{revealable ? <button onClick={() => setRevealed((value) => !value)}>{revealed ? copy("pairing-grant.hidePrivateDocument_5c1efa") : copy("pairing-grant.revealPrivateDocument_9353b2")}</button> : null}{revealed && revealable ? <><label>{copy("pairing-grant.privatePairingDocument_55ef2e")}<textarea ref={output} readOnly value={json} rows={8} spellCheck={false} /></label><button onClick={() => { output.current?.focus(); output.current?.select(); }}>{copy("pairing-grant.selectPrivateDocument_93a9e3")}</button><p>{copy("pairing-grant.copyTheSelectedDocumentToThe_0ea9b2")}</p></> : null}</> : null}
+      {changed ? <p role="alert">{copy("pairing-grant.theSelectedServerChangedThisOriginal_fe768e")}</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
+      <SettingsTaskActions>{mutation.uncertain ? <button disabled={mutation.busy || changed} onClick={mutation.retry}>{copy("pairing-grant.retryOriginalPairingIssuance_519736")}</button> : null}<button disabled={blocked} onClick={discard}>{attempt ? copy("pairing-grant.discardPrivatePairingDocument_00f569") : copy("pairing-grant.cancelPairing_b0fcb1")}</button></SettingsTaskActions>{attempt ? <p>{copy("pairing-grant.discardingClearsThisWindowSPrivate_9c7ba6")}</p> : null}
     </SettingsTaskDialog> : null}
   </section>;
 }

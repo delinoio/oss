@@ -1,0 +1,15 @@
+{
+  "native-claude-compaction.compactionTrigger_aedcf8": "압축 계기",
+  "native-claude-compaction.automatic_d461a4": "자동",
+  "native-claude-compaction.manual_b0b9fe": "수동",
+  "native-claude-compaction.tokensBeforeCompaction_602d37": "압축 전 토큰",
+  "native-claude-compaction.tokensAfterCompaction_047fdc": "압축 후 토큰",
+  "native-claude-compaction.notReported_adadfa": "보고되지 않음",
+  "native-claude-compaction.durationMilliseconds_60d19b": "소요 시간(밀리초)",
+  "native-claude-compaction.cumulativeDroppedTokens_b82734": "누적 제외된 토큰",
+  "native-claude-compaction.originalContextReferences_ea9604": "원래 컨텍스트 참조",
+  "native-claude-compaction.contextCountsAreSeparateFromProvider_92356b": "컨텍스트 수는 제공업체 사용량 및 청구 비용과 별개입니다. 이 경계는 저장된 대화를 삭제하거나 입력 완료를 확인하지 않습니다.",
+  "native-claude-compaction.originalNativeCompactionSummary_809770": "네이티브 압축 요약 원문",
+  "native-claude-compaction.thisIsContextSuppliedByClaude_cbc806": "Claude가 제공한 컨텍스트입니다. 새 사용자 메시지가 아니며 저장된 대화 기록을 대체하지 않습니다.",
+  "native-claude-compaction.originalBoundary_3e1890": "원래 경계"
+}

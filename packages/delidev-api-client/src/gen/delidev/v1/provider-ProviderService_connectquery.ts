@@ -20,6 +20,11 @@ export const listProviderInventory = ProviderService.method.listProviderInventor
 export const discoverModels = ProviderService.method.discoverModels;
 
 /**
+ * @generated from rpc delidev.v1.ProviderService.ListKnownSubscriptionModels
+ */
+export const listKnownSubscriptionModels = ProviderService.method.listKnownSubscriptionModels;
+
+/**
  * @generated from rpc delidev.v1.ProviderService.SearchModels
  */
 export const searchModels = ProviderService.method.searchModels;

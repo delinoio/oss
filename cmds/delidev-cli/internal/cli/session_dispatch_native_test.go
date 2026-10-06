@@ -142,7 +142,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			ready := make(chan struct{})
 			done := make(chan error, 1)
 			go func() {
-				done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil))}, func(server.Endpoint) { close(ready) })
+				done <- server.Serve(ctx, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil))}, func(server.Endpoint) { close(ready) })
 			}()
 			defer func() {
 				cancel()

@@ -1,0 +1,14 @@
+{
+  "native-claude-message.streaming_a951c5": "스트리밍 중",
+  "native-claude-message.contentComplete_829c09": "내용 완료됨",
+  "native-claude-message.streamClosed_5eab18": "스트림 종료됨",
+  "native-claude-message.interruptedPartialResponse_637011": "중단됨 · 일부 응답",
+  "native-claude-message.claudeMessageUnavailable_9efc2c": "Claude 메시지를 확인할 수 없음",
+  "native-claude-message.theRetainedClaudeMessageIsUnavailable_453226": "유지된 Claude 메시지를 확인할 수 없거나 일관되지 않습니다.",
+  "native-claude-message.claudeMessageContent_fa712d": "Claude 메시지 내용",
+  "native-claude-message.toolProposal_e8bdb5": "도구 제안: <s0/>. <s1/>",
+  "native-claude-message.reasoning_4d3137": "추론 · <s0/>",
+  "native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3": "하네스가 추론을 가렸습니다. <s0/>",
+  "native-claude-message.nativeStopReason_e2e029": "네이티브 중지 이유: <s0/>",
+  "native-claude-message.nativeStopSequence_96951d": "네이티브 중지 순서"
+}
