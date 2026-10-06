@@ -46,6 +46,14 @@ export function parseInventory(output, root, { paths = nativePaths, canonicalize
   }
   if (depth !== 0 || quoted || records.length === 0) throw new Error("Empty or incomplete Go inventory");
   const seen = new Set();
+  const originalDirectories = new Map();
+  for (const record of records) {
+    const originalPath = record.ForTest === undefined ? record.ImportPath : typeof record.ForTest === "string" ? record.ForTest : null;
+    if (!originalPath) continue;
+    const directories = originalDirectories.get(originalPath) ?? new Set();
+    directories.add(record.Dir);
+    originalDirectories.set(originalPath, directories);
+  }
   const inventory = [];
   for (const record of records) {
     if (typeof record.ImportPath !== "string" || !within(record.ImportPath, modulePath) || typeof record.Dir !== "string" || record.Error || record.DepsErrors?.length || (record.ForTest !== undefined && typeof record.ForTest !== "string")) throw new Error("Invalid Go package discovery");
@@ -55,8 +63,13 @@ export function parseInventory(output, root, { paths = nativePaths, canonicalize
     if (paths.isAbsolute(nativeRelative) || directory.startsWith("../") || directory === "..") throw new Error("Go package is outside the checkout");
     // -test resolves test embed files on original records, but also emits test
     // binaries and rewritten packages. Those records must never own CI shards
-    // or turn test-only embed bytes into production dependency seeds.
-    if (record.ForTest || record.ImportPath.endsWith(".test")) continue;
+    // or turn test-only embed bytes into production dependency seeds. Match a
+    // test binary to a known original path and directory so a real package
+    // ending in `.test` remains in the inventory.
+    const isTestBinary = record.ImportPath.endsWith(".test") &&
+      originalDirectories.get(record.ImportPath.slice(0, -".test".length))?.has(record.Dir) &&
+      record.Name === "main";
+    if (record.ForTest || isTestBinary) continue;
     if (/\s/u.test(record.ImportPath) || seen.has(record.ImportPath)) throw new Error("Invalid Go package discovery");
     seen.add(record.ImportPath);
     const imports = ["Imports", "TestImports", "XTestImports"].flatMap((key) => {

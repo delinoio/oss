@@ -133,6 +133,12 @@ test("resolved embed inventory retains original packages and excludes synthetic 
   assert.deepEqual(parseInventory(JSON.stringify({ ImportPath: modulePath, Dir: root, EmbedFiles: ["asset.json"] }), root)[0].embedFiles, ["asset.json"]);
 });
 
+test("native inventory retains a real package whose import path ends in `.test`", () => {
+  const packageRecord = { ImportPath: path("cmds/sample.test"), Dir: join(root, "cmds/sample.test"), Name: "sample" };
+  const testBinary = { ImportPath: `${packageRecord.ImportPath}.test`, Dir: packageRecord.Dir, Name: "main" };
+  assert.deepEqual(parseInventory([packageRecord, testBinary].map(JSON.stringify).join("\n"), root).map((item) => item.path), [packageRecord.ImportPath]);
+});
+
 test("Windows discovery accepts equivalent native paths and rejects other drives", () => {
   const checkout = "D:\\a\\oss\\oss";
   const record = { ImportPath: path("cmds/sample"), Dir: "d:\\a\\oss\\oss\\cmds\\sample", TestEmbedFiles: ["child\\testdata\\fixture.json"] };
