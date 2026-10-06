@@ -64,7 +64,7 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 	}
 	if strings.Contains(value, "://") {
 		u, err := url.Parse(value)
-		if err != nil || u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" || !cloneHost(u.Hostname()) || (u.Scheme != "https" && u.Scheme != "ssh") {
+		if err != nil || u.Opaque != "" || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Host, ":") || !cloneHost(u.Hostname()) || (u.Scheme != "https" && u.Scheme != "ssh") {
 			return result, cloneInvalidURL()
 		}
 		if u.Port() != "" {
@@ -108,6 +108,9 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 			return result, cloneInvalidURL()
 		}
 		result.Transport, result.Host, result.Path = RepositoryCloneSSH, host, remotePath
+	}
+	if Text(result.Path, "remote repository path", 4096, true) != nil {
+		return RepositoryCloneURL{}, cloneInvalidURL()
 	}
 	for _, c := range result.Path {
 		if unicode.IsControl(c) || c == '\\' {
