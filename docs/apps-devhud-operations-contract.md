@@ -84,6 +84,8 @@ Administrator support triage uses `AdminService` metadata-only user, usage, uplo
 
 ## High-risk CEF vulnerability response
 
+The comparison summary reports committed/upstream revisions, comparison status and counts, and retained/total security-signal counts, including truncation. A successful comparison must complete this summary before uploading its bounded JSON report with 35-day retention. Summary fixtures syntax-check the actual Node heredoc and execute the workflow step with synthetic zero-signal and truncated-signal reports; hosted comparison and artifact-upload evidence remain separate.
+
 The monthly `.github/workflows/devhud-cef-security-review.yml` report compares the committed Tauri revision with upstream `feat/cef`; it is read-only and produces metadata only. A high-risk signal requires an immediate maintainer-owned change:
 
 1. Pin a reviewed Tauri/CEF revision in `apps/devhud/cef-pins.json`, every matching `Cargo.lock` git source entry, the root `Cargo.toml`, `apps/devhud/src-tauri/Cargo.toml`, and `apps/devhud/scripts/verify-pins.mjs`. Update every runtime revision consumer—`apps/devhud/src/diagnostics.ts`, `packages/devhud-api-client/src/validation.ts`, and `servers/devhud-api/internal/rpc/diagnostics.go`—or mechanically derive its value from the pin. The CEF review workflow derives its comparison revision from `cef-pins.json`; do not add a separate hardcoded workflow revision. Record the old/new revision, reason, compatibility result, and review reference in this contract and the release contracts.
