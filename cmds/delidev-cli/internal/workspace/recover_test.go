@@ -113,6 +113,41 @@ func TestExplicitPartialRecoveryKeepsDurableCleanupProof(t *testing.T) {
 		t.Fatal("another job reused cleanup proof")
 	}
 }
+
+func TestManagedCleanupReplayUsesRemovalClaimAfterRootRemoval(t *testing.T) {
+	m, request, _ := managedCloneFixture(t)
+	manifest, err := m.Prepare(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.State = CleanupPending
+	raw, _ := json.Marshal(manifest)
+	if err := security.WriteAtomic(filepath.Join(m.Root, "workspaces", string(request.SessionID), "manifest.json"), raw); err != nil {
+		t.Fatal(err)
+	}
+	input := recoveryInput(request)
+	input.Action = CleanupPreparation
+	if result, err := m.Recover(context.Background(), input, false); err != nil || result.Outcome != RecoveredClean {
+		t.Fatalf("managed cleanup failed: %+v %v", result, err)
+	}
+	proofPath := filepath.Join(m.Root, "workspace-recovery", string(input.JobID)+".json")
+	raw, err = security.ReadPrivate(proofPath, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proof cleanupProof
+	if err := domain.Decode(raw, &proof); err != nil || proof.Claim == nil {
+		t.Fatalf("cleanup removal claim missing: %v", err)
+	}
+	proof.Complete = false
+	if err := writeCleanupProof(proofPath, proof); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := m.Recover(context.Background(), input, false); err != nil || result.Outcome != RecoveredClean {
+		t.Fatalf("managed cleanup replay failed: %+v %v", result, err)
+	}
+}
+
 func TestRecoveryRejectsPartialOwnershipMismatchWithoutDeletion(t *testing.T) {
 	m := manager(t)
 	request := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat, Repositories: []RepositorySpec{}}

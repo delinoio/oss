@@ -613,6 +613,20 @@ func (m *Manager) verify(manifest Manifest) error {
 	return nil
 }
 func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) error {
+	var claim *cleanupClaim
+	if _, err := os.Lstat(root); err == nil {
+		identity, identityErr := directoryIdentityDigest(root)
+		if identityErr != nil {
+			return identityErr
+		}
+		if manifest.ManagedRootDigest != "" && manifest.ManagedRootDigest != identity {
+			return ResultUncertain()
+		}
+		claim = &cleanupClaim{Version: 1, SessionID: manifest.SessionID, RootIdentity: identity, ManifestDigest: manifestDigest(manifest)}
+	}
+	return m.cleanupWithClaim(ctx, root, manifest, claim)
+}
+func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Manifest, claim *cleanupClaim) error {
 	if err := m.requireNoSidechatReferences(ctx, manifest.SessionID); err != nil {
 		return err
 	}
@@ -631,9 +645,9 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 	if manifest.Reference != nil {
 		return m.removeSidechatMetadata(ctx, root, manifest)
 	}
-	if manifest.ManagedRootDigest != "" {
+	if claim != nil {
 		current, err := directoryIdentityDigest(root)
-		if err != nil || current != manifest.ManagedRootDigest {
+		if err != nil || current != claim.RootIdentity || claim.ManifestDigest != manifestDigest(manifest) || claim.SessionID != manifest.SessionID || claim.Version != 1 {
 			return ResultUncertain()
 		}
 	}
@@ -682,7 +696,10 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 		}
 	}
 	if manifest.ManagedRootDigest != "" {
-		if current, err := directoryIdentityDigest(root); err != nil || current != manifest.ManagedRootDigest {
+		if claim == nil {
+			return ResultUncertain()
+		}
+		if current, err := directoryIdentityDigest(root); err != nil || current != claim.RootIdentity {
 			return ResultUncertain()
 		}
 		allowed := map[string]bool{"manifest.json": true}
