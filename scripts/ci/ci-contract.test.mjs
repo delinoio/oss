@@ -34,7 +34,7 @@ const devhudJobs = [
   "devhud-api", "devhud-oci", "devhud-supply-chain", "devhud-release-contracts",
 ];
 const achJobs = ["async-commit-hook"];
-const delidevJobs = ["delidev-protocol"];
+const delidevJobs = ["delidev-protocol", "delidev-client", "delidev-frontend"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -108,6 +108,7 @@ test("Node jobs use one frozen install and the planner's exact comparison throug
     }
   }
   const frontend = workflow.jobs["devhud-frontend"];
+  assert.equal(namedStep(frontend, "Test DevHud API client").run, "pnpm --filter @delinoio/devhud-api-client test");
   assert.equal(namedStep(frontend, "Run affected frontend contracts").run, "node scripts/ci/run-affected.mjs devhud test");
   assert.match(namedStep(frontend, "Verify immutable desktop and mobile pins").run, /verify:pins/u);
   const testScript = packages["apps/devhud/package.json"].scripts.test;
@@ -208,25 +209,22 @@ test("desktop and mobile matrices match the committed architecture contracts", (
   }
 });
 
-test("DeliDev owns protocol, client and desktop validation without DevHud client checks", () => {
+test("DeliDev schema validation preserves shared freshness without client or desktop tests", () => {
   assert.equal(workflow.jobs["devhud-protocol"], undefined);
   const job = workflow.jobs["delidev-protocol"];
-  assert.equal(job.name, "DeliDev Protocol and Client");
+  assert.equal(job.name, "DeliDev Schemas and Generated Bindings");
   assert.equal(job["runs-on"], "ubuntu-latest");
   const commands = job.steps.map(({ run }) => run ?? "").join("\n");
   for (const command of [
     "pnpm proto:check", "go test ./protos/gen/go/delidev/...",
-    "pnpm --filter @delinoio/delidev-api-client lint",
-    "pnpm --filter @delinoio/delidev-api-client test",
-    "pnpm --filter @delinoio/delidev-api-client build",
-    "pnpm --filter delidev-desktop test",
   ]) assert.ok(commands.includes(command), command);
-  assert.doesNotMatch(commands, /@delinoio\/devhud-api-client|go test \.\/protos\/\.\.\./u);
+  assert.doesNotMatch(commands, /api-client|delidev-desktop|go test \.\/protos\/\.\.\./u);
   assert.equal(job.steps.filter(({ run }) => run?.includes("pnpm install")).length, 1);
 });
 
 test("implemented DevHud conformance commands are wired to their owning jobs", () => {
   const commands = new Map([
+    ["delidev-protocol", ["proto:check", "go test ./protos/"]],
     ["devhud-api", ["ci:format", "ci:vet", "ci:build", "ci:unit", "ci:migrations", "ci:integration", "ci:api", "ci:sweeper"]],
     ["devhud-rust-conformance", ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]],
     ["devhud-frontend", ["run-affected.mjs devhud test", "verify:pins"]],
@@ -427,7 +425,7 @@ test("local CI commands are documented by repository contracts", () => {
   for (const command of ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:security", "test:adapters"]) assert.ok(project.includes(command), command);
 });
 
-test("Go validation retains full Unix suites and four independent native Windows shards", () => {
+test("Go validation retains full main suites and four independent native Windows shards", () => {
   const job = workflow.jobs["go-test"];
   assert.equal(job.strategy["fail-fast"], false);
   assert.deepEqual(job.strategy.matrix, { include: [
@@ -442,7 +440,7 @@ test("Go validation retains full Unix suites and four independent native Windows
   const embeds = namedStep(job, "Generate and verify embedded administrator assets");
   for (const name of ["devhud-admin", "async-commit-hook"]) assert.ok(embeds.run.includes(`pnpm --filter ${name} build:embedded`));
   assert.ok(job.steps.indexOf(embeds) < job.steps.indexOf(namedStep(job, "Run go test")));
-  assert.equal(step(job, "ci-go").with["cache-scope"], "${{ matrix.os == 'windows-latest' && format('go-test-{0}', matrix.shard) || '' }}");
+  assert.equal(step(job, "ci-go").with["cache-scope"], "${{ format('go-test-{0}', matrix.shard) }}");
 });
 
 test("scoped Go caches preserve default keys and restore shared main caches on first use", () => {
@@ -510,15 +508,69 @@ test("React Forge CI removes scene-engine and visual jobs while retaining docume
   assert.doesNotMatch(JSON.stringify(workflow), /react-forge-scenes|react-forge-scene-inputs|render-scenes\.py|compare-scenes\.py/u);
 });
 
-test("workspace Rust CI excludes React Forge scene engines", () => {
-  for (const [jobId, stepName, command] of [
-    ["rust-clippy", "Run clippy", "cargo clippy"],
-    ["rust-test", "Run cargo test", "cargo test"],
-  ]) {
-    const run = namedStep(workflow.jobs[jobId], stepName).run;
-    assert.ok(run.startsWith(command), `${jobId}: ${run}`);
-    for (const engine of ["forge-scene", "forge-glb", "forge-fbx"]) {
-      assert.ok(run.includes(`--exclude ${engine}`), `${jobId} must exclude ${engine}`);
+test("Rust CI consumes one verified prebuilt selection and gates native preparation", () => {
+  const changes = workflow.jobs.changes;
+  assert.equal(changes["runs-on"], "ubuntu-24.04");
+  assert.equal(changes.outputs.jobs, "${{ steps.rust.outputs.jobs || steps.plan.outputs.jobs }}");
+  assert.equal(changes.outputs.rust_packages, "${{ steps.rust.outputs.rust_packages || '[]' }}");
+  const prepare = namedStep(changes, "Prepare verified prebuilt cargo-mono");
+  const live = namedStep(changes, "Verify published cargo-mono selection behavior");
+  const selection = namedStep(changes, "Select final Rust packages and jobs");
+  assert.equal(prepare.run, "node scripts/ci/cargo-mono-prebuilt.mjs");
+  assert.equal(live.run, "node --test scripts/ci/rust-affected-live.test.mjs");
+  assert.equal(selection.run, "node scripts/ci/rust-affected.mjs plan");
+  assert.equal(prepare.if, selection.if);
+  assert.ok(changes.steps.indexOf(prepare) < changes.steps.indexOf(live));
+  assert.ok(changes.steps.indexOf(live) < changes.steps.indexOf(selection));
+  assert.equal(selection.env.CI_BASE, "${{ steps.plan.outputs.base }}");
+  assert.equal(selection.env.CI_HEAD, "${{ steps.plan.outputs.head }}");
+  const selected = name => "${{ contains(fromJSON(needs.changes.outputs.rust_packages), '" + name + "') }}";
+  for (const [id, name, command] of [["rust-test", "Run cargo test", "test"], ["rust-clippy", "Run clippy", "clippy"]]) {
+    const job = workflow.jobs[id];
+    const check = namedStep(job, name);
+    assert.equal(check.run, `node scripts/ci/rust-affected.mjs ${command}`);
+    assert.equal(check.env.RUST_PACKAGES, "${{ needs.changes.outputs.rust_packages }}");
+    assert.equal(namedStep(job, "Build DevHUD frontend").if, selected("devhud"));
+    assert.equal(namedStep(job, "Build DeliDev native inputs").if, selected("delidev-desktop"));
+    if (id === "rust-clippy") assert.equal(namedStep(job, "Setup Go for DeliDev sidecar").if, selected("delidev-desktop"));
+    else {
+      const go = namedStep(job, "Setup Go for Rust test prerequisites");
+      for (const owner of ["delidev-desktop", "pnport"]) assert.ok(go.if.includes(owner));
+    }
+    assert.ok(namedStep(job, "Install DevHUD Linux prerequisites").if.includes("rust_packages"));
+    assert.ok(namedStep(job, "Save Go cache after successful main validation").if.includes("steps.ci-go.outcome == 'success'"));
+  }
+  assert.equal(namedStep(workflow.jobs["rust-test"], "Build pnport injection companion").if, selected("pnport"));
+  assert.equal(namedStep(workflow.jobs["rust-fmt"], "Run rustfmt").run, "cargo fmt --all --check");
+});
+
+
+test("Go PR selection uses exact comparisons while main, manual and forced validation stay complete", () => {
+  for (const id of ["go-test", "go-quality"]) {
+    const job = workflow.jobs[id];
+    const execution = job.steps.find(({ run }) => run?.includes(id === "go-test" ? "scripts/ci/go-test.mjs" : "scripts/ci/go-quality.mjs"));
+    assert.equal(execution.env.CI_GO_MODE, "${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['" + id + "'] && 'affected' || 'full' }}");
+    assert.equal(execution.env.CI_GO_BASE, "${{ needs.changes.outputs.base }}");
+    assert.equal(execution.env.CI_GO_HEAD, "${{ needs.changes.outputs.head }}");
+  }
+  for (const id of ["ci-contracts", "go-quality", "async-commit-hook", "devhud-api", "delidev-protocol", "delidev-client"]) assert.equal(step(workflow.jobs[id], "ci-go").with["cache-scope"], id);
+  assert.equal(namedStep(workflow.jobs["go-test"], "Verify native affected Go discovery").run, "node --test scripts/ci/go-affected.test.mjs");
+});
+
+test("DeliDev desktop phases partition all tests and preserve uncached executable reuse", () => {
+  const job = workflow.jobs["delidev-frontend"];
+  assert.equal(job.strategy["fail-fast"], false);
+  assert.equal(job.strategy.matrix, "${{ fromJSON(needs.changes.outputs.delidev_frontend_matrix) }}");
+  assert.equal(namedStep(job, "Build runner-owned Go fixture executable").if, "${{ matrix.phase != 'checks' }}");
+  const manifest = JSON.parse(readFileSync(`${root}/apps/delidev/package.json`, "utf8"));
+  assert.equal(manifest.scripts["test:ci:tests-1"], "vitest run --shard=1/2");
+  assert.equal(manifest.scripts["test:ci:tests-2"], "vitest run --shard=2/2");
+  for (const command of ["pnpm typecheck", "test:bundle-dry-run", "test:desktop-launch", "test:widget", "test:qa", "pnpm build", "qa/check-release.mjs"]) assert.ok(manifest.scripts["test:ci:checks"].includes(command));
+  for (const [owner, tasks] of [["apps/delidev", ["test:ci:tests-1", "test:ci:tests-2"]], ["packages/delidev-api-client", ["test", "test:unit"]]]) {
+    const config = JSON.parse(readFileSync(`${root}/${owner}/turbo.json`, "utf8"));
+    for (const task of tasks) {
+      assert.equal(config.tasks[task].cache, false);
+      assert.deepEqual(config.tasks[task].passThroughEnv, ["DELIDEV_TEST_BINARY"]);
     }
   }
 });
