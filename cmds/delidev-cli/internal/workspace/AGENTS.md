@@ -78,3 +78,8 @@ Compact settled removal proof to one original inventory path per entry, without 
 - Sidechat preparation synchronizes a private 4 MiB original-job/parent/child/inode-bound claim in sidechat-preparations/ before manifest publication. Failure and restart cleanup remove only matching original metadata; missing, malformed or changed claims cannot adopt existing roots. Published-child deletion retires the matching claim only after metadata absence. Parent files and native thread ownership never follow from this claim.
 
 - Remote Worktree sources follow the workspace contract: persist original clone ownership before Git, require native commitments and joined process cleanup, retain uncertain outcomes and legacy accepted requests, and keep independent Fork Git stores and metadata-only Sidechat lifetimes. Managed session clones are an explicit scratch-creation exception with session ownership; they grant no Local folder deletion authority.
+- Managed Worktree clones use the restricted clone Git profile for remote URL
+  changes, inspection, PR preparation and automatic fetches. Add every configured
+  preferred/base/starting remote name against the one pinned repository URL and
+  mirror initial tracking refs without stale fallback. Never widen the ambient
+  transport policy for an alias or later fetch.

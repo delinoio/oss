@@ -129,6 +129,24 @@ func TestManagedCloneDetachedFullHistoryAndRestartReplay(t *testing.T) {
 		t.Fatal("accepted source changed")
 	}
 }
+
+func TestManagedCloneProvisionsConfiguredRemoteAliases(t *testing.T) {
+	m, input, _ := managedCloneFixture(t)
+	input.Repositories[0].Starting = domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}
+	input.Repositories[0].AutoFetch = false
+	manifest, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := manifest.Repositories[0]
+	if !strings.Contains(gitTest(t, repo.Path, "remote"), "upstream") {
+		t.Fatal("configured remote alias was not provisioned")
+	}
+	if repo.Starting.Remote != "upstream" || repo.StartingCommit == "" {
+		t.Fatalf("alias reference was not resolved from the initial clone: %+v", repo)
+	}
+}
+
 func TestManagedCloneConcurrentPreparationRunsOnce(t *testing.T) {
 	m, input, marker := managedCloneFixture(t)
 	var group sync.WaitGroup

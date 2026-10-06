@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -39,6 +40,7 @@ func ForkRequiresManagedClone(input domain.ForkJobInput) (bool, error) {
 // transfers files to the user and a published Local clone never belongs here.
 func (g Git) cloneProfile() Git {
 	g.cloneDiagnostics = true
+	g.restrictedTransport = true
 	g.Timeout = RepositoryCloneTimeout
 	g.environment = append(gitEnvironment(), "GIT_LFS_SKIP_SMUDGE=1")
 	g.HooksDir = os.DevNull
@@ -57,6 +59,91 @@ func cloneArguments(source, destination, template, remote string, noCheckout, in
 		args = append(args, "--no-local", "--no-hardlinks")
 	}
 	return append(args, "--", source, destination)
+}
+
+func managedCloneRemotes(spec RepositorySpec, primary string) ([]string, error) {
+	if err := (domain.Reference{Type: domain.RemoteBranch, Remote: primary, Name: "branch"}).Validate(false); err != nil {
+		return nil, err
+	}
+	remotes := []string{primary}
+	seen := map[string]bool{primary: true}
+	add := func(remote string) error {
+		if remote == "" || seen[remote] {
+			return nil
+		}
+		if err := (domain.Reference{Type: domain.RemoteBranch, Remote: remote, Name: "branch"}).Validate(false); err != nil {
+			return err
+		}
+		seen[remote] = true
+		remotes = append(remotes, remote)
+		return nil
+	}
+	if err := add(spec.PreferredRemote); err != nil {
+		return nil, err
+	}
+	for _, ref := range []domain.Reference{spec.Base, spec.Starting} {
+		if ref.Type == domain.RemoteBranch {
+			if err := add(ref.Remote); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return remotes, nil
+}
+
+// A repository stores one credential-free URL. Configure every referenced
+// remote name against that pinned URL so accepted multi-remote references are
+// visible to inspection and later resolution. Fetches still use cloneProfile,
+// including the automatic-fetch policy selected by the repository.
+func provisionManagedCloneRemotes(ctx context.Context, git Git, path, url string, spec RepositorySpec, primary string) error {
+	remotes, err := managedCloneRemotes(spec, primary)
+	if err != nil {
+		return err
+	}
+	for _, remote := range remotes[1:] {
+		if _, err := git.run(ctx, path, "remote", "add", remote, url); err != nil {
+			return err
+		}
+	}
+	if len(remotes) == 1 {
+		return nil
+	}
+	// The pinned URL is the only source URL available to this managed clone.
+	// Mirror the refs already obtained by the initial clone into each alias so
+	// auto_fetch=false remains meaningful without a stale or missing-reference
+	// fallback. Later fetches still target the alias through cloneProfile.
+	raw, err := git.run(ctx, path, "for-each-ref", "--format=%(refname)%00%(objectname)", "refs/remotes/"+primary+"/")
+	if err != nil {
+		return err
+	}
+	primaryPrefix := "refs/remotes/" + primary + "/"
+	for _, line := range strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		ref, object, ok := strings.Cut(line, "\x00")
+		if !ok || !strings.HasPrefix(ref, primaryPrefix) || (len(object) != 40 && len(object) != 64) {
+			return ResultUncertain()
+		}
+		if _, err := hex.DecodeString(object); err != nil {
+			return ResultUncertain()
+		}
+		for _, remote := range remotes[1:] {
+			alias := "refs/remotes/" + remote + "/" + strings.TrimPrefix(ref, primaryPrefix)
+			if _, err := git.run(ctx, path, "update-ref", "--no-deref", alias, object); err != nil {
+				return err
+			}
+		}
+	}
+	if symbolic, err := git.run(ctx, path, "symbolic-ref", "--quiet", "refs/remotes/"+primary+"/HEAD"); err == nil && strings.HasPrefix(string(symbolic), primaryPrefix) {
+		for _, remote := range remotes[1:] {
+			alias := "refs/remotes/" + remote + "/" + strings.TrimPrefix(strings.TrimSpace(string(symbolic)), primaryPrefix)
+			if _, err := git.run(ctx, path, "symbolic-ref", "refs/remotes/"+remote+"/HEAD", alias); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 func slicesContainManagedClone(repos []RepositorySpec) bool {
 	for _, repo := range repos {
@@ -144,16 +231,19 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 		return *entry, nil, ResultUncertain()
 	}
 	if spec.SourceKind == IndependentForkSource {
-		if _, err := git.run(ctx, prepared.Path, "remote", "set-url", remote, spec.RemoteURL); err != nil {
+		if _, err := clone.run(ctx, prepared.Path, "remote", "set-url", remote, spec.RemoteURL); err != nil {
 			return *entry, nil, err
 		}
 	}
-	inspection, err := git.Inspect(ctx, prepared.Path)
+	if err := provisionManagedCloneRemotes(ctx, clone, prepared.Path, spec.RemoteURL, spec, remote); err != nil {
+		return *entry, nil, err
+	}
+	inspection, err := clone.Inspect(ctx, prepared.Path)
 	if err != nil {
 		return *entry, nil, err
 	}
 	if spec.PRTarget != nil {
-		if err := git.preparePRObjects(ctx, inspection, spec); err != nil {
+		if err := clone.preparePRObjects(ctx, inspection, spec); err != nil {
 			return *entry, nil, err
 		}
 	}
@@ -163,7 +253,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 			return *entry, nil, err
 		}
 	}
-	entry.StartingCommit, err = git.Resolve(ctx, inspection, entry.Starting, spec.AutoFetch)
+	entry.StartingCommit, err = clone.Resolve(ctx, inspection, entry.Starting, spec.AutoFetch)
 	if err != nil {
 		return *entry, nil, err
 	}
@@ -172,7 +262,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	}
 	entry.BaseCommit = entry.StartingCommit
 	if entry.Base != entry.Starting {
-		entry.BaseCommit, err = git.Resolve(ctx, inspection, entry.Base, spec.AutoFetch)
+		entry.BaseCommit, err = clone.Resolve(ctx, inspection, entry.Base, spec.AutoFetch)
 		if err != nil {
 			return *entry, nil, err
 		}

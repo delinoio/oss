@@ -76,6 +76,10 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Grok initial mode in execution configuration is an original server-retained observation. Keep it attributed to its original execution/input and distinct from current mode, sandbox permissions, requested settings and account readiness. Missing values remain unavailable; reading this field cannot enable Grok dispatch.
 
 - Portable configuration uses generated ConfigurationService operations under `docs/cmds-delidev-configuration-transfer-contract.md`. Preserve authoritative original JSON bytes and bigint revisions; never round-trip configuration through JavaScript numbers. Require explicit mappings and separate full change review/apply, invalidate edited previews, retain exact uncertain requests and keep acknowledged unknown outcomes blocked. No implicit account/device authentication or persistent document cache.
+- Portable repository imports distinguish a successful status response without
+  capability 37 from a failed status read. The failed read remains actionable
+  with its typed error and retry control; do not present upgrade guidance or
+  enable preview/apply until the capability response is known.
 
 - Notification preferences and display reservations follow `docs/cmds-delidev-inbox-contract.md`. Derive their client identity from the authenticated principal, recheck current source/Archive/dispatch/recovery and response state at claim commit, and reserve once before any native side effect. Receipt replay and reconnect return observation only, never another display grant; no TTL or failed/uncertain report can requeue a notification. Keep reports metadata-only and terminal, with OS submission distinct from human observation. Neither preference edits nor claims/reports can change source responses, inbox reads or execution. Preserve synchronized pre-migration backups and original v1-v16 history when adding schema v17.
 

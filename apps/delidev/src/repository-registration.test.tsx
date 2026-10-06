@@ -333,6 +333,9 @@ function connectedProfile(f: ReturnType<typeof fixture>, pending = false) {
 }
 it("clones with fresh local proof and no frontend registration after acceptance", async () => {
   const f = fixture(metadata, true); f.mount(); await f.add(); cloneInputs();
+  expect((screen.getByRole("textbox", { name: "Repository name" }) as HTMLInputElement).disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "Optional settings" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(true);
   const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fireEvent.click(button); await screen.findByText("Repository clone accepted");
   expect(f.proof).toHaveBeenCalledTimes(1); expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();

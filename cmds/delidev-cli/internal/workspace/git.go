@@ -30,17 +30,18 @@ type Inspection struct {
 	GitHubRepositories map[string]GitHubRepository `json:"github_repositories,omitempty"`
 }
 type Git struct {
-	Executable       string
-	ProcessRoot      string
-	OwnerID          domain.ID
-	Logger           *slog.Logger
-	HooksDir         string
-	Timeout          time.Duration
-	environment      []string
-	cloneDiagnostics bool
-	readOnly         bool
-	offline          bool
-	diffIndexFile    string
+	Executable          string
+	ProcessRoot         string
+	OwnerID             domain.ID
+	Logger              *slog.Logger
+	HooksDir            string
+	Timeout             time.Duration
+	environment         []string
+	cloneDiagnostics    bool
+	readOnly            bool
+	offline             bool
+	restrictedTransport bool
+	diffIndexFile       string
 }
 
 type limitedOutput struct {
@@ -93,6 +94,12 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		// Even check-attr can open the index and invoke a configured fsmonitor.
 		// Read-only workspace observations never grant that command authority.
 		commandArgs = append(commandArgs, "-c", "core.fsmonitor=false")
+	}
+	if g.restrictedTransport {
+		// Managed clone commands keep the same transport boundary after the
+		// initial clone. In particular, automatic branch fetches must not inherit
+		// a repository, system or user redirect/protocol policy.
+		commandArgs = append(commandArgs, "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false")
 	}
 	if g.HooksDir != "" {
 		commandArgs = append(commandArgs, "-c", "core.hooksPath="+g.HooksDir)

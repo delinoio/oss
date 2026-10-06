@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, ResourceSchema, ResourceService, EntityKind, newRequestId } from "@delinoio/delidev-api-client";
+import { ConfigurationService, ResourceSchema, ResourceService, EntityKind, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { ConfigurationTransfer, formatConfigurationReview } from "./configuration-transfer";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
@@ -17,14 +17,16 @@ function fixture() {
   const exported = vi.fn(async () => ({ documentJson: encode(bundle) }));
   const preview = vi.fn(async (_input: unknown) => ({ previewJson: previewBytes }));
   const apply = vi.fn(async (_input: unknown) => ({ resultJson: encode({ job_id: jobId, state: "queued", resources: [] }) }));
+  const status = vi.fn(async () => ({ capabilities: [SystemCapability.REMOTE_REPOSITORIES_V1] }));
   let state = "queued";
   const transport = createRouterTransport((router) => {
     router.service(ConfigurationService, { exportConfiguration: exported, previewConfigurationImport: preview, applyConfigurationImport: apply });
+    router.service(SystemService, { getStatus: status });
     router.service(ResourceService, { getResource: () => ({ resource: create(ResourceSchema, { id: jobId, kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ type: "import-configuration", state }) }) }), listResources: () => ({ resources: [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { bundle, previewBytes, exported, preview, apply, client, view, state: (next: string) => { state = next; } };
+  return { bundle, previewBytes, exported, preview, apply, client, view, status, state: (next: string) => { state = next; } };
 }
 function load(bundle: unknown) {
   fireEvent.change(screen.getByRole("textbox", { name: "Configuration JSON" }), { target: { value: typeof bundle === "string" ? bundle : JSON.stringify(bundle) } });
@@ -194,4 +196,19 @@ it("refuses a service-native v1 graph before requesting an import preview", () =
   const value = fixture(); render(value.view());
   load({ ...value.bundle, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt" } }] });
   expect(screen.getByText(/Service-native subscription configuration requires a version 2 export/)).toBeTruthy(); expect(value.preview).not.toHaveBeenCalled();
+});
+
+it("separates capability-read failure from unsupported repository imports and offers retry", async () => {
+  const value = fixture();
+  const repositoryBundle = { version: 1, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Remote", remote_url: "https://example.com/remote.git", checkouts: [], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
+  value.status.mockRejectedValueOnce(new ConnectError("status unavailable", Code.Unavailable));
+  render(value.view()); load(repositoryBundle);
+  await screen.findByRole("button", { name: "Retry server capability check" });
+  expect(screen.queryByText("Update the selected server before importing repositories.")).toBeNull();
+  value.status.mockResolvedValueOnce({ capabilities: [SystemCapability.REMOTE_REPOSITORIES_V1] });
+  fireEvent.click(screen.getByRole("button", { name: "Retry server capability check" }));
+  await waitFor(() => expect(value.status).toHaveBeenCalledTimes(2));
+  fireEvent.click(await screen.findByRole("button", { name: "Preview configuration changes" }));
+  await screen.findByRole("button", { name: "Apply reviewed configuration" });
+  expect(value.preview).toHaveBeenCalledTimes(1);
 });
