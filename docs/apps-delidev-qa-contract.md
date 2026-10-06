@@ -36,9 +36,10 @@ Use existing `server run --listen 127.0.0.1:0`, exact `--allowed-origins`,
 Readiness requires authenticated server/version checks and a connected original
 Worker, separately from installed harness or account readiness.
 
-The local `/__qa/` routes expose bootstrap, server status/explicit Start, original
-Worker registration/lifecycle/proof/network controls and an environment-local
-appearance adapter. These are internal QA interfaces, not Connect procedures.
+The local `/__qa/` routes expose bootstrap, server status/explicit Start and original
+Worker registration/lifecycle/proof/network controls. The separate browser entry
+injects an environment-local appearance adapter. These are internal QA interfaces,
+not Connect procedures.
 They accept closed actions and never executable, scope, endpoint or argv input.
 Worker Stop retains its exact original generation. Concurrent mutations are
 rejected while the original operation runs; reads never start or repair a child.
@@ -58,6 +59,24 @@ assign each ready URL to one worker; its model, capacity, recording and coverage
 rules remain unchanged. An unavailable native operation is blocked coverage,
 never a passing browser check. The external MainQA skill is not edited here.
 
+After the `qa-environments` record lists `ready` environments, give MainQA the
+command, its JSON record and the requested coverage. For example:
+
+```text
+Use main-qa against the DeliDev browser QA environments started with:
+pnpm --filter delidev-desktop dev:qa -- --workers 4
+Assign each ready environment URL from the attached qa-environments JSON to
+one QA worker. Record screenshots under its artifacts/screenshots directory.
+Use the existing repository path input with an explicitly selected test checkout.
+Treat the listed native limits as blocked coverage and report them separately.
+```
+
+Keep the launcher running until QA workers finish. Each worker uses its own URL,
+including in tabs of one Chrome profile. Separate ports isolate origin storage;
+the appearance key additionally contains the original server ID. A stopped server
+keeps the same endpoint and identity on explicit Start. Starting a server does
+not replace a stopped Worker, pair a revoked client, or certify harness readiness.
+
 ## Storage
 
 Place generated binaries, frontend assets and every server/client/Worker scope
@@ -74,6 +93,23 @@ product cleanup and original process exit are confirmed. Unavailable server
 authority, unsettled jobs/native ownership, protected references, malformed
 metadata or failed process cleanup preserve that environment and report a stable
 reason and its recovery location. Killing a process is not native cleanup proof.
+
+Use Ctrl+C or SIGTERM for normal shutdown. The final `qa-cleanup` record and
+`artifacts/run.json` report `deleted` or `preserved` per environment. A preserved
+record includes its original state path, server identity, endpoint, frontend origin
+and stable reasons; the shared binary remains in the parent run directory. Keep
+these private scopes intact. Use that binary with the retained `--data-dir` and
+`--worker-dir` for product inspection/recovery, never a personal scope. The runner
+may start a stopped owned server at its original endpoint for cleanup after browser
+admission is closed; it does not silently start a stopped Worker. A protected Worker
+network recipient without a product removal operation remains preserved, even
+when ordinary metadata work finished. An externally installed or replaced Worker
+also retains ownership for separate reconciliation. Do not delete such directories
+on the basis of process exit. Artifacts remain separate and are not removed.
+
+Metadata/Git inspection needs no AI account. Actual AI execution requires an
+explicitly configured test account and an installed supported harness. The tool
+does not copy personal DeliDev configuration or account material.
 
 ## Security
 
@@ -104,6 +140,20 @@ authentication revocation, Worker inspection/control, server Stop/explicit Start
 cross-origin rejection and package exclusion. Cover startup failure, repeated
 controls, signals and cleanup uncertainty. Do not equate these checks with CEF,
 real AI account or platform installation acceptance.
+
+Run browser acceptance explicitly:
+
+```sh
+DELIDEV_QA_PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+  pnpm --filter delidev-desktop test:qa:browser
+```
+
+The optional `DELIDEV_QA_BROWSER_CHANNEL` selects an installed browser; default
+is Chrome. Both browser pages share one browser context and use actual product
+RPCs and Workers. `browser-validation.json` and synthetic screenshots remain in
+the external artifacts directory. `test:qa` runs the Go/host/lifecycle integration
+tests; ordinary `pnpm test` also verifies that the built release frontend excludes
+the QA entry and host markers. No validation record is added to this repository.
 
 ## Dependencies and Integrations
 
