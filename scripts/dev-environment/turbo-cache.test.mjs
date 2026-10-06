@@ -24,7 +24,14 @@ const task = "ci:environment:turbo";
 
 test("environment checker invalidates a warm cache when its development graph changes", async (t) => {
   const cwd = mkdtempSync(join(tmpdir(), "dev-environment-cache-"));
-  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  // Keep generated cache metadata outside the fixture. The checker hashes broad
+  // repository inputs, and platform-specific Turbo cache state must not change
+  // the source-graph hash after a mutation is restored.
+  const cacheDir = mkdtempSync(join(tmpdir(), "dev-environment-turbo-cache-"));
+  t.after(() => {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(cacheDir, { recursive: true, force: true });
+  });
   const write = (path, content) => {
     const target = join(cwd, path);
     mkdirSync(dirname(target), { recursive: true });
@@ -81,7 +88,7 @@ test("environment checker invalidates a warm cache when its development graph ch
   const canary = "environment-cache-fixture-sensitive-value";
   const run = (...args) => {
     const result = spawnSync(process.execPath, [turbo, "run", task,
-      "--filter=@delinoio/ci", "--cache=local:rw", ...args], {
+      "--filter=@delinoio/ci", "--cache=local:rw", "--cache-dir", cacheDir, ...args], {
       cwd,
       encoding: "utf8",
       shell: false,
@@ -177,7 +184,9 @@ test("environment checker invalidates a warm cache when its development graph ch
   await t.test("workspace inventory invalidates the checker", () => {
     const path = "pnpm-workspace.yaml";
     try {
-      write(path, sources.get(path).replace("  - servers/*\n", "  - servers/unused-*\n"));
+      const source = sources.get(path);
+      const newline = source.includes("\r\n") ? "\r\n" : "\n";
+      write(path, source.replace(`  - apps/*${newline}`, `  - apps/unused-*${newline}`));
       assert.notEqual(hash(), baselineHash);
       const result = run();
       assert.notEqual(result.status, 0, output(result));
