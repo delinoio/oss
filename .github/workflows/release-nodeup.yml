@@ -19,8 +19,7 @@ on:
           - "false"
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: release-nodeup-${{ github.ref }}
@@ -34,9 +33,11 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
       dry_run: ${{ steps.meta.outputs.dry_run }}
+      revision: ${{ steps.meta.outputs.revision }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
@@ -44,10 +45,11 @@ jobs:
       - name: Validate source and release metadata
         id: meta
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_PROJECT: nodeup
           REQUESTED_VERSION: ${{ inputs.version }}
           REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
-        run: node scripts/release/project.mjs source
+        run: node scripts/release/project.mjs legacy-source
 
   build:
     name: Build (${{ matrix.asset_os }}-${{ matrix.asset_arch }})
@@ -90,6 +92,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
@@ -150,12 +155,10 @@ jobs:
           name: nodeup-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
           path: dist/*
 
-  publish:
-    name: Publish release
+  package:
+    name: Prepare unsigned candidate
     runs-on: ubuntu-latest
-    needs:
-      - prepare
-      - build
+    needs: [prepare, build]
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -163,6 +166,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-clibox
 
@@ -182,23 +188,9 @@ jobs:
           mv release-dist dist
           find dist -maxdepth 1 -type f | pnpm exec clibox text replace '(?m)^(.+)$' "artifact: \$1" --regex >&2
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.1
-
-      - name: Generate checksums and signatures
+      - name: Generate unsigned checksums
         shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x ./scripts/release/generate-checksums.sh
-          ./scripts/release/generate-checksums.sh --artifacts-dir dist
-
-      - name: Create GitHub release
-        if: env.DRY_RUN != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: dist/*
-          generate_release_notes: true
+        run: bash scripts/release/generate-checksums.sh --artifacts-dir dist --skip-signing
 
       - name: Render Homebrew update
         if: env.DRY_RUN == 'true'
@@ -236,6 +228,79 @@ jobs:
             --linux-arm64-url "$linux_arm64_url" \
             --linux-arm64-sha256 "$linux_arm64_sha" \
             --dry-run >/dev/null
+
+      - name: Upload unsigned candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodeup-release-candidate
+          path: dist/*
+
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: [prepare, package]
+    if: needs.prepare.outputs.dry_run == 'false'
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-clibox
+
+      - name: Download unsigned candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: nodeup-release-candidate
+          path: dist
+
+      - name: Verify release tag before signing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PROJECT: nodeup
+          REQUESTED_VERSION: ${{ needs.prepare.outputs.version }}
+          REQUESTED_DRY_RUN: "false"
+        run: node scripts/release/project.mjs legacy-source
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Generate checksums and signatures
+        shell: bash
+        run: bash scripts/release/generate-checksums.sh --artifacts-dir dist
+
+      - name: Verify release tag before publication
+        id: release-source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PROJECT: nodeup
+          REQUESTED_VERSION: ${{ needs.prepare.outputs.version }}
+          REQUESTED_DRY_RUN: "false"
+        run: node scripts/release/project.mjs legacy-source
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ steps.release-source.outputs.target_commitish }}
+          files: dist/*
+          generate_release_notes: true
+
+      - name: Verify release tag before Homebrew writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PROJECT: nodeup
+          REQUESTED_VERSION: ${{ needs.prepare.outputs.version }}
+          REQUESTED_DRY_RUN: "false"
+        run: node scripts/release/project.mjs legacy-source
 
       - name: Setup Node for release bot identity
         if: env.DRY_RUN != 'true'

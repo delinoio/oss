@@ -293,6 +293,21 @@ export async function tagRevision(tag, request) {
   return object.sha;
 }
 
+// These older publishers also support manual main releases. Version agreement
+// alone cannot authorize attaching a new build to an existing historical tag.
+export async function legacyReleaseMetadata({ revision, ...input }, read, request) {
+  requireValue([Project.Binpm, Project.CargoMono, Project.Nodeup, Project.WithWatch, Project.Derun].includes(input.project), "Unsupported legacy release project");
+  requireValue(shaPattern.test(revision ?? ""), "Invalid release source revision");
+  const metadata = sourceMetadata(input, read);
+  if (metadata.dry_run === "false") {
+    const existing = await tagRevision(metadata.tag, request);
+    requireValue(existing === null || existing === revision, "Existing release tag belongs to a different commit");
+  }
+  // Always use the immutable build SHA, including when the tag is absent and
+  // main advances between validation and GitHub's release/tag creation.
+  return { ...metadata, revision, target_commitish: revision };
+}
+
 export async function reactForgeVersionPublished(version, request = fetch) {
   versionParts(version);
   let response;
@@ -343,6 +358,15 @@ function workflowContext() {
 }
 
 export async function main(command) {
+  if (command === "legacy-source") {
+    const revision = process.env.GITHUB_SHA;
+    requireValue(process.env.GITHUB_REPOSITORY === repository, "Legacy release requires delinoio/oss");
+    requireValue(shaPattern.test(revision ?? "") && git(root, ["rev-parse", "HEAD"]) === revision, "Checkout is not the workflow source revision");
+    const metadata = await legacyReleaseMetadata({ project: process.env.RELEASE_PROJECT, revision, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, (file) => readFileSync(path.join(root, file), "utf8"), githubRequest);
+    log({ phase: command, project: process.env.RELEASE_PROJECT, tag: metadata.tag, revision, dry_run: metadata.dry_run, outcome: "verified" });
+    output(metadata);
+    return;
+  }
   if (command === "source") {
     output(sourceMetadata({ project: process.env.RELEASE_PROJECT, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, (file) => readFileSync(path.join(root, file), "utf8")));
     return;

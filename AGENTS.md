@@ -496,6 +496,8 @@ Release automation baseline:
 
 ### Linux CLI Package Distribution
 
+- Legacy binpm, cargo-mono, nodeup, with-watch and derun releases bind every checkout and new tag to the validated workflow SHA. Before signing, release upload and Homebrew writes, resolve remote lightweight or bounded annotated tags and reject conflicting or uncertain targets. Preserve manual-main publication, never move tags, and keep development-ref dry runs unsigned with read-only contents authority. Follow `docs/repository-workflow-contract.md`.
+
 - Follow `docs/repository-linux-packages-contract.md` for the seven CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and enrolls binpm, cargo-mono, nodeup, with-watch, derun, runmoor and clibox in stable.
 - Native package release callers must explicitly inherit secrets so the reusable publisher can resolve its protected `linux-packages` environment. Only the guarded publication job references production credentials; validation and installation jobs remain credential-free. Preserve the environment boundary for manual recovery of already-published release identities.
 - Runmoor uses stable for both source releases and native packages. Preview remains reserved and separately registered; callers cannot override project channels.
