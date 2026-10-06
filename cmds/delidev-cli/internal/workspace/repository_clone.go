@@ -176,8 +176,11 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	g.cloneDiagnostics = true
 	g.Timeout = RepositoryCloneTimeout
 	g.environment = append(gitEnvironment(), "GIT_LFS_SKIP_SMUDGE=1")
-	g.HooksDir = filepath.Join(staging, "hooks")
-	if err := os.Mkdir(g.HooksDir, 0700); err != nil {
+	// A null-device hook path cannot acquire executable hooks even if another
+	// same-user process changes the staging template while Git is running.
+	g.HooksDir = os.DevNull
+	template := filepath.Join(staging, "template")
+	if err := os.Mkdir(template, 0700); err != nil {
 		return result, domain.SafeError(err)
 	}
 	checkout := filepath.Join(staging, "checkout")
@@ -199,7 +202,7 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	if identity, err := directoryPathIdentity(staging); err != nil || identity != stagingIdentity {
 		return result, cloneRecoveryRequired()
 	}
-	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "clone", "--no-recurse-submodules", "--template=" + g.HooksDir, "--", request.URL, checkout}
+	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "clone", "--no-recurse-submodules", "--template=" + template, "--", request.URL, checkout}
 	if _, err := g.run(bounded, staging, args...); err != nil {
 		return result, err
 	}
@@ -258,7 +261,7 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	if err := writeCloneClaim(claimPath, claim); err != nil {
 		return result, cloneRecoveryRequired()
 	}
-	// Only the now-empty wrapper and its empty hooks directory remain owned.
+	// Only the now-empty wrapper and its empty template directory remain owned.
 	if err := removeCloneStaging(bounded, claimPath, claim); err != nil {
 		return result, cloneRecoveryRequired()
 	}

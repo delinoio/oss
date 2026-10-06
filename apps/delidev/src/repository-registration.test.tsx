@@ -361,8 +361,8 @@ it("keeps repository pagination explicit including empty later pages and local f
   const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
   fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
   fireEvent.change(screen.getByRole("textbox", { name: "Filter this page" }), { target: { value: "not-on-this-page" } }); await screen.findByText("No matches on this page."); expect(f.repositories).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Next", exact: true })); await screen.findByText("No repositories are accessible on this page."); expect(f.repositories.mock.calls[1][0].page).toBe(2);
-  fireEvent.click(screen.getByRole("button", { name: "First", exact: true })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.click(screen.getByRole("button", { name: "Next" })); await screen.findByText("No repositories are accessible on this page."); expect(f.repositories.mock.calls[1][0].page).toBe(2);
+  fireEvent.click(screen.getByRole("button", { name: "First" })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
   fireEvent.click(screen.getByRole("button", { name: "Refresh repositories" })); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(3));
 });
 it("hides the GitHub choice for a pending profile change", async () => {

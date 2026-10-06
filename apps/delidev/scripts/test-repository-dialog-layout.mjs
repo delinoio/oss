@@ -36,7 +36,7 @@ try {
   // zoom and packaged CEF behavior require independent platform acceptance.
   for (const theme of ["light", "dark"]) for (const [width, height] of [[1440, 900], [960, 640], [640, 480], [480, 320]]) {
     await page.setViewportSize({ width, height });
-    await page.goto(`${origin}/?theme=${theme}`);
+    await page.goto(`${origin}/?theme=${theme}&repository-pat=true`);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const categories = page.getByRole("button", { name: "Open settings categories", exact: true });
     if (await categories.isVisible()) await categories.click();
@@ -49,6 +49,7 @@ try {
     assert(await page.getByRole("heading", { name: "Repositories", exact: true }).isVisible());
     assert(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).isVisible());
     assert(await dialog.getByRole("textbox", { name: "Clone to", exact: true }).isVisible());
+    await dialog.getByRole("button", { name: "Choose from GitHub", exact: true }).waitFor();
     const layout = await dialog.evaluate(node => {
       const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
       return { width: rect.width, height: rect.height, top: rect.top, padding: style.paddingLeft, overflow: node.scrollWidth > node.clientWidth, scroll: node.scrollHeight > node.clientHeight, title: getComputedStyle(node.querySelector("header h2")).fontSize, controls: [...node.querySelectorAll("button,input")].every(control => control.getBoundingClientRect().height >= 39.5) };

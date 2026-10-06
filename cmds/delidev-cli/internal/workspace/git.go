@@ -115,7 +115,7 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		})
 		environment = append(environment, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1")
 	}
-	if g.readOnly {
+	if g.readOnly || g.cloneDiagnostics {
 		// Git localizes binary/EOF patch markers. Read observations require a
 		// stable wire grammar independent of the execution machine's locale.
 		environment = slices.DeleteFunc(environment, func(value string) bool { key, _, _ := strings.Cut(value, "="); return strings.EqualFold(key, "LC_ALL") })
