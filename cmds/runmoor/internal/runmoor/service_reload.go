@@ -861,9 +861,9 @@ func waitServiceReloadHandoff(ctx context.Context, journal, token string) int {
 	return 0
 }
 
-// Only the actual replacement service can consume the startup boundary. A
-// foreground or previous-version run beside an interrupted journal retains
-// normal Start behavior.
+// Verified previous and replacement service managers start from committed
+// state. Only the replacement receives authority to retire the handoff journal;
+// foreground runs beside an interrupted journal retain normal Start behavior.
 func (r *serviceReloader) startup(ctx context.Context, path string, c Config) (Config, bool, *serviceReloadJournal, error) {
 	j, err := readReloadJournal(r.Unit)
 	if err != nil {
@@ -889,7 +889,12 @@ func (r *serviceReloader) startup(ctx context.Context, path string, c Config) (C
 		if err := r.originalInvocation(j); err != nil {
 			return c, false, nil, err
 		}
-		return c, false, nil, nil
+		s, err := ReadSnapshot(Config{Storage: j.Storage})
+		if err != nil || s.Installation != j.Installation {
+			return c, false, nil, reloadFailure()
+		}
+		r.Log.Info("service_reload_previous_manager_startup", "version", r.Version, "stage", j.Stage)
+		return s.Requested, true, nil, nil
 	}
 	target, err := r.definition(path, j)
 	if err != nil || !target {
