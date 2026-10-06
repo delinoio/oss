@@ -218,10 +218,8 @@ func (r PrepareRequest) validateStructure() error {
 			if r.Type != domain.Local || repo.Checkout == "" || repo.ForkRegistrationSource != "" {
 				return ResultUncertain()
 			}
-			if repo.RemoteURL != "" {
-				if _, err := domain.ParseRepositoryCloneURL(repo.RemoteURL); err != nil {
-					return err
-				}
+			if _, err := domain.ParseRepositoryCloneURL(repo.RemoteURL); err != nil {
+				return err
 			}
 		case RemoteCloneSource, IndependentForkSource:
 			if r.Type != domain.Worktree || repo.ForkRegistrationSource != "" {
