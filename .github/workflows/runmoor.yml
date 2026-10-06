@@ -10,6 +10,13 @@ on:
       - go.mod
       - go.sum
       - .github/actions/setup-ci-go/**
+      - .github/actions/setup-ci-node/**
+      - scripts/ci/**
+      - .nvmrc
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - turbo.json
   push:
     branches: [main]
     paths:
@@ -20,6 +27,13 @@ on:
       - go.mod
       - go.sum
       - .github/actions/setup-ci-go/**
+      - .github/actions/setup-ci-node/**
+      - scripts/ci/**
+      - .nvmrc
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - turbo.json
   workflow_dispatch:
 
 permissions:
@@ -37,15 +51,35 @@ jobs:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-ci-go
         id: ci-go
+      - uses: ./.github/actions/setup-ci-node
+        id: ci-node
+      - name: Install locked validation tools
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Unit, lifecycle and mocked API tests
-        run: go test -race ./cmds/runmoor/...
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:runmoor:unit
+        env:
+          FORCE_RUN: 'true'
       - name: Local Docker integration without GitHub job assignment
         env:
           RUNMOOR_DOCKER_TEST: "1"
-        run: go test -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor
+          FORCE_RUN: 'true'
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:runmoor:docker
       - name: Save Go cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-runmoor-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
