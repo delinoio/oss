@@ -9,7 +9,7 @@ import { DeleteLocalReviewCommentRequestSchema, EntityKind, ResourceSchema, Reso
 import { encode } from "./documents";
 import { Comparison, type Diff } from "./session-diff-model";
 import { MutationIntents } from "./mutation";
-import { LocalReviews } from "./local-reviews";
+import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 
 function fixture() {
  const sessionId = newRequestId(), foreignSessionId = newRequestId(), inputId = newRequestId();
@@ -29,7 +29,7 @@ function fixture() {
   router.service(SessionService, { readSessionReviewContext: read, createLocalReviewComment: save, editLocalReviewComment: edit, deleteLocalReviewComment: remove, submitLocalReview: submit });
  });
  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
- function View() { const [open, setOpen] = useState(true), [currentSessionId, setCurrentSessionId] = useState(sessionId); return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><button onClick={() => setOpen(!open)}>Toggle review</button><button onClick={() => setCurrentSessionId(currentSessionId === sessionId ? foreignSessionId : sessionId)}>Switch session</button>{open ? <LocalReviews key={currentSessionId} sessionId={currentSessionId} diff={diff} reading={false} /> : null}</MutationIntents></QueryClientProvider></TransportProvider>; }
+ function View() { const [open, setOpen] = useState(true), [currentSessionId, setCurrentSessionId] = useState(sessionId); return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><button onClick={() => setOpen(!open)}>Toggle review</button><button onClick={() => setCurrentSessionId(currentSessionId === sessionId ? foreignSessionId : sessionId)} >Switch session</button><LocalReviewRecovery sessionId={currentSessionId} />{open ? <LocalReviews key={currentSessionId} sessionId={currentSessionId} diff={diff} reading={false} /> : null}</MutationIntents></QueryClientProvider></TransportProvider>; }
  return { View, read, save, edit, remove, submit, list, diff, inputId, sessionId, commentId: originalComment.id,
   eraseComment: () => { rows = rows.filter((row) => row.id !== originalComment.id); },
   addSubmission: () => { const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REVIEW, sessionId, revision: 1n, schemaVersion: 1, documentJson: encode({ version: 1, type: "submission", submission: { input_id: inputId, mode: "plan", comments: [{ id: originalComment.id, ...comment, freshness: "current" }] } }) }); rows.push(row); return row; },

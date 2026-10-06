@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Mode, encode } from "./documents";
 import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
@@ -21,6 +22,17 @@ function PendingCommentDeletion({ intent, commentId, accepted }: { intent: Retai
     <p>Comment deletion · {commentId}</p><p role="status">{intent.busy ? "Waiting for comment deletion acknowledgement…" : "Comment deletion acknowledgement is uncertain."}</p>
     <Problem error={mutation.error} />{intent.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry original comment deletion</button> : null}
   </article>;
+}
+
+export function LocalReviewRecovery({ sessionId }: { sessionId: string }) {
+  const client = useQueryClient();
+  const deletionPrefix = `review:delete:${sessionId}:`;
+  const deletions = useRetainedMutationIntents(deletionPrefix);
+  if (!deletions.length) return null;
+  return <section aria-label="Pending comment deletions"><h3>Pending comment deletions</h3>{deletions.map((intent) => {
+    const commentId = intent.key.slice(deletionPrefix.length);
+    return <PendingCommentDeletion key={intent.key} intent={intent} commentId={commentId} accepted={() => { void client.invalidateQueries({ refetchType: "active" }); }} />;
+  })}</section>;
 }
 
 function NewComment({ sessionId, diff, saved, close }: { sessionId: string; diff: Diff; saved: (message: string) => void; close: () => void }) {
@@ -71,17 +83,11 @@ export function LocalReviews({ sessionId, diff, reading }: { sessionId: string; 
   const refresh = () => { void list.refetch(); };
   const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? `Request changes queued as input ${r.change.input.id}.` : "Submission acknowledged. Inspect the session queue and review history."); refresh(); });
   const blocked = submit.busy || submit.uncertain;
-  const deletionPrefix = `review:delete:${sessionId}:`;
-  const deletions = useRetainedMutationIntents(deletionPrefix);
   const rows = list.data?.resources ?? [];
   const choose = (id: string, value?: Selected) => { if (blocked) return; if (value && selected.size >= 25 && !selected.has(id)) { setNotice("Select at most 25 comments for one request."); return; } setSelected((previous) => { const next = new Map(previous); if (value) next.set(id, value); else next.delete(id); return next; }); };
   return <section aria-label="Local agent review" className="local-reviews">
     <h3>Local agent review</h3><p>Save file or line comments, then send selected comments to this session's agent. Submission follows the session's input queue and does not resolve comments.</p>
     <div className="actions"><button disabled={reading || Boolean(authoring) || blocked} onClick={() => setAuthoring(diff)}>Add review comment</button><button disabled={list.isFetching} onClick={refresh}>Refresh reviews</button></div>
-    {deletions.length ? <section aria-label="Pending comment deletions"><h4>Pending comment deletions</h4>{deletions.map((intent) => {
-      const commentId = intent.key.slice(deletionPrefix.length);
-      return <PendingCommentDeletion key={intent.key} intent={intent} commentId={commentId} accepted={() => { choose(commentId); setNotice("Comment deletion acknowledged."); refresh(); }} />;
-    })}</section> : null}
     {authoring ? <NewComment sessionId={sessionId} diff={authoring} saved={(message) => { setNotice(message); refresh(); }} close={() => setAuthoring(undefined)} /> : null}
     {notice ? <p role="status">{notice}</p> : null}<Problem error={list.error} />{list.error && list.data ? <p role="alert">Review refresh failed. Retained records may be outdated.</p> : null}
     {list.isPending ? <p>Loading local reviews…</p> : rows.length ? rows.map((row) => {

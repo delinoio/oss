@@ -5,7 +5,7 @@ import { encode } from "./documents";
 import { Comparison, readDiff } from "./session-diff-model";
 import { workspaceReadOptions } from "./session-files";
 import { Problem } from "./ui";
-import { LocalReviews } from "./local-reviews";
+import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 
 export function SessionDiff({ sessionId, worktree, close }: { sessionId: string; worktree: boolean; close: () => void }) {
   const heading = useRef<HTMLHeadingElement>(null);
@@ -21,6 +21,7 @@ export function SessionDiff({ sessionId, worktree, close }: { sessionId: string;
     {roots.isPending ? <p role="status">Loading workspace roots…</p> : null}
     {roots.error ? <button disabled={roots.isFetching} onClick={() => void roots.refetch()}>Retry workspace roots</button> : null}
     {available?.length ? <label>Diff repository<select value={selected} onChange={(event) => setRepository(event.target.value)}>{available.map((root) => <option key={root.repository_id} value={root.repository_id}>{root.name}{root.primary ? " · Primary" : ""}</option>)}</select></label> : roots.data ? <p>This workspace has no prepared Git repository.</p> : null}
+    <LocalReviewRecovery sessionId={sessionId} />
     {selected ? <RepositoryDiff key={selected} sessionId={sessionId} repository={selected} worktree={worktree} /> : null}
   </aside>;
 }
