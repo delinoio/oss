@@ -45,13 +45,15 @@ function cleared(resource: Resource) {
 
 export function AccountDeletionResult({ initial, active, deleted }: { initial: Resource; active: boolean; deleted: () => void }) {
   const isApi = document(initial).type === "api";
+  const isChatGPT = serviceAccount(initial, undefined, SubscriptionServiceId.ChatGPT);
   const cleanup = useQuery(BrowserQuery.getAccountBrowserCleanup, { accountId: initial.id }, { enabled: active, retry: false });
-  return <section className={isApi ? "api-entry-workflow" : "subscription-account-create account-deletion"}>
+  const actions = <><button disabled={!active || cleanup.isFetching} onClick={() => void cleanup.refetch()}>Refresh cleanup status</button><button disabled={!active} onClick={deleted}>{isApi ? "Return to AI API Keys" : "Return to accounts"}</button></>;
+  return <section className={isApi ? "api-entry-workflow" : isChatGPT ? "subscription-account-create account-deletion" : undefined}>
     {isApi ? <header className="api-entry-heading"><h2>API key entry deleted</h2><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3>Account configuration deleted</h3>}
     <p>Browser cleanup is tracked separately. Offline devices remain pending until their native browser has shut down, the full profile has been removed and the owning server confirms the acknowledgment.</p>
     <Problem error={cleanup.error} />
     {cleanup.data ? <p>{cleanup.data.pending} profile cleanup obligations pending · {cleanup.data.removed} confirmed removed</p> : <p>Cleanup status is unavailable until the owning server can be read.</p>}
-    <div className="actions"><button disabled={!active || cleanup.isFetching} onClick={() => void cleanup.refetch()}>Refresh cleanup status</button><button disabled={!active} onClick={deleted}>{isApi ? "Return to AI API Keys" : "Return to accounts"}</button></div>
+    {isChatGPT ? <div className="actions">{actions}</div> : actions}
   </section>;
 }
 
