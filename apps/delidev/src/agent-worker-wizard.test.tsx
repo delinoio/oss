@@ -37,8 +37,8 @@ function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1]) {
   const wizardView = (active = true, upstream: Transport = transport) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><AgentWorkerWizard active={active} saved={() => {}} cancel={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
   return { provider, otherProvider, accounts, subscription, models, agent, records, save, search, discover, list, get, transport, client, view, wizardView };
 }
-async function start(value: ReturnType<typeof fixture>, edit = false) {
-  render(value.view());
+async function start(value: ReturnType<typeof fixture>, edit = false, transport = value.transport) {
+  render(value.view(transport));
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(edit ? await screen.findByRole("button", { name: "Edit Existing Worker" }) : screen.getByRole("button", { name: "New Agent Worker" }));
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
@@ -336,6 +336,79 @@ it("keeps pagination and explicit refresh when a complete page has only hidden c
   await screen.findByRole("checkbox", { name: /Personal API/ });
   expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it.each(["choices", "hidden-only", "failed", "invalid"] as const)("hides hidden-only emptiness during a pending refresh that returns %s", async result => {
+  const value = fixture();
+  const loaded = value.list.getMockImplementation()!;
+  const hiddenPage = { resources: [value.accounts[2]], nextPageToken: "account-page-2" };
+  value.list.mockImplementation(request => request.filter?.kind === EntityKind.ACCOUNT ? hiddenPage : loaded(request));
+  let refreshing = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (refreshing && args[0].name === "ListResources") await pending; return value.transport.unary(...args); } };
+  await start(value, false, transport);
+  confirmHarness();
+  await screen.findByRole("option", { name: "OpenAI API" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  await screen.findByText("No accounts to select on this page.");
+  refreshing = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
+  expect((screen.getByRole("button", { name: "Next account page" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+  expect(screen.queryByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeNull();
+  expect(screen.queryByText("Loading accounts…")).toBeNull();
+  value.list.mockImplementation(request => {
+    if (request.filter?.kind !== EntityKind.ACCOUNT) return loaded(request);
+    if (result === "failed") throw new ConnectError("Account read unavailable", Code.Unavailable);
+    return result === "choices" ? { ...hiddenPage, resources: [value.accounts[0]] } : result === "invalid" ? { ...hiddenPage, resources: [value.subscription] } : hiddenPage;
+  });
+  await act(async () => release());
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
+  if (result === "hidden-only") {
+    expect(screen.getByText("No accounts to select on this page.")).toBeTruthy();
+    expect(screen.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeTruthy();
+  } else {
+    expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+    if (result === "choices") expect(screen.getByRole("checkbox", { name: /Personal API/ })).toBeTruthy();
+    else if (result === "failed") expect(screen.getByText("Refresh failed. Showing the last successfully loaded accounts.")).toBeTruthy();
+    else expect(screen.getByText(/This account page includes unsupported or mismatched source data/)).toBeTruthy();
+  }
+  expect((screen.getByRole("button", { name: "Next account page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText("0 accounts selected")).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it("retains cached choices and selected account order and weights while refresh is pending", async () => {
+  const value = fixture();
+  const expected = [{ id: value.accounts[0].id, weight: 3 }, { id: value.accounts[1].id, weight: 5 }];
+  value.agent.documentJson = encode({ ...document(value.agent), accounts: expected });
+  let refreshing = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (refreshing && args[0].name === "ListResources") await pending; return value.transport.unary(...args); } };
+  await start(value, true, transport);
+  confirmHarness();
+  await screen.findByRole("checkbox", { name: /Personal API/ });
+  fireEvent.click(screen.getByText("Routing options"));
+  refreshing = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
+  expect((screen.getByRole("checkbox", { name: /Personal API/ }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByText("2 accounts selected")).toBeTruthy();
+  const selected = within(screen.getByRole("region", { name: "Choose accounts" })).getByRole("list");
+  expect(within(selected).getAllByRole("listitem").map(row => row.querySelector("strong")!.textContent)).toEqual(["Personal API", "Team API"]);
+  expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe("3");
+  expect((screen.getByLabelText("Weight for account 2") as HTMLInputElement).value).toBe("5");
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+  await act(async () => release());
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
+  next(); await screen.findByRole("combobox", { name: "Model" }); next();
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson)).accounts).toEqual(expected);
+  expect(value.discover).not.toHaveBeenCalled();
 });
 
 it.each(["initial", "refresh"])("keeps an %s account read failure distinct from hidden-only emptiness", async state => {

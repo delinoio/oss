@@ -37,6 +37,9 @@ func (s AccountOAuthState) Valid() bool {
 // resources, snapshots, events or portable configuration. Secrets and callback/
 // authorization URLs belong only to the original process's ephemeral controller.
 type AccountOAuthAttempt struct {
+	Preset              ProviderPresetID  `json:"preset,omitempty"`
+	StateCommitment     string            `json:"state_commitment,omitempty"`
+	QuotaProject        string            `json:"quota_project,omitempty"`
 	Version             uint32            `json:"version"`
 	ID                  ID                `json:"id"`
 	Revision            uint64            `json:"revision"`
@@ -68,8 +71,11 @@ func (a AccountOAuthAttempt) Validate() error {
 		b, e := hex.DecodeString(v)
 		return e == nil && len(b) == 32 && hex.EncodeToString(b) == v
 	}
-	if a.Version != 1 || a.Revision == 0 || a.ProviderRevision == 0 || UniqueIDs([]ID{a.ID, a.StartRequestID, a.AccountID, a.CreateRequestID, a.ConnectRequestID}) != nil || a.ServerID.Validate() != nil || a.ProviderID.Validate() != nil || a.Generation.Validate() != nil || !a.State.Valid() || (a.Actor.Type != OwnerDevice && a.Actor.Type != ClientDevice) || a.Actor.MachineID != "" || a.Actor.Type == ClientDevice && a.Actor.DeviceID.Validate() != nil || a.StartedAt.IsZero() || a.UpdatedAt.Before(a.StartedAt) || !a.ExpiresAt.Equal(a.StartedAt.Add(10*time.Minute)) || a.CallbackCommitment != "" && !validDigest(a.CallbackCommitment) || (a.CompletionRequestID != "") != (a.CompletionRevision != 0 && validDigest(a.CodeCommitment)) || a.CompletionRequestID != "" && a.CompletionRequestID.Validate() != nil || a.StagingClaimed && a.CompletionRequestID == "" || a.Sealed && !a.StagingClaimed || a.CleanupPending && !a.StagingClaimed || a.State == OAuthConnected && (!a.Sealed || a.CleanupPending) {
+	if (a.Version != 1 && a.Version != 2) || a.Revision == 0 || a.ProviderRevision == 0 || UniqueIDs([]ID{a.ID, a.StartRequestID, a.AccountID, a.CreateRequestID, a.ConnectRequestID}) != nil || a.ServerID.Validate() != nil || a.ProviderID.Validate() != nil || a.Generation.Validate() != nil || !a.State.Valid() || (a.Actor.Type != OwnerDevice && a.Actor.Type != ClientDevice) || a.Actor.MachineID != "" || a.Actor.Type == ClientDevice && a.Actor.DeviceID.Validate() != nil || a.StartedAt.IsZero() || a.UpdatedAt.Before(a.StartedAt) || !a.ExpiresAt.Equal(a.StartedAt.Add(10*time.Minute)) || a.CallbackCommitment != "" && !validDigest(a.CallbackCommitment) || (a.CompletionRequestID != "") != (a.CompletionRevision != 0 && validDigest(a.CodeCommitment)) || a.CompletionRequestID != "" && a.CompletionRequestID.Validate() != nil || a.StagingClaimed && a.CompletionRequestID == "" || a.Sealed && !a.StagingClaimed || a.CleanupPending && !a.StagingClaimed || a.State == OAuthConnected && (!a.Sealed || a.CleanupPending) {
 		return Fail(RecoveryRequired, "OAuth attempt ownership is invalid.", "Preserve the original attempt and protected credential evidence.")
+	}
+	if a.Version == 2 && (a.Preset != PresetHuggingFace && a.Preset != PresetGemini && a.Preset != PresetBaseten || !validDigest(a.StateCommitment)) {
+		return Fail(RecoveryRequired, "OAuth authentication profile is invalid.", "Preserve the original attempt.")
 	}
 	if a.Actor.Type == OwnerDevice && a.Actor.DeviceID != "" || a.CompletionRequestID != "" && UniqueIDs([]ID{a.ID, a.StartRequestID, a.AccountID, a.CreateRequestID, a.ConnectRequestID, a.CompletionRequestID}) != nil || (a.State == OAuthExchanging || a.State == OAuthSaving || a.State == OAuthConnected) && a.CompletionRequestID == "" || a.State == OAuthAwaiting && (a.CompletionRequestID != "" || a.StagingClaimed) || a.State == OAuthSaving && !a.StagingClaimed {
 		return Fail(RecoveryRequired, "OAuth attempt state is invalid.", "Preserve the original attempt and protected credential evidence.")

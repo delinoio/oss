@@ -17,6 +17,7 @@
         "$TURBO_ROOT$/rust-toolchain",
         "$TURBO_ROOT$/go.mod",
         "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/protos/delidev/v1/contracttest/testdata/legacy-declaration-order.json",
         "$TURBO_ROOT$/scripts/delidev/proto-layout.json"
       ],
       "outputs": [],
