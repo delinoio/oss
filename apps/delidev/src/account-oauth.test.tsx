@@ -12,7 +12,7 @@ import { SettingsLifetime } from "./settings-lifetime";
 import type { AccountProviderSummary } from "./account-settings";
 import { encode } from "./documents";
 
-function fixture(args: { huggingFace?: boolean; gemini?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
+function fixture(args: { huggingFace?: boolean; gemini?: boolean; wrongFlow?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
   const name = args.huggingFace ? "Hugging Face Inference Providers" : args.gemini ? "Google Gemini" : "OpenRouter";
   const providerId = newRequestId(), attemptId = newRequestId(), nativeGeneration = newRequestId();
   const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 1n, documentJson: encode({ name, preset_id: args.huggingFace ? "hugging-face" : args.gemini ? "gemini" : "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
@@ -22,7 +22,7 @@ function fixture(args: { huggingFace?: boolean; gemini?: boolean; oldNative?: bo
   const rawState = Array.from(new TextEncoder().encode("s".repeat(43)));
   const rawCode = Array.from(new TextEncoder().encode("renderer-oauth-code-sentinel"));
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 2n, documentJson: encode({ alias: "OpenRouter", provider_id: providerId, type: "api", health: "unverified", enabled: true, recovery_notifications: true }) });
-  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; if(args.interruptedStart) {retained=attempt(State.ACCOUNT_OAUTH_STATE_INTERRUPTED,2n);retained.problem=create(ErrorDetailSchema,{code:"conflict"});return {attempt:retained,requestId:request.provider?.requestId};} return { attempt: retained, requestId: request.provider?.requestId, flow: AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
+  const start = vi.fn(async (request) => { await args.startDelay; if (args.startError) throw args.startError; if(args.interruptedStart) {retained=attempt(State.ACCOUNT_OAUTH_STATE_INTERRUPTED,2n);retained.problem=create(ErrorDetailSchema,{code:"conflict"});return {attempt:retained,requestId:request.provider?.requestId};} return { attempt: retained, requestId: request.provider?.requestId, flow: args.wrongFlow ? AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_UNSPECIFIED : AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
   const complete = vi.fn(async (request: CompleteAccountOAuthRequest) => { if (args.complete) await args.complete(request); retained = attempt(State.ACCOUNT_OAUTH_STATE_CONNECTED, 5n); return { attempt: retained, account, requestId: request.mutation?.requestId }; });
   const cancel = vi.fn(async (request) => { retained = attempt(State.ACCOUNT_OAUTH_STATE_CANCELED, 2n); return { attempt: retained, requestId: request.mutation?.requestId }; });
   const status = vi.fn(async () => ({ attempt: retained, account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED ? account : undefined }));
@@ -210,4 +210,16 @@ it("asks for the Google quota project before any browser or server Start", async
  expect(f.start).toHaveBeenCalledWith(expect.objectContaining({ google: expect.objectContaining({ quotaProjectId: "my-ai-project" }) }), expect.anything());
  expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BeginGoogleGemini)).toHaveLength(1);
  f.trigger(); await screen.findByText("Google Gemini connected", {}, { timeout: 2500 });
+});
+
+it("retains an admitted attempt for cancellation when its new-provider flow is unsupported", async () => {
+ const f=fixture({huggingFace:true,wrongFlow:true});
+ await waitFor(() => expect(f.native.mock.calls.some(call=>call[1]===OAuthNativeAction.Profiles)).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));
+ await screen.findByRole("alert");
+ expect(f.native.mock.calls.some(call=>call[1]===OAuthNativeAction.BindOpen)).toBe(false);
+ fireEvent.click(screen.getByRole("button",{name:"Use an API key instead"}));
+ await waitFor(() => expect(f.manual).toHaveBeenCalledTimes(1));
+ expect(f.cancel).toHaveBeenCalledTimes(1);
+ expect(f.complete).not.toHaveBeenCalled();
 });

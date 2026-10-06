@@ -110,8 +110,8 @@ export function useAccountOAuth() {
       const result = await service.startAccountOAuth({ provider: { id: value.provider.providerId, expectedRevision: value.provider.provider.revision, requestId: value.startId }, callbackUrl: value.callback, google: value.quotaProject ? { quotaProjectId: value.quotaProject } : undefined });
       if (!current(value)) return;
       if (result.requestId !== value.startId) throw new Error("start receipt");
-      if (profileOf(value.provider) !== AccountOAuthProfile.OpenRouter && result.flow !== WireOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE) throw new Error("OAuth flow");
       value.attempt = checkedAttempt(result.attempt, value);
+      if (profileOf(value.provider) !== AccountOAuthProfile.OpenRouter && result.flow !== WireOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE) throw new Error("OAuth flow");
       setView({ provider: value.provider, stage: stage(value.attempt.state), attempt: value.attempt });
       if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && result.authorizationUrl && !value.bound) {
         try { await native(value.nativeOpening, OAuthNativeAction.BindOpen, value.generation, value.attempt.id, result.authorizationUrl); value.bound = true; value.openFailed = false; value.problem = undefined; }
