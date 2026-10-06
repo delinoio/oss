@@ -23,6 +23,8 @@
   "server-preferences.off_ca7981": "끔",
   "server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f": "지원하지 않는 서버 환경설정 스키마입니다. 정책 값을 확인할 수 없습니다.",
   "server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc": "서버 환경설정을 읽을 수 없거나 지원하지 않는 정책 값이 포함되어 있습니다. 정책 값을 사용할 수 없습니다.",
+  "server-preferences.unavailable_0a6a4f": "서버 환경설정을 사용할 수 없음",
+  "server-preferences.incompleteReadRefreshBeforeEditing": "서버 환경설정 읽기가 완료되지 않았거나 하나의 설정 문서를 식별하지 못했습니다. 편집하기 전에 설정을 새로 고치세요.",
   "server-preferences.extra.5ecef0b36ba3": "필수 CI 실패 자동 수정",
   "server-preferences.extra.feab8b0b6d7b": "일치하는 게시 피드백 자동 처리",
   "server-preferences.extra.7f64e75c8c6e": "검증된 병합 충돌 자동 해결"

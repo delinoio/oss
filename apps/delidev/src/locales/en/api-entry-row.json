@@ -8,6 +8,7 @@
   "api-entry-row.unavailable_ca1844": "Unavailable",
   "api-entry-row.knownSubtotal_fe63dd": "Known subtotal",
   "api-entry-row.noHistoricalEstimate_db5d04": "No historical estimate",
+  "api-entry-row.noUsageInPeriod": "No usage in this period",
   "api-entry-row.observedTokens_617022": "Observed tokens",
   "api-entry-row.noExactResponseRecords_bead73": "No exact response records",
   "api-entry-row.notReported_adadfa": "Not reported",
@@ -58,6 +59,7 @@
   "api-entry-row.extra.37709967fc3f": "Provider unavailable · ",
   "api-entry-row.extra.b764cdc0eab7": "Unknown",
   "api-entry-row.observedResponses_one": "{{v0}} observed response",
+  "api-entry-row.observedResponses_compatibility": "{{v0}} observed responses",
   "api-entry-row.observedUnits_one": "{{v0}} observed unit",
   "api-entry-row.observedResponses_other": "{{v0}} observed responses",
   "api-entry-row.observedUnits_other": "{{v0}} observed units"

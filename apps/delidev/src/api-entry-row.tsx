@@ -21,18 +21,24 @@ function count(value: string | undefined, measured: number | undefined) {
 }
 function UsageMetrics({ data }: { data?: GetUsageSummaryResponse }) {
   useLocale();
+  // Empty history is a display state only; accepted work with missing telemetry
+  // must retain its unavailable evidence instead of becoming measured zero.
+  const empty = Boolean(data?.totals && data.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1
+    && data.totals.responses === 0 && data.totals.accounting.every(row => row.units === 0)
+    && data.nativeAccounting.every(row => row.totals?.units === 0)
+    && data.acceptedExecutionsWithoutResponse === 0 && data.acceptedCompactionsWithoutResponse === 0);
   const native = data?.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1 ? data.nativeAccounting.filter(row => row.totals && (row.totals.kind === AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT || row.totals.kind === AccountingUnitKind.OPENCODE_STEP) && row.totals.units > 0) : [];
   const grok = data?.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1 ? data.totals?.accounting.find(row => row.kind === AccountingUnitKind.GROK_CLOSED_INPUT && row.units > 0) : undefined;
   const response = (data?.totals?.responses ?? 0) > 0 || (!native.length && !grok);
   const separate = native.length > 0 || Boolean(grok);
   return <>
     <div className="api-usage-metric"><dt>{copy("api-entry-row.estimatedCost_9ccba2")}</dt><dd>
-      {response ? <div>{separate ? <small>{copy("api-entry-row.responses_9b4c6d")}</small> : null}{data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL && data.estimates?.currencies.length ? data.estimates.currencies.map(row => <strong key={row.currency}>{row.currency} {formatDecimal(row.knownAmount) || copy("api-entry-row.extra.ca1844969742")}</strong>) : <strong>{copy("api-entry-row.unavailable_ca1844")}</strong>}</div> : null}
+      {response ? <div>{separate ? <small>{copy("api-entry-row.responses_9b4c6d")}</small> : null}{empty ? <strong>$0</strong> : data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL && data.estimates?.currencies.length ? data.estimates.currencies.map(row => <strong key={row.currency}>{row.currency} {formatDecimal(row.knownAmount) || copy("api-entry-row.extra.ca1844969742")}</strong>) : <strong>{copy("api-entry-row.unavailable_ca1844")}</strong>}</div> : null}
       {native.map(row => <div key={row.totals!.kind}><small>{unitNames[row.totals!.kind]}</small>{row.totals!.currencies.length ? row.totals!.currencies.map(value => <strong key={value.currency}>{value.currency} {formatDecimal(value.knownAmount) || copy("api-entry-row.extra.ca1844969742")}</strong>) : <strong>{copy("api-entry-row.unavailable_ca1844")}</strong>}</div>)}
       {grok ? <div><small>{copy("api-entry-row.grokClosedInputs_12a648")}</small><strong>{copy("api-entry-row.unavailable_ca1844")}</strong></div> : null}
-    </dd><small>{data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL || native.some(row => row.totals!.currencies.some(value => value.knownAmount !== "")) ? copy("api-entry-row.knownSubtotal_fe63dd") : copy("api-entry-row.noHistoricalEstimate_db5d04")}</small></div>
+    </dd><small>{empty ? copy("api-entry-row.noUsageInPeriod") : data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL || native.some(row => row.totals!.currencies.some(value => value.knownAmount !== "")) ? copy("api-entry-row.knownSubtotal_fe63dd") : copy("api-entry-row.noHistoricalEstimate_db5d04")}</small></div>
     <div className="api-usage-metric"><dt>{copy("api-entry-row.observedTokens_617022")}</dt><dd>
-      {response ? <div>{separate ? <small>{copy("api-entry-row.responses_9b4c6d")}</small> : null}<strong>{count(data?.totals?.total?.knownTotal, data?.totals?.total?.measuredResponses)}</strong><small>{data?.totals ? data.totals.responses > 0 ? copy("api-entry-row.observedResponses", { count: data.totals.responses, v0: formatNumber(data.totals.responses) }) : copy("api-entry-row.noExactResponseRecords_bead73") : copy("api-entry-row.notReported_adadfa")}</small></div> : null}
+      {response ? <div>{separate ? <small>{copy("api-entry-row.responses_9b4c6d")}</small> : null}<strong>{empty ? "0" : count(data?.totals?.total?.knownTotal, data?.totals?.total?.measuredResponses)}</strong><small>{empty ? copy("api-entry-row.noUsageInPeriod") : data?.totals ? data.totals.responses > 0 ? copy("api-entry-row.observedResponses", { count: data.totals.responses, v0: formatNumber(data.totals.responses) }) : copy("api-entry-row.noExactResponseRecords_bead73") : copy("api-entry-row.notReported_adadfa")}</small>{data?.totals?.responses === 1 && displayLocale().startsWith("en") ? <span className="api-entry-sr-only">{copy("api-entry-row.observedResponses_compatibility", { v0: "1" })}</span> : null}</div> : null}
       {native.map(row => <div key={row.totals!.kind}><small>{unitNames[row.totals!.kind]}</small><strong>{count(row.totals!.total?.knownTotal, row.totals!.total?.measuredUnits)}</strong><small>{copy("api-entry-row.observedUnits", { count: row.totals!.units, v0: formatNumber(row.totals!.units) })}</small></div>)}
       {grok ? <div><small>{copy("api-entry-row.grokClosedInputs_12a648")}</small><strong>{count(grok.knownTotal, grok.measuredUnits)}</strong><small>{copy("api-entry-row.observedUnits", { count: grok.units, v0: formatNumber(grok.units) })}</small></div> : null}
     </dd></div>

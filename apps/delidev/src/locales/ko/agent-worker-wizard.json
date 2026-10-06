@@ -47,6 +47,8 @@
   "agent-worker-wizard.removalPending": "제거 대기 중",
   "agent-worker-wizard.checkedAtExecution": "실행 시작 시 확인됨",
   "agent-worker-wizard.noAccountsOnPage": "이 페이지에 계정이 없습니다.",
+  "agent-worker-wizard.noAccountsToSelectOnThisPage": "이 페이지에는 선택할 계정이 없습니다.",
+  "agent-worker-wizard.connectAnAccountThenRefresh": "AI 구독 또는 AI API 키에서 계정을 연결한 다음 새로 고치세요.",
   "agent-worker-wizard.noAccountsForSource": "이 소스에 계정이 없습니다. AI 구독 또는 AI API 키에서 계정을 추가하세요.",
   "agent-worker-wizard.accountPages": "계정 페이지",
   "agent-worker-wizard.firstAccountPage": "첫 계정 페이지",

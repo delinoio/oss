@@ -22,6 +22,90 @@ function fixture() {
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><ApiEntryRow row={row} provider={{ displayName: "OpenRouter", enabled: true }} active={active} {...callbacks} /></QueryClientProvider></TransportProvider>;
   return { id, row, data, read, client, callbacks, view };
 }
+function emptyFixture() {
+  const f = fixture();
+  Object.assign(f.data, create(GetUsageSummaryResponseSchema, {
+    fromUnixMs: f.data.fromUnixMs, untilUnixMs: f.data.untilUnixMs,
+    accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1,
+    totals: { total: {} }, estimatedCost: UsageCostState.UNAVAILABLE,
+    nativeAccounting: [
+      { totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT } },
+      { totals: { kind: AccountingUnitKind.OPENCODE_STEP } },
+    ],
+  }));
+  return f;
+}
+it.each(["ready", "failed"])("shows an empty usage interval as zero independently of account health: %s", async health => {
+  const f = emptyFixture();
+  f.row.documentJson = encode({ alias: "OpenRouter", type: "api", enabled: true, health, connection: { id: newRequestId() }, quota: [] });
+  render(f.view());
+  await screen.findByText("$0", { selector: "strong" });
+  expect(screen.getByText("0", { selector: "strong" })).toBeTruthy();
+  expect(screen.getAllByText("No usage in this period")).toHaveLength(2);
+  expect(screen.queryByText("No historical estimate")).toBeNull();
+  expect(screen.queryByText("No exact response records")).toBeNull();
+  expect(screen.getByText("Not reported", { selector: "strong" })).toBeTruthy();
+  expect(f.read).toHaveBeenCalledTimes(1);
+  for (const callback of Object.values(f.callbacks)) expect(callback).not.toHaveBeenCalled();
+});
+it.each([
+  "missing totals", "older accounting profile", "execution without usage", "compaction without usage",
+  "response without tokens", "response without prices", "Grok input without tokens", "Claude input without total", "OpenCode step without total", "missing native totals",
+])("keeps incomplete usage unavailable: %s", async scenario => {
+  const f = emptyFixture();
+  switch (scenario) {
+    case "missing totals": f.data.totals = undefined; break;
+    case "older accounting profile": f.data.accountingProfile = UsageAccountingProfile.UNSPECIFIED; break;
+    case "execution without usage": f.data.acceptedExecutionsWithoutResponse = 1; break;
+    case "compaction without usage": f.data.acceptedCompactionsWithoutResponse = 1; break;
+    case "response without tokens": f.data.totals!.responses = 1; f.data.totals!.total!.unavailableResponses = 1; break;
+    case "response without prices": f.data.totals!.responses = 1; f.data.totals!.total!.knownTotal = "25"; f.data.totals!.total!.measuredResponses = 1; break;
+    case "Grok input without tokens": f.data.totals!.accounting = create(GetUsageSummaryResponseSchema, { totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, unavailableUnits: 1 }] } }).totals!.accounting; break;
+    case "Claude input without total": f.data.nativeAccounting[0].totals!.units = 1; break;
+    case "OpenCode step without total": f.data.nativeAccounting[1].totals!.units = 1; break;
+    case "missing native totals": f.data.nativeAccounting[0].totals = undefined; break;
+  }
+  render(f.view());
+  await waitFor(() => expect(screen.queryByText("Loading usage…")).toBeNull());
+  expect(screen.getAllByText("Unavailable", { selector: "strong" }).length).toBeGreaterThan(0);
+  expect(screen.queryByText("$0", { selector: "strong" })).toBeNull();
+  expect(screen.queryByText("0", { selector: "strong" })).toBeNull();
+  expect(screen.queryByText("No usage in this period")).toBeNull();
+});
+it("does not display zero while the initial usage read is pending", async () => {
+  const f = emptyFixture();
+  f.read.mockImplementation(() => new Promise(() => {}));
+  render(f.view());
+  await screen.findByText("Loading usage…");
+  expect(screen.queryByText("$0", { selector: "strong" })).toBeNull();
+  expect(screen.queryByText("0", { selector: "strong" })).toBeNull();
+  expect(screen.queryByText("No usage in this period")).toBeNull();
+});
+it("retains stale empty usage after a failed refresh", async () => {
+  const f = emptyFixture(); render(f.view());
+  await screen.findByText("$0", { selector: "strong" });
+  f.read.mockRejectedValueOnce(new ConnectError("Read denied", Code.PermissionDenied));
+  await f.client.refetchQueries();
+  await screen.findByText(/Showing stale usage/);
+  expect(screen.getByText("$0", { selector: "strong" })).toBeTruthy();
+  expect(screen.getByText("0", { selector: "strong" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry usage for OpenRouter" }));
+  await waitFor(() => expect(screen.queryByText(/Showing stale usage/)).toBeNull());
+  expect(f.read).toHaveBeenCalledTimes(3);
+});
+it("keeps measured zero tokens and zero estimates distinct from an empty interval", async () => {
+  const f = emptyFixture();
+  f.data.totals!.responses = 1;
+  f.data.totals!.total!.knownTotal = "0";
+  f.data.totals!.total!.measuredResponses = 1;
+  f.data.estimatedCost = UsageCostState.KNOWN_SUBTOTAL;
+  f.data.estimates = create(GetUsageSummaryResponseSchema, { estimates: { currencies: [{ currency: "USD", knownAmount: "0", completeResponses: 1 }] } }).estimates;
+  render(f.view()); await screen.findAllByText("USD 0");
+  expect(screen.getByText("0", { selector: "strong" })).toBeTruthy();
+  expect(screen.getByText("1 observed responses")).toBeTruthy();
+  expect(screen.queryByText("$0", { selector: "strong" })).toBeNull();
+  expect(screen.queryByText("No usage in this period")).toBeNull();
+});
 it("reads one exact account and preserves decimal precision, currencies and the original navigation range", async () => {
   const f = fixture(); const view = render(f.view());
   await screen.findAllByText("USD 12.48");
@@ -87,6 +171,8 @@ it("does not turn missing evidence into zero, and preserves exhaustion without a
 it("retains failed reads as unavailable without disabling connection management", async () => {
   const f = fixture(); f.read.mockRejectedValue(new ConnectError("Read denied", Code.PermissionDenied));
   render(f.view()); await screen.findByText(/Entry controls remain available/);
+  expect(screen.queryByText("$0", { selector: "strong" })).toBeNull();
+  expect(screen.queryByText("0", { selector: "strong" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Manage connection" }));
   expect(f.callbacks.manage).toHaveBeenCalledTimes(1);
 });

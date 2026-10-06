@@ -30,7 +30,7 @@
   "saved-connections.theOriginalNameEditMayAlready_1ba462": "The original name edit may already be saved. Retrying checks the same request; discarding this draft does not undo an accepted change.",
   "saved-connections.confirmConnectionRemoval_36e149": "Confirm connection removal",
   "saved-connections.remove_d25d10": "Remove <s0/>",
-  "saved-connections.thisClosesThisServerSWindow_340931": "This closes this server's window and discards its unsent drafts. It deletes this computer's saved client credential and pairing material. Server sessions, independent Workers and work files continue unchanged.",
+  "saved-connections.thisClosesThisServerSWindow_340931": "This closes all windows for this saved connection and discards their unsent drafts. It deletes this computer's saved client credential and pairing material. Server sessions, independent Workers and work files continue unchanged.",
   "saved-connections.thisIsLocalRemovalPreviouslyCopied_af18b5": "This is local removal. Previously copied credentials and other running clients are not revoked. Use the server's Paired devices settings to revoke a device explicitly.",
   "saved-connections.theConnectionChangedKeepItRefresh_3297d6": "The connection changed. Keep it, refresh, and confirm the current name before removing it.",
   "saved-connections.retryOriginalConnectionRemoval_34f433": "Retry original connection removal",

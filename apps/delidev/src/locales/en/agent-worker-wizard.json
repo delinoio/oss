@@ -47,6 +47,8 @@
   "agent-worker-wizard.removalPending": "Removal pending",
   "agent-worker-wizard.checkedAtExecution": "Checked when execution starts",
   "agent-worker-wizard.noAccountsOnPage": "No accounts on this page.",
+  "agent-worker-wizard.noAccountsToSelectOnThisPage": "No accounts to select on this page.",
+  "agent-worker-wizard.connectAnAccountThenRefresh": "Connect an account in AI Subscription or AI API Keys, then refresh.",
   "agent-worker-wizard.noAccountsForSource": "No accounts for this source. Add an account in AI Subscription or AI API Keys.",
   "agent-worker-wizard.accountPages": "Account pages",
   "agent-worker-wizard.firstAccountPage": "First account page",

@@ -20,7 +20,7 @@ use tauri::{
 };
 use tauri_runtime_cef::CefRuntime;
 
-use super::{SavedWindows, saved_binding, show, trusted_main, trusted_url};
+use super::{ProductWindows, saved_binding, show, trusted_local, trusted_url};
 
 const TRAY_ID: &str = "delidev-status";
 const STALE_AFTER: Duration = Duration::from_secs(45);
@@ -88,10 +88,10 @@ pub struct TrayHost {
 }
 fn authorized(
     window: &WebviewWindow<CefRuntime>,
-    windows: &SavedWindows,
+    windows: &ProductWindows,
 ) -> Result<(), NativeFailure> {
-    if window.label() == "main" {
-        trusted_main(window)
+    if super::is_local(window) {
+        trusted_local(window)
     } else {
         saved_binding(window, windows).map(|_| ())
     }
@@ -100,82 +100,118 @@ fn authorized(
 pub async fn begin_tray(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
 ) -> Result<String, NativeFailure> {
-    authorized(&window, &windows)?;
-    let scope = uuid::Uuid::now_v7().to_string();
-    host.state
-        .lock()
-        .map_err(|_| NativeFailure::Busy)?
-        .windows
-        .insert(
-            window.label().into(),
-            Presentation {
-                scope: scope.clone(),
-                revision: 0,
-                summary: None,
-                received: Instant::now(),
-                stale: false,
-            },
-        );
-    schedule(&app);
-    Ok(scope)
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
+        authorized(&window, &windows)?;
+        let scope = uuid::Uuid::now_v7().to_string();
+        host.state
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?
+            .windows
+            .insert(
+                window.label().into(),
+                Presentation {
+                    scope: scope.clone(),
+                    revision: 0,
+                    summary: None,
+                    received: Instant::now(),
+                    stale: false,
+                },
+            );
+        schedule(&app);
+        Ok(scope)
+    }
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 pub async fn publish_tray(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
     scope: String,
     revision: u32,
     summary: TraySummary,
 ) -> Result<(), NativeFailure> {
-    authorized(&window, &windows)?;
-    let host = Arc::clone(host.inner());
-    let windows = Arc::clone(windows.inner());
-    let window = window.clone();
-    // File synchronization runs off the native UI and async executor threads.
-    // Preserve order under the tray scope/revision lock, and recheck the saved
-    // binding there so a closed/replaced window cannot publish another profile.
-    tauri::async_runtime::spawn_blocking(move || {
-        // CEF URL reads wait on the native UI loop. Do them before acquiring
-        // the publication lock so UI-thread shutdown can join that lock safely.
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
         authorized(&window, &windows)?;
-        let binding = if window.label() == "main" {
-            None
-        } else {
-            Some(saved_binding(&window, &windows)?)
-        };
-        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
-        if host.stop.load(Ordering::Acquire) {
-            return Err(NativeFailure::Stopped);
-        }
-        if let Some(binding) = &binding {
-            let current = windows.0.try_lock().map_err(|_| NativeFailure::Busy)?;
-            if !current.get(window.label()).is_some_and(|value| {
-                !value.closing
-                    && value.instance == binding.instance
-                    && value.profile.id == binding.profile.id
-            }) {
-                return Err(NativeFailure::PermissionDenied);
+        let host = Arc::clone(host.inner());
+        let windows = Arc::clone(windows.inner());
+        let window = window.clone();
+        // File synchronization runs off the native UI and async executor
+        // threads. Preserve order under the tray scope/revision lock,
+        // and recheck the saved binding there so a closed/replaced
+        // window cannot publish another profile.
+        tauri::async_runtime::spawn_blocking(move || {
+            // CEF URL reads wait on the native UI loop. Do them before
+            // acquiring the publication lock so UI-thread shutdown
+            // can join that lock safely.
+            authorized(&window, &windows)?;
+            let binding = if super::is_local(&window) {
+                None
+            } else {
+                Some(saved_binding(&window, &windows)?)
+            };
+            let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+            if host.stop.load(Ordering::Acquire) {
+                return Err(NativeFailure::Stopped);
             }
-        }
-        state.publish(window.label(), &scope, revision, summary.clone())?;
-        if let Some(binding) = binding {
-            // Widget storage is a separate presentation outcome. Its closed
-            // diagnostic and the widget's expiry remain truthful without
-            // disabling an already accepted in-memory tray publication.
-            let _ =
-                super::widget_host::publish(&binding.profile.id, &binding.profile.name, &summary);
-        }
-        Ok::<(), NativeFailure>(())
-    })
-    .await
-    .map_err(|_| NativeFailure::StorageUnavailable)??;
-    schedule(&app);
-    Ok(())
+            if let Some(binding) = &binding {
+                let current = windows
+                    .bindings
+                    .try_lock()
+                    .map_err(|_| NativeFailure::Busy)?;
+                if !current.get(window.label()).is_some_and(|value| {
+                    !value.closing
+                        && value.instance == binding.instance
+                        && value.profile.id == binding.profile.id
+                }) {
+                    return Err(NativeFailure::PermissionDenied);
+                }
+            }
+            state.publish(window.label(), &scope, revision, summary.clone())?;
+            if let Some(binding) = binding {
+                let registry = windows
+                    .registry
+                    .try_lock()
+                    .map_err(|_| NativeFailure::Busy)?;
+                let writer = registry.oldest(&delidev_desktop::window_registry::Role::Saved(
+                    binding.profile.id.clone(),
+                ));
+                drop(registry);
+                if writer
+                    .as_ref()
+                    .is_none_or(|entry| entry.instance != binding.instance)
+                {
+                    return Ok(());
+                }
+                // Widget storage is a separate presentation outcome. Its closed
+                // diagnostic and the widget's expiry remain truthful without
+                // disabling an already accepted in-memory tray publication.
+                let _ = super::widget_host::publish(
+                    &binding.profile.id,
+                    &binding.profile.name,
+                    &summary,
+                );
+            }
+            Ok::<(), NativeFailure>(())
+        })
+        .await
+        .map_err(|_| NativeFailure::StorageUnavailable)??;
+        schedule(&app);
+        Ok(())
+    }
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 pub fn remove_widget(app: &AppHandle<CefRuntime>, id: &str) {
@@ -187,36 +223,50 @@ pub fn remove_widget(app: &AppHandle<CefRuntime>, id: &str) {
 #[tauri::command]
 pub async fn read_tray_action(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
 ) -> Result<Option<TrayAction>, NativeFailure> {
-    authorized(&window, &windows)?;
-    let action = host
-        .state
-        .lock()
-        .map_err(|_| NativeFailure::Busy)?
-        .pending
-        .get(window.label())
-        .cloned();
-    Ok(action.filter(|action| {
-        action.notification_scope.as_ref().is_none_or(|scope| {
-            window
-                .state::<Arc<super::NotificationHost>>()
-                .current(window.label(), scope)
-        })
-    }))
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
+        authorized(&window, &windows)?;
+        let action = host
+            .state
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?
+            .pending
+            .get(window.label())
+            .cloned();
+        Ok(action.filter(|action| {
+            action.notification_scope.as_ref().is_none_or(|scope| {
+                window
+                    .state::<Arc<super::NotificationHost>>()
+                    .current(window.label(), scope)
+            })
+        }))
+    }
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 pub async fn acknowledge_tray_action(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<TrayHost>>,
     id: String,
 ) -> Result<(), NativeFailure> {
-    authorized(&window, &windows)?;
-    let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
-    state.acknowledge(window.label(), &id);
-    Ok(())
+    let response_window = window.clone();
+    let original_authority = super::capture_authority(&response_window)?;
+    let result = async {
+        authorized(&window, &windows)?;
+        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+        state.acknowledge(window.label(), &id);
+        Ok(())
+    }
+    .await;
+    super::recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 pub fn schedule(app: &AppHandle<CefRuntime>) {
@@ -265,12 +315,12 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
         return Ok(());
     };
     let host = app.state::<Arc<TrayHost>>();
-    let saved = app.state::<Arc<SavedWindows>>();
+    let saved = app.state::<Arc<ProductWindows>>();
     // Both state maps are touched only long enough to build bounded native UI.
     // No controller, network operation, credential read or product call occurs.
-    // Saved-label publication can be awaiting the main thread while holding
-    // its lock. Skip this repaint instead of blocking the event loop on it.
-    let saved = match saved.0.try_lock() {
+    // Skip contention rather than delaying the native event loop. The joined
+    // presentation timer schedules another repaint with current labels.
+    let saved = match saved.bindings.try_lock() {
         Ok(values) => values.clone(),
         Err(_) => return Ok(()),
     };
@@ -284,20 +334,31 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?)?;
-    let mut labels: Vec<_> = app.webview_windows().into_keys().collect();
-    labels.sort();
-    for label in labels {
-        let (name, instance) = if label == "main" {
-            (text(Message::Computer).to_owned(), None)
-        } else {
-            let Some(binding) = saved.get(&label).filter(|v| !v.closing) else {
-                continue;
-            };
-            (
-                menu_alias(&binding.profile.name),
-                Some(binding.instance.clone()),
-            )
+    let registry = match app.state::<Arc<ProductWindows>>().registry.try_lock() {
+        Ok(registry) => registry.entries(),
+        Err(_) => return Ok(()),
+    };
+    for entry in registry
+        .into_iter()
+        .filter(|entry| entry.phase == delidev_desktop::window_registry::Phase::Ready)
+    {
+        let label = entry.label;
+        let name = match entry.role {
+            delidev_desktop::window_registry::Role::Local => {
+                format!("{} · Window {}", text(Message::Computer), entry.number)
+            }
+            delidev_desktop::window_registry::Role::Saved(_) => {
+                let Some(binding) = saved.get(&label).filter(|v| !v.closing) else {
+                    continue;
+                };
+                format!(
+                    "{} · Window {}",
+                    menu_alias(&binding.profile.name),
+                    entry.number
+                )
+            }
         };
+        let instance = Some(entry.instance);
         let action = |destination| {
             Some(Activation {
                 label: label.clone(),
@@ -571,9 +632,7 @@ fn activate(app: &AppHandle<CefRuntime>, id: &str) {
         return;
     }
     if id == "tray-show" {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = show(&window);
-        }
+        super::window_host::restore_recent(app);
         return;
     }
     let host = app.state::<Arc<TrayHost>>();
@@ -635,17 +694,16 @@ fn navigate_off_loop(
     if !window.url().is_ok_and(|url| trusted_url(&url)) {
         return;
     }
-    if let Some(instance) = &action.instance {
-        let windows = app.state::<Arc<SavedWindows>>();
-        if !window.url().is_ok_and(|url| trusted_url(&url))
-            || !windows.0.try_lock().is_ok_and(|values| {
-                values
-                    .get(&action.label)
-                    .is_some_and(|value| !value.closing && &value.instance == instance)
-            })
-        {
-            return;
-        }
+    let original = match super::capture_authority(&window) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    if action
+        .instance
+        .as_ref()
+        .is_some_and(|instance| &original.entry.instance != instance)
+    {
+        return;
     }
     if host.stop.load(Ordering::Acquire)
         || notification_scope.as_ref().is_some_and(|scope| {
@@ -653,6 +711,9 @@ fn navigate_off_loop(
                 .current(&action.label, scope)
         })
     {
+        return;
+    }
+    if super::recheck_authority(&window, &original).is_err() {
         return;
     }
     if let Ok(mut state) = host.state.lock() {
