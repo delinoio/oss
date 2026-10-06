@@ -564,6 +564,7 @@
       "scripts/release/generate-delidev-updater.mjs",
       "scripts/release/linux/**",
       "scripts/release/project.mjs",
+      "scripts/release/legacy-cli-release.mjs",
       "scripts/release/runmoor.mjs",
       "scripts/release/runmoor-homebrew.mjs",
       "packaging/homebrew/templates/runmoor.rb.tmpl",
