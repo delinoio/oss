@@ -623,6 +623,9 @@ jobs:
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Test DevHud API client
+        run: pnpm --filter @delinoio/devhud-api-client test
+
       - name: Run affected frontend contracts
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['devhud-frontend'] }}
@@ -1314,10 +1317,10 @@ jobs:
           key: ${{ steps.prebuilt.outputs.cache-key }}
 
 
-  devhud-protocol:
+  delidev-protocol:
     needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-protocol'] }}
-    name: DevHud Protocol and Client
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-protocol'] }}
+    name: DeliDev Protocol and Client
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -1342,13 +1345,10 @@ jobs:
         run: pnpm proto:check
 
       - name: Test Go bindings
-        run: go test ./protos/...
+        run: go test ./protos/gen/go/delidev/...
 
-      - name: Check TypeScript client
+      - name: Check DeliDev client and desktop
         run: |
-          pnpm --filter @delinoio/devhud-api-client lint
-          pnpm --filter @delinoio/devhud-api-client test
-          pnpm --filter @delinoio/devhud-api-client build
           pnpm --filter @delinoio/delidev-api-client lint
           pnpm --filter @delinoio/delidev-api-client test
           pnpm --filter @delinoio/delidev-api-client build
@@ -1893,7 +1893,7 @@ jobs:
       - devhud-mobile-contracts
       - devhud-ios-simulator
       - devhud-android-emulator
-      - devhud-protocol
+      - delidev-protocol
       - devhud-admin
       - devhud-api
       - devhud-oci
