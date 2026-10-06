@@ -286,6 +286,7 @@ jobs:
           FORCE_RUN: 'true'
 
       - name: Run go test
+        # The central runner uses -count=1 for execution and reuses compiled objects.
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:go:test
         env:
           CI_GO_TEST_SHARD: ${{ matrix.shard }}

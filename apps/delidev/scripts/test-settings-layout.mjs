@@ -147,7 +147,7 @@ try {
   const checkHiddenAccountChoices = async () => {
     await select("Agent Workers");
     await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
-    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await page.getByRole("radio", { name: "Codex", exact: true }).click();
     await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
     const form = page.locator(".worker-wizard");
     await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
