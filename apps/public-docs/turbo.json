@@ -1,0 +1,37 @@
+{
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "ci:routes": {
+      "cache": true,
+      "dependsOn": [
+        "build:frontend",
+        "@delinoio/docs-site-switcher#test"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/docs/apps-*-docs-foundation.md"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ]
+    },
+    "ci:check": {
+      "cache": false,
+      "dependsOn": [
+        "ci:routes"
+      ]
+    },
+    "test": {
+      "cache": false
+    }
+  }
+}

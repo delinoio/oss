@@ -11,13 +11,22 @@
         "package.json",
         "pnpm-lock.yaml",
         "protos/async_commit_hook/v1/**",
-        "protos/delidev/v1/**"
+        "protos/delidev/v1/**",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [
         "protos/gen/**",
         "packages/devhud-api-client/src/gen/**",
         "packages/async-commit-hook-api-client/src/gen/**",
         "packages/delidev-api-client/src/gen/**"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT"
       ]
     },
     "dev": {
@@ -54,11 +63,20 @@
         "!*/**/*.test.tsx",
         "!*/**/*.e2e.ts",
         "!*/**/*.e2e.tsx",
-        "!*/**/*.cy.ts"
+        "!*/**/*.cy.ts",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [
         "dist/**",
         ".next/**"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT"
       ]
     },
     "build:frontend": {
@@ -70,6 +88,18 @@
         "build/**",
         "artifacts/**",
         "doc_build/**"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
       ]
     },
     "build": {
@@ -94,7 +124,13 @@
         "!*/**/*.test.tsx",
         "!*/**/*.e2e.ts",
         "!*/**/*.e2e.tsx",
-        "!*/**/*.cy.ts"
+        "!*/**/*.cy.ts",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [
         "dist/**",
@@ -102,22 +138,127 @@
         "build/**",
         "artifacts/**",
         "doc_build/**"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT"
       ]
     },
-    "test": {},
+    "test": {
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ]
+    },
     "typecheck": {
       "dependsOn": [
         "^build"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
       ]
     },
-    "test:unit": {},
-    "test:components": {},
-    "test:accessibility": {},
-    "test:security": {},
-    "test:adapters": {},
+    "test:unit": {
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ]
+    },
+    "test:components": {
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ]
+    },
+    "test:accessibility": {
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ]
+    },
+    "test:security": {
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ]
+    },
+    "test:adapters": {
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ]
+    },
     "lint": {
       "dependsOn": [
         "^lint"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
       ]
     },
     "async-commit-hook#test": {
@@ -127,11 +268,41 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs",
-        "$TURBO_ROOT$/scripts/dev-environment/process.mjs"
+        "$TURBO_ROOT$/scripts/dev-environment/process.mjs",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [
         "dist/**"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT"
       ]
+    },
+    "ci:check": {
+      "cache": false
+    },
+    "ci:typecheck": {
+      "dependsOn": [
+        "^build"
+      ],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": []
     }
   }
 }

@@ -83,3 +83,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Export independent server-login capability 30, typed progress state/name/generation and write-only original callback messages. URLs, callback bytes and unsaved suggested names stay outside shared caches/persistence/logs. Preserve API, Worker protected-lane and quota authorization; generate outputs from reconciled schemas.
 
 - Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
+
+- PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.

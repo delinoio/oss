@@ -1,5 +1,7 @@
 # DeliDev desktop client
 
+PR validation is owned by the desktop Turbo task graph: cache type checks, pure UI assertions and frontend output; execute Go-server integration, QA, widget and native packaging fixtures every time. Serialize pure UI, client Go integration, desktop Go integration and QA, and keep jsdom `maxWorkers: 4`. Local `pnpm test` retains the complete validation sequence. Follow `docs/repository-workflow-contract.md` for cache authentication and evidence limits.
+
 ## In-app toast notifications
 
 `src/toast-notifications.tsx`, `src/toast-store.ts` and the static scoped stylesheet own transient in-app notifications. Each authenticated connection mounts one `NotificationProvider` inside its existing connection identity boundary. `useNotifications()` exposes `notify({ kind, message, id?, durationMs? }): string` and `dismiss(id)`. `ToastKind` is the closed success/info/warning/error enum. Publishing updates only the viewport subscription, not conversation/query consumers. Isolated consumers without a provider receive an inert controller; missing optional presentation cannot turn an acknowledged business operation into a failed mutation.

@@ -1,5 +1,7 @@
 # DeliDev TypeScript client
 
+Pure client fixtures use the cacheable `test:unit` Turbo leaf; the real temporary Go server uses uncached `test:integration`. CI serializes that integration after desktop pure UI and before desktop integration/QA through explicit task dependencies. Local `pnpm test` executes both client suites. Imported-layout fixtures hash the shared protocol layout file. See `docs/repository-workflow-contract.md`.
+
 Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAccountOAuth, CancelAccountOAuth and GetAccountOAuthStatus, with exact bigint revisions and closed OAuth state/connection-method enums. Authorization URL exists only in original live Start; status carries metadata only. Completion code is a write-only bounded byte array: use a direct authenticated RPC without query/mutation-cache retention, clear transient buffers, and recover only the original completion identity without code. No client-side retry may repeat an exchange. Preserve all four existing account-flow gates independently of capability 5 under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Request diagnostic client

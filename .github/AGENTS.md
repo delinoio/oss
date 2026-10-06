@@ -33,3 +33,5 @@
 - Shared Tauri CLI preparation uses `setup-prebuilt` and execution-host lock selection; restore/verify on native and mobile paths, save only after a successful main job, and retain existing application Cargo caches. Native DeliDev dry runs remain read-only and credential-free.
 
 - DevHud Linux Xvfb smokes must provide an explicit session-local StatusNotifierWatcher fixture for the pinned ksni tray backend, retain Chromium sandbox requirements, and keep fixture-only tray registration distinct from real desktop-panel acceptance. Only AppImage smokes may set APPDIR and APPIMAGE.
+
+- PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.

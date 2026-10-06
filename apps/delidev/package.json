@@ -13,8 +13,8 @@
     "build:frontend": "rsbuild build",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && vitest run && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm test:widget && pnpm test:qa && pnpm build && node scripts/qa/check-release.mjs",
-    "test:unit": "vitest run",
+    "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:bundle-dry-run && pnpm test:desktop-launch && pnpm test:widget && pnpm test:qa && pnpm build && node scripts/qa/check-release.mjs",
+    "test:unit": "vitest run --exclude \"**/*.integration.test.*\"",
     "prepare:assets": "node scripts/prepare-assets.mjs",
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
     "prepare:widget": "node scripts/build-widget.mjs",
@@ -26,7 +26,9 @@
     "bundle:dry-run": "node scripts/bundle-native-dry-run.mjs",
     "test:bundle-dry-run": "node --test scripts/bundle-macos-dry-run.test.mjs scripts/native-package.test.mjs scripts/bundle-updater-dry-run.test.mjs",
     "test:desktop-launch": "node --test scripts/run-desktop.test.mjs scripts/prepare-assets.test.mjs",
-    "bundle:updater-dry-run": "node scripts/bundle-updater-dry-run.mjs"
+    "bundle:updater-dry-run": "node scripts/bundle-updater-dry-run.mjs",
+    "test:integration": "vitest run .integration.test.",
+    "ci:release": "node scripts/qa/check-release.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",

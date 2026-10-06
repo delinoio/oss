@@ -1,5 +1,7 @@
 # DevHud Maintainer Operations Contract
 
+PR validation executes package-owned Turbo leaves through `ci:check`, preserving the complete frontend assertions, repeated clean-build checks and native boundaries. Cache-only Vercel OIDC access follows `docs/repository-workflow-contract.md`; it grants no deployment, signing or release authority. Turbo run summaries complement `CI Result` and native evidence.
+
 ## Scope and invariants
 
 This is the internal maintainer runbook for the implemented DevHud workflow. The repository contracts and checked-in scripts remain authoritative; this document names the operator actions, evidence, and stopping points. Never print secrets, tokens, signed URLs, private response bodies, local paths, capture bytes, prompts, or issue bodies.

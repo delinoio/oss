@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
+import { cacheContext, cachePolicy } from "./cache-context.mjs";
+
 const require = createRequire(import.meta.url);
 
 const [workspace, ...tasks] = process.argv.slice(2);
@@ -12,7 +14,10 @@ if (process.env.FORCE_RUN !== "true") {
   }
   args.push("--affected");
 }
-console.log(JSON.stringify({ event: "ci_workspace", workspace, tasks, forced: process.env.FORCE_RUN === "true" }));
+process.env.CI_CACHE_CONTEXT = cacheContext();
+const policy = cachePolicy();
+if (policy) args.push(`--cache=${policy}`, "--summarize");
+console.log(JSON.stringify({ event: "ci_workspace", workspace, tasks, forced: process.env.FORCE_RUN === "true", cache: policy ?? "configured-local-development", remoteAuth: process.env.TURBO_REMOTE_CACHE_AUTH === "true" }));
 // Windows package-manager shims require a shell. Invoke the installed Turbo
 // Node entry point directly so paths and task arguments remain literal on all OSes.
 const result = spawnSync(process.execPath, args, { stdio: "inherit", shell: false });

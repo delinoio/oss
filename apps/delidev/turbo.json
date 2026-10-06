@@ -1,92 +1,9 @@
 {
-  "$schema": "https://turbo.build/schema.json",
   "extends": [
     "//"
   ],
   "tasks": {
-    "test": {
-      "cache": false
-    },
-    "build": {
-      "cache": false
-    },
-    "test:unit": {
-      "dependsOn": [
-        "^build"
-      ]
-    },
-    "test:components": {
-      "dependsOn": [
-        "^build"
-      ]
-    },
-    "test:security": {
-      "dependsOn": [
-        "^build"
-      ]
-    },
-    "test:adapters": {
-      "dependsOn": [
-        "^build"
-      ]
-    },
-    "test:native:capture": {
-      "cache": false,
-      "dependsOn": [
-        "ci:build:frontend"
-      ],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "CARGO_NET_OFFLINE"
-      ]
-    },
-    "test:native:shortcuts": {
-      "cache": false,
-      "dependsOn": [
-        "ci:build:frontend"
-      ],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "CARGO_NET_OFFLINE"
-      ]
-    },
-    "test:native:ipc": {
-      "cache": false,
-      "dependsOn": [
-        "ci:build:frontend"
-      ],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "CARGO_NET_OFFLINE"
-      ]
-    },
-    "test:native:updater": {
-      "cache": false,
-      "dependsOn": [
-        "ci:build:frontend"
-      ],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "CARGO_NET_OFFLINE"
-      ]
-    },
-    "mobile:generate": {
-      "cache": false
-    },
-    "build:ios": {
-      "cache": false
-    },
-    "build:android": {
-      "cache": false
-    },
-    "smoke:platform": {
-      "cache": false
-    },
-    "ci:build:frontend": {
+    "typecheck": {
       "cache": true,
       "dependsOn": [
         "^build"
@@ -98,19 +15,56 @@
         "$TURBO_ROOT$/pnpm-lock.yaml",
         "$TURBO_ROOT$/rust-toolchain",
         "$TURBO_ROOT$/go.mod",
-        "$TURBO_ROOT$/go.sum",
-        "$TURBO_ROOT$/docs/apps-devhud-*.md"
+        "$TURBO_ROOT$/go.sum"
       ],
-      "outputs": [
-        "dist/**"
-      ],
+      "outputs": [],
       "env": [
-        "CI_CACHE_CONTEXT",
-        "TAURI_ENV_PLATFORM",
-        "TAURI_ENV_TARGET_TRIPLE"
+        "CI_CACHE_CONTEXT"
       ]
     },
-    "ci:contracts": {
+    "test:unit": {
+      "cache": true,
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ]
+    },
+    "test:integration": {
+      "cache": false,
+      "dependsOn": [
+        "test:unit",
+        "@delinoio/delidev-api-client#test:integration"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "RUNNER_TEMP"
+      ]
+    },
+    "test:bundle-dry-run": {
       "cache": false,
       "dependsOn": [],
       "inputs": [
@@ -135,7 +89,7 @@
         "GITHUB_SHA"
       ]
     },
-    "ci:clean-frontend": {
+    "test:desktop-launch": {
       "cache": false,
       "dependsOn": [],
       "inputs": [
@@ -160,7 +114,7 @@
         "GITHUB_SHA"
       ]
     },
-    "mobile:check": {
+    "test:widget": {
       "cache": false,
       "dependsOn": [],
       "inputs": [
@@ -185,7 +139,34 @@
         "GITHUB_SHA"
       ]
     },
-    "verify:pins": {
+    "test:qa": {
+      "cache": false,
+      "dependsOn": [
+        "test:integration"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "GOCACHE",
+        "GOPATH",
+        "GOFLAGS",
+        "CARGO_NET_OFFLINE",
+        "npm_execpath",
+        "RUNNER_TEMP",
+        "GITHUB_SHA"
+      ]
+    },
+    "prepare:sidecar": {
       "cache": false,
       "dependsOn": [],
       "inputs": [
@@ -208,29 +189,45 @@
         "npm_execpath",
         "RUNNER_TEMP",
         "GITHUB_SHA"
+      ]
+    },
+    "ci:release": {
+      "cache": true,
+      "dependsOn": [
+        "build:frontend"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/docs/apps-delidev-*.md",
+        "$TURBO_ROOT$/docs/cmds-delidev-*.md"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT"
       ]
     },
     "ci:check": {
       "cache": false,
       "dependsOn": [
-        "ci:typecheck",
+        "typecheck",
         "test:unit",
-        "test:components",
-        "ci:contracts",
-        "ci:clean-frontend",
-        "mobile:check"
+        "test:integration",
+        "test:bundle-dry-run",
+        "test:desktop-launch",
+        "test:widget",
+        "test:qa",
+        "ci:release",
+        "@delinoio/delidev-api-client#ci:check"
       ]
     },
-    "ci:security:contracts": {
+    "test": {
       "cache": false
-    },
-    "ci:security": {
-      "cache": false,
-      "dependsOn": [
-        "test:security",
-        "test:adapters",
-        "ci:security:contracts"
-      ]
     }
   }
 }

@@ -82,7 +82,7 @@ export function runGoTests(shard, { run = spawnSync, log = console.log, platform
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const args = process.argv.slice(2);
+    const args = process.argv.length === 2 && process.env.CI_GO_TEST_SHARD ? ["--shard", process.env.CI_GO_TEST_SHARD] : process.argv.slice(2);
     if (args.length !== 2 || args[0] !== "--shard") throw new Error("Expected --shard all|core|server|harness|worker");
     process.exitCode = runGoTests(args[1]);
   } catch (error) {

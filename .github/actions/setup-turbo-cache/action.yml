@@ -1,0 +1,24 @@
+name: Setup Turbo cache
+description: Exchange trusted GitHub OIDC identity for a short-lived cache-only token
+runs:
+  using: composite
+  steps:
+    - name: Authenticate first-party CI cache
+      id: auth
+      if: ${{ vars.TURBO_TEAM != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      continue-on-error: true
+      uses: vercel/setup-turborepo-remote-cache-action@49d7b1b46ba4c9251e1977986bfe18336feabc8f # v1.1.0
+      with:
+        team: ${{ vars.TURBO_TEAM }}
+        policy: ${{ vars.TURBO_OIDC_POLICY }}
+    - name: Record cache availability
+      shell: bash
+      env:
+        AUTHENTICATED: ${{ steps.auth.outcome == 'success' }}
+      run: |
+        echo "TURBO_REMOTE_CACHE_AUTH=$AUTHENTICATED" >> "$GITHUB_ENV"
+        if [ "$AUTHENTICATED" = true ]; then
+          echo 'Turbo remote cache authenticated; task runner enforces main write / PR read policy.' >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo 'Turbo remote authentication unavailable or skipped; validation uses the local cache.' >> "$GITHUB_STEP_SUMMARY"
+        fi

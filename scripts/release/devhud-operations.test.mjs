@@ -40,7 +40,7 @@ test("CI evidence distinguishes PR validation from full native packaging", () =>
   }
   for (const id of ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"]) assert.equal(ciPaths[id].native, true);
   assert.equal(ciPaths["devhud-mobile-contracts"].native, undefined);
-  assert.match(ciWorkflow, /node scripts\/ci\/run-affected\.mjs devhud test/u);
+  assert.match(ciWorkflow, /node scripts\/ci\/run-affected\.mjs devhud ci:check/u);
   assert.match(workflowContract, /counterfactual estimate, not a measured post-change improvement/u);
 });
 
@@ -154,4 +154,16 @@ test("CI validates release fixtures without publication authority", () => {
   assert.match(workflowContract, /CI never builds a signed private candidate and never publishes/iu);
   assert.match(operations, /CI never builds a signed private candidate and never publishes/iu);
   assert.match(support, /validation evidence only/iu);
+});
+
+test("CI cache identity has no release authority and preserves non-cacheable native checks", () => {
+  for (const text of [workflowContract, operations, support]) assert.match(text, /cache-only|Cache-only|Cache access only|Remote Cache access only/u);
+  const action = yaml.load(readFileSync(`${root}/.github/actions/setup-turbo-cache/action.yml`, "utf8"));
+  const auth = action.runs.steps.find(({ id }) => id === "auth");
+  assert.equal(auth.continueOnError, undefined);
+  assert.equal(auth["continue-on-error"], true);
+  assert.match(auth.uses, /@49d7b1b46ba4c9251e1977986bfe18336feabc8f$/u);
+  assert.match(auth.if, /head.repo.full_name == github.repository/u);
+  const tasks = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8")).tasks;
+  for (const name of ["ci:clean-frontend", "mobile:check", "test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]) assert.equal(tasks[name].cache, false, name);
 });
