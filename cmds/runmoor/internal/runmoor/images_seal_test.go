@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"runtime"
 	"testing"
 )
 
@@ -60,6 +62,9 @@ func TestImageSealRejectsInvalidAutomaticPathsBeforeSideEffects(t *testing.T) {
 }
 
 func TestImageSealAutomaticPathsPreserveDefaultAndDedicatedDirectories(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("archive-backed Tart sealing fixture requires Darwin or Linux filesystem semantics")
+	}
 	for _, version := range []string{"", LatestRunner} {
 		for _, path := range []string{"", "/Users/runner/actions-runner", "/opt/actions-runner", "/Users/runner/actions runner"} {
 			t.Run(version+"/"+path, func(t *testing.T) {
@@ -108,6 +113,48 @@ func TestImageSealAutomaticPathsPreserveDefaultAndDedicatedDirectories(t *testin
 					t.Fatalf("automatic sealing made %d requests instead of metadata and archive requests", requests)
 				}
 			})
+		}
+	}
+}
+
+func TestImageSealRejectsInvalidRequestBeforePromotingCreatedVM(t *testing.T) {
+	c, store := fixtureStore(t)
+	driver, fixture := fakeTart(c)
+	images := &ImageManager{Store: store, Tart: driver}
+	im, err := images.Operate(context.Background(), c, ImageRequest{Action: "create", Name: "setup", IPSW: "/fixture.ipsw", Resources: Resources{1, 512}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, lock, err := prepareTartCreationHome(c, im.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Rename(vmPath(c, im.VM), tartCreationVMPath(c, im.ID)); err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	if err = lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupTartCreationHome(c, im.ID) })
+
+	before := store.View()
+	firstCommand := len(fixture.commands)
+	_, err = images.Operate(context.Background(), c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: LatestRunner, RunnerPath: "/"})
+	requireCode(t, err, ErrConfig)
+	if fingerprint(store.View()) != fingerprint(before) {
+		t.Fatal("invalid automatic path changed image state or reservations")
+	}
+	if _, statErr := os.Lstat(vmPath(c, im.VM)); !os.IsNotExist(statErr) {
+		t.Fatalf("invalid automatic path promoted the staged VM: %v", statErr)
+	}
+	if _, statErr := os.Lstat(tartCreationVMPath(c, im.ID)); statErr != nil {
+		t.Fatalf("invalid automatic path lost the staged VM: %v", statErr)
+	}
+	for _, args := range fixture.commands[firstCommand:] {
+		if len(args) == 0 || args[0] != "--version" {
+			t.Fatalf("invalid automatic path reached VM preparation: %v", args)
 		}
 	}
 }

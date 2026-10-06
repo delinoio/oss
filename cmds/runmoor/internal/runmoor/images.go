@@ -28,6 +28,23 @@ type ImageManager struct {
 	Client *http.Client
 }
 
+func validateImageSealRequest(req *ImageRequest) error {
+	automatic := req.RunnerVersion == "" || req.RunnerVersion == LatestRunner
+	if !automatic && !versionPattern.MatchString(req.RunnerVersion) {
+		return problem(ErrConfig, "Runner version must be latest or an exact version.", "Omit --runner-version to install the latest runner.")
+	}
+	if req.RunnerPath == "" {
+		req.RunnerPath = "/Users/runner/actions-runner"
+	}
+	if !validRunnerPath(req.RunnerPath) {
+		return problem(ErrConfig, "Runner path must be an absolute clean guest path.", "Use the same absolute guest directory as runner_path in TOML, without '..', NUL or line breaks.")
+	}
+	if automatic && !managedPathValid(req.RunnerPath) {
+		return problem(ErrConfig, "Automatic installation requires a dedicated clean runner directory.", "Use the default runner_path.")
+	}
+	return nil
+}
+
 func (m *ImageManager) imageRunner(im *Image, s Snapshot) Runner {
 	return Runner{ID: im.ID, Handle: Handle{VM: im.VM, PID: s.ImageTartPIDs[im.ID]}}
 }
@@ -91,6 +108,13 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 	im := s.Images[req.ID]
 	if im == nil {
 		return nil, problem(ErrImage, "Image revision does not exist.", "Use 'runmoor image list' to select an existing revision.")
+	}
+	if req.Action == "seal" {
+		// Validate request-only seal fields before recovering an interrupted Tart
+		// creation. Invalid input must not promote or inspect VM state.
+		if err := validateImageSealRequest(&req); err != nil {
+			return nil, err
+		}
 	}
 	if err := promoteCreatedTartVM(c, im.VM, s.Installation, im.ID); err != nil {
 		return nil, err
@@ -224,18 +248,6 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			return im, nil
 		}
 		automatic := req.RunnerVersion == "" || req.RunnerVersion == LatestRunner
-		if !automatic && !versionPattern.MatchString(req.RunnerVersion) {
-			return nil, problem(ErrConfig, "Runner version must be latest or an exact version.", "Omit --runner-version to install the latest runner.")
-		}
-		if req.RunnerPath == "" {
-			req.RunnerPath = "/Users/runner/actions-runner"
-		}
-		if !validRunnerPath(req.RunnerPath) {
-			return nil, problem(ErrConfig, "Runner path must be an absolute clean guest path.", "Use the same absolute guest directory as runner_path in TOML, without '..', NUL or line breaks.")
-		}
-		if automatic && !managedPathValid(req.RunnerPath) {
-			return nil, problem(ErrConfig, "Automatic installation requires a dedicated clean runner directory.", "Use the default runner_path.")
-		}
 		v, e := m.Tart.vmOwned(ctx, c, im.VM, s.Installation, im.ID)
 		if e != nil {
 			return nil, m.imageFailure(im.ID, e)
