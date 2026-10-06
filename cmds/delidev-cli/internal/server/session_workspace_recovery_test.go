@@ -352,7 +352,7 @@ func createUnbornRecoverySession(t *testing.T, f *accountFixture, selection doma
 	}
 	repo := domain.NewID()
 	_, err = db.Mutate(context.Background(), domain.NewID(), "fixture.local-recovery-repository", nil, func(tx *store.Tx) (any, error) {
-		return tx.Put(domain.RepositoryKind, repo, 0, "", "", domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Local recovery", Checkouts: []domain.Checkout{{MachineID: selection.MachineID, Path: checkout}}})
+		return tx.Put(domain.RepositoryKind, repo, 0, "", "", domain.Repository{Name: "Local recovery", Checkouts: []domain.Checkout{{MachineID: selection.MachineID, Path: checkout}}})
 	})
 	closeErr := db.Close()
 	if err != nil || closeErr != nil {
