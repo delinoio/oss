@@ -12,7 +12,77 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/configuration.proto.
  */
 export const file_delidev_v1_configuration: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kZWxpZGV2L3YxL2NvbmZpZ3VyYXRpb24ucHJvdG8SCmRlbGlkZXYudjEilwEKGFNhdmVDb25maWd1cmF0aW9uUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIWCg5zY2hlbWFfdmVyc2lvbhgDIAEoDRIVCg1kb2N1bWVudF9qc29uGAQgASgMIowBChlTYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEiYKCHJlc291cmNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEiEKA2pvYhgEIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiagoaRGVsZXRlQ29uZmlndXJhdGlvblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEiQKBGtpbmQYAiABKA4yFi5kZWxpZGV2LnYxLkVudGl0eUtpbmQiTwobRGVsZXRlQ29uZmlndXJhdGlvblJlc3BvbnNlEgoKAmlkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgiPQoVUHJldmlld1JvdXRpbmdSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkiLAoWUHJldmlld1JvdXRpbmdSZXNwb25zZRISCgpyb3V0ZV9qc29uGAEgASgMIhwKGkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0IjQKG0V4cG9ydENvbmZpZ3VyYXRpb25SZXNwb25zZRIVCg1kb2N1bWVudF9qc29uGAEgASgMIjsKIVByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBIWCg5zZWxlY3Rpb25fanNvbhgBIAEoDCI6CiJQcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhQKDHByZXZpZXdfanNvbhgBIAEoDCJLCh9BcHBseUNvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFAoMcHJldmlld19qc29uGAIgASgMIl0KIEFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIcmVwbGF5ZWQYAiABKAgSEwoLcmVzdWx0X2pzb24YAyABKAwylQUKFENvbmZpZ3VyYXRpb25TZXJ2aWNlEmYKE0V4cG9ydENvbmZpZ3VyYXRpb24SJi5kZWxpZGV2LnYxLkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0GicuZGVsaWRldi52MS5FeHBvcnRDb25maWd1cmF0aW9uUmVzcG9uc2USewoaUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnQSLS5kZWxpZGV2LnYxLlByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBouLmRlbGlkZXYudjEuUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRJ1ChhBcHBseUNvbmZpZ3VyYXRpb25JbXBvcnQSKy5kZWxpZGV2LnYxLkFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QaLC5kZWxpZGV2LnYxLkFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEmAKEVNhdmVDb25maWd1cmF0aW9uEiQuZGVsaWRldi52MS5TYXZlQ29uZmlndXJhdGlvblJlcXVlc3QaJS5kZWxpZGV2LnYxLlNhdmVDb25maWd1cmF0aW9uUmVzcG9uc2USZgoTRGVsZXRlQ29uZmlndXJhdGlvbhImLmRlbGlkZXYudjEuRGVsZXRlQ29uZmlndXJhdGlvblJlcXVlc3QaJy5kZWxpZGV2LnYxLkRlbGV0ZUNvbmZpZ3VyYXRpb25SZXNwb25zZRJXCg5QcmV2aWV3Um91dGluZxIhLmRlbGlkZXYudjEuUHJldmlld1JvdXRpbmdSZXF1ZXN0GiIuZGVsaWRldi52MS5QcmV2aWV3Um91dGluZ1Jlc3BvbnNlQjxaOmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vZGVsaWRldi92MTtkZWxpZGV2djFiBnByb3RvMw", [file_delidev_v1_common]);
+  fileDesc("Ch5kZWxpZGV2L3YxL2NvbmZpZ3VyYXRpb24ucHJvdG8SCmRlbGlkZXYudjEipQEKFlNhdmVBZ2VudFdvcmtlclJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhUKDWRvY3VtZW50X2pzb24YAiABKAwSNAoFbW9kZWwYAyABKAsyJS5kZWxpZGV2LnYxLkFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SFgoOc2NoZW1hX3ZlcnNpb24YBCABKA0icgoZQWdlbnRXb3JrZXJNb2RlbFNlbGVjdGlvbhISCghtb2RlbF9pZBgBIAEoCUgAEhMKCW5hdGl2ZV9pZBgCIAEoCUgAEh8KF2V4cGVjdGVkX21vZGVsX3JldmlzaW9uGAMgASgEQgsKCXNlbGVjdGlvbiKXAQoYU2F2ZUNvbmZpZ3VyYXRpb25SZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIkCgRraW5kGAIgASgOMhYuZGVsaWRldi52MS5FbnRpdHlLaW5kEhYKDnNjaGVtYV92ZXJzaW9uGAMgASgNEhUKDWRvY3VtZW50X2pzb24YBCABKAwijAEKGVNhdmVDb25maWd1cmF0aW9uUmVzcG9uc2USJgoIcmVzb3VyY2UYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSIQoDam9iGAQgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZSJqChpEZWxldGVDb25maWd1cmF0aW9uUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZCJPChtEZWxldGVDb25maWd1cmF0aW9uUmVzcG9uc2USCgoCaWQYASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCI9ChVQcmV2aWV3Um91dGluZ1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCSIsChZQcmV2aWV3Um91dGluZ1Jlc3BvbnNlEhIKCnJvdXRlX2pzb24YASABKAwiHAoaRXhwb3J0Q29uZmlndXJhdGlvblJlcXVlc3QiNAobRXhwb3J0Q29uZmlndXJhdGlvblJlc3BvbnNlEhUKDWRvY3VtZW50X2pzb24YASABKAwiOwohUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0EhYKDnNlbGVjdGlvbl9qc29uGAEgASgMIjoKIlByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVzcG9uc2USFAoMcHJldmlld19qc29uGAEgASgMIksKH0FwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIUCgxwcmV2aWV3X2pzb24YAiABKAwiXQogQXBwbHlDb25maWd1cmF0aW9uSW1wb3J0UmVzcG9uc2USEgoKcmVxdWVzdF9pZBgBIAEoCRIQCghyZXBsYXllZBgCIAEoCBITCgtyZXN1bHRfanNvbhgDIAEoDDLzBQoUQ29uZmlndXJhdGlvblNlcnZpY2USZgoTRXhwb3J0Q29uZmlndXJhdGlvbhImLmRlbGlkZXYudjEuRXhwb3J0Q29uZmlndXJhdGlvblJlcXVlc3QaJy5kZWxpZGV2LnYxLkV4cG9ydENvbmZpZ3VyYXRpb25SZXNwb25zZRJ7ChpQcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydBItLmRlbGlkZXYudjEuUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0Gi4uZGVsaWRldi52MS5QcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEnUKGEFwcGx5Q29uZmlndXJhdGlvbkltcG9ydBIrLmRlbGlkZXYudjEuQXBwbHlDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBosLmRlbGlkZXYudjEuQXBwbHlDb25maWd1cmF0aW9uSW1wb3J0UmVzcG9uc2USXAoPU2F2ZUFnZW50V29ya2VyEiIuZGVsaWRldi52MS5TYXZlQWdlbnRXb3JrZXJSZXF1ZXN0GiUuZGVsaWRldi52MS5TYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEmAKEVNhdmVDb25maWd1cmF0aW9uEiQuZGVsaWRldi52MS5TYXZlQ29uZmlndXJhdGlvblJlcXVlc3QaJS5kZWxpZGV2LnYxLlNhdmVDb25maWd1cmF0aW9uUmVzcG9uc2USZgoTRGVsZXRlQ29uZmlndXJhdGlvbhImLmRlbGlkZXYudjEuRGVsZXRlQ29uZmlndXJhdGlvblJlcXVlc3QaJy5kZWxpZGV2LnYxLkRlbGV0ZUNvbmZpZ3VyYXRpb25SZXNwb25zZRJXCg5QcmV2aWV3Um91dGluZxIhLmRlbGlkZXYudjEuUHJldmlld1JvdXRpbmdSZXF1ZXN0GiIuZGVsaWRldi52MS5QcmV2aWV3Um91dGluZ1Jlc3BvbnNlQjxaOmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vZGVsaWRldi92MTtkZWxpZGV2djFiBnByb3RvMw", [file_delidev_v1_common]);
+
+/**
+ * Saves a Worker and resolves its source-scoped model atomically.
+ *
+ * @generated from message delidev.v1.SaveAgentWorkerRequest
+ */
+export type SaveAgentWorkerRequest = Message<"delidev.v1.SaveAgentWorkerRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * @generated from field: bytes document_json = 2;
+   */
+  documentJson: Uint8Array;
+
+  /**
+   * @generated from field: delidev.v1.AgentWorkerModelSelection model = 3;
+   */
+  model?: AgentWorkerModelSelection | undefined;
+
+  /**
+   * @generated from field: uint32 schema_version = 4;
+   */
+  schemaVersion: number;
+};
+
+/**
+ * Describes the message delidev.v1.SaveAgentWorkerRequest.
+ * Use `create(SaveAgentWorkerRequestSchema)` to create a new message.
+ */
+export const SaveAgentWorkerRequestSchema: GenMessage<SaveAgentWorkerRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 0);
+
+/**
+ * @generated from message delidev.v1.AgentWorkerModelSelection
+ */
+export type AgentWorkerModelSelection = Message<"delidev.v1.AgentWorkerModelSelection"> & {
+  /**
+   * @generated from oneof delidev.v1.AgentWorkerModelSelection.selection
+   */
+  selection: {
+    /**
+     * @generated from field: string model_id = 1;
+     */
+    value: string;
+    case: "modelId";
+  } | {
+    /**
+     * @generated from field: string native_id = 2;
+     */
+    value: string;
+    case: "nativeId";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * Required for a canonical model selection; zero for direct native IDs.
+   *
+   * @generated from field: uint64 expected_model_revision = 3;
+   */
+  expectedModelRevision: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.AgentWorkerModelSelection.
+ * Use `create(AgentWorkerModelSelectionSchema)` to create a new message.
+ */
+export const AgentWorkerModelSelectionSchema: GenMessage<AgentWorkerModelSelection> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 1);
 
 /**
  * @generated from message delidev.v1.SaveConfigurationRequest
@@ -44,7 +114,7 @@ export type SaveConfigurationRequest = Message<"delidev.v1.SaveConfigurationRequ
  * Use `create(SaveConfigurationRequestSchema)` to create a new message.
  */
 export const SaveConfigurationRequestSchema: GenMessage<SaveConfigurationRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 0);
+  messageDesc(file_delidev_v1_configuration, 2);
 
 /**
  * @generated from message delidev.v1.SaveConfigurationResponse
@@ -78,7 +148,7 @@ export type SaveConfigurationResponse = Message<"delidev.v1.SaveConfigurationRes
  * Use `create(SaveConfigurationResponseSchema)` to create a new message.
  */
 export const SaveConfigurationResponseSchema: GenMessage<SaveConfigurationResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 1);
+  messageDesc(file_delidev_v1_configuration, 3);
 
 /**
  * @generated from message delidev.v1.DeleteConfigurationRequest
@@ -100,7 +170,7 @@ export type DeleteConfigurationRequest = Message<"delidev.v1.DeleteConfiguration
  * Use `create(DeleteConfigurationRequestSchema)` to create a new message.
  */
 export const DeleteConfigurationRequestSchema: GenMessage<DeleteConfigurationRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 2);
+  messageDesc(file_delidev_v1_configuration, 4);
 
 /**
  * @generated from message delidev.v1.DeleteConfigurationResponse
@@ -127,7 +197,7 @@ export type DeleteConfigurationResponse = Message<"delidev.v1.DeleteConfiguratio
  * Use `create(DeleteConfigurationResponseSchema)` to create a new message.
  */
 export const DeleteConfigurationResponseSchema: GenMessage<DeleteConfigurationResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 3);
+  messageDesc(file_delidev_v1_configuration, 5);
 
 /**
  * @generated from message delidev.v1.PreviewRoutingRequest
@@ -149,7 +219,7 @@ export type PreviewRoutingRequest = Message<"delidev.v1.PreviewRoutingRequest"> 
  * Use `create(PreviewRoutingRequestSchema)` to create a new message.
  */
 export const PreviewRoutingRequestSchema: GenMessage<PreviewRoutingRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 4);
+  messageDesc(file_delidev_v1_configuration, 6);
 
 /**
  * @generated from message delidev.v1.PreviewRoutingResponse
@@ -166,7 +236,7 @@ export type PreviewRoutingResponse = Message<"delidev.v1.PreviewRoutingResponse"
  * Use `create(PreviewRoutingResponseSchema)` to create a new message.
  */
 export const PreviewRoutingResponseSchema: GenMessage<PreviewRoutingResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 5);
+  messageDesc(file_delidev_v1_configuration, 7);
 
 /**
  * @generated from message delidev.v1.ExportConfigurationRequest
@@ -179,7 +249,7 @@ export type ExportConfigurationRequest = Message<"delidev.v1.ExportConfiguration
  * Use `create(ExportConfigurationRequestSchema)` to create a new message.
  */
 export const ExportConfigurationRequestSchema: GenMessage<ExportConfigurationRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 6);
+  messageDesc(file_delidev_v1_configuration, 8);
 
 /**
  * @generated from message delidev.v1.ExportConfigurationResponse
@@ -196,7 +266,7 @@ export type ExportConfigurationResponse = Message<"delidev.v1.ExportConfiguratio
  * Use `create(ExportConfigurationResponseSchema)` to create a new message.
  */
 export const ExportConfigurationResponseSchema: GenMessage<ExportConfigurationResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 7);
+  messageDesc(file_delidev_v1_configuration, 9);
 
 /**
  * @generated from message delidev.v1.PreviewConfigurationImportRequest
@@ -213,7 +283,7 @@ export type PreviewConfigurationImportRequest = Message<"delidev.v1.PreviewConfi
  * Use `create(PreviewConfigurationImportRequestSchema)` to create a new message.
  */
 export const PreviewConfigurationImportRequestSchema: GenMessage<PreviewConfigurationImportRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 8);
+  messageDesc(file_delidev_v1_configuration, 10);
 
 /**
  * @generated from message delidev.v1.PreviewConfigurationImportResponse
@@ -230,7 +300,7 @@ export type PreviewConfigurationImportResponse = Message<"delidev.v1.PreviewConf
  * Use `create(PreviewConfigurationImportResponseSchema)` to create a new message.
  */
 export const PreviewConfigurationImportResponseSchema: GenMessage<PreviewConfigurationImportResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 9);
+  messageDesc(file_delidev_v1_configuration, 11);
 
 /**
  * @generated from message delidev.v1.ApplyConfigurationImportRequest
@@ -252,7 +322,7 @@ export type ApplyConfigurationImportRequest = Message<"delidev.v1.ApplyConfigura
  * Use `create(ApplyConfigurationImportRequestSchema)` to create a new message.
  */
 export const ApplyConfigurationImportRequestSchema: GenMessage<ApplyConfigurationImportRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 10);
+  messageDesc(file_delidev_v1_configuration, 12);
 
 /**
  * @generated from message delidev.v1.ApplyConfigurationImportResponse
@@ -279,7 +349,7 @@ export type ApplyConfigurationImportResponse = Message<"delidev.v1.ApplyConfigur
  * Use `create(ApplyConfigurationImportResponseSchema)` to create a new message.
  */
 export const ApplyConfigurationImportResponseSchema: GenMessage<ApplyConfigurationImportResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_configuration, 11);
+  messageDesc(file_delidev_v1_configuration, 13);
 
 /**
  * @generated from service delidev.v1.ConfigurationService
@@ -310,6 +380,20 @@ export const ConfigurationService: GenService<{
     output: typeof ApplyConfigurationImportResponseSchema;
   },
   /**
+   * Both save paths use the existing revisioned acknowledgement envelope.
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+   *
+   * @generated from rpc delidev.v1.ConfigurationService.SaveAgentWorker
+   */
+  saveAgentWorker: {
+    methodKind: "unary";
+    input: typeof SaveAgentWorkerRequestSchema;
+    output: typeof SaveConfigurationResponseSchema;
+  },
+  /**
+   * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+   *
    * @generated from rpc delidev.v1.ConfigurationService.SaveConfiguration
    */
   saveConfiguration: {
