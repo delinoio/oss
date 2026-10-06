@@ -13,7 +13,7 @@ type Selected = { resource: Resource; comment: Comment };
 
 function useCommentDeletion(key: string, accepted: () => void) {
   return useRetainedMutation(key, SessionQuery.deleteLocalReviewComment, accepted, (result, request) =>
-    Boolean(request.mutation?.id && request.mutation.requestId && result.id === request.mutation.id && result.requestId === request.mutation.requestId));
+    Boolean(request.mutation?.id && request.mutation.requestId && result.id === request.mutation.id && result.requestId === request.mutation.requestId), true);
 }
 
 function PendingCommentDeletion({ intent, commentId, accepted }: { intent: RetainedMutationIntent; commentId: string; accepted: () => void }) {

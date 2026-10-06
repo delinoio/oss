@@ -133,6 +133,19 @@ it.each(["comment", "request"])("keeps deletion uncertain after a mismatched %s 
  expect(f.remove.mock.calls[1][0]).toEqual(f.remove.mock.calls[0][0]);
 });
 
+it("retains deletion recovery after a deterministic RPC failure", async () => {
+ const f = fixture();
+ f.remove.mockImplementationOnce(async () => { f.eraseComment(); throw new ConnectError("Comment already absent", Code.NotFound); });
+ render(<f.View />);
+ fireEvent.click(await screen.findByRole("button", { name: "Delete comment" }));
+ await screen.findByText("Comment deletion acknowledgement is uncertain.");
+ expect(screen.getByRole("button", { name: "Retry original comment deletion" })).toBeTruthy();
+ fireEvent.click(screen.getByRole("button", { name: "Retry original comment deletion" }));
+ await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original comment deletion" })).toBeNull());
+ expect(f.remove).toHaveBeenCalledTimes(2);
+ expect(f.remove.mock.calls[1][0]).toEqual(f.remove.mock.calls[0][0]);
+});
+
 it("shows pending deletion without its row and verifies acknowledgement on explicit retry", async () => {
  const f = fixture();
  let acknowledge!: (response: { id: string; requestId: string }) => void;

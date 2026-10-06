@@ -47,7 +47,7 @@ export function MutationIntents({ children }: { children: ReactNode }) {
 // Exact pending requests outlive session navigation. Only switching the whole
 // connection discards that registry. Settings owns a nested category registry;
 // leaving it discards only its intents, and late results cannot reach a replacement.
-export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void, acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean) {
+export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void, acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean, retainOnError = false) {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
   const opening = useSettingsOpening();
@@ -81,7 +81,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       mutation.reset();
       if (!registry.alive || opening?.disposed) return;
       const failure = clientFailure(error);
-      const uncertain = [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
+      const uncertain = retainOnError || [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
       registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, error });
       return;
     }
