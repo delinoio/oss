@@ -62,3 +62,20 @@ it.each(["begin", "start"] as const)("ignores a late OAuth %s after leaving the 
   expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BindOpen)).toHaveLength(0);
   expect(value.start).toHaveBeenCalledTimes(delay === "begin" ? 0 : 1); expect(value.cancel).not.toHaveBeenCalled(); expect(value.complete).not.toHaveBeenCalled();
 });
+
+it("hides live OAuth without cancellation or disposing its original native callback owner", async () => {
+  const value = fixture(); await add(); await screen.findByText("Waiting for authorization…");
+  await waitFor(() => expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BindOpen)).toHaveLength(1));
+  const disposed = value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose).length;
+  fireEvent.click(screen.getByRole("button", { name: "Close Add AI API key" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(value.cancel).not.toHaveBeenCalled();
+  expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose)).toHaveLength(disposed);
+  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
+  expect(screen.getByText("Waiting for authorization…")).toBeTruthy();
+  expect(value.start).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(value.cancel).not.toHaveBeenCalled();
+  expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose)).toHaveLength(disposed);
+});

@@ -19,7 +19,7 @@ dialog.settings-task-dialog { width: min(768px, calc(100vw - 32px)); max-width: 
 .settings-task-body :is(button, input:not([type=checkbox]):not([type=radio]), textarea, select, summary), .settings-task-footer button { min-height: 40px; max-width: 100%; border-radius: 8px; }
 .settings-task-body textarea { white-space: pre-wrap; }
 .settings-task-body :is(section, article, header, fieldset, form, label, header > div) { min-width: 0; }
-.settings-task-footer { flex: none; padding: 16px 24px; border-top: 1px solid var(--border); }
+.settings-task-footer { font-size: 14px; line-height: 20px; flex: none; padding: 16px 24px; border-top: 1px solid var(--border); }
 .settings-task-footer:empty { display: none; }
 .settings-task-footer .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0; }
 .settings-task-footer button { white-space: normal; overflow-wrap: anywhere; }
@@ -32,3 +32,8 @@ dialog.settings-task-dialog { width: min(768px, calc(100vw - 32px)); max-width: 
 .settings-task-body :is(input:not([type=checkbox]):not([type=radio]), select, textarea, button), .settings-task-footer button { border-color: var(--control-border); }
 .settings-task-footer button.primary { border-color: var(--accent); }
 @container settings-body (width < 640px) { .settings-task-body :is(.account-provider-choices, .agent-core-columns, .integration-form-grid) { grid-template-columns: minmax(0, 1fr); } }
+
+.settings-task-status:empty { display: none; }
+.settings-task-status { max-width: 1040px; }
+.settings-task-body .project-field-group:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.settings-task-body :is(.project-field-group p, .agent-section-summary, .integration-secondary) { font-size: 12px; line-height: 18px; color: var(--muted); }

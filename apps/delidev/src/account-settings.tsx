@@ -364,6 +364,7 @@ function AccountCreationWizard({
   }, [accountTypeFilteringReady, autoConnect, connect.send, createdAccount, keyless, selectedAuthentication, selectedProvider, selectedProviderDocument.endpoint, selectedProviderDocument.protocol]);
 
   const navigateBack = () => {
+    if (unknownResponse) { closeTask(); return; }
     if (create.busy || create.uncertain || connect.busy || connect.uncertain) return;
     clearHandoff();
     close();
@@ -499,7 +500,7 @@ function AccountCreationWizard({
       <Problem error={providerRead.error} />
       {unknownResponse ? <p role="alert">The server acknowledged a request without a matching entry result. Inspect the original request before starting another operation.</p> : null}
       <Problem error={connect.error} />
-      <SettingsTaskActions className=""><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>Manage connection</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={close}>Done</button></SettingsTaskActions>
+      <SettingsTaskActions className=""><button type="button" disabled={unknownResponse || providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>Manage connection</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={unknownResponse ? closeTask : close}>Done</button></SettingsTaskActions>
     </section>;
   }
 

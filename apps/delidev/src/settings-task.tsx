@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Children, Fragment, cloneElement, createContext, isValidElement, useCallback, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskContext, useRetainSettingsTask, useSettingsTaskDismiss, type SettingsTaskPresentation } from "./settings-task-context";
+import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskStatus, SettingsTaskContext, useRetainSettingsTask, useSettingsTaskDismiss, type SettingsTaskPresentation } from "./settings-task-context";
 import "./settings-task.css";
 import { DialogSurface } from "./ui";
 
 export { SettingsDialogFocus, SettingsDialogSize } from "./settings-task-context";
-interface Host { outlet: HTMLDivElement | null; locked: boolean; modal: boolean; register: (id: string, mounted: boolean, visible?: boolean) => void }
+interface Host { outlet: HTMLDivElement | null; statusTarget: HTMLDivElement | null; setStatusTarget: (node: HTMLDivElement | null) => void; locked: boolean; modal: boolean; register: (id: string, mounted: boolean, visible?: boolean) => void }
 const HostContext = createContext<Host | undefined>(undefined);
 
 export function SettingsTasks({ children }: { children: ReactNode }) {
   const [outlet, setOutlet] = useState<HTMLDivElement | null>(null);
+  const [statusTarget, setStatusTarget] = useState<HTMLDivElement | null>(null);
   const tasks = useRef(new Map<string, boolean>());
   const [locked, setLocked] = useState(false);
   const [modal, setModal] = useState(false);
@@ -19,7 +20,7 @@ export function SettingsTasks({ children }: { children: ReactNode }) {
     setLocked(tasks.current.size > 0);
     setModal([...tasks.current.values()].some(Boolean));
   }, []);
-  const host = useMemo(() => ({ outlet, locked, modal, register }), [outlet, locked, modal, register]);
+  const host = useMemo(() => ({ outlet, statusTarget, setStatusTarget, locked, modal, register }), [outlet, statusTarget, locked, modal, register]);
   return <HostContext.Provider value={host}>{children}<div className="settings-task-outlet" ref={setOutlet} /></HostContext.Provider>;
 }
 
@@ -27,9 +28,9 @@ export function SettingsTaskBackground({ children }: { children: ReactNode }) {
   const host = useContext(HostContext);
   // Dialogs are portaled outside this fieldset. A hidden unresolved task still
   // disables replacement writes, while its explicit outcome opener stays usable.
-  return <fieldset className="settings-task-background" disabled={host?.locked} inert={host?.modal || undefined} aria-hidden={host?.modal || undefined} onClickCapture={event => {
+  return <><div className="settings-task-status" ref={host?.setStatusTarget} /><fieldset className="settings-task-background" disabled={host?.locked} inert={host?.modal || undefined} aria-hidden={host?.modal || undefined} onClickCapture={event => {
     if (event.target instanceof Element) event.target.closest<HTMLButtonElement>("button")?.focus({ preventScroll: true });
-  }}>{children}</fieldset>;
+  }}>{children}</fieldset></>;
 }
 
 function available(node: HTMLElement | null) {
@@ -79,9 +80,14 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
   const [presentation, setPresentation] = useState<SettingsTaskPresentation>();
   const [activeStep, setActiveStep] = useState<string>();
   const [stepTarget, setStepTarget] = useState<HTMLDivElement | null>(null);
-  const signals = useRef(new Set<string>()), dismissals = useRef(new Map<string, () => void>()), presentations = useRef(new Map<string, SettingsTaskPresentation>());
+  const [signalStatus, setSignalStatus] = useState(SettingsTaskStatus.AwaitingConfirmation);
+  const signals = useRef(new Map<string, SettingsTaskStatus>()), dismissals = useRef(new Map<string, () => void>()), presentations = useRef(new Map<string, SettingsTaskPresentation>());
   const host = useContext(HostContext), register = host?.register;
-  const retain = useCallback((key: string, retained: boolean) => { if (retained) signals.current.add(key); else signals.current.delete(key); }, []);
+  const retain = useCallback((key: string, retained: boolean, status = SettingsTaskStatus.AwaitingConfirmation) => {
+    if (retained) signals.current.set(key, status); else signals.current.delete(key);
+    const states = [...signals.current.values()];
+    setSignalStatus(states.includes(SettingsTaskStatus.Uncertain) ? SettingsTaskStatus.Uncertain : states.includes(SettingsTaskStatus.Pending) ? SettingsTaskStatus.Pending : SettingsTaskStatus.AwaitingConfirmation);
+  }, []);
   const onDismiss = useCallback((key: string, action?: () => void) => { if (action) dismissals.current.set(key, action); else dismissals.current.delete(key); }, []);
   const present = useCallback((key: string, value?: SettingsTaskPresentation) => {
     if (value) presentations.current.set(key, value); else presentations.current.delete(key);
@@ -132,8 +138,9 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     (target ?? heading.current)?.focus({ preventScroll: true });
   }, [visible, presentation]);
   const content = <SettingsTaskContext.Provider value={context}>
+    {!visible && (!host || host.statusTarget) ? createPortal(<div className="settings-task-retained" role="status"><span>{title}: {signalStatus === SettingsTaskStatus.Pending ? "The original operation is in progress." : signalStatus === SettingsTaskStatus.Uncertain ? "The original result is unconfirmed." : "The original operation awaits confirmation."}</span><button type="button" onClick={event => { opener.current = event.currentTarget; setVisible(true); }}>View original operation</button></div>, host?.statusTarget ?? document.body) : null}
     {(!host || host.outlet) ? createPortal(<>
-    {!visible ? <div className="settings-task-retained" role="status"><span>{title}: an original operation is retained.</span><button type="button" onClick={event => { opener.current = event.currentTarget; setVisible(true); }}>View original operation</button></div> : null}
+
     <DialogSurface ref={dialog} onKeyDown={containTab} className="settings-task-dialog" data-size={current.size} aria-modal="true" aria-labelledby={`${id}-title`} onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss(); }}>
       <header className="settings-task-header"><div><h2 ref={heading} tabIndex={-1} id={`${id}-title`}>{current.title}</h2><p>Saved on the selected server.</p></div><button type="button" className="settings-task-close" aria-label={`Close ${current.title}`} onClick={dismiss}>×</button></header>
       <div className="settings-task-body settings-content-column"><div hidden={Boolean(activeStep)}>{children}</div><div ref={setStepTarget} /></div>
@@ -143,20 +150,21 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
   return content;
 }
 
-function associateForm(children: ReactNode, form?: string): ReactNode {
+function associateForm(children: ReactNode, form?: string, dismiss?: () => void, step = false): ReactNode {
   const nodes = Children.toArray(children).flatMap(child => isValidElement(child) && child.type === Fragment ? Children.toArray((child.props as { children: ReactNode }).children) : [child]);
   nodes.sort((a, b) => Number(isValidElement(a) && String((a.props as { className?: string }).className ?? "").split(" ").includes("primary")) - Number(isValidElement(b) && String((b.props as { className?: string }).className ?? "").split(" ").includes("primary")));
   return Children.map(nodes, child => {
     if (!isValidElement(child)) return child;
-    if (child.type === Fragment) return cloneElement(child as React.ReactElement<{ children: ReactNode }>, { children: associateForm((child.props as { children: ReactNode }).children, form) });
+    if (child.type === Fragment) return cloneElement(child as React.ReactElement<{ children: ReactNode }>, { children: associateForm((child.props as { children: ReactNode }).children, form, dismiss) });
     if (child.type !== "button") return child;
-    const button = child as React.ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>;
-    return cloneElement(button, { form: button.props.form ?? form, type: button.props.type ?? (form ? "submit" : "button") });
+    const button = child as React.ReactElement<ButtonHTMLAttributes<HTMLButtonElement> & { "data-settings-task-cancel"?: boolean }>;
+    const cancel = button.props["data-settings-task-cancel"] && dismiss && (!step || button.props.disabled) ? dismiss : undefined;
+    return cloneElement(button, { ...(cancel ? { disabled: false, onClick: cancel } : {}), form: button.props.form ?? form, type: button.props.type ?? (form ? "submit" : "button") });
   });
 }
 export function SettingsTaskActions({ children, className = "", form }: { children: ReactNode; className?: string; form?: string }) {
   const task = useContext(SettingsTaskContext);
   if (task?.activeStep !== task?.stepId) return null;
-  const content = <div className={`actions ${className}`}>{associateForm(children, form)}</div>;
+  const content = <div className={`actions ${className}`}>{associateForm(children, form, task?.dismiss, Boolean(task?.stepId))}</div>;
   return task?.actions ? createPortal(content, task.actions) : content;
 }

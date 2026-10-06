@@ -67,7 +67,7 @@ try {
       checked++;
     }
     if (!populated) {
-      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "New Repository"], ["Server preferences", "New Server preferences"], ["Models", "New Model"], ["Integrations", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
+      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", "New Server preferences"], ["Models", "New Model"], ["API Providers", "Custom provider"], ["Integrations", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
         await select(category); await page.getByRole("button", { name: action, exact: true }).click();
         if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
         const dialog = page.getByRole("dialog"); await dialog.waitFor();
@@ -93,7 +93,7 @@ try {
         await page.mouse.click(2, 2); assert(await dialog.isVisible(), "Backdrop preserves task");
         formsChecked++;
         await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
-        assert(await page.locator(".settings-content").evaluate(node => node.contains(document.activeElement)), `${category} returns focus to its category`); keyboardChecks++;
+        await page.waitForFunction(() => document.querySelector(".settings-content")?.contains(document.activeElement), { timeout: 2000 }); keyboardChecks++;
 
       }
     }
@@ -112,6 +112,29 @@ try {
     const dialog = page.getByRole("dialog");
     assert(await dialog.evaluate(node => { const box = node.getBoundingClientRect(), body = node.querySelector(".settings-task-body"); return box.width <= innerWidth - 31 && box.height <= innerHeight - 47 && body.scrollWidth <= body.clientWidth; }), `${theme} Project dialog effective 200% ${width}`);
     await page.keyboard.press("Escape"); formsChecked++;
+  }
+  for (const theme of ["light", "dark"]) {
+    await page.setViewportSize({ width: 1280, height: 820 }); await page.goto(`${origin}/?theme=${theme}&populated=true`);
+    await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Projects");
+    await page.getByRole("button", { name: /^Delete Example PROJECT/ }).click();
+    const dialog = page.getByRole("dialog"); await dialog.waitFor();
+    await page.waitForFunction(() => document.activeElement?.textContent === "Keep configuration");
+    assert.equal(await dialog.evaluate(node => Math.round(node.getBoundingClientRect().width)), 480);
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    await select("Backups");
+    const main = page.locator("#main");
+    const position = await main.evaluate(node => { node.scrollTop = 80; return node.scrollTop; });
+    await page.getByRole("button", { name: /^Inspect backup/ }).click(); await dialog.waitFor();
+    await page.getByText("Database integrity and original server identity verified.", { exact: true }).waitFor();
+    assert.equal(await main.evaluate(node => node.scrollTop), position, "Opening preserves list scroll");
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    assert.equal(await main.evaluate(node => node.scrollTop), position, "Closing preserves list scroll");
+    await select("Models");
+    const query = page.getByRole("textbox", { name: "Search models" }); await query.fill("retained fixture search");
+    await page.getByRole("button", { name: "Edit model", exact: true }).click(); await dialog.waitFor();
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    assert.equal(await query.inputValue(), "retained fixture search", "Closing preserves list search");
+    keyboardChecks += 3;
   }
   if (process.env.DELIDEV_LAYOUT_SCREENSHOT) {
     await page.setViewportSize({ width: 1440, height: 900 }); await page.goto(`${origin}/?theme=light&populated=true`);

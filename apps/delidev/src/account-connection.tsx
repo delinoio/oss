@@ -1,5 +1,5 @@
 import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
-import { useSettingsTaskDismiss, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
+import { useSettingsTaskDismiss, useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask } from "./settings-task-context";
 import { ManagedSubscriptionAccount, serviceAccount } from "./subscription-accounts";
 import { useEffect, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -46,6 +46,7 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
   useSettingsTaskDismiss(() => setKey(""));
   const mutation = () => ({ id: initial.id, expectedRevision: current.revision, requestId: newRequestId() });
   const removal = object(data.removal);
+  useRetainSettingsTask(Boolean(data.removal));
   const retryRemoval = () => {
     if (!text(removal.request_id) || !Number.isSafeInteger(removal.expected_revision)) return;
     void disconnect.send({ mutation: { id: initial.id, requestId: text(removal.request_id), expectedRevision: BigInt(removal.expected_revision as number) } });

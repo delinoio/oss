@@ -89,7 +89,7 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
       </fieldset>}
       {mutation.busy ? <p role="status">Saving notification preferences…</p> : null}
       {stale ? <p role="alert">These preferences changed elsewhere. Your draft is retained. Cancel this edit and reopen the current preferences before saving.</p> : null}
-      <SettingsTaskActions form={`${ids}-form`}>{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>Save notification preferences</button><button type="button" disabled={blocked} onClick={finishEdit}>Cancel notification edit</button></> : null}
+      <SettingsTaskActions form={`${ids}-form`}>{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>Save notification preferences</button><button type="button" data-settings-task-cancel disabled={blocked} onClick={finishEdit}>Cancel notification edit</button></> : null}
         {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same notification preferences</button> : null}
       </SettingsTaskActions>
     </form>;

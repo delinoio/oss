@@ -4,7 +4,7 @@ import { useMutation } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { clientFailure, FailureCode } from "@delinoio/delidev-api-client";
 import { useSettingsOpening } from "./settings-lifetime";
-import { useRetainSettingsTask } from "./settings-task-context";
+import { SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
 
 interface Intent { input?: object; bytes?: number; busy: boolean; uncertain: boolean; error?: unknown }
 const empty: Intent = Object.freeze({ busy: false, uncertain: false });
@@ -55,7 +55,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
   const [localError, setLocalError] = useState<{ key: string; error: unknown }>();
   const mounted = useRef(true);
   const state = useSyncExternalStore(registry.subscribe, () => registry.entries.get(key) ?? empty);
-  useRetainSettingsTask(state.busy || state.uncertain);
+  useRetainSettingsTask(state.busy || state.uncertain, state.busy ? SettingsTaskStatus.Pending : SettingsTaskStatus.Uncertain);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const send = async (input?: MessageInitShape<I>) => {
     const current = registry.entries.get(key) ?? empty;

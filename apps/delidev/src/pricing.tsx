@@ -1,4 +1,4 @@
-import { useRetainSettingsTask } from "./settings-task-context";
+import { useRetainSettingsTask, useCloseSettingsTask } from "./settings-task-context";
 import { SettingsTaskActions } from "./settings-task";
 import { useState , useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -59,10 +59,11 @@ function PricingEditor({ model, initial, modelRevision, current, readError, save
     {draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? <p>Input/cache estimates require consistent native cache-read counts and explicitly zero cache writes. Missing or unsupported breakdowns remain unavailable.</p> : null}
     {stale ? <p role="alert">The model or price changed elsewhere. Your draft is retained. Cancel this edit and reopen current pricing before saving.</p> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={readError || mutation.error} />
-    <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>Save pricing version</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same price</button> : null}<button type="button" disabled={blocked} onClick={cancel}>Cancel pricing edit</button></SettingsTaskActions>
+    <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>Save pricing version</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same price</button> : null}<button type="button" data-settings-task-cancel disabled={blocked} onClick={cancel}>Cancel pricing edit</button></SettingsTaskActions>
   </form>;
 }
 export function ModelPricing({ model, active, close }: { model: Resource; active: boolean; close: () => void }) {
+  const closeTask = useCloseSettingsTask(close);
   const current = useQuery(UsageQuery.getModelPricing, { modelId: model.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [editing, setEditing] = useState<{ initial?: PricingVersion; modelRevision: bigint }>();
   const [accepted, setAccepted] = useState<PricingVersion>();
@@ -75,6 +76,6 @@ export function ModelPricing({ model, active, close }: { model: Resource; active
     {missingResult ? <p role="alert">The server acknowledged the price without a readable version. Inspect current pricing before starting another save.</p> : null}
     {editing ? <PricingEditor model={model} initial={editing.initial} modelRevision={editing.modelRevision} current={data} readError={current.error} saved={(value) => { setEditing(undefined); setAccepted(value); setMissingResult(!value); void current.refetch(); if (value) close(); }} cancel={() => setEditing(undefined)} /> : <><Problem error={current.error} />{data && current.error ? <p>The last retrieved pricing may be stale.</p> : null}{data?.pricing ? <PricingBasis value={data.pricing} /> : data ? <p>No pricing basis has been configured. Earlier responses stay unpriced.</p> : <p role="status">Loading pricing…</p>}
     {data && data.modelRevision !== model.revision ? <p role="alert">The model configuration changed. Return to Models and refresh before editing its pricing.</p> : null}
-    <SettingsTaskActions className=""><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>Edit token pricing</button><button onClick={close}>Back to Models</button></SettingsTaskActions></>}
+    <SettingsTaskActions className=""><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>Edit token pricing</button><button onClick={closeTask}>Back to Models</button></SettingsTaskActions></>}
   </section>;
 }
