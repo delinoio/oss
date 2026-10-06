@@ -194,7 +194,9 @@ Explicit startup recovery reuses `ReadPRStartupRejection` under the original ses
 
 Worker-owned Git commands enable Windows long paths through a command-local
 `core.longpaths=true` override during preparation and later observations, without
-modifying source repository configuration. Native failures expose only stable
+modifying source repository configuration. If the command already carries
+indexed `GIT_CONFIG_*` entries for retained credentials or SSH settings, the
+long-path entry is appended to that same indexed set. Native failures expose only stable
 launch/exit classifications, exit status, owning IDs and read-only/offline flags;
 argv, paths and native output remain excluded from logs.
 

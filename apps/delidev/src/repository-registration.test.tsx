@@ -15,7 +15,7 @@ import { validRepositoryInspection, selectedInspectionRemote } from "./repositor
 const metadata = { root: "/canonical/oss", name: "oss", remotes: ["origin", "upstream"], default_refs: { origin: "main" }, github_repositories: { origin: { owner: "delinoio", name: "oss" }, upstream: { owner: "another", name: "repo" } } };
 function row(kind: EntityKind, value: Document): Resource { return create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode(value) }); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
-function fixture(output: Document = metadata, cloneCapabilities = false, remoteCapabilities = true, pagedProfiles = false, statusError?: ConnectError) {
+function fixture(output: Document = metadata, cloneCapabilities = false, remoteCapabilities = true, pagedProfiles = false, statusError?: ConnectError, profileOnFirstPage = false) {
   let currentStatusError = statusError;
   const machine = row(EntityKind.MACHINE, { name: "Runner", worker_capabilities: cloneCapabilities ? ["repository-clone-v1"] : [], last_seen: new Date().toISOString() });
   const resources = new Map<string, Resource>([[machine.id, machine]]);
@@ -36,7 +36,7 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
   const repositories = vi.fn(async (request: { profileId: string; expectedRevision: bigint; page: number }) => ({ schemaVersion: 1, documentJson: encode({ profile_id: request.profileId, profile_revision: String(request.expectedRevision), generation_id: (document(resources.get(request.profileId)).connection as Document).generation_id, observed_at: new Date().toISOString(), page: request.page, page_size: 50, next_page: request.page === 1 ? 2 : 0, repositories: request.page === 1 ? [{ repository: { provider: "github.com", id: "123", node_id: "R_123", owner: "delinoio", name: "oss", private: true, default_branch: "main" }, archived: true, https_url: "https://github.com/delinoio/oss.git", ssh_url: "git@github.com:delinoio/oss.git" }] : [] }) }));
   const listResources = vi.fn((request: { filter?: { kind?: EntityKind; pageToken?: string } }) => {
     const matching = [...resources.values()].filter(resource => resource.kind === request.filter?.kind);
-    if (pagedProfiles && request.filter?.kind === EntityKind.INTEGRATION) return request.filter.pageToken ? { resources: matching, nextPageToken: "" } : { resources: [], nextPageToken: "profile-next" };
+    if (pagedProfiles && request.filter?.kind === EntityKind.INTEGRATION) return request.filter.pageToken ? { resources: matching, nextPageToken: "" } : { resources: profileOnFirstPage ? matching : [], nextPageToken: "profile-next" };
     return { resources: matching };
   });
   const transport = createRouterTransport(router => {
@@ -412,6 +412,16 @@ it("keeps profile pagination explicit instead of scanning every page", async () 
   fireEvent.click(screen.getByRole("button", { name: "Next profile page" }));
   await screen.findByRole("button", { name: "Choose from GitHub" });
   expect(f.listResources.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.INTEGRATION && request.filter.pageToken === "profile-next").length).toBeGreaterThan(0);
+});
+it("clears a selected profile when outer profile paging changes page", async () => {
+  const f = fixture(metadata, true, true, true, undefined, true), profile = connectedProfile(f); f.mount(); await f.add();
+  fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Back to Git URL" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Next profile page" }));
+  await screen.findByRole("button", { name: "Choose from GitHub" });
+  fireEvent.click(screen.getByRole("button", { name: "Choose from GitHub" }));
+  expect((screen.getByRole("combobox", { name: "GitHub profile" }) as HTMLSelectElement).value).toBe("");
 });
 it("drops the selected profile association when the Git URL changes repositories", async () => {
   const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));

@@ -84,6 +84,9 @@ Compact settled removal proof to one original inventory path per entry, without 
   mirror initial tracking refs without stale fallback. Validate Git's effective
   source URL before networking, isolate `insteadOf` rules, and retain only the
   configured credential-helper and SSH settings in the restricted environment.
+  When Windows adds the command-local `core.longpaths` setting, append it to
+  the existing indexed `GIT_CONFIG_*` entries; never replace retained
+  credentials or SSH configuration with a second config count.
   One ten-minute context covers the complete clone, validation, resolution and
   checkout flow; never widen the ambient transport policy for an alias or later
   fetch.

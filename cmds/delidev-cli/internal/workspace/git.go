@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +43,26 @@ type Git struct {
 	offline             bool
 	restrictedTransport bool
 	diffIndexFile       string
+}
+
+func appendGitConfig(environment []string, key, value string) []string {
+	countIndex, count := -1, 0
+	for index, entry := range environment {
+		name, raw, ok := strings.Cut(entry, "=")
+		if name != "GIT_CONFIG_COUNT" {
+			continue
+		}
+		parsed, err := strconv.Atoi(raw)
+		if !ok || err != nil || parsed < 0 {
+			return environment
+		}
+		countIndex, count = index, parsed
+	}
+	if countIndex < 0 {
+		return append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0="+key, "GIT_CONFIG_VALUE_0="+value)
+	}
+	environment[countIndex] = "GIT_CONFIG_COUNT=" + strconv.Itoa(count+1)
+	return append(environment, "GIT_CONFIG_KEY_"+strconv.Itoa(count)+"="+key, "GIT_CONFIG_VALUE_"+strconv.Itoa(count)+"="+value)
 }
 
 type limitedOutput struct {
@@ -136,7 +157,7 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		// populating the private checkout. Propagate the bounded override through
 		// Git's config environment so those children receive the same long-path
 		// capability without changing the source repository configuration.
-		environment = append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.longpaths", "GIT_CONFIG_VALUE_0=true")
+		environment = appendGitConfig(environment, "core.longpaths", "true")
 	}
 	var diagnostic limitedOutput
 	diagnostic.limit = 8192
