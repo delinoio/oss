@@ -407,6 +407,34 @@ edit. They may open independently and retain mounted controls and queries:
 | 2 | Instructions | Template count; all ordered reference operations |
 | 3 | Native harness options | Defaults only for absent/empty known fields or concurrency 0 with no unknown keys; otherwise Customized, explicitly identifying unknown options as retained |
 
+Reasoning effort and Subagent effort use the shared editable combobox in
+`apps/delidev/src/reasoning-effort-field.tsx` and its static stylesheet. These
+harness-level hints do not establish selected-model or execution support:
+
+| Harness | Reasoning effort hints | Subagent effort hints |
+| --- | --- | --- |
+| Codex | none, minimal, low, medium, high, xhigh, max, ultra, persistent | The same nine values |
+| Claude Code | low, medium, high, xhigh, max | None |
+| OpenCode / Grok Build | None | None |
+
+Focus or the list button opens the in-flow list, capped at 280px with scrolling.
+Filter hints by a case-insensitive prefix; trim only the search comparison, never
+the stored input. Use native default remains the first option and explicitly
+passes an empty string. Direct input remains editable, including unknown values;
+existing server validation and errors remain authoritative. Opening, closing or
+changing harness never writes an effort value or adds an omitted field. A harness
+change replaces hints and clears keyboard selection while retaining both drafts.
+
+Arrow keys move the active option and keep it visible. Enter selects that option;
+with no active option it closes the open list and retains direct input without
+submitting. Escape, Tab and focus departure close without selecting. Composition
+keys are left to the IME. Each input has a unique combobox/listbox identity,
+active-descendant and help association. Use the existing semantic themes, 40px
+controls, 8px corners and responsive form width, without extra panels or input
+focus rings. Preserve Codex child capability-disabled values and ancestor form
+locks for both the input and custom list actions. The component adds no query,
+RPC, discovery, persistence, public schema or native execution authority.
+
 Accounts & routing moves to Accounts, retaining ordered weighted links and all
 add/move/remove operations. The legacy configuration RPC and shared field seam
 still permit accountless Workers; existing records remain valid. The wizard

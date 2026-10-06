@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.reasoning-effort-field { min-width: 0; display: grid; gap: 8px; }
+.reasoning-effort-field > label[for] { margin: 0; }
+.reasoning-effort-control { position: relative; min-width: 0; }
+.reasoning-effort-control > input { width: 100%; min-width: 0; min-height: 40px; border-radius: 8px; padding-right: 48px; }
+.reasoning-effort-control > button.reasoning-effort-toggle { position: absolute; right: 0; top: 0; bottom: 0; display: grid; place-items: center; width: 40px; min-height: 40px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
+.reasoning-effort-toggle > svg { width: 18px; height: 18px; }
+.reasoning-effort-control > button.reasoning-effort-toggle:hover { background: var(--surface-hover); }
+.reasoning-effort-field > ul.reasoning-effort-suggestions { margin: 0; padding: 0; list-style: none; min-width: 0; max-height: 280px; overflow: auto; border: 1px solid var(--control-border); border-radius: 8px; background: var(--surface); }
+.reasoning-effort-suggestions > li[role="option"] { margin: 0; padding: 10px 16px; min-height: 40px; cursor: pointer; overflow-wrap: anywhere; }
+.reasoning-effort-suggestions > li[aria-selected="true"], .reasoning-effort-suggestions > li:hover { background: var(--selected-background); color: var(--selected-text); }
+.reasoning-effort-field > p.reasoning-effort-help, .reasoning-effort-field > p.reasoning-effort-status { margin: 0; font-size: 12px; line-height: 18px; color: var(--muted); }
+.settings-content[aria-label] .reasoning-effort-field > p.reasoning-effort-help, .settings-content[aria-label] .reasoning-effort-field > p.reasoning-effort-status { font-size: 12px; line-height: 18px; }
