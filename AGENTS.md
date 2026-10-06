@@ -34,6 +34,7 @@
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
 - Follow `docs/repository-dependency-security-contract.md` for dependency security updates, validation evidence, and unresolved upstream constraints. Keep unresolved advisories visible; a fixed runtime pin or an unavailable patch is not a vulnerability fix.
+- Renovate ordinary branch creation, existing branch updates and lock file maintenance are limited to Mondays from 00:00 inclusive to 04:00 exclusive in `Asia/Seoul`. Keep `updateNotScheduled: false` and preserve immediate vulnerability-fix handling, shared presets, automerge and release-age rules. Follow `docs/repository-workflow-contract.md`; repository schedules restrict branch work, not the hosted service's scan cadence.
 - Debug by logging. You should write enough logging code.
 - Write sufficient logs for debugging and operational troubleshooting.
 - Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
