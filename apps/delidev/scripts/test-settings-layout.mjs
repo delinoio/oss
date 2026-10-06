@@ -134,7 +134,11 @@ try {
     await page.getByRole("button", { name: "Edit model", exact: true }).click(); await dialog.waitFor();
     await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
     assert.equal(await query.inputValue(), "retained fixture search", "Closing preserves list search");
-    keyboardChecks += 3;
+    await select("Agent Workers");
+    await page.getByRole("button", { name: /^Preview routing for Example AGENT/ }).click(); await dialog.waitFor();
+    assert.equal(await dialog.evaluate(node => Math.round(node.getBoundingClientRect().width)), 768, "Routing uses the ordinary form width");
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    keyboardChecks += 4;
   }
   if (process.env.DELIDEV_LAYOUT_SCREENSHOT) {
     await page.setViewportSize({ width: 1440, height: 900 }); await page.goto(`${origin}/?theme=light&populated=true`);

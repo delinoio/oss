@@ -351,7 +351,7 @@ function SettingsWorkspace({ connectionSettings, visible = true, controlLocalWor
   const taskResource = editing?.initial ?? pricing ?? device ?? machine ?? deleting ?? routing ?? account;
   const taskKind = editing?.kind ?? kind;
   const taskTitle = pricing ? "Token pricing" : device ? "Revoke device" : machine ? "Runner Device details" : deleting ? "Delete configuration" : routing ? "Preview routing" : account ? "Manage connection" : editing && taskKind === EntityKind.REPOSITORY && !editing.initial ? "Add repository" : editing ? `${editing.initial ? "Edit" : "New"} ${kindNames[taskKind]}` : "Settings task";
-  const taskSize = deleting || device ? SettingsDialogSize.Confirmation : machine || account || [EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.REPOSITORY].includes(taskKind) ? SettingsDialogSize.Wide : SettingsDialogSize.Form;
+  const taskSize = deleting || device ? SettingsDialogSize.Confirmation : pricing || routing ? SettingsDialogSize.Form : machine || account || [EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.REPOSITORY].includes(taskKind) ? SettingsDialogSize.Wide : SettingsDialogSize.Form;
   return <SettingsTasks>
       <section className={isProjects ? "settings-content settings-projects" : isServerPreferences ? "settings-content settings-server-preferences" : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
         <SettingsTaskBackground><div className="settings-content-column">

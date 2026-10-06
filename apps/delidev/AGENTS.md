@@ -2,6 +2,8 @@
 
 # DeliDev desktop
 
+- Frontend validation in `vitest.config.ts` uses at most four jsdom workers. Preserve focus/lifetime test deadlines and product deadlines independently; raise concurrency only after validating those suites under peak concurrent native-build load. Record results in PRs/issues/CI rather than repository evidence documents.
+
 - Form controls use the shared desktop focus treatment in `docs/apps-delidev-desktop-contract.md` and `src/AGENTS.md`: inputs, textareas and selects keep their ordinary boundaries and keyboard behavior without pointer or keyboard focus rings. Other focusable controls retain their existing focus indicators.
 
 - Execution-device presentation follows issue #1136 and `docs/apps-delidev-desktop-contract.md`: New session's visible and accessible machine-selector label is exactly `Runs on`; its resource noun and other former Execution Worker labels/messages are `Runner Device` / `Runner Devices`. Preserve Agent Worker, generic technical Worker terms, user-assigned names, machine IDs, RPC/storage fields, CLI commands, logs, error codes and the `execution-workers` Settings category value. `ResourceChoice.resourceLabel` defaults to `label` and changes only placeholder/status nouns.

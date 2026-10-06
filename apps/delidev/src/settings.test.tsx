@@ -145,8 +145,10 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled(); expect(value.preview).not.toHaveBeenCalled();
   fireEvent.click(row.getByRole("button", { name: `Preview routing for ${name}` }));
   await waitFor(() => expect(value.preview).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id }), expect.anything()));
+  expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
   fireEvent.click(screen.getByRole("button", { name: "Back to Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
+  expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(name);
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
   expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
