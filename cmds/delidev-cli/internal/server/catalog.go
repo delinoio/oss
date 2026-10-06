@@ -359,7 +359,7 @@ func catalogPlan(tx *store.Tx, provider domain.ID, result accountInspection) ([]
 	return plan, nil
 }
 func (s *Service) SearchModels(ctx context.Context, req *connect.Request[pb.SearchModelsRequest]) (*connect.Response[pb.SearchModelsResponse], error) {
-	f := store.ModelSearch{Query: req.Msg.Query, ProviderID: domain.ID(req.Msg.ProviderId), IncludeHidden: req.Msg.IncludeHidden, EnabledProvidersOnly: req.Msg.EnabledProvidersOnly, Limit: int(req.Msg.PageSize)}
+	f := store.ModelSearch{SubscriptionService: rpc.SubscriptionService(req.Msg.SubscriptionService), Query: req.Msg.Query, ProviderID: domain.ID(req.Msg.ProviderId), IncludeHidden: req.Msg.IncludeHidden, EnabledProvidersOnly: req.Msg.EnabledProvidersOnly, Limit: int(req.Msg.PageSize)}
 	if f.Limit == 0 {
 		f.Limit = 50
 	}

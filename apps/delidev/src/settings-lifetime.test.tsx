@@ -22,18 +22,19 @@ function fixture() {
   const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const resources = [create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Sibling project" }) })];
   const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Provider", enabled: true }) });
-  const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Model", provider_id: provider.id }) });
-  resources.push(provider, model);
+  const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Model", native_id: "fixture-native", provider_id: provider.id }) });
+  const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Fixture account", type: "api", provider_id: provider.id, enabled: true, health: "unverified", connection: { id: newRequestId(), authentication: "keyless" } }) });
+  resources.push(provider, model, account);
   const save = vi.fn((request: { kind: EntityKind; documentJson: Uint8Array }) => {
     const resource = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson });
     resources.push(resource);
     return { resource };
   });
   const base = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] }) });
-    router.service(ProviderService, { listProviderInventory: () => ({ entries: [], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: [model], providers: [provider] }) });
-    router.service(ResourceService, { listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
-    router.service(ConfigurationService, { saveConfiguration: save });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.AGENT_WORKER_WIZARD_V1] }) });
+    router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, displayName: "Fixture Provider", enabled: true }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: [model], providers: [provider] }) });
+    router.service(ResourceService, { getResource: request => ({ resource: resources.find(row => row.id === request.id) }), listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
+    router.service(ConfigurationService, { saveConfiguration: save, saveAgentWorker: request => ({ ...save({ kind: EntityKind.AGENT, documentJson: request.documentJson }), requestId: request.mutation!.requestId }) });
   });
   const waiting: { method: string; signal: AbortSignal; gate: ReturnType<typeof deferred> }[] = [];
   let delay: string | undefined, failure: Code | undefined;
@@ -51,7 +52,7 @@ function fixture() {
   } };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
   const view = (visible: boolean, upstream = transport, controlLocalWorker?: ControlLocalWorker) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><Sibling /><Settings visible={visible} controlLocalWorker={controlLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
-  return { client, save, waiting, transport, view, delay: (method?: string, code?: Code) => { delay = method; failure = code; } };
+  return { provider, client, save, waiting, transport, view, delay: (method?: string, code?: Code) => { delay = method; failure = code; } };
 }
 
 function Sibling() {
@@ -145,7 +146,7 @@ it.each([["navigation", "Instructions"], ["Escape then navigation", "Instruction
   expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   fireEvent.click(screen.getByRole("button", { name: category }));
   fireEvent.click(await screen.findByRole("button", { name: category === "Agent Workers" ? "New Agent Worker" : "New Instructions" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned draft" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Abandoned draft" } });
   if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("region", { name: "Settings content" })).toBeTruthy(); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   expect(document.activeElement).not.toBe(opener);
@@ -214,10 +215,14 @@ it.each([undefined, Code.Unavailable, Code.Canceled])("disposes an Agent opening
   const siblingQuery = value.client.getQueryCache().getAll()[0];
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Agent Worker" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
+  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" })); next();
+  await screen.findByRole("option", { name: "Fixture Provider" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ })); next();
+  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "fixture-native" } }); next();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Committed Agent" } });
-  const model = await screen.findByRole("option", { name: "Fixture Model" }) as HTMLOptionElement;
-  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: model.value } });
-  value.delay("SaveConfiguration", code);
+  value.delay("SaveAgentWorker", code);
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.waiting).toHaveLength(1));
   const pending = value.waiting[0];

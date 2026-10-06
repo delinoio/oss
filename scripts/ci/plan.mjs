@@ -7,7 +7,7 @@ import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/nati
 export const jobPaths = JSON.parse(readFileSync(new URL("./job-paths.json", import.meta.url), "utf8"));
 export const nativeMatrices = JSON.parse(readFileSync(new URL("./native-matrices.json", import.meta.url), "utf8"));
 export const Event = Object.freeze({ PullRequest: "pull_request", Push: "push", Manual: "workflow_dispatch" });
-const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/plan.mjs", "scripts/ci/result.mjs", "scripts/ci/run-affected.mjs", "scripts/ci/native-matrices.json"];
+const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/plan.mjs", "scripts/ci/result.mjs", "scripts/ci/run-affected.mjs", "scripts/ci/native-matrices.json", "scripts/ci/rust-affected*.mjs", "scripts/ci/cargo-mono-prebuilt*.mjs"];
 const matches = (path, patterns) => patterns.some((pattern) => matchesGlob(path, pattern));
 
 function ruleSignature(rule) {
@@ -24,6 +24,7 @@ export function matricesForEvent(event) {
   if (!Object.values(Event).includes(event)) throw new Error(`Unsupported CI event: ${event}`);
   const full = event === Event.Manual;
   return {
+    delidevFrontendMatrix: { include: [{ phase: "checks" }, { phase: "tests-1" }, { phase: "tests-2" }] },
     desktopMatrix: { include: nativeMatrices["devhud-desktop"].filter((row) => full || row.os !== "macos") },
     reactForgeMatrix: { include: nativeMatrices["react-forge"].filter((row) => full || row.platform !== "darwin") },
     pnportMatrix,
@@ -96,7 +97,7 @@ export function main(env = process.env) {
   const oldRules = range.paths.includes("scripts/ci/job-paths.json") ? previousJobPaths(range.base) : jobPaths;
   const plan = planJobs(env.GITHUB_EVENT_NAME, range.paths, oldRules);
   const matrices = matricesForEvent(env.GITHUB_EVENT_NAME);
-  const outputs = { base: range.base, head: range.head, event: env.GITHUB_EVENT_NAME, jobs: JSON.stringify(plan.jobs), forced: JSON.stringify(plan.forced), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), pnport_matrix: JSON.stringify(matrices.pnportMatrix) };
+  const outputs = { base: range.base, head: range.head, event: env.GITHUB_EVENT_NAME, jobs: JSON.stringify(plan.jobs), forced: JSON.stringify(plan.forced), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), pnport_matrix: JSON.stringify(matrices.pnportMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) };
   appendFileSync(env.GITHUB_OUTPUT, Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(""));
   console.log(JSON.stringify({ event: "ci_plan", mode: env.GITHUB_EVENT_NAME, base: range.base, head: range.head, changedFiles: range.paths.length, ...plan, ...matrices }));
   if (env.GITHUB_STEP_SUMMARY) {

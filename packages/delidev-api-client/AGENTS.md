@@ -1,3 +1,4 @@
+- Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history and legacy accountless APIs; capability 33 is configuration support, never native readiness.
 # DeliDev delidev-api-client ownership
 
 - Buf generates service-specific files; `scripts/delidev/proto-compat.mjs` generates historical TypeScript import facades. Keep both package-root exports and legacy `./gen/*` paths working. Regenerate facades through `pnpm proto:generate`, never by hand.
@@ -84,3 +85,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
 
 - General API OAuth preserves original capability 5 and adds main-reserved capability 6, flow enum, Google options and write-only completion state. Authorization code/state never enter cached Connect Query/mutation variables. Temporary device approval codes belong only to Start responses. Follow `docs/cmds-delidev-account-oauth-contract.md`.
+
+- CI fixture executable reuse follows `docs/repository-workflow-contract.md`: accept only the runner-owned absolute `DELIDEV_TEST_BINARY` test input, preserve local source-build fallback and keep every server/process/credential/data lifetime private to its fixture. Client/Vitest integration is uncached; desktop CI retains the complete checks/two-shard inventory.

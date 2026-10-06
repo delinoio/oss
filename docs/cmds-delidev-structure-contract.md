@@ -1,5 +1,32 @@
 # DeliDev source ownership and compatibility
 
+## Agent Worker source-route reservations
+
+Issue #964 reserves System capability `AGENT_WORKER_SOURCE_ROUTES_V1 = 36`
+and `SaveAgentWorkerRequest.route_models = 5`, reusing the existing typed model
+selection. Capability 35 remains owned by known subscription models. Establish
+this closure on main before dependent implementation. Reservations do not change
+active schemas, generated bindings, resource documents, SQLite migrations or
+runtime support. The planned feature uses ordered same-source account groups
+with source-specific models under one Harness, confirmed-quota-only fallback at
+first execution, and automatic preference for observed recovered quota. Existing
+sessions retain their selected account/model and immutable attribution.
+
+
+
+## Known subscription model reservations
+
+Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
+and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
+advisory subscription catalog. The closed catalog-source enum reserves
+UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
+reserves native ID/display name/order/minimum harness version/retirement date
+fields 1–5. The request reserves subscription service field 1; the response
+reserves subscription service/models/catalog version/updated at/source fields 1–5.
+Establish these allocations on main before dependent implementation. Reservations
+grant no catalog retrieval, authentication, account entitlement, native discovery
+or execution capability. No database migration is introduced.
+
 ## Scope
 
 The 2026-09-30 structural change preserves the main implementation while preparing
@@ -20,15 +47,23 @@ all affected owners, even when their rules live outside the edited directory.
 
 ## Protocol
 
+GitHub token-first onboarding under issue #964 reserves System capability 34,
+two closed enums and five new message declarations in the protocol allocation
+ledger. Establish this reservation-only closure on main before dependent
+implementation. It grants no token inspection, pre-profile form, credential
+retention or browser capability and adds no migration. Follow the protocol and
+integration contracts.
+
 The Agent Worker wizard amendment under issue #964 reserves System capability
 `AGENT_WORKER_WIZARD_V1 = 33`, list-only subscription-service field 4 on
 `ListResourcesRequest`, field 7 on `SearchModelsRequest`, and the wholly new
 `SaveAgentWorkerRequest` and `AgentWorkerModelSelection` declarations. The request
 reserves mutation/document/model/schema-version fields 1–4; model selection
 reserves canonical model ID/native ID/expected model revision fields 1–3.
-Establish this closure on main before implementing the source-scoped wizard and
-atomic model/Agent save. It changes no active schema, runtime capability or
-database migration, and grants no native execution or account authority.
+PR #1351 established this closure on main before the source-scoped wizard and
+atomic model/Agent save. The implementation reuses the existing acknowledgement
+and storage schemas without a database migration. Reservations alone still grant
+no runtime support, native execution or account authority.
 
 Keep package `delidev.v1`, Go import paths, RPC procedure names, existing field and
 enum numbers, JSON meanings and TypeScript exports stable. Service-specific schema
@@ -80,6 +115,15 @@ common/Hugging Face, Gemini and Baseten feature PRs in that dependency order und
 the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ### Repository addition prerequisites
+
+The approved remote-first extension reserves System 37
+(`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`) on main
+before dependent implementation. It follows the Add repository implementation
+in PR #1355 and preserves its immediate-clone/listing allocations. Reservations
+alone grant no URL registration or managed workspace clone and add no migration.
+The complete feature must compose repository saving, session/schedule admission,
+Worker preparation, native ownership, recovery, snapshots, Fork, Sidechat and
+deletion; a URL-only form without remote Worker preparation is incomplete.
 
 The Add repository extension under issue #964 reserves System capabilities 31
 (`REPOSITORY_CLONE_V1`) and 32 (`GITHUB_REPOSITORY_PICKER_V1`), Worker capability

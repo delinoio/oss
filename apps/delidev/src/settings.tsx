@@ -7,14 +7,14 @@ import { RepositoryGitHubAccess } from "./integration-access";
 import { RepositoryGitHubItems } from "./github-items";
 import { Integrations } from "./integrations";
 import { ConfigurationTransfer } from "./configuration-transfer";
-import { ModelPricing } from "./pricing";
+import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { NotificationSettings } from "./notification-settings";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
-import { ConfigurationFields, editableKinds, kindNames, newConfiguration } from "./configuration-fields";
+import { ConfigurationFields, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { JobState, TrackedJob } from "./jobs";
 import { LocalWorkerControls, LocalWorkerPresentation, type ControlLocalWorker } from "./local-worker-controls";
@@ -29,30 +29,73 @@ import { Problem } from "./ui";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import { AccountSettings, AccountSettingsSection, type AccountProviderPicker, type AccountProviderSummary } from "./account-settings";
-import { ActiveModelSettings, ApiProviderSettings, providerInventoryReady, type ModelListState, type ProviderListState } from "./provider-model-settings";
+import { ApiProviderSettings, providerInventoryReady, type ProviderListState } from "./provider-model-settings";
 import { revealAgentInvalidControl } from "./agent-configuration";
 import { RepositoryRegistration, type ChooseRepositoryFolder } from "./repository-registration";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { SettingsLifetime } from "./settings-lifetime";
 import { AppearanceSettings } from "./appearance";
-import { readableServerPreferences, revealServerPreferenceInvalidControl, ServerPreferencesEmpty, ServerPreferencesSummary } from "./server-preferences";
+import { latestServerPreferences, readableServerPreferences, revealServerPreferenceInvalidControl, ServerPreferencesEmpty, ServerPreferencesSummary, ServerPreferencesUnavailable, serverPreferenceLabel, type ServerPreferencesObservation } from "./server-preferences";
 import { SettingsLoading } from "./settings-presentation";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import "./api-account.css";
+import { SettingsTasks, SettingsTaskBackground, SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
+import { useRetainSettingsTask, useSettingsTaskVisible, useInSettingsTask, useCloseSettingsTask } from "./settings-task-context";
 
-export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, active, saved, cancel, focusName = false, nameFocused }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; active: boolean; saved: () => void; cancel: () => void; focusName?: boolean; nameFocused?: () => void }) {
+export enum ConfigurationEditorPresentation { Workflow, InlineServerPreferences }
+
+export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, serverPreferenceSection = ServerPreferenceSection.All, active, saved, cancel, focusName = false, nameFocused, presentation = ConfigurationEditorPresentation.Workflow, preferencesObservation }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; active: boolean; saved: () => void; cancel: () => void; focusName?: boolean; nameFocused?: () => void; presentation?: ConfigurationEditorPresentation; preferencesObservation?: ServerPreferencesObservation }) {
   const notifications = useNotifications();
+  const inline = kind === EntityKind.SETTINGS && presentation === ConfigurationEditorPresentation.InlineServerPreferences;
+  const [baseline, setBaseline] = useState(initial);
+  const source = inline ? baseline : initial;
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
   const [problem, setProblem] = useState("");
+  const [conflict, setConflict] = useState(false);
+  const observedConflict = useRef<unknown>(undefined);
   const form = useRef<HTMLFormElement>(null);
-  const current = useQuery(ResourceQuery.getResource, { kind, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
-  const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result, request) => { if (result.job) setJob(result.job); else if (result.resource) { notifications.notify({ kind: ToastKind.Success, message: `${kindNames[kind]} saved.`, id: request.mutation?.requestId }); saved(); } else setJob("unknown"); });
-  const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
+  const formId = useId(), taskVisible = useSettingsTaskVisible(), inTask = useInSettingsTask(), cancelTask = useCloseSettingsTask(cancel);
+  useRetainSettingsTask(Boolean(job) || childPending);
+  const current = useQuery(ResourceQuery.getResource, { kind, id: source?.id ?? "" }, { enabled: active && Boolean(source), refetchInterval: active ? 5000 : false });
+  const mutation = useRetainedMutation(`configuration:${kind}:${source?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result, request) => {
+    if (result.job) setJob(result.job);
+    else if (result.resource) {
+      if (inline) { setBaseline(result.resource); setData(document(result.resource)); setProblem(""); }
+      notifications.notify({ kind: ToastKind.Success, message: `${kind === EntityKind.SETTINGS ? serverPreferenceLabel(serverPreferenceSection) : kindNames[kind]} saved.`, id: request.mutation?.requestId }); saved();
+    } else setJob("unknown");
+  }, inline ? (result, request) => !result.resource || Boolean(result.resource.id && readableServerPreferences(result.resource)
+    && (!request.mutation?.id || result.resource.id === request.mutation.id)
+    && result.resource.revision > (request.mutation?.expectedRevision ?? 0n)) : undefined);
+  const polled = current.data?.resource;
+  const latest = inline ? latestServerPreferences(source, preferencesObservation?.resource, polled?.id === source?.id ? polled : undefined) : undefined;
+  const dirty = inline && JSON.stringify(data) !== JSON.stringify(source ? document(source) : initialData ?? newConfiguration(kind));
+  // An older in-flight read cannot replace the resource returned by Save. The
+  // revision-bound document remains authoritative across query invalidation.
+  const currentUnavailable = inline && Boolean(source && current.data && (!polled || polled.id !== source.id ||
+    (polled.revision >= source.revision && !readableServerPreferences(polled))));
+  const stale = inline ? Boolean(latest && (!source || latest.id !== source.id || latest.revision > source.revision))
+    : Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const blocked = mutation.busy || mutation.uncertain;
+  const inlineReadBlocked = inline && Boolean(!preferencesObservation?.complete || preferencesObservation.fetching || preferencesObservation.error || currentUnavailable);
   useEffect(() => {
-    if (!active || !focusName || kind !== EntityKind.PROJECT || initial || blocked) return;
+    if (!inline || !mutation.error || observedConflict.current === mutation.error || clientFailure(mutation.error).code !== FailureCode.Conflict) return;
+    observedConflict.current = mutation.error; setConflict(true);
+    // A rejected first save may reveal a concurrently created singleton. Read
+    // both inventory and current revision without replaying the rejected write.
+    saved();
+  }, [inline, mutation.error, saved]);
+  useEffect(() => {
+    if (!inline || dirty || blocked || conflict || !stale || !latest || !readableServerPreferences(latest) || !preferencesObservation?.complete || currentUnavailable) return;
+    setBaseline(latest); setData(document(latest)); setProblem("");
+  }, [inline, dirty, blocked, conflict, stale, latest, preferencesObservation?.complete, currentUnavailable]);
+  const discard = () => {
+    const adopted = latest && readableServerPreferences(latest) ? latest : source;
+    setBaseline(adopted); setData(adopted ? document(adopted) : initialData ?? newConfiguration(kind)); setProblem(""); setConflict(false);
+  };
+  useEffect(() => {
+    if (!active || !taskVisible || !focusName || kind !== EntityKind.PROJECT || initial || blocked) return;
     const frame = window.requestAnimationFrame(() => {
       const name = form.current?.querySelector<HTMLInputElement>("input");
       if (!name || name.disabled) return;
@@ -60,36 +103,55 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
       nameFocused?.();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, blocked, focusName, initial, kind, nameFocused]);
+  }, [active, blocked, focusName, initial, kind, nameFocused, taskVisible]);
   const change = (value: Document) => {
     if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem("This configuration is too large. Shorten the text before adding more content."); return; }
     setData(value); setProblem("");
   };
   const isApiEntry = kind === EntityKind.ACCOUNT && data.type === "api";
-  const kindLabel = isApiEntry ? "AI API key entry" : kindNames[kind];
+  const kindLabel = isApiEntry ? "AI API key entry" : kind === EntityKind.SETTINGS ? serverPreferenceLabel(serverPreferenceSection) : kindNames[kind];
   if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h1>{kindLabel} save accepted</h1><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3>{kindLabel} save accepted</h3>}{job === "unknown" ? <p role="alert">The server acknowledged this request without a readable result. Inspect its receipt before starting another save.</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>Configuration saved after Worker validation.</p><button onClick={saved}>Done</button></> : state === JobState.Failed || state === JobState.Canceled ? <button onClick={() => setJob(undefined)}>Return to retained draft</button> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
-  return <form ref={form} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); if (blocked || childPending || stale || data.reconfiguration_required === true || !validSubscriptionProvider || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: configurationSchemaVersion(kind, data), documentJson: encode(data) }); }}>
-    {isApiEntry ? <header className="api-entry-heading"><h1>{initial ? "Edit preferences" : "New AI API key entry"}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3>{initial ? "Edit" : "New"} {kindLabel}</h3>}
+  const saveDisabled = blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
+  return <form id={formId} ref={form} aria-label={inline ? "Server preferences form" : undefined} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); if (saveDisabled) return; void mutation.send({ mutation: { id: source?.id ?? "", expectedRevision: source?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: configurationSchemaVersion(kind, data), documentJson: encode(data) }); }}>
+    {inline ? null : isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? "Edit preferences" : "New AI API key entry"}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3 hidden={inTask}>{initial ? "Edit" : "New"} {kindLabel}</h3>}
     {kind === EntityKind.AGENT && !initial ? <p className="agent-subtitle">Configure the essentials, then customize only what you need.</p> : null}
-    <fieldset disabled={blocked}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(initial)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} /></fieldset>
-    {stale ? <p role="alert">This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error} />
+    <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>
+    {stale || (inline && conflict) ? <p role="alert">{inline ? "Server preferences changed elsewhere. Your draft is retained. Choose Discard changes to load the latest settings before saving." : "This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving."}</p> : null}{currentUnavailable ? <p role="status">Server preferences are unavailable. Your draft is retained. Refresh settings before saving.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error} />
     {subscriptionOnly && !validSubscriptionProvider ? <p role="alert">Subscription providers must use native-subscription protocol, subscription authentication and an empty endpoint.</p> : null}
-    {kind === EntityKind.AGENT || kind === EntityKind.SETTINGS ? <div className={kind === EntityKind.AGENT ? "actions agent-footer" : "actions server-preferences-actions"}><button type="button" disabled={blocked || childPending} onClick={cancel}>Cancel edit</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button className="primary" disabled={blocked || childPending || stale || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(initial && current.error)}>Save {kindLabel}</button></div>
-      : <div className="actions"><button className="primary" disabled={blocked || childPending || stale || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(initial && current.error)}>Save {kindLabel}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button type="button" disabled={blocked || childPending} onClick={cancel}>Cancel edit</button></div>}
+    {inline ? <div className="actions server-preferences-actions"><span className="server-preferences-status" role="status">{mutation.busy ? "Saving changes…" : mutation.uncertain ? "Save outcome unknown." : dirty ? "Unsaved changes" : ""}</span><button type="button" disabled={blocked || childPending || (!dirty && !stale && !conflict)} onClick={discard}>Discard changes</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button className="primary" disabled={saveDisabled}>Save changes</button></div> : null}
+    {!inline && (kind === EntityKind.AGENT || kind === EntityKind.SETTINGS) ? <SettingsTaskActions form={formId} className={kind === EntityKind.AGENT ? "agent-footer" : "server-preferences-actions"}><button type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>Cancel edit</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button className="primary" disabled={saveDisabled}>Save {kindLabel}</button></SettingsTaskActions>
+      : !inline ? <SettingsTaskActions form={formId}><button type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>Cancel edit</button><button className="primary" disabled={saveDisabled}>Save {kindLabel}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}</SettingsTaskActions> : null}
 
   </form>;
+}
+
+function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, error, active, saved, authority }: { resources?: Resource[]; nextPageToken?: string; page: string; fetching: boolean; error?: unknown; active: boolean; saved: () => void; authority?: PairingAuthority }) {
+  const complete = Boolean(resources && !page && !nextPageToken && resources.length <= 1 && (!resources.length || readableServerPreferences(resources[0])));
+  // Admit this mounted editor only from a complete read. Once admitted, retain
+  // it through refresh failures and unavailable snapshots without inventing data.
+  const [initial, setInitial] = useState<Resource | null | undefined>(() => complete ? resources?.[0] ?? null : undefined);
+  if (initial === undefined && complete) setInitial(resources?.[0] ?? null);
+  return <>
+    {!resources && !error ? <SettingsLoading label="Loading server preferences…" /> : null}
+    {fetching && resources ? <p role="status">Refreshing server preferences…</p> : null}
+    <Problem error={error} />
+    {error && resources ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
+    {resources && !complete ? <ServerPreferencesUnavailable rows={resources} /> : null}
+    {initial !== undefined ? <ConfigurationEditor kind={EntityKind.SETTINGS} initial={initial ?? undefined} active={active} saved={saved} cancel={() => {}} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{ complete, resource: complete ? resources?.[0] : undefined, fetching, error }} /> : null}
+    <div className="server-preferences-network"><NetworkSettings active={active} authority={authority} /></div>
+  </>;
 }
 
 export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance }
 enum SettingsCategory {
   Appearance = "appearance",
-  SubscriptionAccounts = "subscription-accounts", ApiAccounts = "api-accounts", Providers = "providers", Models = "models", AgentWorkers = "agent-workers", Instructions = "instructions",
+  SubscriptionAccounts = "subscription-accounts", ApiAccounts = "api-accounts", Providers = "providers", AgentWorkers = "agent-workers", Instructions = "instructions",
   Projects = "projects", Repositories = "repositories", ExecutionWorkers = "execution-workers", PairedDevices = "paired-devices",
-  ServerPreferences = "server-preferences", Integrations = "integrations", Diagnostics = "diagnostics", Notifications = "notifications", Transfer = "transfer", Backups = "backups",
+  ServerPreferences = "server-preferences", GitWorkflow = "git-workflow", Integrations = "integrations", Diagnostics = "diagnostics", Notifications = "notifications", Transfer = "transfer", Backups = "backups",
 }
-enum SettingsGroup { AiAgents = "AI & agents", Workspace = "Workspace", System = "System" }
+enum SettingsGroup { Ai = "AI", Coding = "Coding", Devices = "Device management", System = "System" }
 
 const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
   [SettingsCategory.Appearance]: { label: "Appearance", description: "Saved on this computer.", area: SettingsArea.Appearance },
@@ -97,7 +159,6 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
   [SettingsCategory.SubscriptionAccounts]: { label: "AI Subscription", description: "Manage your subscriptions and connect more accounts.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.ApiAccounts]: { label: "AI API Keys", description: "Manage AI API keys and keyless local connections. Connection and health are separate states.", kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.Providers]: { label: "API Providers", description: "Provider availability is saved on the selected server.", kind: EntityKind.PROVIDER, area: SettingsArea.Configuration },
-  [SettingsCategory.Models]: { label: "Models", description: "Saved on the selected server.", kind: EntityKind.MODEL, area: SettingsArea.Configuration },
   [SettingsCategory.AgentWorkers]: { label: "Agent Workers", description: "Saved on the selected server.", kind: EntityKind.AGENT, area: SettingsArea.Configuration },
   [SettingsCategory.Instructions]: { label: "Instructions", description: "Saved on the selected server.", kind: EntityKind.TEMPLATE, area: SettingsArea.Configuration },
   [SettingsCategory.Projects]: { label: "Projects", description: "Saved on the selected server.", kind: EntityKind.PROJECT, area: SettingsArea.Configuration },
@@ -105,23 +166,24 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
   [SettingsCategory.ExecutionWorkers]: { label: "Runner Devices", description: "Saved on the selected server.", kind: EntityKind.MACHINE, area: SettingsArea.Configuration },
   [SettingsCategory.PairedDevices]: { label: "Paired devices", description: "Saved on the selected server.", kind: EntityKind.DEVICE, area: SettingsArea.Configuration },
   [SettingsCategory.ServerPreferences]: { label: "Server preferences", description: "Saved on the selected server.", kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
-  [SettingsCategory.Integrations]: { label: "Integrations", description: "Manage GitHub profiles for repository access. AI accounts are configured separately.", area: SettingsArea.Integrations },
+  [SettingsCategory.GitWorkflow]: { label: "Git", description: "Saved on the selected server.", kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
+  [SettingsCategory.Integrations]: { label: "Git Profiles", description: "Manage GitHub profiles for repository access. AI accounts are configured separately.", area: SettingsArea.Integrations },
   [SettingsCategory.Diagnostics]: { label: "Connection & diagnostics", description: "Read-only observations from the selected server. This check does not repair state, connect an account or run model inference.", area: SettingsArea.Diagnostics },
   [SettingsCategory.Notifications]: { label: "Notifications", description: "These preferences belong to this client on the selected server. Inbox requests stay available when notifications are disabled or cannot be delivered.", area: SettingsArea.Notifications },
   [SettingsCategory.Transfer]: { label: "Import / Export", description: "Move configuration between DeliDev servers.", area: SettingsArea.Transfer },
 };
 
 const settingsGroups: { label: SettingsGroup; categories: SettingsCategory[] }[] = [
-  { label: SettingsGroup.AiAgents, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.Models, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
-  { label: SettingsGroup.Workspace, categories: [SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.ExecutionWorkers] },
-  { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.PairedDevices, SettingsCategory.ServerPreferences, SettingsCategory.Integrations, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
+  { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
+  { label: SettingsGroup.Coding, categories: [SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations, SettingsCategory.GitWorkflow] },
+  { label: SettingsGroup.Devices, categories: [SettingsCategory.ExecutionWorkers, SettingsCategory.PairedDevices] },
+  { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.ServerPreferences, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.Appearance]: "M12 3a9 9 0 1 0 0 18V3zM12 3a9 9 0 0 1 0 18",
   [SettingsCategory.Backups]: "M4 4h16v16H4zM8 4v6h8V4M8 20v-6h8v6",
   [SettingsCategory.Providers]: "M7 18a4 4 0 1 1 .9-7.9A5.5 5.5 0 0 1 18 9.5 3.5 3.5 0 0 1 18 18z",
-  [SettingsCategory.Models]: "M7 7h10v10H7zM4 4h2m12 0h2M4 20h2m12 0h2",
   [SettingsCategory.SubscriptionAccounts]: "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.ApiAccounts]: "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.AgentWorkers]: "M4 8h16v12H4zM8 8V5h8v3m-8 5h.01M16 13h.01M9 16h6",
@@ -130,6 +192,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.Repositories]: "M6 4v6m0 0a3 3 0 1 0 0 6m0-6h7a3 3 0 1 1 0 6h5m-12 0v4",
   [SettingsCategory.ExecutionWorkers]: "M3 4h18v13H3zM8 21h8m-4-4v4M7 8h4m-4 4h10",
   [SettingsCategory.PairedDevices]: "M7 3h10v18H7zM10 6h4m-4 12h4",
+  [SettingsCategory.GitWorkflow]: "M6 4v6m0 0a3 3 0 1 0 0 6m0-6h7a3 3 0 1 1 0 6h5m-12 0v4",
   [SettingsCategory.ServerPreferences]: "M4 6h16M4 12h16M4 18h16M9 4v4m6 2v4m-3 2v4",
   [SettingsCategory.Integrations]: "M9 15l6-6m-8 9H5a4 4 0 0 1 0-8h4m6-4h4a4 4 0 0 1 0 8h-4",
   [SettingsCategory.Diagnostics]: "M3 12h4l3-7 4 14 3-7h4",
@@ -251,9 +314,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const [deleting, setDeleting] = useState<Resource>();
   const [routing, setRouting] = useState<Resource>();
   const [account, setAccount] = useState<Resource>();
-  const [pricing, setPricing] = useState<Resource>();
   const [providerList, setProviderList] = useState<ProviderListState>({ query: "", page: "" });
-  const [modelList, setModelList] = useState<ModelListState>({ query: "", page: "" });
   const [providerChoicePage, setProviderChoicePage] = useState("");
   const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary } | undefined>(() => entry?.kind === SettingsEntryKind.AddAccount ? { key: newRequestId(), providerId: entry.providerId, provider: entry.provider } : undefined);
   const [apiProviderID, setApiProviderID] = useState(() => entry && entry.kind !== SettingsEntryKind.NewProject ? entry.providerId : "");
@@ -268,14 +329,17 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const isSubscriptionAccounts = selectedCategory === SettingsCategory.SubscriptionAccounts;
   const isAccountCategory = isApiAccounts || isSubscriptionAccounts;
   const isApiProviders = selectedCategory === SettingsCategory.Providers;
-  const isModels = selectedCategory === SettingsCategory.Models;
   const isAgentWorkers = selectedCategory === SettingsCategory.AgentWorkers;
   const isProjects = selectedCategory === SettingsCategory.Projects;
   const isServerPreferences = selectedCategory === SettingsCategory.ServerPreferences;
+  const isGitWorkflow = selectedCategory === SettingsCategory.GitWorkflow;
+  const isPreferenceCategory = isServerPreferences || isGitWorkflow;
+  const preferenceSection = isGitWorkflow ? ServerPreferenceSection.GitWorkflow : ServerPreferenceSection.AccountRouting;
+  const preferenceLabel = serverPreferenceLabel(preferenceSection);
   const isPairedDevices = selectedCategory === SettingsCategory.PairedDevices;
   const isRunnerDevices = selectedCategory === SettingsCategory.ExecutionWorkers;
-  const hasSpecializedPanel = isAccountCategory || isApiProviders || isModels;
-  const hasOverlay = Boolean(editing || account || deleting || routing || machine || device || pricing);
+  const hasSpecializedPanel = isAccountCategory || isApiProviders;
+  const hasOverlay = Boolean(editing || account || deleting || routing || machine || device);
   const categoryDescription = kind === EntityKind.DEVICE
     ? "Pair devices using a short-lived document."
     : kind === EntityKind.MACHINE && !controlLocalWorker ? "Configure these entries through the DeliDev CLI."
@@ -298,7 +362,10 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     deviceReturnFocus.current = undefined;
     const action = exit === DeviceRevocationExit.Cancel ? DeviceAction.Revoke : DeviceAction.Details;
     const control = [...(deviceContent.current?.querySelectorAll<HTMLButtonElement>("button[data-device-id]") ?? [])].find((button) => button.dataset.deviceId === id && button.dataset.deviceAction === action && !button.disabled);
-    (control ?? refreshDevices.current)?.focus();
+    const target = control ?? refreshDevices.current;
+    requestAnimationFrame(() => {
+      if (target?.isConnected && !globalThis.document.querySelector("dialog[open]:not([role=region])")) target.focus({ preventScroll: true });
+    });
   }, [device, isPairedDevices]);
   const toggleDevice = (id: string) => setExpandedDevices((current) => {
     if (!pairedPageIds.current.has(id)) return current;
@@ -337,24 +404,30 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(entry => providerSummary(entry, eligibleInventory.data?.capabilities ?? [])).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
   const configurationList = area === SettingsArea.Configuration && !hasOverlay && !hasSpecializedPanel;
   const successfulEmptyFirstPage = !page && Boolean(result.data && result.data.resources.length === 0 && !result.error && !result.data.nextPageToken);
-  const retainedServerEmpty = isServerPreferences && !page && Boolean(result.data && result.data.resources.length === 0 && !result.data.nextPageToken);
-  const hidePagination = successfulEmptyFirstPage || (isServerPreferences && !page && Boolean(result.data && !result.data.nextPageToken));
-  const serverSingleton = isServerPreferences && result.data?.resources.length === 1 ? result.data.resources[0] : undefined;
+  const retainedServerEmpty = isPreferenceCategory && !page && Boolean(result.data && result.data.resources.length === 0 && !result.data.nextPageToken);
+  const hidePagination = successfulEmptyFirstPage || (isPreferenceCategory && !page && Boolean(result.data && !result.data.nextPageToken));
+  const serverSingleton = isGitWorkflow && result.data?.resources.length === 1 ? result.data.resources[0] : undefined;
   const projectNameFocused = useCallback(() => setFocusNewProjectName(false), []);
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   const providerEntrySummary = (entry?: ProviderInventoryEntry, capabilities: readonly ProviderInventoryCapability[] = []) => entry ? providerSummary(entry, capabilities) : undefined;
-  return <>
-      <section className={isProjects ? "settings-content settings-projects" : isServerPreferences ? "settings-content settings-server-preferences" : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices && !hasOverlay ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
-        <div className="settings-content-column">
+  const closeTask = () => { setDevice(undefined); setMachine(undefined); setDeleting(undefined); setRouting(undefined); setEditing(undefined); setAccount(undefined); };
+  const taskResource = editing?.initial ?? device ?? machine ?? deleting ?? routing ?? account;
+  const taskKind = editing?.kind ?? kind;
+  const taskTitle = device ? "Revoke device" : machine ? "Runner Device details" : deleting ? "Delete configuration" : routing ? "Preview routing" : account ? "Manage connection" : editing && taskKind === EntityKind.REPOSITORY && !editing.initial ? "Add repository" : editing ? `${editing.initial ? "Edit" : "New"} ${taskKind === EntityKind.SETTINGS ? preferenceLabel : kindNames[taskKind]}` : "Settings task";
+  const taskSize = deleting || device ? SettingsDialogSize.Confirmation : routing ? SettingsDialogSize.Form : machine || account || [EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.REPOSITORY].includes(taskKind) ? SettingsDialogSize.Wide : SettingsDialogSize.Form;
+  return <SettingsTasks>
+      <section className={isProjects ? "settings-content settings-projects" : isPreferenceCategory ? `settings-content settings-server-preferences${isGitWorkflow ? " settings-git-workflow" : ""}` : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices ? "settings-content settings-runner-devices" : "settings-content"} aria-label="Settings content">
+        <SettingsTaskBackground><div className="settings-content-column">
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices && !hasOverlay ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
-        {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !(isApiProviders && !hasOverlay) && !(isModels && !hasOverlay) ? <div className="settings-category-heading">
-          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : isServerPreferences ? <p>Default routing, Worktree fetch, and pull request remediation.</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isServerPreferences ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">Saved on the selected server.</p> : null}</div>
+        {isGitWorkflow ? <p className="settings-breadcrumb">Coding / Git</p> : null}
+        {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !(isApiProviders && !hasOverlay) ? <div className="settings-category-heading">
+          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{isAgentWorkers ? <p className="settings-agent-summary">Reusable configurations for your agents.</p> : isPreferenceCategory ? <p>{isGitWorkflow ? "Worktree fetch and pull request remediation." : "Default account routing."}</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isPreferenceCategory ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">Saved on the selected server.</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
-            <button type="button" ref={isPairedDevices ? refreshDevices : undefined} onClick={() => void result.refetch()}>Refresh settings</button>
+            <button type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? "Refresh Git workflow" : undefined} onClick={() => void result.refetch()}>{isGitWorkflow ? "Refresh" : "Refresh settings"}</button>
             {isPairedDevices && pairingAuthority ? <span ref={setPairingTriggerContainer} /> : null}
-            {serverSingleton ? <button type="button" className="primary" disabled={!readableServerPreferences(serverSingleton)} onClick={() => setEditing({ initial: serverSingleton, key: newRequestId() })}>Edit Server preferences</button> : null}
-            {editableKinds.includes(kind) && (kind !== EntityKind.SETTINGS || !result.data?.resources.length)
-              ? <button type="button" className="primary" disabled={kind === EntityKind.SETTINGS && (!successfulEmptyFirstPage || result.isFetching)} onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>{kind === EntityKind.REPOSITORY ? "Add repository" : `New ${kindNames[kind]}`}</button>
+            {serverSingleton ? <button type="button" className="primary" disabled={!readableServerPreferences(serverSingleton)} onClick={() => setEditing({ initial: serverSingleton, key: newRequestId() })}>Edit {preferenceLabel}</button> : null}
+            {editableKinds.includes(kind) && (kind !== EntityKind.SETTINGS || (isGitWorkflow && !result.data?.resources.length))
+              ? <button type="button" className="primary" disabled={kind === EntityKind.SETTINGS && (!successfulEmptyFirstPage || result.isFetching)} onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>{kind === EntityKind.REPOSITORY ? "Add repository" : `New ${kind === EntityKind.SETTINGS ? preferenceLabel : kindNames[kind]}`}</button>
               : null}
           </div> : null}
         </div> : null}
@@ -375,18 +448,18 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
               <SubscriptionAccounts active={visible && isSubscriptionAccounts && !hasOverlay} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} />
             </div> : null}
 
-            {pricing ? <ModelPricing model={pricing} active={visible} close={() => { setPricing(undefined); void client.invalidateQueries({ refetchType: "active" }); }} /> : device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={(exit) => { deviceReturnFocus.current = { id: device.id, exit }; setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} authority={pairingAuthority} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion active={visible} initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing && (editing.kind ?? kind) === EntityKind.REPOSITORY && !editing.initial ? <RepositoryRegistration key={editing.key} active={visible} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} chooseFolder={chooseRepositoryFolder} saved={done} cancel={() => setEditing(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} state={providerList} changeState={setProviderList} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.ManageAccounts, providerId: providerID, provider: providerEntrySummary(entry) })} addAccount={(providerID, entry, oauthSupported) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.AddAccount, providerId: providerID, provider: providerEntrySummary(entry, oauthSupported) })} deleteCustom={setDeleting} /> : isModels ? <ActiveModelSettings state={modelList} changeState={setModelList} active={visible && isModels} createModel={(initialData) => setEditing({ kind: EntityKind.MODEL, initialData, key: newRequestId() })} editModel={(initial) => setEditing({ kind: EntityKind.MODEL, initial, key: newRequestId() })} priceModel={setPricing} /> : isRunnerDevices ? <><SSHSetup active={visible} /><RunnerDeviceInventory resources={result.data?.resources} error={result.error} loading={result.isPending && !result.data} fetching={result.isFetching} page={page} nextPage={result.data?.nextPageToken ?? ""} hidePagination={hidePagination} first={() => setPage("")} next={() => setPage(result.data!.nextPageToken)} inspect={setMachine} /></> : hasSpecializedPanel ? null : <>
-              {result.isPending && !result.data ? <SettingsLoading label={`Loading ${selected.label.toLowerCase()}…`} /> : null}
+            {isServerPreferences ? <ServerPreferencesWorkspace resources={result.data?.resources} nextPageToken={result.data?.nextPageToken} page={page} fetching={result.isFetching} error={result.error} active={visible} saved={done} authority={pairingAuthority} /> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} state={providerList} changeState={setProviderList} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.ManageAccounts, providerId: providerID, provider: providerEntrySummary(entry) })} addAccount={(providerID, entry, oauthSupported) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.AddAccount, providerId: providerID, provider: providerEntrySummary(entry, oauthSupported) })} deleteCustom={setDeleting} /> : isRunnerDevices ? <><SSHSetup active={visible} /><RunnerDeviceInventory resources={result.data?.resources} error={result.error} loading={result.isPending && !result.data} fetching={result.isFetching} page={page} nextPage={result.data?.nextPageToken ?? ""} hidePagination={hidePagination} first={() => setPage("")} next={() => setPage(result.data!.nextPageToken)} inspect={setMachine} /></> : hasSpecializedPanel ? null : <>
+              {result.isPending && !result.data ? <SettingsLoading label={`Loading ${(isPreferenceCategory ? preferenceLabel : selected.label).toLowerCase()}…`} /> : null}
               {isServerPreferences ? <NetworkSettings active={visible && isServerPreferences} authority={pairingAuthority} /> : null}
-              {isServerPreferences && result.isFetching && result.data ? <p role="status">Refreshing server preferences…</p> : null}
+              {isPreferenceCategory && result.isFetching && result.data ? <p role="status">Refreshing {preferenceLabel.toLowerCase()}…</p> : null}
               <Problem error={result.error} />
               {result.error && result.data ? <p className="notice" role="status">Refresh failed. Showing the last successfully loaded results.</p> : null}
               {isPairedDevices ? <p className="paired-device-explanation">Authorization does not mean this device is currently connected.</p> : null}
               <div className={isAgentWorkers && result.data?.resources.length ? "settings-agent-list" : isPairedDevices && result.data?.resources.length ? "paired-device-list" : undefined}>
-              {isProjects ? <ProjectList resources={result.data?.resources ?? []} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : result.data?.resources.map((row) => { if (isServerPreferences) return <ServerPreferencesSummary key={row.id} row={row} />; if (isPairedDevices) return <DeviceRow key={row.id} resource={row} currentDeviceId={currentDeviceId} expanded={expandedDevices.has(row.id)} toggle={() => toggleDevice(row.id)} revoke={() => setDevice(row)} />; if (isAgentWorkers) return <AgentWorkerRow key={row.id} row={row} edit={() => setEditing({ initial: row, key: newRequestId() })} preview={() => setRouting(row)} remove={() => setDeleting(row)} />; const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small>{kind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={visible && area === SettingsArea.Configuration} /><RepositoryGitHubItems selected={row} active={visible && area === SettingsArea.Configuration} /></> : null}<div className="actions">{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.MODEL ? <button disabled={row.schemaVersion !== 1} onClick={() => setPricing(row)}>Token pricing</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
+              {isProjects ? <ProjectList resources={result.data?.resources ?? []} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : result.data?.resources.map((row) => { if (isPreferenceCategory) return <ServerPreferencesSummary key={row.id} row={row} section={preferenceSection} />; if (isPairedDevices) return <DeviceRow key={row.id} resource={row} currentDeviceId={currentDeviceId} expanded={expandedDevices.has(row.id)} toggle={() => toggleDevice(row.id)} revoke={() => setDevice(row)} />; if (isAgentWorkers) return <AgentWorkerRow key={row.id} row={row} edit={() => setEditing({ initial: row, key: newRequestId() })} preview={() => setRouting(row)} remove={() => setDeleting(row)} />; const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</h3>{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small>{kind === EntityKind.REPOSITORY ? <><RepositoryGitHubAccess selected={row} active={visible && area === SettingsArea.Configuration} /><RepositoryGitHubItems selected={row} active={visible && area === SettingsArea.Configuration} /></> : null}<div className="actions">{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {kind === EntityKind.SETTINGS ? "Server preferences" : resourceName(row)}</button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
               </div>
-              {isServerPreferences && (successfulEmptyFirstPage || retainedServerEmpty) ? <ServerPreferencesEmpty />
-                : isServerPreferences ? result.data?.resources.length === 0 ? <p>No server preferences on this page.</p> : null
+              {isPreferenceCategory && (successfulEmptyFirstPage || retainedServerEmpty) ? <ServerPreferencesEmpty section={preferenceSection} />
+                : isPreferenceCategory ? result.data?.resources.length === 0 ? <p>No {preferenceLabel.toLowerCase()} on this page.</p> : null
                 : isPairedDevices
                 ? successfulEmptyFirstPage ? <section className="paired-device-empty" aria-label="No paired devices yet"><h2>No paired devices yet</h2><p>{pairingAuthority ? "Choose Create pairing document to pair a desktop client or manually installed Worker." : "Pairing document creation is unavailable for this connection."}</p></section>
                   : result.data?.resources.length === 0 && !result.error ? <p>No paired devices on this page</p> : null
@@ -404,9 +477,10 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           </div> : null}
         </div>
         </div>
-        </div>
+        </div></SettingsTaskBackground>
       </section>
-  </>;
+      {hasOverlay ? <SettingsTaskDialog key={editing?.key ?? `${taskTitle}:${taskResource?.id}`} title={taskTitle} size={taskSize} focus={deleting || device ? SettingsDialogFocus.Cancel : routing || machine || account ? SettingsDialogFocus.Heading : SettingsDialogFocus.Input} close={closeTask}>{device ? <DeviceRevocation initial={device} currentDeviceId={currentDeviceId} active={visible} close={(exit) => { deviceReturnFocus.current = { id: device.id, exit }; setDevice(undefined); void result.refetch(); }} revoked={() => void client.invalidateQueries({ refetchType: "active" })} /> : machine ? <MachineSettings initial={machine} active={visible} authority={pairingAuthority} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing && (editing.kind ?? kind) === EntityKind.REPOSITORY && !editing.initial ? <RepositoryRegistration key={editing.key} active={visible} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} chooseFolder={chooseRepositoryFolder} saved={done} cancel={() => setEditing(undefined)} /> : editing && (editing.kind ?? kind) === EntityKind.AGENT ? <AgentWorkerWizard key={editing.key} initial={editing.initial} active={visible} saved={done} cancel={() => setEditing(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={editing.kind ?? kind} initial={editing.initial} initialData={editing.initialData} subscriptionOnly={editing.subscriptionOnly} serverPreferenceSection={isPreferenceCategory ? preferenceSection : ServerPreferenceSection.All} active={visible} saved={done} cancel={() => setEditing(undefined)} focusName={focusNewProjectName} nameFocused={projectNameFocused} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : null}</SettingsTaskDialog> : null}
+  </SettingsTasks>;
 }
 
 function ProjectList({ resources, edit, remove }: { resources: Resource[]; edit: (row: Resource) => void; remove: (row: Resource) => void }) {

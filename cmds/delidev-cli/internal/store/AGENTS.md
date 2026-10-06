@@ -1,3 +1,4 @@
+- Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history and legacy accountless APIs; capability 33 is configuration support, never native readiness.
 # DeliDev store ownership
 
 - Sidechat publication atomically records its bounded parent dependency. Keep it until original native, database and backup retirement finishes. Synchronized complete parent/storage intents reconstruct only their original child plans across SQL rollback and response loss; compare immutable ownership inventories, never substitute current work. Follow `docs/cmds-delidev-sidechat-contract.md`.
