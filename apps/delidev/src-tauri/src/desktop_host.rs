@@ -317,6 +317,18 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Runs the production 35-second grace period against a hung process fixture."]
+    fn production_quit_deadline_forces_and_joins_original_child() {
+        let (_root, connector) = fixture(&format!("#!/bin/sh\n{}exec /bin/sleep 120\n", ready()));
+        connector.run_desktop_host("desktop-launch").unwrap();
+        let started = Instant::now();
+        connector.shutdown_owned().unwrap();
+        assert!(started.elapsed() >= SHUTDOWN_TIMEOUT);
+        assert!(started.elapsed() < SHUTDOWN_TIMEOUT + Duration::from_secs(10));
+        assert!(connector.hosted.lock().unwrap().is_empty());
+    }
+
+    #[test]
     fn quit_during_startup_retains_and_joins_the_unreported_child() {
         let (root, connector) = fixture(
             "#!/bin/sh\nprintf started > \"$2/started\"\nIFS= read -r control\nprintf stopped > \
