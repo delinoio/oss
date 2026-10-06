@@ -89,6 +89,32 @@ it("preserves editable response fields when selection and server filters change"
   expect(value.answer).not.toHaveBeenCalled();
 });
 
+it("keeps the preceding native answer in the Inbox cache after an oversized paste", async () => {
+  const value = fixture();
+  const nativeId = (prefix: string, suffix = "A") => `${prefix}_${"a".repeat(12)}${suffix.repeat(14)}`;
+  value.interaction.documentJson = encode({
+    type: "user-question", execution_id: document(value.interaction).execution_id, closure: "open",
+    native_item_id: nativeId("prt"), native_thread_id: nativeId("ses"), native_turn_id: nativeId("msg"),
+    native_request_id: { kind: "text", text: nativeId("que") },
+    opencode: { version: "1.18.32", native_event_id: nativeId("evt"), native_message_id: nativeId("msg", "B"), call_id: "original-call", questions: [{ text: "Original question", header: "Original", options: [], custom: true }] },
+  });
+  const rendered = render(value.renderInbox());
+  fireEvent.click(await screen.findByRole("button", { name: /Agent question/ }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Use a custom answer" }));
+  const answer = screen.getByRole("textbox", { name: "Custom answer for question 1" });
+  fireEvent.change(answer, { target: { value: "Previous exact answer" } });
+  fireEvent.change(answer, { target: { value: "x".repeat(1024 * 1024) } });
+  expect((answer as HTMLTextAreaElement).value).toBe("Previous exact answer");
+  expect(screen.getByText(/previous draft was kept/)).toBeTruthy();
+  rendered.rerender(value.renderInbox({ active: false }));
+  rendered.rerender(value.renderInbox());
+  fireEvent.click(screen.getByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
+  await screen.findByText("Original terminal observation");
+  fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
+  expect((await screen.findByRole("textbox", { name: "Custom answer for question 1" }) as HTMLTextAreaElement).value).toBe("Previous exact answer");
+  expect(value.answer).not.toHaveBeenCalled();
+});
+
 it("revalidates every repeated notification activation through the exact inbox read", async () => {
   const value = fixture();
   const rendered = render(value.renderInbox({ notificationId: value.entry.id, notificationActivation: 1 }));

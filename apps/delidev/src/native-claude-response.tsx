@@ -3,26 +3,34 @@ import { encode } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import { InteractionDraftKind, useEditableInteractionDraft, type InteractionDraftState } from "./inbox-drafts";
+import { nativeResponseByteLength, nativeResponseLimit, nativeResponseOverflow } from "./native-response-bounds";
 
 export type ClaudeQuestion = { question: string; header: string; multiSelect: boolean; options: { label: string; description: string }[] };
 enum Behavior { Allow = "allow", Deny = "deny" }
 type Reply = { behavior: Behavior; answers?: Record<string, string>; message?: string; interrupt?: boolean };
+type ClaudeDraft = Extract<InteractionDraftState, { kind: InteractionDraftKind.Claude }>;
 const validText = (v: string, limit: number) => !v.includes("\0") && !/[\uD800-\uDFFF]/u.test(v) && new TextEncoder().encode(v).length <= limit;
 
 // Native question replies use text keys and comma-separated multiple choices.
 // Custom answers remain exact strings; skipped questions are explicitly omitted.
 export function NativeClaudeResponse({ resource, questions, closed, accepted, draft, saveDraft, submissionAllowed = true, receiptRetryAllowed = true }: { resource: Resource; questions?: ClaudeQuestion[]; closed: boolean; accepted: (value?: Resource) => void; draft?: InteractionDraftState; saveDraft?: (value: InteractionDraftState) => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
-  const [editable, setEditable] = useEditableInteractionDraft<Extract<InteractionDraftState, { kind: InteractionDraftKind.Claude }>>(InteractionDraftKind.Claude, () => ({ kind: InteractionDraftKind.Claude, selected: questions?.map(() => []) ?? [], custom: {}, customEnabled: {}, skipped: {}, denial: false, reason: "", interrupt: false }), draft, saveDraft);
+  const replyFor = (value: ClaudeDraft): Reply => value.denial
+    ? { behavior: Behavior.Deny, message: value.reason, ...(value.interrupt ? { interrupt: true } : {}) }
+    : { behavior: Behavior.Allow, ...(questions ? { answers: Object.fromEntries(questions.flatMap((q, i) => value.skipped[i] ? [] : [[q.question, value.customEnabled[i] ? value.custom[i] ?? "" : (value.selected[i] ?? []).join(", ")]])) } : {}) };
+  const [editable, setEditable, editProblem] = useEditableInteractionDraft<ClaudeDraft>(InteractionDraftKind.Claude, () => ({ kind: InteractionDraftKind.Claude, selected: questions?.map(() => []) ?? [], custom: {}, customEnabled: {}, skipped: {}, denial: false, reason: "", interrupt: false }), draft, saveDraft, (value) => nativeResponseOverflow([
+    { values: [value.reason], limit: 4096, guidance: "Keep the Claude denial reason within 4 KiB." },
+    { values: Object.values(value.custom), limit: nativeResponseLimit, guidance: "Keep each Claude answer within 256 KiB." },
+  ], () => ({ claude: replyFor(value) })));
   const { selected, custom, customEnabled, skipped, denial, reason, interrupt } = editable;
   const selectedRows = questions?.map((_, index) => selected[index] ?? []) ?? [];
   const questionMutation = useRetainedMutation(`claude-answer:${resource.id}`, InteractionQuery.respondQuestion, (r) => accepted(r.interaction));
   const approvalMutation = useRetainedMutation(`claude-approve:${resource.id}`, InteractionQuery.respondApproval, (r) => accepted(r.interaction));
   const mutation = questions ? questionMutation : approvalMutation;
-  const answers = questions ? Object.fromEntries(questions.flatMap((q, i) => skipped[i] ? [] : [[q.question, customEnabled[i] ? custom[i] ?? "" : (selected[i] ?? []).join(", ")]])) : undefined;
-  const reply: Reply = denial ? { behavior: Behavior.Deny, message: reason, ...(interrupt ? { interrupt: true } : {}) } : { behavior: Behavior.Allow, ...(answers ? { answers } : {}) };
+  const reply = replyFor(editable);
+  const { answers } = reply;
   const missing = !denial && questions?.some((_, i) => !skipped[i] && !customEnabled[i] && !selected[i]?.length);
   const invalid = denial ? !reason.trim() || !validText(reason, 4096) : Object.values(answers ?? {}).some((v) => !validText(v, 256 * 1024));
-  const oversized = encode({ claude: reply }).byteLength > 256 * 1024;
+  const oversized = nativeResponseByteLength({ claude: reply }) > nativeResponseLimit;
   const blocked = closed || mutation.busy || mutation.uncertain || !submissionAllowed;
   return <form aria-label="Respond to original Claude request" onSubmit={(event) => {
     event.preventDefault();
@@ -45,6 +53,7 @@ export function NativeClaudeResponse({ resource, questions, closed, accepted, dr
       </fieldset>) : <p>Allow this original request with its unchanged input.</p>}
       <button className="primary" disabled={Boolean(missing) || invalid || oversized}>{denial ? "Send denial to Claude" : questions ? "Send answers to Claude" : "Allow this Claude request"}</button>
     </fieldset>
+    {editProblem ? <p role="alert">{editProblem}</p> : null}
     {invalid || oversized ? <p role="alert">Keep the complete response within 256 KiB and a nonempty denial reason within 4 KiB, using valid text.</p> : null}
     <Problem error={mutation.error} />
     {mutation.uncertain ? <button type="button" disabled={mutation.busy || !receiptRetryAllowed} onClick={mutation.retry}>Retry the same response request</button> : null}

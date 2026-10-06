@@ -3,6 +3,7 @@ import { object, encode, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import { InteractionDraftKind, GrokDraftOutcome as Outcome, GrokDraftFileDecision as FileDecision, GrokDraftPlanDecision as PlanDecision, useEditableInteractionDraft, type GrokDraftDecision, type InteractionDraftState } from "./inbox-drafts";
+import { nativeResponseByteLength, nativeResponseLimit, nativeResponseOverflow } from "./native-response-bounds";
 
 enum Method { Update = "session/update", Notification = "_x.ai/session_notification", File = "session/request_permission", Question = "_x.ai/ask_user_question", Plan = "_x.ai/exit_plan_mode" }
 const uuid = (v: unknown, version = 7): v is string => typeof v === "string" && new RegExp(`^[a-f0-9]{8}-[a-f0-9]{4}-${version}[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$`).test(v);
@@ -62,18 +63,26 @@ export function NativeGrokInteraction({data, resource, accepted, draft, saveDraf
 }
 function GrokResponse({resource,original,accepted,draft,saveDraft,closed,submissionAllowed,receiptRetryAllowed}: {resource:Resource;original:NonNullable<ReturnType<typeof request>>;accepted:(r?:Resource)=>void;draft?:InteractionDraftState;saveDraft?:(v:InteractionDraftState)=>void;closed:boolean;submissionAllowed:boolean;receiptRetryAllowed:boolean}) {
  const {v,p}=original, qs=v.method===Method.Question?p.questions as Question[]:undefined;
- const [state,set]=useEditableInteractionDraft<Extract<InteractionDraftState,{kind:InteractionDraftKind.Grok}>>(InteractionDraftKind.Grok,()=>({kind:InteractionDraftKind.Grok,outcome:Outcome.Accepted,decision:"",answers:{},notes:{},partial:{}}),draft,saveDraft);
+ type GrokDraft = Extract<InteractionDraftState, {kind: InteractionDraftKind.Grok}>;
+ const responseFor = (value: GrokDraft) => {
+  const answers = Object.fromEntries(qs?.flatMap((q,i)=>value.outcome===Outcome.Cancelled||value.outcome===Outcome.Skip&&!value.partial[i]?[]:[[q.question,value.answers[i]??""]])??[]);
+  const annotations = Object.fromEntries(qs?.flatMap((q,i)=>value.notes[i]?[[q.question,{notes:value.notes[i]}]]:[])??[]);
+  const reply = qs?value.outcome===Outcome.Accepted?{outcome:value.outcome,answers,...(Object.keys(annotations).length?{annotations}:{})}:value.outcome===Outcome.Skip?{outcome:value.outcome,partial_answers:answers}:{outcome:value.outcome}:v.method===Method.Plan?{outcome:value.decision}:{decision:value.decision};
+  return {answers, annotations, reply};
+ };
+ const [state,set,editProblem]=useEditableInteractionDraft<GrokDraft>(InteractionDraftKind.Grok,()=>({kind:InteractionDraftKind.Grok,outcome:Outcome.Accepted,decision:"",answers:{},notes:{},partial:{}}),draft,saveDraft,(value)=>nativeResponseOverflow([
+  {values:Object.values(value.answers),limit:64<<10,guidance:"Keep each Grok answer within 64 KiB."},
+  {values:Object.values(value.notes),limit:64<<10,guidance:"Keep each Grok note within 64 KiB."},
+ ],()=>({grok:responseFor(value).reply})));
  const question=useRetainedMutation(`grok-answer:${resource.id}`,InteractionQuery.respondQuestion,(r)=>accepted(r.interaction));
  const approval=useRetainedMutation(`grok-approve:${resource.id}`,InteractionQuery.respondApproval,(r)=>accepted(r.interaction));
  const mutation=qs?question:approval;
- const answers=Object.fromEntries(qs?.flatMap((q,i)=>state.outcome===Outcome.Cancelled||state.outcome===Outcome.Skip&&!state.partial[i]?[]:[[q.question,state.answers[i]??""]])??[]);
- const annotations=Object.fromEntries(qs?.flatMap((q,i)=>state.notes[i]?[[q.question,{notes:state.notes[i]}]]:[])??[]);
- const reply=qs?state.outcome===Outcome.Accepted?{outcome:state.outcome,answers,...(Object.keys(annotations).length?{annotations}:{})}:state.outcome===Outcome.Skip?{outcome:state.outcome,partial_answers:answers}:{outcome:state.outcome}:v.method===Method.Plan?{outcome:state.decision}:{decision:state.decision};
- const invalid=encode({grok:reply}).length>(256<<10)||Object.values(answers).some((v)=>!bounded(v,64<<10,true))||Object.values(annotations).some((v)=>!bounded(v.notes,64<<10))||!qs&&!state.decision;
+ const {answers,annotations,reply}=responseFor(state);
+ const invalid=nativeResponseByteLength({grok:reply})>nativeResponseLimit||Object.values(answers).some((v)=>!bounded(v,64<<10,true))||Object.values(annotations).some((v)=>!bounded(v.notes,64<<10))||!qs&&!state.decision;
  const blocked=closed||!submissionAllowed||mutation.busy||mutation.uncertain;
  return <form aria-label="Respond to original Grok request" onSubmit={(e)=>{e.preventDefault();if(blocked||invalid)return;void mutation.send({mutation:{id:resource.id,expectedRevision:resource.revision,requestId:newRequestId()},responseJson:encode({grok:reply})});}}><fieldset disabled={blocked}>
  {qs?<><label>Question response<select value={state.outcome} onChange={(e)=>set({...state,outcome:e.target.value as Outcome})}><option value={Outcome.Accepted}>Answer all questions</option><option value={Outcome.Cancelled}>Decline these questions</option><option value={Outcome.Skip}>Skip interview with selected partial answers</option></select></label><p>Declining questions continues the native input; it does not stop execution.</p>{state.outcome!==Outcome.Cancelled?qs.map((q,i)=><fieldset key={q.question}><legend>{q.question}</legend><p>{q.multiSelect===true?"Multiple selections offered":q.multiSelect===false?"Single selection offered":"Native multi-select value is null"}</p><ul>{q.options.map((o)=><li key={o.label}>{o.label} — {o.description}</li>)}</ul><label>Exact answer for question {i+1}<textarea value={state.answers[i]??""} onChange={(e)=>set({...state,answers:{...state.answers,[i]:e.target.value}})}/></label>{state.outcome===Outcome.Accepted?<label>Notes for question {i+1}<textarea value={state.notes[i]??""} onChange={(e)=>set({...state,notes:{...state.notes,[i]:e.target.value}})}/></label>:<label><input type="checkbox" checked={state.partial[i]??false} onChange={(e)=>set({...state,partial:{...state.partial,[i]:e.target.checked}})}/>Include this partial answer</label>}</fieldset>):null}</>:<label>Decision<select autoFocus value={state.decision} onChange={(e)=>set({...state,decision:e.target.value as GrokDraftDecision})}><option value="">Select a decision</option>{(v.method===Method.Plan?Object.values(PlanDecision):Object.values(FileDecision)).map((d)=><option key={d} value={d}>{d}</option>)}</select></label>}
- {state.decision===FileDecision.Session?<p>The original native session remembers this edit permission after the approving Write completes. It does not change synchronized settings.</p>:null}<button className="primary" disabled={invalid}>Send response to Grok</button></fieldset><Problem error={mutation.error}/>{mutation.uncertain?<button type="button" disabled={mutation.busy||!receiptRetryAllowed} onClick={mutation.retry}>Retry the same response request</button>:null}</form>;
+ {state.decision===FileDecision.Session?<p>The original native session remembers this edit permission after the approving Write completes. It does not change synchronized settings.</p>:null}<button className="primary" disabled={invalid}>Send response to Grok</button></fieldset>{editProblem?<p role="alert">{editProblem}</p>:null}<Problem error={mutation.error}/>{mutation.uncertain?<button type="button" disabled={mutation.busy||!receiptRetryAllowed} onClick={mutation.retry}>Retry the same response request</button>:null}</form>;
 }
 export function NativeGrokTool({data}:{data:Document}) {
  const v=object(data.grok_tool),p=object(v.payload),u=object(p.update),meta=object(p._meta);
