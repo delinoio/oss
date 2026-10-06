@@ -9,12 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 type storageFinalRootStage string
+
+const finalRootReceiptTimeout = 30 * time.Second
 
 const (
 	storageFinalRootBeforeClaim       storageFinalRootStage = "before-claim"
@@ -284,7 +287,13 @@ func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r Sto
 	if err := m.finalRootFault(stage); err != nil {
 		return err
 	}
-	if err := m.writeFinalRemovalClaim(ctx, claim, storageFinalRootUnlinked); err != nil {
+	// Native unlink is irreversible. Publish its receipt with a bounded context
+	// that survives caller cancellation so recovery can distinguish an observed
+	// removal from a missing receipt after a deadline or disconnect.
+	receiptCtx, cancelReceipt := context.WithTimeout(context.WithoutCancel(ctx), finalRootReceiptTimeout)
+	err = m.writeFinalRemovalClaim(receiptCtx, claim, storageFinalRootUnlinked)
+	cancelReceipt()
+	if err != nil {
 		return err
 	}
 	if err := m.finalRootFault(storageFinalRootUnlinked); err != nil {

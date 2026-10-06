@@ -671,7 +671,8 @@ be published. Linux additionally verifies the opened directory's post-unlink
 link count so a retained-parent race in the final kernel interval remains
 recovery-required.
 Keep unlink preparation separate from the durable receipt recorded after native
-unlink. Recovery with a missing root and no unlink receipt remains uncertain,
+unlink. Publish that receipt with a bounded cancellation-independent context
+before honoring the caller's cancellation. Recovery with a missing root and no unlink receipt remains uncertain,
 including interruption between unlink and receipt publication. With the original
 receipt, recovery synchronizes both parents and independently requires both
 names absent before recording completion. Missing or replaced proof/root never

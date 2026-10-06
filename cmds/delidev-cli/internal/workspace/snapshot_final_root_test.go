@@ -153,6 +153,30 @@ func TestFinalRootRemovalRecoveryRequiresOriginalTransition(t *testing.T) {
 	}
 }
 
+func TestFinalRootRemovalPersistsReceiptAfterCancellation(t *testing.T) {
+	m, r := finalRootFixture(t, StorageCleanup)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.storageFinalRootFault = func(stage storageFinalRootStage) error {
+		if stage == storageFinalRootNativeGone {
+			cancel()
+		}
+		return nil
+	}
+
+	if _, err := m.Storage(ctx, r); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("cancellation did not retain recovery ownership", err)
+	}
+	raw, err := os.ReadFile(m.finalRemovalClaimPath(r.OperationID))
+	if err != nil {
+		t.Fatal("unlink receipt was not retained", err)
+	}
+	var claim storageFinalRootClaim
+	if err := domain.Decode(raw, &claim); err != nil || claim.State != storageFinalRootUnlinked {
+		t.Fatalf("unlink receipt state = %q, decode error = %v", claim.State, err)
+	}
+}
+
 func TestFinalRootRemovalRejectsReappearingOldName(t *testing.T) {
 	m, r := finalRootFixture(t, StorageCleanup)
 	removal := filepath.Join(m.Root, "workspace-removals", string(r.OperationID))
