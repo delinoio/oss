@@ -2,6 +2,7 @@
 
 - `@delinoio/ci` owns repository-wide validation; app/package leaves stay with their workspace. Actions owns setup, affected planning, matrices, temporary services, artifacts and `CI Result`.
 - Follow `docs/repository-workflow-contract.md`. Route PR checks through `run-affected.mjs`; preserve exact comparison SHAs, external forcing, full native suites, Windows Go shards and 20/45-minute package watchdogs.
+- Affected Go discovery uses native `go list -mod=readonly -test -json` and retains only original package owners. Match resolved production/internal-test/external-test embed files against every consumer before narrowing testdata ownership; production embeds propagate to callers and test embeds select tests only. Preserve import and subprocess/frontend edges, native checkout identity, discovery failures and conservative deletion/move fallbacks.
 - Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection.
 - Cache deterministic leaves only. Go/Rust execution, DB/OS/render/benchmark, repeated clean builds, embedded generation and protocol freshness run every time. Declare actual outputs and external inputs, plus task-local platform/tool/option hashes.
 - Keep JS hashes independent of native tool availability. Hash installed Go/Rust/Buf versions only in their owning cached tasks; metadata queries must not install compilers.

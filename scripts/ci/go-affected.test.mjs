@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, win32 } from "node:path";
 import test from "node:test";
 import { affectedGoPackages, commandConsumers, parseInventory, selectAffected, selectionOptions } from "./go-affected.mjs";
-import { GoTestShard, runGoTests } from "./go-test.mjs";
+import { GoTestShard, runGoTests, shardForPackage } from "./go-test.mjs";
 import { runGoQuality } from "./go-quality.mjs";
 
 const modulePath = "github.com/delinoio/oss";
@@ -34,6 +34,38 @@ test("test-only changes and testdata select their owner without propagating prod
     assert.deepEqual(affected(name), [path("cmds/delidev-cli/internal/apiproxy")]);
   }
   assert.deepEqual(affected("apps/delidev/src/App.tsx"), []);
+});
+
+test("shared test embeds select every consumer before narrowing testdata ownership", () => {
+  const harness = "cmds/delidev-cli/internal/harness";
+  const file = `${harness}/grok/testdata/initialize.json`;
+  const packages = [
+    { ...pkg(harness), testEmbedFiles: [file] },
+    { ...pkg(`${harness}/grok`), testEmbedFiles: [file] },
+    pkg(`${harness}/other`), pkg("cmds/delidev-cli", [harness]),
+  ];
+  assert.deepEqual(selectAffected(packages, changes(file)).packages, packages.slice(0, 2).map((item) => item.path).sort());
+  assert.deepEqual(selectAffected(packages, changes(`${harness}/grok/testdata/unshared.json`)).packages, [path(`${harness}/grok`)]);
+  assert.deepEqual(selectAffected(packages, changes(`${harness}/grok/discovery_test.go`)).packages, [path(`${harness}/grok`)]);
+  for (const status of ["D", "T", "U"]) {
+    assert.deepEqual(selectAffected(packages, changes(file, status)).packages, packages.map((item) => item.path).sort());
+  }
+});
+
+test("production embeds propagate to callers while external-test embeds seed only tests", () => {
+  const leaf = "cmds/delidev-cli/internal/leaf";
+  const production = `${leaf}/assets/schema.json`, external = `${leaf}/assets/expected.json`;
+  const packages = [
+    { ...pkg(leaf), embedFiles: [production], xTestEmbedFiles: [external] },
+    pkg("cmds/delidev-cli", [leaf]), pkg("cmds/delidev-cli/internal/cli"),
+    pkg("cmds/delidev-cli/internal/server"), pkg("cmds/delidev-cli/internal/unrelated"),
+  ];
+  assert.deepEqual(selectAffected(packages, changes(production)).packages, packages.slice(0, 4).map((item) => item.path).sort());
+  assert.deepEqual(selectAffected(packages, changes(external)).packages, [path(leaf)]);
+  const sharedFixture = `${leaf}/testdata/shared.json`;
+  packages[0].embedFiles.push(sharedFixture);
+  packages[4].testEmbedFiles = [sharedFixture];
+  assert.deepEqual(selectAffected(packages, changes(sharedFixture)).packages, packages.map((item) => item.path).sort());
 });
 
 test("frontend source changes include their real Go embed owners and callers", () => {
@@ -68,16 +100,54 @@ test("native inventory includes production, internal-test and external-test impo
   assert.throws(() => parseInventory([records[0], records[0]].map(JSON.stringify).join("\n"), root));
 });
 
+test("resolved embed inventory retains original packages and excludes synthetic test records", () => {
+  const record = {
+    ImportPath: path("cmds/sample"), Dir: join(root, "cmds/sample"),
+    EmbedFiles: ["assets/schema.json"], TestEmbedFiles: ["child/testdata/internal.json"], XTestEmbedFiles: ["assets/external.json"],
+  };
+  const synthetic = [
+    { ImportPath: `${record.ImportPath}.test`, Name: "main", Dir: record.Dir },
+    { ...record, ImportPath: `${record.ImportPath} [${record.ImportPath}.test]`, ForTest: record.ImportPath, EmbedFiles: record.TestEmbedFiles },
+    { ...record, ImportPath: `${record.ImportPath}_test [${record.ImportPath}.test]`, ForTest: record.ImportPath, EmbedFiles: record.XTestEmbedFiles },
+  ];
+  const parsed = parseInventory([record, ...synthetic].map(JSON.stringify).join("\n"), root);
+  assert.deepEqual(parsed, [{
+    ...pkg("cmds/sample"), embedFiles: ["cmds/sample/assets/schema.json"],
+    testEmbedFiles: ["cmds/sample/child/testdata/internal.json"], xTestEmbedFiles: ["cmds/sample/assets/external.json"],
+  }]);
+  assert.deepEqual(selectAffected(parsed, changes("cmds/sample/child/testdata/internal.json")).packages, [record.ImportPath]);
+  assert.throws(() => parseInventory(synthetic.map(JSON.stringify).join("\n"), root), /Empty/u);
+  for (const malformed of [
+    { ...record, ForTest: 1 }, { ...record, DepsErrors: [{ Err: "missing test dependency" }] },
+    { ...synthetic[0], Error: { Err: "bad test binary" } },
+    { ...synthetic[0], Dir: tmpdir() },
+    { ...synthetic[1], Dir: "relative" },
+    { ...synthetic[1], DepsErrors: [{ Err: "bad test import" }] },
+    { ...record, ImportPath: `${record.ImportPath} [${record.ImportPath}.test]` },
+  ]) assert.throws(() => parseInventory([record, malformed].map(JSON.stringify).join("\n"), root));
+  for (const key of ["EmbedFiles", "TestEmbedFiles", "XTestEmbedFiles"]) {
+    for (const value of ["not-an-array", [1], [""], ["../foreign.json"], ["/absolute.json"], ["C:\\absolute.json"], ["a/../foreign.json"], ["a//file.json"]]) {
+      assert.throws(() => parseInventory(JSON.stringify({ ...record, [key]: value }), root));
+    }
+  }
+  assert.deepEqual(parseInventory(JSON.stringify({ ImportPath: modulePath, Dir: root, EmbedFiles: ["asset.json"] }), root)[0].embedFiles, ["asset.json"]);
+});
+
 test("Windows discovery accepts equivalent native paths and rejects other drives", () => {
   const checkout = "D:\\a\\oss\\oss";
-  const record = { ImportPath: path("cmds/sample"), Dir: "d:\\a\\oss\\oss\\cmds\\sample" };
-  assert.equal(parseInventory(JSON.stringify(record), checkout, { paths: win32 })[0].directory, "cmds/sample");
+  const record = { ImportPath: path("cmds/sample"), Dir: "d:\\a\\oss\\oss\\cmds\\sample", TestEmbedFiles: ["child\\testdata\\fixture.json"] };
+  const parsed = parseInventory(JSON.stringify(record), checkout, { paths: win32 });
+  assert.equal(parsed[0].directory, "cmds/sample");
+  assert.deepEqual(parsed[0].testEmbedFiles, ["cmds/sample/child/testdata/fixture.json"]);
+  assert.deepEqual(selectAffected(parsed, changes("cmds/sample/child/testdata/fixture.json")).packages, [record.ImportPath]);
   for (const Dir of ["C:\\a\\oss\\oss\\cmds\\sample", "D:\\a\\oss\\foreign", "cmds\\sample"]) {
     assert.throws(() => parseInventory(JSON.stringify({ ...record, Dir }), checkout, { paths: win32 }));
   }
   const canonicalize = (value) => win32.resolve(value.replace("RUNNER~1", "runneradmin"));
   const temporary = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\fixture";
-  assert.equal(parseInventory(JSON.stringify({ ...record, Dir: "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\fixture\\cmds\\sample" }), temporary, { paths: win32, canonicalize })[0].directory, "cmds/sample");
+  const canonical = parseInventory(JSON.stringify({ ...record, Dir: "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\fixture\\cmds\\sample" }), temporary, { paths: win32, canonicalize });
+  assert.equal(canonical[0].directory, "cmds/sample");
+  assert.deepEqual(canonical[0].testEmbedFiles, parsed[0].testEmbedFiles);
 });
 
 function mock(discovery = {}, selectedPath = "cmds/delidev-cli/internal/apiproxy/proxy.go", failure = null) {
@@ -105,6 +175,7 @@ test("empty affected Windows shards succeed without compiling or running fixture
   const unix = mock();
   assert.equal(runGoTests(GoTestShard.All, unix.options), 0);
   assert.deepEqual(unix.calls.at(-1).args.slice(0, 2), ["test", "-timeout=20m"]);
+  assert.deepEqual(unix.calls.find((call) => call.command === "go" && call.args[0] === "list").args, ["list", "-mod=readonly", "-test", "-json", "./..."]);
 });
 
 test("bad comparisons, discovery errors and partial inventories cannot silently pass", () => {
@@ -153,4 +224,88 @@ test("real native Go discovery respects OS files, test imports and exact Git cha
   assert.equal(native.status, 0, native.stderr);
   assert.equal(native.stdout.trim(), process.platform === "win32" ? "native_windows.go" : "native_unix.go");
   assert.throws(() => affectedGoPackages({ base: "f".repeat(40), head, cwd, log() {} }));
+});
+
+test("real native embed discovery selects shared fixtures and exposes the omitted parent failure", (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), "ci-go-embeds-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const write = (name, contents) => { const file = join(cwd, name); mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, contents); };
+  const commit = () => { git("add", "."); git("commit", "--quiet", "-m", "fixture change"); return git("rev-parse", "HEAD"); };
+  const harness = "cmds/delidev-cli/internal/harness";
+  const production = "cmds/sample/production", external = "cmds/sample/external", consumer = "cmds/sample/consumer";
+  git("init", "--quiet"); git("config", "user.email", "fixture@example.invalid"); git("config", "user.name", "CI fixture");
+  write("go.mod", `module ${modulePath}\n\ngo 1.22\n`);
+  write(`${harness}/harness.go`, "package harness\n");
+  write(`${harness}/discovery_test.go`, `package harness
+import (_ "embed"; "testing")
+//go:embed grok/testdata/initialize.json
+var grok string
+//go:embed opencode/testdata/schema.json
+var opencode string
+func TestShared(t *testing.T) { if grok != "good" || opencode != "good" { t.Fatal("shared fixture changed") } }
+`);
+  for (const [child, file] of [["grok", "initialize.json"], ["opencode", "schema.json"]]) {
+    write(`${harness}/${child}/child.go`, `package ${child}\n`);
+    write(`${harness}/${child}/child_test.go`, `package ${child}
+import (_ "embed"; "testing")
+//go:embed testdata/${file}
+var fixture string
+func TestNonempty(t *testing.T) { if fixture == "" { t.Fatal("empty fixture") } }
+`);
+    write(`${harness}/${child}/testdata/${file}`, "good");
+  }
+  write(`${harness}/grok/testdata/unshared.json`, "good");
+  write(`${production}/production.go`, `package production\nimport "embed"\n//go:embed assets/*.txt\nvar Value embed.FS\n`);
+  write(`${production}/assets/value.txt`, "good");
+  write(`${external}/external.go`, "package external\nconst Value = 1\n");
+  write(`${external}/external_test.go`, `package external_test
+import (_ "embed"; "testing")
+//go:embed assets/expected.txt
+var expected string
+func TestExpected(t *testing.T) { if expected == "" { t.Fatal("empty expected") } }
+`);
+  write(`${external}/assets/expected.txt`, "good");
+  write(`${consumer}/consumer.go`, `package consumer\nimport ("${path(production)}"; "${path(external)}")\nvar Value = production.Value\nconst External = external.Value\n`);
+  let base = commit();
+  const change = (file, contents) => {
+    write(file, contents);
+    const head = commit();
+    const selection = affectedGoPackages({ base, head, cwd, log() {} });
+    base = head;
+    return selection;
+  };
+  for (const [child, file] of [["grok", "initialize.json"], ["opencode", "schema.json"]]) {
+    const fixture = `${harness}/${child}/testdata/${file}`;
+    const selection = change(fixture, "bad");
+    assert.deepEqual(selection.packages, [path(harness), path(`${harness}/${child}`)].sort());
+    assert.ok(selection.inventory.find((item) => item.path === path(harness)).testEmbedFiles.includes(fixture));
+    assert.deepEqual(selection.inventory.find((item) => item.path === path(`${harness}/${child}`)).testEmbedFiles, [fixture]);
+    assert.equal(selection.inventory.length, 6);
+    const partition = [GoTestShard.Core, GoTestShard.Server, GoTestShard.Harness, GoTestShard.Worker]
+      .flatMap((shard) => selection.inventory.filter((item) => shardForPackage(item.path) === shard).map((item) => item.path));
+    assert.deepEqual(partition.sort(), selection.inventory.map((item) => item.path).sort());
+    assert.equal(new Set(partition).size, partition.length);
+    assert.ok(partition.every((item) => !item.endsWith(".test") && !/\s/u.test(item)));
+    const childRun = spawnSync("go", ["test", "-count=1", path(`${harness}/${child}`)], { cwd, encoding: "utf8" });
+    assert.equal(childRun.status, 0, childRun.stderr || childRun.stdout);
+    const parentRun = spawnSync("go", ["test", "-count=1", path(harness)], { cwd, encoding: "utf8" });
+    assert.equal(parentRun.status, 1, parentRun.stderr || parentRun.stdout);
+    assert.match(parentRun.stdout, /shared fixture changed/u);
+    write(fixture, "good"); base = commit();
+  }
+  assert.deepEqual(change(`${harness}/grok/testdata/unshared.json`, "bad").packages, [path(`${harness}/grok`)]);
+  const externalSelection = change(`${external}/assets/expected.txt`, "bad");
+  assert.deepEqual(externalSelection.packages, [path(external)]);
+  assert.deepEqual(externalSelection.inventory.find((item) => item.path === path(external)).xTestEmbedFiles, [`${external}/assets/expected.txt`]);
+  const productionSelection = change(`${production}/assets/value.txt`, "bad");
+  assert.deepEqual(productionSelection.packages, [path(consumer), path(production)].sort());
+  assert.deepEqual(productionSelection.inventory.find((item) => item.path === path(production)).embedFiles, [`${production}/assets/value.txt`]);
+  const addedSelection = change(`${production}/assets/added.txt`, "new");
+  assert.deepEqual(addedSelection.packages, productionSelection.packages);
+  assert.deepEqual(addedSelection.inventory.find((item) => item.path === path(production)).embedFiles, [`${production}/assets/added.txt`, `${production}/assets/value.txt`]);
+  rmSync(join(cwd, `${harness}/grok/testdata/unshared.json`));
+  write(`${harness}/opencode/testdata/moved.json`, "bad");
+  const head = commit();
+  assert.deepEqual(affectedGoPackages({ base, head, cwd, log() {} }).packages, [path(harness), path(`${harness}/grok`), path(`${harness}/opencode`)].sort());
 });
