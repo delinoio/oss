@@ -1,5 +1,5 @@
 import { LocalizedText, copy, useLocale, type MessageKey } from "./localization";
-import { useEffect, useId, useRef, type ReactNode, type ComponentPropsWithRef } from "react";
+import { useLayoutEffect, useId, useRef, type ReactNode, type RefObject, type ComponentPropsWithRef } from "react";
 import { clientFailure, FailureCode, type ClientFailure } from "@delinoio/delidev-api-client";
 
 export function Problem({ error }: { error: unknown }) {
@@ -23,18 +23,28 @@ export function ServiceProblem({ code, children }: { code?: string; children: Re
 export function DialogSurface(props: ComponentPropsWithRef<"dialog">) {
   return <dialog {...props} onCancel={event => { event.preventDefault(); props.onCancel?.(event); }}>{props.children}</dialog>;
 }
-export function Modal({ title, close, children, visible = true }: { title: string; close: () => void; children: ReactNode; visible?: boolean }) {
+export function Modal({ title, close, children, visible = true, className, initialFocus, trapFocus = false }: { title: string; close: () => void; children: ReactNode; visible?: boolean; className?: string; initialFocus?: RefObject<HTMLElement | null>; trapFocus?: boolean }) {
   useLocale();
   const id = useId();
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!visible) return;
     const opener = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
     dialog.showModal();
+    initialFocus?.current?.focus();
     return () => { dialog.close(); if (opener?.isConnected) opener.focus(); };
-  }, [visible]);
-  return <DialogSurface ref={ref} aria-labelledby={id} onCancel={(event) => { event.preventDefault(); close(); }}>
+  }, [visible, initialFocus]);
+  return <DialogSurface ref={ref} className={className} aria-labelledby={id} onCancel={(event) => { event.preventDefault(); close(); }} onKeyDown={event => {
+    if (!trapFocus || event.key !== "Tab") return;
+    // Some desktop browser hosts include their chrome in the native modal's
+    // Tab cycle. This opt-in boundary keeps repository actions in the dialog.
+    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button,input,select,textarea,a[href],[tabindex]")].filter(node => node.tabIndex >= 0 && !node.matches(":disabled") && node.getClientRects().length > 0 && !node.closest("[hidden],[inert]"));
+    const first = controls[0], last = controls.at(-1);
+    if (!first || !last) return;
+    const focus = document.activeElement;
+    if (!event.currentTarget.contains(focus) || (event.shiftKey ? focus === first : focus === last)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
+  }}>
     <header><h2 id={id}>{title}</h2><button onClick={close} aria-label={copy("ui.close_0fbe2a", { v0: title })}>{copy("ui.close_7d9eb7")}</button></header>
     {children}
   </DialogSurface>;

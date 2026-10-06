@@ -425,7 +425,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   } : undefined;
   const apiProviders = (apiInventory.data?.entries ?? []).map(entry => providerSummary(entry, apiInventory.data?.capabilities ?? [])).filter((value): value is AccountProviderSummary => value !== undefined);
   const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(entry => providerSummary(entry, eligibleInventory.data?.capabilities ?? [])).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
-  const configurationList = area === SettingsArea.Configuration && !hasOverlay && !hasSpecializedPanel;
+  const configurationList = area === SettingsArea.Configuration && !hasSpecializedPanel;
   const successfulEmptyFirstPage = !page && Boolean(result.data && result.data.resources.length === 0 && !result.error && !result.data.nextPageToken);
   const retainedServerEmpty = isPreferenceCategory && !page && Boolean(result.data && result.data.resources.length === 0 && !result.data.nextPageToken);
   const hidePagination = successfulEmptyFirstPage || (isPreferenceCategory && !page && Boolean(result.data && !result.data.nextPageToken));

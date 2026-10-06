@@ -1966,6 +1966,127 @@ func (x *QueryRepositoryIntegrationResponse) GetDocumentJson() []byte {
 	return nil
 }
 
+type ListGitHubRepositoriesRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ProfileId        string                 `protobuf:"bytes,1,opt,name=profile_id,json=profileId,proto3" json:"profile_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Page             uint32                 `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize         uint32                 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ListGitHubRepositoriesRequest) Reset() {
+	*x = ListGitHubRepositoriesRequest{}
+	mi := &file_delidev_v1_integration_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListGitHubRepositoriesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListGitHubRepositoriesRequest) ProtoMessage() {}
+
+func (x *ListGitHubRepositoriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_integration_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListGitHubRepositoriesRequest.ProtoReflect.Descriptor instead.
+func (*ListGitHubRepositoriesRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ListGitHubRepositoriesRequest) GetProfileId() string {
+	if x != nil {
+		return x.ProfileId
+	}
+	return ""
+}
+
+func (x *ListGitHubRepositoriesRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *ListGitHubRepositoriesRequest) GetPage() uint32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *ListGitHubRepositoriesRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListGitHubRepositoriesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	// Validated identities and constructed GitHub.com URLs; no credentials.
+	DocumentJson  []byte `protobuf:"bytes,2,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListGitHubRepositoriesResponse) Reset() {
+	*x = ListGitHubRepositoriesResponse{}
+	mi := &file_delidev_v1_integration_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListGitHubRepositoriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListGitHubRepositoriesResponse) ProtoMessage() {}
+
+func (x *ListGitHubRepositoriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_integration_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListGitHubRepositoriesResponse.ProtoReflect.Descriptor instead.
+func (*ListGitHubRepositoriesResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_integration_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ListGitHubRepositoriesResponse) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *ListGitHubRepositoriesResponse) GetDocumentJson() []byte {
+	if x != nil {
+		return x.DocumentJson
+	}
+	return nil
+}
+
 var File_delidev_v1_integration_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_integration_proto_rawDesc = "" +
@@ -2106,6 +2227,15 @@ const file_delidev_v1_integration_proto_rawDesc = "" +
 	"query_json\x18\x03 \x01(\fR\tqueryJson\"p\n" +
 	"\"QueryRepositoryIntegrationResponse\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12#\n" +
+	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson\"\x9c\x01\n" +
+	"\x1dListGitHubRepositoriesRequest\x12\x1d\n" +
+	"\n" +
+	"profile_id\x18\x01 \x01(\tR\tprofileId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12\x12\n" +
+	"\x04page\x18\x03 \x01(\rR\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\rR\bpageSize\"l\n" +
+	"\x1eListGitHubRepositoriesResponse\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12#\n" +
 	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson*z\n" +
 	"\x0fGitHubTokenKind\x12\"\n" +
 	"\x1eGIT_HUB_TOKEN_KIND_UNSPECIFIED\x10\x00\x12#\n" +
@@ -2128,7 +2258,7 @@ const file_delidev_v1_integration_proto_rawDesc = "" +
 	" GIT_HUB_TOKEN_ACCESS_UNSPECIFIED\x10\x00\x12.\n" +
 	"*GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES\x10\x01\x12,\n" +
 	"(GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES\x10\x02\x12-\n" +
-	")GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES\x10\x032\xae\r\n" +
+	")GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES\x10\x032\x9f\x0e\n" +
 	"\x12IntegrationService\x12c\n" +
 	"\x12InspectGitHubToken\x12%.delidev.v1.InspectGitHubTokenRequest\x1a&.delidev.v1.InspectGitHubTokenResponse\x12o\n" +
 	"\x16PrepareGitHubTokenForm\x12).delidev.v1.PrepareGitHubTokenFormRequest\x1a*.delidev.v1.PrepareGitHubTokenFormResponse\x12o\n" +
@@ -2137,7 +2267,8 @@ const file_delidev_v1_integration_proto_rawDesc = "" +
 	"\x1aValidateIntegrationProfile\x12-.delidev.v1.ValidateIntegrationProfileRequest\x1a..delidev.v1.ValidateIntegrationProfileResponse\x12u\n" +
 	"\x18DeleteIntegrationProfile\x12+.delidev.v1.DeleteIntegrationProfileRequest\x1a,.delidev.v1.DeleteIntegrationProfileResponse\x12\x81\x01\n" +
 	"\x1cInspectRepositoryIntegration\x12/.delidev.v1.InspectRepositoryIntegrationRequest\x1a0.delidev.v1.InspectRepositoryIntegrationResponse\x12{\n" +
-	"\x1aQueryRepositoryIntegration\x12-.delidev.v1.QueryRepositoryIntegrationRequest\x1a..delidev.v1.QueryRepositoryIntegrationResponse\x12c\n" +
+	"\x1aQueryRepositoryIntegration\x12-.delidev.v1.QueryRepositoryIntegrationRequest\x1a..delidev.v1.QueryRepositoryIntegrationResponse\x12o\n" +
+	"\x16ListGitHubRepositories\x12).delidev.v1.ListGitHubRepositoriesRequest\x1a*.delidev.v1.ListGitHubRepositoriesResponse\x12c\n" +
 	"\x12GetGitHubTokenForm\x12%.delidev.v1.GetGitHubTokenFormRequest\x1a&.delidev.v1.GetGitHubTokenFormResponse\x12{\n" +
 	"\x1aRefreshPullRequestProblems\x12-.delidev.v1.RefreshPullRequestProblemsRequest\x1a..delidev.v1.RefreshPullRequestProblemsResponse\x12r\n" +
 	"\x17ListPullRequestProblems\x12*.delidev.v1.ListPullRequestProblemsRequest\x1a+.delidev.v1.ListPullRequestProblemsResponse\x12x\n" +
@@ -2158,7 +2289,7 @@ func file_delidev_v1_integration_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_integration_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_delidev_v1_integration_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_delidev_v1_integration_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_delidev_v1_integration_proto_goTypes = []any{
 	(GitHubTokenKind)(0),                               // 0: delidev.v1.GitHubTokenKind
 	(GitHubTokenIdentityState)(0),                      // 1: delidev.v1.GitHubTokenIdentityState
@@ -2193,8 +2324,10 @@ var file_delidev_v1_integration_proto_goTypes = []any{
 	(*InspectRepositoryIntegrationResponse)(nil),       // 30: delidev.v1.InspectRepositoryIntegrationResponse
 	(*QueryRepositoryIntegrationRequest)(nil),          // 31: delidev.v1.QueryRepositoryIntegrationRequest
 	(*QueryRepositoryIntegrationResponse)(nil),         // 32: delidev.v1.QueryRepositoryIntegrationResponse
-	(*Resource)(nil),                                   // 33: delidev.v1.Resource
-	(*Mutation)(nil),                                   // 34: delidev.v1.Mutation
+	(*ListGitHubRepositoriesRequest)(nil),              // 33: delidev.v1.ListGitHubRepositoriesRequest
+	(*ListGitHubRepositoriesResponse)(nil),             // 34: delidev.v1.ListGitHubRepositoriesResponse
+	(*Resource)(nil),                                   // 35: delidev.v1.Resource
+	(*Mutation)(nil),                                   // 36: delidev.v1.Mutation
 }
 var file_delidev_v1_integration_proto_depIdxs = []int32{
 	1,  // 0: delidev.v1.InspectGitHubTokenResponse.state:type_name -> delidev.v1.GitHubTokenIdentityState
@@ -2204,24 +2337,24 @@ var file_delidev_v1_integration_proto_depIdxs = []int32{
 	0,  // 4: delidev.v1.PrepareGitHubTokenFormResponse.token_kind:type_name -> delidev.v1.GitHubTokenKind
 	3,  // 5: delidev.v1.PrepareGitHubTokenFormResponse.access:type_name -> delidev.v1.GitHubTokenAccess
 	2,  // 6: delidev.v1.RefreshPullRequestProblemsRequest.kind:type_name -> delidev.v1.PullRequestProblemCollectionKind
-	33, // 7: delidev.v1.RefreshPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
-	33, // 8: delidev.v1.ListPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
-	33, // 9: delidev.v1.ListPullRequestProblemsResponse.problems:type_name -> delidev.v1.Resource
-	34, // 10: delidev.v1.DismissPullRequestProblemRequest.mutation:type_name -> delidev.v1.Mutation
-	33, // 11: delidev.v1.DismissPullRequestProblemResponse.problem:type_name -> delidev.v1.Resource
-	33, // 12: delidev.v1.ListPullRequestRemediationAttemptsResponse.problem_set:type_name -> delidev.v1.Resource
-	33, // 13: delidev.v1.ListPullRequestRemediationAttemptsResponse.attempts:type_name -> delidev.v1.Resource
-	34, // 14: delidev.v1.ResumePullRequestRemediationRequest.mutation:type_name -> delidev.v1.Mutation
-	33, // 15: delidev.v1.ResumePullRequestRemediationResponse.problem_set:type_name -> delidev.v1.Resource
+	35, // 7: delidev.v1.RefreshPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
+	35, // 8: delidev.v1.ListPullRequestProblemsResponse.problem_set:type_name -> delidev.v1.Resource
+	35, // 9: delidev.v1.ListPullRequestProblemsResponse.problems:type_name -> delidev.v1.Resource
+	36, // 10: delidev.v1.DismissPullRequestProblemRequest.mutation:type_name -> delidev.v1.Mutation
+	35, // 11: delidev.v1.DismissPullRequestProblemResponse.problem:type_name -> delidev.v1.Resource
+	35, // 12: delidev.v1.ListPullRequestRemediationAttemptsResponse.problem_set:type_name -> delidev.v1.Resource
+	35, // 13: delidev.v1.ListPullRequestRemediationAttemptsResponse.attempts:type_name -> delidev.v1.Resource
+	36, // 14: delidev.v1.ResumePullRequestRemediationRequest.mutation:type_name -> delidev.v1.Mutation
+	35, // 15: delidev.v1.ResumePullRequestRemediationResponse.problem_set:type_name -> delidev.v1.Resource
 	3,  // 16: delidev.v1.GetGitHubTokenFormRequest.access:type_name -> delidev.v1.GitHubTokenAccess
-	34, // 17: delidev.v1.SaveIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	33, // 18: delidev.v1.SaveIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
-	34, // 19: delidev.v1.ReplaceIntegrationTokenRequest.mutation:type_name -> delidev.v1.Mutation
-	33, // 20: delidev.v1.ReplaceIntegrationTokenResponse.profile:type_name -> delidev.v1.Resource
-	34, // 21: delidev.v1.ValidateIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	33, // 22: delidev.v1.ValidateIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
-	34, // 23: delidev.v1.DeleteIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
-	33, // 24: delidev.v1.DeleteIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	36, // 17: delidev.v1.SaveIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	35, // 18: delidev.v1.SaveIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	36, // 19: delidev.v1.ReplaceIntegrationTokenRequest.mutation:type_name -> delidev.v1.Mutation
+	35, // 20: delidev.v1.ReplaceIntegrationTokenResponse.profile:type_name -> delidev.v1.Resource
+	36, // 21: delidev.v1.ValidateIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	35, // 22: delidev.v1.ValidateIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
+	36, // 23: delidev.v1.DeleteIntegrationProfileRequest.mutation:type_name -> delidev.v1.Mutation
+	35, // 24: delidev.v1.DeleteIntegrationProfileResponse.profile:type_name -> delidev.v1.Resource
 	4,  // 25: delidev.v1.IntegrationService.InspectGitHubToken:input_type -> delidev.v1.InspectGitHubTokenRequest
 	7,  // 26: delidev.v1.IntegrationService.PrepareGitHubTokenForm:input_type -> delidev.v1.PrepareGitHubTokenFormRequest
 	21, // 27: delidev.v1.IntegrationService.SaveIntegrationProfile:input_type -> delidev.v1.SaveIntegrationProfileRequest
@@ -2230,28 +2363,30 @@ var file_delidev_v1_integration_proto_depIdxs = []int32{
 	27, // 30: delidev.v1.IntegrationService.DeleteIntegrationProfile:input_type -> delidev.v1.DeleteIntegrationProfileRequest
 	29, // 31: delidev.v1.IntegrationService.InspectRepositoryIntegration:input_type -> delidev.v1.InspectRepositoryIntegrationRequest
 	31, // 32: delidev.v1.IntegrationService.QueryRepositoryIntegration:input_type -> delidev.v1.QueryRepositoryIntegrationRequest
-	19, // 33: delidev.v1.IntegrationService.GetGitHubTokenForm:input_type -> delidev.v1.GetGitHubTokenFormRequest
-	9,  // 34: delidev.v1.IntegrationService.RefreshPullRequestProblems:input_type -> delidev.v1.RefreshPullRequestProblemsRequest
-	11, // 35: delidev.v1.IntegrationService.ListPullRequestProblems:input_type -> delidev.v1.ListPullRequestProblemsRequest
-	13, // 36: delidev.v1.IntegrationService.DismissPullRequestProblem:input_type -> delidev.v1.DismissPullRequestProblemRequest
-	15, // 37: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:input_type -> delidev.v1.ListPullRequestRemediationAttemptsRequest
-	17, // 38: delidev.v1.IntegrationService.ResumePullRequestRemediation:input_type -> delidev.v1.ResumePullRequestRemediationRequest
-	5,  // 39: delidev.v1.IntegrationService.InspectGitHubToken:output_type -> delidev.v1.InspectGitHubTokenResponse
-	8,  // 40: delidev.v1.IntegrationService.PrepareGitHubTokenForm:output_type -> delidev.v1.PrepareGitHubTokenFormResponse
-	22, // 41: delidev.v1.IntegrationService.SaveIntegrationProfile:output_type -> delidev.v1.SaveIntegrationProfileResponse
-	24, // 42: delidev.v1.IntegrationService.ReplaceIntegrationToken:output_type -> delidev.v1.ReplaceIntegrationTokenResponse
-	26, // 43: delidev.v1.IntegrationService.ValidateIntegrationProfile:output_type -> delidev.v1.ValidateIntegrationProfileResponse
-	28, // 44: delidev.v1.IntegrationService.DeleteIntegrationProfile:output_type -> delidev.v1.DeleteIntegrationProfileResponse
-	30, // 45: delidev.v1.IntegrationService.InspectRepositoryIntegration:output_type -> delidev.v1.InspectRepositoryIntegrationResponse
-	32, // 46: delidev.v1.IntegrationService.QueryRepositoryIntegration:output_type -> delidev.v1.QueryRepositoryIntegrationResponse
-	20, // 47: delidev.v1.IntegrationService.GetGitHubTokenForm:output_type -> delidev.v1.GetGitHubTokenFormResponse
-	10, // 48: delidev.v1.IntegrationService.RefreshPullRequestProblems:output_type -> delidev.v1.RefreshPullRequestProblemsResponse
-	12, // 49: delidev.v1.IntegrationService.ListPullRequestProblems:output_type -> delidev.v1.ListPullRequestProblemsResponse
-	14, // 50: delidev.v1.IntegrationService.DismissPullRequestProblem:output_type -> delidev.v1.DismissPullRequestProblemResponse
-	16, // 51: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:output_type -> delidev.v1.ListPullRequestRemediationAttemptsResponse
-	18, // 52: delidev.v1.IntegrationService.ResumePullRequestRemediation:output_type -> delidev.v1.ResumePullRequestRemediationResponse
-	39, // [39:53] is the sub-list for method output_type
-	25, // [25:39] is the sub-list for method input_type
+	33, // 33: delidev.v1.IntegrationService.ListGitHubRepositories:input_type -> delidev.v1.ListGitHubRepositoriesRequest
+	19, // 34: delidev.v1.IntegrationService.GetGitHubTokenForm:input_type -> delidev.v1.GetGitHubTokenFormRequest
+	9,  // 35: delidev.v1.IntegrationService.RefreshPullRequestProblems:input_type -> delidev.v1.RefreshPullRequestProblemsRequest
+	11, // 36: delidev.v1.IntegrationService.ListPullRequestProblems:input_type -> delidev.v1.ListPullRequestProblemsRequest
+	13, // 37: delidev.v1.IntegrationService.DismissPullRequestProblem:input_type -> delidev.v1.DismissPullRequestProblemRequest
+	15, // 38: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:input_type -> delidev.v1.ListPullRequestRemediationAttemptsRequest
+	17, // 39: delidev.v1.IntegrationService.ResumePullRequestRemediation:input_type -> delidev.v1.ResumePullRequestRemediationRequest
+	5,  // 40: delidev.v1.IntegrationService.InspectGitHubToken:output_type -> delidev.v1.InspectGitHubTokenResponse
+	8,  // 41: delidev.v1.IntegrationService.PrepareGitHubTokenForm:output_type -> delidev.v1.PrepareGitHubTokenFormResponse
+	22, // 42: delidev.v1.IntegrationService.SaveIntegrationProfile:output_type -> delidev.v1.SaveIntegrationProfileResponse
+	24, // 43: delidev.v1.IntegrationService.ReplaceIntegrationToken:output_type -> delidev.v1.ReplaceIntegrationTokenResponse
+	26, // 44: delidev.v1.IntegrationService.ValidateIntegrationProfile:output_type -> delidev.v1.ValidateIntegrationProfileResponse
+	28, // 45: delidev.v1.IntegrationService.DeleteIntegrationProfile:output_type -> delidev.v1.DeleteIntegrationProfileResponse
+	30, // 46: delidev.v1.IntegrationService.InspectRepositoryIntegration:output_type -> delidev.v1.InspectRepositoryIntegrationResponse
+	32, // 47: delidev.v1.IntegrationService.QueryRepositoryIntegration:output_type -> delidev.v1.QueryRepositoryIntegrationResponse
+	34, // 48: delidev.v1.IntegrationService.ListGitHubRepositories:output_type -> delidev.v1.ListGitHubRepositoriesResponse
+	20, // 49: delidev.v1.IntegrationService.GetGitHubTokenForm:output_type -> delidev.v1.GetGitHubTokenFormResponse
+	10, // 50: delidev.v1.IntegrationService.RefreshPullRequestProblems:output_type -> delidev.v1.RefreshPullRequestProblemsResponse
+	12, // 51: delidev.v1.IntegrationService.ListPullRequestProblems:output_type -> delidev.v1.ListPullRequestProblemsResponse
+	14, // 52: delidev.v1.IntegrationService.DismissPullRequestProblem:output_type -> delidev.v1.DismissPullRequestProblemResponse
+	16, // 53: delidev.v1.IntegrationService.ListPullRequestRemediationAttempts:output_type -> delidev.v1.ListPullRequestRemediationAttemptsResponse
+	18, // 54: delidev.v1.IntegrationService.ResumePullRequestRemediation:output_type -> delidev.v1.ResumePullRequestRemediationResponse
+	40, // [40:55] is the sub-list for method output_type
+	25, // [25:40] is the sub-list for method input_type
 	25, // [25:25] is the sub-list for extension type_name
 	25, // [25:25] is the sub-list for extension extendee
 	0,  // [0:25] is the sub-list for field type_name
@@ -2269,7 +2404,7 @@ func file_delidev_v1_integration_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_integration_proto_rawDesc), len(file_delidev_v1_integration_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   29,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

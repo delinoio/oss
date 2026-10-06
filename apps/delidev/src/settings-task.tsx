@@ -77,6 +77,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
   useLocale();
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const closeRequested = useRef(false);
   const categoryContent = useRef(document.querySelector<HTMLElement>(".settings-content"));
   const [visible, setVisible] = useState(true), [actions, setActions] = useState<HTMLDivElement | null>(null);
   const [presentation, setPresentation] = useState<SettingsTaskPresentation>();
@@ -101,7 +102,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     const keep = retained || signals.current.size > 0;
     dismissed?.();
     for (const action of dismissals.current.values()) action();
-    if (keep) setVisible(false); else (idleClose ?? close)();
+    if (keep) setVisible(false); else { closeRequested.current = true; (idleClose ?? close)(); }
   }, [retained, dismissed, close]);
   const dismiss = useCallback(() => dismissWithClose(), [dismissWithClose]);
   const context = useMemo(() => ({ visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present }), [visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present]);
@@ -120,17 +121,35 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     return () => {
       cancelAnimationFrame(frame);
       node.close();
+      // StrictMode and retained-task visibility changes also clean up this
+      // effect. They must not unlock the background or steal focus.
+      if (!closeRequested.current) return;
+      // A retained operation is hidden, not dismissed. Keep its background
+      // locked and leave focus on the retained-operation destination.
+      if (retained || signals.current.size > 0) return;
       // A category departure or replacement dialog cannot restore a stale opener.
       if (anotherModal(node)) return;
-      requestAnimationFrame(() => {
+      const restoreFocus = () => {
         if (anotherModal(node)) return;
         const focused = document.activeElement;
-        if (focused !== document.body && focused !== document.documentElement && focused !== opener.current) return;
+        if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return;
+        const openerTarget = opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") ? opener.current : null;
         const fallback = categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null;
-        const target = available(opener.current) ? opener.current : available(fallback) ? fallback : null;
+        const target = openerTarget ?? (available(fallback) ? fallback : null);
         if (target?.matches("h1")) target.tabIndex = -1;
+        // The opener can remain inside the task background until the parent
+        // state update commits. Temporarily clear that synchronous focus
+        // boundary so close restores focus in the same event turn.
+        const background = target?.closest("fieldset.settings-task-background");
+        background?.removeAttribute("disabled");
+        background?.removeAttribute("inert");
+        background?.removeAttribute("aria-hidden");
         target?.focus({ preventScroll: true });
-      });
+        if (target && document.activeElement !== target) requestAnimationFrame(() => { if (target.isConnected) target.focus({ preventScroll: true }); });
+        return target;
+      };
+      restoreFocus();
+      requestAnimationFrame(restoreFocus);
     };
   // Step changes do not create another modal opening or overwrite its opener.
   }, [visible, host?.outlet]);

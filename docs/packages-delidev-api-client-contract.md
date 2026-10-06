@@ -258,6 +258,18 @@ Independent server subscription login exports capability 30, the closed Subscrip
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
 
+## Repository addition
+
+Generated `IntegrationQuery.listGitHubRepositories` and
+`WorkerQuery.cloneRepository` retain the main-established declarations and
+independent System 31/32 / Worker 18 capabilities. Listing is an explicit
+revision-bound profile/page read; preserve exact remote IDs, current generation,
+constructed URLs and page-local filtering. The client never receives a saved PAT.
+Clone sends fresh transient local Worker proof and optional selected GitHub
+metadata; its original durable job completes registration server-side. Keep proof
+outside read keys, drafts and persistence. Retain identical uncertain mutation
+bytes only in the disposable dialog registry; close/departure drops that registry
+and guards all late callbacks without canceling accepted business work.
 ## GitHub token-first client boundary
 
 Generated IntegrationService/IntegrationQuery expose InspectGitHubToken and PrepareGitHubTokenForm under System capability 34. Use the direct generated Connect client for PAT inspection and final connection in the creation wizard, keeping write-only bytes outside React Query. Validate request IDs, closed states, canonical identity fields and exact form kind/owner/access/URL before progression or native dispatch. Only the current verified wizard draft may retain owned PAT memory until explicit save; clear every request copy and the original on failure, Back, cancellation, departure or save termination. Original non-secret create requests and token-replacement identities survive uncertainty only for explicit reconciliation; token reentry is required. Existing profile/revision-bound form descriptors, Manage/Rename/deletion and CLI compatibility remain unchanged. Follow the integration and desktop contracts.

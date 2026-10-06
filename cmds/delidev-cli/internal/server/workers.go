@@ -80,6 +80,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1:
+			capabilities = append(capabilities, domain.RepositoryCloneV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1:
 			capabilities = append(capabilities, domain.SignedWorkerUpdatesV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1:
@@ -219,7 +221,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1}})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1}})
 	var networkStatus domain.WorkerNetworkStatus
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -427,6 +429,22 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					if j.State != domain.JobQueued {
 						return r, nil
 					}
+					if j.Type == domain.CloneRepositoryJob {
+						var input domain.RepositoryCloneInput
+						problem := domain.Decode(j.Input, &input)
+						actor, _ := domain.PrincipalFrom(ctx)
+						if problem == nil {
+							problem = cloneAuthority(tx, input)
+						}
+						if problem == nil && input.LocalOrigin.DeviceID != actor.DeviceID {
+							problem = localOriginRequired()
+						}
+						if problem != nil {
+							now := time.Now().UTC()
+							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
+							return tx.PutJob(r.ID, r.Revision, "", "", j)
+						}
+					}
 					if j.Type == domain.NativeModelsJob {
 						var scope domain.NativeModelScope
 						problem := domain.Decode(j.Input, &scope)
@@ -630,6 +648,9 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		}
 		if job.State != domain.JobClaimed {
 			return nil, domain.Fail(domain.Conflict, "The job is no longer awaiting this result.", "Inspect its current accepted outcome.")
+		}
+		if job.Type == domain.CloneRepositoryJob {
+			return finishRepositoryClone(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
 		}
 		if job.Type == domain.CompactSessionJob {
 			return finishSessionCompaction(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)

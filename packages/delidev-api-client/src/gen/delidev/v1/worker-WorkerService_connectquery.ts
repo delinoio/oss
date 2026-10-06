@@ -60,6 +60,11 @@ export const reportWork = WorkerService.method.reportWork;
 export const inspectRepository = WorkerService.method.inspectRepository;
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.CloneRepository
+ */
+export const cloneRepository = WorkerService.method.cloneRepository;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.DiscoverHarnesses
  */
 export const discoverHarnesses = WorkerService.method.discoverHarnesses;
