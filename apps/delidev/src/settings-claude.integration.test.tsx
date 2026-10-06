@@ -45,7 +45,8 @@ it("persists native Claude permission selection through the desktop and real Go 
   change("Account source", `api:${provider.id}`);
   fireEvent.click(await screen.findByRole("checkbox", { name: /Claude API account/ })); next();
   fireEvent.focus(screen.getByRole("combobox", { name: /^Model for / }));
-  fireEvent.click(await screen.findByRole("option", { name: /Claude settings model/ }, { timeout: 5000 })); next();
+  fireEvent.click(await screen.findByRole("option", { name: /Claude settings model/ }, { timeout: 5000 }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false)); next();
   change("Name", "Native Claude settings"); change("Claude permission mode", "dontAsk");
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));

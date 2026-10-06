@@ -40,6 +40,13 @@ func RouteSources(agentID ID, agent Agent, project *Project, sources []SourceRou
 		seen[source.Source] = true
 		cursor := state.Sources[source.Source]
 		inner := RoutingState{Current: cursor.Current, Rotation: cursor.Rotation, Tie: cursor.Tie}
+		policy := defaultPolicy
+		if agent.Routes[i].Routing != nil {
+			policy = *agent.Routes[i].Routing
+		}
+		if policy == Fixed && len(agent.Routes[i].Accounts) != 1 {
+			source.Problem = Fail(InvalidArgument, "Fixed routing requires one account per source.", "Configure one account or another policy before execution.")
+		}
 		route, next, err := routeAccount(agentID, agent.WithSource(agent.Routes[i]), source.Model, project, source.Accounts, defaultPolicy, inner, now, source.Blocked)
 		if source.Problem != nil {
 			err = source.Problem
@@ -52,7 +59,7 @@ func RouteSources(agentID ID, agent Agent, project *Project, sources []SourceRou
 		nextStates[i], failures[i] = next, err
 	}
 	for i, source := range result.Sources {
-		exhausted := sources[i].Problem == nil && len(source.Route.Candidates) > 0
+		exhausted := sources[i].Problem == nil && (failures[i] == nil || SafeError(failures[i]).Code == MissingInput) && len(source.Route.Candidates) > 0
 		for _, candidate := range source.Route.Candidates {
 			exhausted = exhausted && candidate.Eligibility == ExhaustedAccount
 		}

@@ -132,3 +132,16 @@ func (r AgentSourceRoute) accountIDs() []ID {
 	}
 	return ids
 }
+
+func TestInheritedFixedPolicyCannotAdvanceInvalidSource(t *testing.T) {
+	id, agent, sources := sourceFixture()
+	agent.Routes[0].Routing = nil
+	for id, account := range sources[0].Accounts {
+		account.ConfirmedExhausted = true
+		sources[0].Accounts[id] = account
+	}
+	route, _, err := RouteSources(id, agent, nil, sources, Fixed, RoutingState{}, time.Now().UTC())
+	if err == nil || SafeError(err).Code != InvalidArgument || route.Selected != "" {
+		t.Fatalf("invalid fixed source advanced: %+v %v", route, err)
+	}
+}

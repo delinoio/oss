@@ -50,3 +50,12 @@
   .worker-source-group > fieldset > header { align-items: flex-start; flex-direction: column; }
   .worker-source-wizard .worker-footer > div { flex-wrap: wrap; }
 }
+
+/* Source groups use compact flat disclosures within the existing task shell. */
+.worker-source-wizard > h3 { margin: 16px 0 8px; }
+.worker-source-wizard p { margin: 8px 0; }
+.worker-source-group { padding: 8px 0; }
+.worker-source-group .worker-account-row { padding: 4px 0; }
+.worker-source-group .worker-account-row > span { gap: 2px; }
+.worker-source-group .worker-routing { border: 0; border-top: 1px solid var(--border); border-radius: 0; margin-top: 8px; padding: 8px 0 0; }
+.worker-source-wizard .worker-footer { margin-top: 16px; padding-top: 16px; }
