@@ -110,6 +110,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Setup Go
         id: ci-go
@@ -176,6 +179,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Generate and verify embedded administrator assets
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -250,6 +256,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Generate and verify embedded administrator assets
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -308,6 +317,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -358,6 +370,9 @@ jobs:
         uses: ./.github/actions/setup-ci-node
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install locked workspace tools
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -415,6 +430,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -491,6 +509,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -565,6 +586,9 @@ jobs:
         uses: ./.github/actions/setup-ci-node
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install locked workspace tools
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -623,6 +647,9 @@ jobs:
         uses: ./.github/actions/setup-ci-node
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install locked workspace tools
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -681,6 +708,9 @@ jobs:
     steps:
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - uses: actions/checkout@v6
         with:
@@ -828,6 +858,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -877,6 +910,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -935,6 +971,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -982,6 +1021,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install Linux native prerequisites
         run: |
@@ -1033,6 +1075,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -1409,6 +1454,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -1659,6 +1707,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Setup Go
         id: ci-go
@@ -1724,6 +1775,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -1774,6 +1828,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Generate and verify embedded administrator assets
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -1877,6 +1934,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -1980,6 +2040,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install locked repository tools
         run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
@@ -2029,6 +2092,9 @@ jobs:
 
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - name: Install locked repository tools
         run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
@@ -2078,6 +2144,9 @@ jobs:
         uses: ./.github/actions/setup-ci-node
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Validate package tasks
@@ -2123,6 +2192,9 @@ jobs:
     steps:
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - uses: actions/checkout@v6
         with:
@@ -2190,6 +2262,9 @@ jobs:
     steps:
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
 
       - uses: actions/checkout@v6
         with:

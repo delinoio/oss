@@ -45,6 +45,28 @@ function namedStep(job, name) {
   return job.steps.find((candidate) => candidate.name === name);
 }
 
+test("cache setup receives workflow variables through composite inputs and retains fallback", () => {
+  const source = readFileSync(`${root}/.github/actions/setup-turbo-cache/action.yml`, "utf8");
+  // The runner's action-manifest context excludes vars even though workflow
+  // steps accept it. Keep variable lookup in the caller to avoid a load failure
+  // that bypasses the action's authentication fallback.
+  assert.doesNotMatch(source, /\$\{\{\s*vars\./u);
+  const action = load(source);
+  for (const name of ["team", "policy"]) assert.equal(action.inputs[name].default, "");
+  const auth = action.runs.steps.find(({ id }) => id === "auth");
+  assert.equal(auth.with.team, "${{ inputs.team }}");
+  assert.equal(auth.with.policy, "${{ inputs.policy }}");
+  assert.equal(auth["continue-on-error"], true);
+  assert.ok(auth.if.includes("inputs.team != ''"));
+  assert.ok(auth.if.includes("github.event.pull_request.head.repo.full_name == github.repository"));
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    for (const setup of job.steps.filter(({ uses }) => uses === "./.github/actions/setup-turbo-cache")) {
+      assert.deepEqual(setup.with, { team: "${{ vars.TURBO_TEAM }}", policy: "${{ vars.TURBO_OIDC_POLICY }}" }, id);
+      assert.equal(job.permissions["id-token"], "write", id);
+    }
+  }
+});
+
 test("async-commit-hook retains runner, interface, protocol and unsigned archive validation", () => {
   const commands = jobCommands(workflow.jobs["async-commit-hook"]);
   for (const command of [
