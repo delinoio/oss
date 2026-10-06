@@ -508,17 +508,40 @@ test("React Forge CI removes scene-engine and visual jobs while retaining docume
   assert.doesNotMatch(JSON.stringify(workflow), /react-forge-scenes|react-forge-scene-inputs|render-scenes\.py|compare-scenes\.py/u);
 });
 
-test("workspace Rust CI excludes React Forge scene engines", () => {
-  for (const [jobId, stepName, command] of [
-    ["rust-clippy", "Run clippy", "cargo clippy"],
-    ["rust-test", "Run cargo test", "cargo test"],
-  ]) {
-    const run = namedStep(workflow.jobs[jobId], stepName).run;
-    assert.ok(run.startsWith(command), `${jobId}: ${run}`);
-    for (const engine of ["forge-scene", "forge-glb", "forge-fbx"]) {
-      assert.ok(run.includes(`--exclude ${engine}`), `${jobId} must exclude ${engine}`);
+test("Rust CI consumes one verified prebuilt selection and gates native preparation", () => {
+  const changes = workflow.jobs.changes;
+  assert.equal(changes["runs-on"], "ubuntu-24.04");
+  assert.equal(changes.outputs.jobs, "${{ steps.rust.outputs.jobs || steps.plan.outputs.jobs }}");
+  assert.equal(changes.outputs.rust_packages, "${{ steps.rust.outputs.rust_packages || '[]' }}");
+  const prepare = namedStep(changes, "Prepare verified prebuilt cargo-mono");
+  const live = namedStep(changes, "Verify published cargo-mono selection behavior");
+  const selection = namedStep(changes, "Select final Rust packages and jobs");
+  assert.equal(prepare.run, "node scripts/ci/cargo-mono-prebuilt.mjs");
+  assert.equal(live.run, "node --test scripts/ci/rust-affected-live.test.mjs");
+  assert.equal(selection.run, "node scripts/ci/rust-affected.mjs plan");
+  assert.equal(prepare.if, selection.if);
+  assert.ok(changes.steps.indexOf(prepare) < changes.steps.indexOf(live));
+  assert.ok(changes.steps.indexOf(live) < changes.steps.indexOf(selection));
+  assert.equal(selection.env.CI_BASE, "${{ steps.plan.outputs.base }}");
+  assert.equal(selection.env.CI_HEAD, "${{ steps.plan.outputs.head }}");
+  const selected = name => "${{ contains(fromJSON(needs.changes.outputs.rust_packages), '" + name + "') }}";
+  for (const [id, name, command] of [["rust-test", "Run cargo test", "test"], ["rust-clippy", "Run clippy", "clippy"]]) {
+    const job = workflow.jobs[id];
+    const check = namedStep(job, name);
+    assert.equal(check.run, `node scripts/ci/rust-affected.mjs ${command}`);
+    assert.equal(check.env.RUST_PACKAGES, "${{ needs.changes.outputs.rust_packages }}");
+    assert.equal(namedStep(job, "Build DevHUD frontend").if, selected("devhud"));
+    assert.equal(namedStep(job, "Build DeliDev native inputs").if, selected("delidev-desktop"));
+    if (id === "rust-clippy") assert.equal(namedStep(job, "Setup Go for DeliDev sidecar").if, selected("delidev-desktop"));
+    else {
+      const go = namedStep(job, "Setup Go for Rust test prerequisites");
+      for (const owner of ["delidev-desktop", "pnport"]) assert.ok(go.if.includes(owner));
     }
+    assert.ok(namedStep(job, "Install DevHUD Linux prerequisites").if.includes("rust_packages"));
+    assert.ok(namedStep(job, "Save Go cache after successful main validation").if.includes("steps.ci-go.outcome == 'success'"));
   }
+  assert.equal(namedStep(workflow.jobs["rust-test"], "Build pnport injection companion").if, selected("pnport"));
+  assert.equal(namedStep(workflow.jobs["rust-fmt"], "Run rustfmt").run, "cargo fmt --all --check");
 });
 
 

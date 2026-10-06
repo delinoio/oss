@@ -68,7 +68,7 @@
 ## Build and Test
 - Local validation: `cargo test -p cargo-mono`
 - Workspace validation baseline: `cargo test --workspace --all-targets`
-- CI alignment: `.github/workflows/CI.yml` Rust jobs
+- CI alignment: `.github/workflows/CI.yml` generic Rust jobs use the verified published 0.6.9 binary for affected package detection, including manifest path dependents. Shared inputs and manual runs retain the full baseline; the repository workflow contract owns selection, runtime edges, exclusions and failure handling. The selector does not compile this crate from the checkout.
 - Release contract checks should align with `.github/workflows/release-cargo-mono.yml`.
 - Release assets must cover `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
 - Release signing outputs must use Sigstore bundle sidecars (`SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json`).

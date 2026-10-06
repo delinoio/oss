@@ -369,7 +369,7 @@ function results(event, paths) {
   const { jobs } = planJobs(event, paths);
   const matrices = matricesForEvent(event);
   return {
-    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) } },
+    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), rust_packages: JSON.stringify(jobs["rust-test"] || jobs["rust-clippy"] ? ["fixture-package"] : []), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) } },
     "ci-contracts": { result: "success" },
     ...Object.fromEntries(Object.entries(jobs).map(([id, run]) => [id, { result: run ? "success" : "skipped" }])),
   };
@@ -505,4 +505,15 @@ test("DeliDev separates schema, client and complete desktop validation by depend
     needs.changes.outputs.delidev_frontend_matrix = JSON.stringify({ include: [{ phase: "tests-1" }] });
     assert.throws(() => validateResults(needs), /delidev_frontend_matrix/u);
   }
+});
+
+test("aggregate rejects missing, excluded and inconsistent Rust package selections", () => {
+  for (const value of [undefined, "{}", '["forge-scene"]', '["fixture-package","fixture-package"]', "[]"]) {
+    const needs = results(Event.PullRequest, ["crates/binpm/src/main.rs"]);
+    needs.changes.outputs.rust_packages = value;
+    assert.throws(() => validateResults(needs));
+  }
+  const needs = results(Event.PullRequest, ["docs/project-with-watch.md"]);
+  needs.changes.outputs.rust_packages = '["fixture-package"]';
+  assert.throws(() => validateResults(needs), /Rust package selection/u);
 });
