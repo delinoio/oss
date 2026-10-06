@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ResourceService, SessionQuery, SessionService, newRequestId } from "@delinoio/delidev-api-client";
+import { ResourceService, SessionQuery, SessionService, newRequestId, type DeleteLocalReviewCommentRequest } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { SessionDiff } from "./session-diff";
 import { MutationIntents, useRetainedMutation } from "./mutation";
@@ -17,14 +17,15 @@ function fixture(worktree = true) {
     if (q.operation === "roots") return reply({ roots: [{ repository_id: other, name: "Other", primary: false }, { repository_id: primary, name: "Primary", primary: true }] });
     return reply({ diff: { comparison: q.comparison, repository_id: q.repository_id, path: q.path, base: "commit", base_object: "a".repeat(40), head_commit: "a".repeat(40), patch: "+<script>doNotRun()</script>\n", untracked: ["new.txt"], revision: "b".repeat(64) } });
   });
-  const transport = createRouterTransport((router) => { router.service(SessionService, { readSessionWorkspace: read, deleteLocalReviewComment: () => new Promise(() => {}) }); router.service(ResourceService, { listResources: () => ({ resources: [] }) }); });
+  const deleteLocalReviewComment = vi.fn((_request: DeleteLocalReviewCommentRequest): Promise<{ id: string; requestId: string }> => new Promise(() => {}));
+  const transport = createRouterTransport((router) => { router.service(SessionService, { readSessionWorkspace: read, deleteLocalReviewComment }); router.service(ResourceService, { listResources: () => ({ resources: [] }) }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function SeedPendingDeletion() { const mutation = useRetainedMutation(`review:delete:${sessionId}:comment`, SessionQuery.deleteLocalReviewComment); useEffect(() => { void mutation.send({ sessionId, mutation: { id: "comment", expectedRevision: 1n, requestId: newRequestId() } }); }, []); return null; }
   function View({ seed = false }: { seed?: boolean } = {}) {
     const [open, setOpen] = useState(true), [draft, setDraft] = useState("unsent input");
     return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{seed ? <SeedPendingDeletion /> : null}<label>Draft<input value={draft} onChange={(e) => setDraft(e.target.value)} /></label>{open ? <SessionDiff sessionId={sessionId} worktree={worktree} close={() => setOpen(false)} /> : null}</MutationIntents></QueryClientProvider></TransportProvider>;
   }
-  return { View, primary, other, read, client, reply };
+  return { View, primary, other, read, client, reply, deleteLocalReviewComment };
 }
 
 it("compares the selected repository and creation commit with inert patch text", async () => {
@@ -73,6 +74,18 @@ it("keeps session-scoped deletion recovery visible when the diff has no data", a
   await screen.findByText("Waiting for comment deletion acknowledgement…");
   expect(screen.queryByRole("region", { name: "Git comparison" })).toBeNull();
   view.unmount();
+});
+
+it("refreshes only review resources after recovered deletion", async () => {
+  const f = fixture();
+  f.deleteLocalReviewComment.mockRejectedValueOnce(new ConnectError("Response lost", Code.Unavailable));
+  render(<f.View seed />);
+  await screen.findByRole("button", { name: "Retry original comment deletion" });
+  const readsBeforeRetry = f.read.mock.calls.length;
+  f.deleteLocalReviewComment.mockImplementation(async (request: DeleteLocalReviewCommentRequest) => ({ id: request.mutation?.id ?? "", requestId: request.mutation?.requestId ?? "" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry original comment deletion" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original comment deletion" })).toBeNull());
+  expect(f.read).toHaveBeenCalledTimes(readsBeforeRetry);
 });
 
 it("preserves the Worker's UTF-8 filename ordering across supplementary characters", async () => {

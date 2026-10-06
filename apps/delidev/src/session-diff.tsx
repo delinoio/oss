@@ -11,6 +11,7 @@ export function SessionDiff({ sessionId, worktree, close }: { sessionId: string;
   const heading = useRef<HTMLHeadingElement>(null);
   const roots = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: "roots" }) }, workspaceReadOptions);
   const [repository, setRepository] = useState<string>();
+  const [acceptedDeletionId, setAcceptedDeletionId] = useState<string>();
   const available = roots.data?.roots.filter((root) => root.repository_id);
   const selected = repository ?? available?.find((root) => root.primary)?.repository_id ?? available?.[0]?.repository_id;
   useEffect(() => { heading.current?.focus(); }, []);
@@ -21,12 +22,12 @@ export function SessionDiff({ sessionId, worktree, close }: { sessionId: string;
     {roots.isPending ? <p role="status">Loading workspace roots…</p> : null}
     {roots.error ? <button disabled={roots.isFetching} onClick={() => void roots.refetch()}>Retry workspace roots</button> : null}
     {available?.length ? <label>Diff repository<select value={selected} onChange={(event) => setRepository(event.target.value)}>{available.map((root) => <option key={root.repository_id} value={root.repository_id}>{root.name}{root.primary ? " · Primary" : ""}</option>)}</select></label> : roots.data ? <p>This workspace has no prepared Git repository.</p> : null}
-    <LocalReviewRecovery sessionId={sessionId} />
-    {selected ? <RepositoryDiff key={selected} sessionId={sessionId} repository={selected} worktree={worktree} /> : null}
+    <LocalReviewRecovery sessionId={sessionId} onAccepted={setAcceptedDeletionId} />
+    {selected ? <RepositoryDiff key={selected} sessionId={sessionId} repository={selected} worktree={worktree} acceptedDeletionId={acceptedDeletionId} /> : null}
   </aside>;
 }
 
-function RepositoryDiff({ sessionId, repository, worktree }: { sessionId: string; repository: string; worktree: boolean }) {
+function RepositoryDiff({ sessionId, repository, worktree, acceptedDeletionId }: { sessionId: string; repository: string; worktree: boolean; acceptedDeletionId?: string }) {
   const [comparison, setComparison] = useState(worktree ? Comparison.Creation : Comparison.WorkingTree);
   const [path, setPath] = useState("."), [pathDraft, setPathDraft] = useState(".");
   const result = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: "git-diff", repository_id: repository, comparison, path }) }, { ...workspaceReadOptions, select: (response) => readDiff(response.documentJson, repository, comparison, path) });
@@ -45,6 +46,6 @@ function RepositoryDiff({ sessionId, repository, worktree }: { sessionId: string
       {result.data.patch ? <pre tabIndex={0}>{result.data.patch}</pre> : <p>No tracked changes in this comparison.</p>}
       <h3>Untracked files</h3>{result.data.untracked.length ? <ul>{result.data.untracked.map((file) => <li key={file}>{file}</li>)}</ul> : <p>No untracked files in this path.</p>}
     </section> : null}
-    {result.data ? <LocalReviews sessionId={sessionId} diff={result.data} reading={result.isFetching || Boolean(result.error)} /> : null}
+    {result.data ? <LocalReviews sessionId={sessionId} diff={result.data} reading={result.isFetching || Boolean(result.error)} acceptedDeletionId={acceptedDeletionId} /> : null}
   </>;
 }

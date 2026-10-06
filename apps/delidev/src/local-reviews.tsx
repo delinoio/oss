@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useEffect, useState } from "react";
+import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Mode, encode } from "./documents";
@@ -24,14 +24,19 @@ function PendingCommentDeletion({ intent, commentId, accepted }: { intent: Retai
   </article>;
 }
 
-export function LocalReviewRecovery({ sessionId }: { sessionId: string }) {
+export function LocalReviewRecovery({ sessionId, onAccepted }: { sessionId: string; onAccepted?: (commentId: string) => void }) {
   const client = useQueryClient();
+  const transport = useTransport();
   const deletionPrefix = `review:delete:${sessionId}:`;
+  const reviewListQueryKey = createConnectQueryKey({ schema: ResourceQuery.listResources, transport, cardinality: "finite", input: { filter: { kind: EntityKind.REVIEW, sessionId } } });
   const deletions = useRetainedMutationIntents(deletionPrefix);
   if (!deletions.length) return null;
   return <section aria-label="Pending comment deletions"><h3>Pending comment deletions</h3>{deletions.map((intent) => {
     const commentId = intent.key.slice(deletionPrefix.length);
-    return <PendingCommentDeletion key={intent.key} intent={intent} commentId={commentId} accepted={() => { void client.invalidateQueries({ refetchType: "active" }); }} />;
+    return <PendingCommentDeletion key={intent.key} intent={intent} commentId={commentId} accepted={() => {
+      onAccepted?.(commentId);
+      void client.invalidateQueries({ queryKey: reviewListQueryKey, refetchType: "active" });
+    }} />;
   })}</section>;
 }
 
@@ -76,9 +81,18 @@ function CommentRow({ row, comment, sessionId, diff, selected, choose, refreshed
   </article>;
 }
 
-export function LocalReviews({ sessionId, diff, reading }: { sessionId: string; diff: Diff; reading: boolean }) {
+export function LocalReviews({ sessionId, diff, reading, acceptedDeletionId }: { sessionId: string; diff: Diff; reading: boolean; acceptedDeletionId?: string }) {
   const [page, setPage] = useState(""), [authoring, setAuthoring] = useState<Diff>(), [notice, setNotice] = useState("");
   const [selected, setSelected] = useState<Map<string, Selected>>(() => new Map()), [mode, setMode] = useState(Mode.Execute), [allowStale, setAllowStale] = useState(false);
+  useEffect(() => {
+    if (!acceptedDeletionId) return;
+    setSelected((previous) => {
+      if (!previous.has(acceptedDeletionId)) return previous;
+      const next = new Map(previous);
+      next.delete(acceptedDeletionId);
+      return next;
+    });
+  }, [acceptedDeletionId]);
   const list = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.REVIEW, sessionId, pageToken: page, pageSize: 50 } }, { staleTime: 0, gcTime: 0, refetchOnWindowFocus: false, retry: false });
   const refresh = () => { void list.refetch(); };
   const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? `Request changes queued as input ${r.change.input.id}.` : "Submission acknowledged. Inspect the session queue and review history."); refresh(); });

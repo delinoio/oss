@@ -29,7 +29,7 @@ function fixture() {
   router.service(SessionService, { readSessionReviewContext: read, createLocalReviewComment: save, editLocalReviewComment: edit, deleteLocalReviewComment: remove, submitLocalReview: submit });
  });
  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
- function View() { const [open, setOpen] = useState(true), [currentSessionId, setCurrentSessionId] = useState(sessionId); return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><button onClick={() => setOpen(!open)}>Toggle review</button><button onClick={() => setCurrentSessionId(currentSessionId === sessionId ? foreignSessionId : sessionId)} >Switch session</button><LocalReviewRecovery sessionId={currentSessionId} />{open ? <LocalReviews key={currentSessionId} sessionId={currentSessionId} diff={diff} reading={false} /> : null}</MutationIntents></QueryClientProvider></TransportProvider>; }
+ function View() { const [open, setOpen] = useState(true), [currentSessionId, setCurrentSessionId] = useState(sessionId), [acceptedDeletionId, setAcceptedDeletionId] = useState<string>(); return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><button onClick={() => setOpen(!open)}>Toggle review</button><button onClick={() => setCurrentSessionId(currentSessionId === sessionId ? foreignSessionId : sessionId)} >Switch session</button><LocalReviewRecovery sessionId={currentSessionId} onAccepted={setAcceptedDeletionId} />{open ? <LocalReviews key={currentSessionId} sessionId={currentSessionId} diff={diff} reading={false} acceptedDeletionId={acceptedDeletionId} /> : null}</MutationIntents></QueryClientProvider></TransportProvider>; }
  return { View, read, save, edit, remove, submit, list, diff, inputId, sessionId, commentId: originalComment.id,
   eraseComment: () => { rows = rows.filter((row) => row.id !== originalComment.id); },
   addSubmission: () => { const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REVIEW, sessionId, revision: 1n, schemaVersion: 1, documentJson: encode({ version: 1, type: "submission", submission: { input_id: inputId, mode: "plan", comments: [{ id: originalComment.id, ...comment, freshness: "current" }] } }) }); rows.push(row); return row; },
@@ -144,6 +144,18 @@ it("retains deletion recovery after a deterministic RPC failure", async () => {
  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original comment deletion" })).toBeNull());
  expect(f.remove).toHaveBeenCalledTimes(2);
  expect(f.remove.mock.calls[1][0]).toEqual(f.remove.mock.calls[0][0]);
+});
+
+it("clears a selected comment after recovery acknowledges its deletion", async () => {
+ const f = fixture();
+ f.remove.mockRejectedValueOnce(new ConnectError("Response lost", Code.Unavailable));
+ render(<f.View />);
+ fireEvent.click(await screen.findByRole("checkbox", { name: "Select comment on file.txt" }));
+ fireEvent.click(screen.getByRole("button", { name: "Delete comment" }));
+ fireEvent.click(await screen.findByRole("button", { name: "Retry original comment deletion" }));
+ await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original comment deletion" })).toBeNull());
+ await waitFor(() => expect(screen.getByText("Selected comments: 0")).toBeTruthy());
+ expect((screen.getByRole("button", { name: "Request changes" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it("shows pending deletion without its row and verifies acknowledgement on explicit retry", async () => {
