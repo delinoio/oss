@@ -26,6 +26,7 @@ interface Attempt {
   logout?: RequestSubscriptionRequest;
   deletion?: DeleteConfigurationRequest;
   retry?: Retry;
+  observing: boolean;
   busy: boolean;
   disposed: boolean;
 }
@@ -84,6 +85,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
 
   const pause = (p: Attempt, message: string, guidance: string, retry?: Retry, error?: unknown) => {
     if (!live(p)) return;
+    p.observing = false;
     p.retry = retry;
     setView({ stage: Stage.Paused, failure: error ? clientFailure(error) : { code: FailureCode.ConfirmationRequired, message, guidance } });
   };
@@ -94,7 +96,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       if (!unchanged(resource, p) || !cleared(resource)) { changed(p); return; }
       p.deletion = create(DeleteConfigurationRequestSchema, { kind: EntityKind.ACCOUNT, mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() } });
     }
-    p.busy = true; p.retry = undefined; setView({ stage: Stage.Deleting });
+    p.observing = false; p.busy = true; p.retry = undefined; setView({ stage: Stage.Deleting });
     try {
       const result = await clients.configuration.deleteConfiguration(p.deletion);
       if (!live(p)) return;
@@ -119,13 +121,14 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       const connection = text(object(document(result.account).connection).id);
       if (connection && connection !== p.connection) { changed(p); return; }
       p.minimumRevision = result.account.revision; p.operation = result.operationId;
+      p.observing = true;
       // Force a new observation effect even if logout completed synchronously.
       setView({ stage: Stage.Logout });
     } catch (error) { pause(p, "", "", uncertain(error) ? Retry.Logout : undefined, error); }
     finally { p.busy = false; }
   };
   const inspect = async (p: Attempt) => {
-    if (!live(p) || p.busy || !p.operation) return;
+    if (!live(p) || p.busy || !p.operation || !p.observing) return;
     p.busy = true; p.retry = undefined;
     let ready: Resource | undefined;
     try {
@@ -171,7 +174,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
 
   const confirm = async () => {
     if (!active || !mounted.current || opening?.disposed || pending.current && !pending.current.disposed) return;
-    const p: Attempt = { confirmed: create(ResourceSchema, { ...confirmed, documentJson: confirmed.documentJson.slice() }), minimumRevision: confirmed.revision, connection: text(object(document(confirmed).connection).id), operation: "", busy: true, disposed: false };
+    const p: Attempt = { confirmed: create(ResourceSchema, { ...confirmed, documentJson: confirmed.documentJson.slice() }), minimumRevision: confirmed.revision, connection: text(object(document(confirmed).connection).id), operation: "", observing: false, busy: true, disposed: false };
     pending.current = p; setView({ stage: Stage.Checking });
     let current: Resource | undefined;
     try {
@@ -193,7 +196,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
         if (pendingOperation.action !== "logout" || pendingOperation.machine_id || !isEntityId(text(pendingOperation.id)) || operation.id !== pendingOperation.id || operation.action !== "logout" || pendingOperation.canceled) {
           pause(p, "Another account operation is still pending.", "Complete the original operation and confirm deletion again."); return;
         }
-        p.operation = text(pendingOperation.id); p.minimumRevision = current.revision;
+        p.operation = text(pendingOperation.id); p.minimumRevision = current.revision; p.observing = true;
         setView({ stage: Stage.Logout }); return;
       }
       if (!isEntityId(p.connection) || !isEntityId(text(state.generation)) || object(state.lease).action && object(state.lease).action !== "execute" || operation.native_started) {
@@ -208,7 +211,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     const previous = pending.current;
     if (!active || previous?.busy) return;
     if (previous) previous.disposed = true;
-    const p: Attempt = { confirmed, minimumRevision: 1n, connection: "", operation: "", busy: true, disposed: false };
+    const p: Attempt = { confirmed, minimumRevision: 1n, connection: "", operation: "", observing: false, busy: true, disposed: false };
     pending.current = p; setView({ stage: Stage.Checking });
     try {
       const result = await clients.resource.getResource({ kind: EntityKind.ACCOUNT, id: initial.id });
@@ -224,7 +227,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     if (!p || !live(p) || p.busy) return;
     if (p.retry === Retry.Logout) void logout(p);
     else if (p.retry === Retry.Delete) void remove(p);
-    else if (p.retry === Retry.Progress) { setView({ stage: Stage.Logout }); void inspect(p); }
+    else if (p.retry === Retry.Progress) { p.observing = true; setView({ stage: Stage.Logout }); void inspect(p); }
   };
   const leave = () => { if (pending.current) pending.current.disposed = true; close(); };
   if (view.stage === Stage.Deleted) return <AccountDeletionResult initial={confirmed} active={active} deleted={deleted} />;
