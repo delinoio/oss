@@ -10,6 +10,14 @@ use tauri_runtime_cef::CefRuntime;
 
 use super::{SavedWindows, saved_binding, trusted_main};
 
+#[derive(Debug)]
+enum OAuthPhase {
+    WindowAuthority,
+    ServerAuthority,
+    Control,
+    AuthorityRecheck,
+}
+
 // Tauri injects the independent native owners alongside the fixed renderer
 // schema. Limit this exception to the IPC boundary; internal operations use
 // cohesive requests. Remove it if native injection can be grouped without
@@ -28,18 +36,52 @@ pub async fn account_oauth_native(
     attempt: String,
     authorization: String,
 ) -> Result<OAuthResult, NativeFailure> {
-    let binding = if window.label() == "main" {
-        trusted_main(&window)?;
-        None
-    } else {
-        Some(saved_binding(&window, &windows)?)
-    };
-    // Capture before any server-sidecar wait. Window closure invalidates even
-    // an admitted bridge invocation whose blocking Begin has not run yet.
-    let window_epoch = host.window_epoch(window.label())?;
-    // Closing a Settings visit needs no live server/native sidecar read. The
-    // original opaque generation can dispose only its own matching listener.
-    if action == OAuthAction::Dispose {
+    let mut phase = OAuthPhase::WindowAuthority;
+    let result = async {
+        let binding = if window.label() == "main" {
+            trusted_main(&window)?;
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?)
+        };
+        // Capture before any server-sidecar wait. Window closure invalidates
+        // even an admitted bridge invocation whose blocking Begin has
+        // not run yet.
+        let window_epoch = host.window_epoch(window.label())?;
+        // Closing a Settings visit needs no live server/native sidecar read.
+        // The original opaque generation can dispose only its own
+        // matching listener.
+        if action == OAuthAction::Dispose {
+            let scope = OAuthScope {
+                window: window.label().into(),
+                instance: binding
+                    .as_ref()
+                    .map(|v| v.instance.clone())
+                    .unwrap_or_else(|| "main".into()),
+                server,
+                opening,
+                window_epoch,
+            };
+            let native = Arc::clone(host.inner());
+            phase = OAuthPhase::Control;
+            return tauri::async_runtime::spawn_blocking(move || {
+                native.control(scope, action, &generation, &attempt, &authorization)
+            })
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        }
+        phase = OAuthPhase::ServerAuthority;
+        let expected = if let Some(binding) = &binding {
+            binding.profile.server_id.clone()
+        } else {
+            let connector = Arc::clone(connector.inner());
+            tauri::async_runtime::spawn_blocking(move || connector.oauth_server_identity())
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??
+        };
+        if server != expected {
+            return Err(NativeFailure::InvalidEvidence);
+        }
         let scope = OAuthScope {
             window: window.label().into(),
             instance: binding
@@ -50,77 +92,74 @@ pub async fn account_oauth_native(
             opening,
             window_epoch,
         };
+        let local = binding
+            .as_ref()
+            .map(|v| {
+                url::Url::parse(&v.profile.endpoint)
+                    .ok()
+                    .is_some_and(|u| match u.host() {
+                        Some(url::Host::Domain("localhost")) => true,
+                        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+                        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+                        _ => false,
+                    })
+            })
+            .unwrap_or(true);
+        let original_scope = scope.clone();
         let native = Arc::clone(host.inner());
-        return tauri::async_runtime::spawn_blocking(move || {
-            native.control(scope, action, &generation, &attempt, &authorization)
+        phase = OAuthPhase::Control;
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            native.control_subscription(scope, action, &generation, &attempt, &authorization, local)
         })
         .await
-        .map_err(|_| NativeFailure::SidecarFailed)?;
-    }
-    let expected = if let Some(binding) = &binding {
-        binding.profile.server_id.clone()
-    } else {
-        let connector = Arc::clone(connector.inner());
-        tauri::async_runtime::spawn_blocking(move || connector.oauth_server_identity())
-            .await
-            .map_err(|_| NativeFailure::SidecarFailed)??
-    };
-    if server != expected {
-        return Err(NativeFailure::InvalidEvidence);
-    }
-    let scope = OAuthScope {
-        window: window.label().into(),
-        instance: binding
-            .as_ref()
-            .map(|v| v.instance.clone())
-            .unwrap_or_else(|| "main".into()),
-        server,
-        opening,
-        window_epoch,
-    };
-    let local = binding
-        .as_ref()
-        .map(|v| {
-            url::Url::parse(&v.profile.endpoint)
-                .ok()
-                .is_some_and(|u| match u.host() {
-                    Some(url::Host::Domain("localhost")) => true,
-                    Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-                    Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
-                    _ => false,
-                })
-        })
-        .unwrap_or(true);
-    let original_scope = scope.clone();
-    let native = Arc::clone(host.inner());
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        native.control_subscription(scope, action, &generation, &attempt, &authorization, local)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
-    let authority = if let Some(binding) = binding {
-        saved_binding(&window, &windows).map(|current| {
-            current.instance == binding.instance && current.profile.same_authority(&binding.profile)
-        })
-    } else if trusted_main(&window).is_err() {
-        Err(NativeFailure::InvalidEvidence)
-    } else {
-        let connector = Arc::clone(connector.inner());
-        match tauri::async_runtime::spawn_blocking(move || connector.oauth_server_identity()).await
-        {
-            Ok(result) => result.map(|current| current == expected),
-            Err(_) => Err(NativeFailure::SidecarFailed),
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+        phase = OAuthPhase::AuthorityRecheck;
+        let authority = if let Some(binding) = binding {
+            saved_binding(&window, &windows).map(|current| {
+                current.instance == binding.instance
+                    && current.profile.same_authority(&binding.profile)
+            })
+        } else if trusted_main(&window).is_err() {
+            Err(NativeFailure::InvalidEvidence)
+        } else {
+            let connector = Arc::clone(connector.inner());
+            match tauri::async_runtime::spawn_blocking(move || connector.oauth_server_identity())
+                .await
+            {
+                Ok(result) => result.map(|current| current == expected),
+                Err(_) => Err(NativeFailure::SidecarFailed),
+            }
+        };
+        if !authority.unwrap_or(false) || host.window_epoch(window.label())? != window_epoch {
+            let _ = host.control(
+                original_scope,
+                OAuthAction::Dispose,
+                &result.generation,
+                "",
+                "",
+            );
+            return Err(NativeFailure::InvalidEvidence);
         }
-    };
-    if !authority.unwrap_or(false) || host.window_epoch(window.label())? != window_epoch {
-        let _ = host.control(
-            original_scope,
-            OAuthAction::Dispose,
-            &result.generation,
-            "",
-            "",
-        );
-        return Err(NativeFailure::InvalidEvidence);
+        Ok(result)
     }
-    Ok(result)
+    .await;
+    // Record only closed lifecycle metadata. Authorization URLs, callback
+    // addresses, code bytes and native scopes must never enter diagnostics.
+    match &result {
+        Ok(_) if action != OAuthAction::Take => tracing::info!(
+            operation = "account_oauth_native",
+            ?action,
+            ?phase,
+            outcome = "completed"
+        ),
+        Err(code) => tracing::warn!(
+            operation = "account_oauth_native",
+            ?action,
+            ?phase,
+            outcome = "failed",
+            ?code
+        ),
+        _ => {}
+    }
+    result
 }

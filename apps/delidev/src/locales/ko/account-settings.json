@@ -102,5 +102,9 @@
   "account-settings.extra.7a611b78ccfc": "공급자가 문서화한 API 키 절차를 사용하세요.",
   "account-settings.extra.37709967fc3f": "공급자 사용 불가 · ",
   "account-settings.extra.b764cdc0eab7": "알 수 없음",
-  "account-settings.sentence.60031f8620a9": "검증 {{v0}}"
+  "account-settings.sentence.60031f8620a9": "검증 {{v0}}",
+  "account-settings.yourApiKeys_e9bf62": "내 API 키",
+  "account-settings.delidevUsageLast30Days_6c267c": "DeliDev 사용량 · 최근 30일",
+  "account-settings.refreshUsage_831ddd": "<s0/> 사용량 새로 고침",
+  "account-settings.knownUsageMayBeIncompleteEstimates_30eea0": "확인된 사용량이 불완전할 수 있습니다. 추정치는 청구 금액이 아닙니다."
 }

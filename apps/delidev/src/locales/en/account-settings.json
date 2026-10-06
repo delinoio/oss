@@ -102,5 +102,9 @@
   "account-settings.extra.7a611b78ccfc": "Use the provider's documented API key flow.",
   "account-settings.extra.37709967fc3f": "Provider unavailable · ",
   "account-settings.extra.b764cdc0eab7": "Unknown",
-  "account-settings.sentence.60031f8620a9": "validation {{v0}}"
+  "account-settings.sentence.60031f8620a9": "validation {{v0}}",
+  "account-settings.yourApiKeys_e9bf62": "Your API keys",
+  "account-settings.delidevUsageLast30Days_6c267c": "DeliDev usage · Last 30 days",
+  "account-settings.refreshUsage_831ddd": "<s0/> Refresh usage",
+  "account-settings.knownUsageMayBeIncompleteEstimates_30eea0": "Known usage may be incomplete. Estimates are not billed amounts."
 }

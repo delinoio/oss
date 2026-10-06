@@ -776,7 +776,7 @@ it.each([false, true])("uses shared Settings navigation and preserves a visit th
   expect(rail.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe("page");
   expect(rail.getByRole("button", { name: "Sessions" }).getAttribute("aria-current")).toBeNull();
   const main = screen.getByRole("main");
-  const content = within(main).getByRole("region", { name: "Settings content" });
+  expect(within(main).getByRole("region", { name: "Settings content" })).toBeTruthy();
   expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Close Settings" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Settings category" })).toBeNull();
@@ -787,7 +787,7 @@ it.each([false, true])("uses shared Settings navigation and preserves a visit th
   expect(categories.closest("main")).toBeNull();
   fireEvent.click(within(categories).getByRole("button", { name: "Instructions" }));
   if (compact) expect(document.querySelector(".sidebar-pane-dialog")?.hasAttribute("open")).toBe(false);
-  fireEvent.click(await within(content).findByRole("button", { name: "New Instructions" }));
+  fireEvent.click(await within(main).findByRole("button", { name: "New Instructions" }));
   const name = screen.getByRole("textbox", { name: "Name" });
   name.focus();
   fireEvent.change(name, { target: { value: "Visit draft" } });

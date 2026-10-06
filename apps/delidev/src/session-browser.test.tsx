@@ -8,12 +8,19 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { BrowserService, BrowserCapability, BrowserProfileSchema, BrowserProfileState, EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { MutationIntents } from "./mutation";
 import { SessionBrowser, browserProfile } from "./session-browser";
+import { BrowserHostProvider } from "./host-capabilities";
 const native = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 100, y: 100, left: 100, top: 100, width: 300, height: 200, right: 400, bottom: 300, toJSON: () => ({}) });
   native.mockReset();
+});
+it("an unavailable browser host does not register a profile or call native code", () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, revision: 1n });
+  render(<BrowserHostProvider available={false}><SessionBrowser session={session} accountId={newRequestId()} close={() => {}} /></BrowserHostProvider>);
+  expect(screen.getByText("CEF browser profiles require the supported desktop host.")).toBeTruthy();
+  expect(native).not.toHaveBeenCalled();
 });
 function fixture() {
   const accountId = newRequestId(), profileId = newRequestId(), tabId = newRequestId();

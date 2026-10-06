@@ -22,5 +22,6 @@
   "notification-settings.openingANotificationNeverMarksAn_4f219c": "Opening a notification never marks an item read, answers a request, approves work or resumes a session.",
   "notification-settings.aboutNotificationDelivery_e8b4e9": "About notification delivery",
   "notification-settings.aSubmittedNotificationDoesNotProve_0edca6": "A submitted notification does not prove that its banner was displayed.",
-  "notification-settings.readingAnInboxItemNeverAnswers_3d1331": "Reading an inbox item never answers it."
+  "notification-settings.readingAnInboxItemNeverAnswers_3d1331": "Reading an inbox item never answers it.",
+  "notification-settings.savedToast": "Notification preferences saved."
 }

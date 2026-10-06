@@ -13,7 +13,7 @@ import { SettingsLifetime } from "./settings-lifetime";
 import { document, encode } from "./documents";
 import { subscriptionAliasDocument } from "./subscription-resource";
 const url = "https://auth.openai.com/oauth/authorize?state=fixture-original-state-123456&redirect_uri=http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback&response_type=code&code_challenge_method=S256";
-function fixture() {
+function fixture(loginURL = url) {
   let current = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: "ChatGPT", type: "subscription", subscription_service: "chatgpt" }) });
   let state = State.WAITING, suggested = "fixture@example.invalid", operation = "";
   const generation = newRequestId(), nativeGeneration = newRequestId();
@@ -26,7 +26,7 @@ function fixture() {
     current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), subscription: { server_operation: { id: operation }, pending: { id: operation } } }) });
     return { account: current, operationId: operation };
   });
-  const progress = vi.fn(() => ({ state, url: state === State.WAITING ? url : "", suggestedName: suggested, generation }));
+  const progress = vi.fn(() => ({ state, url: state === State.WAITING ? loginURL : "", suggestedName: suggested, generation }));
   const cancel = vi.fn(() => { state = State.CANCELED; return { account: current }; });
   const forward = vi.fn(() => ({ accepted: true }));
   const native = vi.fn(async (_scope: string, _action: OAuthNativeAction, _generation: string, _attempt: string, _url: string) => ({ generation: nativeGeneration } as { generation: string; code?: number[] }));
@@ -42,15 +42,16 @@ function fixture() {
     return <>{flow.body ?? <button onClick={() => flow.begin(SubscriptionServiceId.ChatGPT)}>Add account</button>}</>;
   }
   const view = () => <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><SettingsLifetime>{() => <Body />}</SettingsLifetime></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>;
-  return { view, save, login, progress, cancel, forward, native, client, generation, current: () => current, success: () => { state = State.SUCCEEDED; current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), connection: { id: newRequestId() }, subscription: { generation, server_operation: { id: operation }, lease: { revision: "preserved" } } }) }); }, suggestion: (name: string) => { suggested = name; } };
+  return { authorization: (value: string) => { loginURL = value; }, view, save, login, progress, cancel, forward, native, client, generation, current: () => current, success: () => { state = State.SUCCEEDED; current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), connection: { id: newRequestId() }, subscription: { generation, server_operation: { id: operation }, lease: { revision: "preserved" } } }) }); }, suggestion: (name: string) => { suggested = name; } };
 }
 async function start(f: ReturnType<typeof fixture>) {
   const rendered = render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
   await screen.findByRole("button", { name: "Open browser again" }, { timeout: 3000 });
   return rendered;
 }
-it("starts once in Strict Mode without a device, automatically opens and reopens the same browser binding", async () => {
-  const f = fixture(); const rendered = render(f.view()); const add = screen.getByRole("button", { name: "Add account" });
+it.each(["localhost", "127.0.0.1"])("starts once and preserves the original %s browser binding", async (host) => {
+  const originalURL = url.replace("localhost", host);
+  const f = fixture(originalURL); const rendered = render(f.view()); const add = screen.getByRole("button", { name: "Add account" });
   fireEvent.click(add); fireEvent.click(add);
   await screen.findByRole("button", { name: "Open browser again" }, { timeout: 3000 });
   expect(f.save).toHaveBeenCalledTimes(1); expect(f.login).toHaveBeenCalledTimes(1);
@@ -61,13 +62,13 @@ it("starts once in Strict Mode without a device, automatically opens and reopens
   await waitFor(() => expect(f.native.mock.calls.filter(c => c[1] === OAuthNativeAction.Reopen)).toHaveLength(1));
   const initial = f.native.mock.calls.find(c => c[1] === OAuthNativeAction.SubscriptionOpen)!;
   const again = f.native.mock.calls.find(c => c[1] === OAuthNativeAction.Reopen)!;
-  expect(initial[4]).toBe(url); expect(again[0]).toBe(initial[0]); expect(again[3]).toBe(initial[3]);
+  expect(initial[4]).toBe(originalURL); expect(again[0]).toBe(initial[0]); expect(again[3]).toBe(initial[3]);
   rendered.unmount(); expect(f.cancel).not.toHaveBeenCalled();
 });
 it("suggests a name only after verified success, retains edits and saves current server state", async () => {
   const f = fixture(); await start(f); f.success();
   const input = await screen.findByLabelText("Account name", {}, { timeout: 3000 });
-  expect((input as HTMLInputElement).value).toBe("fixture@example.invalid"); expect(window.document.activeElement).toBe(input);
+  expect((input as HTMLInputElement).value).toBe("fixture@example.invalid"); await waitFor(() => expect(window.document.activeElement).toBe(input));
   fireEvent.change(input, { target: { value: "Edited name" } }); f.suggestion("later@example.invalid");
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
   expect((input as HTMLInputElement).value).toBe("Edited name");
@@ -144,4 +145,35 @@ it("requests cancellation only for the original accepted account operation", asy
   await screen.findByText("Login canceled", {}, { timeout: 3000 });
   fireEvent.click(screen.getByRole("button", { name: "Back to AI Subscription" }));
   expect(f.cancel).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  "http://127.1:1457/auth/callback", "http://2130706433:1457/auth/callback", "http://[::1]:1457/auth/callback",
+  "http://localhost:1455/auth/callback", "http://127.0.0.1:1457/other", "https://localhost:1457/auth/callback",
+  "http://localhost.evil.invalid:1457/auth/callback",
+])("rejects an unregistered callback %s before opening", async (callback) => {
+  const f = fixture(url.replace("http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback", encodeURIComponent(callback)));
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  await screen.findByText("The original sign-in status could not be verified. Waiting for another status check.", {}, { timeout: 3000 });
+  expect(f.native).not.toHaveBeenCalled(); expect(f.forward).not.toHaveBeenCalled();
+});
+it.each([
+  url + "&redirect_uri=http%3A%2F%2F127.0.0.1%3A1457%2Fauth%2Fcallback",
+  url + "&state=fixture-original-state-123456",
+  url.replace("fixture-original-state-123456", "short"),
+  url.replace("fixture-original-state-123456", "invalid.state-value-1234"),
+])("rejects malformed authorization before opening (%#)", async (authorization) => {
+  const f = fixture(authorization); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  await screen.findByText("The original sign-in status could not be verified. Waiting for another status check.", {}, { timeout: 3000 });
+  expect(f.native).not.toHaveBeenCalled();
+});
+it.each(["localhost", "127.0.0.1"])("refuses to replace an original %s callback with its other permitted spelling", async (host) => {
+  const originalURL = url.replace("localhost", host), f = fixture(originalURL); await start(f);
+  f.authorization(url.replace("localhost", host === "localhost" ? "127.0.0.1" : "localhost"));
+  await screen.findByText("The original sign-in status could not be verified. Waiting for another status check.", {}, { timeout: 3000 });
+  expect(f.native.mock.calls.filter(c => c[1] === OAuthNativeAction.SubscriptionOpen)).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Open browser again" }));
+  await waitFor(() => expect(f.native.mock.calls.filter(c => c[1] === OAuthNativeAction.Reopen)).toHaveLength(1));
+  expect(f.native.mock.calls.find(c => c[1] === OAuthNativeAction.SubscriptionOpen)![4]).toBe(originalURL);
+  expect(f.login).toHaveBeenCalledTimes(1);
 });

@@ -10,6 +10,7 @@ import { MutationIntents } from "./mutation";
 import { StrictMode } from "react";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SidebarOutletProvider } from "./sidebar-context";
+import { NotificationProvider } from "./toast-notifications";
 
 function fixture() {
   let preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
@@ -23,6 +24,34 @@ function fixture() {
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { view, save, read, transport, client, change: async () => { preferences = create(NotificationPreferencesSchema, { revision: 9n, interactions: false, terminals: false }); await client.invalidateQueries(); } };
 }
+
+it("shows one toast only after notification preferences are acknowledged", async () => {
+  const value = fixture();
+  value.save.mockRejectedValueOnce(new ConnectError("Acknowledgment lost", Code.Unavailable));
+  render(<NotificationProvider>{value.view()}</NotificationProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
+  const retry = await screen.findByRole("button", { name: "Retry the same notification preferences" });
+  expect(screen.queryByText("Notification preferences saved.")).toBeNull();
+  fireEvent.click(retry);
+  expect(await screen.findByText("Notification preferences saved.")).toBeTruthy();
+  expect(screen.getAllByText("Notification preferences saved.")).toHaveLength(1);
+  expect(value.save).toHaveBeenCalledTimes(2);
+});
+
+it("never shows a success toast for a late save after the Settings visit is disposed", async () => {
+  const value = fixture();
+  const pending = deferred<Awaited<ReturnType<typeof value.save>>>();
+  value.save.mockImplementationOnce(() => pending.promise);
+  const view = (visible: boolean) => <NotificationProvider><TransportProvider transport={value.transport}><QueryClientProvider client={value.client}>{visible ? <SettingsLifetime>{() => <MutationIntents><NotificationSettings active /></MutationIntents>}</SettingsLifetime> : <p>Other destination</p>}</QueryClientProvider></TransportProvider></NotificationProvider>;
+  const mounted = render(view(true));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  mounted.rerender(view(false));
+  await act(async () => pending.resolve({ preferences: create(NotificationPreferencesSchema, { revision: 2n, interactions: true, terminals: false }) }));
+  expect(screen.queryByText("Notification preferences saved.")).toBeNull();
+});
 
 it("retains stale notification drafts across settings visibility and never saves over a changed revision", async () => {
   const value = fixture(), mounted = render(value.view());

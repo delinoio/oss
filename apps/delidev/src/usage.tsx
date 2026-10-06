@@ -1,12 +1,13 @@
 import { ownedMessage, useProductMessage, LocalizedText, copy, displayLocale, useLocale  } from "./localization";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import type { UsageEntry } from "./usage-entry";
 import { useQuery } from "@connectrpc/connect-query";
 import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, EntityKind, UsageAccountingProfile, UsageCoverage, UsageQuery, UsageTimeGranularity, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
 import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { ResourceChoice } from "./configuration-fields";
 import { Problem } from "./ui";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
-import { detectDeviceTimeZone, localDateTimeToUnixMs } from "./usage-time";
+import { detectDeviceTimeZone, localDateTimeToUnixMs, unixMsToLocalDateTime } from "./usage-time";
 import { UsageCharts } from "./usage-chart";
 import { GrokAccounting } from "./grok-accounting";
 import { NativeAccounting } from "./native-accounting";
@@ -65,15 +66,28 @@ function appliedFilters(selection: ReturnType<typeof request>): string[] {
   return values;
 }
 
-export function Usage({ active, open }: { active: boolean; open: (id: string) => void }) {
+export function Usage({ active, open, entry }: { active: boolean; open: (id: string) => void; entry?: UsageEntry }) {
   useLocale();
   const [draft, setDraft] = useState<Filters>(emptyFilters);
   const [appliedDraft, setAppliedDraft] = useState<Filters>(emptyFilters);
   const [selection, setSelection] = useState(() => request(emptyFilters, detectDeviceTimeZone()));
   const [invalid, setInvalid] = useProductMessage("");
+  const consumedEntry = useRef<string>(undefined);
+  useLayoutEffect(() => {
+    if (!active || !entry || consumedEntry.current === entry.key) return;
+    consumedEntry.current = entry.key;
+    const zone = detectDeviceTimeZone();
+    const next = { ...emptyFilters, accountId: entry.accountId, from: unixMsToLocalDateTime(entry.fromUnixMs, zone), until: unixMsToLocalDateTime(entry.untilUnixMs, zone) };
+    setDraft(next);
+    setAppliedDraft(next);
+    setInvalid("");
+    // Do not round-trip the applied range through wall time: DST folds can
+    // otherwise select a different instant. The original server bounds win.
+    setSelection({ ...request(emptyFilters, zone), accountId: entry.accountId, fromUnixMs: entry.fromUnixMs, untilUnixMs: entry.untilUnixMs });
+  }, [active, entry]);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const nativeFilters = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
-  const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active });
+  const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active && (!entry || consumedEntry.current === entry.key) });
   const closeDrawer = useCloseSidebarDrawer();
   const detectedTimeZone = detectDeviceTimeZone();
   const change = <K extends keyof Filters>(key: K, value: Filters[K]) => setDraft((current) => ({ ...current, [key]: value }));

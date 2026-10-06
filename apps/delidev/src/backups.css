@@ -8,7 +8,7 @@
 .backups-settings button { min-height: 40px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--control-border); border-radius: 8px; color: var(--text); background: var(--surface); font: inherit; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
 .backups-settings button:hover:enabled { background: var(--background); }
 .backups-settings button:disabled { border-color: var(--border); color: var(--muted); background: var(--background); opacity: .65; }
-.backups-settings :focus-visible, .backups-settings h2:focus { outline: 3px solid var(--focus); outline-offset: 3px; }
+.backups-settings :focus-visible:not(:where(input, select, textarea)), .backups-settings h2:focus { outline: 3px solid var(--focus); outline-offset: 3px; }
 .backups-settings button.backups-primary { border-color: var(--accent); color: var(--on-accent); background: var(--accent); }
 .backups-settings button.backups-primary:hover:enabled { background: var(--accent-hover); }
 .backups-settings h1 { margin: 0 0 8px; font-size: 28px; font-weight: 600; line-height: 1.2; }

@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountingUnitKind, EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, UsageAccountingProfile, UsageTotalsSchema, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
+import { AccountingUnitKind, EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, SystemService, UsageTimeGranularity, UsageAccountingProfile, UsageTotalsSchema, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
 import { encode } from "./documents";
 
@@ -209,4 +209,24 @@ it("keeps historical currency subtotals, partial coverage and source basis separ
   expect(screen.getByText("Retained original source")).toBeTruthy();
   expect(screen.getByText("Fixture fee excluded")).toBeTruthy();
   expect(screen.getByText(BigInt("9223372036854775807").toLocaleString())).toBeTruthy();
+});
+
+it("consumes an account entry once, preserves its exact bounds and retains subsequent filter edits", async () => {
+  const f = fixture();
+  const entry = { key: newRequestId(), accountId: f.ids.account, fromUnixMs: f.data.fromUnixMs + 123n, untilUnixMs: f.data.untilUnixMs + 789n };
+  // A stable transport matches same-identity reconnect ownership.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  const transport = createRouterTransport(router => { router.service(SystemService, { getStatus: () => ({}) }); router.service(UsageService, { getUsageSummary: f.read }); router.service(ResourceService, { listResources: () => ({ resources: [] }) }); });
+  const viewFor = (active = true, value = entry) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Usage active={active} open={f.open} entry={value} /></QueryClientProvider></TransportProvider>;
+  const view = render(viewFor()); await screen.findByText("Incomplete coverage");
+  expect(f.read).toHaveBeenCalledTimes(1);
+  expect(f.read.mock.calls[0][0]).toMatchObject({ accountId: entry.accountId, fromUnixMs: entry.fromUnixMs, untilUnixMs: entry.untilUnixMs });
+  fireEvent.change(screen.getByLabelText(/^From \(/), { target: { value: "2026-09-01T10:00" } });
+  view.rerender(viewFor(false)); view.rerender(viewFor());
+  expect((screen.getByLabelText(/^From \(/) as HTMLInputElement).value).toBe("2026-09-01T10:00");
+  expect(f.read).toHaveBeenCalledTimes(1);
+  const next = { ...entry, key: newRequestId(), accountId: newRequestId() };
+  view.rerender(viewFor(true, next));
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+  expect(f.read.mock.calls[1][0].accountId).toBe(next.accountId);
 });

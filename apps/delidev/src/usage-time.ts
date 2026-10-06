@@ -60,3 +60,11 @@ export function localDateTimeToUnixMs(value: string, timeZone: string): bigint {
     throw new ProductError("validation.24d222761f98");
   }
 }
+
+// Preserve the exact millisecond range when a summary opens the Usage editor.
+export function unixMsToLocalDateTime(value: bigint, timeZone: string): string {
+  if (value === 0n) return "";
+  const time = Number(value), parts = partsAt(time, timeZone);
+  const pad = (value: number, length = 2) => String(value).padStart(length, "0");
+  return `${pad(parts.year, 4)}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}.${pad(time % 1000, 3)}`;
+}

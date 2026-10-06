@@ -61,6 +61,77 @@ function Sibling() {
   return <section><label>Sibling composer<textarea value={composer} onChange={(event) => setComposer(event.target.value)} /></label><span>{query.data ? "Sibling ready" : "Sibling loading"}</span><button onClick={() => void mutation.send({ kind: EntityKind.PROJECT, mutation: { requestId: newRequestId() }, documentJson: encode({ name: "Sibling write" }) })}>Sibling save</button>{mutation.uncertain ? <button onClick={mutation.retry}>Sibling retry</button> : null}</section>;
 }
 
+it.each(["", "Unsaved instructions"])("discards an Instructions form on category departure: %s", async (name) => {
+  const value = fixture();
+  render(value.view(true));
+  await screen.findByText("Sibling ready");
+  fireEvent.change(screen.getByRole("textbox", { name: "Sibling composer" }), { target: { value: "Keep sibling input" } });
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  const input = screen.getByRole("textbox", { name: "Name" });
+  fireEvent.change(input, { target: { value: name } });
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(input);
+  fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(screen.getByRole("button", { name: "New Instructions" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+  expect((screen.getByRole("textbox", { name: "Sibling composer" }) as HTMLTextAreaElement).value).toBe("Keep sibling input");
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([undefined, Code.Unavailable, Code.Canceled])("disposes a category write before its late outcome without replay: %s", async (code) => {
+  const value = fixture();
+  render(value.view(true));
+  await screen.findByText("Sibling ready");
+  const sibling = value.client.getQueryCache().getAll()[0];
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Committed after departure" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), { target: { value: "Committed content" } });
+  value.delay("SaveConfiguration", code);
+  fireEvent.click(screen.getByRole("button", { name: "Save Instructions" }));
+  await waitFor(() => expect(value.waiting).toHaveLength(1));
+  const pending = value.waiting[0];
+  const oldQueries = value.client.getQueryCache().getAll().filter(query => query !== sibling);
+  fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+  expect(pending.signal.aborted).toBe(true);
+  expect(value.client.getQueryCache().getAll()).toContain(sibling);
+  expect(value.client.getQueryCache().getAll().some(query => oldQueries.includes(query))).toBe(false);
+  expect(value.client.getMutationCache().getAll()).toHaveLength(0);
+  const focus = screen.getByRole("button", { name: "Projects" });
+  focus.focus();
+  value.delay();
+  await act(async () => pending.gate.resolve());
+  expect(document.activeElement).toBe(focus);
+  expect(screen.getByRole("heading", { level: 1, name: "Projects" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  expect(await screen.findByRole("heading", { name: "Committed after departure" })).toBeTruthy();
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
+
+it("discards an uncertain write on category departure without a replacement mutation", async () => {
+  const value = fixture();
+  render(value.view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Original uncertain write" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), { target: { value: "Original bytes" } });
+  value.delay("SaveConfiguration", Code.Unavailable);
+  fireEvent.click(screen.getByRole("button", { name: "Save Instructions" }));
+  await waitFor(() => expect(value.waiting).toHaveLength(1));
+  await act(async () => value.waiting[0].gate.resolve());
+  await screen.findByRole("button", { name: "Retry the same configuration" });
+  fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  await screen.findByRole("heading", { name: "Original uncertain write" });
+  expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
+
 it.each([["navigation", "Instructions"], ["Escape then navigation", "Instructions"], ["navigation", "Agent Workers"], ["Escape then navigation", "Agent Workers"]])("starts at the first category after leaving via %s an unsaved %s editor", async (route, category) => {
   const value = fixture();
   function Harness() {

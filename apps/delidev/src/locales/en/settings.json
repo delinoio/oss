@@ -99,5 +99,16 @@
   "settings.extra.7a611b78ccfc": "Use the provider's documented API key flow.",
   "settings.group.aiAgents": "AI & agents",
   "settings.group.workspace": "Workspace",
-  "settings.group.system": "System"
+  "settings.group.system": "System",
+  "settings.sentence.4a6e71505a83": "{{v0}} saved.",
+  "settings.savedKind.AGENT": "Agent Worker saved.",
+  "settings.savedKind.TEMPLATE": "Instructions saved.",
+  "settings.savedKind.PROJECT": "Project saved.",
+  "settings.savedKind.REPOSITORY": "Repository saved.",
+  "settings.savedKind.ACCOUNT": "Account saved.",
+  "settings.savedKind.MACHINE": "Runner Device saved.",
+  "settings.savedKind.PROVIDER": "Provider saved.",
+  "settings.savedKind.MODEL": "Model saved.",
+  "settings.savedKind.SETTINGS": "Server preferences saved.",
+  "settings.savedKind.fallback": "Configuration saved."
 }

@@ -78,6 +78,10 @@ auto-retry. Controls and text wrap in both themes, narrow layouts and 200% zoom.
 Tray language refresh uses only retained observations and changes labels.
 New notifications and native dialogs use the current language; delivered
 notifications are never resent. OS-owned standard buttons follow OS localization.
+Existing in-app toasts retain catalog descriptors alongside original string
+content. A language update changes presentation while preserving the toast ID,
+arrival order, remaining visible time, hover/focus pauses and close-button focus.
+It never republishes a toast or replays the operation that created it.
 User aliases retain separate masking provenance so a legitimate name matching a
 mask placeholder is not translated.
 

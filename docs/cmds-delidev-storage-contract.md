@@ -205,9 +205,9 @@ original job independently of history pagination. Settings requires
 an explicit inspection and permanent-deletion checkbox bound to that exact
 observation. Hiding the view or refreshing/replacing its inspection clears fresh
 confirmation; already submitted uncertain requests retain their original bytes.
-Settings retains uncertain requests
-across category navigation within one opening, and presents pending/completed jobs with separate cleanup
-failures. Accepted deletion cannot be canceled. Logical validated image bytes
+Settings retains uncertain requests within the active Backups category and
+presents pending/completed jobs with separate cleanup failures. Category
+departure discards local retries. Accepted deletion cannot be canceled. Logical validated image bytes
 removed are not a claim of reclaimed filesystem space; hard links, filesystem
 snapshots and allocation remain outside that measurement.
 
@@ -498,9 +498,9 @@ creation and migration-image checks; it never ingests external sidecar state or
 opens a backup as a writable live database. Foreign/corrupt images remain intact
 and end a durable creation with recovery-required rather than false success.
 
-Settings retains up to 20 accepted jobs per operation type in opening memory
+Settings retains up to 20 accepted jobs per operation type in active-category memory
 and observes each directly through `GetBackupCreation` or `GetBackupDeletion`.
-History page changes do not replace these identities. Closing Settings releases
+History page changes do not replace these identities. Category departure or leaving Settings releases
 local tracking and uncertain retries without canceling accepted jobs or replaying
 acceptance; a new opening observes durable history through fresh reads. Pending/failed reads poll
 only while the view is active; terminal observations stop polling and each newly

@@ -1,4 +1,5 @@
-import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
+// SPDX-License-Identifier: Apache-2.0
+import { copy, useLocale, ownedMessage, useProductMessage, LocalizedText } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,6 +7,7 @@ import { BrowserQuery, BrowserCapability, BrowserProfileState, newRequestId, typ
 
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { useBrowserHost } from "./host-capabilities";
 
 enum BrowserAction { Navigate = "navigate", Back = "back", Forward = "forward", Reload = "reload", NewTab = "new-tab", SelectTab = "select-tab", CloseTab = "close-tab", Resize = "resize", Hide = "hide" }
 interface BrowserState { tabs: { tabs: { id: string; url: string }[]; selected: string }; removal_pending: boolean }
@@ -28,6 +30,12 @@ function browserState(value: BrowserState): BrowserState {
   return value;
 }
 export function SessionBrowser({ session, accountId, close }: { session: Resource; accountId: string; close: () => void }) {
+  useLocale();
+  const available = useBrowserHost();
+  if (!available) return <section aria-label={copy("session-browser.sessionBrowser_47d746")}><p>{copy("session-browser.cefBrowserProfilesRequireTheSupported_c9b9e8")}</p><button onClick={close}>{copy("session-browser.closeBrowser_dd3303")}</button></section>;
+  return <NativeSessionBrowser session={session} accountId={accountId} close={close} />;
+}
+function NativeSessionBrowser({ session, accountId, close }: { session: Resource; accountId: string; close: () => void }) {
   useLocale();
   const [address, setAddress] = useState("");
   const [profileId, setProfileId] = useState<string>();

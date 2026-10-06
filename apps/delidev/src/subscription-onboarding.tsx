@@ -113,7 +113,7 @@ const wirePhaseNames: Partial<Record<CodexDiagnosticPhase, string>> = {
 };
 const versionText = (value: string) => value.length <= 256 && /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/.test(value);
 // Reconstruct text from closed metadata, never provider/native message strings.
-function safeDiagnostic(d?: CodexDiagnostic) {
+export function safeDiagnostic(d?: CodexDiagnostic) {
  if (!d || (d.detectedVersion && !versionText(d.detectedVersion)) || !versionText(d.minimumVersion) || !phaseNames[d.phase] || !Object.values(FailureCode).includes(d.code as FailureCode)) return;
  const reasons: Partial<Record<FailureCode,string>> = { [FailureCode.NotFound]: copy("subscription-onboarding.extra.42fee8b5804e"), [FailureCode.Unsupported]: copy("subscription-onboarding.extra.19786363aa19"), [FailureCode.Unavailable]: copy("subscription-onboarding.extra.59b7856d21b8"), [FailureCode.Unauthenticated]: copy("subscription-onboarding.extra.09cda2aca67d"), [FailureCode.PermissionDenied]: copy("subscription-onboarding.extra.818b40d88444"), [FailureCode.RecoveryRequired]: copy("subscription-onboarding.extra.c5c34ea04a9b") };
  const timeout = d.code === FailureCode.Unavailable && d.message === `Codex ${d.detectedVersion || "not detected"} did not complete ${wirePhaseNames[d.phase]!.toLowerCase()}. The native operation timed out.`;

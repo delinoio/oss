@@ -43,6 +43,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### delidev
 - [Desktop English/Korean localization](apps-delidev-localization-contract.md)
+- [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Protected account browser](cmds-delidev-browser-contract.md)

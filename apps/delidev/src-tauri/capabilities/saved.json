@@ -8,6 +8,8 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "github-presentation",
+    "account-oauth",
+    "provider-guidance",
     "device-appearance",
     "device-language",
     "browser-presentation",

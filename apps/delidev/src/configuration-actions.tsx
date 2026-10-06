@@ -1,23 +1,32 @@
-import { formatTimestamp } from "./localization";
+// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, useLocale, formatTimestamp } from "./localization";
 import { statusLabel } from "./product-status";
-import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { BrowserQuery, ConfigurationQuery, EntityKind, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationQuery, EntityKind, SubscriptionServiceId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text, type Document } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { AccountDeletionResult, ChatGPTAccountDeletion } from "./account-deletion";
+import { serviceAccount } from "./subscription-resource";
 import "./api-account.css";
 
-export function ConfigurationDeletion({ initial, deleted, close }: { initial: Resource; deleted: () => void; close: () => void }) {
+interface DeletionProps { initial: Resource; active?: boolean; deleted: () => void; close: () => void }
+export function ConfigurationDeletion({ active = true, ...props }: DeletionProps) {
+  useLocale();
+  const key = props.initial.id;
+  return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT)
+    ? <ChatGPTAccountDeletion key={key} {...props} active={active} />
+    : <ConfigurationDeletionRequest key={key} {...props} active={active} />;
+}
+function ConfigurationDeletionRequest({ initial, active, deleted, close }: DeletionProps & { active: boolean }) {
   useLocale();
   const isApiEntry = initial.kind === EntityKind.ACCOUNT && document(initial).type === "api";
   const [accepted, setAccepted] = useState(false);
   const mutation = useRetainedMutation(`configuration-delete:${initial.kind}:${initial.id}`, ConfigurationQuery.deleteConfiguration, () => { if (initial.kind === EntityKind.ACCOUNT) setAccepted(true); else deleted(); });
-  const cleanup = useQuery(BrowserQuery.getAccountBrowserCleanup, { accountId: initial.id }, { enabled: accepted, retry: false });
-  if (accepted) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h2>{copy("configuration-actions.apiKeyEntryDeleted_3200d9")}</h2><p className="api-entry-scope">{copy("configuration-actions.savedOnTheSelectedServer_93dbee")}</p></header> : <h3>{copy("configuration-actions.accountConfigurationDeleted_2a5579")}</h3>}<p>{copy("configuration-actions.browserCleanupIsTrackedSeparatelyOffline_5550d1")}</p><Problem error={cleanup.error} />{cleanup.data ? <p><LocalizedText id="configuration-actions.profileCleanupObligationsPendingConfirmedRemoved_063eba" components={{ s0: <>{cleanup.data.pending}</>, s1: <>{cleanup.data.removed}</> }} /></p> : <p>{copy("configuration-actions.cleanupStatusIsUnavailableUntilThe_de4aa8")}</p>}<button onClick={() => void cleanup.refetch()}>{copy("configuration-actions.refreshCleanupStatus_fb7773")}</button><button onClick={deleted}>{document(initial).type === "api" ? copy("configuration-actions.returnToAiApiKeys_4b92a5") : copy("configuration-actions.returnToAccounts_4b7a6d")}</button></section>;
-  const blocked = mutation.busy || mutation.uncertain;
+  if (accepted) return <AccountDeletionResult initial={initial} active={active} deleted={deleted} />;
+  const blocked = !active || mutation.busy || mutation.uncertain;
   return <section className={initial.kind === EntityKind.PROJECT ? "project-deletion" : isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h2>{copy("configuration-actions.deleteEntry_e570cd")}</h2><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("configuration-actions.savedOnTheSelectedServer_93dbee")}</p></header> : <h3><LocalizedText id="configuration-actions.delete_cac286" components={{ s0: <>{resourceName(initial)}</> }} /></h3>}<p>{copy("configuration-actions.thisDeletesItsSavedConfigurationRetained_8aa78e")}</p>{initial.kind === EntityKind.PROJECT || initial.kind === EntityKind.AGENT ? <p>{copy("configuration-actions.schedulesUsingThisConfigurationWillBe_e67d03")}</p> : null}{initial.kind === EntityKind.ACCOUNT ? <p>{document(initial).type === "api" ? copy("configuration-actions.disconnectTheEntryAndFinishCredential_ad3caf") : copy("configuration-actions.disconnectTheAccountAndFinishCredential_9de80a")}</p> : null}{initial.kind === EntityKind.ACCOUNT ? <p>{copy("configuration-actions.browserProfileCleanupRemainsPendingOn_a24d79")}</p> : null}<Problem error={mutation.error} /><div className="actions"><button disabled={blocked} onClick={() => void mutation.send({ kind: initial.kind, mutation: { id: initial.id, expectedRevision: initial.revision, requestId: newRequestId() } })}>{copy("configuration-actions.confirmConfigurationDeletion_5413bb")}</button>{mutation.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("configuration-actions.retryTheSameDeletion_b32bf6")}</button> : null}<button disabled={blocked} onClick={close}>{copy("configuration-actions.keepConfiguration_1210fc")}</button></div></section>;
 }
 export function RoutingPreview({ agent, active, close }: { agent: Resource; active: boolean; close: () => void }) {

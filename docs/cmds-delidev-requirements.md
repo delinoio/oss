@@ -1,3 +1,7 @@
+## Explicit owner amendment: app-owned sidecar Quit (2026-10-06)
+
+Normal desktop Quit stops only server processes directly admitted by that host, including explicit Start and automatic recovery. After 35 seconds without confirmed exit, force only the retained original child and observe its exit; do not claim native/session cleanup. Title-bar close-to-tray and independent CLI/service/remote servers/Workers retain their lifetimes. Desktop crash/forced termination leaves a running sidecar available. This supersedes prior desktop-exit server preservation only for app-owned sidecars; original durable data, recovery and all other ownership remain intact. See the [desktop shutdown boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown) and CLI contract. The historical issue snapshot below is unchanged.
+
 ## Explicit owner amendment: desktop startup (#1137, 2026-09-30)
 
 The original issue #964 requirements snapshot below is preserved verbatim. Issue #1137 amends only desktop launch/presentation: each fresh trusted main process owns one bounded Go-admitted start/reuse and separate client bootstrap, then verifies authenticated server identity before automatic product entry. Helpers, saved windows, renderer remounts and presentation restoration cannot replay it. A same-process Stop stays suppressed until explicit advanced Start or a later fresh process after cleanup; native-service ownership prevents a detached competitor and never grants automatic service management.
@@ -187,7 +191,7 @@ DeliDev is a personal desktop Agent Runner for managing multiple projects, AI ac
 **Settings Application Screen (issue #1236)**
 
 - Provide desktop settings as `Surface.Settings` in main content with the shared navigation rail and category pane/drawer. Settings has no outer modal or Escape-to-leave behavior; actual child dialogs retain their own behavior.
-- Entering or leaving Settings preserves the selected session, unsent input and New session draft. State survives uninterrupted visits, category/reflow/same-identity reconnect and active rail reselection; navigation away disposes drafts, secrets, client waits and retry presentation with scoped late-result/cache guards. Fresh ordinary entry starts at AI Subscription; New Project/Repositories entries remain targeted. Category workflow locks never block global navigation. Settings operations use the same server-owned RPC and CLI functionality as other public product capabilities.
+- Entering or leaving Settings preserves the selected session, unsent input and New session draft. Active-category state survives reflow, same-identity reconnect and active rail/category reselection; category departure or leaving Settings disposes drafts, secrets, client waits and retry presentation with scoped late-result/cache guards. Fresh ordinary entry starts at AI Subscription; New Project/Repositories entries remain targeted. Category navigation remains available during every workflow; operation-local guards do not lock the menu. Settings operations use the same server-owned RPC and CLI functionality as other public product capabilities.
 
 **Integrations: GitHub and Personal Access Tokens**
 

@@ -99,5 +99,16 @@
   "settings.extra.7a611b78ccfc": "공급자가 문서화한 API 키 절차를 사용하세요.",
   "settings.group.aiAgents": "AI 및 에이전트",
   "settings.group.workspace": "작업 공간",
-  "settings.group.system": "시스템"
+  "settings.group.system": "시스템",
+  "settings.sentence.4a6e71505a83": "{{v0}}을(를) 저장했습니다.",
+  "settings.savedKind.AGENT": "에이전트 워커를 저장했습니다.",
+  "settings.savedKind.TEMPLATE": "지침을 저장했습니다.",
+  "settings.savedKind.PROJECT": "프로젝트를 저장했습니다.",
+  "settings.savedKind.REPOSITORY": "저장소를 저장했습니다.",
+  "settings.savedKind.ACCOUNT": "계정을 저장했습니다.",
+  "settings.savedKind.MACHINE": "실행 장치를 저장했습니다.",
+  "settings.savedKind.PROVIDER": "제공자를 저장했습니다.",
+  "settings.savedKind.MODEL": "모델을 저장했습니다.",
+  "settings.savedKind.SETTINGS": "서버 환경 설정을 저장했습니다.",
+  "settings.savedKind.fallback": "설정을 저장했습니다."
 }

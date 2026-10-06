@@ -58,7 +58,7 @@ func validateConfig(config Config) (net.IP, error) {
 	return ip, nil
 }
 
-func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
+func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result error) {
 	if config.Listen == "" {
 		config.Listen = DefaultListen
 	}
@@ -103,7 +103,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err != nil {
 		return err
 	}
-	defer state.Close()
+	defer func() { result = errors.Join(result, state.Close()) }()
 	if config.StartupID == "" {
 		if _, err := WriteRunning(config.DataDir, config); err != nil {
 			return err

@@ -1,10 +1,14 @@
-import { statusLabel } from "./product-status";
+// SPDX-License-Identifier: Apache-2.0
 import { LocalizedText, copy, useLocale } from "./localization";
+import { statusLabel } from "./product-status";
 import { ProviderGuidance } from "./provider-guidance";
 import { OpenRouterOAuth, useOpenRouterOAuth, type OpenRouterOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { ApiEntryRow } from "./api-entry-row";
+import type { UsageEntry } from "./usage-entry";
 import {
   AccountQuery,
   AccountTypeFilter,
@@ -13,6 +17,7 @@ import {
   ConfigurationQuery,
   EntityKind,
   ResourceQuery,
+  UsageQuery,
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
@@ -54,6 +59,7 @@ export interface AccountProviderPicker {
 }
 
 export interface AccountSettingsProps {
+  openUsage?: (entry: UsageEntry) => void;
   oauth?: OpenRouterOAuthFlow;
   section: AccountSettingsSection;
   active: boolean;
@@ -559,6 +565,7 @@ export function AccountSettings(props: AccountSettingsProps) {
 }
 
 function ApiAccountSettings({
+  openUsage,
   oauth,
   section,
   active,
@@ -590,6 +597,10 @@ function ApiAccountSettings({
   providerHint,
 }: AccountSettingsProps) {
   useLocale();
+  const client = useQueryClient();
+  const transport = useTransport();
+  const usageKey = createConnectQueryKey({ schema: UsageQuery.getUsageSummary, transport, cardinality: "finite" });
+  const usageFetching = useIsFetching({ queryKey: usageKey });
   const [page, setPage] = useState<{ section: AccountSettingsSection; providerId: string; token: string }>({ section, providerId: "", token: "" });
   const [wizard, setWizard] = useState(false);
   const [wizardProvider, setWizardProvider] = useState<AccountProviderSummary>();
@@ -649,7 +660,7 @@ function ApiAccountSettings({
   const readDenied = readProblem && clientFailure(readProblem).code === FailureCode.PermissionDenied;
   const successfulEmpty = accountTypeFilteringReady && rows.data?.resources.length === 0 && !readProblem;
   const finalFirstPage = !pageToken && !rows.data?.nextPageToken;
-  return <section className="account-settings api-keys-view" aria-label={copy("account-settings.aiApiKeysSettings_111960")}>
+  return <section className="account-settings api-keys-view api-usage-list" aria-label={copy("account-settings.aiApiKeysSettings_111960")}>
     <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} description={copy("account-settings.manageAiApiKeysAndKeyless_372629")} actions={<>
       <button className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); onWorkflowReadyChange?.(true); setWizard(true); }}>{copy("account-settings.addAiApiKey_2c04a8")}</button>
     </>} />
@@ -664,27 +675,12 @@ function ApiAccountSettings({
       {rows.error ? <button type="button" disabled={rows.isFetching} onClick={() => { void rows.refetch(); }}>{copy("account-settings.retryEntries_038902")}</button> : null}
       {readProblem && rows.data ? <p className="notice" role="status">{copy("account-settings.refreshFailedShowingTheLastSuccessfully_09833b")}</p> : null}
       {rows.isFetching && !rows.data ? <SettingsLoading label={copy("account-settings.loadingEntries_49f7f3")} /> : null}
-      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map((row) => {
-        const data = document(row);
-        const provider = providersById.get(text(data.provider_id));
-        const quotaCount = Array.isArray(data.quota) ? data.quota.length : 0;
-        return <article className="api-entry-row" key={row.id}>
-          <h2>{resourceName(row)}</h2>
-          {row.schemaVersion !== 1 ? <p className="api-entry-provider-name">{row.id}</p> : null}
-          <p className="api-entry-provider-name">{provider?.displayName ?? copy("account-settings.extra.37709967fc3f") + text(data.provider_id)}</p>
-          <dl>
-            <div><dt>{copy("account-settings.connection_5d80f5")}</dt><dd>{text(object(data.removal).request_id) ? copy("account-settings.credentialCleanupPending_50459d") : text(object(data.connection).id) ? copy("account-settings.credentialConnected_eed6f1") : copy("account-settings.disconnected_04dfac")}</dd></div>
-            <div><dt>{copy("account-settings.health_ac2be4")}</dt><dd>{statusLabel(text(data.health)) || copy("account-settings.extra.b764cdc0eab7")}</dd></div>
-            <div><dt>{copy("account-settings.entry_861e39")}</dt><dd>{data.enabled === true ? copy("account-settings.enabled_92c1cd") : copy("account-settings.disabled_75081b")}</dd></div>
-            <div><dt>{copy("account-settings.providerStatus_369744")}</dt><dd>{provider ? provider.enabled ? copy("account-settings.enabled_92c1cd") : copy("account-settings.off_ca7981") : copy("account-settings.unavailable_ca1844")}</dd></div>
-            <div><dt>{copy("account-settings.quota_e67c46")}</dt><dd>{data.confirmed_exhausted === true ? copy("account-settings.confirmedExhausted_763851") : quotaCount ? copy("account-settings.observations_402a6b", { v0: quotaCount }) : copy("account-settings.noQuotaObservation_d9e3af")}</dd></div>
-          </dl>
-          <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} onClick={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }}>{copy("account-settings.manageConnection_ad2892")}</button><button type="button" disabled={row.schemaVersion !== 1} onClick={() => editAccount(row)}>{copy("account-settings.editPreferences_00b4cc")}</button><button className="api-entry-delete" type="button" disabled={row.schemaVersion !== 1} onClick={() => deleteAccount(row)}>{copy("account-settings.deleteEntry_d2968b")}</button></div>
-        </article>;
-      })}</div> : null}
+      <div className="api-usage-list-heading"><div><h2>{copy("account-settings.yourApiKeys_e9bf62")}</h2><p>{copy("account-settings.delidevUsageLast30Days_6c267c")}</p></div><button type="button" disabled={!active || rows.isFetching || usageFetching > 0} onClick={() => { void rows.refetch(); void client.refetchQueries({ queryKey: usageKey, type: "active" }); }}><LocalizedText id="account-settings.refreshUsage_831ddd" components={{ s0: <span aria-hidden="true">↻</span> }} /></button></div>
+      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map(row => <ApiEntryRow key={row.id} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div> : null}
       {successfulEmpty ? finalFirstPage && !providerIdFilter ? <SettingsEmpty title={copy("account-settings.noAiApiKeyEntries_319a32")}><p>{copy("account-settings.addAnEntryForAnEnabled_309062")}</p><p>{copy("account-settings.keylessLocalProvidersDoNotRequire_8313c6")}</p></SettingsEmpty> : <p className="api-entry-page-empty">{finalFirstPage && providerIdFilter ? copy("account-settings.noEntriesForThisProvider_86ca40") : copy("account-settings.noEntriesOnThisPage_c02ff6")}</p> : null}
       {pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label={copy("account-settings.entryPages_b4e028")}>{pageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>{copy("account-settings.firstPage_0bdbb7")}</button> : null}{rows.data?.nextPageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>{copy("account-settings.nextPage_c08ac7")}</button> : null}</nav> : null}
     </> : null}
+    {accountTypeFilteringReady ? <p className="api-entry-storage-note">{copy("account-settings.knownUsageMayBeIncompleteEstimates_30eea0")}</p> : null}
     <p className="api-entry-storage-note">{copy("account-settings.credentialsAreStoredSecurelyOnThe_be612b")}</p>
   </section>;
 }

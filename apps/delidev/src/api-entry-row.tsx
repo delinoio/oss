@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: Apache-2.0
+import { LocalizedText, copy, displayLocale, formatDecimal, formatNumber, formatTimestamp, useLocale } from "./localization";
+import { statusLabel } from "./product-status";
+import { useEffect, useId, useRef, useState } from "react";
+import { useQuery } from "@connectrpc/connect-query";
+import { AccountingUnitKind, UsageAccountingProfile, UsageCostState, UsageQuery, newRequestId, type GetUsageSummaryResponse, type Resource } from "@delinoio/delidev-api-client";
+import { document, object, resourceName, text } from "./documents";
+import { EstimateAmounts } from "./estimate-costs";
+import { QuotaObservationState, quotaPresentation, type SubscriptionQuotaWindow } from "./subscription-settings";
+import { Problem } from "./ui";
+import type { UsageEntry } from "./usage-entry";
+
+const unitNames: Partial<Record<AccountingUnitKind, string>> = {
+  get [AccountingUnitKind.CODEX_RESPONSE]() { return copy("api-entry-row.codexResponses_9e02cb"); },
+  get [AccountingUnitKind.GROK_CLOSED_INPUT]() { return copy("api-entry-row.grokClosedInputs_12a648"); },
+  get [AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT]() { return copy("api-entry-row.claudeMainLoopInputs_3081f2"); },
+  get [AccountingUnitKind.OPENCODE_STEP]() { return copy("api-entry-row.opencodeSteps_583cef"); },
+};
+function count(value: string | undefined, measured: number | undefined) {
+  return measured && value !== undefined && /^(0|[1-9][0-9]*)$/.test(value) ? BigInt(value).toLocaleString(displayLocale()) : copy("api-entry-row.extra.ca1844969742");
+}
+function UsageMetrics({ data }: { data?: GetUsageSummaryResponse }) {
+  useLocale();
+  const native = data?.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1 ? data.nativeAccounting.filter(row => row.totals && (row.totals.kind === AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT || row.totals.kind === AccountingUnitKind.OPENCODE_STEP) && row.totals.units > 0) : [];
+  const grok = data?.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1 ? data.totals?.accounting.find(row => row.kind === AccountingUnitKind.GROK_CLOSED_INPUT && row.units > 0) : undefined;
+  const response = (data?.totals?.responses ?? 0) > 0 || (!native.length && !grok);
+  const separate = native.length > 0 || Boolean(grok);
+  return <>
+    <div className="api-usage-metric"><dt>{copy("api-entry-row.estimatedCost_9ccba2")}</dt><dd>
+      {response ? <div>{separate ? <small>{copy("api-entry-row.responses_9b4c6d")}</small> : null}{data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL && data.estimates?.currencies.length ? data.estimates.currencies.map(row => <strong key={row.currency}>{row.currency} {formatDecimal(row.knownAmount) || copy("api-entry-row.extra.ca1844969742")}</strong>) : <strong>{copy("api-entry-row.unavailable_ca1844")}</strong>}</div> : null}
+      {native.map(row => <div key={row.totals!.kind}><small>{unitNames[row.totals!.kind]}</small>{row.totals!.currencies.length ? row.totals!.currencies.map(value => <strong key={value.currency}>{value.currency} {formatDecimal(value.knownAmount) || copy("api-entry-row.extra.ca1844969742")}</strong>) : <strong>{copy("api-entry-row.unavailable_ca1844")}</strong>}</div>)}
+      {grok ? <div><small>{copy("api-entry-row.grokClosedInputs_12a648")}</small><strong>{copy("api-entry-row.unavailable_ca1844")}</strong></div> : null}
+    </dd><small>{data?.estimatedCost === UsageCostState.KNOWN_SUBTOTAL || native.some(row => row.totals!.currencies.some(value => value.knownAmount !== "")) ? copy("api-entry-row.knownSubtotal_fe63dd") : copy("api-entry-row.noHistoricalEstimate_db5d04")}</small></div>
+    <div className="api-usage-metric"><dt>{copy("api-entry-row.observedTokens_617022")}</dt><dd>
+      {response ? <div>{separate ? <small>{copy("api-entry-row.responses_9b4c6d")}</small> : null}<strong>{count(data?.totals?.total?.knownTotal, data?.totals?.total?.measuredResponses)}</strong><small>{data?.totals ? data.totals.responses > 0 ? copy("api-entry-row.observedResponses", { count: data.totals.responses, v0: formatNumber(data.totals.responses) }) : copy("api-entry-row.noExactResponseRecords_bead73") : copy("api-entry-row.notReported_adadfa")}</small></div> : null}
+      {native.map(row => <div key={row.totals!.kind}><small>{unitNames[row.totals!.kind]}</small><strong>{count(row.totals!.total?.knownTotal, row.totals!.total?.measuredUnits)}</strong><small>{copy("api-entry-row.observedUnits", { count: row.totals!.units, v0: formatNumber(row.totals!.units) })}</small></div>)}
+      {grok ? <div><small>{copy("api-entry-row.grokClosedInputs_12a648")}</small><strong>{count(grok.knownTotal, grok.measuredUnits)}</strong><small>{copy("api-entry-row.observedUnits", { count: grok.units, v0: formatNumber(grok.units) })}</small></div> : null}
+    </dd></div>
+  </>;
+}
+function Quota({ window, now, compact = false }: { window: SubscriptionQuotaWindow; now: number; compact?: boolean }) {
+  useLocale();
+  const value = quotaPresentation(window, now);
+  return <div className="api-quota-window"><small>{window.id || copy("api-entry-row.extra.aae8d5aad61f")}</small><strong>{value.percent === undefined ? copy("api-entry-row.notReported_adadfa") : copy("api-entry-row.remaining_fe6b6b", { v0: value.percent })}</strong>{value.percent !== undefined ? <progress value={value.percent} max={100} aria-label={copy("api-entry-row.remaining_f33475", { v0: window.id || copy("api-entry-row.extra.aae8d5aad61f") })} /> : null}<small>{value.state === QuotaObservationState.Observed ? copy("api-entry-row.observed_64fa8a") : value.state === QuotaObservationState.Failed ? copy("api-entry-row.observationFailed_d2fffd") : value.state === QuotaObservationState.Stale ? copy("api-entry-row.staleObservation_ce693c") : value.state === QuotaObservationState.Unsupported ? copy("api-entry-row.unsupported_543246") : copy("api-entry-row.unknown_b764cd")}</small>{!compact && window.observedAt ? <small><LocalizedText id="api-entry-row.observed_e8e2c1" components={{ s0: <time dateTime={window.observedAt}>{formatTimestamp(window.observedAt)}</time> }} /></small> : null}{!compact && window.resetAt ? <small><LocalizedText id="api-entry-row.resets_8693d0" components={{ s0: <time dateTime={window.resetAt}>{formatTimestamp(window.resetAt)}</time> }} /></small> : null}</div>;
+}
+export function ApiEntryRow({ row, provider, active, manage, edit, remove, openUsage }: {
+  row: Resource; provider?: { displayName: string; enabled: boolean }; active: boolean;
+  manage: () => void; edit: () => void; remove: () => void; openUsage?: (entry: UsageEntry) => void;
+}) {
+  useLocale();
+  const value = document(row), name = resourceName(row), supported = row.schemaVersion === 1;
+  const result = useQuery(UsageQuery.getUsageSummary, { accountId: row.id, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 }, { enabled: active && supported, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
+  const [menu, setMenu] = useState(false), [details, setDetails] = useState(false);
+  const menuId = useId(), detailsId = useId(), nameId = useId();
+  const menuButton = useRef<HTMLButtonElement>(null), detailsButton = useRef<HTMLButtonElement>(null);
+  const [, setClock] = useState(0);
+  const now = Date.now();
+  const windows: SubscriptionQuotaWindow[] = Array.isArray(value.quota) ? value.quota.map(entry => {
+    const window = object(entry);
+    return { id: text(window.id), state: Object.values(QuotaObservationState).find(state => state === window.state) ?? QuotaObservationState.Unknown, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) };
+  }) : [];
+  const expiry = windows.flatMap(window => [Date.parse(window.observedAt ?? "") + 5 * 60 * 1000 + 1, Date.parse(window.resetAt ?? "")]).filter(time => Number.isFinite(time) && time > now).sort((a, b) => a - b)[0];
+  useEffect(() => {
+    if (!active || expiry === undefined) return;
+    const timer = setTimeout(() => setClock(value => value + 1), Math.min(Math.max(0, expiry - Date.now()), 2_147_483_647));
+    return () => clearTimeout(timer);
+  }, [active, expiry]);
+  const closeMenu = () => { setMenu(false); menuButton.current?.focus(); };
+  const cleanup = Boolean(text(object(value.removal).request_id));
+  const connected = Boolean(text(object(value.connection).id));
+  return <article className="api-entry-row api-usage-row" aria-labelledby={nameId}>
+    <div className="api-usage-main">
+      <div className="api-entry-identity"><span className="api-entry-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 15l6-6m-8 9H5a4 4 0 0 1 0-8h4m6-4h4a4 4 0 0 1 0 8h-4" /></svg></span><div>
+        <h2 id={nameId}>{name}</h2><p className="api-entry-provider-name">{provider?.displayName ?? copy("api-entry-row.extra.37709967fc3f") + text(value.provider_id)}</p>
+        <div className="api-entry-statuses"><span data-state={cleanup ? "warning" : connected ? "connected" : "neutral"}><span className="api-entry-sr-only">{copy("api-entry-row.connection_9adb21")}</span>{cleanup ? copy("api-entry-row.credentialCleanupPending_50459d") : connected ? copy("api-entry-row.connected_229655") : copy("api-entry-row.disconnected_04dfac")}</span><span data-state={value.health === "ready" ? "connected" : "warning"}><span className="api-entry-sr-only">{copy("api-entry-row.health_6e9098")}</span>{statusLabel(text(value.health)) || copy("api-entry-row.extra.b764cdc0eab7")}</span></div>
+        {!supported ? <small>{row.id}</small> : null}
+      </div></div>
+      <dl className="api-usage-metrics"><UsageMetrics data={result.data} /><div className="api-usage-metric"><dt>{copy("api-entry-row.quota_6c105c")}</dt><dd>{value.confirmed_exhausted === true ? <strong className="api-entry-exhausted">{copy("api-entry-row.confirmedExhausted_763851")}</strong> : windows.length ? windows.slice(0, 2).map((window, index) => <Quota key={index} window={window} now={now} compact />) : <strong>{copy("api-entry-row.notReported_adadfa")}</strong>}</dd></div></dl>
+      <div className="api-entry-controls"><button type="button" disabled={!supported} onClick={manage}>{copy("api-entry-row.manageConnection_ad2892")}</button><div className="api-entry-more">
+        <button ref={menuButton} type="button" disabled={!supported} aria-label={copy("api-entry-row.moreActionsFor_5057a7", { v0: name })} aria-expanded={menu} aria-controls={menuId} onClick={() => setMenu(!menu)} onKeyDown={event => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><span aria-hidden="true">⋯</span></button>
+        {menu ? <div id={menuId} className="api-entry-more-panel" role="group" aria-label={copy("api-entry-row.actionsFor_b59837", { v0: name })} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><button type="button" onClick={() => { closeMenu(); edit(); }}>{copy("api-entry-row.editPreferences_00b4cc")}</button><button className="api-entry-delete" type="button" onClick={() => { closeMenu(); remove(); }}>{copy("api-entry-row.deleteEntry_d2968b")}</button></div> : null}
+      </div></div>
+    </div>
+    <div className="api-entry-usage-status">
+      {result.isFetching ? <p role="status">{result.data ? copy("api-entry-row.refreshingUsage_70313a") : copy("api-entry-row.loadingUsage_0134e9")}</p> : null}
+      <Problem error={result.error} />{result.error ? <><p role="status">{result.data ? copy("api-entry-row.refreshFailedShowingStaleUsageFrom_b5be80") : copy("api-entry-row.usageIsUnavailableEntryControlsRemain_755eaf")}</p><button type="button" disabled={!active || result.isFetching} onClick={() => void result.refetch()}><LocalizedText id="api-entry-row.retryUsageFor_40ac3c" components={{ s0: <>{name}</> }} /></button></> : null}
+    </div>
+    <div className="api-entry-footer"><button ref={detailsButton} type="button" className="api-entry-text-action" aria-expanded={details} aria-controls={detailsId} onClick={() => setDetails(!details)} onKeyDown={event => { if (event.key === "Escape" && details) { event.preventDefault(); event.stopPropagation(); setDetails(false); } }}><LocalizedText id="api-entry-row.details_2b5716" components={{ s0: <span aria-hidden="true">{details ? "⌄" : "›"}</span> }} /></button><button type="button" className="api-entry-text-action api-entry-usage-link" disabled={!supported || !openUsage} onClick={() => openUsage?.({ key: newRequestId(), accountId: row.id, fromUnixMs: result.data?.fromUnixMs ?? 0n, untilUnixMs: result.data?.untilUnixMs ?? 0n })}>{copy("api-entry-row.viewUsage_2e4ae3")}</button></div>
+    <div id={detailsId} className="api-entry-details" hidden={!details} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDetails(false); detailsButton.current?.focus(); } }}>
+      <dl><div><dt>{copy("api-entry-row.entry_861e39")}</dt><dd>{value.enabled === true ? copy("api-entry-row.enabled_92c1cd") : copy("api-entry-row.disabled_75081b")}</dd></div><div><dt>{copy("api-entry-row.providerStatus_369744")}</dt><dd>{provider ? provider.enabled ? copy("api-entry-row.enabled_92c1cd") : copy("api-entry-row.off_ca7981") : copy("api-entry-row.unavailable_ca1844")}</dd></div><div><dt>{copy("api-entry-row.accountId_4489c4")}</dt><dd>{row.id}</dd></div></dl>
+      <p>{copy("api-entry-row.connectionAndHealthAreIndependentActual_149c54")}</p>
+      {result.data ? <>{result.data.fromUnixMs > 0n && result.data.untilUnixMs > result.data.fromUnixMs ? <p><LocalizedText id="api-entry-row.rangeExclusive_cacdfc" components={{ s0: <time>{formatTimestamp(new Date(Number(result.data.fromUnixMs)).toISOString())}</time>, s1: <time>{formatTimestamp(new Date(Number(result.data.untilUnixMs)).toISOString())}</time> }} /></p> : null}<p><LocalizedText id="api-entry-row.incompleteCoverageAcceptedExecutionsAndNative_a304c9" components={{ s0: <>{formatNumber(result.data.acceptedExecutionsWithoutResponse)}</>, s1: <>{formatNumber(result.data.acceptedCompactionsWithoutResponse)}</> }} /></p><p><LocalizedText id="api-entry-row.measuredResponsesUnavailableResponseTotals_7758ea" components={{ s0: <>{formatNumber(result.data.totals?.total?.measuredResponses ?? 0)}</>, s1: <>{formatNumber(result.data.totals?.total?.unavailableResponses ?? 0)}</> }} /></p><EstimateAmounts value={result.data.estimates} />{result.data.nativeAccounting.map(data => unitNames[data.totals?.kind ?? AccountingUnitKind.UNSPECIFIED] ? <p key={data.totals!.kind}><LocalizedText id="api-entry-row.measuredUnavailableTotalUnitsUnpricedUnits_f7c451" components={{ s0: <>{unitNames[data.totals!.kind]}</>, s1: <>{formatNumber(data.totals?.total?.measuredUnits ?? 0)}</>, s2: <>{formatNumber(data.totals?.total?.unavailableUnits ?? 0)}</>, s3: <>{formatNumber(data.totals?.unpricedUnits ?? 0)}</> }} /></p> : null)}{result.data.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 ? <p>{copy("api-entry-row.independentNativeAccountingIsUnavailableFrom_324aa8")}</p> : null}</> : <p>{copy("api-entry-row.noUsageEvidenceHasBeenRetrieved_a6a0ca")}</p>}
+      {windows.length ? windows.map((window, index) => <Quota key={index} window={window} now={now} />) : <p>{copy("api-entry-row.noQuotaObservation_d9e3af")}</p>}
+    </div>
+  </article>;
+}

@@ -428,6 +428,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 
 func (s *Service) publishServerSubscriptionProgress(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, url, code string) error {
 	if !validServerLoginProgress(url, code) {
+		s.logger.WarnContext(ctx, "server_subscription_login_url_rejected", "operation_id", o.ID, "code", domain.RecoveryRequired)
 		return subscriptionDenied()
 	}
 	unlock, err := s.lockAccounts(ctx)
