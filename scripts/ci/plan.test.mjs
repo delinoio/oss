@@ -119,6 +119,31 @@ test("shared release implementations select the fixture job that exercises them"
   }
 });
 
+test("DeliDev updater generator changes select both consumers and force desktop checks", () => {
+  const path = "scripts/release/generate-delidev-updater.mjs";
+  for (const event of [Event.PullRequest, Event.Push]) {
+    assert.deepEqual(selected(event, [path]), ["devhud-release-contracts", "delidev-frontend"]);
+    assert.equal(planJobs(event, [path]).forced["delidev-frontend"], true);
+    assert.equal(validateResults(results(event, [path])), true);
+    for (const id of ["devhud-release-contracts", "delidev-frontend"]) {
+      for (const result of ["failure", "cancelled", "skipped", undefined]) {
+        const needs = results(event, [path]);
+        needs[id].result = result;
+        assert.throws(() => validateResults(needs), new RegExp(id, "u"));
+      }
+    }
+  }
+});
+
+test("unrelated release helpers retain their narrower owners", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["scripts/release/runmoor.mjs", "scripts/release/runmoor-homebrew.mjs"]) {
+      assert.deepEqual(selected(event, [path]), ["devhud-release-contracts"]);
+    }
+    assert.deepEqual(selected(event, ["scripts/release/generate-delidev-updater.test.mjs"]), ["devhud-release-contracts"]);
+  }
+});
+
 test("checksum generator changes select their DevHud supply-chain fixture job", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of ["scripts/release/generate-checksums.sh", "scripts/release/generate-checksums.test.mjs"]) {

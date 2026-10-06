@@ -2,6 +2,7 @@
 
 - `@delinoio/ci` owns repository-wide validation; app/package leaves stay with their workspace. Actions owns setup, affected planning, matrices, temporary services, artifacts and `CI Result`.
 - Follow `docs/repository-workflow-contract.md`. Route PR checks through `run-affected.mjs`; preserve exact comparison SHAs, external forcing, full native suites, Windows Go shards and 20/45-minute package watchdogs.
+- `scripts/release/generate-delidev-updater.mjs` is an external input of `delidev-frontend` and `devhud-release-contracts`. Generator-only PRs and pushes must select both consumers and force the DeliDev workspace checks; retain separate credential-free native dry runs and event-based packaging skips.
 - Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection.
 - Cache deterministic leaves only. Go/Rust execution, DB/OS/render/benchmark, repeated clean builds, embedded generation and protocol freshness run every time. Declare actual outputs and external inputs, plus task-local platform/tool/option hashes.
 - Keep JS hashes independent of native tool availability. Hash installed Go/Rust/Buf versions only in their owning cached tasks; metadata queries must not install compilers.
