@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.account-deletion .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.settings-content[aria-label] .account-deletion .account-deletion-confirm { color: var(--danger-text); border-color: var(--danger-text); }
+.account-deletion .account-deletion-confirm:hover { background: var(--danger-background); }
+@container (max-width: 460px) { .account-deletion .actions { flex-direction: column; align-items: stretch; } }

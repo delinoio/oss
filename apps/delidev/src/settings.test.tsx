@@ -822,7 +822,7 @@ it("scopes shared preference and deletion terminology to API documents and prese
     expect(screen.getByRole("checkbox", { name: type === "api" ? "Notify when entry quota recovers" : "Notify when account quota recovers" })).toBeTruthy();
     view.rerender(value.view(<ConfigurationDeletion initial={account} deleted={() => {}} close={() => {}} />));
     expect(screen.getByRole("heading", { name: type === "api" ? "Delete entry?" : "Delete Original API account alias?" })).toBeTruthy();
-    expect(screen.getByText(type === "api" ? "Disconnect the entry and finish credential cleanup before deleting it." : "Disconnect the account and finish credential cleanup before deleting it.")).toBeTruthy();
+    expect(screen.getByText(type === "api" ? "Disconnect the entry and finish credential cleanup before deleting it." : "This logs out the account and removes its protected credentials before deleting its saved configuration.")).toBeTruthy();
     view.unmount();
     value.client.clear();
   }

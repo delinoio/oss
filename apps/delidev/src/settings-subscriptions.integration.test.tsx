@@ -42,7 +42,7 @@ it("manages service-native subscription metadata through real authenticated RPC 
   const saved = (await createClient(ResourceService, fixture.transport).getResource({ kind: EntityKind.ACCOUNT, id: account.id })).resource!;
   expect(saved.schemaVersion).toBe(2); expect(document(saved)).toMatchObject({ alias: "Edited subscription", subscription_service: "chatgpt", recovery_notifications: false }); expect(document(saved)).not.toHaveProperty("provider_id");
   fireEvent.click(screen.getByRole("button", { name: "More actions for Edited subscription" })); fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Confirm configuration deletion" })); await screen.findByRole("heading", { name: "Account configuration deleted" });
+  fireEvent.click(await screen.findByRole("button", { name: "Disconnect and delete account" })); await screen.findByRole("heading", { name: "Account configuration deleted" });
   expect(await screen.findByText("0 profile cleanup obligations pending · 0 confirmed removed")).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Return to accounts" })); await screen.findByRole("heading", { name: "No subscriptions yet" });
   expect((screen.getByRole("button", { name: "Claude · Coming soon" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" })); fireEvent.click(screen.getByRole("button", { name: "Open Settings fixture" }));
