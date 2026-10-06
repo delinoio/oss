@@ -6,13 +6,13 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountTypeFilter, ConfigurationQuery, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, SubscriptionServiceIdentity, SystemCapability, SystemService, newRequestId, type SaveAgentWorkerRequest, type SearchModelsRequest } from "@delinoio/delidev-api-client";
+import { AccountTypeFilter, ConfigurationQuery, KnownSubscriptionModelCatalogSource, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, SubscriptionServiceIdentity, SystemCapability, SystemService, newRequestId, type SaveAgentWorkerRequest, type ListKnownSubscriptionModelsRequest, type SearchModelsRequest } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { document, encode } from "./documents";
 import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 
-function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1]) {
+function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1]) {
   const row = (kind: EntityKind, data: Record<string, unknown>, schemaVersion = 1) => create(ResourceSchema, { kind, schemaVersion, id: newRequestId(), revision: 1n, documentJson: encode(data) });
   const provider = row(EntityKind.PROVIDER, { name: "OpenAI API", enabled: true, discovery: true, protocol: "openai-responses" });
   const otherProvider = row(EntityKind.PROVIDER, { name: "Other API", enabled: true, discovery: true, protocol: "openai-responses" });
@@ -23,28 +23,35 @@ function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1]) {
   const records = [provider, otherProvider, ...accounts, subscription, ...models, agent];
   const save = vi.fn(async (request: SaveAgentWorkerRequest) => ({ requestId: request.mutation!.requestId, resource: row(EntityKind.AGENT, { ...JSON.parse(new TextDecoder().decode(request.documentJson)), model_id: models[0].id }) }));
   const search = vi.fn(async (_request: SearchModelsRequest) => ({ models, providers: [provider], nextPageToken: "model-page-2" }));
+  const known = vi.fn(async (request: ListKnownSubscriptionModelsRequest) => ({ subscriptionService: request.subscriptionService, models: [{ nativeId: "gpt-known-current", displayName: "GPT Known Current", order: 0 }], catalogVersion: `sha256:${"a".repeat(64)}`, updatedAt: "2026-10-06", source: KnownSubscriptionModelCatalogSource.BUNDLED }));
   const discover = vi.fn(async (request: { mutation?: { requestId: string; id: string } }) => ({ requestId: request.mutation!.requestId, account: accounts.find(value => value.id === request.mutation!.id) }));
   const list = vi.fn((request: { filter?: { kind: EntityKind; pageToken: string }; providerId: string; subscriptionService: SubscriptionServiceIdentity }) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? request.subscriptionService === SubscriptionServiceIdentity.CHATGPT ? [subscription] : request.providerId === provider.id ? request.filter.pageToken ? [accounts[1], accounts[2]] : [accounts[0]] : [] : records.filter(value => value.kind === request.filter?.kind), nextPageToken: request.filter?.kind === EntityKind.ACCOUNT && request.providerId === provider.id && !request.filter.pageToken ? "account-page-2" : "" }));
   const get = vi.fn((request: { id: string }) => ({ resource: records.find(value => value.id === request.id) }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities }) });
-    router.service(ProviderService, { listProviderInventory: () => ({ entries: [provider, otherProvider].map(value => ({ provider: value, providerId: value.id, displayName: document(value).name as string, enabled: true })), capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] }), searchModels: search, discoverModels: discover });
+    router.service(ProviderService, { listProviderInventory: () => ({ entries: [provider, otherProvider].map(value => ({ provider: value, providerId: value.id, displayName: document(value).name as string, enabled: true })), capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] }), searchModels: search, discoverModels: discover, listKnownSubscriptionModels: known });
     router.service(ResourceService, { listResources: list, getResource: get });
     router.service(ConfigurationService, { saveAgentWorker: save });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
   const view = (upstream: Transport = transport, visible = true) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><Settings visible={visible} /></QueryClientProvider></TransportProvider></StrictMode>;
   const wizardView = (active = true, upstream: Transport = transport) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><AgentWorkerWizard active={active} saved={() => {}} cancel={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
-  return { provider, otherProvider, accounts, subscription, models, agent, records, save, search, discover, list, get, transport, client, view, wizardView };
+  return { provider, otherProvider, accounts, subscription, models, agent, records, save, search, known, discover, list, get, transport, client, capabilities, view, wizardView };
 }
-async function start(value: ReturnType<typeof fixture>, edit = false) {
-  render(value.view());
+async function start(value: ReturnType<typeof fixture>, edit = false, transport = value.transport) {
+  render(value.view(transport));
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(edit ? await screen.findByRole("button", { name: "Edit Existing Worker" }) : screen.getByRole("button", { name: "New Agent Worker" }));
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
 }
 const confirmHarness = (name = "Codex") => fireEvent.click(screen.getByRole("radio", { name }));
 const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
+async function subscriptionModels(value: ReturnType<typeof fixture>) {
+  await start(value); confirmHarness(); next();
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: "subscription:chatgpt" } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
+  return screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement;
+}
 async function accounts(value: ReturnType<typeof fixture>, multi = false) {
   confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
@@ -273,11 +280,22 @@ it("requires accounts, restricts Fixed routing and resets incompatible source se
   next(); expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
 });
 
-it("uses service-scoped subscription reads and keeps manual input available when discovery is unsupported", async () => {
-  const value = fixture(); await start(value); confirmHarness();
+it("autocompletes known subscription models with an empty saved list and saves through native ID", async () => {
+  const value = fixture(); value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" }); await start(value); confirmHarness(); next();
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: "subscription:chatgpt" } });
   fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
-  await screen.findByText(/Subscription model discovery is unsupported/);
+  await screen.findByText(/Known models · Catalog updated Oct 6, 2026/);
+  const input = screen.getByRole("combobox", { name: "Model" });
+  fireEvent.focus(input); fireEvent.change(input, { target: { value: "gpt" } });
+  await screen.findByRole("option", { name: /GPT Known Current.*Known/ });
+  fireEvent.keyDown(input, { key: "ArrowDown" }); fireEvent.keyDown(input, { key: "Enter" });
+  expect((input as HTMLInputElement).value).toBe("gpt-known-current");
+  expect(screen.queryByRole("button", { name: "Next model page" })).toBeNull();
+  expect(screen.getByText("Availability depends on your plan and installed harness.")).toBeTruthy();
+  next(); fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Known model Worker" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(value.save.mock.calls[0][0].model).toMatchObject({ selection: { case: "nativeId", value: "gpt-known-current" }, expectedModelRevision: 0n });
   expect(value.list.mock.calls.some(([request]) => request.subscriptionService === SubscriptionServiceIdentity.CHATGPT)).toBe(true);
   await waitFor(() => expect(value.search.mock.calls.some(([request]) => request.subscriptionService === SubscriptionServiceIdentity.CHATGPT && request.providerId === "")).toBe(true));
   expect(screen.queryByRole("button", { name: "Refresh models from endpoint" })).toBeNull();
@@ -336,6 +354,79 @@ it("keeps pagination and explicit refresh when a complete page has only hidden c
   await screen.findByRole("checkbox", { name: /Personal API/ });
   expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it.each(["choices", "hidden-only", "failed", "invalid"] as const)("hides hidden-only emptiness during a pending refresh that returns %s", async result => {
+  const value = fixture();
+  const loaded = value.list.getMockImplementation()!;
+  const hiddenPage = { resources: [value.accounts[2]], nextPageToken: "account-page-2" };
+  value.list.mockImplementation(request => request.filter?.kind === EntityKind.ACCOUNT ? hiddenPage : loaded(request));
+  let refreshing = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (refreshing && args[0].name === "ListResources") await pending; return value.transport.unary(...args); } };
+  await start(value, false, transport);
+  confirmHarness();
+  await screen.findByRole("option", { name: "OpenAI API" });
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  await screen.findByText("No accounts to select on this page.");
+  refreshing = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
+  expect((screen.getByRole("button", { name: "Next account page" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+  expect(screen.queryByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeNull();
+  expect(screen.queryByText("Loading accounts…")).toBeNull();
+  value.list.mockImplementation(request => {
+    if (request.filter?.kind !== EntityKind.ACCOUNT) return loaded(request);
+    if (result === "failed") throw new ConnectError("Account read unavailable", Code.Unavailable);
+    return result === "choices" ? { ...hiddenPage, resources: [value.accounts[0]] } : result === "invalid" ? { ...hiddenPage, resources: [value.subscription] } : hiddenPage;
+  });
+  await act(async () => release());
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
+  if (result === "hidden-only") {
+    expect(screen.getByText("No accounts to select on this page.")).toBeTruthy();
+    expect(screen.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeTruthy();
+  } else {
+    expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+    if (result === "choices") expect(screen.getByRole("checkbox", { name: /Personal API/ })).toBeTruthy();
+    else if (result === "failed") expect(screen.getByText("Refresh failed. Showing the last successfully loaded accounts.")).toBeTruthy();
+    else expect(screen.getByText(/This account page includes unsupported or mismatched source data/)).toBeTruthy();
+  }
+  expect((screen.getByRole("button", { name: "Next account page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText("0 accounts selected")).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it("retains cached choices and selected account order and weights while refresh is pending", async () => {
+  const value = fixture();
+  const expected = [{ id: value.accounts[0].id, weight: 3 }, { id: value.accounts[1].id, weight: 5 }];
+  value.agent.documentJson = encode({ ...document(value.agent), accounts: expected });
+  let refreshing = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (refreshing && args[0].name === "ListResources") await pending; return value.transport.unary(...args); } };
+  await start(value, true, transport);
+  confirmHarness();
+  await screen.findByRole("checkbox", { name: /Personal API/ });
+  fireEvent.click(screen.getByText("Routing options"));
+  refreshing = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
+  expect((screen.getByRole("checkbox", { name: /Personal API/ }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByText("2 accounts selected")).toBeTruthy();
+  const selected = within(screen.getByRole("region", { name: "Choose accounts" })).getByRole("list");
+  expect(within(selected).getAllByRole("listitem").map(row => row.querySelector("strong")!.textContent)).toEqual(["Personal API", "Team API"]);
+  expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe("3");
+  expect((screen.getByLabelText("Weight for account 2") as HTMLInputElement).value).toBe("5");
+  expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
+  await act(async () => release());
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
+  next(); await screen.findByRole("combobox", { name: "Model" }); next();
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson)).accounts).toEqual(expected);
+  expect(value.discover).not.toHaveBeenCalled();
 });
 
 it.each(["initial", "refresh"])("keeps an %s account read failure distinct from hidden-only emptiness", async state => {
@@ -413,6 +504,109 @@ it("removes a hidden selection only through its explicit Routing options action"
   next();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
+});
+
+it("rejects an invalid known catalog date without crashing the wizard", async () => {
+  const value = fixture(); value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" }); value.known.mockResolvedValue({ subscriptionService: SubscriptionServiceIdentity.CHATGPT, models: [{ nativeId: "gpt-known-current", displayName: "GPT Known Current", order: 0 }], catalogVersion: `sha256:${"a".repeat(64)}`, updatedAt: "2026-99-99", source: KnownSubscriptionModelCatalogSource.BUNDLED });
+  await subscriptionModels(value);
+  await screen.findByText("The known model catalog is unavailable. Reload models or enter an exact model ID.");
+  expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull();
+});
+
+it("drops cached known candidates when the server loses catalog capability", async () => {
+  const value = fixture(); value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
+  const input = await subscriptionModels(value); fireEvent.focus(input);
+  await screen.findByRole("option", { name: /GPT Known Current.*Known/ });
+  value.capabilities.splice(value.capabilities.indexOf(SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1), 1);
+  await act(async () => { await value.client.invalidateQueries(); });
+  await waitFor(() => expect(screen.queryByRole("option", { name: /GPT Known Current.*Known/ })).toBeNull());
+  expect(screen.getByText("Update the server to search known models. Saved models and exact model IDs remain available.")).toBeTruthy();
+});
+
+it("prefers a saved subscription model over its known duplicate and retains its revision", async () => {
+  const value = fixture();
+  const saved = create(ResourceSchema, { kind: EntityKind.MODEL, schemaVersion: 2, id: newRequestId(), revision: 4n, documentJson: encode({ name: "Saved GPT", native_id: "gpt-known-current", source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["codex"], hidden: false }) });
+  value.records.push(saved); value.search.mockResolvedValue({ models: [saved], providers: [], nextPageToken: "" });
+  const input = await subscriptionModels(value); fireEvent.focus(input);
+  await screen.findByRole("option", { name: /Saved GPT.*Saved/ });
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+  fireEvent.keyDown(input, { key: "ArrowDown" }); fireEvent.keyDown(input, { key: "Enter" }); next();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Saved subscription model" } });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(value.save.mock.calls[0][0].model).toMatchObject({ selection: { case: "modelId", value: saved.id }, expectedModelRevision: 4n });
+});
+
+it("drops saved IDs that disappear after a model reload", async () => {
+  const value = fixture();
+  const saved = create(ResourceSchema, { kind: EntityKind.MODEL, schemaVersion: 2, id: newRequestId(), revision: 4n, documentJson: encode({ name: "Saved GPT", native_id: "gpt-known-current", source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["codex"], hidden: false }) });
+  value.records.push(saved);
+  value.search.mockResolvedValue({ models: [saved], providers: [], nextPageToken: "" });
+  const input = await subscriptionModels(value); fireEvent.focus(input);
+  await screen.findByRole("option", { name: /Saved GPT.*Saved/ });
+  value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
+  fireEvent.click(screen.getByRole("button", { name: "Reload models" }));
+  await screen.findByRole("option", { name: /GPT Known Current.*Known/ });
+});
+
+it("does not offer a known duplicate before all saved pages are visited", async () => {
+  const value = fixture();
+  const first = create(ResourceSchema, { kind: EntityKind.MODEL, schemaVersion: 2, id: newRequestId(), revision: 2n, documentJson: encode({ name: "First saved", native_id: "saved-first", source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["codex"], hidden: false }) });
+  const later = create(ResourceSchema, { kind: EntityKind.MODEL, schemaVersion: 2, id: newRequestId(), revision: 4n, documentJson: encode({ name: "Saved GPT", native_id: "gpt-known-current", source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["codex"], hidden: false }) });
+  value.records.push(first, later); value.search.mockImplementation(async request => ({ models: request.pageToken ? [later] : [first], providers: [], nextPageToken: request.pageToken ? "" : "model-page-2" }));
+  const input = await subscriptionModels(value); fireEvent.focus(input);
+  await screen.findByRole("option", { name: /First saved.*Saved/ });
+  expect(screen.queryByRole("option", { name: /GPT Known Current.*Known/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Next model page" }));
+  await screen.findByRole("option", { name: /Saved GPT.*Saved/ });
+  expect(screen.queryByRole("option", { name: /GPT Known Current.*Known/ })).toBeNull();
+  fireEvent.click(screen.getByRole("option", { name: /Saved GPT.*Saved/ })); next();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Later saved model Worker" } });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(value.save.mock.calls[0][0].model).toMatchObject({ selection: { case: "modelId", value: later.id }, expectedModelRevision: 4n });
+});
+
+it("retains known candidates and typed input after reload failure, with name search and exact-ID fallback", async () => {
+  const value = fixture(); value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
+  const input = await subscriptionModels(value);
+  await screen.findByText(/Known models · Catalog updated/);
+  fireEvent.change(input, { target: { value: "Known Current" } });
+  await screen.findByRole("option", { name: /GPT Known Current/ });
+  value.known.mockRejectedValue(new ConnectError("Unavailable", Code.Unavailable));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Reload models" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Reload models" }));
+  await screen.findByText(/Showing the last successfully loaded models/);
+  expect(input.value).toBe("Known Current");
+  fireEvent.focus(input); expect(screen.getByRole("option", { name: /GPT Known Current/ })).toBeTruthy();
+  fireEvent.change(input, { target: { value: "unlisted-native-id" } });
+  await waitFor(() => expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull());
+  fireEvent.click(screen.getByRole("option", { name: /Use exact ID/ })); next();
+  expect(screen.getByRole("heading", { name: "Configure", level: 3 })).toBeTruthy();
+});
+
+it("gates known reads on capability 35 and rejects mismatched service data", async () => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1]);
+  value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
+  const input = await subscriptionModels(value);
+  await screen.findByText(/Update the server to search known models/);
+  expect(value.known).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: "exact" } }); next();
+  expect(screen.getByRole("heading", { name: "Configure", level: 3 })).toBeTruthy();
+});
+
+it("does not retain known candidates after changing harness and service", async () => {
+  const value = fixture(); value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
+  const input = await subscriptionModels(value); fireEvent.focus(input);
+  await screen.findByRole("option", { name: /GPT Known Current/ });
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" })); next();
+  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: "subscription:claude" } });
+  expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull();
+  expect(screen.getByText("0 accounts selected")).toBeTruthy();
 });
 
 it.each(["failed", "empty"])("accepts direct IDs with a %s catalog and retains earlier selections across pagination", async state => {

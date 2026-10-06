@@ -1,0 +1,20 @@
+{
+  "activity-pr-source.originalPrActivitySource_39ade6": "Original PR activity source",
+  "activity-pr-source.readingRetainedPrSource_cfa2ca": "Reading retained PR source…",
+  "activity-pr-source.theOriginalPrSourceIsUnavailable_1c6ae0": "The original PR source is unavailable or inconsistent. The activity grants no handling or execution authority.",
+  "activity-pr-source.recordedSourceRevisionCurrentSourceRevision_df8461": "Recorded source revision: <s0/> · Current source revision: <s1/>",
+  "activity-pr-source.dedicatedVerificationRecordItsOriginalProblem_17b711": "Dedicated verification record: <s0/>. Its original problem versions remain separate from attempt outcomes.",
+  "activity-pr-source.outcome_f04e83": " · Outcome: {{v0}}",
+  "activity-pr-source.currentAttemptStateACompletedAttempt_6b3175": "Current attempt state: <s0/><s1/>. A completed attempt does not establish verified handling.",
+  "activity-pr-source.originalProblemKindContentVersionCurrent_0adac4": "Original problem kind: <s0/> · Content version: <s1/> · Current local handling: <s2/>",
+  "activity-pr-source.originalEvidenceRemainsAvailableInRetained_0e5bc5": "Original evidence remains available in retained PR history.",
+  "activity-pr-source.closeOriginalPrRecord_963c00": "Close original PR record",
+  "activity-pr-source.inspectOriginalPrRecord_fa92e2": "Inspect original PR record",
+  "activity-pr-source.attemptSuccessDoesNotEstablishVerified_f0764b": "Attempt: <s0/> · <s1/>. Success does not establish verified handling.",
+  "activity-pr-source.message_a4e9a4": " {{v0}}",
+  "activity-pr-source.actor_3b75fc": "Actor: <s0/><s1/>",
+  "activity-pr-source.originalActivityReferences_bae436": "Original activity references",
+  "activity-pr-source.sourceRevisionRequest_b783ad": "Source <s0/> · revision <s1/> · request <s2/>",
+  "activity-pr-source.problemVersion_f62c8e": "Problem <s0/> · version <s1/>",
+  "activity-pr-source.extra.4faa01b666e4": "Empty original feedback."
+}

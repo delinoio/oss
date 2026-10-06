@@ -222,7 +222,7 @@ func TestManualNativeSSHWorkerSetup(t *testing.T) {
 	done := make(chan error, 1)
 	serverCtx, stop := context.WithCancel(ctx)
 	go func() {
-		done <- Serve(serverCtx, Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(logs, nil)), accountSecrets: secrets, disableCatalogMaintenance: true, releaseFactory: func() (releaseClient, error) { return release, nil }}, func(e Endpoint) { ready <- e })
+		done <- Serve(serverCtx, Config{disableKnownModelMaintenance: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(logs, nil)), accountSecrets: secrets, disableCatalogMaintenance: true, releaseFactory: func() (releaseClient, error) { return release, nil }}, func(e Endpoint) { ready <- e })
 	}()
 	var endpoint Endpoint
 	select {

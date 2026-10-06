@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskDialog, SettingsDialogSize, SettingsDialogFocus, SettingsTaskActions } from "./settings-task";
 import { useCloseSettingsTask, useRetainSettingsTask } from "./settings-task-context";
@@ -20,6 +21,7 @@ import { QuotaObservationState, SubscriptionOperationState, SubscriptionConnecti
 export { serviceAccount } from "./subscription-resource";
 
 export function ManagedSubscriptionAccount({ initial, active, close }: { initial: Resource; active: boolean; close: () => void }) {
+  useLocale();
   const closeTask = useCloseSettingsTask(close);
   const service = subscriptionService(document(initial).subscription_service)!;
   const [quotaBusy, setQuotaBusy] = useState(false);
@@ -47,22 +49,23 @@ export function ManagedSubscriptionAccount({ initial, active, close }: { initial
     void operation.send({ mutation: { id: current.id, expectedRevision: current.revision, requestId: newRequestId() }, action });
   };
   if (flow.body) return flow.body;
-  return <section className="subscription-account-create" aria-label={`Manage subscription ${resourceName(current)}`}>
-    <h2>{resourceName(current)}</h2><p>{subscriptionServiceNames[service]} · {connected ? "Connected" : "Disconnected"}</p>
-    {!supported ? <p role="status">Native login for this service is unavailable in this server profile.</p> : null}
-    {state.recovery_required === true ? <p role="alert">The original credential owner requires recovery. Inspect Connection & diagnostics before starting another operation.</p> : null}
-    <SettingsTaskActions className="">{!connected ? <button type="button" disabled={!ready || !flow.available} onClick={() => flow.begin(service, current)}>Sign in to {subscriptionServiceNames[service]}</button> : <><button type="button" disabled={!ready} onClick={() => request(SubscriptionAction.REFRESH)}>Refresh login</button><button type="button" disabled={!logoutReady} onClick={() => setLogoutConfirmation(current)}>Log out</button></>}</SettingsTaskActions>
-    {logoutConfirmation ? <SettingsTaskDialog title="Log out subscription" size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setLogoutConfirmation(undefined)}><section aria-label="Confirm subscription logout"><p>Log out {resourceName(logoutConfirmation)}? Active executions are canceled and credentials are removed after original native cleanup. Preferences and history remain.</p>{current.revision !== logoutConfirmation.revision ? <p role="alert">The account changed. Inspect it and confirm the current account again.</p> : null}<SettingsTaskActions className=""><button type="button" disabled={!logoutReady || current.revision !== logoutConfirmation.revision} onClick={() => { request(SubscriptionAction.LOGOUT); setLogoutConfirmation(undefined); }}>Confirm logout</button><button data-settings-task-cancel type="button" disabled={blocked} onClick={() => setLogoutConfirmation(undefined)}>Keep account connected</button></SettingsTaskActions></section></SettingsTaskDialog> : null}
-    {pendingID ? <p role="status">{text(pending.action)} · {pending.canceled === true ? "Cancellation requested; waiting for original cleanup" : text(pending.phase)}</p> : null}
-    {!validRead ? <p role="alert">The current account could not be verified. Refresh it before another operation.</p> : null}
+  return <section className="subscription-account-create" aria-label={copy("subscription-accounts.manageSubscription_5ac1d0", { v0: resourceName(current) })}>
+    <h2>{resourceName(current)}</h2><p>{subscriptionServiceNames[service]} · {connected ? copy("subscription-accounts.connected_229655") : copy("subscription-accounts.disconnected_04dfac")}</p>
+    {!supported ? <p role="status">{copy("subscription-accounts.nativeLoginForThisServiceIs_09b215")}</p> : null}
+    {state.recovery_required === true ? <p role="alert">{copy("subscription-accounts.theOriginalCredentialOwnerRequiresRecovery_4da135")}</p> : null}
+    <SettingsTaskActions className="">{!connected ? <button type="button" disabled={!ready || !flow.available} onClick={() => flow.begin(service, current)}><LocalizedText id="subscription-accounts.signInTo_fa4edf" components={{ s0: <>{subscriptionServiceNames[service]}</> }} /></button> : <><button type="button" disabled={!ready} onClick={() => request(SubscriptionAction.REFRESH)}>{copy("subscription-accounts.refreshLogin_85188a")}</button><button type="button" disabled={!logoutReady} onClick={() => setLogoutConfirmation(current)}>{copy("subscription-accounts.logOut_496161")}</button></>}</SettingsTaskActions>
+    {logoutConfirmation ? <SettingsTaskDialog title={copy("subscription-accounts.logOut_496161")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setLogoutConfirmation(undefined)}><section aria-label={copy("subscription-accounts.confirmSubscriptionLogout_1d058a")}><p><LocalizedText id="subscription-accounts.logOutActiveExecutionsAreCanceled_dc5bf0" components={{ s0: <>{resourceName(logoutConfirmation)}</> }} /></p>{current.revision !== logoutConfirmation.revision ? <p role="alert">{copy("subscription-accounts.theAccountChangedInspectItAnd_316118")}</p> : null}<SettingsTaskActions className=""><button type="button" disabled={!logoutReady || current.revision !== logoutConfirmation.revision} onClick={() => { request(SubscriptionAction.LOGOUT); setLogoutConfirmation(undefined); }}>{copy("subscription-accounts.confirmLogout_2e9d08")}</button><button data-settings-task-cancel type="button" disabled={blocked} onClick={() => setLogoutConfirmation(undefined)}>{copy("subscription-accounts.keepAccountConnected_00ae06")}</button></SettingsTaskActions></section></SettingsTaskDialog> : null}
+    {pendingID ? <p role="status">{text(pending.action)} · {pending.canceled === true ? copy("subscription-accounts.cancellationRequestedWaitingForOriginalCleanup_4f54b9") : text(pending.phase)}</p> : null}
+    {!validRead ? <p role="alert">{copy("subscription-accounts.theCurrentAccountCouldNotBe_9c686a")}</p> : null}
     <Problem error={read.error || operation.error || status.error} />
-    {operation.uncertain ? <button type="button" disabled={operation.busy} onClick={operation.retry}>Retry original subscription operation</button> : null}
+    {operation.uncertain ? <button type="button" disabled={operation.busy} onClick={operation.retry}>{copy("subscription-accounts.retryOriginalSubscriptionOperation_691fa2")}</button> : null}
     {serviceSupported && connected ? <SubscriptionQuotaControls current={current} machine={quotaObservationMachine(state)} active={active && validRead} accepted={setAccepted} busyChanged={setQuotaBusy} /> : null}
-    <SettingsTaskActions className=""><button type="button" disabled={blocked} onClick={() => void read.refetch()}>Refresh account status</button><button data-settings-task-cancel type="button" disabled={blocked} onClick={closeTask}>Back to subscriptions</button></SettingsTaskActions>
+    <SettingsTaskActions className=""><button type="button" disabled={blocked} onClick={() => void read.refetch()}>{copy("subscription-accounts.refreshAccountStatus_fa2870")}</button><button data-settings-task-cancel type="button" disabled={blocked} onClick={closeTask}>{copy("subscription-accounts.backToSubscriptions_257d53")}</button></SettingsTaskActions>
   </section>;
 }
 
 export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWorkflowReadyChange }: { active: boolean; editAccount: (resource: Resource) => void; deleteAccount: (resource: Resource) => void; onWorkflowReadyChange?: (active: boolean) => void }) {
+  useLocale();
   const [page, setPage] = useState("");
   const [selected, setSelected] = useState<Resource>();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
@@ -85,7 +88,7 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
     return { id: row.id, alias: resourceName(row), providerName: subscriptionServiceNames[service], brand: service as unknown as SubscriptionBrand,
       connection: data.removal ? SubscriptionConnectionState.CleanupPending : object(data.subscription).recovery_required === true ? SubscriptionConnectionState.CleanupPending : text(object(data.connection).id) ? SubscriptionConnectionState.Connected : SubscriptionConnectionState.Disconnected,
       refresh: quotaSupported && service===SubscriptionServiceId.ChatGPT && quotaAccountAvailable(data) && isEntityId(quotaMachine) && !quota.busy && !quota.uncertain ? ()=>void quota.send({mutation:{requestId:newRequestId(),id:row.id,expectedRevision:row.revision},machineId:quotaMachine,action:SubscriptionObservationAction.QUOTA,connectionId:text(object(data.connection).id),generationId:text(object(data.subscription).generation)}) : undefined,
- health: text(data.health), enabled: data.enabled === true, providerState: "Service-native account", confirmedExhausted: data.confirmed_exhausted === true,
+ health: text(data.health), enabled: data.enabled === true, providerState: copy("subscription-accounts.extra.22fc4e1096f2"), confirmedExhausted: data.confirmed_exhausted === true,
       windows: items(data.quota).map((entry) => { const window = object(entry); return { id: text(window.id), state: Object.values(QuotaObservationState).find((state) => state === window.state) ?? QuotaObservationState.Unknown, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) }; }),
       metadataAvailable: true, connect: service === SubscriptionServiceId.ChatGPT ? () => setSelected(row) : undefined,
       details: () => setSelected(row), edit: () => editAccount(row), delete: () => deleteAccount(row),
@@ -93,14 +96,14 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
   }) : [];
   const blocked = flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain;
   return <>
-    <SubscriptionSettingsView refreshAll={quotaSupported && !blocked ? ()=>void refreshAll.send({requestId:newRequestId()}) : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} />{!validPage ? <p role="alert">The server returned an unsupported subscription account page.</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
+    <SubscriptionSettingsView refreshAll={quotaSupported && !blocked ? ()=>void refreshAll.send({requestId:newRequestId()}) : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} />{!validPage ? <p role="alert">{copy("subscription-accounts.theServerReturnedAnUnsupportedSubscription_ac7e8b")}</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
       lifecycleUnavailable="ChatGPT sign-in opens your browser and is independent of Runner Devices. Claude Code and Grok sign-in are not supported yet. Quota refresh requires an existing native observation owner."
       selectService={capable && loginCapable && flow.available && !blocked ? (brand) => { const service = subscriptionService(brand); if (service) flow.begin(service); } : undefined}
       serviceLoginAvailable={(brand) => brand === SubscriptionBrand.ChatGPT}
-      pagination={page || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label="Subscription account pages"><button type="button" disabled={!page || rows.isFetching || workflow} onClick={() => setPage("")}>First page</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching || workflow} onClick={() => setPage(rows.data!.nextPageToken)}>Next page</button></nav> : null}
-      advanced={<p>Service identity is independent of API providers. Edit preferences from the account menu. Recovery notifications start disabled. Retired legacy configurations retain historical attribution and require explicit Agent Worker and schedule reconfiguration.</p>} />
-    {flow.body ? <SettingsTaskDialog title="Connect a subscription" size={SettingsDialogSize.Wide} retained={flow.retained} close={flow.leave}>{flow.body}</SettingsTaskDialog> : null}
-    {selected ? <SettingsTaskDialog key={selected.id} title="Manage subscription" size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={() => { setSelected(undefined); void rows.refetch(); }}><ManagedSubscriptionAccount initial={selected} active={active} close={() => { setSelected(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
-    <Problem error={quota.error || refreshAll.error} />{quota.uncertain ? <button type="button" disabled={quota.busy} onClick={quota.retry}>Retry original quota refresh</button> : null}
+      pagination={page || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label={copy("subscription-accounts.subscriptionAccountPages_6c8f61")}><button type="button" disabled={!page || rows.isFetching || workflow} onClick={() => setPage("")}>{copy("subscription-accounts.firstPage_0bdbb7")}</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching || workflow} onClick={() => setPage(rows.data!.nextPageToken)}>{copy("subscription-accounts.nextPage_c08ac7")}</button></nav> : null}
+      advanced={<p>{copy("subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6")}</p>} />
+    {flow.body ? <SettingsTaskDialog title={copy("subscription-accounts.connectSubscription")} size={SettingsDialogSize.Wide} retained={flow.retained} close={flow.leave}>{flow.body}</SettingsTaskDialog> : null}
+    {selected ? <SettingsTaskDialog key={selected.id} title={copy("subscription-accounts.manageSubscriptionTitle")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={() => { setSelected(undefined); void rows.refetch(); }}><ManagedSubscriptionAccount initial={selected} active={active} close={() => { setSelected(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
+    <Problem error={quota.error || refreshAll.error} />{quota.uncertain ? <button type="button" disabled={quota.busy} onClick={quota.retry}>{copy("subscription-accounts.retryOriginalQuotaRefresh_8a9eca")}</button> : null}
   </>;
 }

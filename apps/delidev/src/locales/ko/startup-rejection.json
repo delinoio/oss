@@ -1,0 +1,15 @@
+{
+  "startup-rejection.startupRejectionDetailsAreUnavailableKeep_780ffd": "시작 거부 상세 정보를 사용할 수 없습니다. 원래 상태를 확인하는 동안 이 입력의 일시 중지를 유지하세요.",
+  "startup-rejection.agentStartupRejection_27a3f8": "에이전트 시작 거부",
+  "startup-rejection.agentDidNotStart_32a1e1": "에이전트가 시작되지 않음",
+  "startup-rejection.theOriginalInputRemainsInHistory_e7a561": "원래 입력은 기록에 남습니다. 새 수정 작업을 시작하기 전에 PR과 워커의 Git 접근 권한을 검토하세요.",
+  "startup-rejection.recordedThisSessionRemainsPaused_ed54d8": "<s0/> 기록됨 · 이 세션은 일시 중지 상태입니다.",
+  "startup-rejection.theOriginalStartupRejectionCouldNot_fff807": "유지된 세션에서 원래 시작 거부를 검증하지 못했습니다.",
+  "startup-rejection.rejectedBeforeAgentStartupThisInput_9b8fc2": "에이전트 시작 전에 거부되었습니다. 입력은 기록에 유지되며 다시 전송되지 않습니다.",
+  "startup-rejection.extra.0ab4527c94e0": "PR 또는 준비된 작업공간이 변경되었습니다.",
+  "startup-rejection.extra.2bdb660fc027": "필수 PR 또는 Git 입력을 사용할 수 없습니다.",
+  "startup-rejection.extra.319c00c76acb": "워커가 Git 검사를 완료하지 못했습니다.",
+  "startup-rejection.extra.a78e7fc39866": "시작이 취소되었습니다.",
+  "startup-rejection.extra.933576bc6c6f": "시작 검사가 리소스 한도에 도달했습니다.",
+  "startup-rejection.extra.bfc1004381ca": "시작 검사가 입력을 거부했습니다."
+}

@@ -152,7 +152,7 @@ func testNativeWorkerReplacement(t *testing.T, mode string) {
 	done := make(chan error, 1)
 	serverCtx, stopServer := context.WithCancel(ctx)
 	go func() {
-		done <- Serve(serverCtx, Config{DataDir: serverRoot, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(logs, nil)), disableCatalogMaintenance: true, accountSecrets: &accountTestSecrets{values: map[credentials.Ref][]byte{}, removed: map[credentials.Ref]bool{}}, releaseFactory: func() (releaseClient, error) { return fixtureRelease{candidate: candidate}, nil }, releaseVerifier: verifyFixture}, func(e Endpoint) { ready <- e })
+		done <- Serve(serverCtx, Config{disableKnownModelMaintenance: true, DataDir: serverRoot, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(logs, nil)), disableCatalogMaintenance: true, accountSecrets: &accountTestSecrets{values: map[credentials.Ref][]byte{}, removed: map[credentials.Ref]bool{}}, releaseFactory: func() (releaseClient, error) { return fixtureRelease{candidate: candidate}, nil }, releaseVerifier: verifyFixture}, func(e Endpoint) { ready <- e })
 	}()
 	var endpoint Endpoint
 	select {

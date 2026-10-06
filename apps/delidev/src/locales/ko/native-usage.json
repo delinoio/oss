@@ -1,0 +1,23 @@
+{
+  "native-usage.theRetainedNativeUsageObservationIs_bbd973": "유지된 네이티브 사용량 관측을 확인할 수 없거나 일관되지 않습니다.",
+  "native-usage.completedNativeStep_81d2fc": "완료된 네이티브 단계",
+  "native-usage.finalizedAssistantMessage_15531a": "확정된 어시스턴트 메시지",
+  "native-usage.source_590a7b": "출처: <s0/>",
+  "native-usage.reportedTotal_30b27c": "보고된 합계",
+  "native-usage.unavailable_ca1844": "확인할 수 없음",
+  "native-usage.nativeEstimateCurrencyUnspecified_62f71a": "네이티브 추정값 · 통화 미지정",
+  "native-usage.stepAndMessageObservationsOverlapOpencode_023a82": "단계와 메시지 관측값은 중복됩니다. OpenCode가 누락된 카운터를 0으로 대체할 수 있습니다. 이 값은 청구 사용량, 가격 추정 또는 세션 예산에 더하지 않습니다.",
+  "native-usage.nativeUsageObservation_6d9842": "네이티브 사용량 관측",
+  "native-usage.refreshFailedAnyDisplayedObservationIs_9ff040": "새로 고침에 실패했습니다. 표시된 관측은 유지된 데이터입니다.",
+  "native-usage.noNativeUsageHasBeenRetained_f51bbb": "이 실행에 유지된 네이티브 사용량이 없습니다.",
+  "native-usage.loadingNativeUsage_976abd": "네이티브 사용량을 불러오는 중…",
+  "native-usage.theMatchingNativeUsageObservationIs_14a62c": "일치하는 네이티브 사용량 관측을 확인할 수 없습니다.",
+  "native-usage.recordedExecution_2fdcd7": "기록된 실행: <s0/>",
+  "native-usage.thisObservationBelongsToAPreceding_165fda": "이 관측은 이전 실행에 속합니다.",
+  "native-usage.refreshNativeUsage_4fc93f": "네이티브 사용량 새로고침",
+  "native-usage.extra.5062c025b237": "캐시되지 않은 입력",
+  "native-usage.extra.085171a719a1": "캐시 읽기 입력",
+  "native-usage.extra.06c03c4d8fe8": "캐시 쓰기 입력",
+  "native-usage.extra.152c2e5abcdf": "추론을 제외한 출력",
+  "native-usage.extra.f85860ca7347": "추론 출력"
+}

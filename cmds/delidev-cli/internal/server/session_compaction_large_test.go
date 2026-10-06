@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -102,7 +103,23 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 				}
 			}
 			assertContext(domain.JobQueued)
-			claimed := claimQueuedCompaction(t, f, r.Msg.Job)
+			claimed := watchWorkAssignment(t, f.workerClient, f.workerIdentity, f.selection.MachineID, domain.ID(f.workerInstance))
+			var assigned domain.Job
+			if claimed.Id != r.Msg.Job.Id || domain.DecodeCompactionJob(claimed.DocumentJson, &assigned) != nil || !bytes.Equal(assigned.Input, job.Input) {
+				t.Fatal("primary lane changed the original compaction input")
+			}
+			if harness == domain.Codex && !managed && !profile.disconnect {
+				assertWorkerClaimExceptionBounds(t, claimed, domain.MaxCompactionInputBytes, domain.MaxCompactionJobBytes)
+				malformed := bytes.Replace(claimed.DocumentJson, []byte(`"action_id":"`+string(input.ActionID)+`"`), []byte(`"action_id":""`), 1)
+				record := store.Record{ID: domain.ID(claimed.Id), Kind: domain.JobKind, Revision: claimed.Revision}
+				if _, _, err := decodeWorkerClaim(workerClaimJSON(t, record, malformed)); err == nil {
+					t.Fatal("malformed enlarged compaction claim was accepted")
+				}
+			}
+			reconnected := watchWorkAssignment(t, f.workerClient, f.workerIdentity, f.selection.MachineID, domain.ID(f.workerInstance))
+			if reconnected.Id != claimed.Id || reconnected.Revision != claimed.Revision || !bytes.Equal(reconnected.DocumentJson, claimed.DocumentJson) {
+				t.Fatal("reconnect changed the original compaction claim")
+			}
 			// Exercise every fresh authority reader at the admitted large bound.
 			// Codex also uses a synchronized non-Direct route, without upstream I/O.
 			routeID := domain.NewID()
@@ -224,28 +241,6 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 			}
 		})
 	}
-}
-
-func claimQueuedCompaction(t *testing.T, f *firstDispatchFixture, resource *pb.Resource) *pb.Resource {
-	t.Helper()
-	var claimed store.Record
-	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.large-compaction-claim", nil, func(tx *store.Tx) (any, error) {
-		r, err := tx.Get(domain.JobKind, domain.ID(resource.Id))
-		if err != nil {
-			return nil, err
-		}
-		job, err := store.Decode[domain.Job](r)
-		if err != nil {
-			return nil, err
-		}
-		job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, domain.ID(f.workerInstance), f.workerDevice
-		claimed, err = tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
-		return nil, err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return resourceForTest(claimed)
 }
 
 // Controlled protected-state fixture: configure a completed synthetic original

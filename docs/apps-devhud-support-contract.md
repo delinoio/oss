@@ -10,9 +10,13 @@ For diagnostics, ask the user to preview the exact redacted payload first. Guest
 
 CI results, generated SBOMs/provenance, dry package layouts, and release fixtures are validation evidence only. They do not prove that an artifact was signed, uploaded, deployed, approved by a store, exposed by the updater, or made public. Never cite a green CI run as public availability; confirm the exact coordinated release state through the operations contract.
 
+Chrome public availability requires `PUBLISHED`, the exact version, and 100 percent deployment. `PUBLISHED_TO_TESTERS` and unknown or missing states are insufficient. A known `takenDown` flag blocks automated release checks and actions with a stable redacted error. Preserve the withdrawal refusal for an exact published revision at 100 percent regardless of its state, including states that cannot certify public availability; refer recovery to the accountable maintainer without copying private provider responses.
+
 PR CI deliberately defers the ten desktop and seven mobile packaging entries while retaining affected tests, static mobile/widget checks, deterministic frontend output, CEF pins, and OCI validation. Related main pushes run Windows/Linux desktop and Android native entries; macOS desktop and iOS native evidence comes from unconditional manual CI or the exact signed private candidate. The candidate requires both Mac desktop packages, signed iOS arm64, and arm64/x64 simulator builds. Consult the execution-plan summary: `CI Result` accepts only planned skips and fails on missing, failed, cancelled, or unexpectedly skipped validation.
 
 A clean-checkout API or sweeper compile that reports missing embedded administrator assets is a build-prerequisite failure, not a runtime service incident. Re-run the repository-owned `pnpm --filter devhud-admin build:embedded` generator/verifier or the Docker build boundary; never recover by committing or copying a `dist` tree from another checkout.
+
+For CEF comparison triage, inspect the maintainer summary and its 35-day bounded metadata artifact. The summary includes committed/upstream revisions, comparison status and counts, retained/total signal counts, and any truncation marker. A summary failure skips the subsequent report upload. Synthetic summary fixtures prove local parsing and metadata output only; confirm the exact hosted run before claiming comparison or upload success. Raw commit messages, credentials, and native content remain excluded.
 
 ## Upload, deletion, and audit cases
 

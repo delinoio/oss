@@ -22,6 +22,7 @@ cef = { version = "=151.8.1", optional = true }
 rfd = { version = "=0.16.0", default-features = false, features = ["xdg-portal", "tokio"], optional = true }
 base64 = "0.22.1"
 dirs = "6"
+sys-locale = "=0.3.2"
 raw-window-handle = { version = "=0.6.2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

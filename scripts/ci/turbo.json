@@ -213,6 +213,19 @@
         "GITHUB_SHA"
       ]
     },
+    "ci:windows-signature": {
+      "cache": false,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.github/workflows/package-devhud-private.yml",
+        "$TURBO_ROOT$/scripts/release/devhud-private-workflow.test.mjs",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "passThroughEnv": ["GOCACHE", "GOPATH", "GOFLAGS"]
+    },
     "ci:go:format": {
       "cache": true,
       "dependsOn": [],
@@ -329,7 +342,10 @@
         "$TURBO_ROOT$/**/*.rs",
         "$TURBO_ROOT$/Cargo.toml",
         "$TURBO_ROOT$/**/Cargo.toml",
-        "$TURBO_ROOT$/rustfmt.toml"
+        "!.turbo/**",
+        "!$TURBO_ROOT$/**/.turbo/**",
+        "$TURBO_ROOT$/**/.rustfmt.toml",
+        "$TURBO_ROOT$/**/rustfmt.toml"
       ],
       "outputs": [],
       "env": [
@@ -346,6 +362,15 @@
         "npm_execpath",
         "RUNNER_TEMP",
         "GITHUB_SHA"
+      ]
+    },
+    "ci:rust:fmt-fixture": {
+      "cache": false,
+      "dependsOn": [],
+      "outputs": [],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME"
       ]
     },
     "ci:rust:clippy": {
@@ -520,6 +545,11 @@
         "GITHUB_SHA",
         "FORGE_RENDER_ARTIFACTS"
       ]
+    },
+    "ci:proto:launcher": {
+      "cache": false,
+      "dependsOn": [],
+      "outputs": []
     },
     "ci:proto:lint": {
       "cache": true,
