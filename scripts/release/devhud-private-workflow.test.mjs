@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
-const workflow = readFileSync(fileURLToPath(new URL("../../.github/workflows/package-devhud-private.yml", import.meta.url)), "utf8");
+const workflow = readFileSync(fileURLToPath(new URL("../../.github/workflows/package-devhud-private.yml", import.meta.url)), "utf8").replaceAll("\r\n", "\n");
 const apiDockerfile = readFileSync(fileURLToPath(new URL("../../servers/devhud-api/Dockerfile", import.meta.url)), "utf8");
 const windowsStep = yaml.load(workflow).jobs.desktop.steps.find(({ name }) => name === "Normalize and validate Windows artifact and lifecycle");
 const signatureGuard = 'if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed with exit code $LASTEXITCODE" }';
