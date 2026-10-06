@@ -8,7 +8,7 @@ import { configure, fireEvent, render, screen, waitFor, within } from "@testing-
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type ListResourcesRequest, type SaveConfigurationRequest, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationEditor, ConfigurationEditorPresentation, Settings } from "./settings";
-import { newConfiguration } from "./configuration-fields";
+import { newConfiguration, ServerPreferenceSection } from "./configuration-fields";
 import { encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
 
@@ -42,12 +42,145 @@ function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise
   return { list, save, get, client, transport, makeTransport, view };
 }
 function choosePreferences() { fireEvent.click(screen.getByRole("button", { name: "Server preferences" })); }
+function chooseGit() { fireEvent.click(screen.getByRole("button", { name: "Git" })); }
+function automaticFetch() { return screen.getByLabelText("Allow automatic fetch before Worktree preparation") as HTMLInputElement; }
 function details() { return screen.getByText("Remediation details").closest("details")!; }
 
 const known = { default_routing: "priority", automatic_fetch: false, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } };
 function saveButton() { return screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement; }
 function discardButton() { return screen.getByRole("button", { name: "Discard changes" }) as HTMLButtonElement; }
 function routing() { return screen.getByLabelText("Default account routing") as HTMLSelectElement; }
+
+it.each([true, false])("opens the scoped Git form directly without writes, empty: %s", async empty => {
+  const row = resource(EntityKind.SETTINGS, known), value = fixture(empty ? [] : [row]);
+  render(value.view(<Settings />)); chooseGit();
+  const form = await screen.findByRole("form", { name: "Git workflow form" });
+  expect(automaticFetch().checked).toBe(empty);
+  expect(screen.getAllByRole("checkbox")).toHaveLength(4); expect(details().open).toBe(false);
+  expect(screen.queryByLabelText("Default account routing")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Network settings" })).toBeNull();
+  for (const label of ["New Git workflow", "Edit Git workflow", "Delete Git workflow", "Cancel edit"]) expect(screen.queryByRole("button", { name: label })).toBeNull();
+  expect(screen.queryByText("Saved git workflow")).toBeNull(); expect(screen.queryByRole("dialog")).toBeNull();
+  expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(true);
+  fireEvent.click(automaticFetch()); expect(saveButton().disabled).toBe(false);
+  fireEvent.click(discardButton()); expect(automaticFetch().checked).toBe(empty);
+  expect(screen.getByRole("form")).toBe(form); expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([Code.PermissionDenied, Code.Unavailable])("does not admit Git defaults after an initial %s failure", async code => {
+  const value = fixture([], () => { throw new ConnectError("Fixture read failure", code); });
+  render(value.view(<Settings />)); chooseGit(); await screen.findByRole("alert");
+  expect(screen.queryByRole("form")).toBeNull(); expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each(["empty-continuation", "singleton-continuation", "multiple", "unsupported"])("retains Git identities without admitting an editor for %s", async variant => {
+  const rows = variant === "empty-continuation" ? [] : [resource(EntityKind.SETTINGS, known)];
+  if (variant === "multiple") rows.push(resource(EntityKind.SETTINGS, known));
+  if (variant === "unsupported") rows[0].schemaVersion = 2;
+  const value = fixture(rows, () => ({ resources: rows, nextPageToken: variant.endsWith("continuation") ? "opaque-page-2" : "" }));
+  render(value.view(<Settings />)); chooseGit(); await screen.findByRole("region", { name: "Git workflow unavailable" });
+  for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
+  expect(screen.queryByRole("form")).toBeNull(); expect(value.save).not.toHaveBeenCalled();
+  if (variant.endsWith("continuation")) {
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByRole("form")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "First page" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(true));
+  }
+});
+
+it("retains a dirty Git draft and disclosure through failed refresh and reconnect", async () => {
+  let fail = false;
+  const rows = [resource(EntityKind.SETTINGS, known)];
+  const value = fixture(rows, () => {
+    if (fail) throw new ConnectError("Refresh unavailable", Code.Unavailable);
+    return { resources: rows };
+  });
+  const view = render(value.view(<Settings />)); chooseGit(); const form = await screen.findByRole("form");
+  fireEvent.click(automaticFetch()); details().open = true;
+  fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh Git workflow" }));
+  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.getByRole("form")).toBe(form); expect(automaticFetch().checked).toBe(true); expect(details().open).toBe(true);
+  expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(false);
+  fail = false; view.rerender(value.view(<Settings />, value.makeTransport()));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Git workflow" }));
+  await waitFor(() => expect(saveButton().disabled).toBe(false));
+  expect(screen.getByRole("form")).toBe(form); expect(details().open).toBe(true); expect(value.save).not.toHaveBeenCalled();
+});
+
+it("discards Git revision drift into the latest full document and preserves hidden values", async () => {
+  const original = resource(EntityKind.SETTINGS, known), rows = [original], value = fixture(rows);
+  render(value.view(<Settings />)); chooseGit(); await screen.findByRole("form");
+  fireEvent.click(automaticFetch());
+  const latest = { ...known, default_routing: "fixed", retained_extension: { value: "keep" }, remediation: { ...known.remediation, attempt_limit: 11 } };
+  rows[0] = { ...original, revision: 9n, documentJson: encode(latest) };
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Git workflow" }));
+  await screen.findByText(/Git workflow changed elsewhere/);
+  expect(automaticFetch().checked).toBe(true); expect(saveButton().disabled).toBe(true);
+  fireEvent.click(discardButton()); expect(automaticFetch().checked).toBe(false);
+  fireEvent.click(automaticFetch()); await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  expect(value.save.mock.calls[0][0].mutation).toMatchObject({ id: original.id, expectedRevision: 9n });
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson))).toEqual({ ...latest, automatic_fetch: true });
+});
+
+it("freezes the Git draft and discard until the original uncertain save is retried", async () => {
+  const value = fixture([resource(EntityKind.SETTINGS, known)]);
+  value.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
+  render(value.view(<Settings />)); chooseGit(); await screen.findByRole("form");
+  fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
+  const retry = await screen.findByRole("button", { name: "Retry the same configuration" });
+  expect(automaticFetch().matches(":disabled")).toBe(true); expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(true);
+  fireEvent.click(retry); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
+  await waitFor(() => expect(screen.queryByText("Save outcome unknown.")).toBeNull());
+  expect(automaticFetch().checked).toBe(true);
+});
+
+it("blocks a fresh Git save after a typed revision rejection until explicit discard", async () => {
+  const original = resource(EntityKind.SETTINGS, known), rows = [original], value = fixture(rows);
+  value.save.mockImplementationOnce(async () => {
+    rows[0] = { ...original, revision: 9n, documentJson: encode({ ...known, default_routing: "fixed" }) };
+    throw new ConnectError("Revision conflict", Code.Aborted);
+  });
+  render(value.view(<Settings />)); chooseGit(); await screen.findByRole("form");
+  fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
+  await screen.findByText(/Git workflow changed elsewhere/);
+  expect(automaticFetch().checked).toBe(true); expect(saveButton().disabled).toBe(true);
+  fireEvent.click(discardButton()); expect(automaticFetch().checked).toBe(false);
+  fireEvent.click(automaticFetch()); await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0].mutation).toMatchObject({ id: original.id, expectedRevision: 9n });
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[1][0].documentJson)).default_routing).toBe("fixed");
+});
+
+it("keeps the Git save result authoritative over an older pending read", async () => {
+  const original = resource(EntityKind.SETTINGS, known), value = fixture([original]);
+  let resolve!: (response: { resource: Resource }) => void;
+  value.get.mockImplementation(() => new Promise(done => { resolve = done; }));
+  render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} initial={original} serverPreferenceSection={ServerPreferenceSection.GitWorkflow} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{ complete: true, resource: original, fetching: false }} active saved={() => {}} cancel={() => {}} />));
+  const form = screen.getByRole("form", { name: "Git workflow form" });
+  fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
+  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  resolve({ resource: original }); await waitFor(() => expect(value.client.isFetching()).toBe(0));
+  expect(automaticFetch().checked).toBe(true); expect(screen.getByRole("form")).toBe(form);
+  expect(screen.queryByText(/changed elsewhere/)).toBeNull();
+  fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[1][0].mutation).toMatchObject({ id: original.id, expectedRevision: 9n });
+});
+
+it("disposes a Git draft and disclosure on category departure while preserving saved settings", async () => {
+  const value = fixture([resource(EntityKind.SETTINGS, known)]);
+  render(value.view(<Settings />)); chooseGit(); await screen.findByRole("form");
+  fireEvent.click(automaticFetch()); details().open = true;
+  choosePreferences(); await screen.findByLabelText("Default account routing");
+  expect(screen.queryByText("Remediation details")).toBeNull();
+  chooseGit(); await screen.findByRole("form", { name: "Git workflow form" });
+  expect(automaticFetch().checked).toBe(false); expect(details().open).toBe(false);
+  expect(saveButton().disabled).toBe(true); expect(value.save).not.toHaveBeenCalled();
+});
 
 it("shows an ordinary form only after a complete empty read without creating settings", async () => {
   let resolve!: (value: Page) => void;
@@ -60,8 +193,8 @@ it("shows an ordinary form only after a complete empty read without creating set
   resolve({ resources: [] });
   const form = await screen.findByRole("form", { name: "Server preferences form" });
   expect(routing().value).toBe("sequential-exhaustion");
-  expect(screen.getAllByRole("checkbox")).toHaveLength(4);
-  expect(details().open).toBe(false);
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.queryByText("Remediation details")).toBeNull();
   expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(true);
   expect(screen.queryByText("No saved server preferences")).toBeNull();
   expect(screen.queryByRole("heading", { name: /New Server|Edit Server/ })).toBeNull();
@@ -98,7 +231,7 @@ it("opens saved values directly with no New, Edit, summary or deletion workflow"
   const row = resource(EntityKind.SETTINGS, known), value = fixture([row]);
   render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
   expect(routing().value).toBe("priority");
-  expect((screen.getByLabelText("Allow reference fetches after the initial Worktree clone") as HTMLInputElement).checked).toBe(false);
+  expect(screen.queryByLabelText("Allow automatic fetch before Worktree preparation")).toBeNull();
   for (const label of ["New Server preferences", "Edit Server preferences", "Delete Server preferences"]) expect(screen.queryByRole("button", { name: label })).toBeNull();
   expect(screen.queryByText("Saved server preferences")).toBeNull(); expect(saveButton().disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
@@ -121,12 +254,11 @@ it.each([true, false])("preserves the mounted dirty form through refresh failure
   const value = fixture(rows, () => fail ? new Promise<Page>((_resolve, rejection) => { reject = rejection; }) : { resources: rows });
   render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
   fireEvent.change(routing(), { target: { value: "fixed" } });
-  details().open = true;
   fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByText("Refreshing server preferences…"); expect(saveButton().disabled).toBe(true);
   reject(new ConnectError("Refresh unavailable", Code.Unavailable));
   await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
-  expect(screen.getByRole("form")).toBe(form); expect(routing().value).toBe("fixed"); expect(details().open).toBe(true);
+  expect(screen.getByRole("form")).toBe(form); expect(routing().value).toBe("fixed");
   expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(false);
   fail = false; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await waitFor(() => expect(saveButton().disabled).toBe(false)); expect(routing().value).toBe("fixed");
@@ -134,19 +266,19 @@ it.each([true, false])("preserves the mounted dirty form through refresh failure
 });
 
 it("adopts the first save and keeps the same form, disclosure and singleton for another save", async () => {
-  const value = fixture(); render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
+  const value = fixture(); render(value.view(<Settings />)); chooseGit(); const form = await screen.findByRole("form");
   details().open = true;
-  fireEvent.change(routing(), { target: { value: "priority" } }); fireEvent.click(saveButton());
+  fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
   expect(screen.getByRole("form")).toBe(form); expect(details().open).toBe(true); expect(saveButton().disabled).toBe(true);
   const first = (await value.save.mock.results[0].value).resource;
-  fireEvent.click(screen.getByLabelText("Allow reference fetches after the initial Worktree clone"));
+  fireEvent.click(screen.getByLabelText("Automatically fix required CI failures"));
   await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[1][0].mutation).toMatchObject({ id: first.id, expectedRevision: first.revision });
   expect(screen.getByRole("form")).toBe(form);
-  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[1][0].documentJson))).toEqual({ ...newConfiguration(EntityKind.SETTINGS), default_routing: "priority", automatic_fetch: false });
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[1][0].documentJson))).toEqual({ ...newConfiguration(EntityKind.SETTINGS), automatic_fetch: false, remediation: { ...newConfiguration(EntityKind.SETTINGS).remediation as Document, ci_failure: true } });
 });
 
 it("retains a changed draft on external revision drift and discards into the latest full document", async () => {
@@ -257,18 +389,18 @@ it("keeps a retained draft read-only when refresh finds unsupported settings", a
   expect(value.save).not.toHaveBeenCalled();
 });
 
-it("retains the inline draft and disclosure across same-identity transport replacement", async () => {
+it("retains the inline draft across same-identity transport replacement", async () => {
   const value = fixture([resource(EntityKind.SETTINGS, known)]);
   const view = render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
-  fireEvent.change(routing(), { target: { value: "fixed" } }); details().open = true;
+  fireEvent.change(routing(), { target: { value: "fixed" } });
   view.rerender(value.view(<Settings />, value.makeTransport()));
   await waitFor(() => expect(value.client.isFetching()).toBe(0));
-  expect(screen.getByRole("form")).toBe(form); expect(routing().value).toBe("fixed"); expect(details().open).toBe(true);
+  expect(screen.getByRole("form")).toBe(form); expect(routing().value).toBe("fixed");
   expect(value.save).not.toHaveBeenCalled();
 });
 
 it("opens inline remediation details and focuses their first invalid control before saving", async () => {
-  const value = fixture(); render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+  const value = fixture(); render(value.view(<Settings />)); chooseGit(); await screen.findByRole("form");
   details().open = true;
   const limit = screen.getByLabelText("Consecutive automatic attempt limit");
   fireEvent.change(limit, { target: { value: "0" } }); details().open = false;
@@ -346,17 +478,17 @@ it("retains a draft after revision drift and blocks a fresh save", async () => {
 it("disposes a changed disclosure and ignores a late save in a replacement visit", async () => {
   const value = fixture(); let resolve!: (response: { resource: Resource }) => void;
   value.save.mockImplementation(() => new Promise(done => { resolve = done; }));
-  const view = render(value.view(<Settings visible />)); choosePreferences(); await screen.findByRole("form");
+  const view = render(value.view(<Settings visible />)); chooseGit(); await screen.findByRole("form");
   details().open = true; fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "11" } });
   fireEvent.click(saveButton()); await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   expect(discardButton().disabled).toBe(true);
   view.rerender(value.view(<Settings visible={false} />)); view.rerender(value.view(<Settings visible />));
   expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
-  choosePreferences(); await screen.findByRole("form");
+  chooseGit(); await screen.findByRole("form");
   resolve({ resource: resource(EntityKind.SETTINGS, known) }); await waitFor(() => expect(value.client.isMutating()).toBe(0));
   expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
   expect(details().open).toBe(false); expect((screen.getByLabelText("Consecutive automatic attempt limit") as HTMLInputElement).value).toBe("3");
-  expect(routing().value).toBe("sequential-exhaustion"); expect(value.save).toHaveBeenCalledOnce();
+  expect(automaticFetch().checked).toBe(true); expect(value.save).toHaveBeenCalledOnce();
 });
 
 it("ignores a late prior read after its Settings visit was replaced", async () => {
