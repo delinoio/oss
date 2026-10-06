@@ -447,7 +447,7 @@
     ],
     "native": true
   },
-  "devhud-protocol": {
+  "delidev-protocol": {
     "paths": [
       ".npmrc",
       ".nvmrc",
@@ -459,13 +459,10 @@
       "go.sum",
       "package.json",
       "packages/delidev-api-client/**",
-      "packages/devhud-api-client/**",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       "protos/delidev/**",
-      "protos/devhud/**",
       "protos/gen/go/delidev/**",
-      "protos/gen/go/devhud/**",
       "scripts/check-proto-breaking.sh",
       "turbo.json",
       "scripts/delidev/**"

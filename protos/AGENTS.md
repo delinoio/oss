@@ -1,3 +1,5 @@
+- DeliDev remote-first repositories reserve System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1` on main before activation. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; reservations alone grant no support or Git authority.
+
 - DeliDev Agent Worker source routes reserve System capability 36 and SaveAgentWorkerRequest.route_models field 5 before dependent implementation. Preserve capability 35 and every existing allocation; reservations alone grant no support.
 
 ### Instructions for `protos/`
