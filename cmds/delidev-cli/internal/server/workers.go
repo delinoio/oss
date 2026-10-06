@@ -520,11 +520,10 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					}
 					return rpc.Error(err, correlation)
 				}
-				if err := domain.Decode(result.Data, &record); err != nil {
-					return rpc.Error(err, correlation)
-				}
-				job, err = store.Decode[domain.Job](record)
+				claimID := record.ID
+				record, job, err = decodeWorkerClaim(result.Data)
 				if err != nil {
+					s.logger.WarnContext(ctx, "worker claim receipt rejected", "machine_id", machine, "job_id", claimID, "code", domain.SafeError(err).Code)
 					return rpc.Error(err, correlation)
 				}
 			}
