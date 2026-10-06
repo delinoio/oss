@@ -117,11 +117,11 @@ export function useAccountOAuth() {
       const result = await service.startAccountOAuth({ provider: { id: value.provider.providerId, expectedRevision: value.provider.provider.revision, requestId: value.startId }, callbackUrl: value.callback, google: value.quotaProject ? { quotaProjectId: value.quotaProject } : undefined });
       if (!current(value)) return;
       if (result.requestId !== value.startId) throw new Error("start receipt");
+      value.attempt = checkedAttempt(result.attempt, value);
       const device = profileOf(value.provider) === AccountOAuthProfile.Baseten;
       if (profileOf(value.provider) !== AccountOAuthProfile.OpenRouter && result.flow !== (device ? WireOAuthFlow.ACCOUNT_OAUTH_FLOW_DEVICE : WireOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE)) throw new Error("OAuth flow");
       if (device && result.userCode && (!/^[!-~]{1,64}$/.test(result.userCode))) throw new Error("Device user code");
       if (!device && result.userCode) throw new Error("Unexpected Device code");
-      value.attempt = checkedAttempt(result.attempt, value);
  value.userCode = device && value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION ? result.userCode : undefined;
       setView({ provider: value.provider, stage: stage(value.attempt.state), attempt: value.attempt, userCode:value.userCode });
       if (value.attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION && result.authorizationUrl && !value.bound) {

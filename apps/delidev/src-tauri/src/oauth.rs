@@ -829,16 +829,15 @@ fn parse_request_profile(
                 return None;
             }
         }
-        if api == Some(OAuthProfile::GoogleGemini) {
-            if fields
+        if api == Some(OAuthProfile::GoogleGemini)
+            && (fields
                 .get("authuser")
                 .is_some_and(|v| v.len() > 2 || !v.iter().all(u8::is_ascii_digit))
                 || fields
                     .get("prompt")
-                    .is_some_and(|v| !matches!(v.as_slice(), b"consent" | b"none"))
-            {
-                return None;
-            }
+                    .is_some_and(|v| !matches!(v.as_slice(), b"consent" | b"none")))
+        {
+            return None;
         }
         let supplied = fields.get("state")?;
         if (!fields.contains_key("code")

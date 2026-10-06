@@ -243,3 +243,5 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - Gemini PKCE Start requires an immutable valid quota project in the original receipt. Resolve access token/project together for inspection and execution without changing public connection identity; pending public registration remains disabled. Follow `docs/cmds-delidev-account-oauth-contract.md`.
 
 - Baseten Device Start owns the durable dispatch UUID before authorize, one live joined account-check job and ephemeral Device bytes. Poll only explicit pending/slow_down; uncertainty, cancellation, changed authority and restart cannot resume it. Reuse the private Go token result in protected completion; public Complete cannot create Device exchange authority. Status exposes only the already claimed original completion receipt for explicit code-free recovery under the account OAuth contract.
+
+- OAuth completion/recovery rechecks the original adapter, with version 1 exclusive to OpenRouter. Protected local recovery and publication require exact private client digest, quota project and staging generation; another accepted preset or replacement registration cannot adopt that result.
