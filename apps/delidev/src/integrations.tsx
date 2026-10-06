@@ -2,12 +2,13 @@ import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-pres
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { EntityKind, FailureCode, IntegrationQuery, ResourceQuery, clientFailure, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, IntegrationQuery, ResourceQuery, SystemCapability, SystemQuery, clientFailure, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import { GitHubTokenForm } from "./github-opening";
 import { useSettingsOpening } from "./settings-lifetime";
+import { GitHubOnboarding, type GitHubTokenRetry } from "./github-onboarding";
 
 enum TokenKind { FineGrained = "fine-grained", Classic = "classic" }
 enum IdentityState {
@@ -73,15 +74,26 @@ function IntegrationEditor({ initial, active, close }: { initial?: Resource; act
     <div className="actions"><button className="primary" disabled={blocked || stale || Boolean(current.error)}>Save profile</button>{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same profile save</button> : null}<button type="button" disabled={blocked} onClick={close}>Cancel edit</button></div>
   </form>;
 }
-function IntegrationConnection({ initial, active, close }: { initial: Resource; active: boolean; close: () => void }) {
+function IntegrationCreation({ active, close, connected }: { active: boolean; close: () => void; connected: (profile: Resource, retry?: GitHubTokenRetry, problem?: Document) => void }) {
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active, retry: false });
+  const negotiated = useRef<boolean | undefined>(undefined);
+  const capabilities = status.data?.capabilities;
+  const supported = !status.error && capabilities?.includes(SystemCapability.GITHUB_TOKEN_ONBOARDING_V1) && new Set(capabilities).size === capabilities.length && capabilities.every(value => value !== SystemCapability.UNSPECIFIED && Object.values(SystemCapability).includes(value));
+  // Keep a settled older-server editor mounted across inactive query states so
+  // its exact metadata retry cannot be replaced by the negotiation placeholder.
+  if (!status.isPending) negotiated.current = Boolean(supported);
+  if (negotiated.current === undefined) return <><SettingsLoading label="Checking GitHub connection support…" /><button onClick={close}>Cancel</button></>;
+  return negotiated.current ? <GitHubOnboarding active={active} close={close} connected={connected} /> : <><p role="status">Update the selected server to verify a token before creating a profile. You can still create a profile first below.</p><IntegrationEditor active={active} close={close} /></>;
+}
+function IntegrationConnection({ initial, active, close, initialRetry, initialProblem }: { initial: Resource; active: boolean; close: () => void; initialRetry?: GitHubTokenRetry; initialProblem?: Document }) {
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.INTEGRATION, id: initial.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const current = [initial, result.data?.resource, acknowledged].filter((row): row is Resource => Boolean(row)).reduce((a, b) => a.revision >= b.revision ? a : b);
   const data = document(current), pending = object(data.pending), connection = object(data.connection), validation = object(connection.validation), identity = object(validation.identity);
   const [token, setToken] = useState("");
-  const [retryIdentity, setRetryIdentity] = useState<MutationIdentity>();
+  const [retryIdentity, setRetryIdentity] = useState<MutationIdentity | undefined>(initialRetry);
   const [tokenError, setTokenError] = useState<unknown>();
-  const [problem, setProblem] = useState<Document>();
+  const [problem, setProblem] = useState<Document | undefined>(initialProblem);
   const [confirm, setConfirm] = useState(false);
   const opening = useSettingsOpening();
   const initiallyExplainToken = useRef(!document(initial).connection);
@@ -147,19 +159,23 @@ function IntegrationConnection({ initial, active, close }: { initial: Resource; 
 export function Integrations({ active, showCategoryIntro = true, onWorkflowReadyChange }: { active: boolean; showCategoryIntro?: boolean; onWorkflowReadyChange?: (active: boolean) => void }) {
   const [page, setPage] = useState("");
   const [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
-  const [selected, setSelected] = useState<Resource>();
+  const [selected, setSelected] = useState<{ profile: Resource; retry?: GitHubTokenRetry; problem?: Document }>();
+  const createButton = useRef<HTMLButtonElement>(null);
+  const returning = useRef(false);
   const client = useQueryClient();
   const result = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.INTEGRATION, pageSize: 50, pageToken: page } }, { enabled: active });
-  const done = () => { setEditing(undefined); setSelected(undefined); void client.invalidateQueries({ refetchType: "active" }); };
+  const done = () => { returning.current = true; setEditing(undefined); setSelected(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   useEffect(() => {
     onWorkflowReadyChange?.(Boolean(editing || selected));
     return () => onWorkflowReadyChange?.(false);
   }, [editing, onWorkflowReadyChange, selected]);
+  useEffect(() => { if (returning.current && !editing && !selected) { returning.current = false; createButton.current?.focus(); } }, [editing, selected]);
+  const connected = (profile: Resource, retry?: GitHubTokenRetry, problem?: Document) => { setEditing(undefined); setSelected({ profile, retry, problem }); void client.invalidateQueries({ refetchType: "active" }); };
   const successfulEmpty = Boolean(result.data && !result.error && !page && result.data.resources.length === 0 && !result.data.nextPageToken);
-  const createProfile = <button className="primary" onClick={() => setEditing({ key: newRequestId() })}><span aria-hidden="true">+ </span>New GitHub profile</button>;
+  const createProfile = <button ref={createButton} className="primary" onClick={() => setEditing({ key: newRequestId() })}><span aria-hidden="true">+ </span>New GitHub profile</button>;
   return <section className="github-integrations" aria-label="GitHub integrations">
     {showCategoryIntro ? <SettingsHeading title="Integrations" description="Manage GitHub profiles for repository access. AI accounts are configured separately." actions={!editing && !selected ? <><button aria-label="Refresh GitHub profiles" onClick={() => void result.refetch()}>Refresh</button>{createProfile}</> : undefined} /> : null}
-    {editing ? <IntegrationEditor key={editing.key} initial={editing.initial} active={active} close={done} /> : selected ? <IntegrationConnection key={selected.id} initial={selected} active={active} close={done} /> : <>
+    {editing ? editing.initial ? <IntegrationEditor key={editing.key} initial={editing.initial} active={active} close={done} /> : <IntegrationCreation key={editing.key} active={active} close={done} connected={connected} /> : selected ? <IntegrationConnection key={selected.profile.id} initial={selected.profile} initialRetry={selected.retry} initialProblem={selected.problem} active={active} close={done} /> : <>
       <section className="integration-panel" aria-label="GitHub profiles" aria-busy={result.isFetching}>
         <header className="integration-panel-header"><div className="integration-provider"><span className="integration-provider-mark"><IntegrationIcon kind={IntegrationIconKind.GitHub} /></span><div><h3>GitHub</h3><p>GitHub.com · Personal access tokens</p></div></div>
           {!showCategoryIntro ? <div className="actions"><button aria-label="Refresh GitHub profiles" onClick={() => void result.refetch()}>Refresh</button>{createProfile}</div> : null}
@@ -169,14 +185,14 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
           {result.data && result.isFetching ? <p role="status">Refreshing GitHub profiles… Previous results are shown.</p> : null}
           <Problem error={result.error} />
           {result.data && result.error ? <p role="status">Previous GitHub profile results are stale because the refresh failed.</p> : null}
-          {successfulEmpty ? <SettingsEmpty title="Add your first GitHub profile" icon={<IntegrationIcon kind={IntegrationIconKind.Link} />}><p>Create a named profile, then connect a personal access token.</p><p>Each repository selects its profile explicitly.</p></SettingsEmpty> : <>
+          {successfulEmpty ? <SettingsEmpty title="Add your first GitHub profile" icon={<IntegrationIcon kind={IntegrationIconKind.Link} />}><p>Enter a personal access token, verify your GitHub username, then save your profile.</p><p>Each repository selects its profile explicitly.</p></SettingsEmpty> : <>
             {result.data?.resources.map((row) => <article className="integration-row" key={row.id}><div><h3>{resourceName(row)}</h3><p className="integration-secondary">{profileDescription(document(row))}</p><ProfileFacts profile={row} /></div>
-              <div className="actions"><button aria-label={`Manage ${resourceName(row)}`} disabled={row.schemaVersion !== 1} onClick={() => setSelected(row)}>Manage</button><button aria-label={`Rename ${resourceName(row)}`} disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Rename</button></div>
+              <div className="actions"><button aria-label={`Manage ${resourceName(row)}`} disabled={row.schemaVersion !== 1} onClick={() => setSelected({ profile: row })}>Manage</button><button aria-label={`Rename ${resourceName(row)}`} disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Rename</button></div>
             </article>)}
             {result.data?.resources.length === 0 ? <p>No GitHub profiles on this page.</p> : null}
           </>}
         </div>
-        {successfulEmpty ? <ol className="integration-steps" aria-label="GitHub profile setup explanation"><li>Create a profile</li><li>Connect a token</li><li>Select it in Repositories</li></ol> : null}
+        {successfulEmpty ? <ol className="integration-steps" aria-label="GitHub profile setup explanation"><li>Verify a token</li><li>Confirm your profile</li><li>Select it in Repositories</li></ol> : null}
         <p className="integration-access-note">Identity verification does not confirm repository access.</p>
       </section>
       <p className="integration-storage-note"><IntegrationIcon kind={IntegrationIconKind.Shield} /><span>{tokenStorageNote}</span></p>
