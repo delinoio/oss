@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const outcomes = new Set(["pass", "fail", "skip"]);
 const diagnosticLimit = 1024 * 1024;
 const packageName = /^[A-Za-z0-9._~+/-]+$/u;
-const testName = /^(?:Test|Example|Fuzz)[A-Za-z0-9_]*$/u;
+const testName = /^(?:Test|Example|Fuzz)[\p{L}\p{Nd}_]*$/u;
 const goHarnessOutput = /^(?:=== (?:RUN|PAUSE|CONT|NAME)\s+\S.*|--- (?:PASS|FAIL|SKIP):\s+\S+\s+\(\d+(?:\.\d+)?s\)|(?:ok|FAIL)\s+\S+\s+(?:\d+(?:\.\d+)?s|\(cached\))|(?:PASS|FAIL))\r?\n?$/u;
 
 export function testTimings({ log = console.log, output = (text) => process.stdout.write(text) } = {}) {
@@ -33,6 +33,21 @@ export function testTimings({ log = console.log, output = (text) => process.stdo
     if (!packageDiagnostics) return;
     packageDiagnostics.buckets.delete(test ?? "");
     if (packageDiagnostics.buckets.size === 0) diagnostics.delete(name);
+  };
+  const flushDiagnostics = (name) => {
+    const packageDiagnostics = diagnostics.get(name);
+    const record = packages.get(name);
+    if (!packageDiagnostics || !record) return;
+    const entries = [...packageDiagnostics.buckets.values()].flatMap((bucket) => bucket.entries)
+      .filter((entry) => {
+        const result = entry.test ? record.tests.get(entry.test)?.result : record.result;
+        return result === "fail" || result === "incomplete";
+      }).sort((a, b) => a.sequence - b.sequence);
+    if (entries.some((entry) => packageDiagnostics.buckets.get(entry.test ?? "").truncated)) {
+      log(JSON.stringify({ event: "ci_go_test_diagnostics_truncated", package: name, limitBytes: diagnosticLimit }));
+    }
+    for (const entry of entries) output(entry.text.toString("utf8"));
+    diagnostics.delete(name);
   };
   return {
     line(line) {
@@ -82,24 +97,13 @@ export function testTimings({ log = console.log, output = (text) => process.stdo
         record.result = event.Action;
         record.elapsedSeconds = elapsedSeconds;
         if (event.Action === "fail") {
-          const packageDiagnostics = diagnostics.get(event.Package);
-          const entries = [...(packageDiagnostics?.buckets.values() ?? [])].flatMap((bucket) => bucket.entries)
-            .filter((entry) => {
-              const result = record.tests.get(entry.test)?.result;
-              return !entry.test || result === "fail" || result === "incomplete";
-            }).sort((a, b) => a.sequence - b.sequence);
-          if (entries.some((entry) => packageDiagnostics.buckets.get(entry.test ?? "").truncated)) {
-            log(JSON.stringify({ event: "ci_go_test_diagnostics_truncated", package: event.Package, limitBytes: diagnosticLimit }));
-          }
-          for (const entry of entries) {
-            output(entry.text.toString("utf8"));
-          }
+          flushDiagnostics(event.Package);
         }
-        diagnostics.delete(event.Package);
         log(JSON.stringify({ event: "ci_go_test_package_complete", package: event.Package, result: event.Action, elapsedSeconds, cached: record.cached }));
       }
     },
-    finish() {
+    finish({ flushIncompleteDiagnostics = false } = {}) {
+      if (flushIncompleteDiagnostics) for (const name of diagnostics.keys()) flushDiagnostics(name);
       return { invalid, packages: [...packages.values()].map((record) => ({ ...record, tests: [...record.tests.values()].sort((a, b) => a.test.localeCompare(b.test)) })).sort((a, b) => a.package.localeCompare(b.package)) };
     },
   };
@@ -122,7 +126,7 @@ export async function runTestJson(command, args, options, { log = console.log, o
       // close follows drained stdout, including its final unterminated line.
       child.on("close", (status, signal) => resolveResult({ status, signal, error }));
     });
-    const timings = collector.finish();
+    const timings = collector.finish({ flushIncompleteDiagnostics: result.status !== 0 || result.signal || result.error });
     const incomplete = timings.packages.some((record) => record.result === "incomplete" || record.tests.some((entry) => entry.result === "incomplete"));
     if (timings.invalid || result.status === 0 && (timings.packages.length === 0 || incomplete)) {
       log(JSON.stringify({ event: "ci_go_test_timing_invalid" }));

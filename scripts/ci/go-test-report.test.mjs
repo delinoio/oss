@@ -68,6 +68,20 @@ test("failed and interrupted tests retain bounded diagnostics while successful t
   assert.equal(bounded.output.join("").length, 1024 * 1024);
 });
 
+test("Unicode top-level test names are timed while dynamic subtests remain excluded", () => {
+  const { collector, output } = collect();
+  for (const line of [
+    event("run", { Test: "TestParser日本" }),
+    event("run", { Test: "TestParser日本/private-subtest" }),
+    event("output", { Test: "TestParser日本/private-subtest", Output: "success-secret\n" }),
+    event("pass", { Test: "TestParser日本/private-subtest", Elapsed: 1 }),
+    event("pass", { Test: "TestParser日本", Elapsed: 2 }),
+    event("pass", { Elapsed: 3 }),
+  ]) collector.line(line);
+  assert.deepEqual(collector.finish().packages[0].tests, [{ test: "TestParser日本", result: "pass", elapsedSeconds: 2 }]);
+  assert.deepEqual(output, []);
+});
+
 test("malformed output and invalid durations cannot produce valid timing data", () => {
   for (const line of ["not JSON", "null", event("pass", { Elapsed: -1 }), event("pass", { Elapsed: "1" })]) {
     const { collector } = collect();
@@ -109,6 +123,12 @@ test("streamed child output drains partial final lines and preserves failures, s
   assert.equal(missing.error.code, "ENOENT");
   const signaled = await runTestJson(process.execPath, ["-e", "process.kill(process.pid, 'SIGTERM')"], { shell: false }, { log() {}, output() {} });
   assert.notEqual(signaled.status, 0);
+
+  const interruptedOutput = [];
+  const interruptedPayload = `${event("run", { Test: "TestInterrupted" })}\n${event("output", { Test: "TestInterrupted", Output: "interruption detail\n" })}`;
+  const interrupted = await runTestJson(process.execPath, ["-e", `process.stdout.write(${JSON.stringify(interruptedPayload)}); process.exitCode = 7;`], { shell: false }, { log() {}, output: (text) => interruptedOutput.push(text) });
+  assert.equal(interrupted.status, 7);
+  assert.equal(interruptedOutput.join(""), "interruption detail\n");
 });
 
 test("real Go execution records passing, skipped, failed and incomplete tests with original exit status", async (t) => {
