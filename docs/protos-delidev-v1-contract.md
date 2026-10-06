@@ -20,7 +20,10 @@ before returning. The PAT authorizes Metadata reads only, never Worker Git.
 request ID, machine ID, fresh same-computer Worker token, URL, existing parent
 path, portable directory name and optional exact GitHub profile/repository
 selection. The proof token is transient; only its digest binds the actor-bound
-receipt. The durable `clone-repository` assignment contains non-secret original
+receipt. New admission authenticates that secondary proof in the acceptance
+transaction. An identical receipt replay checks the original product actor and
+input even after Worker retirement; it cannot admit another Clone. The durable
+`clone-repository` assignment contains non-secret original
 Worker/device and selection/generation metadata. Claim revalidates original
 local authority, negotiated Worker capability and current profile selection.
 Accepted routing and once-only Worker journal ownership remain immutable.

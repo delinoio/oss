@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -90,6 +91,50 @@ func TestRepositoryCloneAcceptReplayAndServerRegistration(t *testing.T) {
 	retry, err := client.ReportWork(ctx, ownerRequest(worker, report))
 	if err != nil || !retry.Msg.Replayed {
 		t.Fatal("completion duplicated", err)
+	}
+	request.DirectoryName = "repo"
+	otherClient, otherToken := domain.NewID(), randomCode()
+	verifier := sha256.Sum256([]byte(otherToken))
+	_, err = f.service.Store.Mutate(actor, domain.NewID(), "fixture.clone-client", nil, func(tx *store.Tx) (any, error) {
+		_, err := tx.Put(domain.DeviceKind, otherClient, 0, "", "", domain.Device{Name: "other client", Type: domain.ClientDevice, PairedAt: time.Now().UTC()})
+		if err != nil {
+			return nil, err
+		}
+		return nil, tx.PutCredential(otherClient, verifier[:])
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherRequest := connect.NewRequest(request)
+	otherRequest.Header().Set("Authorization", "Bearer "+otherToken)
+	if _, err := client.CloneRepository(ctx, otherRequest); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("another client adopted the original receipt", err)
+	}
+	_, err = f.service.Store.Mutate(actor, domain.NewID(), "fixture.retire-clone-worker", nil, func(tx *store.Tx) (any, error) {
+		r, err := tx.Get(domain.DeviceKind, domain.ID(paired.Device.Id))
+		if err != nil {
+			return nil, err
+		}
+		d, err := store.Decode[domain.Device](r)
+		if err != nil {
+			return nil, err
+		}
+		d.Revoked = true
+		if _, err = tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d); err != nil {
+			return nil, err
+		}
+		return nil, tx.RevokeCredential(r.ID)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retiredReplay, err := client.CloneRepository(ctx, ownerRequest(f.service.Identity, request))
+	if err != nil || !retiredReplay.Msg.Replayed || retiredReplay.Msg.Job.Id != accepted.Msg.Job.Id {
+		t.Fatal("secondary proof retirement lost the original acknowledgment", err)
+	}
+	request.RequestId = string(domain.NewID())
+	if _, err := client.CloneRepository(ctx, ownerRequest(f.service.Identity, request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("retired proof granted fresh Clone authority", err)
 	}
 }
 func bytesContain(raw []byte, value string) bool { return strings.Contains(string(raw), value) }
