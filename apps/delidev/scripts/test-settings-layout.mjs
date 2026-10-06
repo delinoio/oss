@@ -17,7 +17,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [960,640], [640,480]];
-let checked = 0, formsChecked = 0;
+let checked = 0, formsChecked = 0, keyboardChecks = 0;
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 try {
   const build = await createRsbuild({ cwd: app, rsbuildConfig: { plugins: [pluginReact()], source: { entry: { index: join(app, "src/settings-layout.fixture.tsx") } }, html: { template: join(app, "index.html") }, output: { distPath: { root: directory }, assetPrefix: "/", sourceMap: false, cleanDistPath: true } } });
@@ -120,19 +120,30 @@ try {
           continue;
         }
         if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
-        const form = page.locator(".settings-content form:visible"); await form.waitFor();
-        assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
-        assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
-        assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
-        assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
-        if (category === "Agent Workers") {
-          assert.equal(await form.locator(".worker-steps li").count(), 4);
-          assert.equal(await form.getByRole("heading", { name: "Harness", exact: true }).count(), 1);
-          assert.equal(await form.getByRole("button", { name: "Save Agent Worker", exact: true }).count(), 0);
+        const dialog = page.getByRole("dialog"); await dialog.waitFor();
+        const form = dialog.locator("form:visible");
+        if (category !== "Repositories") await form.waitFor();
+        const layout = await dialog.evaluate(node => {
+          const box = node.getBoundingClientRect(), header = node.querySelector(".settings-task-header"), footer = node.querySelector(".settings-task-footer"), body = node.querySelector(".settings-task-body");
+          return { width: box.width, left: box.left, right: innerWidth - box.right, height: box.height, overflow: body.scrollWidth > body.clientWidth, title: getComputedStyle(header.querySelector("h2")).fontSize, radius: getComputedStyle(node).borderRadius, footerInside: !footer.getClientRects().length || footer.getBoundingClientRect().bottom <= box.bottom, bodyScroll: getComputedStyle(body).overflowY };
+        });
+        assert(layout.left >= 15.5 && layout.right >= 15.5 && layout.height <= viewport[1] - 47.5 && !layout.overflow && layout.footerInside, `${category} dialog bounds: ${JSON.stringify(layout)}`);
+        assert.equal(layout.title, "20px"); assert.equal(layout.radius, "16px"); assert.equal(layout.bodyScroll, "auto");
+        assert.equal(await page.locator(".settings-content h1:visible").count(), 1, "Mounted background category title");
+        assert.equal(await page.locator("dialog[open]:not([role=region])").count(), 1, "One native dialog");
+        if (category !== "Repositories") {
+          assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline controls preserve whitespace`);
+          assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
         }
+        const close = dialog.locator(".settings-task-close"); await close.focus();
+        for (const key of ["Shift+Tab", "Tab", "Tab"]) {
+          await page.keyboard.press(key);
+          assert(await dialog.evaluate(node => node.contains(document.activeElement)), `${category} ${key} stays in dialog`); keyboardChecks++;
+        }
+        await page.mouse.click(2, 2); assert(await dialog.isVisible(), "Backdrop preserves task");
         formsChecked++;
-        await page.getByRole("button", { name: category === "AI API Keys" ? "Back to AI API Keys" : category === "Notifications" ? "Cancel notification edit" : category === "Agent Workers" ? "Cancel" : "Cancel edit", exact: true }).click();
-        if (category === "AI API Keys" && await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).isVisible()) await page.getByRole("button", { name: "Back to AI API Keys", exact: true }).click();
+        await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+        await page.waitForFunction(() => document.querySelector(".settings-content")?.contains(document.activeElement), { timeout: 2000 }); keyboardChecks++;
       }
     }
   }
@@ -151,7 +162,7 @@ try {
   for (const [width, height] of [[1440,900], [960,640], [640,480]]) {
     await page.setViewportSize({ width, height }); await page.emulateMedia({ colorScheme: "light" });
     await page.goto(`${origin}/?theme=light&github-onboarding=true`);
-    await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Integrations");
+    await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Git Profiles");
     await page.getByRole("button", { name: "New GitHub profile", exact: true }).click();
     const token = page.getByLabel("GitHub personal access token", { exact: true }); await token.waitFor();
     assert(await token.evaluate(node => node === document.activeElement), "Password initial focus");
@@ -178,7 +189,45 @@ try {
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     assert(await page.getByRole("button", { name: "New GitHub profile", exact: true }).evaluate(node => node === document.activeElement), "Cancel restores opener focus");
   }
-  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, themes: githubOnly ? 1 : 3, inventories: githubOnly ? 1 : 2, viewports: githubOnly ? 3 : 6, effectiveZoomChecks: githubOnly ? 0 : 102, onboardingChecks, nativeAcceptance: "not-performed", githubAccountAcceptance: "not-performed" }));
+  if (!githubOnly) {
+  for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
+    await page.setViewportSize({ width: width / 2, height: height / 2 });
+    await page.goto(`${origin}/?theme=${theme}`); await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await select("Projects"); await page.getByRole("button", { name: "New Project", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    assert(await dialog.evaluate(node => { const box = node.getBoundingClientRect(), body = node.querySelector(".settings-task-body"); return box.width <= innerWidth - 31 && box.height <= innerHeight - 47 && body.scrollWidth <= body.clientWidth; }), `${theme} Project dialog effective 200% ${width}`);
+    await page.keyboard.press("Escape"); formsChecked++;
+  }
+  for (const theme of ["light", "dark"]) {
+    await page.setViewportSize({ width: 1280, height: 820 }); await page.goto(`${origin}/?theme=${theme}&populated=true`);
+    await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Projects");
+    await page.getByRole("button", { name: /^Delete Example PROJECT/ }).click();
+    const dialog = page.getByRole("dialog"); await dialog.waitFor();
+    await page.waitForFunction(() => document.activeElement?.textContent === "Keep configuration");
+    assert.equal(await dialog.evaluate(node => Math.round(node.getBoundingClientRect().width)), 480);
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    await select("Backups");
+    const main = page.locator("#main");
+    const position = await main.evaluate(node => { node.scrollTop = 80; return node.scrollTop; });
+    await page.getByRole("button", { name: /^Inspect backup/ }).click(); await dialog.waitFor();
+    await page.getByText("Database integrity and original server identity verified.", { exact: true }).waitFor();
+    assert.equal(await main.evaluate(node => node.scrollTop), position, "Opening preserves list scroll");
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    assert.equal(await main.evaluate(node => node.scrollTop), position, "Closing preserves list scroll");
+    await select("Agent Workers");
+    await page.getByRole("button", { name: /^Preview routing for Example AGENT/ }).click(); await dialog.waitFor();
+    assert.equal(await dialog.evaluate(node => Math.round(node.getBoundingClientRect().width)), 768, "Routing uses the ordinary form width");
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    keyboardChecks += 4;
+  }
+  if (process.env.DELIDEV_LAYOUT_SCREENSHOT) {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.goto(`${origin}/?theme=light&populated=true`);
+    await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Projects");
+    await page.getByRole("button", { name: /^Edit Example PROJECT/ }).click(); await page.getByRole("dialog").waitFor();
+    await page.screenshot({ path: process.env.DELIDEV_LAYOUT_SCREENSHOT });
+  }
+  }
+  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, themes: githubOnly ? 1 : 3, inventories: githubOnly ? 1 : 2, viewports: githubOnly ? 3 : 6, effectiveZoomChecks: githubOnly ? 0 : categories.length * viewports.length, keyboardChecks, onboardingChecks, nativeAcceptance: "not-performed", githubAccountAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

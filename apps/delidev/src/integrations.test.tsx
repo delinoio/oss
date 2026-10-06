@@ -170,7 +170,7 @@ it("renders separate storage and identity facts with readable immutable metadata
   expect(screen.getByText("Identity verification does not confirm repository access.")).toBeTruthy();
   expect(f.validate).not.toHaveBeenCalled(); fireEvent.click(manage);
   expect(screen.getByText(/Authenticated as fixture-user · GitHub ID 9007199254740993/)).toBeTruthy();
-  expect(screen.getByText("Checked at 2026-09-30T04:00:00Z")).toBeTruthy();
+  expect(within(screen.getByRole("dialog")).getByText("Checked at 2026-09-30T04:00:00Z")).toBeTruthy();
   expect((screen.getByText("Create a token on GitHub").closest("details") as HTMLDetailsElement).open).toBe(false);
   const input = screen.getByLabelText("GitHub personal access token") as HTMLInputElement;
   expect(input.value).toBe(""); expect(input.placeholder).toBe("Enter a personal access token");

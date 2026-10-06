@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize } from "./settings-task";
+import { useEffect, useLayoutEffect, useRef, useState, useId } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@connectrpc/connect-query";
 import { DeviceQuery, DeviceType, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -22,6 +23,7 @@ export function PairingGrant({ authority, active, triggerContainer }: { authorit
   const [editing, setEditing] = useState(false), [name, setName] = useState("");
   const [kind, setKind] = useState(PairingKind.Client);
   const [attempt, setAttempt] = useState<Attempt>();
+  const formId = useId();
   const original = useRef<Attempt>(undefined);
   const [accepted, setAccepted] = useState<Resource | "unknown">();
   const [revealed, setRevealed] = useState(false), [preparing, setPreparing] = useState(false);
@@ -84,12 +86,13 @@ export function PairingGrant({ authority, active, triggerContainer }: { authorit
   const json = revealable && attempt && initial ? JSON.stringify({ version: 1, pairing_id: initial.id, server_id: attempt.authority.serverId, endpoint: attempt.authority.endpoint, code: attempt.code }, null, 2) : "";
   const createAction = <button type="button" ref={trigger} className="primary" onClick={() => { focusName.current = true; setEditing(true); }}><span aria-hidden="true">+ </span>Create pairing document</button>;
   return <section aria-label="Device pairing" className={editing ? "paired-device-form" : undefined}>
-    {!editing ? triggerContainer === undefined ? createAction : triggerContainer ? createPortal(createAction, triggerContainer) : null : <>
+    {triggerContainer === undefined ? createAction : triggerContainer ? createPortal(createAction, triggerContainer) : null}
+    {editing ? <SettingsTaskDialog title="Pair another device" size={SettingsDialogSize.Wide} retained={preparing || mutation.busy || mutation.uncertain || Boolean(attempt || accepted)} onDismiss={() => setRevealed(false)} close={discard}>
       <h3>Pair another device</h3><p>This single-use document authorizes one desktop client or manually installed Worker. Share it only with your intended device; it expires five minutes after server issuance.</p><p>Server: {authority.endpoint}</p>
-      {!accepted ? <form onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked || Boolean(attempt)}><label>Device name<input ref={nameInput} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label><label>Device type<select value={kind} onChange={(event) => setKind(event.target.value as PairingKind)}><option value={PairingKind.Client}>Desktop client</option><option value={PairingKind.Worker}>Worker</option></select></label></fieldset><button disabled={blocked || Boolean(attempt) || changed}>Issue single-use document</button></form> : null}
+      {!accepted ? <form id={formId} onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked || Boolean(attempt)}><label>Device name<input ref={nameInput} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label><label>Device type<select value={kind} onChange={(event) => setKind(event.target.value as PairingKind)}><option value={PairingKind.Client}>Desktop client</option><option value={PairingKind.Worker}>Worker</option></select></label></fieldset><SettingsTaskActions form={formId}><button className="primary" disabled={blocked || Boolean(attempt) || changed}>Issue single-use document</button></SettingsTaskActions></form> : null}
       {accepted === "unknown" ? <p role="alert">Issuance was acknowledged without a matching grant. Inspect the original pairing request; no replacement was issued.</p> : initial ? <><p>Expires: {initial.expiresAt}</p><p role="status">{used ? "Pairing document was used. Its private code has been cleared." : expired ? "Pairing document expired. Its private code has been cleared." : latest && !current.error && !inconsistent ? "Single-use grant issued; the latest read has no paired device." : "Grant issued; current use status is unavailable."}</p><Problem error={current.error} />{inconsistent ? <p role="alert">The grant observation no longer matches the original issuance.</p> : null}<button disabled={current.isFetching} onClick={() => void current.refetch()}>Refresh pairing status</button>{revealable ? <button onClick={() => setRevealed((value) => !value)}>{revealed ? "Hide private document" : "Reveal private document"}</button> : null}{revealed && revealable ? <><label>Private pairing document<textarea ref={output} readOnly value={json} rows={8} spellCheck={false} /></label><button onClick={() => { output.current?.focus(); output.current?.select(); }}>Select private document</button><p>Copy the selected document to the intended device. It remains private when this settings area closes.</p></> : null}</> : null}
       {changed ? <p role="alert">The selected server changed. This original grant cannot be shared or retried through another connection.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
-      {mutation.uncertain ? <button disabled={mutation.busy || changed} onClick={mutation.retry}>Retry original pairing issuance</button> : null}<button disabled={blocked} onClick={discard}>{attempt ? "Discard private pairing document" : "Cancel pairing"}</button>{attempt ? <p>Discarding clears this window's private copy; an already-issued grant remains valid until used or expired. Closing this server window also discards the copy.</p> : null}
-    </>}
+      <SettingsTaskActions>{mutation.uncertain ? <button disabled={mutation.busy || changed} onClick={mutation.retry}>Retry original pairing issuance</button> : null}<button disabled={blocked} onClick={discard}>{attempt ? "Discard private pairing document" : "Cancel pairing"}</button></SettingsTaskActions>{attempt ? <p>Discarding clears this window's private copy; an already-issued grant remains valid until used or expired. Closing this server window also discards the copy.</p> : null}
+    </SettingsTaskDialog> : null}
   </section>;
 }

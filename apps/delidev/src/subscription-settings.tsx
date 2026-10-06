@@ -1,5 +1,5 @@
-import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useId, useReducer, useRef, useState, type ReactNode } from "react";
 import { subscriptionCatalog, SubscriptionBrand } from "./subscription-catalog";
 
