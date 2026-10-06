@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 
 import { load } from "js-yaml";
 import { Event, jobPaths, nativeMatrices, planJobs } from "./plan.mjs";
@@ -9,8 +10,10 @@ import { jobCommands, jobTaskGraph } from "./task-graph.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const workflowSource = readFileSync(`${root}/.github/workflows/CI.yml`, "utf8");
+const releaseWorkflowSource = readFileSync(`${root}/.github/workflows/release-async-commit-hook.yml`, "utf8");
 const apiDockerfileSource = readFileSync(`${root}/servers/devhud-api/Dockerfile`, "utf8");
 const workflow = load(workflowSource);
+const releaseWorkflow = load(releaseWorkflowSource);
 const packages = Object.fromEntries([
   "package.json",
   "apps/devhud/package.json",
@@ -136,6 +139,52 @@ test("async-commit-hook retains runner, interface, protocol and unsigned archive
     'python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"',
   ]) assert.ok(commands.includes(command), command);
   assert.equal(commands.match(/pnpm install --frozen-lockfile --ignore-scripts/gu)?.length, 1);
+});
+
+test("every step reaching shared protocol breaking checks carries the event baseline", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const plan = planJobs(event, ["protos/devhud/v1/common.proto"]);
+    assert.equal(plan.jobs["async-commit-hook"], true);
+    assert.equal(plan.jobs["delidev-protocol"], false);
+    assert.ok(jobTaskGraph(workflow.jobs["async-commit-hook"]).has("@delinoio/ci#ci:proto:breaking"));
+  }
+  const expression = "${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}";
+  const consumers = [];
+  const workflows = [
+    { name: "CI.yml", definition: workflow, baseline: expression, evaluateEvents: true },
+    { name: "release-async-commit-hook.yml", definition: releaseWorkflow, baseline: "HEAD^", evaluateEvents: false },
+  ];
+  for (const { name, definition, baseline, evaluateEvents } of workflows) {
+    for (const [id, job] of Object.entries(definition.jobs)) {
+      for (const candidate of job.steps) {
+        const reachesBreaking = jobTaskGraph({ steps: [candidate] }).has("@delinoio/ci#ci:proto:breaking") || candidate.run?.includes("pnpm proto:check");
+        if (!reachesBreaking) continue;
+        const label = `${name} ${id}: ${candidate.name}`;
+        consumers.push(label);
+        const env = { ...definition.env, ...job.env, ...candidate.env };
+        assert.equal(env.DEVHUD_PROTO_BASELINE, baseline, label);
+        assert.equal(job.steps.find(({ uses }) => uses?.startsWith("actions/checkout@"))?.with?.["fetch-depth"], 0, label);
+        if (evaluateEvents) {
+          // This closed expression uses equality, AND and OR with the same string
+          // truthiness in JavaScript and Actions; evaluate the actual workflow value.
+          for (const [event, ref, expected] of [
+            ["push", "refs/heads/main", "pre-push-revision"],
+            ["pull_request", "refs/pull/1450/merge", "origin/main"],
+            ["workflow_dispatch", "refs/heads/main", "HEAD^"],
+            ["workflow_dispatch", "refs/heads/feature", "origin/main"],
+          ]) {
+            assert.equal(runInNewContext(env.DEVHUD_PROTO_BASELINE.slice(3, -2), {
+              github: { event_name: event, ref, event: { before: "pre-push-revision" } },
+            }), expected, `${label}: ${event} ${ref}`);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(consumers.some((label) => label.startsWith("release-async-commit-hook.yml validate:")), "Inventory must include the async-commit-hook release protocol step");
+  assert.ok(consumers.length >= 4, "Inventory must include protocol, bindings and async-commit-hook steps");
+  const config = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8"));
+  assert.ok(config.tasks["ci:proto:breaking"].passThroughEnv.includes("DEVHUD_PROTO_BASELINE"));
 });
 
 test("DevHud generated-only plans reach the shared uncached freshness command", () => {

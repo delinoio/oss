@@ -102,6 +102,19 @@ setting does not apply to asset-consuming build, test, or packaging commands.
 The CI regression uses a temporary repository with an unavailable LFS object and
 the installed Buf/Git LFS tools to verify both compatible and breaking schemas.
 
+Every CI step whose Turbo graph reaches `ci:proto:breaking` supplies
+`DEVHUD_PROTO_BASELINE`. Push events compare against `github.event.before`, so
+all commits in a push are checked even when `origin/main` already points to the
+pushed revision. Manual main runs use `HEAD^`; PR and manual non-main runs use
+`origin/main`. This includes both DeliDev protocol steps and async-commit-hook
+validation, including the manually dispatched async-commit-hook release
+workflow. The release workflow uses `HEAD^`; all of these jobs fetch full
+history, and the breaking leaf retains its existing environment pass-through.
+A revision without prior DevHud schemas still establishes the v1 baseline.
+Workflow graph assertions and a temporary Git fixture cover the event rules,
+compatible additions, deleted fields and multi-commit pushes without
+downloading unrelated LFS assets.
+
 ### Pinned repository utilities
 
 The root `clibox-prebuilt` dev dependency aliases the published `@delino/clibox@0.1.6` package. Its exact launcher and optional native packages are integrity-pinned in `pnpm-lock.yaml`; the private `packages/clibox` workspace is not an executable dependency. Ordinary `pnpm install` installs the prebuilt without Rust compilation. Run repository utility scripts from the repository root; they invoke `pnpm exec clibox` directly. There is no additional repository launcher or runtime download.
