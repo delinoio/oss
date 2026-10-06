@@ -1,5 +1,16 @@
 # DeliDev v1 Connect contract
 
+## Agent Worker source-route reservations
+
+Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
+`AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
+is exclusive with the legacy singular model. Establish both ledger reservations
+on main before activation. Capability 35 keeps its known-subscription-model
+ownership. No active schema, generated output, advertisement or migration is
+introduced by this prerequisite.
+
+
 
 
 ## Known subscription model reservations

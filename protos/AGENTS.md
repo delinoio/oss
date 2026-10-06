@@ -1,3 +1,5 @@
+- DeliDev Agent Worker source routes reserve System capability 36 and SaveAgentWorkerRequest.route_models field 5 before dependent implementation. Preserve capability 35 and every existing allocation; reservations alone grant no support.
+
 ### Instructions for `protos/`
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.
