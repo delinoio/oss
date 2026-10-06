@@ -133,13 +133,28 @@ func (r Reference) Validate(optional bool) error {
 		if err := Text(r.Remote, "Git remote", 256, true); err != nil {
 			return err
 		}
-		if strings.HasPrefix(r.Remote, "-") || strings.ContainsAny(r.Remote, " /\\:\r\n") {
+		if !validGitRemoteName(r.Remote) {
 			return Fail(InvalidArgument, "Invalid Git remote name.", "Use the name from repository inspection.")
 		}
 	} else if r.Remote != "" {
 		return Fail(InvalidArgument, "Only remote-branch references have a remote.", "Remove the remote field.")
 	}
 	return nil
+}
+
+func validGitRemoteName(value string) bool {
+	if value == "" || value == "@" || strings.HasPrefix(value, "-") || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") || strings.HasSuffix(value, ".lock") {
+		return false
+	}
+	if strings.Contains(value, "..") || strings.Contains(value, "@{") || strings.ContainsAny(value, " /\\:~^?*[") {
+		return false
+	}
+	for _, character := range value {
+		if character <= ' ' || character == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 type Checkout struct {
@@ -211,7 +226,7 @@ func (r Repository) Validate() error {
 	if err := Text(r.PreferredRemote, "preferred remote", 256, false); err != nil {
 		return err
 	}
-	if strings.ContainsAny(r.PreferredRemote, " /\\:\r\n") || strings.HasPrefix(r.PreferredRemote, "-") {
+	if r.PreferredRemote != "" && !validGitRemoteName(r.PreferredRemote) {
 		return Fail(InvalidArgument, "Invalid preferred remote name.", "Use a remote returned by Worker inspection.")
 	}
 	return nil

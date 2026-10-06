@@ -23,3 +23,26 @@ func TestRepositoryAcceptsRemoteCheckoutPaths(t *testing.T) {
 		})
 	}
 }
+
+func TestRepositoryRejectsInvalidGitRemoteNames(t *testing.T) {
+	for _, remote := range []string{"foo~bar", "foo..bar", "foo@{bar", "foo^bar", "foo?bar", "foo*bar", "foo[bar", "foo.lock", ".foo", "foo."} {
+		t.Run(remote, func(t *testing.T) {
+			repository := Repository{
+				Name:            "remote",
+				RemoteURL:       "https://github.com/fixture/repo.git",
+				PreferredRemote: remote,
+			}
+			if err := repository.Validate(); err == nil || SafeError(err).Code != InvalidArgument {
+				t.Fatalf("invalid preferred remote was accepted: %v", err)
+			}
+		})
+	}
+	for _, remote := range []string{"foo~bar", "foo..bar", "foo@{bar"} {
+		t.Run("reference-"+remote, func(t *testing.T) {
+			reference := Reference{Type: RemoteBranch, Name: "main", Remote: remote}
+			if err := reference.Validate(false); err == nil || SafeError(err).Code != InvalidArgument {
+				t.Fatalf("invalid reference remote was accepted: %v", err)
+			}
+		})
+	}
+}
