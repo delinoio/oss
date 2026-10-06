@@ -4,6 +4,7 @@
 package workspace
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -11,11 +12,13 @@ import (
 )
 
 // removeVerifiedFinalRoot keeps the final unlink relative to an opened private
-// parent directory. POSIX has no portable unlink-by-directory-handle primitive;
-// the caller therefore performs the identity check through the same private
-// namespace immediately before this anchored unlink. Windows uses its stronger
-// handle-disposition operation in final_root_remove_windows.go.
-func removeVerifiedFinalRoot(path, expectedIdentity string) error {
+// parent directory. POSIX has no portable unlink-by-directory-handle primitive.
+// After the initial identity check, remove search permission from the opened
+// root. A source writer that retains only the root handle or cwd can no longer
+// reach the private parent through .. and move that root between the final
+// identity check and unlinkat. The final check then rejects a replacement
+// installed by a writer that already retained the private parent.
+func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink func() error) error {
 	parent, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
@@ -33,5 +36,31 @@ func removeVerifiedFinalRoot(path, expectedIdentity string) error {
 	}
 	defer root.Close()
 
+	if beforeUnlink != nil {
+		if err := beforeUnlink(); err != nil {
+			return err
+		}
+	}
+	if err := root.Chmod(0); err != nil {
+		return err
+	}
+	lockedIdentity, lockedErr := directoryFileIdentity(root)
+	currentIdentity, currentMode, currentErr := directoryIdentityAt(parent, filepath.Base(path))
+	if lockedErr != nil || currentErr != nil || lockedIdentity != expectedIdentity || currentIdentity != lockedIdentity || currentMode.Perm() != 0 {
+		return ResultUncertain()
+	}
+
 	return unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR)
+}
+
+func directoryIdentityAt(parent *os.File, name string) (string, os.FileMode, error) {
+	var stat unix.Stat_t
+	if err := unix.Fstatat(int(parent.Fd()), name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return "", 0, err
+	}
+	mode := uint32(stat.Mode)
+	if mode&unix.S_IFMT != unix.S_IFDIR {
+		return "", 0, ResultUncertain()
+	}
+	return fmt.Sprintf("%x:%x", uint64(stat.Dev), stat.Ino), os.ModeDir | os.FileMode(mode&07777), nil
 }

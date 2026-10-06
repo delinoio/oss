@@ -661,6 +661,9 @@ the empty root with a no-replace rename into the separate private
 mode and empty-inventory verification. Synchronize both namespace parents before
 recording the claimed state. The old removal name is never an unlink operand;
 a directory or symlink appearing there is preserved and blocks completion.
+On Unix, retain the opened final root, remove its search permission, and repeat
+the anchored identity check immediately before `unlinkat`; this closes the
+retained-root-handle path to the private parent during the final name operation.
 Keep unlink preparation separate from the durable receipt recorded after native
 unlink. Recovery with a missing root and no unlink receipt remains uncertain,
 including interruption between unlink and receipt publication. With the original

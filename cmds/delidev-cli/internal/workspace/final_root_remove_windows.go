@@ -14,7 +14,7 @@ import (
 // removeVerifiedFinalRoot marks the verified directory handle for deletion.
 // Unlike a name-based Remove, the disposition remains bound to the opened
 // native file object if a writer renames that object after verification.
-func removeVerifiedFinalRoot(path, expectedIdentity string) error {
+func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink func() error) error {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err
@@ -41,6 +41,11 @@ func removeVerifiedFinalRoot(path, expectedIdentity string) error {
 	identity, identityErr := directoryFileIdentity(file)
 	if identityErr != nil || identity != expectedIdentity {
 		return ResultUncertain()
+	}
+	if beforeUnlink != nil {
+		if err := beforeUnlink(); err != nil {
+			return err
+		}
 	}
 
 	type dispositionInformation struct {
