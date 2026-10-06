@@ -178,6 +178,19 @@ The `async-commit-hook` CI job follows the central change plan and validates the
 
 The always-running `changes` job computes the execution plan with `scripts/ci/plan.mjs` and `scripts/ci/job-paths.json`. Domain jobs depend on this plan and use job-level conditions, so unrelated jobs do not allocate runners. `ci-contracts` always validates the workflow and planner. Rules cover Go, Rust, every Node workspace, environment tooling, all implemented DevHud domains, packaging, public documentation, and private-package, public-release, and CEF-review workflows. Runmoor-only release scripts do not select DevHud native packaging.
 
+Job ownership, configuration forcing and workspace forcing share one dependency-free
+dot-aware path matcher. Wildcards include hidden files and directories at every
+depth; literal-dot patterns retain their literal dots. Match Git's POSIX paths
+without removing filename characters, including whitespace, newlines and literal
+backslashes. Preserve single-segment wildcards, zero-or-more-directory globstars
+and event eligibility. Planning works before pnpm installation. In particular,
+changes limited to `apps/devhud-admin/.env.example` or
+`servers/devhud-api/.env.example` select `repository-environment` on both PRs and
+main pushes, and hidden descendants of `.github/actions/` force every eligible
+job. Hidden inputs inside a job's workspace retain ordinary affected execution;
+owned inputs outside that workspace force it. Unrelated hidden paths do not
+select jobs.
+
 The `devhud-release-contracts` job runs the complete top-level `scripts/release/*.test.mjs` suite, including release fixtures shared with other projects. Every test fixture in that suite, committed data under `scripts/release/fixtures/`, and the shared `project.mjs`, `runmoor.mjs`, and `update-homebrew.sh` implementations they exercise select this Ubuntu job on PRs and main pushes. Other project-specific release scripts retain their narrower owners. A Runmoor fixture or implementation change does not select DevHud desktop or mobile packaging.
 
 The `node-public-docs-test` job owns the consolidated root and subpath publication checks. Its path rule includes `packages/docs-site-switcher/**` and `docs/apps-react-forge-docs-foundation.md`; the latter contract alone forces the job. Its public-docs test boundary runs the shared selector interaction suite before building the assembled site, so changes to the shared navigation cannot bypass documentation CI.

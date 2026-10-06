@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { matchesGlob, resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
 
@@ -8,7 +8,18 @@ export const jobPaths = JSON.parse(readFileSync(new URL("./job-paths.json", impo
 export const nativeMatrices = JSON.parse(readFileSync(new URL("./native-matrices.json", import.meta.url), "utf8"));
 export const Event = Object.freeze({ PullRequest: "pull_request", Push: "push", Manual: "workflow_dispatch" });
 const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/plan.mjs", "scripts/ci/result.mjs", "scripts/ci/run-affected.mjs", "scripts/ci/native-matrices.json", "scripts/ci/package.json", "scripts/ci/turbo.json", "scripts/ci/from-root.mjs", "scripts/ci/cache-context.mjs", "scripts/ci/protocol-fresh.mjs", "scripts/ci/rust-affected*.mjs", "scripts/ci/cargo-mono-prebuilt*.mjs", "scripts/ci/run-rust.mjs"];
-const matches = (path, patterns) => patterns.some((pattern) => matchesGlob(path, pattern));
+export function matchesPath(path, pattern) {
+  // Node's matcher excludes leading dots at every wildcard boundary and has no
+  // dot option. Prefix each segment on both sides without removing filename
+  // characters; keep pattern globstars bare for zero-or-more-directory matching.
+  // Git paths use POSIX separators on every host. Remove this adapter when Node
+  // supports dot-aware matching that passes the same path fixtures.
+  const visiblePath = path.split("/").map((segment) => `x${segment}`).join("/");
+  const visiblePattern = pattern.split("/").map((segment) => segment === "**" ? segment : `x${segment}`).join("/");
+  return posix.matchesGlob(visiblePath, visiblePattern);
+}
+
+const matches = (path, patterns) => patterns.some((pattern) => matchesPath(path, pattern));
 
 function ruleSignature(rule) {
   if (!rule) return null;
