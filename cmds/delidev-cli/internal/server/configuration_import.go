@@ -138,7 +138,14 @@ func (s *Service) ApplyConfigurationImport(ctx context.Context, req *connect.Req
 					}
 					childID := domain.NewID()
 					pending.Inspections = append(pending.Inspections, configurationImportInspection{ID: childID, RepositoryID: change.ID, MachineID: checkout.MachineID, Path: checkout.Path})
-					raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required})
+					identity := ""
+					if repository.RemoteURL != "" {
+						identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
+						if err != nil {
+							return nil, err
+						}
+					}
+					raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required, ExpectedRemoteIdentity: identity})
 					if err != nil {
 						return nil, err
 					}

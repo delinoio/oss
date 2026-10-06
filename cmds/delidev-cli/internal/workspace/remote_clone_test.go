@@ -147,6 +147,24 @@ func TestManagedCloneProvisionsConfiguredRemoteAliases(t *testing.T) {
 	}
 }
 
+func TestManagedCloneMaterializesConfiguredLocalBranches(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix Git fixture; native Windows clone acceptance is separate")
+	}
+	source, destination := repository(t), filepath.Join(t.TempDir(), "clone")
+	gitTest(t, source, "branch", "feature")
+	gitTest(t, source, "clone", "--no-checkout", source, destination)
+	gitTest(t, destination, "update-ref", "-d", "refs/heads/feature")
+	git := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID()}
+	spec := RepositorySpec{Base: domain.Reference{Type: domain.LocalBranch, Name: "feature"}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "feature"}}
+	if err := materializeManagedCloneBranches(context.Background(), git, destination, spec, "origin"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := gitTest(t, destination, "rev-parse", "refs/heads/feature"), gitTest(t, source, "rev-parse", "refs/heads/feature"); got != want {
+		t.Fatalf("materialized branch points to %s, want %s", got, want)
+	}
+}
+
 func TestManagedCloneConcurrentPreparationRunsOnce(t *testing.T) {
 	m, input, marker := managedCloneFixture(t)
 	var group sync.WaitGroup

@@ -227,7 +227,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
         <label>Git URL<input ref={initialAction} type="text" value={cloneDraft.url} maxLength={4096} placeholder="https://github.com/owner/repository.git" disabled={blocked} autoComplete="off" spellCheck={false} onChange={event => changeCloneDraft({ ...cloneDraft, url: event.target.value, directory: undefined })} /></label>
         {cloneDraft.url && !parsedClone ? <p role="alert">Enter a credential-free HTTPS or SSH Git URL.</p> : null}
         <RepositoryGitHubPicker active={active} supported={pickerSupported} disabled={blocked} choose={(selection, url) => { changeCloneDraft({ ...cloneDraft, url, directory: undefined }); setGitHubSelection(selection); setData(current => ({ ...current, integration_id: selection.profileId, github_owner: selection.owner, github_name: selection.name })); }} />
-        <TextField label="Repository name" value={data.name} required disabled={cloneLocally} change={name => { nameEdited.current = true; change({ ...data, name }); }} />
+        {cloneLocally ? <p className="repository-clone-name">Clone registration uses the folder name <strong>{cloneDirectory}</strong>.</p> : <TextField label="Repository name" value={data.name} required change={name => { nameEdited.current = true; change({ ...data, name }); }} />}
         <p>The selected Runner Device clones this repository when a Worktree session starts.</p>
         {!remoteSupported ? <p role="status">Update the selected server to add repositories by URL.</p> : null}
         <Problem error={status.error} />

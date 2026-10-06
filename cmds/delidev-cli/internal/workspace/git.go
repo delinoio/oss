@@ -252,6 +252,52 @@ func (g Git) Inspect(ctx context.Context, path string) (Inspection, error) {
 	}
 	return result, nil
 }
+
+func selectedInspectionRemote(inspection Inspection, preferred string) (string, error) {
+	if preferred != "" {
+		if !slices.Contains(inspection.Remotes, preferred) {
+			return "", domain.Fail(domain.InvalidArgument, "The preferred remote does not exist on this Worker.", "Refresh repository inspection and select a current remote.")
+		}
+		return preferred, nil
+	}
+	if slices.Contains(inspection.Remotes, "origin") {
+		return "origin", nil
+	}
+	if len(inspection.Remotes) == 1 {
+		return inspection.Remotes[0], nil
+	}
+	return "", domain.Fail(domain.MissingInput, "The checkout's source remote is ambiguous or absent.", "Choose a preferred remote before saving this checkout.")
+}
+
+// ValidateRemoteIdentity checks the selected checkout's effective Git remote
+// against an opaque server-provided identity. The raw URL stays in the Worker
+// process and is never returned in inspection output or error text.
+func (g Git) ValidateRemoteIdentity(ctx context.Context, inspection Inspection, preferred, expected string) error {
+	if expected == "" {
+		return nil
+	}
+	if !domain.ValidRepositoryCloneSourceIdentity(expected) {
+		return domain.Fail(domain.RecoveryRequired, "The repository source identity is invalid.", "Inspect the original save operation before retrying.")
+	}
+	remote, err := selectedInspectionRemote(inspection, preferred)
+	if err != nil {
+		return err
+	}
+	raw, err := g.run(ctx, inspection.Root, "remote", "get-url", "--all", "--", remote)
+	if err != nil {
+		return err
+	}
+	value := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
+	if value == "" || strings.ContainsAny(value, "\r\n") {
+		return domain.Fail(domain.InvalidArgument, "The selected checkout has no single usable source remote.", "Configure one credential-free remote that matches the repository URL.")
+	}
+	actual, err := domain.RepositoryCloneSourceIdentity(value)
+	if err != nil || actual != expected {
+		return domain.Fail(domain.InvalidArgument, "The selected checkout belongs to a different repository.", "Choose a checkout of the configured repository source.")
+	}
+	return nil
+}
+
 func DefaultStarting(inspection Inspection, preferred string) (domain.Reference, error) {
 	remote := preferred
 	if remote != "" && !slices.Contains(inspection.Remotes, remote) {

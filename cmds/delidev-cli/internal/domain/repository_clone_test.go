@@ -32,6 +32,35 @@ func TestRepositoryCloneIdentityAcrossTransport(t *testing.T) {
 	}
 }
 
+func TestRepositoryCloneSourceIdentity(t *testing.T) {
+	var identity string
+	for _, value := range []string{"https://github.com/owner/repo.git", "ssh://git@github.com/owner/repo.git", "git@github.com:owner/repo.git"} {
+		got, err := RepositoryCloneSourceIdentity(value)
+		if err != nil {
+			t.Fatal(value, err)
+		}
+		if identity == "" {
+			identity = got
+		} else if got != identity {
+			t.Fatalf("transport changed source identity: %q != %q", got, identity)
+		}
+		if !ValidRepositoryCloneSourceIdentity(got) {
+			t.Fatalf("invalid generated source identity: %q", got)
+		}
+	}
+	for _, value := range []string{"https://github.com/owner/other.git", "https://example.com/owner/repo.git", "https://github.com/owner/repo/other.git"} {
+		got, err := RepositoryCloneSourceIdentity(value)
+		if err != nil || got == identity {
+			t.Fatalf("source identity collision: %q, %q, %v", value, got, err)
+		}
+	}
+	for _, value := range []string{"", "0", "not-a-digest", "000000000000000000000000000000000000000000000000000000000000000g"} {
+		if ValidRepositoryCloneSourceIdentity(value) {
+			t.Fatalf("accepted invalid source identity: %q", value)
+		}
+	}
+}
+
 func TestRepositoryCloneDirectory(t *testing.T) {
 	for _, value := range []string{"repo", "My repository", "한글", "repo.git", "-folder"} {
 		if err := ValidateRepositoryCloneDirectory(value); err != nil {

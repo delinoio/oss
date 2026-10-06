@@ -1157,6 +1157,9 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 				return nil, domain.Fail(domain.InvalidArgument, "The configured remote is missing on this Worker.", "Refresh inspection and select an existing remote.")
 			}
 		}
+		if err := git.ValidateRemoteIdentity(ctx, inspection, input.PreferredRemote, input.ExpectedRemoteIdentity); err != nil {
+			return nil, err
+		}
 		if config.inspectionMetadata {
 			if err := git.EnrichInspection(ctx, &inspection); err != nil {
 				return nil, err

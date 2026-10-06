@@ -2,6 +2,8 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net"
 	"net/url"
 	"path"
@@ -130,6 +132,31 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 		}
 	}
 	return result, nil
+}
+
+// RepositoryCloneSourceIdentity returns an opaque identity for the repository
+// named by a credential-free clone URL. Transport and SSH user details do not
+// identify a different repository, but the host and repository path do. The
+// digest lets a Worker compare a checkout without returning its raw remote URL.
+func RepositoryCloneSourceIdentity(value string) (string, error) {
+	parsed, err := ParseRepositoryCloneURL(value)
+	if err != nil {
+		return "", err
+	}
+	repositoryPath := strings.TrimSuffix(strings.Trim(parsed.Path, "/"), ".git")
+	if repositoryPath == "" {
+		return "", cloneInvalidURL()
+	}
+	digest := sha256.Sum256([]byte(strings.ToLower(parsed.Host) + "\x00" + repositoryPath))
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func ValidRepositoryCloneSourceIdentity(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func cloneSSHUser(value string) bool {

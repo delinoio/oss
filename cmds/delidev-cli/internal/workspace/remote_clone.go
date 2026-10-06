@@ -145,6 +145,35 @@ func provisionManagedCloneRemotes(ctx context.Context, git Git, path, url string
 	}
 	return nil
 }
+
+func materializeManagedCloneBranches(ctx context.Context, git Git, path string, spec RepositorySpec, primary string) error {
+	seen := map[string]bool{}
+	for _, ref := range []domain.Reference{spec.Base, spec.Starting} {
+		if ref.Type != domain.LocalBranch || seen[ref.Name] {
+			continue
+		}
+		seen[ref.Name] = true
+		if err := ref.Validate(false); err != nil {
+			return err
+		}
+		local := "refs/heads/" + ref.Name
+		if _, exit, err := git.runCommand(ctx, path, "rev-parse", "--verify", "--end-of-options", local+"^{commit}"); err == nil {
+			continue
+		} else if exit != 128 {
+			return err
+		}
+		remote := "refs/remotes/" + primary + "/" + ref.Name
+		commit, err := git.run(ctx, path, "rev-parse", "--verify", "--end-of-options", remote+"^{commit}")
+		if err != nil {
+			return err
+		}
+		if _, err := git.run(ctx, path, "update-ref", "--no-deref", local, strings.TrimSpace(string(commit))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func slicesContainManagedClone(repos []RepositorySpec) bool {
 	for _, repo := range repos {
 		if repo.SourceKind.managed() {
@@ -238,6 +267,9 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if err := provisionManagedCloneRemotes(ctx, clone, prepared.Path, spec.RemoteURL, spec, remote); err != nil {
 		return *entry, nil, err
 	}
+	if err := materializeManagedCloneBranches(ctx, clone, prepared.Path, spec, remote); err != nil {
+		return *entry, nil, err
+	}
 	inspection, err := clone.Inspect(ctx, prepared.Path)
 	if err != nil {
 		return *entry, nil, err
@@ -274,7 +306,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 		if _, err := git.run(ctx, prepared.Path, "update-ref", "--no-deref", "HEAD", entry.StartingCommit); err != nil {
 			return *entry, nil, err
 		}
-	} else if _, err := git.run(ctx, prepared.Path, "checkout", "--detach", "--no-recurse-submodules", entry.StartingCommit); err != nil {
+	} else if _, err := clone.run(ctx, prepared.Path, "checkout", "--detach", "--no-recurse-submodules", entry.StartingCommit); err != nil {
 		return *entry, nil, err
 	}
 	var copy *forkCopy

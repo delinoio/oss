@@ -255,7 +255,8 @@ func (r AuxiliaryTitleResult) Validate(input AuxiliaryTitleInput) error {
 }
 
 type RepositoryInspectionInput struct {
-	Path            string   `json:"path"`
-	PreferredRemote string   `json:"preferred_remote,omitempty"`
-	RequiredRemotes []string `json:"required_remotes,omitempty"`
+	Path                   string   `json:"path"`
+	PreferredRemote        string   `json:"preferred_remote,omitempty"`
+	RequiredRemotes        []string `json:"required_remotes,omitempty"`
+	ExpectedRemoteIdentity string   `json:"expected_remote_identity,omitempty"`
 }

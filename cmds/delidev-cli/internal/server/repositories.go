@@ -65,7 +65,14 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 			}
 		}
 		for _, checkout := range repository.Checkouts {
-			raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required})
+			identity := ""
+			if repository.RemoteURL != "" {
+				identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
+				if err != nil {
+					return nil, err
+				}
+			}
+			raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required, ExpectedRemoteIdentity: identity})
 			if err != nil {
 				return nil, err
 			}

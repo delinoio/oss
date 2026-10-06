@@ -83,3 +83,7 @@ Compact settled removal proof to one original inventory path per entry, without 
   preferred/base/starting remote name against the one pinned repository URL and
   mirror initial tracking refs without stale fallback. Never widen the ambient
   transport policy for an alias or later fetch.
+- Local repository saves bind each configured checkout to the server's opaque
+  source identity. The Worker computes that identity from the selected effective
+  remote without returning the raw URL; a mismatch fails the save before the
+  checkout can become Local execution authority.

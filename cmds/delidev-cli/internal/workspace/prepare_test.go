@@ -85,6 +85,32 @@ func TestInspectRootSubdirectoryLinkedWorktreeWithoutURLs(t *testing.T) {
 		t.Fatal("linked root lost", inspection)
 	}
 }
+
+func TestValidateRemoteIdentityRejectsDifferentCheckoutSource(t *testing.T) {
+	root := repository(t)
+	gitTest(t, root, "remote", "add", "origin", "https://github.com/fixture/repo.git")
+	g := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID()}
+	inspection, err := g.Inspect(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := domain.RepositoryCloneSourceIdentity("https://github.com/fixture/repo.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.ValidateRemoteIdentity(context.Background(), inspection, "", expected); err != nil {
+		t.Fatal(err)
+	}
+	gitTest(t, root, "remote", "set-url", "origin", "https://github.com/other/repo.git")
+	inspection, err = g.Inspect(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problem := domain.SafeError(g.ValidateRemoteIdentity(context.Background(), inspection, "", expected)); problem.Code != domain.InvalidArgument {
+		t.Fatalf("different source was accepted: %+v", problem)
+	}
+}
+
 func TestDetachedAllRepositoryPreparationAndIdempotency(t *testing.T) {
 	root, second := repository(t), repository(t)
 	m := manager(t)
