@@ -114,6 +114,18 @@ installation, configuration/storage references, original/target definitions and
 file identities, native process identity, UUID-v7 token and typed operation stage.
 It contains no credentials and adds no public field or SQLite migration.
 
+The journal records the reload CLI's PID and process-start identity as its
+completion owner. While holding the service-operation lock, an authenticated
+retry atomically replaces that identity with its own verified identity through
+the exact-record private-file checks. Transfer ownership before resumed native
+actions, replacement readiness checks or completion, including when the target
+is already ready. Identity or journal-update failure preserves recovery intent
+and permits no native mutation. Replacement startup retains the journal while
+the current owner is live. A confirmed exited owner permits reclamation; legacy
+records without an initiator remain conservative until recovery claims them.
+The retry removes its journal only after readiness and final normal reload
+acceptance succeed.
+
 Linux atomically publishes the target definition, performs `daemon-reload`,
 revalidates the original active invocation against its captured definition, and
 uses `systemctl --user kill --kill-who=main --signal=SIGKILL runmoor.service`.

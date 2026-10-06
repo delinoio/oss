@@ -172,6 +172,7 @@
 - If `apps/devhud` changes, run `pnpm --filter devhud test` and `pnpm --filter devhud verify:pins`; run its platform smoke on a supported native production artifact when the host is available.
 - If `apps/public-docs/docs/binpm` or `apps/public-docs/docs/nodeup` changes, run `pnpm --filter public-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
+- Public-docs `build`, `build:frontend`, and `ci:routes` must hash all eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources through package-local external inputs. Preserve inherited build inputs, dependencies, outputs, and deterministic caching; installer changes must not invalidate unrelated workspace caches.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
 
 ### async-commit-hook
@@ -223,4 +224,4 @@
 - The owner permits Chromium without a process sandbox on Windows DevHud and DeliDev only while upstream lacks executable-host broker support. Keep this exception explicit in runtime selection, validation and user documentation. macOS/Linux require Chromium sandboxing. Desktop hosts use OS-backed secret storage except DeliDev macOS builds with `debug_assertions`, which use an explicit Mock cookie key in a separate development CEF root under the desktop/browser contracts. Keep Go credentials OS-protected, protected-browser IPC isolated, profile ownership exact and cleanup joined across both cookie paths. This exception grants no production Keychain or shutdown acceptance.
 
 - PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.
-- Chrome extension CI must serialize the cached test build, uncached repeated clean-build regression and final ZIP parity check because they share `dist`, `build` and `artifacts` output directories.
+- Chrome extension CI must order the uncached repeated clean-build regression before the cached test build or output restoration, then run the final ZIP parity check. These tasks share `dist`, `build` and `artifacts` output directories; preserve controlled cold/warm interleaving and failure-propagation fixtures.

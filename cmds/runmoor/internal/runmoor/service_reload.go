@@ -411,11 +411,28 @@ func conditionalReplaceServiceDefinition(unit, staged, expectedID string, expect
 	return reloadFailure()
 }
 
+func (r *serviceReloader) claimReloadInitiator(j *serviceReloadJournal) error {
+	pid := os.Getpid()
+	start, err := r.ProcessStart(pid)
+	if err != nil || start == "" {
+		return reloadFailure()
+	}
+	old, _ := json.Marshal(j)
+	claimed := *j
+	claimed.ReloadPID, claimed.ReloadStart = pid, start
+	body, _ := json.Marshal(&claimed)
+	if err := replaceReloadFile(reloadJournalPath(r.Unit), old, reloadJournalLimit, body); err != nil {
+		return err
+	}
+	*j = claimed
+	r.Log.Info("service_reload_recovered", "stage", j.Stage, "previous_version", j.PreviousVersion, "target_version", j.Version)
+	return nil
+}
+
 func (r *serviceReloader) reloadInitiatorFinished(j *serviceReloadJournal) bool {
 	if j.ReloadPID <= 0 || j.ReloadStart == "" {
 		// Journals written before the initiator identity was added are retained
-		// conservatively. The initiating CLI remains the only safe owner of
-		// completion for those records.
+		// conservatively until a recovery CLI records its verified identity.
 		return false
 	}
 	start, err := r.ProcessStart(j.ReloadPID)
@@ -659,6 +676,11 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 			return reloadFailure()
 		}
 		if err := r.Preflight(ctx, c, s); err != nil {
+			return err
+		}
+		// The retry owns completion before checking readiness or resuming native
+		// actions, so replacement startup cannot reclaim an exited CLI's intent.
+		if err := r.claimReloadInitiator(j); err != nil {
 			return err
 		}
 	}

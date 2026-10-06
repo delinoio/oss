@@ -90,6 +90,55 @@ export function stage(directory, output, sourceRevision, inspect = readElf) {
   return { plan, files };
 }
 
+function requireRelease(plan, release, releaseId) {
+  ensure(Number.isSafeInteger(releaseId) && releaseId > 0 && release?.id === releaseId &&
+    release.tag_name === plan.tag && typeof release.draft === 'boolean' && release.prerelease === false &&
+    typeof release.target_commitish === 'string' && release.target_commitish.length > 0 &&
+    (!release.draft || release.target_commitish === plan.revision) && Array.isArray(release.assets), 'Conflicting release identity');
+  return release;
+}
+
+async function discoverRelease(plan, api, prefix, report) {
+  const seen = new Set();
+  let match = null;
+  // GitHub's tag lookup returns published releases only. A full list scan must
+  // establish unique ownership before absence can authorize draft creation.
+  for (let page = 1; page <= 1000; page++) {
+    const releases = await api('GET', `${prefix}/releases?per_page=100&page=${page}`);
+    ensure(Array.isArray(releases) && releases.length <= 100 && releases.every((release) =>
+      Number.isSafeInteger(release?.id) && release.id > 0 && typeof release.tag_name === 'string' && release.tag_name.length > 0 &&
+      typeof release.draft === 'boolean' && typeof release.prerelease === 'boolean' &&
+      typeof release.target_commitish === 'string' && release.target_commitish.length > 0), 'Malformed release list; cannot establish release ownership');
+    for (const release of releases) {
+      ensure(!seen.has(release.id), 'Repeated release ID; cannot establish release ownership');
+      seen.add(release.id);
+      if (release.tag_name === plan.tag) {
+        ensure(match === null, 'Multiple releases use the requested tag');
+        match = release;
+      }
+    }
+    if (releases.length < 100) {
+      if (match) requireRelease(plan, match, match.id);
+      report('github_discovery', { tag: plan.tag, release_id: match?.id ?? null, pages: page });
+      return match;
+    }
+  }
+  // A bounded or repeating scan is uncertain, never evidence of absence.
+  ensure(false, 'Incomplete release list; pagination limit reached');
+}
+
+function assetInventory(assets) {
+  const seen = new Set();
+  for (const asset of assets) {
+    ensure(Number.isSafeInteger(asset?.id) && asset.id > 0 && !seen.has(asset.id) && typeof asset.name === 'string' &&
+      Number.isSafeInteger(asset.size) && asset.size > 0 && asset.state === 'uploaded', 'Malformed release asset');
+    seen.add(asset.id);
+  }
+  // Asset IDs bind the immutable bytes that were downloaded and verified. A
+  // delete/re-upload changes the ID even when the replacement keeps the name.
+  return JSON.stringify(assets.map(({ id, name, size, state, digest }) => ({ id, name, size, state, digest })).sort((a, b) => a.id - b.id));
+}
+
 // A draft is the recovery boundary. Existing bytes and signatures are verified
 // before any writes; public assets are immutable and a complete retry is read-only.
 export async function publish({ plan, files }, { api, download, upload, sign, verify, report = event }) {
@@ -100,11 +149,14 @@ export async function publish({ plan, files }, { api, download, upload, sign, ve
     object = (await api('GET', `${prefix}/git/tags/${object.sha}`)).object;
   }
   ensure(object?.type === 'commit' && object.sha === plan.revision, 'Release tag does not match the exact source commit');
-  let release = await api('GET', `${prefix}/releases/tags/${encodeURIComponent(plan.tag)}`, undefined, true);
+  let release = await discoverRelease(plan, api, prefix, report);
   const expected = [...files.keys()].flatMap((name) => [name, `${name}.sigstore.json`]);
   const existing = new Map();
   if (release) {
-    ensure(release.tag_name === plan.tag && release.prerelease === false && (!release.draft || release.target_commitish === plan.revision), 'Conflicting release identity');
+    const candidate = release;
+    release = requireRelease(plan, await api('GET', `${prefix}/releases/${candidate.id}`), candidate.id);
+    ensure(release.draft === candidate.draft, 'Conflicting release identity');
+    assetInventory(release.assets);
     for (const asset of release.assets) {
       ensure(expected.includes(asset.name) && !existing.has(asset.name), 'Unexpected release asset');
       existing.set(asset.name, await download(asset));
@@ -115,21 +167,27 @@ export async function publish({ plan, files }, { api, download, upload, sign, ve
     }
     if (!release.draft) {
       ensure(existing.size === expected.length, 'Incomplete public release; refusing to mutate public assets');
-      report('github_reuse', { tag: plan.tag }); return;
+      report('github_reuse', { tag: plan.tag, release_id: release.id }); return;
     }
   }
-  if (!release) release = await api('POST', `${prefix}/releases`, { tag_name: plan.tag, target_commitish: plan.revision, name: plan.tag, draft: true, prerelease: false, generate_release_notes: true });
+  if (!release) {
+    release = await api('POST', `${prefix}/releases`, { tag_name: plan.tag, target_commitish: plan.revision, name: plan.tag, draft: true, prerelease: false, generate_release_notes: true });
+    requireRelease(plan, release, release?.id);
+    ensure(release.draft === true && release.assets.length === 0, 'Conflicting release identity');
+  }
+  const releaseId = release.id;
   for (const [name, bytes] of files) {
     if (!existing.has(name)) await upload(release, name, bytes);
-    report('github_asset', { tag: plan.tag, asset: name, reused: existing.has(name) });
+    report('github_asset', { tag: plan.tag, release_id: releaseId, asset: name, reused: existing.has(name) });
     const bundleName = `${name}.sigstore.json`;
     if (!existing.has(bundleName)) {
       const bundle = await sign(name, bytes); await verify(name, bytes, bundle);
       await upload(release, bundleName, bundle);
     }
   }
-  const ready = await api('GET', `${prefix}/releases/${release.id}`);
-  ensure(ready.draft === true && ready.tag_name === plan.tag && ready.target_commitish === plan.revision && ready.prerelease === false, 'Draft identity changed');
+  const ready = requireRelease(plan, await api('GET', `${prefix}/releases/${releaseId}`), releaseId);
+  ensure(ready.draft === true, 'Draft identity changed');
+  const verifiedInventory = assetInventory(ready.assets);
   ensure(ready.assets.length === expected.length && new Set(ready.assets.map(({ name }) => name)).size === expected.length, 'Incomplete signed release');
   for (const [name, bytes] of files) {
     const asset = ready.assets.find((item) => item.name === name);
@@ -137,8 +195,14 @@ export async function publish({ plan, files }, { api, download, upload, sign, ve
     ensure(asset && signature && (await download(asset)).equals(bytes), 'Release readback mismatch');
     await verify(name, bytes, await download(signature));
   }
-  await api('PATCH', `${prefix}/releases/${release.id}`, { draft: false });
-  report('github_publish', { tag: plan.tag, revision: plan.revision });
+  // Recheck uniqueness after verification, then read the pinned ID once more.
+  // No missing or changed draft can authorize creation within this attempt.
+  const soleRelease = await discoverRelease(plan, api, prefix, report);
+  ensure(soleRelease?.id === releaseId && soleRelease.draft === true, 'Pinned draft is no longer the sole release for this tag');
+  const final = requireRelease(plan, await api('GET', `${prefix}/releases/${releaseId}`), releaseId);
+  ensure(final.draft === true && assetInventory(final.assets) === verifiedInventory, 'Verified draft changed before publication');
+  await api('PATCH', `${prefix}/releases/${releaseId}`, { draft: false });
+  report('github_publish', { tag: plan.tag, release_id: releaseId, revision: plan.revision });
 }
 
 export async function main() {

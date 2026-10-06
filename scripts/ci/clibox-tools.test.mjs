@@ -32,7 +32,9 @@ test("release utilities are installed before checksumming, rendering, or secret 
     const steps = workflow(`release-${name}`).jobs.publish.steps;
     const setup = setupIndex(steps);
     assert.ok(setup >= 0, name);
-    assert.ok(setup < steps.findIndex(({ run }) => run?.includes("generate-checksums.sh")), name);
+    const consumer = steps.findIndex(({ run }) => run?.includes(name === "async-commit-hook" ? "generate-checksums.sh" : "legacy-cli-release.mjs"));
+    assert.ok(consumer >= 0, name);
+    assert.ok(setup < consumer, name);
   }
   const privateJobs = workflow("package-devhud-private").jobs;
   for (const id of ["desktop", "mobile", "assemble"]) {
