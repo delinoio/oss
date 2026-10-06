@@ -233,6 +233,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if !validRunnerPath(req.RunnerPath) {
 			return nil, problem(ErrConfig, "Runner path must be an absolute clean guest path.", "Use the same absolute guest directory as runner_path in TOML, without '..', NUL or line breaks.")
 		}
+		if automatic && !managedPathValid(req.RunnerPath) {
+			return nil, problem(ErrConfig, "Automatic installation requires a dedicated clean runner directory.", "Use the default runner_path.")
+		}
 		v, e := m.Tart.vmOwned(ctx, c, im.VM, s.Installation, im.ID)
 		if e != nil {
 			return nil, m.imageFailure(im.ID, e)
@@ -255,9 +258,6 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			}
 		}
 		if automatic {
-			if !managedPathValid(req.RunnerPath) {
-				return nil, m.imageFailure(im.ID, problem(ErrConfig, "Automatic installation requires a dedicated clean runner directory.", "Use the default runner_path."))
-			}
 			cli := m.Client
 			if cli == nil {
 				cli = defaultReleaseClient()

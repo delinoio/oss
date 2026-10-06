@@ -327,7 +327,7 @@ func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {
 }
 
 func TestImageSealAndConfigurationShareRunnerPathValidation(t *testing.T) {
-	for _, path := range []string{"/Users/runner/tools/../actions-runner", "/Users/runner/a..b", "relative/runner", "/runner\x00", "/runner\n", "/runner\r", "/Users/runner/actions-runner", "/Users/runner/actions runner", ""} {
+	for _, path := range []string{"/Users/runner/tools/../actions-runner", "/Users/runner/a..b", "relative/runner", "/runner\x00", "/runner\n", "/runner\r", "/", "/runner", "/Users//runner/actions-runner", "/Users/runner/./actions-runner", "/Users/runner/actions-runner/", "/Users/runner/actions-runner", "/Users/runner/actions runner", ""} {
 		t.Run(path, func(t *testing.T) {
 			c, s := fixtureStore(t)
 			driver, fixture := fakeTart(c)
