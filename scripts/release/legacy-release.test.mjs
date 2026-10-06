@@ -66,15 +66,52 @@ test("legacy publication creates an absent tag atomically and verifies the commi
   const result = await createLegacyReleaseTag({ tag, revision: build, request: async (route, options) => {
     calls.push({ route, options });
     if (options?.method === "POST") return { status: 201, body: {} };
-    return calls.length === 1 ? { status: 404 } : commit(build);
+    if (route.includes("/releases/tags/")) return { status: 404 };
+    if (route.includes("/releases?")) return { status: 200, body: [] };
+    return calls.filter(({ route: candidate }) => candidate.includes("/git/ref/")).length === 1 ? { status: 404 } : commit(build);
   } });
   assert.deepEqual(result, { tag, revision: build, target_commitish: build });
   assert.deepEqual(calls, [
     { route: `/repos/delinoio/oss/git/ref/tags/${encodeURIComponent(tag)}`, options: undefined },
+    { route: `/repos/delinoio/oss/releases/tags/${encodeURIComponent(tag)}`, options: undefined },
+    { route: "/repos/delinoio/oss/releases?per_page=100&page=1", options: undefined },
     { route: "/repos/delinoio/oss/git/refs", options: { method: "POST", body: { ref: `refs/tags/${tag}`, sha: build } } },
     { route: `/repos/delinoio/oss/git/ref/tags/${encodeURIComponent(tag)}`, options: undefined },
+    { route: `/repos/delinoio/oss/releases/tags/${encodeURIComponent(tag)}`, options: undefined },
+    { route: "/repos/delinoio/oss/releases?per_page=100&page=1", options: undefined },
   ]);
-  await assert.rejects(createLegacyReleaseTag({ tag, revision: build, request: async (route, options) => options?.method === "POST" ? { status: 422 } : { status: 404 } }), /atomic creation/u);
+  await assert.rejects(createLegacyReleaseTag({ tag, revision: build, request: async (route, options) => {
+    if (options?.method === "POST") return { status: 422 };
+    if (route.includes("/releases/tags/")) return { status: 404 };
+    if (route.includes("/releases?")) return { status: 200, body: [] };
+    return { status: 404 };
+  } }), /atomic creation/u);
+});
+
+test("legacy publication rejects an orphaned release before absent-tag creation", async () => {
+  const tag = `${Project.Binpm}@v${readVersion(Project.Binpm, read)}`;
+  let posted = false;
+  await assert.rejects(createLegacyReleaseTag({ tag, revision: build, request: async (route, options) => {
+    if (options?.method === "POST") {
+      posted = true;
+      return { status: 201, body: {} };
+    }
+    if (route.includes("/git/ref/")) return { status: 404 };
+    return { status: 200, body: { id: 123, tag_name: tag } };
+  } }), /no verified tag target/u);
+  assert.equal(posted, false);
+});
+
+test("legacy publication rejects a release that appears during absent-tag creation", async () => {
+  const tag = `${Project.Binpm}@v${readVersion(Project.Binpm, read)}`;
+  let calls = 0;
+  await assert.rejects(createLegacyReleaseTag({ tag, revision: build, request: async (route, options) => {
+    calls++;
+    if (options?.method === "POST") return { status: 201, body: {} };
+    if (route.includes("/git/ref/")) return calls === 1 ? { status: 404 } : commit(build);
+    if (route.includes("/releases/tags/")) return calls < 6 ? { status: 404 } : { status: 200, body: { id: 123, tag_name: tag } };
+    return { status: 200, body: [] };
+  } }), /no verified tag target/u);
 });
 
 test("historical tags and uncertain lookups stop all signing, publication and tap side effects", async () => {

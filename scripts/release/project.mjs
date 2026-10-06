@@ -334,10 +334,18 @@ export async function legacyReleaseMetadata({ revision, ...input }, read, reques
 export async function createLegacyReleaseTag({ tag, revision, request }) {
   const existing = await tagRevision(tag, request);
   if (existing === null) {
+    // The source check runs before signing. Recheck the release list here so a
+    // release created during signing cannot be paired with a newly created tag.
+    requireValue(!(await releaseExists(tag, request)), "Existing GitHub release has no verified tag target");
     const created = await request(`/repos/${repository}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: revision } });
     requireValue(created.status === 201, created.status === 422 ? "Release tag appeared during atomic creation" : "Release tag creation failed");
   } else requireValue(existing === revision, "Existing release tag belongs to a different commit");
   requireValue(await tagRevision(tag, request) === revision, "Remote release tag verification failed");
+  if (existing === null) {
+    // Do not hand off to the release action if an orphaned release appeared
+    // while the tag was being created. The action may reuse that release.
+    requireValue(!(await releaseExists(tag, request)), "Existing GitHub release has no verified tag target");
+  }
   return { tag, revision, target_commitish: revision };
 }
 
