@@ -39,6 +39,12 @@ test("changed document structure, unknown API family and empty extraction fail c
   assert.throws(() => extractGrok(inputs.grok.replace("recommended for coding", "changed")));
   assert.throws(() => buildCatalog({ ...inputs, codex: '{"models":[]}' }, sources));
 });
+test("retirement subjects require an exact model name or ID, not a family prefix", () => {
+  const input = JSON.parse(inputs.codex);
+  input.models.push({ slug: "gpt", display_name: "GPT", visibility: "list", available_in_plans: ["plus"], priority: 6 });
+  assert.ok(extractChatGPT(JSON.stringify(input), inputs.openai, "2026-10-14").some(row => row.native_id === "gpt"));
+  assert.equal(canonical({ display_name: "<&>\u2028\u2029" }), '{"display_name":"\\u003c\\u0026\\u003e\\u2028\\u2029"}');
+});
 test("duplicate models, invalid dates/versions, unbound sources and over-limit pages fail", () => {
   const mutate = change => { const value = fixture(); change(value); assert.throws(() => validateCatalog(rehash(value))); };
   mutate(value => value.services[0].models.push({ ...value.services[0].models[0], order: 2 }));

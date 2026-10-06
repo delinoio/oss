@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
-export const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b, "en"))) : item);
+// Match Go's sorted-key JSON encoding, including its HTML/line-separator escapes.
+export const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item).replace(/[<>&\u2028\u2029]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
 export const catalogPath = "cmds/delidev-cli/internal/knownmodels/catalog.json";
 export const services = ["chatgpt", "claude", "grok"];
 const digest = value => createHash("sha256").update(value).digest("hex");
@@ -36,7 +37,7 @@ export function validateCatalog(value) {
       exactKeys(model, ["native_id", "display_name", "order", "source_keys"], ["minimum_harness_version", "retirement_date"]);
       if (typeof model.native_id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/.test(model.native_id) || ids.has(model.native_id) || typeof model.display_name !== "string" || !model.display_name.trim() || Buffer.byteLength(model.display_name) > 256 || /[\x00-\x1f\x7f]/.test(model.display_name) || model.order !== order) fail("model identity or order");
       if (!Array.isArray(model.source_keys) || !model.source_keys.length || new Set(model.source_keys).size !== model.source_keys.length || model.source_keys.some(key => !keys.has(key))) fail("model provenance");
-      if (model.minimum_harness_version !== undefined && !/^\d+\.\d+\.\d+$/.test(model.minimum_harness_version)) fail("minimum version");
+      if (model.minimum_harness_version !== undefined && (model.minimum_harness_version.length > 32 || !/^\d+\.\d+\.\d+$/.test(model.minimum_harness_version))) fail("minimum version");
       if (model.retirement_date !== undefined && !validDate(model.retirement_date)) fail("retirement date");
       ids.add(model.native_id);
     }
@@ -50,13 +51,14 @@ function section(markdown, heading) {
   if (start < 0) fail("upstream section changed");
   return markdown.slice(start + heading.length).split(/\n## /)[0];
 }
-const normalize = text => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function retirement(markdown, model, today) {
   const notices = section(markdown, "## Deprecated Codex models").split(/\n\s*\n/);
   for (const paragraph of notices) {
     // Replacement IDs belong to the next sentence, not the retiring subject.
     const sentence = paragraph.replace(/\s+/g, " ").split(/\. (?=[A-Z])/)[0];
-    if (![model.native_id, model.display_name].some(value => normalize(sentence).includes(normalize(value)))) continue;
+    const subjectEnd = "(?=(?:`|\\s)*(?:and\\b|,|(?:models?\\s+)?(?:retires?\\b|retired\\b|will retire\\b|(?:is|are)\\s+(?:already\\s+)?deprecated\\b)))";
+    if (![model.native_id, model.display_name].some(value => new RegExp(`(?:^|[^a-z0-9._-])${escapeRegex(value)}${subjectEnd}`, "i").test(sentence))) continue;
     if (/already deprecated/i.test(sentence)) return { excluded: true };
     const match = sentence.match(/(?:retires?|retired|will retire).*?(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (\d{4})/i);
     if (!match) fail("unrecognized retirement notice");

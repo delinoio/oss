@@ -157,7 +157,7 @@ func (m *Manager) refresh(ctx context.Context) error {
 // its original refresh deadline across restarts; failures never busy-loop.
 func (m *Manager) Run(ctx context.Context) {
 	m.mu.RLock()
-	delay := time.Until(m.fetchedAt.Add(SuccessInterval))
+	delay := m.fetchedAt.Add(SuccessInterval).Sub(m.now())
 	m.mu.RUnlock()
 	if delay < 0 {
 		delay = 0

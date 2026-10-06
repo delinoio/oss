@@ -14,7 +14,9 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const MaxBytes = 1 << 20
@@ -66,7 +68,7 @@ var ErrInvalid = errors.New("invalid known subscription model catalog")
 // Strict JSON rejects duplicate keys as well as unknown fields and trailing
 // documents. A partial or ambiguous catalog can never replace a valid one.
 func strictJSON(raw []byte, target any) error {
-	if len(raw) == 0 || len(raw) > MaxBytes {
+	if len(raw) == 0 || len(raw) > MaxBytes || !utf8.Valid(raw) {
 		return ErrInvalid
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -129,6 +131,26 @@ func validDate(value string) bool {
 	parsed, err := time.Parse(time.DateOnly, value)
 	return err == nil && parsed.Format(time.DateOnly) == value
 }
+func exactShape(value map[string]any, required, optional []string) bool {
+	for _, key := range required {
+		if item, ok := value[key]; !ok || item == nil {
+			return false
+		}
+	}
+	for key, item := range value {
+		allowed := false
+		for _, field := range append(append([]string(nil), required...), optional...) {
+			if key == field {
+				allowed = true
+				break
+			}
+		}
+		if !allowed || item == nil {
+			return false
+		}
+	}
+	return true
+}
 func Decode(raw []byte) (Catalog, error) {
 	var catalog Catalog
 	if err := strictJSON(raw, &catalog); err != nil {
@@ -159,7 +181,7 @@ func Decode(raw []byte) (Catalog, error) {
 		}
 		ids := map[string]bool{}
 		for order, model := range service.Models {
-			if !idPattern.MatchString(model.NativeID) || ids[model.NativeID] || model.DisplayName == "" || len(model.DisplayName) > 256 || int(model.Order) != order || len(model.SourceKeys) == 0 || model.MinimumHarnessVersion != "" && !versionPattern.MatchString(model.MinimumHarnessVersion) || model.RetirementDate != "" && !validDate(model.RetirementDate) {
+			if !idPattern.MatchString(model.NativeID) || ids[model.NativeID] || strings.TrimSpace(model.DisplayName) == "" || len(model.DisplayName) > 256 || int(model.Order) != order || len(model.SourceKeys) == 0 || len(model.MinimumHarnessVersion) > 32 || model.MinimumHarnessVersion != "" && !versionPattern.MatchString(model.MinimumHarnessVersion) || model.RetirementDate != "" && !validDate(model.RetirementDate) {
 				return Catalog{}, ErrInvalid
 			}
 			for _, ch := range model.DisplayName {
@@ -179,10 +201,46 @@ func Decode(raw []byte) (Catalog, error) {
 	}
 	// Hash the original service JSON through sorted object keys, shared with the
 	// collector. Unknown/missing values cannot evade its semantic version.
-	var original map[string]json.RawMessage
+	var original map[string]any
 	_ = json.Unmarshal(raw, &original)
-	var inventory any
-	_ = json.Unmarshal(original["services"], &inventory)
+	if !exactShape(original, []string{"schema_version", "catalog_version", "updated_at", "services", "sources"}, nil) {
+		return Catalog{}, ErrInvalid
+	}
+	inventory, ok := original["services"].([]any)
+	if !ok {
+		return Catalog{}, ErrInvalid
+	}
+	for _, entry := range inventory {
+		service, ok := entry.(map[string]any)
+		if !ok || !exactShape(service, []string{"service", "models"}, nil) {
+			return Catalog{}, ErrInvalid
+		}
+		models, ok := service["models"].([]any)
+		if !ok {
+			return Catalog{}, ErrInvalid
+		}
+		for _, row := range models {
+			model, ok := row.(map[string]any)
+			if !ok || !exactShape(model, []string{"native_id", "display_name", "order", "source_keys"}, []string{"minimum_harness_version", "retirement_date"}) {
+				return Catalog{}, ErrInvalid
+			}
+			for _, key := range []string{"minimum_harness_version", "retirement_date"} {
+				if item, present := model[key]; present && item == "" {
+					return Catalog{}, ErrInvalid
+				}
+			}
+		}
+	}
+	provenance, ok := original["sources"].([]any)
+	if !ok {
+		return Catalog{}, ErrInvalid
+	}
+	for _, entry := range provenance {
+		source, ok := entry.(map[string]any)
+		if !ok || !exactShape(source, []string{"key", "url", "revision", "sha256"}, nil) {
+			return Catalog{}, ErrInvalid
+		}
+	}
 	canonical, _ := json.Marshal(inventory)
 	digest := sha256.Sum256(canonical)
 	if catalog.CatalogVersion != "sha256:"+hex.EncodeToString(digest[:]) {

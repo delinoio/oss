@@ -4,10 +4,14 @@ package knownmodels
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +87,7 @@ func TestInvalidRefreshRetainsLastCatalog(t *testing.T) {
 			if after.Version != before.Version || after.Source != Cache || len(after.Models) != len(before.Models) {
 				t.Fatal("last valid catalog lost")
 			}
-			if New(strings.TrimSuffix(manager.path, "/known-subscription-models.json"), nil, quiet()).List("chatgpt").Version != before.Version {
+			if New(filepath.Dir(manager.path), nil, quiet()).List("chatgpt").Version != before.Version {
 				t.Fatal("invalid bytes replaced cache")
 			}
 		})
@@ -104,8 +108,51 @@ func TestCacheFailureDoesNotPublishAndMalformedRestartFallsBack(t *testing.T) {
 	if err := os.WriteFile(manager.path, []byte(`{"catalog":{}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if New(strings.TrimSuffix(manager.path, "/known-subscription-models.json"), nil, quiet()).List("claude").Source != Bundled {
+	if New(filepath.Dir(manager.path), nil, quiet()).List("claude").Source != Bundled {
 		t.Fatal("invalid cache restored")
+	}
+}
+func TestExactSchemaKeysAndRequiredModelMetadata(t *testing.T) {
+	var value map[string]any
+	if err := json.Unmarshal(fixtureRaw(t), &value); err != nil {
+		t.Fatal(err)
+	}
+	mutate := func(change func(map[string]any)) []byte {
+		var next map[string]any
+		_ = json.Unmarshal(fixtureRaw(t), &next)
+		change(next)
+		inventory, _ := json.Marshal(next["services"])
+		sum := sha256.Sum256(inventory)
+		next["catalog_version"] = "sha256:" + hex.EncodeToString(sum[:])
+		raw, _ := json.Marshal(next)
+		return raw
+	}
+	for _, change := range []func(map[string]any){
+		func(v map[string]any) { v["Services"] = v["services"]; delete(v, "services") },
+		func(v map[string]any) {
+			service := v["services"].([]any)[0].(map[string]any)
+			service["Models"] = service["models"]
+			delete(service, "models")
+		},
+		func(v map[string]any) {
+			model := v["services"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
+			delete(model, "order")
+		},
+		func(v map[string]any) {
+			model := v["services"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
+			model["minimum_harness_version"] = nil
+		},
+	} {
+		if _, err := Decode(mutate(change)); err == nil {
+			t.Fatal("partial or differently cased schema accepted")
+		}
+	}
+	raw := mutate(func(v map[string]any) {
+		model := v["services"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
+		model["display_name"] = "GPT <&>\u2028\u2029"
+	})
+	if _, err := Decode(raw); err != nil {
+		t.Fatal("canonical escaped metadata rejected", err)
 	}
 }
 func TestFixedRequestAndJoinedCancellation(t *testing.T) {
