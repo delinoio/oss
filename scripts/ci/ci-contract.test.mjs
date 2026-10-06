@@ -588,7 +588,13 @@ test("React Forge validates its supported runtime without scene-specific CI test
   const release = load(readFileSync(`${root}/.github/workflows/release-react-forge.yml`, "utf8"));
   assert.equal(release.jobs.build.steps.find(({ name }) => name === "Validate native engine, installed CLI, renders, and benchmark")?.run, 'bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"');
   const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
-  for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
+  for (const name of ["build", "test", "test:render", "benchmark", "ci:host"]) assert.equal(tasks[name].cache, false, name);
+  assert.deepEqual(tasks["ci:host"].dependsOn, ["build", "typecheck", "lint", "test", "typecheck:examples"]);
+  assert.equal(job.env.CARGO_TARGET_DIR, "${{ github.workspace }}/target/react-forge");
+  const rustCache = job.steps.find(({ uses }) => uses?.startsWith("Swatinem/rust-cache@"));
+  assert.equal(rustCache.with.workspaces.trim(), ". -> target/react-forge");
+  assert.equal(rustCache.with["save-if"], "${{ github.ref == 'refs/heads/main' }}");
+  assert.equal(rustCache.with["cache-on-failure"], false);
   assert.ok(tasks.test.passThroughEnv.includes("REACT_FORGE_SKIP_SCENE_TESTS"));
 });
 
