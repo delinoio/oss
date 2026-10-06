@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 type roundTrip func(*http.Request) (*http.Response, error)
@@ -42,13 +44,23 @@ func changedFixture(t *testing.T, change func(map[string]any)) []byte {
 	return raw
 }
 func quiet() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }
+func privateRoot(t *testing.T) string {
+	t.Helper()
+	// Windows temp roots inherit a broad ACL. Manager.New validates its caller-owned
+	// private root, so the fixture must model the private store used in production.
+	root := filepath.Join(t.TempDir(), "known-models")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
 func fixtureTransport(raw []byte) roundTrip {
 	return func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(raw))}, nil
 	}
 }
 func TestBundledOnlineCacheAndRestart(t *testing.T) {
-	root := t.TempDir()
+	root := privateRoot(t)
 	raw := changedFixture(t, func(v map[string]any) {
 		model := v["services"].([]any)[0].(map[string]any)["models"].([]any)[0].(map[string]any)
 		model["native_id"] = "gpt-fixture-reviewed"
@@ -90,7 +102,7 @@ func TestInvalidRefreshRetainsLastCatalog(t *testing.T) {
 	cases := map[string][]byte{"bad_json": []byte("{"), "schema": bytes.Replace(raw, []byte(`"schema_version": 1`), []byte(`"schema_version": 2`), 1), "unknown": bytes.Replace(raw, []byte(`"schema_version": 1`), []byte(`"unknown": 1, "schema_version": 1`), 1), "duplicate": bytes.Replace(raw, []byte(`"schema_version": 1`), []byte(`"schema_version": 1, "schema_version": 1`), 1), "too_large": bytes.Repeat([]byte(" "), MaxBytes+1), "empty": []byte(`{}`), "digest": bytes.Replace(raw, []byte("gpt-6.1-sol"), []byte("gpt-changed"), 1)}
 	for name, invalid := range cases {
 		t.Run(name, func(t *testing.T) {
-			manager := New(t.TempDir(), fixtureTransport(raw), quiet())
+			manager := New(privateRoot(t), fixtureTransport(raw), quiet())
 			if err := manager.Refresh(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +122,7 @@ func TestInvalidRefreshRetainsLastCatalog(t *testing.T) {
 	}
 }
 func TestCacheFailureDoesNotPublishAndMalformedRestartFallsBack(t *testing.T) {
-	manager := New(t.TempDir(), fixtureTransport(fixtureRaw(t)), quiet())
+	manager := New(privateRoot(t), fixtureTransport(fixtureRaw(t)), quiet())
 	if err := os.Mkdir(manager.path, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +132,7 @@ func TestCacheFailureDoesNotPublishAndMalformedRestartFallsBack(t *testing.T) {
 	if manager.List("claude").Source != Bundled {
 		t.Fatal("unpersisted catalog published")
 	}
-	manager = New(t.TempDir(), nil, quiet())
+	manager = New(privateRoot(t), nil, quiet())
 	if err := os.WriteFile(manager.path, []byte(`{"catalog":{}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +199,7 @@ func TestCatalogRequiresCompleteSourceProvenance(t *testing.T) {
 func TestFixedRequestAndJoinedCancellation(t *testing.T) {
 	started := make(chan struct{})
 	stopped := make(chan struct{})
-	manager := New(t.TempDir(), roundTrip(func(request *http.Request) (*http.Response, error) {
+	manager := New(privateRoot(t), roundTrip(func(request *http.Request) (*http.Response, error) {
 		if request.URL.String() != CatalogURL || request.Method != "GET" || request.Header.Get("Authorization") != "" || request.Header.Get("Cookie") != "" {
 			t.Error("request authority changed")
 		}
@@ -220,7 +232,7 @@ func TestFixedRequestAndJoinedCancellation(t *testing.T) {
 	}
 }
 func TestTimeoutAndRedirectKeepBundled(t *testing.T) {
-	manager := New(t.TempDir(), roundTrip(func(request *http.Request) (*http.Response, error) {
+	manager := New(privateRoot(t), roundTrip(func(request *http.Request) (*http.Response, error) {
 		<-request.Context().Done()
 		return nil, request.Context().Err()
 	}), quiet())
