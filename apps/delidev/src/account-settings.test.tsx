@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource, type GetUsageSummaryRequest, UsageService, GetUsageSummaryResponseSchema } from "@delinoio/delidev-api-client";
 import { AccountSettings, AccountSettingsSection, type AccountProviderSummary } from "./account-settings";
 import { MutationIntents } from "./mutation";
 import { Authentication } from "./configuration-fields";
@@ -31,7 +31,9 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
   const connect = vi.fn(args.connect ?? (async (request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT), requestId: requestId(request) })));
   const other = vi.fn(async () => ({}));
   const status = vi.fn(() => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] as SystemCapability[] }));
+  const usage = vi.fn((_request: GetUsageSummaryRequest) => create(GetUsageSummaryResponseSchema, { fromUnixMs: 1780000000000n, untilUnixMs: 1782592000000n }));
   const transport = createRouterTransport((router) => {
+    router.service(UsageService, { getUsageSummary: usage });
     router.service(SystemService, { getStatus: status });
     router.service(ResourceService, { listResources: list, getResource: async (request) => ({ resource: resources.find((row) => row.id === request.id) ?? (request.kind === EntityKind.PROVIDER && request.id === providerId ? args.currentProvider ?? provider : undefined) }) });
     router.service(ConfigurationService, { saveConfiguration: save });
@@ -70,7 +72,7 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     deleteAccount={callbacks.deleteAccount}
     {...overrides}
   />;
-  return { status, providerId, provider, providerOption, resources, list, save, connect, other, client, callbacks, view, settings };
+  return { usage, status, providerId, provider, providerOption, resources, list, save, connect, other, client, callbacks, view, settings };
 }
 
 it("uses server-side account type and provider filters and keeps the split view disabled without its capability", async () => {
@@ -465,6 +467,7 @@ it("retains API entries during failed refreshes and labels initial loading witho
   expect(await screen.findByText("Refresh failed. Showing the last successfully loaded entries.")).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Retained alias" })).toBeTruthy();
   expect(screen.queryByText(/No AI API key entries/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Retained alias" }));
   expect(screen.getByRole("button", { name: "Delete entry" })).toBeTruthy();
 });
 
@@ -522,17 +525,22 @@ it("preserves every independent row fact, full fallback identity, server order a
   const rows = screen.getAllByRole("article");
   expect(rows.map((row) => row.querySelector("h2")?.textContent)).toEqual(["Personal", "Work", "Disabled cleanup entry", "Unnamed"]);
   expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
-  expect(within(rows[0]).getByText("Credential connected")).toBeTruthy();
+  expect(within(rows[0]).getByText("Connected")).toBeTruthy();
   expect(within(rows[0]).getByText("unverified")).toBeTruthy();
-  expect(within(rows[0]).getByText("No quota observation")).toBeTruthy();
+  expect(within(rows[0]).getAllByText("Not reported").length).toBeGreaterThan(0);
   expect(within(rows[1]).getByText(`Provider unavailable · ${missing}`)).toBeTruthy();
-  expect(within(rows[1]).getByText("Unavailable")).toBeTruthy();
-  expect(within(rows[1]).getByText("1 observations")).toBeTruthy();
+  expect(within(rows[1]).getAllByText("Unavailable").length).toBeGreaterThan(0);
+  expect(within(rows[1]).getAllByText("Unknown").length).toBeGreaterThan(0);
   expect(within(rows[2]).getByText("Credential cleanup pending")).toBeTruthy();
   expect(within(rows[2]).getByText("Disabled")).toBeTruthy();
   expect(within(rows[2]).getByText("Confirmed exhausted")).toBeTruthy();
-  for (const row of rows) expect(within(row).getAllByRole("button").map((button) => button.textContent)).toEqual(["Manage connection", "Edit preferences", "Delete entry"]);
-  expect(within(rows[3]).getAllByRole("button").every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+  for (const row of rows.slice(0, 3)) {
+    fireEvent.click(within(row).getByRole("button", { name: /More actions/ }));
+    expect(within(row).getByRole("button", { name: "Edit preferences" })).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "Delete entry" })).toBeTruthy();
+  }
+  expect((within(rows[3]).getByRole("button", { name: "Manage connection" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((within(rows[3]).getByRole("button", { name: /More actions/ }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByLabelText("API key")).toBeNull();
 });
 
@@ -595,4 +603,22 @@ it("keeps inventory loading, denial, missing capabilities and failed cached empt
   await screen.findByRole("button", { name: "Retry entries" });
   expect(screen.queryByRole("heading", { name: "No AI API key entries" })).toBeNull();
   expect(screen.getByText(/last successfully loaded entries/)).toBeTruthy();
+});
+
+it("refreshes only the current page's accounts and usage without business mutations", async () => {
+  const first = resource(EntityKind.ACCOUNT, { alias: "First key", type: "api", enabled: true });
+  const second = resource(EntityKind.ACCOUNT, { alias: "Second key", type: "api", enabled: true });
+  const f = fixture({ listPage: request => request.filter?.pageToken ? { resources: [second] } : { resources: [first], nextPageToken: "next-page" } });
+  render(f.view(f.settings(AccountSettingsSection.Api)));
+  await waitFor(() => expect(f.usage).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByRole("heading", { name: "Second key" });
+  await waitFor(() => expect(f.usage).toHaveBeenCalledTimes(2));
+  const refresh = screen.getByRole("button", { name: "Refresh usage" });
+  await waitFor(() => expect((refresh as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(refresh);
+  await waitFor(() => expect(f.usage).toHaveBeenCalledTimes(3));
+  expect(f.usage.mock.calls.map(([request]) => request.accountId)).toEqual([first.id, second.id, second.id]);
+  expect(f.list.mock.calls.map(([request]) => request.filter?.pageToken)).toEqual(["", "next-page", "next-page"]);
+  expect(f.save).not.toHaveBeenCalled(); expect(f.connect).not.toHaveBeenCalled(); expect(f.other).not.toHaveBeenCalled();
 });

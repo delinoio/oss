@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "provider-guidance"
+description = "Open only compiled official provider documentation and key-creation pages selected by a closed preset and action."
+commands.allow = ["open_provider_guidance"]

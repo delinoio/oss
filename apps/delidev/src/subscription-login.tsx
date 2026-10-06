@@ -18,7 +18,9 @@ interface Pending {
 function browserURL(value: string) {
   try {
     const url = new URL(value), q = url.searchParams;
-    return value.length <= 8192 && url.protocol === "https:" && url.host === "auth.openai.com" && !url.username && !url.password && !url.hash && url.pathname === "/oauth/authorize" && q.get("redirect_uri") === "http://localhost:1457/auth/callback" && /^[a-zA-Z0-9_-]{16,512}$/.test(q.get("state") ?? "");
+    if (Array.from(q.keys()).some(key => q.getAll(key).length !== 1)) return false;
+    const callback = q.get("redirect_uri");
+    return value.length <= 8192 && url.protocol === "https:" && url.host === "auth.openai.com" && !url.username && !url.password && !url.hash && url.pathname === "/oauth/authorize" && (callback === "http://localhost:1457/auth/callback" || callback === "http://127.0.0.1:1457/auth/callback") && /^[a-zA-Z0-9_-]{16,512}$/.test(q.get("state") ?? "");
   } catch { return false; }
 }
 const stages: Partial<Record<SubscriptionLoginState, Stage>> = {

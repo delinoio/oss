@@ -11,6 +11,7 @@ fn main() {
             "read_appearance",
             "update_appearance",
             "open_github",
+            "open_provider_guidance",
             "connect_local",
             "launch_local",
             "retry_local",

@@ -1,5 +1,7 @@
 # DeliDev scripts ownership
 
+- `qa/` owns the explicit parallel browser QA launcher and host under `docs/apps-delidev-qa-contract.md`. Track preparation, lifecycle and cleanup children, pin every browser control to its original private environment, and keep credentials out of logs/manifests. Delete state only after original product cleanup and process exit; preserve uncertainty and evidence outside the checkout.
+
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Native builds and packaging must run the shared `prepare:assets` preflight before compilation. Hydrate only the exact DeliDev source-icon LFS path, first from the local cache and then by a path-scoped current-ref fetch. Validate the original pointer size/SHA-256 and PNG container, preserve local image/pointer edits, stop on failure or cancellation, and retain credential-free signing environments. A valid PNG needs neither Git nor network access. Follow `docs/apps-delidev-desktop-contract.md`.

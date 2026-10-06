@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,6 +33,7 @@ type serverLoginFixture struct {
 	startError error
 	waitError  error
 	bundle     []byte
+	url        string
 	calls      atomic.Int32
 }
 
@@ -41,7 +43,11 @@ func (n *serverLoginFixture) StartManagedLogin(context.Context, bool) (codex.Man
 	if n.startError != nil {
 		return codex.ManagedLoginProgress{}, n.startError
 	}
-	return codex.ManagedLoginProgress{LoginID: "fixture-login", URL: serverFixtureURL}, nil
+	authorization := n.url
+	if authorization == "" {
+		authorization = serverFixtureURL
+	}
+	return codex.ManagedLoginProgress{LoginID: "fixture-login", URL: authorization}, nil
 }
 func (n *serverLoginFixture) WaitManagedLogin(ctx context.Context, _ string) error {
 	close(n.started)
@@ -96,42 +102,47 @@ func awaitServerFixture(t *testing.T, ch <-chan struct{}) {
 	}
 }
 func TestServerSubscriptionLoginWithoutWorkerAndTransientName(t *testing.T) {
-	f := newSubscriptionFixture(t)
-	op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
-	r, a := f.record()
-	if a.Subscription.Pending.MachineID != "" || a.Subscription.ServerOperation == nil {
-		t.Fatal("server login borrowed Worker ownership")
-	}
-	replay, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: op.OperationId, Id: string(r.ID), ExpectedRevision: op.Account.Revision - 1}, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN}))
-	if err != nil || !replay.Msg.Replayed {
-		t.Fatalf("original request replay: %v", err)
-	}
-	n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle("server-native-account", "first", time.Now().UTC())}
-	done := f.serverRun(n)
-	awaitServerFixture(t, n.started)
-	if p := f.progressFor(op.OperationId); p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING || p.Url != serverFixtureURL || p.UserCode != "" || p.SuggestedName != "" {
-		t.Fatal("unconfirmed login exposed a name or code")
-	}
-	if _, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN); err == nil {
-		t.Fatal("Worker consumed a server operation")
-	}
-	close(n.finish)
-	awaitServerFixture(t, done)
-	r, a = f.record()
-	if a.Connection == nil || a.Subscription.Pending != nil || a.Subscription.Lease != nil || a.Subscription.OwnerMachineID != "" || a.Subscription.ServerOperation.NativeStarted {
-		t.Fatal("server success did not release exclusive authentication ownership")
-	}
-	p := f.progressFor(op.OperationId)
-	if p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED || p.Generation != string(a.Subscription.Generation) || p.SuggestedName != "fixture@example.invalid" {
-		t.Fatal("original success did not publish its transient suggestion")
-	}
-	if bytes.Contains(r.Data, []byte("fixture@example.invalid")) || bytes.Contains(r.Data, []byte("synthetic-refresh")) || n.calls.Load() != 1 {
-		t.Fatal("persisted sensitive presentation or repeated login")
-	}
-	// A later status read cannot inherit the prior original success after rotation.
-	f.service.subscriptionProgress[domain.ID(op.OperationId)] = subscriptionProgress{Name: "stale", Generation: domain.NewID(), Until: time.Now().Add(time.Minute)}
-	if f.progressFor(op.OperationId).SuggestedName != "" {
-		t.Fatal("suggestion crossed generations")
+	for _, host := range []string{"localhost", "127.0.0.1"} {
+		t.Run(host, func(t *testing.T) {
+			authorization := strings.Replace(serverFixtureURL, "localhost", host, 1)
+			f := newSubscriptionFixture(t)
+			op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+			r, a := f.record()
+			if a.Subscription.Pending.MachineID != "" || a.Subscription.ServerOperation == nil {
+				t.Fatal("server login borrowed Worker ownership")
+			}
+			replay, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: op.OperationId, Id: string(r.ID), ExpectedRevision: op.Account.Revision - 1}, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN}))
+			if err != nil || !replay.Msg.Replayed {
+				t.Fatalf("original request replay: %v", err)
+			}
+			n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), url: authorization, bundle: subscriptionTestBundle("server-native-account", "first", time.Now().UTC())}
+			done := f.serverRun(n)
+			awaitServerFixture(t, n.started)
+			if p := f.progressFor(op.OperationId); p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_WAITING || p.Url != authorization || p.UserCode != "" || p.SuggestedName != "" {
+				t.Fatal("unconfirmed login exposed a name or code")
+			}
+			if _, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN); err == nil {
+				t.Fatal("Worker consumed a server operation")
+			}
+			close(n.finish)
+			awaitServerFixture(t, done)
+			r, a = f.record()
+			if a.Connection == nil || a.Subscription.Pending != nil || a.Subscription.Lease != nil || a.Subscription.OwnerMachineID != "" || a.Subscription.ServerOperation.NativeStarted {
+				t.Fatal("server success did not release exclusive authentication ownership")
+			}
+			p := f.progressFor(op.OperationId)
+			if p.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED || p.Generation != string(a.Subscription.Generation) || p.SuggestedName != "fixture@example.invalid" {
+				t.Fatal("original success did not publish its transient suggestion")
+			}
+			if bytes.Contains(r.Data, []byte("fixture@example.invalid")) || bytes.Contains(r.Data, []byte("synthetic-refresh")) || n.calls.Load() != 1 {
+				t.Fatal("persisted sensitive presentation or repeated login")
+			}
+			// A later status read cannot inherit the prior original success after rotation.
+			f.service.subscriptionProgress[domain.ID(op.OperationId)] = subscriptionProgress{Name: "stale", Generation: domain.NewID(), Until: time.Now().Add(time.Minute)}
+			if f.progressFor(op.OperationId).SuggestedName != "" {
+				t.Fatal("suggestion crossed generations")
+			}
+		})
 	}
 }
 func TestServerSubscriptionCancelCompletionAndCleanupRace(t *testing.T) {
@@ -173,11 +184,12 @@ func TestServerSubscriptionCancelCompletionAndCleanupRace(t *testing.T) {
 type callbackFixtureTransport struct {
 	calls atomic.Int32
 	fail  bool
+	host  string
 }
 
 func (r *callbackFixtureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	r.calls.Add(1)
-	if req.URL.Host != "127.0.0.1:1457" || req.Host != "localhost:1457" || req.URL.Path != "/auth/callback" {
+	if req.URL.Host != "127.0.0.1:1457" || req.Host != r.host || req.URL.Path != "/auth/callback" {
 		return nil, errors.New("foreign callback authority")
 	}
 	if r.fail {
@@ -186,39 +198,43 @@ func (r *callbackFixtureTransport) RoundTrip(req *http.Request) (*http.Response,
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("constant fixture page")), Header: make(http.Header)}, nil
 }
 func TestServerSubscriptionCallbackRejectsDuplicateForeignAndLate(t *testing.T) {
-	for _, unknown := range []bool{false, true} {
-		t.Run(map[bool]string{false: "accepted", true: "unknown"}[unknown], func(t *testing.T) {
-			f := newSubscriptionFixture(t)
-			op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
-			n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle("callback-account", "first", time.Now().UTC())}
-			done := f.serverRun(n)
-			awaitServerFixture(t, n.started)
-			transport := &callbackFixtureTransport{fail: unknown}
-			f.service.subscriptionCallbackTransport = transport
-			send := func(operation, query string) error {
-				_, err := f.client.ForwardSubscriptionCallback(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.ForwardSubscriptionCallbackRequest{AccountId: string(f.input.AccountID), OperationId: operation, CallbackQuery: []byte(query)}))
-				return err
-			}
-			for _, query := range []string{"code=fixture&state=foreign", "code=fixture&state=" + serverFixtureState + "&code=other", "code=fixture&state=" + serverFixtureState + "&redirect_uri=https://external.invalid"} {
-				if send(op.OperationId, query) == nil {
-					t.Fatal("accepted foreign or duplicate callback")
-				}
-			}
-			query := "code=fixture&state=" + serverFixtureState
-			if send(string(domain.NewID()), query) == nil {
-				t.Fatal("accepted foreign operation")
-			}
-			err := send(op.OperationId, query)
-			if (err != nil) != unknown {
-				t.Fatalf("delivery result: %v", err)
-			}
-			if send(op.OperationId, query) == nil || transport.calls.Load() != 1 {
-				t.Fatal("callback dispatched more than once")
-			}
-			close(n.finish)
-			awaitServerFixture(t, done)
-			if send(op.OperationId, query) == nil || transport.calls.Load() != 1 {
-				t.Fatal("late callback dispatched")
+	for _, host := range []string{"localhost", "127.0.0.1"} {
+		t.Run(host, func(t *testing.T) {
+			for _, unknown := range []bool{false, true} {
+				t.Run(map[bool]string{false: "accepted", true: "unknown"}[unknown], func(t *testing.T) {
+					f := newSubscriptionFixture(t)
+					op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+					n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), url: strings.Replace(serverFixtureURL, "localhost", host, 1), bundle: subscriptionTestBundle("callback-account", "first", time.Now().UTC())}
+					done := f.serverRun(n)
+					awaitServerFixture(t, n.started)
+					transport := &callbackFixtureTransport{fail: unknown, host: host + ":1457"}
+					f.service.subscriptionCallbackTransport = transport
+					send := func(operation, query string) error {
+						_, err := f.client.ForwardSubscriptionCallback(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.ForwardSubscriptionCallbackRequest{AccountId: string(f.input.AccountID), OperationId: operation, CallbackQuery: []byte(query)}))
+						return err
+					}
+					for _, query := range []string{"code=fixture&state=foreign", "code=fixture&state=" + serverFixtureState + "&code=other", "code=fixture&state=" + serverFixtureState + "&redirect_uri=https://external.invalid"} {
+						if send(op.OperationId, query) == nil {
+							t.Fatal("accepted foreign or duplicate callback")
+						}
+					}
+					query := "code=fixture&state=" + serverFixtureState
+					if send(string(domain.NewID()), query) == nil {
+						t.Fatal("accepted foreign operation")
+					}
+					err := send(op.OperationId, query)
+					if (err != nil) != unknown {
+						t.Fatalf("delivery result: %v", err)
+					}
+					if send(op.OperationId, query) == nil || transport.calls.Load() != 1 {
+						t.Fatal("callback dispatched more than once")
+					}
+					close(n.finish)
+					awaitServerFixture(t, done)
+					if send(op.OperationId, query) == nil || transport.calls.Load() != 1 {
+						t.Fatal("late callback dispatched")
+					}
+				})
 			}
 		})
 	}
@@ -392,5 +408,39 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 				t.Fatal("subscription log lost safe native failure attribution")
 			}
 		})
+	}
+}
+
+func TestServerSubscriptionBrowserCallbackAllowlist(t *testing.T) {
+	for _, callback := range []string{"http://localhost:1457/auth/callback", "http://127.0.0.1:1457/auth/callback"} {
+		authorization := strings.Replace(serverFixtureURL, "http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback", url.QueryEscape(callback), 1)
+		actual, state, ok := serverLoginCallback(authorization)
+		if !ok || actual != callback || state != serverFixtureState || !validServerLoginProgress(authorization, "") {
+			t.Fatal("registered original callback was rejected")
+		}
+	}
+	for _, callback := range []string{"http://127.1:1457/auth/callback", "http://2130706433:1457/auth/callback", "http://[::1]:1457/auth/callback", "http://localhost:1455/auth/callback", "http://127.0.0.1:1457/other", "http://localhost.evil.invalid:1457/auth/callback", "https://127.0.0.1:1457/auth/callback", "http://user@localhost:1457/auth/callback", "http://localhost:1457/auth/callback#fragment"} {
+		authorization := strings.Replace(serverFixtureURL, "http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback", url.QueryEscape(callback), 1)
+		if validServerLoginProgress(authorization, "") {
+			t.Fatal("unregistered callback was accepted")
+		}
+	}
+	for _, authorization := range []string{serverFixtureURL + "&redirect_uri=http%3A%2F%2F127.0.0.1%3A1457%2Fauth%2Fcallback", serverFixtureURL + "&state=" + serverFixtureState, strings.Replace(serverFixtureURL, serverFixtureState, "invalid.state-value-1234", 1), strings.Replace(serverFixtureURL, serverFixtureState, "short", 1), strings.Replace(serverFixtureURL, "auth.openai.com", "external.invalid", 1)} {
+		if validServerLoginProgress(authorization, "") {
+			t.Fatal("malformed original authorization was accepted")
+		}
+	}
+}
+
+func TestServerSubscriptionRejectedURLLogsOnlySafeMetadata(t *testing.T) {
+	var logs bytes.Buffer
+	service := &Service{logger: slog.New(slog.NewJSONHandler(&logs, nil))}
+	operation := domain.ServerSubscriptionOperation{ID: domain.NewID()}
+	authorization := serverFixtureURL + "&state=sensitive-fixture-state"
+	if service.publishServerSubscriptionProgress(context.Background(), domain.NewID(), operation, authorization, "") == nil {
+		t.Fatal("invalid login URL was admitted")
+	}
+	if !bytes.Contains(logs.Bytes(), []byte("server_subscription_login_url_rejected")) || !bytes.Contains(logs.Bytes(), []byte(operation.ID)) || bytes.Contains(logs.Bytes(), []byte("sensitive-fixture-state")) || bytes.Contains(logs.Bytes(), []byte("auth.openai.com")) {
+		t.Fatal("URL rejection log lost safe attribution or exposed native content")
 	}
 }
