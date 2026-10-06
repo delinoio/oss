@@ -46,7 +46,10 @@ orders snapshots and removals independently of tray rendering. The tray lock
 orders admission only; no tray, binding, registry or queue lock spans persistence.
 Before each queued snapshot reaches storage, recheck its original window instance,
 presentation scope/revision and current oldest-ready owner, and read the latest
-committed native name. Superseded queued snapshots are discarded. An already
+committed native name. Retain earlier admitted revisions within the same scope
+in FIFO order, so a later unavailable refresh preserves their last successful
+observation. Replaced scopes and revoked writer ownership discard queued
+predecessor snapshots. An already
 executing write finishes before any successor can write, so it cannot overwrite
 a newer writer's persisted snapshot.
 

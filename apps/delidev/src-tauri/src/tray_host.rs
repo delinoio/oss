@@ -266,10 +266,14 @@ fn widget_current(
         Ok(value) => value,
         Err(_) => return false,
     };
-    if !state
-        .windows
-        .get(label)
-        .is_some_and(|value| value.scope == scope && value.revision == revision)
+    // FIFO admission already orders increasing revisions. Keep earlier accepted
+    // observations: a later failed refresh must retain their successful state.
+    // Scope/window replacement still revokes queued predecessor authority.
+    if revision == 0
+        || !state
+            .windows
+            .get(label)
+            .is_some_and(|value| value.scope == scope && value.revision >= revision)
     {
         return false;
     }
@@ -935,6 +939,30 @@ mod tests {
             &first,
             "scope",
             0,
+            &original,
+            &mut publication
+        ));
+
+        state
+            .lock()
+            .unwrap()
+            .publish(&first, "scope", 2, unavailable())
+            .unwrap();
+        assert!(widget_current(
+            &state,
+            &windows,
+            &first,
+            "scope",
+            1,
+            &original,
+            &mut publication
+        ));
+        assert!(!widget_current(
+            &state,
+            &windows,
+            &first,
+            "scope",
+            3,
             &original,
             &mut publication
         ));
