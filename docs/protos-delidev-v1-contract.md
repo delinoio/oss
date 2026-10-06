@@ -647,4 +647,6 @@ Main-established capability 30 and PR #1332's reserved declarations activate the
 
 ### Codex diagnostic activation
 
+The existing schema-v2 account JSON may retain optional server-owned `server_operation.cleanup_phase` with closed `native-confirmed` or `credentials-confirmed` values for failed initial server login cleanup. Omitted legacy metadata remains unchanged. This checkpoint grants no authentication, callback or configuration-deletion authority; the subscription contract defines its original-owner and cleanup requirements. No protobuf field, capability, generated declaration or database migration is added.
+
 PR #1336 established the diagnostic allocations on main at `82d8859e98485458ccf8708225c0c6694d9cfab5`. The optional `GetSubscriptionProgressResponse.diagnostic` field 7 now uses those exact declarations: detected version 1, minimum version 2, closed phase 3, stable code 4, safe message 5, guidance 6 and correlation ID 7. An empty detected version means no verified version; absent diagnostic means the server did not report metadata. Native failure attribution never grants account, callback or retry authority. Preserve original actor/operation ownership and terminal read authorization; older clients can ignore the additive field. Regenerate Go and TypeScript bindings from the reconciled schema. No migration or capability number is added.

@@ -124,4 +124,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Subscription server_operation is optional server-owned closed metadata. A machine-less pending claim is valid only for its exact server operation/actor; native_started requires no Worker lease and the original generation. Active/recovery ownership retains pending authority. Terminal metadata grants no credential use. Keep APIs, immutable historical service attribution and real migrations unchanged.
 
+- Optional server-operation cleanup_phase is a closed native-confirmed/credentials-confirmed enum for failed initial login only. It cannot coexist with connection, generation, identity or Worker/quota ownership. Credential confirmation requires a terminal failed/canceled/expired/unsupported operation and cleared native/pending/recovery fences. Omission preserves legacy bytes; configuration cannot create cleanup proof. Follow the subscription contract.
+
 - Codex diagnostics are optional bounded existing-document metadata with closed phases/codes and locally reconstructed safe text. Validate actual version attribution and original operation correlation; no diagnostic grants native/account authority or requires a SQLite migration.
