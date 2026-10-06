@@ -156,6 +156,16 @@ Those same jobs build the DevHud frontend only when `devhud` is selected, and th
 
 CI never builds a signed private candidate and never publishes.
 
+The read-only `devhud-supply-chain` job uses Ubuntu 22.04 for the existing
+installer, SBOM, provenance and updater fixtures and Windows for
+`ci:windows-signature`, an uncached Turbo task. Windows prepares the pinned Go
+toolchain to build a temporary native SignTool stub, then executes the private
+workflow's PowerShell validation prefix. MSI and NSIS fixtures require nonzero
+verification status to stop before installation, SBOM, evidence or upload
+sentinels; zero status reaches every sentinel. Both rows remain required by
+`CI Result`, without release credentials or publication authority. These fixtures
+do not establish actual certificate verification or signed-package acceptance.
+
 Changes to the shared checksum generator select the DevHud supply-chain fixture job that exercises it, including on pull requests where desktop packaging is skipped.
 
 Forge uses `forge-test` on Linux, macOS, and Windows for its three private Rust crates, DSL, preservation, state and official MCP-client tests. `forge-render` installs LibreOffice Impress and Poppler on Linux and explicitly runs the normally ignored renderer integration test, retaining PNG/PDF evidence for seven days. Both jobs participate in central path selection and `CI Result`; neither publishes packages or artifacts outside the workflow run.

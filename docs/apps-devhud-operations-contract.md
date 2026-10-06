@@ -56,6 +56,14 @@ Validate the exact primary artifacts before retaining a candidate:
 
 Use `scripts/release/validate-devhud-private-build.mjs`, `scripts/release/validate-devhud-public-assets.mjs`, `scripts/release/validate-devhud-ios-signing.mjs`, `apps/devhud/scripts/validate-updater-release.mjs`, and the release test suite. Never replace a missing SBOM, provenance statement, signature, or validation record with a placeholder.
 
+Windows private packaging checks `$LASTEXITCODE` immediately after
+`signtool.exe verify /pa /all /v`. A nonzero status fails the step before installer
+execution, SBOM generation, validation evidence or artifact upload. The diagnostic
+contains only stable Authenticode context and the numeric status. Successful
+verification continues through the existing lifecycle and evidence checks. The
+Windows supply-chain CI row tests this boundary with temporary native stubs for
+MSI and NSIS; actual certificate and signed-package acceptance remain separate.
+
 ## Coordinated publication, delays, withdrawal, and rollback
 
 Google Play full-rollout verification is currently unavailable. Its published lifecycle summary covers complete, partial, and resumable halted rollouts without distinguishing them. For the exact build, status and withdrawal fail with `Google Play published release summary cannot verify a full rollout; release advancement and automatic cleanup are blocked`. Stop release advancement and automatic cleanup or rollback when this error occurs. Even a genuinely complete rollout remains blocked until independent authoritative full-rollout evidence exists. Do not bypass this error with operator approval, a previous `completed` submission request, or edit-based polling. The production-release service-account prerequisite still applies before any Google network access.
