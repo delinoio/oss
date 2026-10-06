@@ -47,3 +47,38 @@ func TestFinalRootRemovalPreservesPrivateReplacementAfterIdentityCheck(t *testin
 		t.Fatal("original private root was removed", err)
 	}
 }
+
+func TestFinalRootRemovalRestoresModeAfterFailedUnlink(t *testing.T) {
+	m, r := finalRootFixture(t, StorageCleanup)
+	injected := false
+	var private string
+	m.storageFinalRootFault = func(stage storageFinalRootStage) error {
+		if stage != storageFinalRootBeforeUnlink || injected {
+			return nil
+		}
+		injected = true
+		private = finalRootFixturePath(t, m, r.OperationID)
+		return os.WriteFile(filepath.Join(private, "retained"), []byte("writer data"), 0600)
+	}
+
+	result, err := m.Storage(context.Background(), r)
+	if !injected || domain.SafeError(err).Code != domain.RecoveryRequired || result.CleanupVerified {
+		t.Fatal("retained writer did not keep removal uncertain", result, err)
+	}
+	info, err := os.Stat(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf("failed unlink left private root mode %04o", info.Mode().Perm())
+	}
+	if err := os.Remove(filepath.Join(private, "retained")); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := &Manager{Root: m.Root, Logger: m.Logger}
+	recovered, err := restarted.Storage(context.Background(), recoveryRequest(r))
+	if err != nil || !recovered.CleanupVerified || recovered.RecoveredJobState != domain.JobSucceeded {
+		t.Fatal("original final-root transition did not recover", recovered, err)
+	}
+}

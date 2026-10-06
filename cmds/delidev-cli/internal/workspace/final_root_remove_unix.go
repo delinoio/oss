@@ -50,7 +50,19 @@ func removeVerifiedFinalRoot(path, expectedIdentity string, beforeUnlink func() 
 		return ResultUncertain()
 	}
 
-	return unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR)
+	if err := unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR); err != nil {
+		// A retained writer can make the directory non-empty after the final
+		// identity check. Restore the exact verified mode before returning so a
+		// retry can reopen the private root and continue the original transition.
+		if restoreErr := root.Chmod(0700); restoreErr != nil {
+			return fmt.Errorf("unlink final root: %w; restore mode: %v", err, restoreErr)
+		}
+		if syncErr := root.Sync(); syncErr != nil {
+			return fmt.Errorf("unlink final root: %w; sync restored mode: %v", err, syncErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func directoryIdentityAt(parent *os.File, name string) (string, os.FileMode, error) {
