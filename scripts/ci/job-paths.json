@@ -587,6 +587,7 @@
       "go.sum",
       "package.json",
       "packages/async-commit-hook-api-client/**",
+      "packages/devhud-api-client/src/gen/**",
       "packaging/async-commit-hook/**",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",

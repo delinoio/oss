@@ -216,6 +216,35 @@ test("async-commit-hook failures, missing results and unauthorized skips fail th
   assert.throws(() => validateResults(needs), /inventory/u);
 });
 
+test("DevHud generated inputs select shared freshness without selecting DeliDev jobs", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of [
+      "packages/devhud-api-client/src/gen/devhud/v1/common_pb.ts",
+      "packages/devhud-api-client/src/gen/devhud/v1/account-AccountService_connectquery.ts",
+      "protos/devhud/v1/account.proto", "protos/gen/go/devhud/v1/account.pb.go",
+    ]) {
+      const plan = planJobs(event, [path]);
+      assert.equal(plan.jobs["async-commit-hook"], true, `${event}: ${path}`);
+      for (const id of ["delidev-protocol", "delidev-client", "delidev-frontend"]) {
+        assert.equal(plan.jobs[id], false, `${event}: ${path}: ${id}`);
+      }
+      for (const id of ["devhud-frontend", "devhud-admin", "devhud-api"]) {
+        assert.equal(plan.jobs[id], true, `${event}: ${path}: ${id}`);
+      }
+      assert.equal(validateResults(results(event, [path])), true);
+      for (const result of ["failure", "cancelled", "skipped", undefined]) {
+        const needs = results(event, [path]);
+        needs["async-commit-hook"].result = result;
+        assert.throws(() => validateResults(needs), /async-commit-hook/u);
+      }
+      const needs = results(event, [path]);
+      delete needs["async-commit-hook"];
+      assert.throws(() => validateResults(needs), /inventory/u);
+    }
+    assert.equal(planJobs(event, ["packages/devhud-api-client/src/client.ts"]).jobs["async-commit-hook"], false);
+  }
+});
+
 test("workspace, shared, runtime, and external contract inputs select their owners", () => {
   for (const [path, ids] of [
     ["apps/public-docs/docs/projects-overview.md", ["node-public-docs-test"]],
