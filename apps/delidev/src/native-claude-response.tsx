@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { LocalizedText, copy, resolveMessage, useLocale } from "./localization";
 import { InteractionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -20,8 +20,8 @@ export function NativeClaudeResponse({ resource, questions, closed, accepted, dr
     ? { behavior: Behavior.Deny, message: value.reason, ...(value.interrupt ? { interrupt: true } : {}) }
     : { behavior: Behavior.Allow, ...(questions ? { answers: Object.fromEntries(questions.flatMap((q, i) => value.skipped[i] ? [] : [[q.question, value.customEnabled[i] ? value.custom[i] ?? "" : (value.selected[i] ?? []).join(", ")]])) } : {}) };
   const [editable, setEditable, editProblem] = useEditableInteractionDraft<ClaudeDraft>(InteractionDraftKind.Claude, () => ({ kind: InteractionDraftKind.Claude, selected: questions?.map(() => []) ?? [], custom: {}, customEnabled: {}, skipped: {}, denial: false, reason: "", interrupt: false }), draft, saveDraft, (value) => nativeResponseOverflow([
-    { values: [value.reason], limit: 4096, guidance: "Keep the Claude denial reason within 4 KiB." },
-    { values: Object.values(value.custom), limit: nativeResponseLimit, guidance: "Keep each Claude answer within 256 KiB." },
+    { values: [value.reason], limit: 4096, message: "native-response-bounds.keepClaudeDenialReasonWithin4Kib" },
+    { values: Object.values(value.custom), limit: nativeResponseLimit, message: "native-response-bounds.keepClaudeAnswerWithin256Kib" },
   ], () => ({ claude: replyFor(value) })));
   const { selected, custom, customEnabled, skipped, denial, reason, interrupt } = editable;
   const selectedRows = questions?.map((_, index) => selected[index] ?? []) ?? [];
@@ -55,7 +55,7 @@ export function NativeClaudeResponse({ resource, questions, closed, accepted, dr
       </fieldset>) : <p>{copy("native-claude-response.allowThisOriginalRequestWithIts_2a5592")}</p>}
       <button className="primary" disabled={Boolean(missing) || invalid || oversized}>{denial ? copy("native-claude-response.sendDenialToClaude_8203ab") : questions ? copy("native-claude-response.sendAnswersToClaude_e80585") : copy("native-claude-response.allowThisClaudeRequest_940805")}</button>
     </fieldset>
-    {editProblem ? <p role="alert">{editProblem}</p> : null}
+    {editProblem ? <p role="alert">{resolveMessage(editProblem)}</p> : null}
     {invalid || oversized ? <p role="alert">{copy("native-claude-response.keepTheCompleteResponseWithin256_7a7390")}</p> : null}
     <Problem error={mutation.error} />
     {mutation.uncertain ? <button type="button" disabled={mutation.busy || !receiptRetryAllowed} onClick={mutation.retry}>{copy("native-claude-response.retryTheSameResponseRequest_ebd80d")}</button> : null}

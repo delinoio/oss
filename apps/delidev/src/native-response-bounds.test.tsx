@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, InteractionService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { NativeQuestionResponse, NativePermissionResponse } from "./native-interaction-response";
@@ -13,6 +13,7 @@ import { MutationIntents } from "./mutation";
 import { GrokDraftOutcome, InteractionDraftKind, type InteractionDraftState } from "./inbox-drafts";
 import { nativeResponseByteLength, nativeResponseLimit } from "./native-response-bounds";
 import { encode } from "./documents";
+import { i18n } from "./localization";
 
 type Input = { mutation?: { requestId?: string }; responseJson: Uint8Array };
 enum Editor { OpenCodeAnswer, OpenCodeFeedback, ClaudeAnswer, ClaudeDenial, GrokAnswer, GrokNotes }
@@ -143,6 +144,17 @@ it("rejects Grok partial-selection and outcome changes that activate an oversize
   fireEvent.change(screen.getByRole("combobox", { name: "Question response" }), { target: { value: "accepted" } });
   expect((screen.getByRole("combobox", { name: "Question response" }) as HTMLSelectElement).value).toBe("skip_interview");
   expect(f.retained()).toBe(previous); expect(f.save).not.toHaveBeenCalled();
+});
+
+it("localizes retained overflow guidance without changing the draft", async () => {
+  const f = fixture(Editor.GrokAnswer, true); f.mount();
+  const input = screen.getByRole("textbox", { name: names[Editor.GrokAnswer] });
+  fireEvent.change(input, { target: { value: "x".repeat((64 << 10) + 1) } });
+  expect(screen.getByText(/Your previous draft was kept/)).toBeTruthy();
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("alert").textContent).toContain("이전 초안을 유지했습니다.");
+  expect((input as HTMLTextAreaElement).value).toBe("");
+  expect(f.save).not.toHaveBeenCalled();
 });
 
 it("bounds combined Grok answers and notes before saving notes", () => {

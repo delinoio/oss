@@ -1,3 +1,5 @@
+import { ownedMessage, type MessageKey, type OwnedMessage } from "./localization";
+
 const encoder = new TextEncoder();
 export const nativeResponseLimit = 256 * 1024;
 
@@ -8,11 +10,11 @@ export function nativeResponseByteLength(response: unknown): number {
   return encoder.encode(json).byteLength;
 }
 
-export function nativeResponseOverflow(fields: { values: string[]; limit: number; guidance: string }[], response: () => unknown): string | undefined {
+export function nativeResponseOverflow(fields: { values: string[]; limit: number; message: MessageKey }[], response: () => unknown): OwnedMessage | undefined {
   // Retention checks sizes only. Empty answers and unfinished denial reasons
   // remain editable; submission validation still owns native answer validity.
   for (const field of fields) {
-    if (field.values.some((value) => value.length > field.limit || encoder.encode(value).byteLength > field.limit)) return `${field.guidance} Your previous draft was kept.`;
+    if (field.values.some((value) => value.length > field.limit || encoder.encode(value).byteLength > field.limit)) return ownedMessage(field.message);
   }
-  if (nativeResponseByteLength(response()) > nativeResponseLimit) return "The complete response exceeds 256 KiB. Shorten it before adding more text. Your previous draft was kept.";
+  if (nativeResponseByteLength(response()) > nativeResponseLimit) return ownedMessage("native-response-bounds.completeResponseExceeds256Kib");
 }

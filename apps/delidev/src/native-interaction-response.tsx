@@ -1,4 +1,4 @@
-import { LocalizedText, copy, useLocale } from "./localization";
+import { LocalizedText, copy, resolveMessage, useLocale } from "./localization";
 import { InteractionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -17,7 +17,7 @@ export function NativeQuestionResponse({ resource, questions, closed, accepted, 
   useLocale();
   const responseFor = (value: QuestionDraft) => ({ opencode: { answers: questions.map((_, i) => value.unanswered[i] ? [] : [...(value.selected[i] ?? []), ...(value.customEnabled[i] ? [value.custom[i] ?? ""] : [])]) } });
   const [editable, setEditable, editProblem] = useEditableInteractionDraft<QuestionDraft>(InteractionDraftKind.OpenCodeQuestion, () => ({ kind: InteractionDraftKind.OpenCodeQuestion, selected: questions.map(() => []), custom: {}, customEnabled: {}, unanswered: {} }), draft, saveDraft, (value) => nativeResponseOverflow([
-    { values: [...Object.values(value.custom), ...value.selected.flat()], limit: 64 * 1024, guidance: "Keep each OpenCode answer within 64 KiB." },
+    { values: [...Object.values(value.custom), ...value.selected.flat()], limit: 64 * 1024, message: "native-response-bounds.keepOpenCodeAnswerWithin64Kib" },
   ], () => responseFor(value)));
   const { selected, custom, customEnabled, unanswered } = editable;
   const selectedRows = questions.map((_, index) => selected[index] ?? []);
@@ -41,7 +41,7 @@ export function NativeQuestionResponse({ resource, questions, closed, accepted, 
       <button className="primary" disabled={missing || invalid || oversized}>{copy("native-interaction-response.sendAnswers_8a7856")}</button>
       <button type="button" onClick={() => { if (blocked) return; void mutation.send({ mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() }, responseJson: encode({ opencode: { reject: true } }) }); }}>{copy("native-interaction-response.rejectQuestionRequest_d50673")}</button>
     </fieldset>
-    {editProblem ? <p role="alert">{editProblem}</p> : null}
+    {editProblem ? <p role="alert">{resolveMessage(editProblem)}</p> : null}
     {invalid ? <p role="alert">{copy("native-interaction-response.useValidDistinctAnswersThatMatch_1fc0d6")}</p> : null}
     {oversized ? <p role="alert">{copy("native-interaction-response.theCompleteResponseIsTooLarge_fbbffb")}</p> : null}
     <Problem error={mutation.error} />
@@ -53,7 +53,7 @@ export function NativePermissionResponse({ resource, closed, accepted, draft, sa
   useLocale();
   const rejectionFor = (value: PermissionDraft) => ({ opencode: { decision: NativePermissionDecision.Reject, ...(value.feedbackEnabled ? { feedback: value.feedback } : {}) } });
   const [editable, setEditable, editProblem] = useEditableInteractionDraft<PermissionDraft>(InteractionDraftKind.OpenCodePermission, () => ({ kind: InteractionDraftKind.OpenCodePermission, feedbackEnabled: false, feedback: "" }), draft, saveDraft, (value) => nativeResponseOverflow([
-    { values: [value.feedback], limit: 64 * 1024, guidance: "Keep OpenCode correction feedback within 64 KiB." },
+    { values: [value.feedback], limit: 64 * 1024, message: "native-response-bounds.keepOpenCodeCorrectionFeedbackWithin64Kib" },
   ], () => rejectionFor(value)));
   const { feedbackEnabled, feedback } = editable;
   const mutation = useRetainedMutation(`opencode-approve:${resource.id}`, InteractionQuery.respondApproval, (r) => accepted(r.interaction));
@@ -73,7 +73,7 @@ export function NativePermissionResponse({ resource, closed, accepted, draft, sa
       {feedbackEnabled ? <label>{copy("native-interaction-response.correctionFeedback_c92684")}<textarea value={feedback} onChange={(event) => setEditable({ ...editable, feedback: event.target.value })} /><small>{copy("native-interaction-response.nonemptyFeedbackLetsThisToolRejection_8284bd")}</small></label> : null}
       <button type="button" disabled={invalidFeedback} onClick={() => send(NativePermissionDecision.Reject)}>{copy("native-interaction-response.rejectPermissionRequest_3b124c")}</button>
     </fieldset>
-    {editProblem ? <p role="alert">{editProblem}</p> : null}
+    {editProblem ? <p role="alert">{resolveMessage(editProblem)}</p> : null}
     {invalidFeedback ? <p role="alert">{copy("native-interaction-response.keepValidCorrectionFeedbackWithin64_ca809b")}</p> : null}
     <Problem error={mutation.error} />
     {mutation.uncertain ? <button type="button" disabled={mutation.busy || !receiptRetryAllowed} onClick={mutation.retry}>{copy("native-interaction-response.retryTheSameResponseRequest_ebd80d")}</button> : null}
