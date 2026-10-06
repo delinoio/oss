@@ -66,7 +66,12 @@ export function runGoTests(shard, { run = spawnSync, log = console.log, platform
   // Hosted Windows Git, shell and SQLite fixtures can starve bounded protocols
   // when package binaries share a runner. Separate runners provide parallelism;
   // retain -p=1 until full native Windows evidence permits concurrent packages.
-  const args = ["test", ...(shard === GoTestShard.All ? [] : ["-p=1"]), "-timeout=20m", ...packages];
+  // The Worker shard owns the durable workspace fixtures. Hosted Windows can
+  // spend longer than the other shards on their per-entry filesystem claims,
+  // so its test watchdog is 45 minutes while the product operation deadline
+  // remains unchanged.
+  const timeout = shard === GoTestShard.Worker ? "45m" : "20m";
+  const args = ["test", ...(shard === GoTestShard.All ? [] : ["-p=1"]), `-timeout=${timeout}`, ...packages];
   const testStarted = performance.now();
   const result = run("go", args, { shell: false, stdio: "inherit" });
   if (result.error) throw result.error;

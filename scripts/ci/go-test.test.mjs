@@ -77,7 +77,7 @@ test("each Windows invocation discovers native packages and runs its whole shard
       options: { shell: false, stdio: "inherit" },
     });
     assert.deepEqual(execution, {
-      command: "go", args: ["test", "-p=1", "-timeout=20m", ...fixtures[shard].toSorted()],
+      command: "go", args: ["test", "-p=1", `-timeout=${shard === GoTestShard.Worker ? "45m" : "20m"}`, ...fixtures[shard].toSorted()],
       options: { shell: false, stdio: "inherit" },
     });
     assert.equal(fixture.events[0].packageCount, fixtures[shard].length);
