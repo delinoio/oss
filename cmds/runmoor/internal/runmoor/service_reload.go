@@ -455,11 +455,11 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 		}
 		pid, _, err := r.nativePID(ctx)
 		if err != nil {
-			return err
+			r.Log.Warn("service_reload_native_inspection_unavailable", "platform", r.Platform, "code", classify(err, ErrControl, "Native service inspection failed.", "Inspect the user service.").Code)
 		}
-		if pid != peer {
-			// An installed service for another configuration does not own this
-			// socket. Preserve the foreground manager's existing reload behavior.
+		if err != nil || pid != peer {
+			// Without native ownership evidence, only the authenticated socket peer
+			// may handle ordinary reload. Pending journals require native recovery.
 			_, _, err = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
 			return err
 		}
