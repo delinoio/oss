@@ -8,7 +8,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { EntityKind, ErrorDetailSchema, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { LocalWorkerAction, LocalWorkerState, type ControlLocalWorker, type LocalWorkerStatus } from "./local-worker-controls";
+import { LocalWorkerAction, LocalWorkerManagementState, LocalWorkerState, type ControlLocalWorker, type LocalWorkerStatus } from "./local-worker-controls";
 import { Settings } from "./settings";
 
 type Page = { resources: Resource[]; nextPageToken?: string };
@@ -38,6 +38,34 @@ function failure(code: Code) {
   const correlationId = newRequestId();
   return { correlationId, error: new ConnectError("The server denied this read.", code, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "unavailable", guidance: "Retry the selected server read.", correlationId }) }]) };
 }
+
+it("preserves automatic presentation through the category lifetime before native status arrives", async () => {
+  const value = fixture(), pending = deferred<LocalWorkerStatus>();
+  const control = Object.assign(vi.fn(async (_action: LocalWorkerAction) => pending.promise), { automatic: true });
+  open(value, control);
+  expect(screen.getByText("DeliDev automatically starts and maintains this Worker while the app is running. Harnesses must already be installed.")).toBeTruthy();
+  expect(screen.getByText("Waiting for the authenticated local connection before checking this Worker.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Register this computer" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Start local Worker" })).toBeNull();
+  await act(async () => pending.resolve({ ...status(LocalWorkerState.Running), controller_active: true, management: { state: LocalWorkerManagementState.Running, attempts: 0, retry_ms: 0, owned_by_app: false } }));
+  await screen.findByText("Running");
+  expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+});
+
+it("keeps keyboard focus in the main region when blocked recovery opens diagnostics", async () => {
+  const value = fixture(), current: LocalWorkerStatus = { ...status(), management: { state: LocalWorkerManagementState.Blocked, attempts: 1, retry_ms: 0, owned_by_app: false, failure: "unconfirmed-exit" } };
+  const control = Object.assign(vi.fn(async (_action: LocalWorkerAction) => current), { automatic: true });
+  render(value.view(<main id="main" tabIndex={-1}><Settings controlLocalWorker={control} /></main>));
+  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
+  const worker = await screen.findByRole("region", { name: "Worker on this computer" });
+  const diagnostics = await within(worker).findByRole("button", { name: "Connection & diagnostics" });
+  diagnostics.focus();
+  expect(document.activeElement).toBe(diagnostics);
+  fireEvent.click(diagnostics);
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  expect(screen.getByRole("heading", { level: 1, name: "Connection & diagnostics" })).toBeTruthy();
+  expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+});
 
 it("renders the approved uncertain/loading hierarchy without duplicate guidance or fake records", async () => {
   const value = fixture(), pending = deferred<Page>(), current = status(); value.list.mockReturnValue(pending.promise);

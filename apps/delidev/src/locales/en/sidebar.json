@@ -34,6 +34,8 @@
   "sidebar.search_49c266": "Search",
   "sidebar.closeNavigation_99904d": "Close navigation",
   "sidebar.newSession_cffdba": "New session",
+  "sidebar.newSessionInProject": "New session in {{v0}}",
+  "sidebar.newSessionInProjectId": "New session in {{v0}}. Project ID: {{v1}}",
   "sidebar.projectAndSessionNavigation_ccbca5": "Project and session navigation",
   "sidebar.menuNavigationAndFilters_b5a21d": "Menu navigation and filters",
   "sidebar.projects_04e2a9": "Projects",

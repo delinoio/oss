@@ -41,11 +41,14 @@ type Config struct {
 	StartupID                domain.ID
 	Logger                   *slog.Logger
 	Ready                    func(domain.ID)
-	execution                *PublicationConfig
-	executionContext         context.Context
-	questionControls         <-chan *pb.QuestionResponseControl
-	approvalControls         <-chan *pb.ApprovalResponseControl
-	steerControls            <-chan *pb.SteerInputControl
+	// Admitted runs only after this original process owns its generation/lock.
+	// It publishes desktop ownership independently of network readiness.
+	Admitted         func(Lifecycle)
+	execution        *PublicationConfig
+	executionContext context.Context
+	questionControls <-chan *pb.QuestionResponseControl
+	approvalControls <-chan *pb.ApprovalResponseControl
+	steerControls    <-chan *pb.SteerInputControl
 }
 type journalState string
 
@@ -203,6 +206,9 @@ func Run(ctx context.Context, config Config) (resultErr error) {
 		}
 	}()
 	onReady := config.Ready
+	if config.Admitted != nil {
+		config.Admitted(lifecycle)
+	}
 	config.Ready = func(id domain.ID) {
 		if err := setPhase(config.Root, credential, lifecycle.Generation, RuntimeReady); err != nil {
 			cancelRun(err)

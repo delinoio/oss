@@ -93,3 +93,29 @@ func TestLaunchAdmissionPinsConcurrentServiceControl(t *testing.T) {
 		t.Fatal("removed registration claimed scope", err)
 	}
 }
+
+func TestWorkerLaunchAdmissionPreservesServiceOwnership(t *testing.T) {
+	m, native := fixture(t)
+	m.Kind = Worker
+	control(t, m, Install, 0)
+	writes := len(native.writes)
+	admission, err := AdmitKindLaunch(context.Background(), m.Root, Worker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admission.Close()
+	if managed, stopped, err := admission.Managed(); err != nil || !managed || !stopped {
+		t.Fatal("installed Worker service lost ownership", managed, stopped, err)
+	}
+	if _, err := m.Control(context.Background(), Start, domain.NewID(), 1, "fixture-owner"); err == nil {
+		t.Fatal("Worker service control crossed desktop admission")
+	}
+	if len(native.writes) != writes {
+		t.Fatal("admission changed native service state")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := AdmitKindLaunch(ctx, m.Root, Worker); err == nil || ctx.Err() == nil {
+		t.Fatal("competing Worker admission crossed control lock")
+	}
+}
