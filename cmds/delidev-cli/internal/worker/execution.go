@@ -38,6 +38,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	if err := input.Validate(); err != nil {
+		if config.Logger != nil {
+			config.Logger.WarnContext(ctx, "native_execution_settings_rejected", "job_id", owner, "stage", "assignment-validation", "options", input.Configuration.SelectedNativeOptionNames(), "code", domain.SafeError(err).Code)
+		}
 		return nil, err
 	}
 	if input.Version == 4 {
@@ -59,7 +62,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
-	logger = logger.With("job_id", owner, "execution_id", input.ExecutionID, "session_id", input.SessionID, "harness", input.Configuration.Harness)
+	logger = logger.With("job_id", owner, "execution_id", input.ExecutionID, "session_id", input.SessionID, "harness", input.Configuration.Harness, "options", input.Configuration.SelectedNativeOptionNames())
 	logger.InfoContext(ctx, "native_execution_started")
 	defer func() {
 		if workspace.IsPRStartupRejection(returned) {
@@ -221,9 +224,6 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 	}
 	if input.Configuration.Subscription {
-		if settings.Options.Permission != domain.PermissionReadOnly && settings.Options.Permission != domain.PermissionWorkspaceWrite {
-			return nil, domain.Fail(domain.Unsupported, "Managed subscription execution requires an explicit bounded native sandbox.", "Choose read-only or workspace-write permissions; default and full-access execution cannot protect the managed authentication file from native tools.")
-		}
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}

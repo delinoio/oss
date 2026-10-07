@@ -268,12 +268,14 @@ func TestFailedServerLoginCleanupCheckpointSurvivesRestart(t *testing.T) {
 	}
 	f.changeFailedLogin(func(a *domain.Account) { a.Alias = "Retained edited alias" })
 	f.secrets.deleteError = nil
+	// The explicit failed deletion now owns its terminal cleanup attempt;
+	// maintenance cannot repeat it after the vault recovers.
 	if err := f.service.recoverFailedServerLogin(failedLoginContext(), f.input.AccountID, operation); err != nil {
 		t.Fatal(err)
 	}
 	_, a = f.record()
-	if a.Alias != "Retained edited alias" || a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupConfirmed || a.Subscription.RecoveryRequired || a.Subscription.Pending != nil {
-		t.Fatal("restarted cleanup did not preserve metadata and release ownership")
+	if a.Alias != "Retained edited alias" || a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed || !a.Subscription.RecoveryRequired {
+		t.Fatal("terminal deletion cleanup was repeated by maintenance")
 	}
 	if err := f.deleteFailedLogin(f.failedLoginDeletion()); err != nil {
 		t.Fatal(err)

@@ -25,7 +25,7 @@ func openCodeExecutionSettings(c domain.ExecutionConfiguration, mode domain.Sess
 		return openCodeRequestedSettings{}, err
 	}
 	return openCodeRequestedSettings{
-		Session:      opencode.SessionSettings{Title: title, Agent: agent, Provider: openCodeAPIProvider, Model: c.NativeModel, Permission: []opencode.PermissionRule{}},
+		Session:      opencode.SessionSettings{Effort: c.Effort, Title: title, Agent: agent, Provider: openCodeAPIProvider, Model: c.NativeModel, Permission: []opencode.PermissionRule{}},
 		Instructions: c.Instructions,
 		Rejection:    opencode.StopOnInteractionRejection,
 	}, nil

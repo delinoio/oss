@@ -28,6 +28,8 @@ Main desktop local Workers now have automatic same-owner registration/start and 
 
 Failed-login subscription cleanup uses System capability 41 after main-first reservation PR #1614. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
 
+Native execution option selection follows the [catalog contract](cmds-delidev-catalog-contract.md#native-execution-option-selection). Available settings pass unchanged to native execution; unavailable saved values remain explicit, and all four Codex API/subscription permission modes preserve authentication, applied-setting and cleanup/recovery ownership. No protocol or database migration is required.
+
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative, with the explicit owner startup/presentation amendment in #1137; implementation and real-environment evidence are distinct.
 
@@ -268,3 +270,5 @@ subagent contracts. Independent Models and persistent API catalogs are removed
 only with complete activation. Earlier DB retention is waived by the owner;
 explicit reset does not convert history or grant native/credential cleanup.
 Earlier backups remain unsupported.
+
+- Subscription Auto cleanup includes failed initial ChatGPT server logins and fully disconnected configurations for all supported subscription services. Explicit failed-login deletion uses the same server-owned durable cleanup controller and retains the original deletion command across cleanup revision changes. Follow the subscription, account and subscription Settings contracts; preserve reference/vault/native ownership checks and terminal-attempt semantics without protocol allocation or migration.

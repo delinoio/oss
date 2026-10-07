@@ -6,7 +6,7 @@ import { object, type Document } from "./documents";
 import { NativeClaudeAPIRetry, validClaudeAPIRetry } from "./native-claude-retry";
 
 enum Kind { Compaction = "compaction-boundary", CompactionSummary = "compaction-summary", Task = "task-lifecycle", Status = "session-status", Thinking = "thinking-tokens-estimated", Retry = "api-retry", Tool = "tool-progress", ToolSummary = "tool-summary" }
-enum Permission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions" }
+enum Permission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions", Auto = "auto" }
 const nativeID = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
 const id = (v: unknown) => nativeID(v) && v[14] === "7";
 const exact = (v: Document, fields: string[]) => Object.keys(v).length === fields.length && fields.every((k) => Object.hasOwn(v, k));
