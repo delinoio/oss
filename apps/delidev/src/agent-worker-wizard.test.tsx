@@ -1050,3 +1050,22 @@ it("scrolls the exact highlighted model option through payload wrappers", async 
   expect(second.getAttribute("aria-selected")).toBe("true");
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
+
+it("translates retained routed account status after its independent read fails", async () => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
+  await screen.findByRole("checkbox", { name: "Select ChatGPT account" });
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select ChatGPT account" }).closest("label")!.textContent).toContain("Connected · Quota unknown"));
+  value.get.mockImplementation(request => { if (request.id === value.subscription.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  await screen.findByRole("alert");
+  const reads = value.get.mock.calls.length;
+  await act(() => i18n.changeLanguage("ko"));
+  const selected = screen.getByRole("checkbox", { name: /ChatGPT account/ }).closest("label")!;
+  expect(selected.textContent).toContain("연결됨 · 할당량 알 수 없음");
+  expect(selected.textContent).not.toContain("Connected");
+  expect(value.get).toHaveBeenCalledTimes(reads); expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+  await act(() => i18n.changeLanguage("en"));
+});
