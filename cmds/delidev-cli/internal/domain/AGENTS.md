@@ -3,6 +3,8 @@
 
 # DeliDev domain ownership
 
+- Preserve historical session `start_preparation` phase/discovery-job metadata from earlier development builds through strict typed decoding and session saves. This compatibility field grants no inspection, execution or retry authority; current direct startup remains authoritative. Follow the startup contract; add no migration or conversion.
+
 - GitHub draft form URLs may omit an undeclared fine-grained owner while retaining the closed read-only prefills. Saved-profile form URLs and profile validation still require that owner. The native presentation validator admits only the exact canonical draft or saved form, rejecting empty explicit parameters, extra/duplicate query parameters and write permissions. Follow the integration contract; URL preparation grants no repository access.
 
 - Repository clone inputs accept only credential-free HTTPS, ssh:// and SCP-style SSH, with bounded portable folder names and no encoded path separators. Keep helper transports, local paths, controls and URL passwords/tokens outside that contract. When GitHub repository metadata accompanies a remote URL, it must match the parsed GitHub owner/name. GitHub source identities normalize only the GitHub owner/repository namespace case; generic hosts retain security-significant path and transport distinctions. GitHub picker entries use validated numeric/node/owner/name identity and constructed GitHub.com URLs; metadata observations never provide Git credentials or execution authority.
