@@ -33,10 +33,15 @@ import { SessionForkProvider } from "./session-fork";
 import { SessionStorageProvider } from "./session-storage";
 import { PRWorkflowProvider } from "./pr-workflow";
 import { ProjectCreationDialog } from "./project-creation";
+import { ShortcutProvider, useShortcutHelp, useShortcutSurface, useShortcuts } from "./shortcut-provider";
+import { ShortcutId, ShortcutInput, ShortcutScope, globalShortcutBindings } from "./shortcuts";
 
 function Shell({ localServer, serverPresentation, connectionReady, connectionSettings, connectionTarget, readLocalWorker, controlLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; chooseRepositoryFolder?: ChooseRepositoryFolder; localServer?: ReactNode; serverPresentation?: ServerPresentation; connectionReady: boolean; connectionSettings?: ReactNode; connectionTarget?: HTMLElement; readLocalWorker?: ReadLocalWorkerProof }) {
   useLocale();
   const [surface, setSurface] = useState(Surface.Sessions);
+  useShortcutSurface(surface);
+  const openHelp = useShortcutHelp();
+  const [searchFocusActivation, setSearchFocusActivation] = useState(0);
   const pendingFocusDestination = useRef<Surface>(undefined);
   const main = useRef<HTMLElement>(null);
   const contextOpener = useRef<HTMLButtonElement>(null);
@@ -114,6 +119,15 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
+  useShortcuts([
+    { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: globalShortcutBindings[ShortcutId.Help], run: openHelp },
+    { id: ShortcutId.Search, scope: ShortcutScope.Global, label: "shortcuts.openSearch", bindings: globalShortcutBindings[ShortcutId.Search], input: ShortcutInput.Allow, run: () => {
+      navigateHeader(Surface.Search);
+      setSearchFocusActivation(value => value + 1);
+      if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches) setDrawerOpen(true);
+    } },
+    { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: globalShortcutBindings[ShortcutId.NewSession], input: ShortcutInput.Allow, run: startNewSession },
+  ]);
   useLayoutEffect(() => {
     const destination = pendingFocusDestination.current;
     pendingFocusDestination.current = undefined;
@@ -124,12 +138,12 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     const target = compact ? contextOpener.current : main.current;
     if (target && !target.closest("[hidden], [inert]")) target.focus({ preventScroll: true });
   }, [surface, drawerOpen, settingsEntry]);
-  return <SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} newGeneralChat={startNewGeneralChat} newProject={openNewProject} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+  return <SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen} openDrawer={() => setDrawerOpen(true)}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} newGeneralChat={startNewGeneralChat} newProject={openNewProject} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     {projectCreation ? <ProjectCreationDialog key={projectCreation.id} activation={projectCreation.activation} close={closeProjectCreation} fallbackFocus={projectFallbackFocus} /> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Prerequisites active={surface === Surface.Sessions} openSettings={openSettings} /><Problem error={status.error} /></section>}</div>
     <NewSession active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionEntry.activation} entryProjectId={newSessionEntry.projectId} projectSelectionBlockedChanged={setNewSessionProjectBlocked} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
     {newGeneralChatActivation > 0 ? <NewSession kind={NewSessionKind.GeneralChat} active={surface === Surface.NewGeneralChat} ownsActivation={surface === Surface.NewGeneralChat} activation={newGeneralChatActivation} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} /> : null}
-    <Search active={surface === Surface.Search} open={open} />
+    <Search active={surface === Surface.Search} open={open} focusActivation={searchFocusActivation} />
     <Activity active={surface === Surface.Activity} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} /></div>
     <Usage active={surface === Surface.Usage} open={open} entry={usageEntry} />
@@ -149,5 +163,5 @@ export function App({ transport, localServer, serverPresentation, connectionSett
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><PRWorkflowProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></PRWorkflowProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider>;
+  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><PRWorkflowProvider><ShortcutProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></ShortcutProvider></PRWorkflowProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider>;
 }

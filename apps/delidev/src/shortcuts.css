@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.shortcut-help { width: min(640px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: 12px; color: var(--text); background: var(--surface); box-shadow: 0 12px 48px var(--shadow); overflow-y: auto; }
+.shortcut-help::backdrop { background: var(--backdrop); }
+.shortcut-help header { align-items: flex-start; padding-bottom: 20px; }
+.shortcut-help h2 { margin: 0 0 6px; font-size: 22px; font-weight: 650; }
+.shortcut-help header button { display: grid; place-items: center; min-width: 40px; height: 40px; padding: 9px; border-radius: 8px; }
+.shortcut-help header svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; }
+.shortcut-help section { border-top: 1px solid var(--border); padding: 20px 0; }
+.shortcut-help h3 { font-size: 13px; font-weight: 650; margin-bottom: 12px; }
+.shortcut-help dl { margin: 0; }
+.shortcut-help dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 46px; padding: 6px 0; }
+.shortcut-help dt { min-width: 0; overflow-wrap: anywhere; }
+.shortcut-help dt small { display: block; margin-top: 4px; }
+.shortcut-help dd { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin: 0; flex-shrink: 0; max-width: 55%; }
+.shortcut-binding { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.shortcut-help kbd { display: inline-block; padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); color: var(--text-secondary); font: inherit; font-size: 13px; white-space: nowrap; }
+.shortcut-help footer { padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+.shortcut-help footer p { margin: 0 0 8px; }
+.shortcut-disabled { color: var(--muted); }
+@media (max-width: 480px) { .shortcut-help dl > div { align-items: flex-start; flex-direction: column; gap: 8px; padding: 10px 0; } .shortcut-help dd { max-width: 100%; justify-content: flex-start; } }
