@@ -8,7 +8,6 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, NativeModelService, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type DiscoverNativeModelsRequest, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
-import { chooseScrollOption } from "./test-scroll-picker";
 import { NativeModelSettings } from "./native-model-settings";
 import { chooseScrollOption } from "./test-scroll-picker";
 
