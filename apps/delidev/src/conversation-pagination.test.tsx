@@ -80,3 +80,32 @@ it.each([EntityKind.MESSAGE, EntityKind.QUEUE, EntityKind.INTERACTION, EntityKin
   expect(read).toHaveBeenCalledTimes(2);
   expect(read.mock.calls[1][0]).toEqual(original);
 });
+
+
+it.each(["initial", "additional"])("recovers an %s failure through explicit conversation refresh without automatic retry", async stage => {
+  const sessionId = newRequestId();
+  const first = create(ResourceSchema, { id: newRequestId(), sessionId, kind: EntityKind.MESSAGE, revision: 1n });
+  const second = create(ResourceSchema, { id: newRequestId(), sessionId, kind: EntityKind.MESSAGE, revision: 1n });
+  let fail = true;
+  const read = vi.fn(async (request: { filter?: { pageToken: string } }) => {
+    const token = request.filter?.pageToken ?? "";
+    if (fail && (stage === "initial" || token)) { fail = false; throw new ConnectError("Fixture unavailable", Code.Unavailable); }
+    return { resources: token ? [second] : [first], nextPageToken: token ? "" : "original-next" };
+  });
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: read }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const query = useConversationPages(EntityKind.MESSAGE, sessionId);
+    return <><output>{query.rows.length}:{query.error ? "failed" : "ready"}</output><button onClick={query.append}>Append</button><button onClick={query.refresh}>Automatic refresh</button><button onClick={query.refetch}>Refresh conversation</button></>;
+  }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><View /></QueryClientProvider></TransportProvider>);
+  if (stage === "additional") { await screen.findByText("1:ready"); fireEvent.click(screen.getByRole("button", { name: "Append" })); }
+  await screen.findByText(`${stage === "initial" ? 0 : 1}:failed`);
+  const before = read.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Automatic refresh" }));
+  expect(read).toHaveBeenCalledTimes(before);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh conversation" }));
+  await screen.findByText(`${stage === "initial" ? 1 : 2}:ready`);
+  expect(read).toHaveBeenCalledTimes(before + 1);
+  expect(read.mock.calls.at(-1)?.[0]).toEqual(read.mock.calls[before - 1][0]);
+});
