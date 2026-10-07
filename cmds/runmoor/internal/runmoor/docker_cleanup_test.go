@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -71,6 +72,10 @@ func TestDockerCleanupRevalidatesVolumeOwnership(t *testing.T) {
 				switch {
 				case path == "/_ping":
 					_, _ = w.Write([]byte("OK"))
+				case req.Method == http.MethodGet && path != "/containers/json" && strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/json"):
+					// The volume fixture has no execution containers. The cleanup
+					// container preflight must observe their confirmed absence.
+					http.Error(w, "No such container", http.StatusNotFound)
 				case req.Method == http.MethodGet && (path == "/containers/json" || path == "/networks"):
 					_, _ = w.Write([]byte("[]"))
 				case req.Method == http.MethodGet && path == "/volumes":
@@ -189,6 +194,211 @@ func TestDockerCleanupRevalidatesVolumeOwnership(t *testing.T) {
 				mu.Unlock()
 				if remains || !reflect.DeepEqual(got, []string{"list", "inspect", "list", "inspect", "delete"}) {
 					t.Fatal("cleanup retry bypassed fresh ownership inspection", got)
+				}
+			}
+		})
+	}
+}
+
+func TestDockerCleanupRetryVerifiesRecordedContainers(t *testing.T) {
+	for _, tc := range []struct {
+		name, role string
+		code       ErrorCode
+	}{
+		{"copied labels runner replacement", "runner", ErrOwnership},
+		{"copied labels daemon replacement", "daemon", ErrOwnership},
+		{"copied labels renamed runner replacement", "runner", ErrOwnership},
+		{"foreign init", "init", ErrOwnership},
+		{"wrong role", "runner", ErrOwnership},
+		{"foreign renamed runner", "runner", ErrOwnership},
+		{"unavailable runner inspection", "runner", ErrDependency},
+		{"unavailable daemon inspection", "daemon", ErrDependency},
+		{"missing container state", "runner", ErrCleanup},
+		{"running container", "runner", ErrCleanup},
+		{"restarting container", "daemon", ErrCleanup},
+		{"stopped originals", "", ""},
+		{"renamed original", "runner", ""},
+		{"confirmed absence", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, c, remote, _, pool := testManager(t)
+			id := seedRunner(t, m, pool, Cleaning)
+			r := m.Store.View().Runners[id]
+			listener, err := net.Listen("unix", filepath.Join(c.Storage.State, "docker.sock"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.DockerSocket = "unix://" + listener.Addr().String()
+			if err = m.Store.Update(func(s *Snapshot) error {
+				s.Generations[r.Generation] = c
+				r := s.Runners[id]
+				r.Handle = Handle{Container: "runner-id", Daemon: "daemon-id"}
+				r.Terminated, r.RemoteRemoved, r.DiagnosticsSaved = true, true, true
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			snap := m.Store.View()
+			r = snap.Runners[id]
+			type fixtureContainer struct {
+				name, role string
+				labels     map[string]string
+			}
+			containers := map[string]fixtureContainer{}
+			for _, role := range []string{"runner", "daemon", "init"} {
+				name := r.Name
+				if role != "runner" {
+					name += "-" + role
+				}
+				cid := role + "-id"
+				labels := dockerLabels(snap, *r, role)
+				if tc.role == role {
+					switch tc.name {
+					case "copied labels runner replacement", "copied labels daemon replacement", "copied labels renamed runner replacement":
+						cid = "replacement-id"
+					case "foreign init", "foreign renamed runner":
+						labels[ownerKey] = "another-installation"
+					case "wrong role":
+						labels[roleKey] = "daemon"
+					}
+					if tc.name == "foreign renamed runner" || tc.name == "renamed original" || tc.name == "copied labels renamed runner replacement" {
+						name = "renamed-container"
+					}
+				}
+				containers[cid] = fixtureContainer{name, role, labels}
+			}
+			if tc.name == "confirmed absence" {
+				clear(containers)
+			}
+			var mutations, inspections atomic.Int32
+			var recovered atomic.Bool
+			var containerMu sync.Mutex
+			server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				containerMu.Lock()
+				defer containerMu.Unlock()
+				w.Header().Set("API-Version", "1.51")
+				w.Header().Set("Content-Type", "application/json")
+				path := strings.TrimPrefix(req.URL.Path, "/v1.51")
+				if path == "/_ping" {
+					_, _ = w.Write([]byte("OK"))
+					return
+				}
+				if req.Method != http.MethodGet {
+					mutations.Add(1)
+					cid := strings.TrimPrefix(path, "/containers/")
+					if req.Method == http.MethodDelete && path == "/containers/"+cid {
+						if _, ok := containers[cid]; ok {
+							delete(containers, cid)
+							w.WriteHeader(http.StatusNoContent)
+							return
+						}
+					}
+					t.Errorf("unexpected Docker mutation: %s %s", req.Method, path)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				switch path {
+				case "/containers/json":
+					items := []any{}
+					for cid, v := range containers {
+						if ownedDocker(v.labels, snap, *r) {
+							items = append(items, map[string]any{"Id": cid, "Names": []string{"/" + v.name}, "Labels": v.labels, "State": "exited"})
+						}
+					}
+					_ = json.NewEncoder(w).Encode(items)
+					return
+				case "/networks":
+					_, _ = w.Write([]byte("[]"))
+					return
+				case "/volumes":
+					_, _ = w.Write([]byte(`{"Volumes":[]}`))
+					return
+				}
+				if strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/json") {
+					inspections.Add(1)
+					ref := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/json")
+					for cid, v := range containers {
+						if ref != cid && ref != v.name {
+							continue
+						}
+						state := map[string]any{"Running": false, "Restarting": false}
+						if v.role == tc.role {
+							switch tc.name {
+							case "unavailable runner inspection", "unavailable daemon inspection":
+								if !recovered.Load() {
+									w.WriteHeader(http.StatusInternalServerError)
+									return
+								}
+							case "missing container state":
+								state = nil
+							case "running container":
+								state["Running"] = true
+							case "restarting container":
+								state["Restarting"] = true
+							}
+						}
+						_ = json.NewEncoder(w).Encode(map[string]any{"Id": cid, "Config": map[string]any{"Labels": v.labels}, "State": state})
+						return
+					}
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				t.Errorf("unexpected Docker read: %s", path)
+				w.WriteHeader(http.StatusInternalServerError)
+			})}
+			go func() { _ = server.Serve(listener) }()
+			defer server.Close()
+			m.Drivers = func(Backend) (Driver, error) { return &DockerDriver{}, nil }
+			attempts := 2
+			if tc.code == ErrDependency {
+				attempts = 3
+			}
+			for attempt := range attempts {
+				code := tc.code
+				if attempt == 2 {
+					// Restored inspection permits cleanup without repeating Stop.
+					recovered.Store(true)
+					code = ""
+				}
+				beforeInspections := inspections.Load()
+				m.cleanup(context.Background(), id)
+				s := m.Store.View()
+				got := s.Runners[id]
+				if !got.Terminated || !got.RemoteRemoved || !got.DiagnosticsSaved || !reflect.DeepEqual(got.Handle, r.Handle) {
+					t.Fatal("cleanup changed confirmed termination or recorded ownership", got)
+				}
+				if resources, count, vms := usage(s); resources != (Resources{}) || count != 0 || vms != 0 {
+					t.Fatal("cleanup restored a confirmed terminated reservation", resources, count, vms)
+				}
+				if remote.removed != 0 {
+					t.Fatal("cleanup repeated confirmed remote removal")
+				}
+				if code != "" {
+					if mutations.Load() != 0 || got.LocalCleaned || got.Phase == Completed {
+						t.Fatalf("attempt %d mutated unverified resources or completed cleanup: mutations=%d runner=%+v", attempt, mutations.Load(), got)
+					}
+					requireCode(t, got.Problem, code)
+					want := Cleaning
+					if code == ErrOwnership {
+						want = Quarantined
+					}
+					if got.Phase != want {
+						t.Fatalf("cleanup phase = %s, want %s", got.Phase, want)
+					}
+				} else {
+					if got.Phase != Completed || !got.LocalCleaned || got.Problem != nil {
+						t.Fatal("verified cleanup did not complete", got)
+					}
+					want := int32(3)
+					if tc.name == "confirmed absence" {
+						want = 0
+					}
+					if mutations.Load() != want {
+						t.Fatalf("cleanup mutations = %d, want %d", mutations.Load(), want)
+					}
+				}
+				if inspections.Load() == beforeInspections {
+					t.Fatal("cleanup did not inspect deterministic names or recorded IDs")
 				}
 			}
 		})
