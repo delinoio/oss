@@ -11,6 +11,7 @@ import { StrictMode } from "react";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SidebarOutletProvider } from "./sidebar-context";
 import { NotificationProvider } from "./toast-notifications";
+import { SettingsTasks, SettingsTaskBackground } from "./settings-task";
 
 function fixture() {
   let preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
@@ -24,6 +25,22 @@ function fixture() {
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { view, save, read, transport, client, change: async () => { preferences = create(NotificationPreferencesSchema, { revision: 9n, interactions: false, terminals: false }); await client.invalidateQueries(); } };
 }
+
+it.each(["X", "Escape"] as const)("keeps the notification summary mounted and restores its original opener after %s", async dismissal => {
+  const value = fixture();
+  render(<SettingsTasks><div className="settings-content"><h1>Notifications category</h1><SettingsTaskBackground>{value.view()}</SettingsTaskBackground></div></SettingsTasks>);
+  const opener = await screen.findByRole("button", { name: "Edit notification preferences" });
+  const summary = opener.closest("form")!;
+  fireEvent.click(opener);
+  expect(summary.isConnected).toBe(true); expect(opener.isConnected).toBe(true);
+  const dialog = screen.getByRole("dialog");
+  if (dismissal === "X") fireEvent.click(screen.getByRole("button", { name: "Close Edit notification preferences" }));
+  else fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByRole("button", { name: "Edit notification preferences" })).toBe(opener);
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  expect(value.save).not.toHaveBeenCalled();
+});
 
 it("shows one toast only after notification preferences are acknowledged", async () => {
   const value = fixture();

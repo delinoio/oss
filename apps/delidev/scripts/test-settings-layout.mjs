@@ -410,7 +410,13 @@ try {
         await page.mouse.click(2, 2); assert(await dialog.isVisible(), "Backdrop preserves task");
         formsChecked++;
         await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
-        await page.waitForFunction(() => document.querySelector(".settings-content")?.contains(document.activeElement), { timeout: 2000 }); keyboardChecks++;
+        try {
+          await page.waitForFunction(() => document.querySelector(".settings-content")?.contains(document.activeElement), undefined, { timeout: 2000 });
+        } catch {
+          const focus = await page.evaluate(() => ({ tag: document.activeElement?.tagName, id: document.activeElement?.id, className: document.activeElement?.className }));
+          throw new Error(`${language}/${theme}/${viewport}/${category}: close focus ${JSON.stringify(focus)}`);
+        }
+        keyboardChecks++;
       }
     }
   }

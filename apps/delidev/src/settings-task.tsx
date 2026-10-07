@@ -149,7 +149,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
         // Keep the original reference to recognize automatic browser focus
         // restoration, but never return to a confirmed-removed opener.
         const openerTarget = !openerRetired.current && opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") ? opener.current : null;
-        const fallback = categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null;
+        const fallback = categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>("h1") : null;
         // The opener or category fallback can still be inert until this parent
         // teardown commits. Release their task backgrounds before checking
         // visibility, while preserving unrelated hidden/disabled boundaries.
@@ -160,12 +160,18 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
           background?.removeAttribute("aria-hidden");
         }
         const target = available(openerTarget) ? openerTarget : available(fallback) ? fallback : null;
+        // Native close can restore an opener that this commit has just disabled.
+        // Do not leave focus on an unavailable control while its read refreshes.
+        if (focused === opener.current && opener.current?.matches(":disabled")) opener.current.blur();
         if (target?.matches("h1")) target.tabIndex = -1;
         target?.focus({ preventScroll: true });
         if (target && document.activeElement !== target) requestAnimationFrame(() => { if (target.isConnected) target.focus({ preventScroll: true }); });
         return target;
       };
-      restoreFocus();
+      // Programmatic completion runs before React commits updated list controls.
+      // Inspect their final availability after that commit, preserving explicit
+      // user dismissal's immediate return and the native dialog restoration.
+      if (closeRequested.current) restoreFocus(); else queueMicrotask(restoreFocus);
       requestAnimationFrame(restoreFocus);
     };
   // Step changes do not create another modal opening or overwrite its opener.
