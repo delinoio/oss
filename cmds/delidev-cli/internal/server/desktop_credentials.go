@@ -249,9 +249,10 @@ func (s *Service) checkDesktopCredential(ctx context.Context, actor domain.Princ
 		if err != nil {
 			return err
 		}
-		p, err := store.Decode[domain.Provider](row)
+		providerProfile, err := store.Decode[domain.Provider](row)
+		p := providerProfile
 		if err == nil {
-			p, err = providers.ResolveAccountProfile(p, a)
+			p, err = providers.ResolveAccountProfile(providerProfile, a)
 		}
 		if err == nil {
 			err = p.Validate()
@@ -265,14 +266,15 @@ func (s *Service) checkDesktopCredential(ctx context.Context, actor domain.Princ
 		if p.Authentication == domain.KeylessAuth {
 			return nil
 		}
-		ref = credentials.Ref{Owner: id, ID: a.Connection.ID, Purpose: credentials.AccountAPI}
-		metadata, oauth, err := tx.AccountOAuthCredential(id, a.Connection.ID)
+		referenceID := a.Connection.CredentialReferenceID()
+		ref = credentials.Ref{Owner: id, ID: referenceID, Purpose: credentials.AccountAPI}
+		metadata, oauth, err := tx.AccountOAuthCredential(id, referenceID)
 		if err != nil {
 			return err
 		}
 		if oauth {
 			// A readiness read must never refresh or clean old generations.
-			profile, err := s.oauthProfile(p)
+			profile, err := s.oauthProfile(providerProfile)
 			if err != nil || metadata.ProviderID != a.ProviderID || metadata.Preset != profile.preset || metadata.ClientDigest != profile.digest() {
 				return oauthCredentialProblem()
 			}

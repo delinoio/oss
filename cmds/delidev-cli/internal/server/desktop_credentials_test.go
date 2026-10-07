@@ -288,6 +288,83 @@ func TestDesktopCredentialsOAuthReadsOriginalTokenWithoutRefresh(t *testing.T) {
 	}
 }
 
+func TestDesktopCredentialsReadSharedKeyAfterAPIFormatChange(t *testing.T) {
+	f := newOAuthFixture(t)
+	account, err := saveAPIFormatConfiguration(f, domain.AccountKind, domain.Account{
+		Alias: "Startup format fixture", Type: domain.APIAccount, ProviderID: domain.ID(f.provider.Id),
+		APIProtocol: domain.OpenAIChat, Enabled: true, Health: domain.AccountDisconnected,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connected, err := f.s.ConnectAccount(f.ctx, connect.NewRequest(&pb.ConnectAccountRequest{
+		Mutation: acctMutation(account, domain.NewID()), ApiKey: []byte("startup-format-key"),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := accountBody(t, connected.Msg.Account).Connection.CredentialReferenceID()
+	changed, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(formatRequest(connected.Msg.Account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := accountBody(t, changed.Msg.Account)
+	if body.Connection.ID == original || body.Connection.CredentialReferenceID() != original {
+		t.Fatal("format change did not preserve the shared credential reference")
+	}
+	spy := &desktopReadSecrets{accountSecrets: f.vault}
+	f.s.accountSecrets = spy
+	c, client, attempt := desktopAccess(t, f)
+	c.Handle(f.ctx, DesktopCredentialBegin, attempt, "", client)
+	if got := waitDesktopAccess(t, c); got.State != DesktopCredentialSucceeded {
+		t.Fatalf("result: %+v", got)
+	}
+	if len(spy.reads) != 1 || spy.reads[0].ID != original {
+		t.Fatalf("startup did not read the shared credential reference: %+v", spy.reads)
+	}
+}
+
+func TestDesktopCredentialsOAuthReadsSharedReferenceAfterAPIFormatChange(t *testing.T) {
+	f := newHuggingFaceFixture(t)
+	connected := f.connectedHF(t, time.Now().Add(time.Minute))
+	connectedBody := accountBody(t, connected)
+	original := connectedBody.Connection.CredentialReferenceID()
+	protocol := pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES
+	if connectedBody.APIProtocol == domain.OpenAIResponses {
+		protocol = pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT
+	}
+	changed, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(formatRequest(connected, protocol)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata domain.AccountOAuthCredential
+	var found bool
+	if err := f.s.Store.Read(f.ctx, func(tx *store.Tx) error {
+		var err error
+		metadata, found, err = tx.AccountOAuthCredential(domain.ID(connected.Id), original)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("OAuth metadata was not retained under the shared reference")
+	}
+	body := accountBody(t, changed.Msg.Account)
+	if body.Connection.ID == original || body.Connection.CredentialReferenceID() != original {
+		t.Fatal("format change did not preserve the OAuth metadata reference")
+	}
+	spy := &desktopReadSecrets{accountSecrets: f.vault}
+	f.s.accountSecrets = spy
+	c, client, attempt := desktopAccess(t, f)
+	c.Handle(f.ctx, DesktopCredentialBegin, attempt, "", client)
+	if got := waitDesktopAccess(t, c); got.State != DesktopCredentialSucceeded {
+		t.Fatalf("result: %+v", got)
+	}
+	if len(spy.reads) != 1 || spy.reads[0].ID != metadata.TokenID {
+		t.Fatalf("startup did not read the original OAuth token reference: got %+v, want %s", spy.reads, metadata.TokenID)
+	}
+}
+
 func TestDesktopCredentialsEmptyAndRevokedClient(t *testing.T) {
 	f := newOAuthFixture(t)
 	c, client, attempt := desktopAccess(t, f)

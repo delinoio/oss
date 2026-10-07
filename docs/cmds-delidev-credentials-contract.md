@@ -87,11 +87,14 @@ are checked before admission; server reads recheck client revocation. Paginated
 account inventory selects only current connected credential-bearing API
 accounts without pending removal, resolves each immutable selected provider
 profile and reads its exact current protected reference. Disconnected,
-subscription and keyless accounts do not open the vault. OAuth reads use the
-current private token reference directly, including when its refresh checkpoint
-is claimed, recovery-required or denied. This check does not resume or mutate
-that checkpoint, refresh, exchange or clean up another generation. Every
-returned secret buffer is cleared, including on failure. No provider request,
+subscription and keyless accounts do not open the vault. Resolve the shared
+`CredentialReferenceID` for both the protected key and OAuth metadata so a
+key-preserving API-format change retains the same reference. Validate OAuth
+metadata against its immutable managed OAuth profile, then read the current
+private token directly even when its refresh checkpoint is claimed,
+recovery-required or denied. This check does not resume or mutate that
+checkpoint, refresh, exchange or clean up another generation. Every returned
+secret buffer is cleared, including on failure. No provider request,
 account-health write, revision or receipt change is permitted. Access success
 proves decryptability only, not provider readiness.
 
