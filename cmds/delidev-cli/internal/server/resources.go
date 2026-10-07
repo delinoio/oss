@@ -369,6 +369,22 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		if !provider.Discovery {
 			s.cancelCatalogChecks(record.ID)
 		}
+		if !provider.EnabledValue() {
+			s.cancelAutomaticChecks(record.ID, true)
+		}
+	}
+	if kind == domain.AccountKind {
+		current, err := s.Store.Get(ctx, domain.AccountKind, record.ID)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		account, err := store.Decode[domain.Account](current)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		if !account.Enabled {
+			s.cancelAutomaticChecks(record.ID, false)
+		}
 	}
 	message := &pb.SaveConfigurationResponse{RequestId: string(result.RequestID), Replayed: result.Replayed}
 	if record.Kind == domain.JobKind {

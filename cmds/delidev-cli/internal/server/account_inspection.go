@@ -18,7 +18,15 @@ const (
 	oauthInspection      inspectionOperation = "oauth.exchange"
 )
 
+type automaticInspectionKey struct{}
+
+func automaticInspection(ctx context.Context) bool {
+	value, _ := ctx.Value(automaticInspectionKey{}).(bool)
+	return value
+}
+
 type accountCheck struct {
+	automatic  bool
 	cancel     context.CancelFunc
 	providerID domain.ID
 	operation  inspectionOperation
@@ -43,6 +51,25 @@ func (s *Service) cancelCatalogChecks(provider domain.ID) {
 		}
 	}
 }
+
+// Account gate must be held. Provider disablement cancels only automatic
+// validation; discovery disablement retains its separate catalog-only boundary.
+func (s *Service) cancelAutomaticChecks(id domain.ID, provider bool) {
+	for accountID, checks := range s.accountChecks {
+		for _, check := range checks {
+			if check.automatic && ((!provider && accountID == id) || (provider && check.providerID == id)) {
+				check.cancel()
+			}
+		}
+	}
+}
+func automaticInspectionPreflight(account domain.Account, provider domain.Provider, automatic bool) error {
+	if automatic && (!account.Enabled || !provider.EnabledValue()) {
+		return providerDisabled()
+	}
+	return nil
+}
+
 func (s *Service) startAccountCheck(ctx context.Context, id, requestID, provider domain.ID, operation inspectionOperation) (context.Context, func(), error) {
 	if len(s.accountChecks[id]) > 0 {
 		return nil, nil, domain.Fail(domain.Conflict, "An account inspection is already running.", "Wait for its result before starting another inspection.")
@@ -54,7 +81,7 @@ func (s *Service) startAccountCheck(ctx context.Context, id, requestID, provider
 		s.accountChecks = map[domain.ID]map[domain.ID]accountCheck{}
 	}
 	child, cancel := context.WithCancel(ctx)
-	s.accountChecks[id] = map[domain.ID]accountCheck{requestID: {cancel: cancel, providerID: provider, operation: operation}}
+	s.accountChecks[id] = map[domain.ID]accountCheck{requestID: {cancel: cancel, providerID: provider, operation: operation, automatic: automaticInspection(ctx)}}
 	finish := func() {
 		cancel()
 		unlock, _ := s.lockAccounts(context.Background())
@@ -124,6 +151,9 @@ func (s *Service) inspectAccount(ctx context.Context, meta *pb.Mutation, operati
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		var e error
 		account, provider, e = inspectionPreflight(tx, input, operation)
+		if e == nil {
+			e = automaticInspectionPreflight(account, provider, automaticInspection(ctx))
+		}
 		return e
 	})
 	if err != nil {
@@ -183,6 +213,9 @@ func (s *Service) inspectAccount(ctx context.Context, meta *pb.Mutation, operati
 	result, err = s.Store.Mutate(checkCtx, domain.ID(meta.RequestId), string(operation), input, func(tx *store.Tx) (any, error) {
 		current, currentProvider, err := inspectionPreflight(tx, input, operation)
 		if err != nil {
+			return nil, err
+		}
+		if err := automaticInspectionPreflight(current, currentProvider, automaticInspection(ctx)); err != nil {
 			return nil, err
 		}
 		if current.Connection.ID != account.Connection.ID || currentProvider.Endpoint != provider.Endpoint || currentProvider.Protocol != provider.Protocol || currentProvider.Authentication != provider.Authentication {

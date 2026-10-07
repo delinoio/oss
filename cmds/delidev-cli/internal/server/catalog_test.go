@@ -576,8 +576,8 @@ func TestAutomaticCatalogRestartAndShutdown(t *testing.T) {
 		t.Fatal("automatic model missing after restart")
 	}
 	time.Sleep(150 * time.Millisecond)
-	if calls.Load() != 1 {
-		t.Fatal("startup ignored persistent refresh interval")
+	if calls.Load() != 2 {
+		t.Fatal("startup ignored independent persistent validation/catalog intervals")
 	}
 	f.shutdown()
 	started, canceled := make(chan struct{}), make(chan struct{})
