@@ -1,0 +1,508 @@
+// SPDX-License-Identifier: Apache-2.0
+package workspace
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+)
+
+type storageFinalRootStage string
+
+const finalRootReceiptTimeout = 30 * time.Second
+
+const (
+	storageFinalRootBeforeClaim       storageFinalRootStage = "before-claim"
+	storageFinalRootClaimChecked      storageFinalRootStage = "claim-checked"
+	storageFinalRootPrepared          storageFinalRootStage = "prepared"
+	storageFinalRootRenamed           storageFinalRootStage = "renamed"
+	storageFinalRootClaimed           storageFinalRootStage = "claimed"
+	storageFinalRootUnlinkReady       storageFinalRootStage = "unlink-ready"
+	storageFinalRootVerified          storageFinalRootStage = "verified"
+	storageFinalRootBeforeUnlink      storageFinalRootStage = "before-unlink"
+	storageFinalRootNativeGone        storageFinalRootStage = "native-unlinked"
+	storageFinalRootAfterVerification storageFinalRootStage = "after-verification"
+	storageFinalRootUnlinked          storageFinalRootStage = "unlinked"
+	storageFinalRootSynced            storageFinalRootStage = "synced"
+	storageFinalRootRemoved           storageFinalRootStage = "removed"
+)
+
+// The separate private parent is outside the directory retained by source
+// writers. Its fresh UUID is claimed without replacement before verification.
+// The old removal name never becomes an unlink operand again.
+type storageFinalRootClaim struct {
+	RootName     domain.ID               `json:"root_name"`
+	Version      uint32                  `json:"version"`
+	Reference    StorageRemovalReference `json:"reference"`
+	IntentDigest string                  `json:"intent_digest"`
+	RootIdentity string                  `json:"root_identity"`
+	State        storageFinalRootStage   `json:"state"`
+}
+
+func (m *Manager) finalRemovalRoot(claim storageFinalRootClaim) string {
+	return filepath.Join(m.Root, "workspace-removal-roots", string(claim.Reference.OperationID)+"-"+string(claim.RootName))
+}
+
+func (m *Manager) finalRemovalQuarantine(claim storageFinalRootClaim) string {
+	return filepath.Join(m.Root, "workspace-removal-quarantine", string(claim.Reference.OperationID)+"-"+string(claim.RootName))
+}
+
+func (m *Manager) finalRemovalClaimPath(id domain.ID) string {
+	return filepath.Join(m.Root, "storage-removal-root-claims", string(id)+".json")
+}
+
+func (m *Manager) readFinalRemovalClaim(r StorageRequest, original storageRemovalClaim) (storageFinalRootClaim, error) {
+	raw, err := security.ReadPrivate(m.finalRemovalClaimPath(r.OperationID), 4096)
+	var claim storageFinalRootClaim
+	if err != nil || domain.Decode(raw, &claim) != nil || claim.Version != 1 || claim.RootName.Validate() != nil || claim.Reference != removalReference(r) || claim.IntentDigest != original.IntentDigest || claim.RootIdentity != original.RootIdentity || claim.RootIdentity == "" {
+		return claim, ResultUncertain()
+	}
+	switch claim.State {
+	case storageFinalRootPrepared, storageFinalRootClaimed, storageFinalRootUnlinkReady, storageFinalRootUnlinked, storageFinalRootRemoved:
+		return claim, nil
+	default:
+		return claim, ResultUncertain()
+	}
+}
+
+func (m *Manager) writeFinalRemovalClaim(ctx context.Context, claim storageFinalRootClaim, state storageFinalRootStage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Every state after the initial publication must advance the exact claim that
+	// the caller read. A replacement cannot become the input to an atomic update.
+	// The no-replace initial publication below prevents a foreign first claim from
+	// being overwritten before this version-bound check exists.
+	rawCurrent, err := security.ReadPrivate(m.finalRemovalClaimPath(claim.Reference.OperationID), 4096)
+	var current storageFinalRootClaim
+	if err != nil || domain.Decode(rawCurrent, &current) != nil || current != claim {
+		return ResultUncertain()
+	}
+	claim.State = state
+	raw, err := json.Marshal(claim)
+	if err != nil {
+		return ResultUncertain()
+	}
+	return security.WriteAtomicOwned(m.finalRemovalClaimPath(claim.Reference.OperationID), raw)
+}
+
+// publishFinalRemovalClaim publishes the first transition without replacement.
+// A same-user writer that wins the target name must remain visible as foreign
+// evidence; replacing it would erase the recovery boundary before validation.
+func (m *Manager) publishFinalRemovalClaim(ctx context.Context, claim storageFinalRootClaim, state storageFinalRootStage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	claim.State = state
+	raw, err := json.Marshal(claim)
+	if err != nil {
+		return ResultUncertain()
+	}
+	path := m.finalRemovalClaimPath(claim.Reference.OperationID)
+	f, err := os.CreateTemp(filepath.Dir(path), ".pending-"+filepath.Base(path)+"-")
+	if err != nil {
+		return err
+	}
+	temporary := f.Name()
+	defer os.Remove(temporary)
+	if err := f.Chmod(0600); err == nil {
+		_, err = f.Write(raw)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := storageRenameNoReplace(temporary, path); err != nil {
+		return err
+	}
+	return security.SyncParent(path)
+}
+
+func (m *Manager) finalRootFault(stage storageFinalRootStage) error {
+	if m.storageFinalRootFault != nil {
+		return m.storageFinalRootFault(stage)
+	}
+	return nil
+}
+
+func storageNameAbsent(path string) error {
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return ResultUncertain()
+	}
+	return nil
+}
+
+func (m *Manager) finalRemovalAbsent(id domain.ID) error {
+	if err := storageNameAbsent(filepath.Join(m.Root, "workspace-removals", string(id))); err != nil {
+		return err
+	}
+	paths, err := finalRemovalNamespacePaths(context.Background(), m.Root, map[domain.ID]bool{id: true})
+	if err != nil || len(paths) != 0 {
+		return ResultUncertain()
+	}
+	return nil
+}
+
+// Once the claim is decoded, its exact private name is the only expected
+// namespace entry. This avoids rescanning the shared namespace during every
+// recovery step while still rejecting a reappearing public name or private
+// replacement.
+func (m *Manager) finalRemovalClaimAbsent(claim storageFinalRootClaim) error {
+	if err := storageNameAbsent(filepath.Join(m.Root, "workspace-removals", string(claim.Reference.OperationID))); err != nil {
+		return err
+	}
+	if err := storageNameAbsent(m.finalRemovalRoot(claim)); err != nil {
+		return err
+	}
+	return storageNameAbsent(m.finalRemovalQuarantine(claim))
+}
+
+// retireFinalRemovalClaim removes only the final-root proof after the
+// workspace-owned transition has reached its durable removed state. Legacy
+// removal intent and journals remain for the generic session-removal phase.
+func (m *Manager) retireFinalRemovalClaim(ctx context.Context, r StorageRequest, original storageRemovalClaim) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path := m.finalRemovalClaimPath(r.OperationID)
+	raw, err := security.ReadPrivate(path, 4096)
+	if err != nil {
+		return ResultUncertain()
+	}
+	var claim storageFinalRootClaim
+	if domain.Decode(raw, &claim) != nil || claim.State != storageFinalRootRemoved {
+		return ResultUncertain()
+	}
+	if _, err := m.readFinalRemovalClaim(r, original); err != nil || m.finalRemovalClaimAbsent(claim) != nil {
+		return ResultUncertain()
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	return security.SyncParent(path)
+}
+
+func (m *Manager) claimFinalRemovalRoot(ctx context.Context, r StorageRequest, original storageRemovalClaim) error {
+	if err := m.finalRootFault(storageFinalRootBeforeClaim); err != nil {
+		return err
+	}
+	if err := storageNameAbsent(m.finalRemovalClaimPath(r.OperationID)); err != nil {
+		return err
+	}
+	paths, err := finalRemovalNamespacePaths(ctx, m.Root, map[domain.ID]bool{r.OperationID: true})
+	if err != nil || len(paths) != 0 {
+		return ResultUncertain()
+	}
+	if err := m.finalRootFault(storageFinalRootClaimChecked); err != nil {
+		return err
+	}
+	claim := storageFinalRootClaim{RootName: domain.NewID(), Version: 1, Reference: removalReference(r), RootIdentity: original.RootIdentity, IntentDigest: original.IntentDigest}
+	if err := m.publishFinalRemovalClaim(ctx, claim, storageFinalRootPrepared); err != nil {
+		return err
+	}
+	if err := m.finalRootFault(storageFinalRootPrepared); err != nil {
+		return err
+	}
+	return m.finishFinalRootRemoval(ctx, r, original)
+}
+
+// Recovery may resume only this original transition. In particular, a missing
+// root with unlink-ready proof is uncertain: a crash between unlink and its
+// durable receipt cannot be distinguished from an external namespace move.
+func (m *Manager) finishFinalRootRemoval(ctx context.Context, r StorageRequest, original storageRemovalClaim) (returned error) {
+	return m.finishFinalRootRemovalWithNamespace(ctx, r, original, nil)
+}
+
+// finishFinalRootRemovalWithNamespace optionally consumes one inventory of the
+// shared final-root namespace. Permanent session deletion passes that inventory
+// through all copies, so recovery checks each operation's names without
+// rereading up to 65,536 directory entries for every historical copy.
+func (m *Manager) finishFinalRootRemovalWithNamespace(ctx context.Context, r StorageRequest, original storageRemovalClaim, namespace map[domain.ID][]string) (returned error) {
+	stage := storageFinalRootPrepared
+	defer func() {
+		if returned != nil {
+			m.Logger.WarnContext(ctx, "workspace_final_root_removal_incomplete", "operation_id", r.OperationID, "action", r.Action, "stage", stage, "code", domain.SafeError(returned).Code)
+		}
+	}()
+	claim, err := m.readFinalRemovalClaim(r, original)
+	if err != nil {
+		return err
+	}
+	stage = claim.State
+	removal := filepath.Join(m.Root, "workspace-removals", string(r.OperationID))
+	private := m.finalRemovalRoot(claim)
+	quarantine := m.finalRemovalQuarantine(claim)
+	if namespace != nil {
+		for _, path := range namespace[claim.Reference.OperationID] {
+			if path != private && path != quarantine {
+				return ResultUncertain()
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := security.CheckPrivateDir(filepath.Dir(private)); err != nil {
+		return ResultUncertain()
+	}
+	if claim.State == storageFinalRootUnlinked || claim.State == storageFinalRootRemoved {
+		if err := m.finalRemovalClaimAbsent(claim); err != nil {
+			return err
+		}
+		if err := security.SyncParent(private); err != nil {
+			return err
+		}
+		if _, err := os.Lstat(filepath.Dir(quarantine)); err == nil {
+			if err := security.SyncParent(quarantine); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := security.SyncParent(removal); err != nil {
+			return err
+		}
+		if err := m.finalRootFault(storageFinalRootSynced); err != nil {
+			return err
+		}
+		if err := m.finalRemovalClaimAbsent(claim); err != nil {
+			return err
+		}
+		return m.writeFinalRemovalClaim(ctx, claim, storageFinalRootRemoved)
+	}
+	if claim.State == storageFinalRootPrepared {
+		if _, err := os.Lstat(private); errors.Is(err, os.ErrNotExist) {
+			identity, err := directoryPathIdentity(removal)
+			info, statErr := os.Lstat(removal)
+			if err != nil || identity != claim.RootIdentity || statErr != nil || info.Mode() != removalWritableDirectoryMode() {
+				return ResultUncertain()
+			}
+			if err := renameStorage(removal, private); err != nil {
+				return ResultUncertain()
+			}
+			if err := m.finalRootFault(storageFinalRootRenamed); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return ResultUncertain()
+		}
+	}
+	if err := storageNameAbsent(removal); err != nil {
+		return err
+	}
+	rootPath, err := finalRootRecoveryPath(private, quarantine)
+	if err != nil {
+		return err
+	}
+	if err := security.PrivateDir(filepath.Dir(quarantine)); err != nil {
+		return ResultUncertain()
+	}
+	parent, err := os.OpenRoot(filepath.Dir(rootPath))
+	if err != nil {
+		return ResultUncertain()
+	}
+	defer parent.Close()
+	name := filepath.Base(rootPath)
+	before, err := parent.Lstat(name)
+	if err != nil || before.Mode() != removalWritableDirectoryMode() {
+		return ResultUncertain()
+	}
+	root, err := openVerifiedChildRoot(parent, name, before)
+	if err != nil {
+		return ResultUncertain()
+	}
+	defer root.Close()
+	file, err := root.Open(".")
+	if err != nil {
+		return ResultUncertain()
+	}
+	identity, identityErr := directoryFileIdentity(file)
+	names, readErr := file.Readdirnames(1)
+	file.Close()
+	if identityErr != nil || identity != claim.RootIdentity || len(names) != 0 || readErr != io.EOF {
+		return ResultUncertain()
+	}
+	// Synchronize both sides even when recovering a rename whose parent flush
+	// was interrupted. Publish claimed authority only after anchored validation.
+	if err := security.SyncParent(removal); err != nil {
+		return err
+	}
+	if err := security.SyncParent(private); err != nil {
+		return err
+	}
+	if claim.State == storageFinalRootPrepared {
+		if err := m.writeFinalRemovalClaim(ctx, claim, storageFinalRootClaimed); err != nil {
+			return err
+		}
+		claim.State = storageFinalRootClaimed
+		if err := m.finalRootFault(storageFinalRootClaimed); err != nil {
+			return err
+		}
+	}
+	stage = storageFinalRootUnlinkReady
+	if err := m.writeFinalRemovalClaim(ctx, claim, stage); err != nil {
+		return err
+	}
+	claim.State = stage
+	current, statErr := parent.Lstat(name)
+	opened, openedErr := root.Lstat(".")
+	if statErr != nil || openedErr != nil || !os.SameFile(before, current) || !os.SameFile(current, opened) || current.Mode() != removalWritableDirectoryMode() || opened.Mode() != removalWritableDirectoryMode() {
+		return ResultUncertain()
+	}
+	if err := m.finalRootFault(storageFinalRootVerified); err != nil {
+		return err
+	}
+	// Closing the child is required on Windows. The unlink remains anchored to
+	// its private parent, never to the replaceable old removal name.
+	root.Close()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := storageNameAbsent(removal); err != nil {
+		return err
+	}
+	if err := removeVerifiedFinalRoot(rootPath, quarantine, claim.RootIdentity, func() error {
+		return m.finalRootFault(storageFinalRootBeforeUnlink)
+	}, func() error {
+		return m.finalRootFault(storageFinalRootAfterVerification)
+	}); err != nil {
+		return ResultUncertain()
+	}
+	stage = storageFinalRootNativeGone
+	if err := m.finalRootFault(stage); err != nil {
+		return err
+	}
+	// Native unlink is irreversible. Publish its receipt with a bounded context
+	// that survives caller cancellation so recovery can distinguish an observed
+	// removal from a missing receipt after a deadline or disconnect.
+	receiptCtx, cancelReceipt := context.WithTimeout(context.WithoutCancel(ctx), finalRootReceiptTimeout)
+	err = m.writeFinalRemovalClaim(receiptCtx, claim, storageFinalRootUnlinked)
+	cancelReceipt()
+	if err != nil {
+		return err
+	}
+	if err := m.finalRootFault(storageFinalRootUnlinked); err != nil {
+		return err
+	}
+	if namespace != nil {
+		delete(namespace, claim.Reference.OperationID)
+	}
+	return m.finishFinalRootRemovalWithNamespace(ctx, r, original, namespace)
+}
+
+// Permanent deletion cannot send this namespace through generic copy removal.
+// The immutable deletion job must name the same original intent and root proof.
+func (m *Manager) cleanupDeletionFinalRoots(ctx context.Context, w domain.SessionDeletionWork) error {
+	jobs := map[domain.ID]bool{}
+	for _, copy := range w.Copies {
+		if copy.Type == domain.WorkspaceStorageJob {
+			jobs[copy.JobID] = true
+		}
+	}
+	namespace, err := finalRemovalNamespaceInventory(ctx, m.Root, jobs)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	for _, copy := range w.Copies {
+		if copy.Type != domain.WorkspaceStorageJob {
+			continue
+		}
+		_, finalErr := os.Lstat(m.finalRemovalClaimPath(copy.JobID))
+		if errors.Is(finalErr, os.ErrNotExist) {
+			if len(namespace[copy.JobID]) != 0 {
+				return domain.SessionDeletionPending()
+			}
+			// The previous retirement may have removed the proof but failed to
+			// synchronize its parent. Before generic cleanup retires the intent
+			// and journal, make the observed absence durable so a crash cannot
+			// resurrect an unsynchronized claim without its final-root proof.
+			if err := security.SyncParent(m.finalRemovalClaimPath(copy.JobID)); err != nil {
+				return domain.SessionDeletionPending()
+			}
+			continue
+		}
+		raw, err := security.ReadPrivate(m.removalIntentPath(copy.JobID), maxSnapshotManifest)
+		var intent storageRemovalIntent
+		if finalErr != nil || err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != copy.JobID || intent.SessionID != w.SessionID || intent.SnapshotID != copy.SnapshotID || (intent.Action != StorageCleanup && intent.Action != StorageDelete) {
+			return domain.SessionDeletionPending()
+		}
+		r := StorageRequest{OperationID: copy.JobID, SnapshotID: copy.SnapshotID, Action: intent.Action, Preparation: PrepareRequest{SessionID: w.SessionID}}
+		claim, _, _, err := m.readRemovalClaimState(r, raw)
+		if err != nil || m.finishFinalRootRemovalWithNamespace(ctx, r, claim, namespace) != nil {
+			return domain.SessionDeletionPending()
+		}
+		// The workspace owner retires only the validated final-root proof before
+		// generic cleanup sees its canonical path. Legacy intent and journals stay
+		// available for that later removal phase. A proof that reappears after this
+		// boundary remains absence-only in worker cleanup.
+		if err := m.retireFinalRemovalClaim(ctx, r, claim); err != nil {
+			return domain.SessionDeletionPending()
+		}
+		delete(namespace, copy.JobID)
+	}
+	return nil
+}
+
+// Keep the original operation prefix in the fresh private name so deletion and
+// completed-proof replay can inventory it even after proof retirement. A missing
+// proof never authorizes removing an observed name.
+func finalRemovalNamespacePaths(ctx context.Context, root string, jobs map[domain.ID]bool) ([]string, error) {
+	namespace, err := finalRemovalNamespaceInventory(ctx, root, jobs)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, entries := range namespace {
+		paths = append(paths, entries...)
+	}
+	return paths, nil
+}
+
+func finalRemovalNamespaceInventory(ctx context.Context, root string, jobs map[domain.ID]bool) (map[domain.ID][]string, error) {
+	namespace := map[domain.ID][]string{}
+	for _, directory := range []string{"workspace-removal-roots", "workspace-removal-quarantine"} {
+		parent := filepath.Join(root, directory)
+		if err := security.CheckPrivateDir(parent); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return nil, ResultUncertain()
+		}
+		file, err := os.Open(parent)
+		if err != nil {
+			return nil, ResultUncertain()
+		}
+		entries, readErr := file.ReadDir(65537)
+		closeErr := file.Close()
+		if readErr != nil && readErr != io.EOF || closeErr != nil || len(entries) > 65536 {
+			return nil, ResultUncertain()
+		}
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			name := entry.Name()
+			if len(name) != 73 || name[36] != '-' || domain.ID(name[:36]).Validate() != nil || domain.ID(name[37:]).Validate() != nil || strings.HasPrefix(name, ".") {
+				return nil, ResultUncertain()
+			}
+			if jobs[domain.ID(name[:36])] {
+				operationID := domain.ID(name[:36])
+				namespace[operationID] = append(namespace[operationID], filepath.Join(parent, name))
+			}
+		}
+	}
+	return namespace, nil
+}

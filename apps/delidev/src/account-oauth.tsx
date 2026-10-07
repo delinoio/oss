@@ -1,11 +1,11 @@
 import { ownedMessage, resolveMessage, type OwnedMessage, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskActions } from "./settings-task";
-import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask } from "./settings-task-context";
+import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
-import { AccountService, AccountOAuthFlow as WireOAuthFlow, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
+import { AccountService, AccountOAuthFlow as WireOAuthFlow, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type ErrorDetail, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
 import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
@@ -25,6 +25,17 @@ interface Pending {
   attempt?: AccountOAuthAttempt; completion?: Mutation; cancel?: Mutation; problem?: string | OwnedMessage; openFailed?: boolean; bound: boolean; serverStartDispatched: boolean; polling: boolean; busy: boolean; disposed: boolean;
 }
 const validId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
+function serverCodeRecovery(problem: ErrorDetail | undefined): OwnedMessage | undefined {
+  if (problem?.code === "recovery_required" && ["credential_executable_changed", "credential_executable_invalid", "oauth_start_not_admitted"].includes(problem.cause)) {
+    return ownedMessage("account-oauth.serverCodeRequiresRestart");
+  }
+}
+function serverCodeError(error: unknown): OwnedMessage | undefined {
+  for (const problem of ConnectError.from(error).findDetails(ErrorDetailSchema)) {
+    const message = serverCodeRecovery(problem);
+    if (message) return message;
+  }
+}
 function stage(state: AccountOAuthState): Stage {
   switch (state) {
     case AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION: return Stage.Awaiting;
@@ -93,7 +104,7 @@ export function useAccountOAuth() {
     if (attempt.state !== AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION) value.userCode = undefined;
     if (attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_CONNECTED) { value.problem = undefined; value.openFailed = false; }
     if (current(value)) setView({ provider: value.provider, stage: stage(attempt.state), attempt, account, userCode: value.userCode,
-      problem: attempt.problem?.code === "permission_denied" ? ownedMessage("account-oauth.extra.50181bfbea4a") : attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? ownedMessage("account-oauth.extra.02b9057706ae") : ownedMessage("account-oauth.extra.50181bfbea4a") : value.problem, openFailed: value.openFailed });
+      problem: serverCodeRecovery(attempt.problem) ?? (attempt.problem?.code === "permission_denied" ? ownedMessage("account-oauth.extra.50181bfbea4a") : attempt.problem ? attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_INTERRUPTED && !value.completion ? ownedMessage("account-oauth.extra.02b9057706ae") : ownedMessage("account-oauth.extra.50181bfbea4a") : value.problem), openFailed: value.openFailed });
   };
   const finish = async (value: Pending, code: Uint8Array, state: Uint8Array) => {
     if (!current(value) || !value.attempt || value.completion) { code.fill(0); state.fill(0); return; }
@@ -104,7 +115,7 @@ export function useAccountOAuth() {
       const result = await service.completeAccountOAuth({ mutation: value.completion, authorizationCode: code, authorizationState: state });
       if (result.requestId !== value.completion.requestId) throw new Error("completion receipt");
       if (current(value)) accept(value, result);
-    } catch { failure(value, ownedMessage("account-oauth.extra.c91835a315d9")); }
+    } catch (error) { failure(value, serverCodeError(error) ?? ownedMessage("account-oauth.extra.c91835a315d9")); }
     finally { code.fill(0); state.fill(0); value.busy = false; }
   };
   const startOriginal = async (value: Pending) => {
@@ -138,8 +149,8 @@ export function useAccountOAuth() {
         value.serverStartDispatched = false;
         // Keep the opening until explicit Cancel/Back performs native disposal.
         // The cause proves admission rolled back; transport errors cannot do so.
-        failure(value, ownedMessage("account-oauth.extra.3843239cf0da"));
-      } else failure(value, ownedMessage("account-oauth.extra.66c9a691ff0d"));
+        failure(value, serverCodeError(error) ?? ownedMessage("account-oauth.extra.3843239cf0da"));
+      } else failure(value, serverCodeError(error) ?? ownedMessage("account-oauth.extra.66c9a691ff0d"));
     }
     finally { value.busy = false; }
   };
@@ -259,7 +270,6 @@ export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow:
   const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
   const [project, setProject] = useState("");
-  useRetainSettingsTask(Boolean(view));
   useEffect(() => { if (visible) heading.current?.focus(); }, [view?.provider.providerId, visible]);
   if (!view) return null;
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;

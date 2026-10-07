@@ -16,6 +16,28 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+func TestSessionDeletionRemovesFinalRootProofBeforeIntent(t *testing.T) {
+	work := domain.SessionDeletionWork{
+		SessionID: domain.NewID(),
+		Copies:    []domain.SessionDeletionCopy{{JobID: domain.NewID(), Type: domain.WorkspaceStorageJob}},
+	}
+	paths := workspace.SessionStorageCopyPaths("/private-root", work)
+	claimPath := filepath.Join("/private-root", "storage-removal-root-claims", string(work.Copies[0].JobID)+".json")
+	intentPath := filepath.Join("/private-root", "storage-removal-intents", string(work.Copies[0].JobID)+".json")
+	claimIndex, intentIndex := -1, -1
+	for index, path := range paths {
+		switch path {
+		case claimPath:
+			claimIndex = index
+		case intentPath:
+			intentIndex = index
+		}
+	}
+	if claimIndex < 0 || intentIndex < 0 || claimIndex >= intentIndex {
+		t.Fatalf("final-root proof must precede its intent: claim=%d intent=%d paths=%v", claimIndex, intentIndex, paths)
+	}
+}
+
 func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 	for _, kind := range []domain.WorkspaceType{domain.GeneralChat, domain.Worktree} {
 		for _, action := range []string{"create", "cleanup", "restore"} {
@@ -74,7 +96,13 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 					if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 						t.Fatal(err)
 					}
-					if err := os.WriteFile(path, []byte("fixture retained path transitions"), 0600); err != nil {
+					// Preserve real removal receipts needed by final-root reconciliation.
+					// Jobs without native removal still exercise journal inventories.
+					if _, err := os.Lstat(path); os.IsNotExist(err) {
+						if err := os.WriteFile(path, []byte("fixture retained path transitions"), 0600); err != nil {
+							t.Fatal(err)
+						}
+					} else if err != nil {
 						t.Fatal(err)
 					}
 					journals = append(journals, path)
@@ -83,7 +111,7 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 				// partial record that cannot be decoded and a compacted claim journal.
 				var remnants []string
 				foreign := domain.NewID()
-				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-root-claims", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
 					parent := filepath.Join(config.Root, directory)
 					if err := security.PrivateDir(parent); err != nil {
 						t.Fatal(err)
@@ -127,7 +155,7 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-root-claims", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
 					if raw, err := os.ReadFile(filepath.Join(config.Root, directory, ".pending-"+string(foreign)+".json-9999")); err != nil || string(raw) != "unrelated" {
 						t.Fatal("unrelated atomic write changed", err)
 					}
@@ -182,6 +210,22 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 					t.Fatal("completed replay acquired new deletion authority", err)
 				}
 				if err := os.Remove(journals[0]); err != nil {
+					t.Fatal(err)
+				}
+				finalRoot := filepath.Join(config.Root, "workspace-removal-roots", string(input.OperationID)+"-"+string(domain.NewID()))
+				if err := security.PrivateDir(filepath.Dir(finalRoot)); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(finalRoot, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+					t.Fatal("completed proof ignored a reappearing final root")
+				}
+				if _, err := os.Lstat(finalRoot); err != nil {
+					t.Fatal("completed replay deleted the foreign final root", err)
+				}
+				if err := os.Remove(finalRoot); err != nil {
 					t.Fatal(err)
 				}
 				if err := os.Mkdir(snapshot, 0700); err != nil {
@@ -250,6 +294,93 @@ func TestSessionDeletionPreservesUnattributedAtomicWrite(t *testing.T) {
 				t.Fatal("unattributed write removed", err)
 			}
 		})
+	}
+}
+
+func TestSessionDeletionPreservesFinalRootWithoutOriginalProof(t *testing.T) {
+	config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	jobID := domain.NewID()
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: jobID, SnapshotID: domain.NewID(), Type: domain.WorkspaceStorageJob, Revision: 2, InstanceID: domain.NewID(), Digest: work.Copies[0].Digest})
+	root := filepath.Join(config.Root, "workspace-removal-roots", string(jobID)+"-"+string(domain.NewID()))
+	if err := security.PrivateDir(filepath.Dir(root)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sentinel"), []byte("foreign"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+		t.Fatal("missing final-root proof granted generic removal")
+	}
+	if raw, err := os.ReadFile(filepath.Join(root, "sentinel")); err != nil || string(raw) != "foreign" {
+		t.Fatal("foreign final root changed", err)
+	}
+}
+
+func TestSessionDeletionPreservesOldRemovalNameWithoutFinalRootProof(t *testing.T) {
+	config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	jobID := domain.NewID()
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: jobID, SnapshotID: domain.NewID(), Type: domain.WorkspaceStorageJob, Revision: 2, InstanceID: domain.NewID(), Digest: work.Copies[0].Digest})
+	removal := filepath.Join(config.Root, "workspace-removals", string(jobID))
+	if err := security.PrivateDir(filepath.Dir(removal)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(removal, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(removal, "sentinel")
+	if err := os.WriteFile(sentinel, []byte("foreign"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
+		t.Fatal("missing final-root proof granted generic removal")
+	}
+	if raw, err := os.ReadFile(sentinel); err != nil || string(raw) != "foreign" {
+		t.Fatal("foreign old removal name changed", err)
+	}
+}
+
+func TestSessionDeletionReinventorySeesNewFinalRoot(t *testing.T) {
+	config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	jobID := domain.NewID()
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: jobID, Type: domain.WorkspaceStorageJob})
+	parent := filepath.Join(config.Root, "workspace-removal-roots")
+	if err := security.PrivateDir(parent); err != nil {
+		t.Fatal(err)
+	}
+	if paths, err := workspace.SessionStorageRemnantPaths(context.Background(), config.Root, work); err != nil || len(paths) != 0 {
+		t.Fatal("initial final-root inventory was not empty", paths, err)
+	}
+	path := filepath.Join(parent, string(jobID)+"-"+string(domain.NewID()))
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionStorageRemnantPaths(context.Background(), config.Root, work)
+	if err != nil || len(paths) != 1 || paths[0] != path {
+		t.Fatal("final-root reinventory missed the new absence-only name", paths, err)
+	}
+}
+
+func TestSessionDeletionReinventorySeesReappearingFinalRootClaim(t *testing.T) {
+	config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	jobID := domain.NewID()
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: jobID, Type: domain.WorkspaceStorageJob})
+	parent := filepath.Join(config.Root, "storage-removal-root-claims")
+	if err := security.PrivateDir(parent); err != nil {
+		t.Fatal(err)
+	}
+	if paths, err := workspace.SessionStorageRemnantPaths(context.Background(), config.Root, work); err != nil || len(paths) != 0 {
+		t.Fatal("initial final-root claim inventory was not empty", paths, err)
+	}
+	path := filepath.Join(parent, string(jobID)+".json")
+	if err := os.WriteFile(path, []byte(`{"reappeared":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionStorageRemnantPaths(context.Background(), config.Root, work)
+	if err != nil || len(paths) != 1 || paths[0] != path {
+		t.Fatal("final-root reinventory missed the canonical claim", paths, err)
 	}
 }
 

@@ -1,5 +1,5 @@
 import { formatDecimal, productError, ProductError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
-import { useRetainSettingsTask, useCloseSettingsTask } from "./settings-task-context";
+import { useCloseSettingsTask } from "./settings-task-context";
 import { SettingsTaskActions } from "./settings-task";
 import { useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -71,7 +71,6 @@ export function ModelPricing({ model, active, close }: { model: Resource; active
   const [editing, setEditing] = useState<{ initial?: PricingVersion; modelRevision: bigint }>();
   const [accepted, setAccepted] = useState<PricingVersion>();
   const [missingResult, setMissingResult] = useState(false);
-  useRetainSettingsTask(missingResult);
   const data = current.data;
   return <section><header><h3><LocalizedText id="pricing.tokenPricing_537ed0" components={{ s0: <>{resourceName(model)}</> }} /></h3><button disabled={current.isFetching} onClick={() => void current.refetch()}>{copy("pricing.refreshPricing_880e13")}</button></header>
     <p>{copy("pricing.enterASourceBackedEstimateBasis_fa3472")}</p>

@@ -45,5 +45,6 @@
   "account-oauth.providerConnected_5a9a4f": "{{v0}} connected",
   "account-oauth.invalidGoogleCloudProjectId_9e2b1c": "Enter a valid Google Cloud project ID (6–30 lowercase letters, digits or hyphens).",
   "account-oauth.ifAskedEnterThisCode_6d3a1f": "If asked, enter this code:",
-  "account-oauth.temporaryAuthorizationCode_1d4e7a": "Temporary authorization code"
+  "account-oauth.temporaryAuthorizationCode_1d4e7a": "Temporary authorization code",
+  "account-oauth.serverCodeRequiresRestart": "The server executable changed or its signature is invalid. Keep existing credentials. Review active work, then explicitly stop and start this server from a valid signed bundle. Do not repeat authorization to repair this error."
 }

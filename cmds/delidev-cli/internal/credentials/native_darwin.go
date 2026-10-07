@@ -33,6 +33,8 @@ type macAPI struct {
 	arrayCallbacks uintptr
 	security       uintptr
 	setInteraction func(uint8) int32
+	copySelf       func(uint32, *uintptr) int32
+	checkValidity  func(uintptr, uint32, uintptr) int32
 }
 
 var loadMac = sync.OnceValues(func() (*macAPI, error) {
@@ -55,6 +57,7 @@ var loadMac = sync.OnceValues(func() (*macAPI, error) {
 		{&a.dataLength, cf, "CFDataGetLength"}, {&a.dataBytes, cf, "CFDataGetBytePtr"},
 		{&a.release, cf, "CFRelease"}, {&a.array, cf, "CFArrayCreate"},
 		{&a.setInteraction, sec, "SecKeychainSetUserInteractionAllowed"}, {&a.add, sec, "SecItemAdd"}, {&a.copy, sec, "SecItemCopyMatching"}, {&a.delete, sec, "SecItemDelete"},
+		{&a.copySelf, sec, "SecCodeCopySelf"}, {&a.checkValidity, sec, "SecCodeCheckValidity"},
 	} {
 		address, err := purego.Dlsym(item.lib, item.name)
 		if err != nil {
@@ -115,6 +118,46 @@ func newNativeProfile(profile nativeProfile) (nativeStore, error) {
 	}
 	return &macStore{api: a, profile: profile}, nil
 }
+
+// CheckRuntime checks code identity without reading or unlocking any keychain.
+// Rebuilt files can invalidate a surviving server even when its version matches.
+// Check on each admission/access; a successful startup check is not a lifetime lease.
+func CheckRuntime(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	a, err := loadMac()
+	if err != nil {
+		return err
+	}
+	var code uintptr
+	if status := a.copySelf(0, &code); status != 0 {
+		return macCodeError(status)
+	}
+	if code == 0 {
+		return invalidExecutable()
+	}
+	defer a.release(code)
+	return macCodeError(a.checkValidity(code, 0, 0))
+}
+
+func invalidExecutable() error {
+	err := domain.Fail(domain.RecoveryRequired, "The running server code signature could not be verified.", "Use a valid signed server executable. Preserve existing credentials and review active work before explicitly stopping and restarting the server.")
+	err.Cause = ExecutableInvalidCause
+	return err
+}
+
+func macCodeError(status int32) error {
+	if status == 0 {
+		return nil
+	}
+	if status == -67034 { // errSecCSStaticCodeChanged
+		err := domain.Fail(domain.RecoveryRequired, "The running server executable changed on disk.", "Review active work, explicitly stop this local server, then start it from the preserved development bundle. Keep existing credentials; unlocking the keychain does not repair changed executable code.")
+		err.Cause = ExecutableChangedCause
+		return err
+	}
+	return invalidExecutable()
+}
 func (s *macStore) query(name string, adding bool) uintptr {
 	a := s.api
 	q := a.dictionary(0, 0, a.keyCallbacks, a.valueCallbacks)
@@ -167,7 +210,7 @@ func macError(status int32) error {
 	}
 }
 func (s *macStore) get(ctx context.Context, name string) ([]byte, error) {
-	if err := ctx.Err(); err != nil {
+	if err := CheckRuntime(ctx); err != nil {
 		return nil, err
 	}
 	a := s.api
@@ -202,7 +245,7 @@ func (s *macStore) get(ctx context.Context, name string) ([]byte, error) {
 	return out, nil
 }
 func (s *macStore) create(ctx context.Context, name string, value []byte) error {
-	if err := ctx.Err(); err != nil {
+	if err := CheckRuntime(ctx); err != nil {
 		return err
 	}
 	if !s.profile.accepts(len(value)) {
@@ -225,7 +268,7 @@ func (s *macStore) create(ctx context.Context, name string, value []byte) error 
 	return macError(a.add(q, nil))
 }
 func (s *macStore) remove(ctx context.Context, name string) error {
-	if err := ctx.Err(); err != nil {
+	if err := CheckRuntime(ctx); err != nil {
 		return err
 	}
 	q := s.query(name, false)
