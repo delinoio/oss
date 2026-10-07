@@ -123,6 +123,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
     list.refresh();
   };
   const refresh = () => {
+    list.refreshExplicit();
     reloadList();
     if (selectedId) setReadTrigger((value) => value + 1);
   };
