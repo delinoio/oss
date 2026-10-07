@@ -186,6 +186,9 @@ func (a *apiConnection) CloseText(ctx context.Context, request domain.ID, record
 	if err := record(life, claim); err != nil {
 		return result, sessionUncertain()
 	}
+	if err := a.captureManagedBundle(); err != nil {
+		return result, err
+	}
 	response, err := a.wire.Call(life, request, "session/close", closeParams{Session: a.session})
 	if err != nil || response.ErrorCode != nil {
 		return result, sessionUncertain()

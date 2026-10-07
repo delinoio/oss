@@ -76,6 +76,7 @@ type apiConnection struct {
 	presentationCount      int
 	presentationBytes      int
 	announcementGeneration uint64
+	managedBundle          *managedBundleCapture
 }
 
 func apiConfigurationError() *domain.Error {
@@ -313,4 +314,13 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	return &apiConnection{wire: connection, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1)}, nil
 }
 
-func (a *apiConnection) Close() error { return a.wire.Close() }
+func (a *apiConnection) Close() error {
+	// Native closure and protected credential capture retain distinct evidence.
+	// A capture failure still joins the original process; it cannot return its
+	// protected account lease or authorize another read after closure.
+	captureErr := a.captureManagedBundle()
+	if err := a.wire.Close(); err != nil {
+		return err
+	}
+	return captureErr
+}

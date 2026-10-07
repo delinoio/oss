@@ -129,6 +129,14 @@ Base64 copies. Clean authentication-file absence alone is insufficient; uncertai
 scans retain history and exclusive ownership. Codex cleanup keeps its separate
 service profile and historical bundle semantics.
 
+The managed harness captures the final native bundle once while its original
+wire is live, before terminal session/process closure. Retain full identity and
+original token digests, validate rotation without retaining a second original
+plaintext bundle, and never retry a failed capture. A single protected handoff
+may use the retained bytes after closure without querying the closed wire.
+Independent process exit and exact post-close authentication-file comparison
+still precede credential cleanup and Finish; capture alone cannot return a lease.
+
 Never retain tokens, authorization codes, device codes, login URLs or raw native
 stderr in database documents, logs, events or frontend caches. Do not import or
 modify a user's existing Grok home. Native callbacks remain bound to the original

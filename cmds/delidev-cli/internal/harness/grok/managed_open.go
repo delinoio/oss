@@ -67,6 +67,10 @@ func openManaged(ctx context.Context, config managedOpeningConfig) (connection *
 	if err != nil {
 		return nil, err
 	}
+	capture, err := newManagedBundleCapture(config.Bundle)
+	if err != nil {
+		return nil, err
+	}
 	environment, err := probeEnvironment(config.Probe)
 	if err != nil {
 		return nil, err
@@ -173,5 +177,5 @@ func openManaged(ctx context.Context, config managedOpeningConfig) (connection *
 	// Later inspections retain their read-only blocked-catalog environment and
 	// never grant a native HTTP call with the protected credentials.
 	inspection.Env = environment
-	return &apiConnection{wire: wire, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1)}, nil
+	return &apiConnection{wire: wire, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1), managedBundle: capture}, nil
 }

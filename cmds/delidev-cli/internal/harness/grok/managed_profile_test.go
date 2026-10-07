@@ -304,6 +304,16 @@ func nativeManagedProfile(t *testing.T, textInput bool) {
 	if claims != 2 || connection.Close() != nil || process.ReconcileOwner(config.Probe.Process.Directory, config.Probe.Process.OwnerID) != nil {
 		t.Fatal("original native session or process cleanup was not confirmed")
 	}
+	captured, err := connection.managedBundle.take()
+	if err != nil || !bytes.Equal(captured, config.Bundle) {
+		clear(captured)
+		t.Fatal("original pre-close native bundle was not captured")
+	}
+	clear(captured)
+	if repeated, err := connection.managedBundle.take(); err == nil || len(repeated) != 0 {
+		clear(repeated)
+		t.Fatal("closed native bundle was delivered twice")
+	}
 	path := filepath.Join(config.Probe.Home, "auth.json")
 	retained, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(retained, config.Bundle) {
