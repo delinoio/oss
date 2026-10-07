@@ -59,6 +59,7 @@ func newGrokOAuthFixture(t *testing.T) *grokOAuthFixture {
 		t.Fatal(err)
 	}
 	f.service.grokOAuthTransport = oauthHTTPTransport(f.roundTrip)
+	f.service.grokSubscriptionAccepted = true
 	return f
 }
 

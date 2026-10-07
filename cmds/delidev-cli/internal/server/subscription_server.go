@@ -52,6 +52,9 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 		if err != nil {
 			return nil, err
 		}
+		if a.SubscriptionService == domain.SubscriptionGrok && action != domain.SubscriptionLogout && !s.grokSubscriptionAccepted {
+			return nil, domain.Fail(domain.Unsupported, "Grok subscription support has not completed native and account validation.", "Keep the original account; authentication is unavailable until the pinned profile is accepted.")
+		}
 		if a.Subscription == nil {
 			a.Subscription = &domain.SubscriptionState{}
 		}

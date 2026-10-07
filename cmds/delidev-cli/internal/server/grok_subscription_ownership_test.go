@@ -9,9 +9,45 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
+
+func TestGrokUnacceptedProfileCannotSendOAuthAndStillPermitsCleanup(t *testing.T) {
+	f := newGrokOAuthFixture(t)
+	f.service.grokSubscriptionAccepted = false
+	for _, device := range []bool{false, true} {
+		r, _ := f.record()
+		_, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, DeviceCode: device}))
+		if domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+			t.Fatal("unaccepted browser/device profile obtained authentication authority")
+		}
+		_, a := f.record()
+		if a.Subscription != nil || f.exchanges.Load() != 0 {
+			t.Fatal("unaccepted profile allocated an operation or sent OAuth")
+		}
+	}
+	f.service.grokSubscriptionAccepted = true
+	f.browserLogin()
+	f.service.grokSubscriptionAccepted = false
+	r, before := f.record()
+	_, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH}))
+	if domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+		t.Fatal("unaccepted profile acquired refresh authority")
+	}
+	_, after := f.record()
+	if after.Subscription.Generation != before.Subscription.Generation || after.Subscription.Pending != nil {
+		t.Fatal("unaccepted refresh changed original ownership")
+	}
+	logout := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	awaitServerFixture(t, f.run())
+	_, after = f.record()
+	refs, err := f.secrets.UnremovedReferences(context.Background(), r.ID)
+	if err != nil || len(refs) != 0 || after.Connection != nil || after.Subscription.Generation != "" || f.progressFor(logout.OperationId).State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED || f.exchanges.Load() != 1 {
+		t.Fatal("closed admission blocked cleanup or sent another OAuth request")
+	}
+}
 
 func (f *grokOAuthFixture) browserLogin() {
 	f.t.Helper()

@@ -127,6 +127,9 @@ func (s *Service) runGrokServerSubscription(parent context.Context, id domain.ID
 		if a.SubscriptionService != domain.SubscriptionGrok || st == nil || st.ServerOperation == nil || st.ServerOperation.State != domain.SubscriptionPreparing || st.ServerOperation.Epoch != s.subscriptionServerEpoch() || st.ServerOperation.NativeStarted || st.RecoveryRequired || st.Lease != nil || st.Pending == nil || st.Pending.ID != st.ServerOperation.ID || st.Pending.Phase != domain.SubscriptionQueued {
 			return nil, subscriptionDenied()
 		}
+		if st.Pending.Action != domain.SubscriptionLogout && !s.grokSubscriptionAccepted {
+			return nil, domain.Fail(domain.Unsupported, "Grok subscription support is awaiting profile acceptance.", "Retain the original operation without sending OAuth.")
+		}
 		o := st.ServerOperation
 		if st.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil || !time.Now().Before(o.ExpiresAt) {
 			o.State = domain.SubscriptionCanceled

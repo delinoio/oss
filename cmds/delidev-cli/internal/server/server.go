@@ -92,42 +92,46 @@ type Service struct {
 	subscriptionOpen              serverSubscriptionOpener
 	subscriptionCallbackTransport http.RoundTripper
 	grokOAuthTransport            http.RoundTripper
-	subscriptionOnce              sync.Once
-	subscriptionEpoch             domain.ID
-	subscriptionProgress          map[domain.ID]subscriptionProgress
-	accountOnce                   sync.Once
-	accountGate                   chan struct{}
-	oauthGeneration               domain.ID
-	oauthLive                     map[domain.ID]*oauthLive
-	oauthRegistrations            map[domain.ProviderPresetID]providers.OAuthRegistration
-	oauthDeviceJobs               sync.WaitGroup
-	oauthClosing                  bool
-	oauthDeviceClient             oauthDeviceClient
-	oauthTokenClient              oauthTokenClient
-	oauthRefreshMu                sync.Mutex
-	oauthRefreshes                map[domain.ID]chan struct{}
-	oauthExchange                 oauthExchange
-	accountChecks                 map[domain.ID]map[domain.ID]accountCheck
-	accountSecrets                accountSecrets
-	ownedVault                    *credentials.Vault
-	Store                         *store.Store
-	Identity                      security.Identity
-	Endpoint                      Endpoint
-	logger                        *slog.Logger
-	stop                          context.CancelFunc
-	stopping                      atomic.Bool
-	connectionsMu                 sync.Mutex
-	connections                   map[domain.ID]map[domain.ID]context.CancelFunc
-	pairAttempts                  map[string]attemptWindow
-	workerStreams                 map[domain.ID]workerStream
-	auxiliaryStreams              map[domain.ID]workerStream
-	forwardsOnce                  sync.Once
-	forwardEpoch                  domain.ID
-	forwardsMu                    sync.Mutex
-	forwardRelays                 map[domain.ID]*forwardRelay
-	forwardLanes                  map[domain.ID]*forwardLane
-	workspaceReadsMu              sync.Mutex
-	workspaceReaders              map[domain.ID]*workspaceReader
-	executionOnce                 sync.Once
-	executionAuthority            *executionAuthority
+	// Production admission remains closed until the complete pinned native and
+	// real-account profiles pass. Private OAuth fixtures inject this separately
+	// from their HTTP transport; neither transport nor reservations grant support.
+	grokSubscriptionAccepted bool
+	subscriptionOnce         sync.Once
+	subscriptionEpoch        domain.ID
+	subscriptionProgress     map[domain.ID]subscriptionProgress
+	accountOnce              sync.Once
+	accountGate              chan struct{}
+	oauthGeneration          domain.ID
+	oauthLive                map[domain.ID]*oauthLive
+	oauthRegistrations       map[domain.ProviderPresetID]providers.OAuthRegistration
+	oauthDeviceJobs          sync.WaitGroup
+	oauthClosing             bool
+	oauthDeviceClient        oauthDeviceClient
+	oauthTokenClient         oauthTokenClient
+	oauthRefreshMu           sync.Mutex
+	oauthRefreshes           map[domain.ID]chan struct{}
+	oauthExchange            oauthExchange
+	accountChecks            map[domain.ID]map[domain.ID]accountCheck
+	accountSecrets           accountSecrets
+	ownedVault               *credentials.Vault
+	Store                    *store.Store
+	Identity                 security.Identity
+	Endpoint                 Endpoint
+	logger                   *slog.Logger
+	stop                     context.CancelFunc
+	stopping                 atomic.Bool
+	connectionsMu            sync.Mutex
+	connections              map[domain.ID]map[domain.ID]context.CancelFunc
+	pairAttempts             map[string]attemptWindow
+	workerStreams            map[domain.ID]workerStream
+	auxiliaryStreams         map[domain.ID]workerStream
+	forwardsOnce             sync.Once
+	forwardEpoch             domain.ID
+	forwardsMu               sync.Mutex
+	forwardRelays            map[domain.ID]*forwardRelay
+	forwardLanes             map[domain.ID]*forwardLane
+	workspaceReadsMu         sync.Mutex
+	workspaceReaders         map[domain.ID]*workspaceReader
+	executionOnce            sync.Once
+	executionAuthority       *executionAuthority
 }

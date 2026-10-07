@@ -140,6 +140,9 @@ Stop/resume and process/server restart plus API/ChatGPT regressions.
 
 Verify actual 1.0.46 OAuth/native profiles and real local/remote account execution
 before activation. A failed profile keeps support disabled until resolved.
+Production login and refresh admission stays closed independently of private
+fixture transports. Closing admission preserves explicit original logout and
+protected cleanup; a transport override or reserved capability cannot enable it.
 Fixture/build/package results do not establish actual account or OS acceptance;
 record supported-platform native and packaging evidence separately.
 
