@@ -7,10 +7,11 @@ import { useQuery } from "@connectrpc/connect-query";
 import { FailureCode, SystemQuery } from "@delinoio/delidev-api-client";
 import { Workspace, workspaceNames } from "./documents";
 import { Surface } from "./views";
-import { SettingsEntryDestination } from "./settings";
+import type { SettingsEntryDestination } from "./settings";
 import { HomeNavigation, ReadStage, type NavigationRow } from "./home-navigation";
 import { HomeScope, useNavigationQuery } from "./home-navigation-query";
 import { ServerPresentationKind, type ServerPresentation } from "./server-presentation";
+import { SessionHoverCard, SessionHoverProvider, useSessionHover } from "./session-hover-card";
 
 enum ExecutionStatus {
   NotStarted = "not-started",
@@ -111,6 +112,26 @@ function archiveLabel(raw: string): string {
   return statusLabel(raw || "unknown");
 }
 
+function cardExecutionLabel(raw: string): string {
+  switch (raw as ExecutionStatus) {
+    case ExecutionStatus.NotStarted: return copy("sidebar.hover.notStarted");
+    case ExecutionStatus.Running: return copy("sidebar.hover.running");
+    case ExecutionStatus.Succeeded: return copy("sidebar.hover.succeeded");
+    case ExecutionStatus.Failed: return copy("sidebar.hover.failed");
+    case ExecutionStatus.Stopped: return copy("sidebar.hover.stopped");
+    default: return executionLabel(raw);
+  }
+}
+
+function cardArchiveLabel(raw: string): string {
+  switch (raw as ArchiveStatus) {
+    case ArchiveStatus.Active: return copy("sidebar.hover.active");
+    case ArchiveStatus.Archiving: return copy("sidebar.hover.archiving");
+    case ArchiveStatus.Archived: return copy("sidebar.hover.archived");
+    default: return archiveLabel(raw);
+  }
+}
+
 function StatusGlyph({ outcome, archive }: { outcome: string; archive: string }) {
   useLocale();
   let execution: ReactNode;
@@ -133,7 +154,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   useLocale();
   const tooltipId = useId();
   const element = useRef<HTMLButtonElement>(null);
-  const [tooltip, setTooltip] = useState<TooltipPosition>();
+  const hover = useSessionHover(element);
   const title = row.name;
   const outcome = row.outcome;
   const archive = row.archive;
@@ -143,31 +164,24 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const titleStateDescription = titlePresentation ? [titleState, titlePresentation.detail].filter(Boolean).join(". ") : "";
   const titleStateSummary = titlePresentation ? [titleState?.replace(/^Title /, "").replace(/^[a-z]/, (letter) => letter.toUpperCase()), titlePresentation.shortDetail].filter(Boolean).join(" · ") : "";
   const description = copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
-  const showTooltip = () => {
-    const rect = element.current?.getBoundingClientRect();
-    if (!rect) return;
-    const width = Math.min(320, window.innerWidth - 16);
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-    const top = rect.bottom + 6 + 84 < window.innerHeight ? rect.bottom + 6 : Math.max(8, rect.top - 84);
-    setTooltip({ left, top });
-  };
-  useEffect(() => {
-    if (!tooltip) return;
-    const dismiss = () => setTooltip(undefined);
-    window.document.addEventListener("scroll", dismiss, true);
-    window.addEventListener("resize", dismiss);
-    return () => { window.document.removeEventListener("scroll", dismiss, true); window.removeEventListener("resize", dismiss); };
-  }, [tooltip]);
   const workspaceIcon = row.workspace === Workspace.Worktree ? "branch" : row.workspace === Workspace.Local ? "computer" : row.workspace === Workspace.GeneralChat ? "chat" : "unknown";
   return <>
-    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={showTooltip} onPointerLeave={() => setTooltip(undefined)} onFocus={showTooltip} onBlur={() => setTooltip(undefined)} onClick={() => open(row.id)}>
+    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); open(row.id); }}>
       <Icon name={workspaceIcon} className="sidebar-workspace-icon" />
       <span className="sidebar-session-title">{title}</span>
-      {titleStateSummary ? <span className="sidebar-session-title-state" title={titlePresentation?.detail}>{titleStateSummary}</span> : null}
+      {titleStateSummary ? <span className="sidebar-session-title-state">{titleStateSummary}</span> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
     </button>
     <span className="sidebar-sr-only" id={tooltipId}>{description}</span>
-    {tooltip ? createPortal(<div className="sidebar-session-tooltip" role="tooltip" style={{ left: tooltip.left, top: tooltip.top }}>{description}</div>, window.document.body) : null}
+    {hover.visible ? <SessionHoverCard hover={hover}>
+      <p className="sidebar-session-card-title">{title}</p>
+      <p className="sidebar-session-card-workspace"><Icon name={workspaceIcon} className="sidebar-workspace-icon" />{workspace}</p>
+      <dl className="sidebar-session-card-states">
+        <dt>{copy("sidebar.hover.execution")}</dt><dd><span className="sidebar-session-card-badge"><StatusGlyph outcome={outcome} archive={ArchiveStatus.Active} />{cardExecutionLabel(outcome)}</span></dd>
+        <dt>{copy("sidebar.hover.archive")}</dt><dd><span className="sidebar-session-card-badge">{cardArchiveLabel(archive)}</span></dd>
+      </dl>
+      {titlePresentation ? <div className="sidebar-session-card-title-state"><p>{titleState}</p>{titlePresentation.detail ? <p>{titlePresentation.detail}</p> : null}</div> : null}
+    </SessionHoverCard> : null}
   </>;
 }
 
@@ -187,20 +201,22 @@ function ProjectSessions({ projectId, label, fallback = false, fallbackRows, hom
   </div>;
 }
 
-function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, home, includeArchived, selected, open, active, root }: {
+function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, newSession, projectSelectionBlocked, home, includeArchived, selected, open, active, root }: {
   projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
+  newSession: (projectId: string) => void; projectSelectionBlocked: boolean;
 }) {
   useLocale();
-  return <section className="sidebar-project-group" data-project-id={projectId}>
+  return <section className={`sidebar-project-group${fallback ? "" : " has-new-session"}`} data-project-id={projectId}>
     <button type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: projectId })} aria-expanded={expanded} onClick={toggle}>
       <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span><Icon name="chevron" className={`sidebar-disclosure ${expanded ? "is-expanded" : ""}`} />
     </button>
+    {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProjectId", { v0: label, v1: projectId })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
     {expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} open={open} active={active} root={root} /> : null}
   </section>;
 }
 
-export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; newGeneralChat: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
+export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   useLocale();
@@ -353,7 +369,8 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   };
 
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
-  return <aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
+  const chooseNewSession = (projectId?: string) => { newSession(projectId); setDrawerOpen(false); };
+  return <SessionHoverProvider enabled={active} scope={surface}><aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
     <nav ref={rail} className="sidebar-rail" aria-label={copy("sidebar.primaryNavigation_e1bfe7")}>
       <SidebarButton label={copy("sidebar.sessions_6fa3cb")} icon="sessions" current={sessionNavigation} onClick={() => navigate(Surface.Sessions)} />
       <SidebarButton label={copy("sidebar.pullRequests_d9e3f2")} icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigate(Surface.PullRequests)} />
@@ -377,14 +394,14 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       {sessionNavigation ? <button type="button" className="sidebar-new-general-chat" aria-current={surface === Surface.NewGeneralChat ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newGeneralChat(); setDrawerOpen(false); }}><Icon name="chat-plus" />{copy("sidebar.newGeneralChat")}</button> : null}
       <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? copy("sidebar.projectAndSessionNavigation_ccbca5") : copy("sidebar.menuNavigationAndFilters_b5a21d")}>
         <div hidden={!sessionNavigation}>
-        <header className="sidebar-projects-heading"><h2>{copy("sidebar.projects_04e2a9")}</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label={copy("sidebar.newProject_a41eb2")} onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />{copy("sidebar.includeArchived_b6c334")}</label></div> : null}</header>
+        <header className="sidebar-projects-heading"><h2>{copy("sidebar.projects_04e2a9")}</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label={copy("sidebar.newProject_a41eb2")} onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); setNewProjectTooltip(undefined); newProject(); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />{copy("sidebar.includeArchived_b6c334")}</label></div> : null}</header>
         {sessionNavigation && newProjectTooltip ? createPortal(<div className="sidebar-action-tooltip" role="tooltip" aria-hidden="true" style={{ left: newProjectTooltip.left, top: newProjectTooltip.top }}>{copy("sidebar.newProject_a41eb2")}</div>, window.document.body) : null}
         {includeArchived ? <p className="sidebar-archive-indicator">{copy("sidebar.archivedIncluded_5c65cb")}</p> : null}
         <QueryProblem query={projects} label={copy("sidebar.projects_2577c0")} retryLabel={copy("sidebar.retryProjectCatalog_6fc560")} />
         <QueryProblem query={sessions} label={copy("sidebar.sessions_1225ae")} retryLabel={copy("sidebar.retryGlobalSessions_4d93c1")} />
         {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingProjects_6970a1")}</p> : null}
-        {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>{copy("sidebar.noProjectsLoaded_9b9e01")}</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}>{copy("sidebar.createAProject_c52af0")}</button></div> : null}
-        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
+        {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>{copy("sidebar.noProjectsLoaded_9b9e01")}</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); setNewProjectTooltip(undefined); newProject(); }}>{copy("sidebar.createAProject_c52af0")}</button></div> : null}
+        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} newSession={chooseNewSession} projectSelectionBlocked={projectSelectionBlocked} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
         <Continuation query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat">
           <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>
@@ -403,5 +420,5 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       </footer>
     </div>
     </dialog>
-  </aside>;
+  </aside></SessionHoverProvider>;
 }

@@ -28,6 +28,9 @@ type SaveAgentWorkerRequest struct {
 	DocumentJson  []byte                     `protobuf:"bytes,2,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
 	Model         *AgentWorkerModelSelection `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	SchemaVersion uint32                     `protobuf:"varint,4,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	// Ordered selections corresponding exactly to schema-3 source routes.
+	// Exclusive with model. Sources are derived from current accounts by Go.
+	RouteModels   []*AgentWorkerModelSelection `protobuf:"bytes,5,rep,name=route_models,json=routeModels,proto3" json:"route_models,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -88,6 +91,13 @@ func (x *SaveAgentWorkerRequest) GetSchemaVersion() uint32 {
 		return x.SchemaVersion
 	}
 	return 0
+}
+
+func (x *SaveAgentWorkerRequest) GetRouteModels() []*AgentWorkerModelSelection {
+	if x != nil {
+		return x.RouteModels
+	}
+	return nil
 }
 
 type AgentWorkerModelSelection struct {
@@ -811,12 +821,13 @@ var File_delidev_v1_configuration_proto protoreflect.FileDescriptor
 const file_delidev_v1_configuration_proto_rawDesc = "" +
 	"\n" +
 	"\x1edelidev/v1/configuration.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xd3\x01\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"\x9d\x02\n" +
 	"\x16SaveAgentWorkerRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12#\n" +
 	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson\x12;\n" +
 	"\x05model\x18\x03 \x01(\v2%.delidev.v1.AgentWorkerModelSelectionR\x05model\x12%\n" +
-	"\x0eschema_version\x18\x04 \x01(\rR\rschemaVersion\"\x9c\x01\n" +
+	"\x0eschema_version\x18\x04 \x01(\rR\rschemaVersion\x12H\n" +
+	"\froute_models\x18\x05 \x03(\v2%.delidev.v1.AgentWorkerModelSelectionR\vrouteModels\"\x9c\x01\n" +
 	"\x19AgentWorkerModelSelection\x12\x1b\n" +
 	"\bmodel_id\x18\x01 \x01(\tH\x00R\amodelId\x12\x1d\n" +
 	"\tnative_id\x18\x02 \x01(\tH\x00R\bnativeId\x126\n" +
@@ -909,31 +920,32 @@ var file_delidev_v1_configuration_proto_goTypes = []any{
 var file_delidev_v1_configuration_proto_depIdxs = []int32{
 	14, // 0: delidev.v1.SaveAgentWorkerRequest.mutation:type_name -> delidev.v1.Mutation
 	1,  // 1: delidev.v1.SaveAgentWorkerRequest.model:type_name -> delidev.v1.AgentWorkerModelSelection
-	14, // 2: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	15, // 3: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
-	16, // 4: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
-	16, // 5: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
-	14, // 6: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	15, // 7: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
-	8,  // 8: delidev.v1.ConfigurationService.ExportConfiguration:input_type -> delidev.v1.ExportConfigurationRequest
-	10, // 9: delidev.v1.ConfigurationService.PreviewConfigurationImport:input_type -> delidev.v1.PreviewConfigurationImportRequest
-	12, // 10: delidev.v1.ConfigurationService.ApplyConfigurationImport:input_type -> delidev.v1.ApplyConfigurationImportRequest
-	0,  // 11: delidev.v1.ConfigurationService.SaveAgentWorker:input_type -> delidev.v1.SaveAgentWorkerRequest
-	2,  // 12: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	4,  // 13: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	6,  // 14: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	9,  // 15: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
-	11, // 16: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
-	13, // 17: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
-	3,  // 18: delidev.v1.ConfigurationService.SaveAgentWorker:output_type -> delidev.v1.SaveConfigurationResponse
-	3,  // 19: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	5,  // 20: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	7,  // 21: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	15, // [15:22] is the sub-list for method output_type
-	8,  // [8:15] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	1,  // 2: delidev.v1.SaveAgentWorkerRequest.route_models:type_name -> delidev.v1.AgentWorkerModelSelection
+	14, // 3: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	15, // 4: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	16, // 5: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
+	16, // 6: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
+	14, // 7: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	15, // 8: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	8,  // 9: delidev.v1.ConfigurationService.ExportConfiguration:input_type -> delidev.v1.ExportConfigurationRequest
+	10, // 10: delidev.v1.ConfigurationService.PreviewConfigurationImport:input_type -> delidev.v1.PreviewConfigurationImportRequest
+	12, // 11: delidev.v1.ConfigurationService.ApplyConfigurationImport:input_type -> delidev.v1.ApplyConfigurationImportRequest
+	0,  // 12: delidev.v1.ConfigurationService.SaveAgentWorker:input_type -> delidev.v1.SaveAgentWorkerRequest
+	2,  // 13: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	4,  // 14: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	6,  // 15: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	9,  // 16: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
+	11, // 17: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
+	13, // 18: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
+	3,  // 19: delidev.v1.ConfigurationService.SaveAgentWorker:output_type -> delidev.v1.SaveConfigurationResponse
+	3,  // 20: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	5,  // 21: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	7,  // 22: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	16, // [16:23] is the sub-list for method output_type
+	9,  // [9:16] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_configuration_proto_init() }
