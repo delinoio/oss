@@ -6,6 +6,7 @@ import { createClient } from "@connectrpc/connect";
 import { EntityKind, FailureCode, GitHubTokenIdentityState as IdentityState, GitHubTokenKind, IntegrationService, SaveIntegrationProfileRequestSchema, clientFailure, isEntityId, newRequestId, type GitHubTokenIdentity, type Resource, type SaveIntegrationProfileRequest } from "@delinoio/delidev-api-client";
 import { document, encode, object, text, type Document } from "./documents";
 import { GitHubDraftTokenForm, githubOwnerValid } from "./github-opening";
+import { copy, useLocale } from "./localization";
 import { useSettingsOpening } from "./settings-lifetime";
 import { Problem } from "./ui";
 
@@ -35,6 +36,7 @@ function replyProblem(raw: Uint8Array): Document | undefined {
 }
 
 export function GitHubOnboarding({ active, close, connected }: { active: boolean; close: () => void; connected: (profile: Resource, retry?: GitHubTokenRetry, problem?: Document) => void }) {
+  useLocale();
   const transport = useTransport(), opening = useSettingsOpening();
   const client = useMemo(() => createClient(IntegrationService, transport), [transport]);
   const [stage, setStage] = useState(Stage.Token), [token, setToken] = useState("");
@@ -147,7 +149,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
         <label>Profile name<input ref={nameInput} required maxLength={160} value={name} onChange={event => { nameEdited.current = true; setName(event.target.value); }} /></label><p>Filled from your GitHub username. You can change it.</p>
         {nameBytes > 160 ? <p role="alert">This profile name is too long. Shorten it before saving.</p> : name && !name.trim() ? <p role="alert">Enter a nonblank profile name.</p> : null}
         <label>Token type<select value={kind} onChange={event => setKind(Number(event.target.value) as GitHubTokenKind)}><option value={GitHubTokenKind.FINE_GRAINED}>Fine-grained PAT (preferred)</option><option value={GitHubTokenKind.CLASSIC}>Classic PAT</option></select></label>
-        <label>Resource owner<input required={kind === GitHubTokenKind.FINE_GRAINED} maxLength={100} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" placeholder="GitHub user or organization" value={owner} onChange={event => setOwner(event.target.value)} /></label><p>Enter the owner selected when you created this token. Token form settings carry into this field; you can change them.</p>
+        <label>Resource owner<input required={kind === GitHubTokenKind.FINE_GRAINED} maxLength={100} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" placeholder="GitHub user or organization" value={owner} onChange={event => setOwner(event.target.value)} /></label><p>{copy("github-opening.draft.confirmOwner")}</p>
         <p>Use a separate fine-grained profile for each repository owner. Repositories explicitly select their profile.</p><p>Token type and owner cannot be changed after creation.</p>
       </fieldset>
       {busy ? <p role="status">Saving GitHub profile and connecting token…</p> : null}<Problem error={error} />

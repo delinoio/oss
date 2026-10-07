@@ -26,5 +26,6 @@
   "github-opening.draft.fineGrainedGuidance": "Fine grained: Metadata, Contents, Pull requests, Issues and Commit statuses are preselected as read-only, with a 30-day expiry. On GitHub, choose the resource owner and Only select repositories; the form defaults to All repositories. The form offers no Checks permission; check access separately. Organization approval may be required.",
   "github-opening.draft.classicGuidance": "Classic: No scopes are preselected. For private repositories, selecting repo grants broad read/write access even though DeliDev only reads GitHub APIs. Prefer fine-grained selected repositories when possible.",
   "github-opening.draft.preparing": "Preparing the official GitHub token form…",
-  "github-opening.draft.failure": "The official form could not be confirmed. Inspect your browser before trying again."
+  "github-opening.draft.failure": "The official form could not be confirmed. Inspect your browser before trying again.",
+  "github-opening.draft.confirmOwner": "Enter the owner you selected when creating this token on GitHub."
 }
