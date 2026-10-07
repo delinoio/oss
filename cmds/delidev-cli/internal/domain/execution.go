@@ -153,7 +153,7 @@ func (c ExecutionConfiguration) Validate() error {
 	if resolved.Instructions != c.Instructions {
 		return Fail(RecoveryRequired, "Retained instructions do not match their ordered templates.", "Reconcile the immutable first-execution configuration.")
 	}
-	return c.validateNativeOptions()
+	return c.ValidateNativeOptions()
 }
 
 type NativeReferenceKind string

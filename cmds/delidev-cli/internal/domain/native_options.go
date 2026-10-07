@@ -9,7 +9,7 @@ func UnavailableNativeOption(harness Harness, option string) error {
 	return Fail(Unsupported, fmt.Sprintf("Native option %q has no corresponding setting in the %s execution interface.", option, harness), "Keep the saved value; explicitly clear this option before execution. Other selected options are not changed.")
 }
 
-func (c ExecutionConfiguration) validateNativeOptions() error {
+func (c ExecutionConfiguration) ValidateNativeOptions() error {
 	o := c.Options
 	fields := []struct {
 		name                string
@@ -31,6 +31,10 @@ func (c ExecutionConfiguration) validateNativeOptions() error {
 		}
 	}
 	return nil
+}
+
+func (c ExecutionConfiguration) validateNativeOptions() error {
+	return c.ValidateNativeOptions()
 }
 
 // SelectedNativeOptionNames contains closed field names, never user values.
