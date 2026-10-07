@@ -436,13 +436,13 @@ impl Connector {
     fn retry_launch(&self) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "desktop_launch", phase = "explicit-retry");
-        self.connect_inner_with_transport("desktop-retry", true)
+        self.connect_inner_with_transport("desktop-retry", false)
     }
 
     fn launch(&self) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "desktop_launch", phase = "starting");
-        let result = self.connect_inner_with_transport("desktop-launch", true);
+        let result = self.connect_inner_with_transport("desktop-launch", false);
         match &result {
             Ok(_) => tracing::info!(operation = "desktop_launch", phase = "ready"),
             Err(code) => tracing::warn!(operation = "desktop_launch", phase = "failed", ?code),
@@ -455,23 +455,19 @@ impl Connector {
     // identity.
     fn observe_launch(&self, original: &Connection) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
-        let status =
-            self.short_request_with_input(&self.server_arguments("desktop-status"), None)?;
+        let status = self.run(&self.server_arguments("desktop-status"))?;
         if self.server_state(&status)? != LocalServerState::Ready {
             return Err(NativeFailure::Stopped);
         }
-        let metadata: DeviceMetadata = serde_json::from_value(self.short_request_with_input(
-            &[
-                "device".into(),
-                "inspect".into(),
-                "--join-existing".into(),
-                "--device-dir".into(),
-                self.root.join("desktop-client").into_os_string(),
-            ],
-            None,
-        )?)
+        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
+            "device".into(),
+            "inspect".into(),
+            "--join-existing".into(),
+            "--device-dir".into(),
+            self.root.join("desktop-client").into_os_string(),
+        ])?)
         .map_err(|_| NativeFailure::InvalidEvidence)?;
-        let current = self.read_local_connection_with_transport(metadata, true)?;
+        let current = self.read_local_connection_with_transport(metadata, false)?;
         if current.endpoint != original.endpoint
             || current.server_id != original.server_id
             || current.device_id != original.device_id

@@ -85,9 +85,9 @@ impl Connector {
             "ensure" => "ensure",
             _ => return Err(NativeFailure::InvalidInput),
         };
-        let mut args = self.server_arguments("desktop-host");
-        args.extend(["--mode".into(), mode.into()]);
-        self.run_host_child(&self.executable, &args, false)
+        // Startup shares the retained version-2 host with all other desktop
+        // operations. A separate legacy controller cannot own this listener.
+        self.resident_request(&["runtime".into(), mode.into()], None, self.command_timeout)
     }
 
     pub(crate) fn reap_worker_children(&self) {
@@ -1137,6 +1137,61 @@ mod tests {
     const HELLO: &str = "print(json.dumps({'version':2,'result':{'endpoint':'http://127.0.0.1:51234','generation':'019c2381-9300-7000-8000-000000000001','key':'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk'}}),flush=True)";
 
     #[test]
+    fn startup_modes_share_one_version_two_resident_host() {
+        let temp = tempfile::tempdir().unwrap();
+        let connector = fixture(
+            temp.path(),
+            &format!(
+                "assert '--control-version' in sys.argv and '--mode' not in \
+                 sys.argv\n{HELLO}\nfor line in sys.stdin:\n request=json.loads(line)\n \
+                 op=request['operation']\n if op=='runtime.shutdown': break\n if op in \
+                 ('runtime.cancel','runtime.fence'): continue\n assert op in \
+                 ('runtime.launch','runtime.retry','runtime.ensure')\n \
+                 print(json.dumps({{'version':2,'id':request['id'],'result':{{'state':'ready','\
+                 operation':op,'pid':os.getpid()}}}}),flush=True)"
+            ),
+        );
+        let mut original = None;
+        for (action, operation) in [
+            ("desktop-launch", "runtime.launch"),
+            ("desktop-retry", "runtime.retry"),
+            ("ensure", "runtime.ensure"),
+        ] {
+            let result = connector.run_desktop_host(action).unwrap();
+            assert_eq!(result["operation"], operation);
+            assert_eq!(
+                *original.get_or_insert(result["pid"].clone()),
+                result["pid"]
+            );
+            assert!(connector.hosted.lock().unwrap().is_empty());
+        }
+        connector.shutdown_owned().unwrap();
+        assert_eq!(
+            connector.run_desktop_host("ensure"),
+            Err(NativeFailure::Stopped)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly built Go sidecar; starts only a private temporary scope"]
+    fn real_launch_authenticates_through_the_resident_host() {
+        let temp = tempfile::tempdir().unwrap();
+        let connector = Connector::new(binary(), temp.path().join("server")).unwrap();
+        let connection = connector.launch().unwrap();
+        assert_eq!(
+            connection.endpoint,
+            connector.current_runtime_endpoint().unwrap()
+        );
+        assert_eq!(
+            connector.observe_launch(&connection).unwrap().device_id,
+            connection.device_id
+        );
+        assert!(connector.hosted.lock().unwrap().is_empty());
+        connector.shutdown_owned().unwrap();
+        assert!(!connector.root.join("desktop-runtime.json").exists());
+    }
+
+    #[test]
     fn quit_before_hello_joins_the_original_child() {
         let temp = tempfile::tempdir().unwrap();
         let connector = fixture(
@@ -1359,7 +1414,9 @@ mod tests {
         );
         let (root, connector) = worker_fixture(&script);
         assert_eq!(
-            connector.run_desktop_host("desktop-launch").unwrap()["started"],
+            connector
+                .run_host_child(&connector.executable, &[], true)
+                .unwrap()["started"],
             true
         );
         connector.shutdown_owned().unwrap();
@@ -1376,7 +1433,9 @@ mod tests {
     fn hung_original_child_is_forced_after_the_grace_period() {
         let (root, connector) =
             worker_fixture(&format!("#!/bin/sh\n{}while :; do :; done\n", ready()));
-        connector.run_desktop_host("desktop-launch").unwrap();
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
         let started = Instant::now();
         connector
             .shutdown_owned_with_timeout(Duration::from_millis(75))
@@ -1392,7 +1451,9 @@ mod tests {
     fn production_quit_deadline_forces_and_joins_original_child() {
         let (_root, connector) =
             worker_fixture(&format!("#!/bin/sh\n{}exec /bin/sleep 120\n", ready()));
-        connector.run_desktop_host("desktop-launch").unwrap();
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
         let started = Instant::now();
         connector.shutdown_owned().unwrap();
         assert!(started.elapsed() >= SHUTDOWN_TIMEOUT);
@@ -1409,7 +1470,7 @@ mod tests {
         let launching = Arc::clone(&connector);
         let task = thread::spawn(move || {
             let _gate = launching.gate.lock().unwrap();
-            launching.run_desktop_host("desktop-launch")
+            launching.run_host_child(&launching.executable, &[], true)
         });
         let limit = Instant::now() + Duration::from_secs(3);
         while !root.path().join("started").exists() {
@@ -1430,7 +1491,9 @@ mod tests {
             ready()
         );
         let (root, connector) = worker_fixture(&script);
-        connector.run_desktop_host("desktop-launch").unwrap();
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
         connector.hosted.lock().unwrap()[0].input.take();
         let limit = Instant::now() + Duration::from_secs(3);
         while !root.path().join("eof").exists() {
@@ -1455,7 +1518,9 @@ mod tests {
             "#!/bin/sh\nprintf '%s\\n' '{\"version\":1,\"result\":{\"reused\":true}}'\n",
         );
         assert_eq!(
-            connector.run_desktop_host("desktop-launch").unwrap()["reused"],
+            connector
+                .run_host_child(&connector.executable, &[], true)
+                .unwrap()["reused"],
             true
         );
         connector.shutdown_owned().unwrap();
