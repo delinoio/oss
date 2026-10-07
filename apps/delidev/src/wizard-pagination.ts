@@ -2,7 +2,7 @@
 import { useCallback, useMemo } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { AccountTypeFilter, ApiProtocol, EntityKind, ProviderQuery, ResourceQuery, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
-import { document, text } from "./documents";
+import { document, resourceName, text } from "./documents";
 import { SourceKind, modelSource, sameSource, sourceKey, wireService, type Source } from "./worker-source";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 
@@ -20,7 +20,7 @@ export function useWizardAccounts(source: Source | undefined, protocol: ApiProto
 }
 export function useWizardModels(query: string, source: Source | undefined, active: boolean) {
   const request = useCallback((token: string) => ({ query, providerId: source?.kind === SourceKind.Api ? source.id : "", subscriptionService: wireService(source), includeHidden: true, enabledProvidersOnly: true, pageSize: 50, pageToken: token }), [query, source]);
-  const project = useCallback((response: { models: Resource[]; nextPageToken: string }) => { validate(response.models, EntityKind.MODEL, source); return { rows: response.models.map(row => ({ id: row.id, revision: row.revision, nativeId: text(document(row).native_id) })), payload: response.models, nextPageToken: response.nextPageToken }; }, [source]);
+  const project = useCallback((response: { models: Resource[]; nextPageToken: string }) => { validate(response.models, EntityKind.MODEL, source); return { rows: response.models.map(row => ({ id: row.id, revision: row.revision, nativeId: text(document(row).native_id), name: resourceName(row), hidden: document(row).hidden === true })), payload: response.models, nextPageToken: response.nextPageToken }; }, [source]);
   const reader = useConnectPaginationReader(ProviderQuery.searchModels, request, project);
   const chain = usePaginationChain(`wizard-models:${sourceKey(source)}:${query}`, active, reader);
   usePaginationRefresh(ProviderQuery.searchModels, request(""), active, chain.refresh);
