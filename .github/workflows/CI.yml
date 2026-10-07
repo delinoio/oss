@@ -24,6 +24,7 @@ jobs:
       rust_packages: ${{ steps.rust.outputs.rust_packages || '[]' }}
       forced: ${{ steps.plan.outputs.forced }}
       event: ${{ steps.plan.outputs.event }}
+      go_test_matrix: ${{ steps.plan.outputs.go_test_matrix }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
       react_forge_matrix: ${{ steps.plan.outputs.react_forge_matrix }}
       pnport_matrix: ${{ steps.plan.outputs.pnport_matrix }}
@@ -242,15 +243,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest, shard: all, label: ubuntu-latest }
-          - { os: macos-latest, shard: all, label: macos-latest }
-          - { os: windows-latest, shard: core, label: "windows-latest, core" }
-          - { os: windows-latest, shard: server, label: "windows-latest, server" }
-          - { os: windows-latest, shard: harness, label: "windows-latest, harness" }
-          - { os: windows-latest, shard: worker, label: "windows-latest, worker" }
-          - { os: windows-latest, shard: workspace, label: "windows-latest, workspace" }
+      matrix: ${{ fromJSON(needs.changes.outputs.go_test_matrix) }}
     permissions:
       contents: read
       pull-requests: read
@@ -293,7 +286,7 @@ jobs:
         env:
           CI_GO_TEST_SHARD: ${{ matrix.shard }}
           FORCE_RUN: 'true'
-          CI_GO_MODE: ${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-test'] && 'affected' || 'full' }}
+          CI_GO_MODE: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && matrix.os != 'ubuntu-latest')) && !fromJSON(needs.changes.outputs.forced)['go-test'] && 'affected' || 'full' }}
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
 
