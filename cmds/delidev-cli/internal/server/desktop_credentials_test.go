@@ -139,8 +139,14 @@ func TestDesktopCredentialsFailureRequiresExplicitNewAttempt(t *testing.T) {
 	f.s.accountSecrets = spy
 	c, client, attempt := desktopAccess(t, f)
 	c.Handle(f.ctx, DesktopCredentialBegin, attempt, "", client)
-	if got := waitDesktopAccess(t, c); got.State != DesktopCredentialFailed || got.Issue != credentialConfirmation {
-		t.Fatalf("result: %+v", got)
+	original := waitDesktopAccess(t, c)
+	if original.State != DesktopCredentialFailed || original.Issue != credentialConfirmation {
+		t.Fatalf("result: %+v", original)
+	}
+	c.close()
+	c.attach(f.ctx, f.s)
+	if got, err := c.Handle(f.ctx, DesktopCredentialStatus, attempt, "", client); err != nil || got != original || len(spy.reads) != 1 {
+		t.Fatalf("reattachment restarted the original attempt: %+v %v", got, err)
 	}
 	c.Handle(f.ctx, DesktopCredentialBegin, attempt, "", client)
 	if len(spy.reads) != 1 {

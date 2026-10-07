@@ -68,7 +68,6 @@ func (c *DesktopCredentialAccess) attach(ctx context.Context, s *Service) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.service, c.lifetime, c.closed = s, ctx, false
-	c.result, c.actor, c.cancel, c.done = DesktopCredentialResult{}, "", nil, nil
 }
 
 func (c *DesktopCredentialAccess) close() {
