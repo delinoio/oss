@@ -127,5 +127,21 @@
   "settings.savedKind.PROVIDER": "Provider saved.",
   "settings.savedKind.MODEL": "Model saved.",
   "settings.savedKind.SETTINGS": "Server preferences saved.",
-  "settings.savedKind.fallback": "Configuration saved."
+  "settings.savedKind.fallback": "Configuration saved.",
+  "settings.repositoryDescription": "Manage Git repositories and their GitHub access settings.",
+  "settings.repositoryRemoteSource": "Git remote repository",
+  "settings.repositoryCheckoutSource": "Checkout-based repository",
+  "settings.repositoryUnsupported": "Unsupported format",
+  "settings.repositoryGithubConfigured": "GitHub configured",
+  "settings.repositoryGithubNeedsSetup": "GitHub not configured",
+  "settings.repositoryFolders": "Registered folders",
+  "settings.repositoryNoFolders": "No registered folders",
+  "settings.repositoryNoGithubIdentity": "Owner and repository not set",
+  "settings.repositoryAccessNotChecked": "Saved settings only. Inspect access to check permissions.",
+  "settings.repositoryId": "Repository ID",
+  "settings.repositoryEmptyTitle": "No repositories yet",
+  "settings.repositoryEmptyHelp": "Choose Add repository to register a Git repository for your projects.",
+  "settings.repositoryPageEmpty": "No repositories on this page.",
+  "settings.repositoryPageCount_one": "{{count}} repository on this page",
+  "settings.repositoryPageCount_other": "{{count}} repositories on this page"
 }
