@@ -7,13 +7,23 @@ import { createHash } from "node:crypto";
 import { Code, ConnectError, createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { DeviceService, DeviceType, NetworkService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { useSettingsFixture } from "./settings-test-fixture";
 const fixture = useSettingsFixture();
+
+async function choose(control: HTMLElement, name: string | RegExp) {
+  await waitFor(() => expect(control.matches(":disabled")).toBe(false));
+  fireEvent.click(control);
+  const popup = window.document.getElementById(control.getAttribute("aria-controls")!)!;
+  const option = await within(popup).findByRole("option", { name });
+  const id = option.dataset.pickerId;
+  fireEvent.click(option);
+  await waitFor(() => expect(control.dataset.value).toBe(id));
+}
 it("selects one real exact route after response loss and exports a pending recipient without account/key-store access", async () => {
   const { transport, directory } = fixture;
   const status = await createClient(SystemService, transport).getStatus({});
@@ -42,7 +52,7 @@ it("selects one real exact route after response loss and exports a pending recip
   fireEvent.click(await screen.findByRole("button", { name: "New network profile" }));
   fireEvent.change(screen.getByLabelText("Profile name"), { target: { value: "Integration Direct" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  const option = await screen.findByRole("option", { name: "Integration Direct · Revision 1" });
+  await screen.findByText("Integration Direct", { selector: "h4" });
   const selectButton = screen.getByRole("button", { name: "Select this revision" }) as HTMLButtonElement;
   // New profile rows can arrive before the independent route refetch. Wait for
   // its authoritative read instead of clicking an ancestor-disabled control.
@@ -50,7 +60,7 @@ it("selects one real exact route after response loss and exports a pending recip
   expect(selectButton.closest("fieldset")?.disabled).toBe(true);
   releaseRouteRead();
   await waitFor(() => expect(selectButton.closest("fieldset")?.disabled).toBe(false));
-  fireEvent.change(screen.getByLabelText("Profile to select"), { target: { value: (option as HTMLOptionElement).value } });
+  await choose(screen.getByRole("combobox", { name: "Profile to select" }), "Integration Direct");
   fireEvent.click(selectButton);
   fireEvent.click(await screen.findByRole("button", { name: "Retry original route selection" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original route selection" })).toBeNull());
