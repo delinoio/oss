@@ -59,6 +59,7 @@ try {
     const menu = page.getByRole("menu"); await menu.waitFor();
     assert.equal(await page.locator('[aria-current="true"]').count(), selected);
     await page.getByRole("menuitem").first().waitFor();
+    await page.waitForFunction(() => document.querySelector(".sidebar-session-menu button[role=menuitem]")?.disabled === false);
     const bounds = await menu.boundingBox();
     assert(bounds.x >= 7 && bounds.y >= 7 && bounds.x + bounds.width <= width - 7 && bounds.y + bounds.height <= height - 7);
     const openerBounds = await more.boundingBox();
