@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -24,7 +25,7 @@ func TestClaudeFirstDispatchRetainsNativeSelectionAndOriginalInput(t *testing.T)
 			}
 			var job domain.Job
 			var input domain.ExecutionJobInput
-			if domain.Decode(f.workerStream.Msg().Job.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Harness != domain.ClaudeCode || input.Installation.Version != domain.ClaudeProtocolVersion || input.Input.Mode != mode || input.Input.Prompt != f.selection.Prompt || input.Version != 1 || input.Continuation != nil {
+			if domain.Decode(f.workerStream.Msg().Job.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Harness != domain.ClaudeCode || input.Startup == nil || input.Startup.Harness != domain.ClaudeCode || !reflect.DeepEqual(input.Installation, domain.Installation{}) || input.Input.Mode != mode || input.Input.Prompt != f.selection.Prompt || input.Version != 4 || input.Continuation != nil {
 				t.Fatal("original Claude settings/input changed")
 			}
 			permission, err := input.Configuration.ClaudeAPIInputPermission(mode)
