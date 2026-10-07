@@ -42,7 +42,7 @@
   --shadow-subtle: #2026320a;
   --shadow-soft: #2026321a;
   --shadow: #20263233;
-  --backdrop: #16243b66;
+  --backdrop: #00000000;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -86,7 +86,7 @@
   --shadow-subtle: #0000001a;
   --shadow-soft: #00000033;
   --shadow: #00000066;
-  --backdrop: #00000099;
+  --backdrop: #00000000;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
@@ -131,7 +131,7 @@
     --shadow-subtle: #0000001a;
     --shadow-soft: #00000033;
     --shadow: #00000066;
-    --backdrop: #00000099;
+    --backdrop: #00000000;
   }
 }
 

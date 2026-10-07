@@ -215,8 +215,12 @@ it("retains pairing through reconnect and discards it after category departure",
 });
 
 it("returns confirmed revocation to Details once and falls back to Refresh when the canceled row is absent", async () => {
-  const value = fixture(); render(value.view()); await open();
+  const value = fixture(); render(value.view({ pairing: true })); await open();
+  const pairing = screen.getByRole("button", { name: "Create pairing document" });
   fireEvent.click(screen.getByRole("button", { name: "Revoke DeliDev local Worker" }));
+  expect(pairing.isConnected).toBe(true);
+  expect(pairing.closest("[hidden]")).toBeNull();
+  expect(pairing.closest("fieldset")?.hasAttribute("inert")).toBe(true);
   const confirm = screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement;
   await waitFor(() => expect(confirm.disabled).toBe(false)); fireEvent.click(confirm);
   await screen.findByText("Authorization revoked for DeliDev local Worker.");

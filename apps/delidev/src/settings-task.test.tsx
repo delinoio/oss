@@ -63,6 +63,9 @@ it("keeps the inventory mounted, moves actions outside the scrolling body and di
   const { save } = fixture(), inventory = screen.getByText("Mounted project inventory");
   fireEvent.click(screen.getByRole("button", { name: "New project task" }));
   const dialog = screen.getByRole("dialog");
+  expect(inventory.closest("[hidden]")).toBeNull();
+  expect(inventory.closest("fieldset")?.hasAttribute("inert")).toBe(true);
+  expect((inventory.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
   expect(inventory.isConnected).toBe(true);
   expect(inventory.closest("fieldset")?.getAttribute("aria-hidden")).toBe("true");
   const name = screen.getByRole("searchbox", { name: "Search repository names" });
