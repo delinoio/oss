@@ -888,6 +888,8 @@ reconfiguration without rewriting historical executions.
 
 The Model step uses source-scoped server catalog autocomplete and permits exact
 native ID input after loading, empty, failed or unsupported discovery results.
+The single-source wizard scrolls the exact active option during keyboard
+navigation, including options nested in retained scroll-payload pages.
 Typing never contacts a provider endpoint. Endpoint refresh uses the deliberate
 existing discovery RPC and original account revision. Codex native observation
 retains explicit selected-account/Runner Device/installation scope, accepted jobs,
@@ -1689,7 +1691,7 @@ Validate all typed unions, ordered completion matching/omission, message-wide se
 
 ### Session file explorer
 
-The Files control opens the right session application panel without remounting the conversation or composer. It lists the original prepared repository roots (including a nonfirst primary), supports directory navigation, bounded pagination, explicit refresh and a UTF-8 text preview. It uses owner/client Connect Query against the actual execution Worker, even during native execution. Keyboard users can close with Escape and regain the Files control; native controls provide ordinary keyboard navigation. Narrow windows place the panel below the conversation. Binary, truncated, unsupported and failed/stale reads remain explicit. Inactive queries are canceled and their file-content cache is discarded; no Web Storage, Tauri filesystem access or executable preview is added. See the [file explorer contract](cmds-delidev-files-contract.md). Other session-side applications remain separate unfinished requirements.
+The Files control opens the right session application panel without remounting the conversation or composer. It lists the original prepared repository roots (including a nonfirst primary), supports directory navigation, bounded pagination, explicit refresh and a UTF-8 text preview. Directory pages require unique entry names; reject malformed whole pages while preserving accepted metadata and exact continuation/retry ownership. It uses owner/client Connect Query against the actual execution Worker, even during native execution. Keyboard users can close with Escape and regain the Files control; native controls provide ordinary keyboard navigation. Narrow windows place the panel below the conversation. Binary, truncated, unsupported and failed/stale reads remain explicit. Inactive queries are canceled and their file-content cache is discarded; no Web Storage, Tauri filesystem access or executable preview is added. See the [file explorer contract](cmds-delidev-files-contract.md). Other session-side applications remain separate unfinished requirements.
 
 ### Portable configuration
 
