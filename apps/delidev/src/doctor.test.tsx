@@ -78,7 +78,7 @@ it("keeps storage and handshake failures in their owning records and moves accou
   expect(screen.queryByText(/Only the first 50 accounts/)).toBeNull();
   expect(screen.getByText("Handshake failed").closest("article")).toBe(screen.getByText("First Worker").closest("article"));
   expect(screen.queryByText("Refresh for the current connection.")).toBeNull();
-  expect(screen.getByText("View account storage results in the account lists.")).toBeTruthy();
+  expect(screen.queryByText("View account storage results in the account lists.")).toBeNull();
   allClosed(view.container);
 });
 
@@ -221,15 +221,16 @@ it("preserves legacy fields and field-level unknown classifications without inve
   for (const text of screen.getAllByText(markup)) if (!text.textContent?.startsWith("Reported capabilities")) { const details = text.closest("details"); if (details) { expect(details.querySelector("summary")?.textContent).toBe("Technical details"); expect(details.open).toBe(false); } }
 });
 
-it("routes account-storage navigation without refreshing diagnostics or mutating accounts", async () => {
-  const value = fixture(), subscriptions = vi.fn(), api = vi.fn();
-  const view = render(value.view(<Doctor active openSubscriptions={subscriptions} openApiKeys={api} />));
+it("omits account-storage presentation while retaining independent diagnostics refresh", async () => {
+  const value = fixture();
+  render(value.view(<Doctor active />));
   await screen.findByText("Read succeeded");
-  const region = screen.getByRole("region", { name: "Account storage" });
-  fireEvent.click(within(region).getByRole("button", { name: "AI Subscription" }));
-  fireEvent.click(within(region).getByRole("button", { name: "AI API Keys" }));
-  expect(subscriptions).toHaveBeenCalledTimes(1); expect(api).toHaveBeenCalledTimes(1);
-  expect(value.doctor).toHaveBeenCalledTimes(1); expect(value.save).not.toHaveBeenCalled();
-  view.rerender(value.view(<Doctor active />));
-  expect(within(screen.getByRole("region", { name: "Account storage" })).queryByRole("button")).toBeNull();
+  expect(screen.queryByRole("region", { name: "Account storage" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "AI Subscription" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "AI API Keys" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Storage diagnostics" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Worker diagnostics" })).toBeTruthy();
+  await refresh();
+  expect(value.doctor).toHaveBeenCalledTimes(2);
+  expect(value.save).not.toHaveBeenCalled();
 });

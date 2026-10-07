@@ -45,32 +45,36 @@ try {
     await page.locator(`[data-settings-category="${category}"]`).click();
   };
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,1000], [960,640], [480,320]]) {
-    const copy = key => catalogs[language][`account-storage.${key}`];
+    const copy = key => catalogs[language][key];
     await page.setViewportSize({ width, height });
     await page.goto(`${origin}/?populated=true&apiUsage=true&accountStorage=true&theme=${theme}&language=${language}`);
     await page.getByRole("button", { name: language === "en" ? "Settings" : "설정", exact: true }).click();
-    await page.getByText(copy("subscription"), { exact: true }).waitFor();
-    assert.equal(await page.locator(".account-storage-summary[role=alert]").count(), 0, "Unsupported subscription inspection is informational");
+    await page.getByRole("heading", { name: "ChatGPT fixture", exact: true }).waitFor();
+    const absent = async () => {
+      assert.equal(await page.locator(".account-storage-notice, .account-storage-toolbar").count(), 0, "Storage presentation is absent");
+      assert.equal(await page.getByRole("heading", { name: language === "en" ? "Account storage" : "계정 저장소", exact: true }).count(), 0);
+    };
+    await absent();
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.fixtureDoctorReads ?? "0"), "0", "Subscriptions do not read Doctor");
     await select("api-accounts");
-    const failure = page.getByText(copy("failed"), { exact: true }); await failure.waitFor();
-    assert.equal(await page.locator(".account-storage-summary[role=alert]").count(), 1, "Only the exact failed row is an alert");
-    assert.equal(await page.locator(".api-entry-row").filter({ has: failure }).count(), 1, "The alert belongs to its account row");
-    await page.getByText(copy("keyless"), { exact: true }).first().waitFor();
-    const details = page.locator(".account-storage-notice[data-failed] details"), summary = details.locator("summary");
-    assert.equal(await details.evaluate(node => node.open), false);
-    await summary.focus(); await summary.press("Enter"); assert.equal(await details.evaluate(node => node.open), true);
-    const layout = await page.locator(".account-storage-notice[data-failed]").evaluate(node => ({ overflow: node.scrollWidth > node.clientWidth, right: node.getBoundingClientRect().right, background: getComputedStyle(node).backgroundColor, inline: Boolean(node.getAttribute("style")), focus: document.activeElement?.tagName }));
-    assert(!layout.overflow && layout.right <= width + 1 && !layout.inline, JSON.stringify(layout));
-    assert.equal(layout.focus, "SUMMARY"); assert.equal(layout.background, theme === "light" ? "rgb(255, 243, 244)" : "rgb(57, 33, 39)");
+    await page.getByRole("heading", { name: "OpenRouter", exact: true }).waitFor();
+    await absent();
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.fixtureDoctorReads ?? "0"), "0", "API entries do not read Doctor");
     assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Settings content reflows");
-    assert(await page.getByRole("button", { name: copy("refresh"), exact: true }).evaluate(node => node.getBoundingClientRect().height >= 40), "Refresh control is accessible");
-    await summary.press("Enter"); assert.equal(await details.evaluate(node => node.open), false);
-    if (screenshots && width >= 960) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `account-storage-${language}-${theme}-${width}.png`) }); }
-    await select("diagnostics"); await page.getByText(copy("destination"), { exact: true }).waitFor();
-    assert.equal(await page.locator(".account-storage-notice").count(), 0, "Doctor does not duplicate account records");
-    await page.getByRole("region", { name: copy("heading"), exact: true }).getByRole("button", { name: copy("apiKeys"), exact: true }).click();
-    await page.getByText(copy("failed"), { exact: true }).waitFor();
-    assert.equal(await page.locator(".account-storage-notice[data-failed] details").evaluate(node => node.open), false, "Category departure clears disclosures");
+    const menu = page.locator(".api-entry-row").filter({ has: page.getByRole("heading", { name: "OpenRouter", exact: true }) }).getByRole("button").first();
+    await menu.focus();
+    assert(await menu.evaluate(node => document.activeElement === node), "Account control remains keyboard reachable");
+    if (screenshots && width >= 960) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `account-storage-removed-${language}-${theme}-${width}.png`) }); }
+    await select("diagnostics");
+    await page.getByRole("button", { name: copy("doctor.refreshDiagnostics_7bce98"), exact: true }).waitFor();
+    await page.getByText(copy("doctor.serverStorage_3e7362"), { exact: true }).waitFor();
+    await absent();
+    const reads = await page.evaluate(() => Number(document.documentElement.dataset.fixtureDoctorReads));
+    assert(reads > 0, "General diagnostics retains its independent reader");
+    await select("api-accounts");
+    await page.getByRole("heading", { name: "OpenRouter", exact: true }).waitFor();
+    await absent();
+    assert.equal(await page.evaluate(() => Number(document.documentElement.dataset.fixtureDoctorReads)), reads, "Reopening accounts does not read Doctor");
     checks++;
   }
   assert.deepEqual(failures, []);

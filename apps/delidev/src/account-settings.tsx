@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskDismissButton } from "./settings-task";
-import { useAccountStorage } from "./account-storage";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
 import { useCloseSettingsTask, useInSettingsTask, useSettingsTaskDismiss, useSettingsTaskVisible } from "./settings-task-context";
@@ -705,7 +704,6 @@ function ApiAccountSettings({
     return values;
   }, [providerSummaries]);
   const workflowActive = (wizard && !pauseWorkflowLock) || Boolean(selectedAccount);
-  const storage = useAccountStorage(rows.data?.resources ?? [], active && accountTypeFilteringReady && Boolean(rows.data) && !rows.error && !workflowActive, Boolean(rows.error));
   useEffect(() => {
     onWorkflowReadyChange?.(workflowActive);
     return () => onWorkflowReadyChange?.(false);
@@ -747,13 +745,12 @@ function ApiAccountSettings({
     {readDenied ? <p role="status">{copy("account-settings.entryAccessIsDeniedCheckThis_755d6f")}</p> : null}
     {!accountTypeFilteringReady && !accountTypeFilteringLoading && !hasInventoryProblem ? <p role="status">{copy("account-settings.entryListsRequireAServerThat_d168c9")}</p> : null}
     {accountTypeFilteringReady ? <>
-      {rows.data?.resources.length ? storage.header : null}
       <Failure failure={rows.error} />
       {entryRetryShown.current ? <button type="button" disabled={rows.isFetching} onClick={() => { void rows.refetch(); }}>{copy("account-settings.retryEntries_038902")}</button> : null}
       {readProblem && rows.data ? <p className="notice" role="status">{copy("account-settings.refreshFailedShowingTheLastSuccessfully_09833b")}</p> : null}
       {rows.isFetching && !rows.data ? <SettingsLoading label={copy("account-settings.loadingEntries_49f7f3")} /> : null}
       <div className="api-usage-list-heading"><div><h2>{copy("account-settings.yourApiKeys_e9bf62")}</h2><p>{copy("account-settings.delidevUsageLast30Days_6c267c")}</p></div><button type="button" disabled={!active || rows.isFetching || usageFetching > 0} onClick={() => { void rows.refetch(); void client.refetchQueries({ queryKey: usageKey, type: "active" }); }}><LocalizedText id="account-settings.refreshUsage_831ddd" components={{ s0: <span aria-hidden="true">↻</span> }} /></button></div>
-      <ScrollPayloadWindow query={inventory} root={root} active={active && !wizard && !selectedAccount} identity={paginationIdentity} revision={paginationRevision}>{resources => <div className="api-entry-rows">{resources.map(row => <ApiEntryRow key={row.id} storage={storage.forAccount(row)} verification={<ApiVerification row={row} provider={providerSummaries.find(provider => provider.providerId === text(document(row).provider_id))?.provider} active={active && accountTypeFilteringReady && !readDenied && !workflowActive && !wizard && !selectedAccount && !rows.error} changed={() => { void rows.refetch(); }} />} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied && !wizard && !selectedAccount} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div>}</ScrollPayloadWindow>
+      <ScrollPayloadWindow query={inventory} root={root} active={active && !wizard && !selectedAccount} identity={paginationIdentity} revision={paginationRevision}>{resources => <div className="api-entry-rows">{resources.map(row => <ApiEntryRow key={row.id} verification={<ApiVerification row={row} provider={providerSummaries.find(provider => provider.providerId === text(document(row).provider_id))?.provider} active={active && accountTypeFilteringReady && !readDenied && !workflowActive && !wizard && !selectedAccount && !rows.error} changed={() => { void rows.refetch(); }} />} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied && !wizard && !selectedAccount} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div>}</ScrollPayloadWindow>
       {successfulEmpty ? finalFirstPage && !providerIdFilter ? <SettingsEmpty title={copy("account-settings.noAiApiKeyEntries_319a32")}><p>{copy("account-settings.addAnEntryForAnEnabled_309062")}</p><p>{copy("account-settings.keylessLocalProvidersDoNotRequire_8313c6")}</p></SettingsEmpty> : <p className="api-entry-page-empty">{finalFirstPage && providerIdFilter ? copy("account-settings.noEntriesForThisProvider_86ca40") : copy("account-settings.noEntriesOnThisPage_c02ff6")}</p> : null}
       <div hidden={wizard || Boolean(selectedAccount)}><ScrollContinuation showInitial={false} showErrors={false} query={inventory} root={root} active={active && !wizard && !selectedAccount} label={copy("account-settings.entryPages_b4e028")} /></div>
     </> : null}
