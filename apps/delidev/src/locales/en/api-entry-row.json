@@ -1,4 +1,5 @@
 {
+  "api-entry-row.apiFormat": "API format",
   "api-entry-row.codexResponses_9e02cb": "Codex responses",
   "api-entry-row.grokClosedInputs_12a648": "Grok closed inputs",
   "api-entry-row.claudeMainLoopInputs_3081f2": "Claude main-loop inputs",

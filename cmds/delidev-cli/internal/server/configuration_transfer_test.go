@@ -227,7 +227,18 @@ func TestConfigurationTransferExportReferencedMachineLimit(t *testing.T) {
 				}
 				for _, entry := range bundle.Entries {
 					original := before[entry.ID]
-					if !bytes.Equal(entry.Document, original.Data) {
+					expected := original.Data
+					if entry.Kind == domain.ProviderKind {
+						provider, decodeErr := store.Decode[domain.Provider](original)
+						if decodeErr != nil {
+							t.Fatal(decodeErr)
+						}
+						expected, err = json.Marshal(providers.WithAPIFormats(provider))
+						if err != nil {
+							t.Fatal(err)
+						}
+					}
+					if !bytes.Equal(entry.Document, expected) {
 						t.Fatal("export changed portable configuration")
 					}
 					action := domain.ConfigurationReuse
@@ -397,7 +408,7 @@ func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *t
 	managed := presets[len(presets)-3].Provider // Ollama remains virtual until explicitly saved.
 	single := func() domain.ConfigurationImportSelection {
 		provider := transferEntry(domain.ProviderKind, managed)
-		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
+		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 4, Entries: []domain.ConfigurationEntry{provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
 	}
 	t.Run("duplicate bundle", func(t *testing.T) {
 		s, _ := newDoctorFixture(t)

@@ -1,26 +1,152 @@
 # DeliDev provider and model catalog
 
-## API account protocol reservations
+## API account format selection
 
-Issue #964 reserves ProviderInventory capability `ACCOUNT_API_PROTOCOL_V1 = 7`,
-`ProviderInventoryEntry.api_formats = 10` and the account-list-only
-`ListResourcesRequest.api_protocol = 5`. `ApiProtocol` reserves UNSPECIFIED 0,
-OPENAI_RESPONSES 1, OPENAI_CHAT 2 and ANTHROPIC_MESSAGES 3.
-`ApiAuthentication` reserves UNSPECIFIED 0, BEARER 1, API_KEY 2 and KEYLESS 3.
-`ProviderApiFormat` reserves protocol/endpoint/authentication fields 1–3.
-The complete declaration closure must reach main before dependent implementation.
-Reservations add no active schemas, bindings, capability advertisement, credential
-use, inference authority or database migration.
+Reservation PR #1646 reached main before this implementation. Issue #964 owns
+ProviderInventory `ACCOUNT_API_PROTOCOL_V1 = 7`, inventory `api_formats = 10`,
+account-list `api_protocol = 5`, and the complete closed `ApiProtocol`,
+`ApiAuthentication` and `ProviderApiFormat` declarations. The protocol values are
+UNSPECIFIED 0, OPENAI_RESPONSES 1, OPENAI_CHAT 2 and ANTHROPIC_MESSAGES 3;
+authentication values are UNSPECIFIED 0, BEARER 1, API_KEY 2 and KEYLESS 3.
+Profiles contain protocol, endpoint and authentication at fields 1–3. No SQLite
+migration or Worker assignment extension is added.
 
-The planned feature selects one explicit protocol when adding an API key. Custom
-providers declare bounded per-protocol endpoint/authentication profiles. Existing
-accounts retain their original defaults; connected accounts cannot change protocol.
-Disconnect and confirmed protected cleanup precede a changed selection and a new
-connection. Preserve immutable original execution/account ownership, keyless
-cleanup proofs and native uncertainty. API-specific resource schema 3 and portable
-configuration version 4 protect explicit selections from older-client writes while
-retaining legacy reads. Follow the catalog, account and proxy contracts.
+API Provider documents retain the original flat protocol/endpoint/authentication
+for legacy accounts and additionally declare `api_formats`, with one to three
+unique API protocols and independently validated URLs/authentication. Current
+managed preset resources project the registry profiles without rewriting stored
+legacy documents. The original preset tuple and identity must match before this
+projection; an arbitrary preset ID never grants official inspection evidence.
+Explicit API Account documents save `api_protocol`. These API families use
+resource schema 3, independently of ordered-source Agent schema 3. A legacy
+account without `api_protocol` continues to use its original flat provider tuple.
+An older-client write cannot clear an explicit account selection or a provider's
+profiles. Legacy preset reads retain their original editable flat shape.
 
+The server's common account profile resolver owns connection, validation,
+discovery, routing, atomic Worker configuration, execution admission, title
+creation and proxy authorization. Account format filtering applies before list
+pagination, including provider-scoped lists and legacy tuple resolution, and is
+bound to the cursor. Unknown protocol filters and subscription combinations are
+rejected. The CLI negotiates capability 7 before `account list --api-protocol`.
+Model identity and Usage attribution remain provider/model scoped; a format does
+not create another model identity or duplicate history.
+
+Connect fixes the selected tuple in the original connection generation. Explicit
+Disconnect and confirmed protected cleanup must finish before changing an account
+format. A change starts disconnected and requires key re-entry and validation.
+Accounts cannot change between keyless and credential-owning profiles; create a
+new account for that transition. Existing keyless cleanup proofs remain valid.
+Every referenced provider tuple is immutable, even for disconnected accounts and
+legacy defaults. Unreferenced profiles may be added or edited. Resume, Fork and
+Sidechat keep the original account/connection and immutable execution; there is
+no format conversion, automatic selection, active execution switch or alternate
+account fallback. Codex requires Responses; Claude Code requires Messages;
+OpenCode and the existing Grok API profile require Chat Completions. Format
+compatibility does not establish model access or native readiness.
+
+Legacy JSON configuration writes and version 1–3 imports retain their original
+configuration semantics. Their execution admission still checks the resolved
+original protocol. Explicit account selections reject incompatible Worker
+configuration writes. The typed atomic Worker save resolves every account through
+the same profile and compatibility checks within its model/account transaction.
+
+The desktop requires an explicit manual format selection between Entry name and
+API key. Lists, connection details and Worker compatibility use that account's
+format. Custom Provider forms use one card per supported format, with URL and
+authentication inputs, and require at least one. Account-referenced cards are
+locked; the server independently verifies every reference. Capability reads,
+permission errors, unavailable profiles and profile changes block new saves with
+an explanation. Profile changes invalidate secret handoffs. Accepted uncertain
+mutations keep only their original request identity and bytes under the existing
+secret disposal rules. Metadata refetch cannot substitute a request or cancel
+an already accepted exact connection handoff.
+
+Portable configuration version 4 preserves profiles and explicit selections;
+versions 1–3 retain their historical import semantics and cannot carry the new
+fields. Connections, protected credentials, observations and history remain
+excluded. Imported accounts start disconnected. OAuth, native subscription
+profiles and service-specific API protocols are outside this extension.
+
+### Official REST profile registry
+
+The following 35 presets are checked against their linked official REST docs.
+R means OpenAI Responses (`POST /responses`), C means OpenAI Chat Completions
+(`POST /chat/completions`), and M means Anthropic Messages (`POST /messages`).
+Paths are appended to the listed base URL. B means Bearer, K means `x-api-key`,
+and L means explicit keyless loopback authentication. Listed profiles are REST
+availability declarations, not promises about each model, tool or installed
+server version. Regional keys, billing/access restrictions, preview features and
+provider limitations remain independent validation and execution conditions.
+
+| Preset | Inference profiles | Official source |
+| --- | --- | --- |
+| Vercel AI Gateway | R: `https://ai-gateway.vercel.sh/v1` (B)<br>C: `https://ai-gateway.vercel.sh/v1` (B)<br>M: `https://ai-gateway.vercel.sh/v1` (B) | [REST 1](https://vercel.com/docs/ai-gateway/sdks-and-apis), [REST 2](https://vercel.com/docs/ai-gateway/anthropic-messages-api) |
+| OpenRouter | R: `https://openrouter.ai/api/v1` (B)<br>C: `https://openrouter.ai/api/v1` (B)<br>M: `https://openrouter.ai/api/v1` (B) | [REST 1](https://openrouter.ai/docs/api/api-reference/responses/create-responses), [REST 2](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-messages) |
+| OpenAI | R: `https://api.openai.com/v1` (B)<br>C: `https://api.openai.com/v1` (B) | [REST 1](https://developers.openai.com/api/reference/resources/responses), [REST 2](https://developers.openai.com/api/reference/resources/chat) |
+| Anthropic | C: `https://api.anthropic.com/v1` (B)<br>M: `https://api.anthropic.com/v1` (K) | [REST 1](https://platform.claude.com/docs/en/api/messages), [REST 2](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk) |
+| xAI | R: `https://api.x.ai/v1` (B)<br>C: `https://api.x.ai/v1` (B)<br>M: `https://api.x.ai/v1` (B) | [REST 1](https://docs.x.ai/developers/rest-api-reference/inference), [REST 2](https://docs.x.ai/developers/rest-api-reference/inference/legacy) |
+| DeepSeek | R: `https://api.deepseek.com/v1` (B)<br>C: `https://api.deepseek.com/v1` (B)<br>M: `https://api.deepseek.com/anthropic/v1` (K) | [REST 1](https://api-docs.deepseek.com/quick_start/agent_integrations/codex/), [REST 2](https://api-docs.deepseek.com/guides/anthropic_api/) |
+| Ollama | R: `http://127.0.0.1:11434/v1` (L)<br>C: `http://127.0.0.1:11434/v1` (L)<br>M: `http://127.0.0.1:11434/v1` (L) | [REST 1](https://docs.ollama.com/api/openai-compatibility), [REST 2](https://docs.ollama.com/api/anthropic-compatibility) |
+| LM Studio | R: `http://127.0.0.1:1234/v1` (L)<br>C: `http://127.0.0.1:1234/v1` (L)<br>M: `http://127.0.0.1:1234/v1` (L) | [REST 1](https://lmstudio.ai/docs/developer/rest) |
+| vLLM | R: `http://127.0.0.1:8000/v1` (L)<br>C: `http://127.0.0.1:8000/v1` (L)<br>M: `http://127.0.0.1:8000/v1` (L) | [REST 1](https://docs.vllm.ai/en/latest/serving/online_serving/) |
+| Google Gemini | C: `https://generativelanguage.googleapis.com/v1beta/openai` (B) | [REST 1](https://ai.google.dev/gemini-api/docs/openai) |
+| Groq | R: `https://api.groq.com/openai/v1` (B)<br>C: `https://api.groq.com/openai/v1` (B) | [REST 1](https://console.groq.com/docs/responses-api) |
+| Mistral | C: `https://api.mistral.ai/v1` (B) | [REST 1](https://docs.mistral.ai/api/endpoint/chat) |
+| Together AI | C: `https://api.together.ai/v1` (B) | [REST 1](https://docs.together.ai/reference/chat-completions) |
+| Fireworks AI | R: `https://api.fireworks.ai/inference/v1` (B)<br>C: `https://api.fireworks.ai/inference/v1` (B)<br>M: `https://api.fireworks.ai/inference/v1` (B) | [REST 1](https://docs.fireworks.ai/api-reference/post-responses), [REST 2](https://docs.fireworks.ai/api-reference/anthropic-messages) |
+| Perplexity Router | R: `https://api.perplexity.ai/router/v1` (B)<br>C: `https://api.perplexity.ai/router/v1` (B)<br>M: `https://api.perplexity.ai/router/v1` (B) | [REST 1](https://docs.perplexity.ai/docs/router/quickstart), [REST 2](https://docs.perplexity.ai/api-reference/gateway-messages-post) |
+| Cohere | C: `https://api.cohere.ai/compatibility/v1` (B) | [REST 1](https://docs.cohere.com/docs/compatibility-api) |
+| Cerebras | C: `https://api.cerebras.ai/v1` (B) | [REST 1](https://inference-docs.cerebras.ai/api-reference/chat-completions) |
+| Nebius Token Factory | C: `https://api.tokenfactory.nebius.com/v1` (B) | [REST 1](https://docs.tokenfactory.nebius.com/api-reference/inference/create-chat-completion) |
+| Novita | C: `https://api.novita.ai/openai/v1` (B)<br>M: `https://api.novita.ai/anthropic/v1` (B) | [REST 1](https://novita.ai/docs/api-reference/model-apis-llm-create-chat-completion), [REST 2](https://blogs.novita.ai/es/use-minimax-m2-7-in-claude-code-via-novita-ai/) |
+| DeepInfra | R: `https://api.deepinfra.com/v1` (B)<br>C: `https://api.deepinfra.com/v1/openai` (B)<br>M: `https://api.deepinfra.com/anthropic/v1` (B) | [REST 1](https://docs.deepinfra.com/api-reference/responses/openai-responses), [REST 2](https://docs.deepinfra.com/api-reference/chat-completions/anthropic-messages) |
+| Hugging Face Inference Providers | R: `https://router.huggingface.co/v1` (B)<br>C: `https://router.huggingface.co/v1` (B)<br>M: `https://router.huggingface.co/v1` (B) | [REST 1](https://huggingface.co/docs/inference-providers/guides/responses-api), [REST 2](https://huggingface.co/docs/inference-providers/integrations/claude-code) |
+| Venice | C: `https://api.venice.ai/api/v1` (B) | [REST 1](https://docs.venice.ai/api-reference/endpoint/chat/completions) |
+| Scaleway | C: `https://api.scaleway.ai/v1` (B) | [REST 1](https://www.scaleway.com/en/developers/api/generative-apis) |
+| Baseten | C: `https://inference.baseten.co/v1` (B)<br>M: `https://inference.baseten.co/v1` (B) | [REST 1](https://docs.baseten.co/reference/inference-api/messages) |
+| Moonshot / Kimi — Global | R: `https://api.moonshot.ai/v1` (B)<br>C: `https://api.moonshot.ai/v1` (B)<br>M: `https://api.moonshot.ai/anthropic/v1` (B) | [REST 1](https://platform.kimi.ai/docs/api/responses), [REST 2](https://platform.kimi.ai/docs/guide/claude-code-kimi) |
+| Moonshot / Kimi — China | R: `https://api.moonshot.cn/v1` (B)<br>C: `https://api.moonshot.cn/v1` (B)<br>M: `https://api.moonshot.cn/anthropic/v1` (B) | [REST 1](https://platform.kimi.com/docs/guide/codex-kimi), [REST 2](https://platform.kimi.com/docs/guide/claude-code-kimi) |
+| MiniMax — Global | R: `https://api.minimax.io/v1` (B)<br>C: `https://api.minimax.io/v1` (B)<br>M: `https://api.minimax.io/anthropic/v1` (B) | [REST 1](https://platform.minimax.io/docs/api-reference/responses-create), [REST 2](https://platform.minimax.io/docs/api-reference/text-chat-anthropic) |
+| MiniMax — China | R: `https://api.minimax.cn/v1` (B)<br>C: `https://api.minimax.cn/v1` (B)<br>M: `https://api.minimax.cn/anthropic/v1` (B) | [REST 1](https://platform.minimax.cn/docs/api-reference/responses-create), [REST 2](https://platform.minimax.cn/docs/api-reference/text-chat-anthropic) |
+| SiliconFlow — Global | C: `https://api.siliconflow.com/v1` (B)<br>M: `https://api.siliconflow.com/v1` (B) | [REST 1](https://www.siliconflow.com/es/blog/deepseek-v4-pro-claude-code-siliconflow) |
+| SiliconFlow — China | C: `https://api.siliconflow.cn/v1` (B)<br>M: `https://api.siliconflow.cn/v1` (B) | [REST 1](https://api-docs.siliconflow.cn/docs/api/messages-post) |
+| Baidu Qianfan | R: `https://qianfan.baidubce.com/v2` (B)<br>C: `https://qianfan.baidubce.com/v2` (B) | [REST 1](https://cloud.baidu.com/doc/qianfan-api/s/vmhejnuy8) |
+| Tencent TokenHub — China | R: `https://tokenhub.tencentmaas.com/v1` (B)<br>C: `https://tokenhub.tencentmaas.com/v1` (B)<br>M: `https://tokenhub.tencentmaas.com/v1` (K) | [REST 1](https://cloud.tencent.com/document/product/1823/138677) |
+| Tencent TokenHub — International | R: `https://tokenhub-intl.tencentmaas.com/v1` (B)<br>C: `https://tokenhub-intl.tencentmaas.com/v1` (B)<br>M: `https://tokenhub-intl.tencentmaas.com/v1` (K) | [REST 1](https://cloud.tencent.com/document/product/1823/130078), [REST 2](https://intl.cloud.tencent.com/ind/document/product/1300/84216) |
+| Alibaba Model Studio — International | R: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (B)<br>C: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (B)<br>M: `https://dashscope-intl.aliyuncs.com/apps/anthropic/v1` (B) | [REST 1](https://help.aliyun.com/zh/model-studio/base-url), [REST 2](https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses), [REST 3](https://help.aliyun.com/en/model-studio/anthropic-api-messages) |
+| Alibaba Model Studio — Hong Kong | R: `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` (B)<br>C: `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` (B)<br>M: `https://cn-hongkong.dashscope.aliyuncs.com/apps/anthropic/v1` (B) | [REST 1](https://help.aliyun.com/zh/model-studio/base-url), [REST 2](https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses), [REST 3](https://help.aliyun.com/en/model-studio/anthropic-api-messages) |
+
+OpenRouter's three inference paths are `/api/v1/responses`,
+`/api/v1/chat/completions` and `/api/v1/messages`, all with Bearer. Its credential
+inspection remains `GET /api/v1/key`; model inspection remains bounded
+`GET /api/v1/models`, parsed as an OpenAI model catalog. Other known profiles
+likewise retain their separate canonical catalog/private-authentication routes
+under the [provider inspection contract](cmds-delidev-providers-contract.md),
+including Fireworks management models and DeepInfra private/model endpoints.
+Matching requires the complete documented selected tuple; custom endpoints stay
+advisory and cannot inherit official evidence from a protocol or name alone.
+
+Anthropic's Chat compatibility layer has provider-defined restrictions. xAI's
+Messages endpoint is documented as legacy/deprecated. Baseten Messages and
+Perplexity Router availability remain subject to the provider's preview/access
+conditions. LM Studio Responses requires 0.3.29 or later and Messages 0.4.1 or
+later. Ollama's Responses endpoint has stateless limitations. Responses support
+on Qianfan, Tencent and other gateways does not imply every Responses tool,
+continuation feature or model is available. Novita's official Claude Code guide
+specifies the Anthropic base and Bearer authentication; its model access remains
+separate from the ordinary OpenAI catalog. Provider-side compatibility is not
+DeliDev translation. Together Link, SiliconFlow's local Responses converter and
+Venice's local Codex/Claude converter do not declare another direct REST profile
+on their ordinary preset endpoints.
+
+
+A disconnected SQL record alone does not prove cleanup: a failed native Connect
+may retain protected staging intents. Format-change admission holds the account
+gate, checks the original revision and credential class, then verifies no remaining
+native references outside SQLite before publication. Failed enumeration rejects
+the edit. Exact accepted receipt replays do not reopen the vault. Keyless proof
+skips native enumeration and cannot be relabeled as credential-owning authority.
 
 ## Ordered Agent Worker account sources
 
@@ -68,9 +194,11 @@ account, connection and Usage/cost attribution. Relationship checks, project
 selection, deletion protection and portable version 3 include all sources.
 Schedules use the ordinary first-execution boundary.
 
-Codex requires an explicitly configured Responses provider. The OpenRouter managed
-Chat preset and existing connections are not rewritten. Use a compatible custom
-provider/account configuration and retain execution-time validation. OpenRouter
+Codex requires the selected API account's Responses profile. OpenRouter's original
+Chat default and existing connections are not rewritten. A new manual OpenRouter
+account may explicitly choose Responses; an existing account must disconnect,
+finish protected cleanup and reconnect before changing its format. Retain
+execution-time validation. OpenRouter
 [documents Responses](https://openrouter.ai/docs/api/api-reference/responses/create-responses).
 No automatic harness switch, active-session retry/account switch or new subscription
 execution profile is introduced.

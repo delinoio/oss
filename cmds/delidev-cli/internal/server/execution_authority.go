@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -132,6 +133,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 			return empty, executionDenied()
 		}
 		provider, err = store.Decode[domain.Provider](r)
+		if err == nil {
+			provider, err = providers.ResolveAccountProfile(provider, account)
+		}
 		if err != nil || provider.Authentication != account.Connection.Authentication {
 			return empty, executionDenied()
 		}

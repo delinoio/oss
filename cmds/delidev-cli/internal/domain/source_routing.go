@@ -22,7 +22,7 @@ func RouteSources(agentID ID, agent Agent, project *Project, sources []SourceRou
 			return Route{}, state, Fail(InvalidArgument, "Incomplete source selection.", "Resolve the current model and accounts.")
 		}
 		source := sources[0]
-		route, next, err := RouteAccount(agentID, agent, source.Model, project, source.Accounts, defaultPolicy, state, now)
+		route, next, err := routeAccount(agentID, agent, source.Model, project, source.Accounts, defaultPolicy, state, now, source.Blocked)
 		if source.Problem != nil {
 			route.Selected = ""
 			return route, state, source.Problem

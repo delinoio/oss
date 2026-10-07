@@ -147,21 +147,30 @@ func requireProviderInventoryCapability(ctx context.Context, c client, capabilit
 }
 
 func listWithProviderFilter(ctx context.Context, c client, filter *pb.Filter, providerID string, accountType ...pb.AccountTypeFilter) (*pb.ListResourcesResponse, error) {
+	selectedType := pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED
+	if len(accountType) > 0 {
+		selectedType = accountType[0]
+	}
+	return listWithAPIFormatFilter(ctx, c, filter, providerID, selectedType, pb.ApiProtocol_API_PROTOCOL_UNSPECIFIED)
+}
+
+func listWithAPIFormatFilter(ctx context.Context, c client, filter *pb.Filter, providerID string, selectedType pb.AccountTypeFilter, apiProtocol pb.ApiProtocol) (*pb.ListResourcesResponse, error) {
 	if providerID != "" {
 		if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER); err != nil {
 			return nil, err
 		}
 	}
-	selectedType := pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED
-	if len(accountType) > 0 {
-		selectedType = accountType[0]
+	if apiProtocol != pb.ApiProtocol_API_PROTOCOL_UNSPECIFIED {
+		if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1); err != nil {
+			return nil, err
+		}
 	}
 	if selectedType != pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_UNSPECIFIED {
 		if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER); err != nil {
 			return nil, err
 		}
 	}
-	response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: filter, ProviderId: providerID, AccountType: selectedType}))
+	response, err := c.resources.ListResources(ctx, request(c, &pb.ListResourcesRequest{Filter: filter, ProviderId: providerID, AccountType: selectedType, ApiProtocol: apiProtocol}))
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}

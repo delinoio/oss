@@ -302,6 +302,7 @@ type ListResourcesRequest struct {
 	ProviderId          string                      `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
 	AccountType         AccountTypeFilter           `protobuf:"varint,3,opt,name=account_type,json=accountType,proto3,enum=delidev.v1.AccountTypeFilter" json:"account_type,omitempty"`
 	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,4,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	ApiProtocol         ApiProtocol                 `protobuf:"varint,5,opt,name=api_protocol,json=apiProtocol,proto3,enum=delidev.v1.ApiProtocol" json:"api_protocol,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -362,6 +363,13 @@ func (x *ListResourcesRequest) GetSubscriptionService() SubscriptionServiceIdent
 		return x.SubscriptionService
 	}
 	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+}
+
+func (x *ListResourcesRequest) GetApiProtocol() ApiProtocol {
+	if x != nil {
+		return x.ApiProtocol
+	}
+	return ApiProtocol_API_PROTOCOL_UNSPECIFIED
 }
 
 type ListResourcesResponse struct {
@@ -683,13 +691,14 @@ const file_delidev_v1_resource_proto_rawDesc = "" +
 	"\x04kind\x18\x01 \x01(\x0e2\x16.delidev.v1.EntityKindR\x04kind\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\"G\n" +
 	"\x13GetResourceResponse\x120\n" +
-	"\bresource\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\bresource\"\x81\x02\n" +
+	"\bresource\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\bresource\"\xbd\x02\n" +
 	"\x14ListResourcesRequest\x12*\n" +
 	"\x06filter\x18\x01 \x01(\v2\x12.delidev.v1.FilterR\x06filter\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
 	"providerId\x12@\n" +
 	"\faccount_type\x18\x03 \x01(\x0e2\x1d.delidev.v1.AccountTypeFilterR\vaccountType\x12Z\n" +
-	"\x14subscription_service\x18\x04 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"s\n" +
+	"\x14subscription_service\x18\x04 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\x12:\n" +
+	"\fapi_protocol\x18\x05 \x01(\x0e2\x17.delidev.v1.ApiProtocolR\vapiProtocol\"s\n" +
 	"\x15ListResourcesResponse\x122\n" +
 	"\tresources\x18\x01 \x03(\v2\x14.delidev.v1.ResourceR\tresources\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"@\n" +
@@ -756,6 +765,7 @@ var file_delidev_v1_resource_proto_goTypes = []any{
 	(EntityKind)(0),                  // 11: delidev.v1.EntityKind
 	(*Resource)(nil),                 // 12: delidev.v1.Resource
 	(SubscriptionServiceIdentity)(0), // 13: delidev.v1.SubscriptionServiceIdentity
+	(ApiProtocol)(0),                 // 14: delidev.v1.ApiProtocol
 }
 var file_delidev_v1_resource_proto_depIdxs = []int32{
 	11, // 0: delidev.v1.Filter.kind:type_name -> delidev.v1.EntityKind
@@ -764,24 +774,25 @@ var file_delidev_v1_resource_proto_depIdxs = []int32{
 	2,  // 3: delidev.v1.ListResourcesRequest.filter:type_name -> delidev.v1.Filter
 	0,  // 4: delidev.v1.ListResourcesRequest.account_type:type_name -> delidev.v1.AccountTypeFilter
 	13, // 5: delidev.v1.ListResourcesRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	12, // 6: delidev.v1.ListResourcesResponse.resources:type_name -> delidev.v1.Resource
-	2,  // 7: delidev.v1.GetSnapshotRequest.filter:type_name -> delidev.v1.Filter
-	12, // 8: delidev.v1.GetSnapshotResponse.resources:type_name -> delidev.v1.Resource
-	11, // 9: delidev.v1.WatchEventsResponse.kind:type_name -> delidev.v1.EntityKind
-	1,  // 10: delidev.v1.WatchEventsResponse.action:type_name -> delidev.v1.EventAction
-	3,  // 11: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
-	5,  // 12: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
-	7,  // 13: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
-	9,  // 14: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
-	4,  // 15: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
-	6,  // 16: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
-	8,  // 17: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
-	10, // 18: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
-	15, // [15:19] is the sub-list for method output_type
-	11, // [11:15] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	14, // 6: delidev.v1.ListResourcesRequest.api_protocol:type_name -> delidev.v1.ApiProtocol
+	12, // 7: delidev.v1.ListResourcesResponse.resources:type_name -> delidev.v1.Resource
+	2,  // 8: delidev.v1.GetSnapshotRequest.filter:type_name -> delidev.v1.Filter
+	12, // 9: delidev.v1.GetSnapshotResponse.resources:type_name -> delidev.v1.Resource
+	11, // 10: delidev.v1.WatchEventsResponse.kind:type_name -> delidev.v1.EntityKind
+	1,  // 11: delidev.v1.WatchEventsResponse.action:type_name -> delidev.v1.EventAction
+	3,  // 12: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
+	5,  // 13: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
+	7,  // 14: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
+	9,  // 15: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
+	4,  // 16: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
+	6,  // 17: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
+	8,  // 18: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
+	10, // 19: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
+	16, // [16:20] is the sub-list for method output_type
+	12, // [12:16] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_resource_proto_init() }

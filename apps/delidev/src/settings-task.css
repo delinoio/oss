@@ -24,6 +24,11 @@ dialog.settings-task-dialog { width: min(768px, calc(100vw - 32px)); max-width: 
 .settings-task-footer .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0; }
 .settings-task-footer button { white-space: normal; overflow-wrap: anywhere; }
 @media (max-width: 759px) { .settings-task-header, .settings-task-body { padding: 16px; } .settings-task-footer { padding: 16px; } }
+@media (max-width: 900px) { .settings-task-footer .actions { flex-direction: column; align-items: stretch; } }
+.provider-api-formats { display: grid; gap: 12px; }
+.provider-api-formats h4, .provider-api-formats p { margin: 0; }
+.provider-api-format-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.provider-api-format-card label { margin: 0; }
 
 .settings-task-body :is(.account-wizard, .subscription-account-create, .agent-core, .project-field-group, .project-deletion, .server-preferences-panel, .paired-device-form, .integration-editor, .integration-manage) { padding: 0; border: 0; border-radius: 0; background: var(--surface); }
 .settings-task-body :is(.project-field-group, .agent-optional, .integration-section) { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }

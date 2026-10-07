@@ -160,6 +160,7 @@ func directDial(ctx context.Context, network, address string) (net.Conn, error) 
 }
 
 func inspect(ctx context.Context, client *http.Client, provider domain.Provider, key []byte) Observation {
+	provider = inspectionProvider(provider)
 	o := Observation{Authentication: AuthenticationUnknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	base, _ := url.Parse(provider.Endpoint)
 	base.Path = strings.TrimSuffix(base.Path, "/")
