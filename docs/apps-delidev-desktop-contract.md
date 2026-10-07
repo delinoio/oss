@@ -117,6 +117,48 @@ Issue #1137 supersedes the earlier Home server-management disclosure. Outside th
 
 Long names truncate on one line with complete pointer/focus and accessible descriptions. Preserve independent passive execution/archive glyphs and unknown values, title states/reasons, visible focus, keyboard activation and reduced motion. Automatic insertion never moves focus. Keep one responsive drawer/controller lifetime, native focus containment/background inertness, Escape/Close/opener restoration, and 200% reflow. There is no new feature flag, dependency, preference, persisted schema, migration or write authority. Diagnostics contain stable stage/classification only, never names, prompts, cursors, credentials or endpoint/path values. Record component/browser checks and unperformed native CEF/platform acceptance separately in issue #1161, its pull requests and CI runs.
 
+#### Session hover information card
+
+Session rows display one read-only card per sidebar. Its hierarchy is the complete
+session name, decorative workspace icon and label, separately labeled Execution
+and Archive observations, then the automatic title state and full safe reason.
+Manual titles omit the title-state section and its divider. Known state labels
+use bundled English/Korean presentation; unknown values remain explicit and never
+infer success, active state or execution readiness. The complete row description
+remains available through `aria-describedby`; the card has `role="tooltip"`,
+no actions, no focusable controls and no live announcement.
+
+Use a 320px width, 16px padding, 8px corners, 15px/20px semibold title and
+12px/18px body. Existing semantic theme tokens own the surface, text, separators,
+neutral badges and soft shadow; there is no arrow. Full names and reasons wrap,
+and oversized cards scroll within the viewport. Position the card 8px right of
+the source row at its top. If it cannot fit to the right, prefer below, otherwise
+above; measured bounds retain an 8px viewport inset. Compact cards are DOM
+descendants of the open sidebar dialog and use the manual popover top layer to
+escape overflow without acquiring modal or focus authority.
+
+Pointer entry opens after 300ms; focus opens immediately. Source/card departure
+has a 150ms grace period, and either source focus or source/card hover retains
+the card. Escape dismisses only this presentation and suppresses reopening until
+a new pointer/focus entry. Clicking the row keeps the original session activation
+and closes the card. External scrolling, resize, surface changes, hidden/inactive
+navigation, drawer closure and source removal clear the card and pending timers;
+scrolling the card itself does not dismiss it. One sidebar controller owns timers
+and global listeners, and row subscriptions observe only their active boolean.
+Language updates retain interaction state and remeasure wrapped content. Hover
+uses existing `NavigationRow` metadata only, with no additional RPC, persistence,
+public interface, dependency, migration or execution authority.
+
+`scripts/test-session-hover-layout.mjs` under the desktop app runs explicit
+host-supplied Playwright Chromium checks against the synthetic Settings fixture's
+opt-in session inventory. `DELIDEV_LAYOUT_PLAYWRIGHT_MODULE` and
+`DELIDEV_LAYOUT_BROWSER_CHANNEL` select the validation host;
+`DELIDEV_HOVER_SCREENSHOT_DIR` optionally saves synthetic screenshots outside the
+checkout. These checks cover English/Korean, light/dark, ordinary and effective
+200% viewports, placement, full text, card scrolling, pointer transitions, Escape,
+modal clipping and static CSS CSP. They do not establish actual native CEF,
+operating-system chrome zoom or macOS/Windows/Ubuntu X11 acceptance.
+
 For issue #1054, record component and native validation separately in pull requests, issues and CI runs, including untested viewports and platforms.
 
 ### Menu-specific context panes

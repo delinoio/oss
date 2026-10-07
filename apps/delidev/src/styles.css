@@ -85,7 +85,18 @@ button.sidebar-project-row:hover { background: var(--surface-hover); }
 .sidebar-footer { flex: 0 0 auto; max-height: 35%; overflow: auto; border-top: 1px solid var(--border); padding: 8px 2px 2px; scrollbar-gutter: stable; }
 .sidebar-footer p { margin: 0 0 5px; color: var(--muted); font-size: 11px; }
 .sidebar-footer button { max-width: 100%; }
-.sidebar-session-tooltip { position: fixed; z-index: 1000; width: max-content; max-width: min(320px, calc(100vw - 16px)); padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--inverse-surface); color: var(--on-inverse); box-shadow: 0 3px 12px var(--shadow); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; pointer-events: none; }
+.sidebar-session-tooltip { position: fixed; z-index: 1000; inset: auto; margin: 0; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px var(--shadow-soft); font-size: 12px; line-height: 18px; overflow: auto; overflow-wrap: anywhere; overscroll-behavior: contain; pointer-events: auto; }
+.sidebar-session-card-title { margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; }
+.sidebar-session-card-workspace { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0 0; color: var(--muted); }
+.sidebar-session-card-workspace .sidebar-icon { flex: 0 0 auto; margin-top: 2px; }
+.sidebar-session-card-states { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: start; gap: 8px 12px; margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.sidebar-session-card-states dt { min-width: 0; padding-top: 3px; color: var(--muted); }
+.sidebar-session-card-states dd { min-width: 0; margin: 0; }
+.sidebar-session-card-badge { display: inline-flex; align-items: flex-start; gap: 6px; max-width: 100%; padding: 3px 8px; border-radius: 6px; background: var(--surface-inset); color: var(--text); font-weight: 500; }
+.sidebar-session-card-badge .sidebar-statuses { margin-top: 2px; }
+.sidebar-session-card-title-state { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-subtle); color: var(--muted); }
+.sidebar-session-card-title-state p { margin: 0; }
+.sidebar-session-card-title-state p + p { margin-top: 8px; }
 .sidebar-action-tooltip { position: fixed; z-index: 1000; max-width: min(120px, calc(100vw - 16px)); padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--inverse-surface); color: var(--on-inverse); box-shadow: 0 3px 12px var(--shadow); font-size: 12px; line-height: 1.3; white-space: nowrap; pointer-events: none; }
 .sidebar-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 main { min-width: 0; overflow: auto; }
