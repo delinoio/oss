@@ -867,3 +867,9 @@ reserves protocol 2 and `AttachWorkerRequest.protocol_version = 10` on main.
 The field is absent from active schemas until complete implementation. The
 reset removes historical forwarding imports/reflection and obsolete API
 surfaces; retained field and enum numbers preserve their original meanings.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Reserve System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields on main. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

@@ -236,3 +236,11 @@ Claude Code account profile on the selected Runner Device; server metadata does
 not grant credentials, cross-device execution or cleanup authority. The
 reservation prerequisite activates no support and adds no migration. Follow
 [the subscription contract](cmds-delidev-subscription-contract.md#planned-native-claude-subscriptions).
+
+The approved inline-Worker-model replacement composes the current-only DB 32 /
+protocol 2 reset. Its complete main-first declarations and ownership are defined
+in the catalog, structure, storage, desktop, protocol, usage, transfer and
+subagent contracts. Independent Models and persistent API catalogs are removed
+only with complete activation. Earlier DB retention is waived by the owner;
+explicit reset does not convert history or grant native/credential cleanup.
+Earlier backups remain unsupported.
