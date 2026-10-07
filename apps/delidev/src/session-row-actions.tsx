@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { BudgetState, EntityKind, ResourceQuery, SessionAction, SessionQuery } from "@delinoio/delidev-api-client";
-import { sessionControlEligibility, useSessionControl } from "./session-control";
+import { sessionControlEligibility, useSessionControl, validSessionActionResource } from "./session-control";
 import { SessionForkAction } from "./session-fork";
 import { copy } from "./localization";
 import { Problem } from "./ui";
@@ -24,8 +24,8 @@ export function SessionRowActions({ id, descriptionId, dismissHover }: { id: str
   const restoreGroup = () => (group.current?.isConnected ? group.current : sidebar.current?.querySelector<HTMLButtonElement>(".sidebar-project-row"))?.focus({ preventScroll: true });
   const read = useQuery(ResourceQuery.getResource, { kind: EntityKind.SESSION, id }, { enabled: visible, staleTime: 0 });
   const budget = useQuery(SessionQuery.getSessionBudget, { sessionId: id }, { enabled: visible, staleTime: 0 });
-  const observed = read.data?.resource?.kind === EntityKind.SESSION && read.data.resource.id === id && read.data.resource.schemaVersion === 1 ? read.data.resource : undefined;
-  const { resource, control, action } = useSessionControl(id, observed);
+  const observed = validSessionActionResource(read.data?.resource, id) ? read.data.resource : undefined;
+  const { resource, control, action } = useSessionControl(id, observed, visible);
   const ready = Boolean(resource && observed && !read.isFetching && !read.error);
   const eligibility = sessionControlEligibility(resource, budget.isFetching || Boolean(budget.error) || !budget.data?.view || budget.data.view.session?.id !== id || budget.data.view.state === BudgetState.THRESHOLD_REACHED);
   const locked = !ready || control.busy || control.uncertain;
