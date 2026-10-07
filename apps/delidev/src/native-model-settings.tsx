@@ -73,7 +73,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
       {text(object(document(job).problem).message) ? <ServiceProblem code={text(object(document(job).problem).code) || text(object(document(job).problem).problem_code)}><p role="alert">{text(object(document(job).problem).message)}</p></ServiceProblem> : null}
       {state !== "succeeded" && operation.data?.lastSuccess ? <button type="button" onClick={() => { setObservationID(operation.data!.lastSuccess!.id); }}>{copy("native-model-settings.showLastSuccessfulObservation_e2c0d6")}</button> : null}
     </div> : null}
-    <Problem error={operation.error} />{operation.error || state === "uncertain" || operation.data && !job ? <button type="button" disabled={!active || operation.isFetching} onClick={() => void operation.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}<Problem error={cancellation.error} />
+    <Problem error={operation.error} />{operation.error || job && !["queued", "claimed", "succeeded", "failed", "canceled"].includes(state) || operation.data && !job ? <button type="button" disabled={!active || operation.isFetching} onClick={() => void operation.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}<Problem error={cancellation.error} />
     {cancellation.uncertain ? <button type="button" disabled={cancellation.busy} onClick={cancellation.retry}>{copy("native-model-settings.retryTheSameCancellation_0bc7e1")}</button> : null}
     <Failure failure={models.error?.failure} />
     {models.error?.failure.code === FailureCode.Internal ? <p role="alert">{copy("native-model-settings.theObservationPageIsMalformedNo_ac73dd")}</p> : null}
