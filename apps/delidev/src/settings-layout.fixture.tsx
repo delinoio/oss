@@ -7,7 +7,6 @@ import { AccountService, AccountTypeFilter, BackupCreationState, ConfigurationSe
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
 import { LanguagePreference, LanguageProblem, LanguageProvider, type LanguageBridge, type LanguageSnapshot } from "./language";
-import { SupportedLanguage } from "./localization";
 import { document as resourceDocument, encode } from "./documents";
 import { LocalWorkerState } from "./local-worker-controls";
 import { ToastKind, useNotifications } from "./toast-notifications";
