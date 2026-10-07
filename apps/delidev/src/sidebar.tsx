@@ -11,6 +11,7 @@ import { SettingsEntryDestination } from "./settings";
 import { HomeNavigation, ReadStage, type NavigationRow } from "./home-navigation";
 import { HomeScope, useNavigationQuery } from "./home-navigation-query";
 import { ServerPresentationKind, type ServerPresentation } from "./server-presentation";
+import { SessionHoverCard, SessionHoverProvider, useSessionHover } from "./session-hover-card";
 
 enum ExecutionStatus {
   NotStarted = "not-started",
@@ -111,6 +112,26 @@ function archiveLabel(raw: string): string {
   return statusLabel(raw || "unknown");
 }
 
+function cardExecutionLabel(raw: string): string {
+  switch (raw as ExecutionStatus) {
+    case ExecutionStatus.NotStarted: return copy("sidebar.hover.notStarted");
+    case ExecutionStatus.Running: return copy("sidebar.hover.running");
+    case ExecutionStatus.Succeeded: return copy("sidebar.hover.succeeded");
+    case ExecutionStatus.Failed: return copy("sidebar.hover.failed");
+    case ExecutionStatus.Stopped: return copy("sidebar.hover.stopped");
+    default: return executionLabel(raw);
+  }
+}
+
+function cardArchiveLabel(raw: string): string {
+  switch (raw as ArchiveStatus) {
+    case ArchiveStatus.Active: return copy("sidebar.hover.active");
+    case ArchiveStatus.Archiving: return copy("sidebar.hover.archiving");
+    case ArchiveStatus.Archived: return copy("sidebar.hover.archived");
+    default: return archiveLabel(raw);
+  }
+}
+
 function StatusGlyph({ outcome, archive }: { outcome: string; archive: string }) {
   useLocale();
   let execution: ReactNode;
@@ -133,7 +154,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   useLocale();
   const tooltipId = useId();
   const element = useRef<HTMLButtonElement>(null);
-  const [tooltip, setTooltip] = useState<TooltipPosition>();
+  const hover = useSessionHover(element);
   const title = row.name;
   const outcome = row.outcome;
   const archive = row.archive;
@@ -143,31 +164,24 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const titleStateDescription = titlePresentation ? [titleState, titlePresentation.detail].filter(Boolean).join(". ") : "";
   const titleStateSummary = titlePresentation ? [titleState?.replace(/^Title /, "").replace(/^[a-z]/, (letter) => letter.toUpperCase()), titlePresentation.shortDetail].filter(Boolean).join(" · ") : "";
   const description = copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
-  const showTooltip = () => {
-    const rect = element.current?.getBoundingClientRect();
-    if (!rect) return;
-    const width = Math.min(320, window.innerWidth - 16);
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-    const top = rect.bottom + 6 + 84 < window.innerHeight ? rect.bottom + 6 : Math.max(8, rect.top - 84);
-    setTooltip({ left, top });
-  };
-  useEffect(() => {
-    if (!tooltip) return;
-    const dismiss = () => setTooltip(undefined);
-    window.document.addEventListener("scroll", dismiss, true);
-    window.addEventListener("resize", dismiss);
-    return () => { window.document.removeEventListener("scroll", dismiss, true); window.removeEventListener("resize", dismiss); };
-  }, [tooltip]);
   const workspaceIcon = row.workspace === Workspace.Worktree ? "branch" : row.workspace === Workspace.Local ? "computer" : row.workspace === Workspace.GeneralChat ? "chat" : "unknown";
   return <>
-    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={showTooltip} onPointerLeave={() => setTooltip(undefined)} onFocus={showTooltip} onBlur={() => setTooltip(undefined)} onClick={() => open(row.id)}>
+    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); open(row.id); }}>
       <Icon name={workspaceIcon} className="sidebar-workspace-icon" />
       <span className="sidebar-session-title">{title}</span>
-      {titleStateSummary ? <span className="sidebar-session-title-state" title={titlePresentation?.detail}>{titleStateSummary}</span> : null}
+      {titleStateSummary ? <span className="sidebar-session-title-state">{titleStateSummary}</span> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
     </button>
     <span className="sidebar-sr-only" id={tooltipId}>{description}</span>
-    {tooltip ? createPortal(<div className="sidebar-session-tooltip" role="tooltip" style={{ left: tooltip.left, top: tooltip.top }}>{description}</div>, window.document.body) : null}
+    {hover.visible ? <SessionHoverCard hover={hover}>
+      <p className="sidebar-session-card-title">{title}</p>
+      <p className="sidebar-session-card-workspace"><Icon name={workspaceIcon} className="sidebar-workspace-icon" />{workspace}</p>
+      <dl className="sidebar-session-card-states">
+        <dt>{copy("sidebar.hover.execution")}</dt><dd><span className="sidebar-session-card-badge"><StatusGlyph outcome={outcome} archive={ArchiveStatus.Active} />{cardExecutionLabel(outcome)}</span></dd>
+        <dt>{copy("sidebar.hover.archive")}</dt><dd><span className="sidebar-session-card-badge">{cardArchiveLabel(archive)}</span></dd>
+      </dl>
+      {titlePresentation ? <div className="sidebar-session-card-title-state"><p>{titleState}</p>{titlePresentation.detail ? <p>{titlePresentation.detail}</p> : null}</div> : null}
+    </SessionHoverCard> : null}
   </>;
 }
 
@@ -353,7 +367,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   };
 
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
-  return <aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
+  return <SessionHoverProvider enabled={active} scope={surface}><aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
     <nav ref={rail} className="sidebar-rail" aria-label={copy("sidebar.primaryNavigation_e1bfe7")}>
       <SidebarButton label={copy("sidebar.sessions_6fa3cb")} icon="sessions" current={sessionNavigation} onClick={() => navigate(Surface.Sessions)} />
       <SidebarButton label={copy("sidebar.pullRequests_d9e3f2")} icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigate(Surface.PullRequests)} />
@@ -403,5 +417,5 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       </footer>
     </div>
     </dialog>
-  </aside>;
+  </aside></SessionHoverProvider>;
 }

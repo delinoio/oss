@@ -61,17 +61,21 @@ the account's selected Runner Device. This prerequisite adds no active schemas,
 generated bindings, advertisement, login, execution or browser authority and no
 database migration. Follow the subscription and structure contracts.
 
-## Agent Worker source-route reservations
+## Agent Worker account source routes
 
-Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
-`SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
-`AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
-is exclusive with the legacy singular model. Establish both ledger reservations
-on main before activation. Capability 35 keeps its known-subscription-model
-ownership. No active schema, generated output, advertisement or migration is
-introduced by this prerequisite.
-
-
+PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5` on main before implementation. The
+active repeated field reuses `AgentWorkerModelSelection`, aligned with ordered
+Agent schema-3 routes and exclusive with the legacy singular model. The existing
+mutation/revision/receipt response remains unchanged. Capability 36 advertises
+this complete configuration extension; capability 35 retains its separate known
+subscription catalog reservation. Schema 1/2 APIs and accountless CLI writes
+remain compatible; current clients retain schema 3 even with one remaining source.
+Resource reads expose schema 3 only for ordered-source Agents. Older clients must
+treat that family as unsupported and cannot overwrite it through legacy saves.
+No Worker protocol shape or database migration changes. The selected-source native
+configuration remains unchanged; complete source decisions are additive server-owned
+initial-execution JSON under the [catalog contract](cmds-delidev-catalog-contract.md).
 
 
 ## Known subscription model allocation and activation
@@ -111,6 +115,14 @@ database migration. Existing profile/revision-bound token forms remain unchanged
 ### Activated onboarding boundary
 
 After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
+
+Fine-grained `PrepareGitHubTokenForm` with selected-repositories access permits
+an empty `resource_owner`, echoes it unchanged and omits `target_name` from the
+canonical URL. Explicit valid owners remain supported. This draft-only allowance
+does not change saved-profile owner requirements or revision-bound form reads.
+The desktop's Classic shortcut uses public-repositories access without scopes;
+existing explicit private-repositories requests retain their separate behavior.
+No protocol field, enum, capability or migration is added.
 
 ## Agent Worker wizard
 

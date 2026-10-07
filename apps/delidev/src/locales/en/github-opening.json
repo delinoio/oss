@@ -19,5 +19,13 @@
   "github-opening.extra.96dce755f727": "Sent to your default browser. This does not verify page access.",
   "github-opening.extra.45a2c8995dcd": "Browser opening was not confirmed. Inspect your browser before trying again.",
   "github-opening.extra.783701cedcbe": "Sent to your default browser. Review repository selection, permissions and expiry before generating a token.",
-  "github-opening.extra.f2427e02d7bb": "The official form could not be confirmed. Refresh the profile and inspect your browser before trying again."
+  "github-opening.extra.f2427e02d7bb": "The official form could not be confirmed. Refresh the profile and inspect your browser before trying again.",
+  "github-opening.draft.classic": "Classic",
+  "github-opening.draft.fineGrained": "Fine grained",
+  "github-opening.draft.createThenPaste": "Create a token on GitHub, then paste it into the protected field above. Opening a form does not create or save a token.",
+  "github-opening.draft.fineGrainedGuidance": "Fine grained: Metadata, Contents, Pull requests, Issues and Commit statuses are preselected as read-only, with a 30-day expiry. On GitHub, choose the resource owner and Only select repositories; the form defaults to All repositories. The form offers no Checks permission; check access separately. Organization approval may be required.",
+  "github-opening.draft.classicGuidance": "Classic: No scopes are preselected. For private repositories, selecting repo grants broad read/write access even though DeliDev only reads GitHub APIs. Prefer fine-grained selected repositories when possible.",
+  "github-opening.draft.preparing": "Preparing the official GitHub token form…",
+  "github-opening.draft.failure": "The official form could not be confirmed. Inspect your browser before trying again.",
+  "github-opening.draft.confirmOwner": "Enter the owner you selected when creating this token on GitHub."
 }

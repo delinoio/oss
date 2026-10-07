@@ -56,7 +56,8 @@ func TestGitHubFormsHaveOnlyVerifiedPrefills(t *testing.T) {
 
 func TestGitHubPresentationRejectsAuthorityAndNormalizationBypasses(t *testing.T) {
 	form, _ := GitHubTokenFormURL(FineGrainedPAT, "fixture-owner", GitHubSelectedRepositories)
-	valid := []string{form, "https://github.com/owner/repo/pull/9007199254740993", "https://github.com/owner/repo/issues/1"}
+	draft, _ := GitHubDraftTokenFormURL(FineGrainedPAT, "", GitHubSelectedRepositories)
+	valid := []string{form, draft, "https://github.com/owner/repo/pull/9007199254740993", "https://github.com/owner/repo/issues/1"}
 	for _, raw := range valid {
 		if err := ValidateGitHubPresentationURL(raw); err != nil {
 			t.Fatal(raw, err)
@@ -66,10 +67,41 @@ func TestGitHubPresentationRejectsAuthorityAndNormalizationBypasses(t *testing.T
 		"file:///tmp/a", "https://evil.example/owner/repo/pull/1", "https://github.com.evil.example/owner/repo/pull/1", "https://user@github.com/owner/repo/pull/1", "https://github.com:443/owner/repo/pull/1", "http://github.com/owner/repo/pull/1",
 		"https://github.com/owner/repo/pull/01", "https://github.com/owner/repo/pull/18446744073709551616", "https://github.com/owner/repo/pull/1#", "https://github.com/owner/repo/pull/1?", "https://github.com/owner/repo/pull/1?token=secret", "https://github.com/owner/repo/pull/%31", "https://github.com/owner/repo/../pull/1", "https://github.com/owner/repo\\evil/pull/1",
 		form + "&checks=read", form + "&contents=write", form + "#", strings.Replace(form, "contents=read", "contents=write", 1), strings.Replace(form, "target_name=fixture-owner", "target_name=fixture-owner%26scopes%3Drepo", 1),
+		draft + "&target_name=", draft + "&contents=read", draft + "&scopes=repo", draft + "&checks=read", strings.Replace(draft, "contents=read", "contents=write", 1),
 	}
 	for _, raw := range bad {
 		if ValidateGitHubPresentationURL(raw) == nil {
 			t.Fatal("unsafe address accepted", raw)
+		}
+	}
+}
+
+func TestGitHubDraftOwnerDoesNotRelaxSavedProfileForms(t *testing.T) {
+	raw, err := GitHubDraftTokenFormURL(FineGrainedPAT, "", GitHubSelectedRepositories)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(raw)
+	q := u.Query()
+	if len(q) != 8 || q.Has("target_name") || q.Get("expires_in") != "30" || q.Get("name") != "DeliDev read-only" || q.Get("description") != "Read-only repository inspection" {
+		t.Fatal("draft prefills changed", q)
+	}
+	for _, permission := range []string{"metadata", "contents", "pull_requests", "issues", "statuses"} {
+		if q.Get(permission) != "read" {
+			t.Fatal("draft permission changed", permission)
+		}
+	}
+	profileForm := GitHubTokenForm{ProfileID: NewID(), ProfileRevision: "1", TokenKind: FineGrainedPAT, Access: GitHubSelectedRepositories, URL: raw}
+	if profileForm.Validate() == nil {
+		t.Fatal("draft URL granted an undeclared saved-profile owner")
+	}
+	for _, tc := range []struct {
+		kind   PATKind
+		owner  string
+		access GitHubTokenAccess
+	}{{FineGrainedPAT, "bad/owner", GitHubSelectedRepositories}, {FineGrainedPAT, "", GitHubPublicRepositories}, {ClassicPAT, "", GitHubSelectedRepositories}, {"unknown", "", GitHubPublicRepositories}} {
+		if _, err := GitHubDraftTokenFormURL(tc.kind, tc.owner, tc.access); err == nil {
+			t.Fatal("invalid draft accepted", tc)
 		}
 	}
 }
