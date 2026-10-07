@@ -11,7 +11,8 @@ import { PaginationChain, type PaginationBatch, type PaginationReader, type Pagi
 export function usePaginationChain<Row extends PaginationRow, Payload = never>(
   scopeKey: string, active: boolean, reader: PaginationReader<Row, Payload>, initialRead = true,
 ) {
-  const chain = useMemo(() => new PaginationChain<Row, Payload>(), [scopeKey]);
+  const client = useQueryClient();
+  const chain = useMemo(() => new PaginationChain<Row, Payload>(), [scopeKey, client]);
   useLayoutEffect(() => {
     if (active) {
       chain.activate();

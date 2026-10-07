@@ -1,6 +1,8 @@
 import { clientFailure, FailureCode, type ClientFailure } from "@delinoio/delidev-api-client";
 
 export interface PaginationRow { id: string; revision: bigint }
+export const paginationIdentity = (row: PaginationRow) => row.id;
+export const paginationRevision = (row: PaginationRow) => row.revision;
 export interface PaginationBatch<Row extends PaginationRow, Payload = never> { rows: Row[]; nextPageToken: string; payload?: Payload[] }
 export interface PaginationPage<Row extends PaginationRow> { rows: Row[]; nextPageToken: string; token: string; height?: number }
 export enum ReadStage { Initial = "initial", Additional = "additional", Refresh = "refresh", Reload = "reload", Restore = "restore" }

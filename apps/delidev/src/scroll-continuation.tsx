@@ -37,7 +37,7 @@ export function ScrollContinuation({ query, label, root, active, showErrors = tr
   const { loaded, nextPageToken, loading, error, append } = query;
   const allowed = active && documentVisible && loaded && Boolean(nextPageToken) && !loading && !error;
   useLayoutEffect(() => {
-    const container = root.current, element = anchor.current;
+    const container = resolveScrollRoot(root.current), element = anchor.current;
     if (!container || !element || !allowed) return;
     const check = () => {
       if (container.clientHeight <= 0 || document.visibilityState === "hidden" || element.closest("[hidden], [inert], [aria-hidden='true']")) return;
@@ -66,19 +66,15 @@ export function ScrollContinuation({ query, label, root, active, showErrors = tr
   </div>;
 }
 
-/** Resolve a list content anchor to its actual overflow owner. Do not observe
- * the unscrollable section when main, a drawer or a task body owns scrolling. */
-export function useScrollRoot(content: RefObject<HTMLElement | null>) {
-  const root = useRef<HTMLElement | null>(null);
-  useLayoutEffect(() => {
-    let node = content.current;
-    while (node) {
-      const style = getComputedStyle(node);
-      if (/(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`)) break;
-      node = node.parentElement;
-    }
-    root.current = node ?? content.current;
-    return () => { root.current = null; };
-  }, [content]);
-  return root;
+/** Resolve at observation time: compact portal reflow can replace an overflow
+ * owner without replacing the connection-owned pagination controller. */
+export function resolveScrollRoot(content: HTMLElement | null) {
+  let node = content;
+  while (node) {
+    const style = getComputedStyle(node);
+    if (/(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`)) return node;
+    node = node.parentElement;
+  }
+  return content;
 }
+export function useScrollRoot(content: RefObject<HTMLElement | null>) { return content; }

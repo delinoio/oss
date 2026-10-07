@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useMemo, useRef } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useMemo, useRef, type ReactNode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -15,6 +16,7 @@ function List({ read, active = true, initialRead = true }: { read: PaginationRea
   const query = usePaginationChain("test-scope", active, reader, initialRead);
   return <div ref={root}><button type="button" onClick={query.reload}>Load</button>{query.rows.map(row => <p key={row.id}>{row.id}</p>)}<ScrollContinuation query={query} label="items" root={root} active={active} /></div>;
 }
+function renderValue(value: ReactNode) { return render(<QueryClientProvider client={new QueryClient()}>{value}</QueryClientProvider>); }
 function viewport() {
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 300, left: 0, right: 200, width: 200, height: 300, x: 0, y: 0, toJSON: () => ({}) });
@@ -25,7 +27,7 @@ it("fills an underfilled viewport serially and stops at exhaustion", async () =>
     max = Math.max(max, ++concurrent); await Promise.resolve(); concurrent--;
     return { rows: [{ id: token || "first", revision: 1n }], nextPageToken: token === "second" ? "" : "second" };
   });
-  render(<List read={read} />);
+  renderValue(<List read={read} />);
   await screen.findByText("second");
   expect(read.mock.calls.map(([token]) => token)).toEqual(["", "second"]);
   expect(max).toBe(1);
@@ -34,7 +36,7 @@ it("fills an underfilled viewport serially and stops at exhaustion", async () =>
 });
 it("never starts an explicit read on mount or scroll", async () => {
   viewport(); const read = vi.fn<PaginationReader<Row>>(async () => ({ rows: [], nextPageToken: "" }));
-  const view = render(<List read={read} initialRead={false} />);
+  const view = renderValue(<List read={read} initialRead={false} />);
   fireEvent.scroll(view.container.firstElementChild!);
   await act(async () => { await Promise.resolve(); });
   expect(read).not.toHaveBeenCalled();
@@ -46,7 +48,7 @@ it("retains accepted data after continuation failure and requires an explicit ex
     if (token) throw new ConnectError("offline", Code.Unavailable);
     return { rows: [{ id: "accepted", revision: 1n }], nextPageToken: "exact-request" };
   });
-  const view = render(<List read={read} />);
+  const view = renderValue(<List read={read} />);
   await screen.findByRole("button", { name: "Retry" });
   fireEvent.scroll(view.container.firstElementChild!); fireEvent.scroll(view.container.firstElementChild!);
   expect(read).toHaveBeenCalledTimes(2);
@@ -57,14 +59,14 @@ it("retains accepted data after continuation failure and requires an explicit ex
 });
 it("suppresses automatic reads when inactive, document-hidden or under a closed disclosure", async () => {
   viewport(); const read = vi.fn<PaginationReader<Row>>(async () => ({ rows: [], nextPageToken: "next" }));
-  const inactive = render(<List read={read} active={false} />);
+  const inactive = renderValue(<List read={read} active={false} />);
   await act(async () => { await Promise.resolve(); }); expect(read).not.toHaveBeenCalled(); inactive.unmount();
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-  const hidden = render(<List read={read} />);
+  const hidden = renderValue(<List read={read} />);
   await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   await act(async () => { await Promise.resolve(); }); expect(read).toHaveBeenCalledTimes(1); hidden.unmount();
   vi.restoreAllMocks(); viewport(); read.mockClear();
-  render(<details><summary>Closed</summary><List read={read} /></details>);
+  renderValue(<details><summary>Closed</summary><List read={read} /></details>);
   await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   await act(async () => { await Promise.resolve(); }); expect(read).toHaveBeenCalledTimes(1);
 });
