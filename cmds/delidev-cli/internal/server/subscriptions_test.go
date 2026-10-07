@@ -449,6 +449,43 @@ func TestSubscriptionExecutionRegistrationCannotUseAPIRelay(t *testing.T) {
 
 }
 
+func TestSubscriptionTakeDoesNotReplaceActiveLeaseForSameOperation(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	original := f.login()
+	defer clear(original)
+	lease := takeSubscriptionExecutionFixture(t, f)
+	defer clear(lease.Bundle)
+
+	var jobRevision uint64
+	if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		job, err := tx.Get(domain.JobKind, f.job)
+		if err != nil {
+			return err
+		}
+		jobRevision = job.Revision
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	request := &pb.TakeSubscriptionRequest{
+		Mutation:    &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: jobRevision},
+		MachineId:   string(f.input.MachineID),
+		InstanceId:  string(f.instance),
+		OperationId: string(f.job),
+		Action:      pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE,
+	}
+	if _, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, request)); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
+		t.Fatal("a fresh lease replaced the active lease for the same operation", err)
+	}
+	_, account := f.record()
+	if account.Subscription.Lease == nil || account.Subscription.Lease.ID != domain.ID(lease.LeaseId) {
+		t.Fatal("the original lease lost its finish authority")
+	}
+	if _, err := f.finish(lease, original, true, false, true); err != nil {
+		t.Fatal("the original lease could not finish", err)
+	}
+}
+
 func TestSubscriptionOtherAccountsRemainIndependentAndIdentityCannotBeDuplicated(t *testing.T) {
 	f := newSubscriptionFixture(t)
 	op := f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)

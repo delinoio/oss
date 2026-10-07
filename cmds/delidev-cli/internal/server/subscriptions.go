@@ -482,6 +482,12 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if state == nil || domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) {
 			return nil, subscriptionDenied()
 		}
+		// A second lease for the same claimed operation would discard the
+		// original finish identity and could redistribute its protected bundle.
+		if state.Lease != nil && state.Lease.OperationID == input.Operation {
+			s.logger.WarnContext(ctx, "subscription_take_active_operation_conflict", "account_id", input.Account, "operation_id", input.Operation, "lease_id", state.Lease.ID, "next_action", "reconcile_original_lease")
+			return nil, domain.Fail(domain.ResourceExhausted, "This subscription operation already has an active lease.", "Reconcile or finish the original lease before retrying this operation.")
+		}
 		if domain.OwnershipBlocks(domain.OwnershipCleanup, input.Account, state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted) {
 			return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
 		}
