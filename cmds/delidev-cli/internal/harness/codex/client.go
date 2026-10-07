@@ -133,6 +133,8 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		// downloads exceed the bounded disposable login runtime inventory.
 		// Keep them disabled for discovery and subscription lifecycle only;
 		// execution retains its independently verified native feature profile.
+		// Revisit this override only when a validated native lifecycle profile
+		// keeps startup and account changes within the unchanged cleanup bounds.
 		config.Process.Args = append(config.Process.Args, "-c", "features.plugins=false")
 	}
 	if config.ManagedAuthentication {
