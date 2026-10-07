@@ -222,21 +222,24 @@ fn stage_verified(p: &Prepared) -> Result<Prepared> {
         .and_then(|v| v.parent())
         .ok_or(NativeFailure::InvalidEvidence)?
         .join("native");
-    let created = match fs::create_dir(&root) {
-        Ok(()) => true,
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
-        Err(_) => return Err(NativeFailure::StorageUnavailable),
+    #[cfg(unix)]
+    let create_result = {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700).create(&root)
     };
+    #[cfg(not(unix))]
+    let create_result = fs::create_dir(&root);
+    match create_result {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(_) => return Err(NativeFailure::StorageUnavailable),
+    }
     if !no_symlink_ancestors(&root) {
         return Err(NativeFailure::InvalidEvidence);
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if created {
-            fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
-                .map_err(|_| NativeFailure::StorageUnavailable)?;
-        }
+    if !private_staging_dir(&root) {
+        return Err(NativeFailure::InvalidEvidence);
     }
     let extension = p
         .artifact_path
@@ -288,6 +291,71 @@ fn stage_verified(p: &Prepared) -> Result<Prepared> {
     let mut staged = p.clone();
     staged.artifact_path = path;
     Ok(staged)
+}
+
+fn private_staging_dir(path: &Path) -> bool {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        metadata.uid() == unsafe { libc::geteuid() } && metadata.permissions().mode() & 0o077 == 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+// Recheck the exact staged bytes immediately before a platform installer uses
+// the pathname. Existing staging directories must also remain private so a
+// different user cannot replace the file after this check.
+fn staged_artifact_verified(p: &Prepared) -> bool {
+    let Some(parent) = p.artifact_path.parent() else {
+        return false;
+    };
+    if parent.file_name().is_none_or(|name| name != "native")
+        || !private_staging_dir(parent)
+        || !no_symlink_ancestors(&p.artifact_path)
+    {
+        return false;
+    }
+    let Ok(mut file) = File::open(&p.artifact_path) else {
+        return false;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() || metadata.len() != p.artifact_size {
+        return false;
+    }
+    let mut hash = Sha256::new();
+    let mut count = 0u64;
+    let mut buffer = [0u8; 65536];
+    loop {
+        let Ok(n) = file.read(&mut buffer) else {
+            return false;
+        };
+        if n == 0 {
+            break;
+        }
+        count = match count.checked_add(n as u64) {
+            Some(count) if count <= p.artifact_size => count,
+            _ => return false,
+        };
+        hash.update(&buffer[..n]);
+    }
+    count == p.artifact_size
+        && hash
+            .finalize()
+            .iter()
+            .map(|v| format!("{v:02x}"))
+            .collect::<String>()
+            == p.artifact_sha256
 }
 
 // Commands and destinations are native-selected; no argument, environment or
@@ -411,6 +479,9 @@ fn plist_is(path: &Path, key: &str, value: &str, exiting: &AtomicBool) -> bool {
 }
 #[cfg(target_os = "macos")]
 fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
+    if !staged_artifact_verified(p) {
+        return Phase::Failed;
+    }
     let Ok(exe) = std::env::current_exe() else {
         return Phase::Failed;
     };
@@ -530,7 +601,7 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
 }
 #[cfg(target_os = "windows")]
 fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
-    if !regular(&p.artifact_path) {
+    if !staged_artifact_verified(p) {
         return Phase::Failed;
     }
     // NSIS can commit files before a nonzero/timeout result. Never claim an old
@@ -567,6 +638,9 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
         return Phase::Failed;
     };
     if !appimage_mount_matches(&mounts, &dir, &image, &exe) {
+        return Phase::Failed;
+    }
+    if !staged_artifact_verified(p) {
         return Phase::Failed;
     }
     let Some(parent) = image.parent() else {
@@ -659,6 +733,9 @@ fn appimage_mount_matches(mounts: &str, dir: &Path, image: &Path, exe: &Path) ->
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     use sha2::{Digest, Sha256};
 
     use super::*;
@@ -879,11 +956,19 @@ mod tests {
         };
         let staged = stage_verified(&p).unwrap();
         assert_eq!(fs::read(&staged.artifact_path).unwrap(), b"verified");
+        assert!(staged_artifact_verified(&staged));
         assert!(stage_verified(&p).is_err());
+        fs::write(&staged.artifact_path, b"tampered").unwrap();
+        assert!(!staged_artifact_verified(&staged));
         let mut bad = p.clone();
         bad.generation = uuid::Uuid::now_v7().to_string();
         bad.artifact_sha256 = "b".repeat(64);
         assert!(stage_verified(&bad).is_err());
+        let native = staged.artifact_path.parent().unwrap();
+        fs::set_permissions(native, fs::Permissions::from_mode(0o777)).unwrap();
+        let mut unsafe_directory = p.clone();
+        unsafe_directory.generation = uuid::Uuid::now_v7().to_string();
+        assert!(stage_verified(&unsafe_directory).is_err());
     }
     #[cfg(target_os = "macos")]
     #[test]

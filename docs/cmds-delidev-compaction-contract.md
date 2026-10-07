@@ -85,10 +85,18 @@ In one authorized transaction, bind the original actor, UUID-v7 request, exact
 session revision, predecessor execution/checkpoint, immutable account/model and
 configuration to one action/job. Competing clients cannot create another owner
 for that boundary. Serialize admission and dispatch with queued input, Stop and
-Archive. Already accepted input wins its race; later input waits behind an
-accepted action. Compaction creates no synthetic DeliDev user input and consumes
-no ordinary queued input. Stop/Archive/revocation preserve the original action and
-independent cleanup obligations rather than manufacturing completion.
+Archive. Already accepted input wins its race; automatic dispatch and later
+queued input wait behind an accepted action. Explicit Resume remains a separate
+authorization and may admit a distinct successor while a compaction job remains
+unresolved. Resume must retain the original `compaction_job_id` until that action
+reaches its terminal boundary. A verified late result settles the original job;
+if the session has advanced, it must not apply that checkpoint or change the
+successor's dispatch, outcome, Archive or recovery state. An unverified result or
+cancellation of a claimed action retains the original action ownership and cannot
+grant a successor checkpoint. Compaction creates no synthetic DeliDev user input
+and consumes no ordinary queued input. Stop/Archive/revocation preserve the
+original action and independent cleanup obligations rather than manufacturing
+completion.
 
 Before any native side effect, recheck live account/provider/configuration and
 budget authority, original Worker/machine/process ownership, and the native

@@ -316,7 +316,9 @@ func queueUnconfirmedSuccessor(tx *store.Tx, sr store.Record, session domain.Ses
 	session.NativeExecutionRootID, session.ActiveExecutionID = input.ExecutionID, input.ExecutionID
 	session.Outcome, session.Dispatch, session.Recovery = domain.ExecutionNotStarted, domain.DispatchClaimed, domain.NoRecovery
 	session.Execution, session.Startup, session.Problem = nil, nil, nil
-	session.ExecutionRecoveryJobID, session.CurrentNativeHistory, session.NextExecutionIntent, session.CompactionJobID = "", "", "", ""
+	// A concurrently claimed manual-compaction job keeps its durable session
+	// reference until that exact native operation reaches a terminal boundary.
+	session.ExecutionRecoveryJobID, session.CurrentNativeHistory, session.NextExecutionIntent = "", "", ""
 	if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 		return store.Record{}, err
 	}

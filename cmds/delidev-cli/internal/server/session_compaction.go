@@ -189,9 +189,12 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 	if err != nil {
 		return store.Record{}, err
 	}
-	if session.CompactionJobID != r.ID || !session.OwnsExecution(input.Assignment) {
+	if session.CompactionJobID != r.ID || input.Assignment.SessionID != sr.ID ||
+		input.Assignment.MachineID != session.MachineID || input.Assignment.Configuration.AgentID != session.AgentID ||
+		session.InitialExecution == nil || input.Assignment.ConfigurationDigest != session.InitialExecution.ConfigurationDigest {
 		return store.Record{}, domain.CompactionUncertain()
 	}
+	currentExecution := session.OwnsExecution(input.Assignment)
 	var output domain.SessionCompactionResult
 	verified := problem == nil && domain.Decode(raw, &output) == nil && output.Validate() == nil && output.ActionID == input.ActionID && output.ExecutionID == input.Assignment.ExecutionID && output.Checkpoint.JobID == r.ID
 	if verified {
@@ -222,7 +225,9 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 	}
 	now := time.Now().UTC()
 	j.FinishedAt = &now
-	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+	if currentExecution {
+		session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+	}
 	if !verified || canceled {
 		j.State, j.Problem, j.Output = domain.JobUncertain, domain.CompactionUncertain(), nil
 		// Cancellation of claimed work retains native ownership even when a
@@ -231,10 +236,11 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 		if verified {
 			j.Output = raw
 		}
-		session.Recovery = domain.NeedsRecovery
+		if currentExecution {
+			session.Recovery = domain.NeedsRecovery
+		}
 	} else {
 		session.CompactionJobID = ""
-		session.Compaction = &output.Checkpoint
 		j.Output = raw
 		j.State = domain.JobSucceeded
 		j.Problem = nil
@@ -242,11 +248,14 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 			j.State = domain.JobFailed
 			j.Problem = domain.Fail(domain.Conflict, "The native compaction command failed.", "Explicit Resume is required before later input; the prior execution outcome is preserved.")
 		}
-		if output.Outcome == domain.CompactionSucceeded && session.Archive == domain.NotArchived && session.Recovery == domain.NoRecovery && input.Dispatch == domain.DispatchReady {
-			session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, input.Intent
-		}
-		if session.Archive == domain.ArchivePending && session.Recovery == domain.NoRecovery {
-			session.Archive = domain.Archived
+		if currentExecution {
+			session.Compaction = &output.Checkpoint
+			if output.Outcome == domain.CompactionSucceeded && session.Archive == domain.NotArchived && session.Recovery == domain.NoRecovery && input.Dispatch == domain.DispatchReady {
+				session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, input.Intent
+			}
+			if session.Archive == domain.ArchivePending && session.Recovery == domain.NoRecovery {
+				session.Archive = domain.Archived
+			}
 		}
 	}
 	if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {

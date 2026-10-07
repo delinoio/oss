@@ -93,8 +93,9 @@ func connectBus(ctx context.Context) (*dbus.Conn, error) {
 		socket.Close()
 		return nil, unavailable()
 	}
-	if peer.Uid != uint32(os.Geteuid()) {
-		domain.ObserveOwnership(domain.OwnershipResource, "")
+	if err := requireLocalBusPeer(peer.Uid, uint32(os.Geteuid())); err != nil {
+		socket.Close()
+		return nil, err
 	}
 	conn, err := dbus.NewConn(socket, dbus.WithContext(ctx))
 	if err != nil {
@@ -110,6 +111,15 @@ func connectBus(ctx context.Context) (*dbus.Conn, error) {
 	}
 	return conn, nil
 }
+
+func requireLocalBusPeer(peerUID, expectedUID uint32) error {
+	if peerUID != expectedUID {
+		domain.ObserveOwnership(domain.OwnershipResource, "")
+		return unavailable()
+	}
+	return nil
+}
+
 func secretServiceError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil

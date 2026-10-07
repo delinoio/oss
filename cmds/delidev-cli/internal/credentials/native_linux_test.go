@@ -39,6 +39,18 @@ func TestSecretServiceSafeErrors(t *testing.T) {
 	wantCode(t, secretServiceError(ctx, dbus.Error{Name: "org.freedesktop.DBus.Error.UnknownObject", Body: []any{"secret"}}), domain.NotFound)
 	wantCode(t, secretServiceError(ctx, errors.New("secret")), domain.Unavailable)
 }
+
+func TestSecretServiceRejectsDifferentUserBusPeer(t *testing.T) {
+	if err := requireLocalBusPeer(uint32(os.Geteuid())+1, uint32(os.Geteuid())); err == nil {
+		t.Fatal("accepted a Secret Service bus owned by another user")
+	} else {
+		wantCode(t, err, domain.Unavailable)
+	}
+	if err := requireLocalBusPeer(uint32(os.Geteuid()), uint32(os.Geteuid())); err != nil {
+		t.Fatalf("rejected the current user's bus: %v", err)
+	}
+}
+
 func TestUnavailableLocalBusNeverFallsBackToDisk(t *testing.T) {
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+t.TempDir()+"/missing-bus")
 	backend := linuxStore{}

@@ -106,7 +106,7 @@ func TestPublicOpenCodeCompactionAtomicReceiptAndFIFO(t *testing.T) {
 	testPublicCompactionAtomicReceiptAndFIFO(t, domain.OpenCode)
 }
 func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harness) {
-	for _, scenario := range []string{"success", "failed-compact-outer-success", "queued-stop", "queued-archive", "claimed-stop", "claimed-archive", "claimed-disconnect", "lost-report", "foreign-result"} {
+	for _, scenario := range []string{"success", "failed-compact-outer-success", "queued-stop", "queued-archive", "claimed-stop", "claimed-archive", "claimed-disconnect", "lost-report", "foreign-result", "explicit-resume"} {
 		if harness != domain.ClaudeCode && scenario == "failed-compact-outer-success" {
 			continue
 		}
@@ -266,6 +266,17 @@ func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harne
 			if harness == domain.OpenCode {
 				result = domain.SessionCompactionResult{Version: 3, Harness: domain.OpenCode, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: result.Checkpoint, OpenCode: &domain.OpenCodeCompactionResult{NativeSessionID: input.Completion.NativeThreadID, SourceNativeInputID: input.Completion.NativeTurnID, UserID: "msg_01960dcbe1fcABCDEFGHIJKLMN", PartID: "prt_01960dcbe1fcABCDEFGHIJKLMN", SummaryID: "msg_01960dcbe1fdABCDEFGHIJKLMN", CompletedEventID: "evt_01960dcbe1fdABCDEFGHIJKLMN", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, Usages: []domain.OpenCodeUsageObservation{}}}
 			}
+			if scenario == "explicit-resume" {
+				_, e = client.ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_RESUME}))
+				if e != nil {
+					t.Fatal("explicit Resume while compaction is claimed", e)
+				}
+				resumed := f.refresh(t)
+				state, err := store.Decode[domain.Session](resumed)
+				if err != nil || state.CompactionJobID != claim.ID || state.ExecutionSelection().ID == prior.ExecutionSelection().ID || state.ActiveExecutionID == "" {
+					t.Fatal("Resume detached the claimed compaction from its session", err)
+				}
+			}
 			if scenario == "foreign-result" {
 				result.Checkpoint.JobID = domain.NewID()
 			}
@@ -289,6 +300,14 @@ func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harne
 			}
 			after := f.refresh(t)
 			state, _ := store.Decode[domain.Session](after)
+			if scenario == "explicit-resume" {
+				jr, err := f.service.Store.Get(ctx, domain.JobKind, claim.ID)
+				saved, decodeErr := store.Decode[domain.Job](jr)
+				if err != nil || decodeErr != nil || saved.State != domain.JobSucceeded || string(saved.Output) != string(output) || state.CompactionJobID != "" || state.ExecutionSelection().ID == prior.ExecutionSelection().ID || state.ActiveExecutionID == "" || state.PendingInputs != 1 || state.Compaction != prior.Compaction {
+					t.Fatal("late compaction result was not durably settled against its original attempt", err, decodeErr, saved.State, saved.Problem, string(saved.Output) == string(output), state.CompactionJobID, state.ExecutionSelection().ID, prior.ExecutionSelection().ID, state.ActiveExecutionID, state.PendingInputs, state.Compaction, prior.Compaction, state.Dispatch, state.Recovery)
+				}
+				return
+			}
 			if state.Outcome != prior.Outcome || state.ExecutionSelection() != prior.ExecutionSelection() || !reflect.DeepEqual(state.Execution, prior.Execution) || state.PendingInputs != 1 {
 				t.Fatal("action changed conversation/queue history")
 			}

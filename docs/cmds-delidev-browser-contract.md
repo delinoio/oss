@@ -177,9 +177,12 @@ root. Shared `tabs.json` metadata remains under the original System profile path
 the development cookie path is separate. Existing cookies are never copied,
 re-encrypted or removed merely by switching builds. The actual initialized CEF
 request-context path must equal the selected mode's exact path. A live
-process shares one context for each profile, including multiple session windows. At most 64 request contexts are retained per
-native process; reopening the desktop releases that runtime capacity without
-deleting profiles.
+process shares one context for each profile, including multiple session windows.
+The runtime context also binds the profile to the exact saved-connection ID,
+server, device and endpoint. A request for the same profile UUID under another
+saved scope fails before it can reuse the cached policy, cookie path or tabs.
+At most 64 request contexts are retained per native process; reopening the
+desktop releases that runtime capacity without deleting profiles.
 Tabs are bounded to 16 and 256 KiB, atomically saved locally with private files;
 cookies, storage, history and browser credentials belong to that context. They
 never enter SQLite, RPC bodies, configuration transfers or Worker workspaces.

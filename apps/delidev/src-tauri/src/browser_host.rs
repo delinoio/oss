@@ -90,6 +90,20 @@ struct RuntimeProfile {
     removing: bool,
     storage_revision: u64,
 }
+
+fn same_profile_scope(a: &Option<SavedConnection>, b: &Option<SavedConnection>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.id == b.id
+                && a.server_id == b.server_id
+                && a.device_id == b.device_id
+                && a.endpoint == b.endpoint
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone)]
 struct View {
     profile: String,
@@ -520,15 +534,9 @@ impl BrowserHost {
                 if profile.removing {
                     return Err(NativeFailure::Stopped);
                 }
-                if profile
-                    .scope
-                    .as_ref()
-                    .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
-                    != scope
-                        .as_ref()
-                        .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
-                {
-                    tracing::warn!(operation_id = %record.id, check = "browser_scope", result = "mismatch", next_action = "continue");
+                if !same_profile_scope(&profile.scope, &scope) {
+                    tracing::warn!(operation_id = %record.id, check = "browser_scope", result = "mismatch", next_action = "reject");
+                    return Err(NativeFailure::InvalidEvidence);
                 }
                 policy = profile
                     .policy
@@ -647,6 +655,17 @@ impl BrowserHost {
         if state.reservations.get(window.label()) != Some(&view_id) {
             return Err(NativeFailure::Stopped);
         }
+        let profile = state
+            .profiles
+            .get(&record.id)
+            .ok_or(NativeFailure::InvalidEvidence)?;
+        if profile.removing {
+            return Err(NativeFailure::Stopped);
+        }
+        if !same_profile_scope(&profile.scope, &scope) {
+            tracing::warn!(operation_id = %record.id, check = "browser_scope", result = "mismatch", next_action = "reject");
+            return Err(NativeFailure::InvalidEvidence);
+        }
         if let Some(view) = state.views.get(window.label()) {
             unmap_view(view)?;
         }
@@ -665,14 +684,9 @@ impl BrowserHost {
             .profiles
             .get_mut(&record.id)
             .ok_or(NativeFailure::InvalidEvidence)?;
-        if p.scope
-            .as_ref()
-            .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
-            != scope
-                .as_ref()
-                .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
-        {
-            tracing::warn!(operation_id = %record.id, check = "browser_scope", result = "mismatch", next_action = "continue");
+        if !same_profile_scope(&p.scope, &scope) {
+            tracing::warn!(operation_id = %record.id, check = "browser_scope", result = "mismatch", next_action = "reject");
+            return Err(NativeFailure::InvalidEvidence);
         }
         if p.removing {
             return Err(NativeFailure::Stopped);
@@ -2164,6 +2178,23 @@ mod tests {
             }),
         }
     }
+
+    fn active_scope(record: &ProfileRecord) -> SavedConnection {
+        SavedConnection {
+            version: 1,
+            revision: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "fixture".into(),
+            endpoint: "https://server.test".into(),
+            server_id: record.data.server_id.clone(),
+            pairing_id: uuid::Uuid::now_v7().to_string(),
+            device_id: record.data.device_id.clone(),
+            state: delidev_desktop::SavedConnectionState::Active,
+            created_at: "2026-09-30T00:00:00Z".into(),
+            removal: None,
+        }
+    }
+
     fn storage_fixture() -> (tempfile::TempDir, Arc<BrowserHost>, ProfileRecord) {
         storage_fixture_with_mode(BrowserStorageMode::System)
     }
@@ -2221,6 +2252,45 @@ mod tests {
         assert_eq!(
             fs::read(original.join("Cookies")).unwrap(),
             b"original cookie fixture"
+        );
+    }
+
+    #[test]
+    fn profile_id_cannot_reuse_runtime_state_from_another_saved_scope() {
+        let (_temp, host, record) = storage_fixture_with_mode(BrowserStorageMode::DevelopmentMock);
+        let first_scope = active_scope(&record);
+        let mut other_scope = first_scope.clone();
+        other_scope.id = uuid::Uuid::now_v7().to_string();
+        other_scope.server_id = uuid::Uuid::now_v7().to_string();
+        other_scope.device_id = uuid::Uuid::now_v7().to_string();
+        other_scope.endpoint = "https://other-server.test".into();
+        let view = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &view).unwrap();
+        host.prepare_open(
+            "fixture",
+            &view,
+            Some(first_scope.clone()),
+            record.clone(),
+            "https://server.test/profile",
+        )
+        .unwrap();
+
+        let result = host.prepare_open(
+            "fixture",
+            &view,
+            Some(other_scope),
+            record.clone(),
+            "https://other-server.test/profile",
+        );
+        assert_eq!(result, Err(NativeFailure::InvalidEvidence));
+        let state = host.state.lock().unwrap();
+        assert_eq!(
+            state.profiles[&record.id].scope.as_ref().unwrap().id,
+            first_scope.id
+        );
+        assert_eq!(
+            state.profiles[&record.id].scope.as_ref().unwrap().endpoint,
+            first_scope.endpoint
         );
     }
 
