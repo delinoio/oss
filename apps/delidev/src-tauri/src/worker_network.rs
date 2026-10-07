@@ -196,6 +196,9 @@ mod tests {
         );
         assert!(validate_input(WorkerNetworkAction::Import, &[1], &"A".repeat(64)).is_err());
         let proof = LocalWorkerProof {
+            paired_endpoint: String::new(),
+            runtime_generation: None,
+            runtime_key: None,
             endpoint: "http://127.0.0.1:46310".into(),
             server_id: uuid::Uuid::now_v7().to_string(),
             machine_id: uuid::Uuid::now_v7().to_string(),

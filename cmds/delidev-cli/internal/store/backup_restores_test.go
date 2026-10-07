@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -349,7 +350,7 @@ func TestBackupRestoreKeepsCurrentRevocationsAndSessionDeletion(t *testing.T) {
 }
 
 func TestBackupRestoreRejectsChangedInspectionRevisionAndOwnership(t *testing.T) {
-	for _, mode := range []string{"digest", "revision", "active", "uncertain", "newer", "foreign", "corrupt", "replaced"} {
+	for _, mode := range []string{"digest", "revision", "active", "uncertain", "cleanup", "newer", "foreign", "corrupt", "replaced"} {
 		t.Run(mode, func(t *testing.T) {
 			s, root, ctx, in, original := restoreFixture(t)
 			source := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
@@ -365,6 +366,14 @@ func TestBackupRestoreRejectsChangedInspectionRevisionAndOwnership(t *testing.T)
 				}
 				_, err := s.Mutate(ctx, domain.NewID(), "owned", nil, func(tx *Tx) (any, error) {
 					return tx.Put(domain.JobKind, domain.NewID(), 0, "", "", domain.Job{Type: domain.ExecuteSessionJob, State: state, Input: []byte(`{}`)})
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				in.ExpectedRevision, _ = s.RestoreRevision(ctx)
+			case "cleanup":
+				_, err := s.Mutate(ctx, domain.NewID(), "fixture.cleanup.pending", nil, func(tx *Tx) (any, error) {
+					return tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.CleanupFailedSubscriptionsJob, State: domain.JobQueued, Input: []byte(`{}`), AcceptedAt: time.Now().UTC()})
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -891,4 +900,97 @@ func TestBackupRestorePreservesSessionPRActivityDeletion(t *testing.T) {
 			t.Fatal("restore resurrected original session-owned state", id, retained, err)
 		}
 	}
+}
+
+// A backup can contain an admitted batch that the live timeline later settled.
+// Restoring that older image must not restore its deletion or receipt authority.
+func TestBackupRestoreQuarantinesHistoricalSubscriptionCleanup(t *testing.T) {
+	s, root, ctx, in, _ := restoreFixture(t)
+	parent, child, account, operation, request := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+	input := struct {
+		Version uint32 `json:"version"`
+	}{1}
+	_, err := s.Mutate(ctx, request, "subscription.cleanup.request", input, func(tx *Tx) (any, error) {
+		now := time.Now().UTC()
+		childInput, _ := json.Marshal(struct{ Account, Operation domain.ID }{account, operation})
+		for _, entry := range []struct {
+			id  domain.ID
+			job domain.Job
+		}{
+			{parent, domain.Job{Type: domain.CleanupFailedSubscriptionsJob, State: domain.JobQueued, Input: json.RawMessage(`{}`), AcceptedAt: now}},
+			{child, domain.Job{Type: domain.CleanupFailedSubscriptionJob, ParentID: parent, State: domain.JobQueued, Input: childInput, AcceptedAt: now}},
+		} {
+			if _, err := tx.PutJob(entry.id, 0, "", "", entry.job); err != nil {
+				return nil, err
+			}
+		}
+		return struct {
+			ID domain.ID `json:"id"`
+		}{parent}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup, err := s.Backup(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := s.InspectBackup(ctx, backup, in.ServerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Backup, in.SHA256 = inspection.Backup, inspection.SHA256
+	_, err = s.Mutate(ctx, domain.NewID(), "fixture.cleanup.settle", nil, func(tx *Tx) (any, error) {
+		now := time.Now().UTC()
+		for _, id := range []domain.ID{parent, child} {
+			row, err := tx.Get(domain.JobKind, id)
+			if err != nil {
+				return nil, err
+			}
+			job, err := Decode[domain.Job](row)
+			if err != nil {
+				return nil, err
+			}
+			job.State, job.FinishedAt = domain.JobSucceeded, &now
+			if _, err := tx.PutJob(id, row.Revision, "", "", job); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.ExpectedRevision, err = s.RestoreRevision(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.RestoreBackup(ctx, domain.NewID(), in); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	reopened, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	for _, id := range []domain.ID{parent, child} {
+		row, err := reopened.Get(ctx, domain.JobKind, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := Decode[domain.Job](row)
+		if err != nil || job.State != domain.JobCanceled || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired {
+			t.Fatal("historical cleanup became executable", job, err)
+		}
+	}
+	pending, err := reopened.FailedSubscriptionCleanupJobs(ctx)
+	if err != nil || len(pending) != 0 {
+		t.Fatal("restored batch regained controller ownership", pending, err)
+	}
+	_, err = reopened.Mutate(ctx, request, "subscription.cleanup.request", input, func(*Tx) (any, error) {
+		t.Fatal("historical admission receipt allowed another batch")
+		return nil, nil
+	})
+	assertCode(t, err, domain.RecoveryRequired)
 }

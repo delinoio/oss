@@ -1,15 +1,37 @@
 # Project: DeliDev
 
-API account protocol selection reserves ProviderInventory capability 7 and its complete profile/filter declarations under issue #964 before implementation. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-protocol-reservations) owns this prerequisite; it adds no runtime or database authority.
+The [OAuth format selection reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
+extend the existing API account format boundary to accepted OAuth profiles through
+ProviderInventory capability 8 and Start/attempt fields 4/7. Establish them on main
+before implementation; preserve original login, credentials, receipts, account
+connections and execution history without a migration.
+
+API account format selection uses the main-first closure in PR #1646. The
+[catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection)
+owns per-key protocol profiles, schema-3 API compatibility and portable version 4;
+legacy account defaults and original connection/execution ownership remain intact.
+The implementation adds no database migration or Worker assignment fields.
+
+Direct execution startup owns System 43 / Worker 23 after PR #1645's main-first
+closure. The [startup contract](cmds-delidev-execution-startup-contract.md) replaces
+manual inspection and numeric execution gates with actual original-process
+initialization, bounded failure metadata and explicit proven no-send retry.
+Account/Worker/history, credentials, revisions and independent cleanup remain
+cross-domain invariants; existing supported feature/platform limits remain and
+no SQLite migration is added.
+
+Historical development-session `start_preparation` observations remain readable
+and preserved under the startup contract, so account deletion can check retained
+references. These observations grant no inspection, execution or retry authority.
 
 Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
 
-Failed-login subscription cleanup reserves System capability 41 and its closed batch/status/result declarations under issue #964. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) and [protocol contract](protos-delidev-v1-contract.md#failed-subscription-cleanup-reservations) require the complete main-first reservation before implementation. This prerequisite grants no cleanup or deletion authority and adds no migration.
+Failed-login subscription cleanup uses System capability 41 after main-first reservation PR #1614. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
 
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative, with the explicit owner startup/presentation amendment in #1137; implementation and real-environment evidence are distinct.
 
-Issue #1137 makes a fresh main desktop launch sufficient to start/reuse a compatible ordinary local runtime and verify the authenticated product connection. Native-service scope admission remains Go-owned; same-process Stop, renderer lifecycle, saved-window authority and independent server/Worker/session ownership stay separate. Normal Quit stops only original app-owned server children, with a 35-second graceful deadline followed by original-child force and observed exit; crash/forced desktop termination preserves running sidecars. Borrowed runtimes and independent Workers remain running. Routine startup/sidebar/tray use product wording; lifecycle, registration and saved-connection controls live in persistent Connection & diagnostics. The [desktop contract](apps-delidev-desktop-contract.md) defines the implementation; record actual platform acceptance and unresolved limits in issue #1137, its pull requests and CI logs/artifacts.
+Issue #1137 makes a fresh main desktop launch sufficient to start its own admitted local runtime and verify the authenticated product connection. Native-service scope admission remains Go-owned; same-process Stop, renderer lifecycle, saved-window authority and independent server/Worker/session ownership stay separate. Each main process owns at most one resident CLI with an OS-assigned random loopback port pinned within that process. Normal Quit, crash and forced termination retire the app-owned CLI/server; graceful Quit retains the 35-second limit and original-child exit proof. External runtimes and independent Workers remain separate. Private generation proof precedes bearer release, while immutable device/pairing/recovery authority and Saved addresses are preserved. Routine startup/sidebar/tray use product wording; lifecycle, registration and saved-connection controls live in persistent Connection & diagnostics. The [desktop contract](apps-delidev-desktop-contract.md) defines the implementation; record actual platform acceptance and unresolved limits in issue #1137, its pull requests and CI logs/artifacts.
 
 Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows ConPTY processes, authenticated create/control/output operations and equivalent CLI commands. The desktop provides a bounded text terminal view. Agent Stop preserves terminals; Archive and storage deletion join their independent exact cleanup gate. The [terminal contract](cmds-delidev-terminals-contract.md) and [validation records in PR #1226](https://github.com/delinoio/oss/pull/1226) distinguish fixture/cross-build validation from native platform, remote Worker and release acceptance; this increment does not complete the remaining issue #964 scope.
 
@@ -57,7 +79,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
-- [Direct execution startup (planned)](cmds-delidev-execution-startup-contract.md)
+- [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
@@ -95,7 +117,7 @@ owns the lifecycle, snapshot-copy deletion integration and remaining database-re
 ## Cross-Domain Invariants
 - Token-first GitHub profile creation uses existing System capability 34 and two always-visible Classic/Fine grained creation shortcuts. Go permits an undeclared owner only for draft form preparation; confirmation, saved-profile forms and repository access retain explicit owner rules. Native opening stays closed, click-driven and guarded by the original Settings visit, with no new allocation or migration. See the [integration contract](cmds-delidev-integrations-contract.md#official-forms-and-local-browser-opening) and [desktop contract](apps-delidev-desktop-contract.md#github-profile-settings).
 
-- Confirmed desktop subscription/API-account configuration deletion closes its task dialog and refreshes the current category once, without a completion screen or cleanup-count read. Pending/uncertain requests retain their exact identities until confirmation or category disposal. Independent native browser cleanup and offline acknowledgments remain authoritative under the desktop, subscription Settings and browser contracts.
+- Confirmed desktop subscription/API-account configuration deletion closes its task dialog and refreshes the current category once, without a completion screen or cleanup-count read. Open tasks retain exact pending/uncertain identities for explicit retry. X/Escape/local Cancel disposes the task scope without hidden-operation UI or category locking; late results cannot continue a client deletion or reach a fresh task. Independent native browser cleanup and offline acknowledgments remain authoritative under the desktop, subscription Settings and browser contracts.
 
 - macOS desktop builds with `debug_assertions` use an explicit development CEF Mock cookie key without signing credentials. System/development CEF paths share metadata, an exclusive native-host lease and durable cleanup of both copies; Go account/PAT/OAuth credentials remain OS-protected. Every other build retains System cookie storage. Follow the [desktop](apps-delidev-desktop-contract.md) and [browser](cmds-delidev-browser-contract.md) contracts; development observations grant no production Keychain or shutdown acceptance.
 

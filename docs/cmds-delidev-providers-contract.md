@@ -1,5 +1,20 @@
 # DeliDev provider inspection
 
+## Inference profiles and inspection profiles
+
+The [REST registry](cmds-delidev-catalog-contract.md#official-rest-profile-registry)
+declares each offered API format separately. The common server resolver first
+selects the account's declared format or original legacy tuple and checks its
+connection-generation pin. The inspector then matches that complete official
+tuple to the fixed canonical catalog/authentication routes already owned here.
+Inference suffixes never become model-list or key-inspection paths. OpenRouter
+Messages and Responses both use `GET /api/v1/key` and `GET /api/v1/models` with
+Bearer and the OpenAI catalog parser; neither sends Messages or Responses during
+validation. Custom URLs remain advisory. Credential state, late-publication
+revision/connection checks, bounded GET inspection, outbound routing and secret
+clearing retain their existing ownership.
+
+
 ## Ownership and scope
 
 The server owns non-inference API checks in `cmds/delidev-cli/internal/providers`, exposed through `AccountService.ValidateAccount` and `account validate --id ID --revision N`. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This inspector implements bounded model-list inspection and credential evidence. Automatic catalog publication and provider presets are integrated through the separate [catalog contract](cmds-delidev-catalog-contract.md). Quota refresh, subscription authentication, API proxy execution and selected-model/harness validation remain required work and must preserve the same explicit authority and secret boundaries.
@@ -8,7 +23,7 @@ Only owner/paired-client RPCs can invoke validation. The key is read from the cu
 
 ## HTTP boundary
 
-Inspection uses only `GET` requests under the saved provider's API base path or the exact documented native/private endpoints below. OpenAI Chat Completions/Responses-compatible providers use `/models`; Anthropic Messages-compatible providers use `/models?limit=1000` and bounded `after_id` pagination. The exact OpenRouter profile uses explicit `limit=500`, numeric `offset` and `output_modalities=all`; it validates `total_count` when present and accepts older count-less responses only through a bounded short-page walk. It never follows response pagination URLs. It sends the configured bearer or `x-api-key` authentication, adds the Anthropic API version where applicable, and fixes `HTTP-Referer: https://deli.dev`. It accepts no caller-supplied headers or destination overrides. Configuration rejects credentials, queries (including an empty query marker), fragments, encoded path components, backslashes and traversal segments in base URLs.
+Inspection uses only `GET` requests under the saved provider's API base path or the exact documented native/private endpoints below. OpenAI Chat Completions/Responses-compatible providers use `/models`; Anthropic Messages-compatible providers use `/models?limit=1000` and bounded `after_id` pagination. The exact OpenRouter profile uses explicit `limit=500`, numeric `offset` and `output_modalities=text`; it validates `total_count` when present and accepts older count-less responses only through a bounded short-page walk. The text-output filter retains models with image/audio inputs and excludes image-, audio- and video-only output models whose token context may be zero. Context-limit validation remains strictly positive; this filtered observation never deletes previously saved models. It never follows response pagination URLs. It sends the configured bearer or `x-api-key` authentication, adds the Anthropic API version where applicable, and fixes `HTTP-Referer: https://deli.dev`. It accepts no caller-supplied headers or destination overrides. Configuration rejects credentials, queries (including an empty query marker), fragments, encoded path components, backslashes and traversal segments in base URLs.
 
 HTTPS verifies the system trust roots and hostname; plaintext is allowed only on explicit loopback. Direct and exact-bypass routing dial literal `localhost` through actual loopback IPs instead of an external resolver. Explicit proxy routing retains the original destination authority. Plaintext loopback provider requests require Direct or an explicit matching bypass and are rejected before connection otherwise; they never expose an account key through a proxy tunnel or silently change routes. Verified HTTPS destinations may use the selected proxy. Requests do not inherit environment proxy settings or cookies. Production inspection now applies the explicit selected server profile through the [outbound networking contract](cmds-delidev-network-contract.md), including catalog and credential checks. Worker selections cannot affect it, and failures never fall back.
 

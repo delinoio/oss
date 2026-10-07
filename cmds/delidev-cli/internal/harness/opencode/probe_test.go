@@ -82,7 +82,7 @@ func init() {
 		switch r.URL.Path {
 		case "/global/health":
 			if mode == "version" {
-				_, _ = io.WriteString(w, `{"healthy":true,"version":"foreign"}`)
+				_, _ = io.WriteString(w, `{"healthy":true,"version":"invalid/version"}`)
 				return
 			}
 			_, _ = fmt.Fprintf(w, `{"healthy":true,"version":%q}`, SupportedVersion)

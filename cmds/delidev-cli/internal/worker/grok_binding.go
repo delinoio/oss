@@ -88,7 +88,7 @@ func newGrokBindingPublisher(p *ExecutionPublisher, journal *grokClaimJournal) (
 	if err != nil {
 		return nil, err
 	}
-	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Continuation != nil || i.Installation.Version != grok.SupportedVersion || state.JobID != p.job || i.ExecutionID != p.execution || state.InstanceID != p.config.Instance || state.ServerID != p.config.Credential.ServerID || state.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Continuation != nil || (i.Version != 4 && i.Installation.Version != grok.SupportedVersion) || state.JobID != p.job || i.ExecutionID != p.execution || state.InstanceID != p.config.Instance || state.ServerID != p.config.Credential.ServerID || state.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
 		return nil, publicationUncertain()
 	}
 	journal.mu.Lock()

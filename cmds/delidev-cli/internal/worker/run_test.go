@@ -114,7 +114,7 @@ func TestCodexTitleExecutableUsesVerifiedConfiguredInstallation(t *testing.T) {
 	for name, mutate := range map[string]func(*domain.Installation){
 		"missing executable":   func(i *domain.Installation) { i.ResolvedPath = "" },
 		"relative executable":  func(i *domain.Installation) { i.ResolvedPath = "codex" },
-		"wrong version":        func(i *domain.Installation) { i.Version = "0.0.0" },
+		"unsafe version":       func(i *domain.Installation) { i.Version = "invalid/version" },
 		"unverified protocol":  func(i *domain.Installation) { i.ProtocolVerified = false },
 		"wrong protocol":       func(i *domain.Installation) { i.Protocol.Protocol = domain.OpenCodeHTTP },
 		"unsupported protocol": func(i *domain.Installation) { i.Protocol.State = domain.ProtocolUnsupported },

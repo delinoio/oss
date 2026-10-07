@@ -1,4 +1,9 @@
 {
+  "account-settings.apiFormat": "API format",
+  "account-settings.chooseApiFormat": "Choose an API format",
+  "account-settings.responsesHelp": "For Codex. This choice applies to this API key.",
+  "account-settings.formatHelp": "This choice applies to this API key. Choose a format compatible with your Agent Worker.",
+  "account-settings.apiFormatUnsupported": "API format selection is unavailable. Wait for the provider check or update the selected server.",
   "account-settings.backToAiApiKeys_2d6214": "Back to AI API Keys",
   "account-settings.aiApiKeys_da1a0f": "AI API Keys",
   "account-settings.entrySavedCredentialConnectionIsSeparate_9ee9e5": "Entry saved. Credential connection is separate from validation and model discovery.",

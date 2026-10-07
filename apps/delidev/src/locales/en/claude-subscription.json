@@ -47,6 +47,7 @@
   "claude-subscription.availability": "Claude sign-in uses the selected Runner Device. Grok sign-in is not available yet.",
   "claude-subscription.refreshRunners": "Refresh Runner Devices",
   "claude-subscription.moreRunners": "Next Runner Device page",
+  "claude-subscription.viewOriginalOperation": "View original operation",
   "claude-subscription.phase": "Native operation phase",
   "claude-subscription.phase1": "Discovery",
   "claude-subscription.phase2": "Version verification",

@@ -1,4 +1,5 @@
 {
+  "agent-worker-wizard.accountApiFormatMismatch": "A selected API key uses a format that does not match this harness. Choose another key or disconnect it and reconfigure its format.",
   "agent-worker-wizard.harnessStep": "Harness",
   "agent-worker-wizard.accountsStep": "Accounts",
   "agent-worker-wizard.modelStep": "Model",

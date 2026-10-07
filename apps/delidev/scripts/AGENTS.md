@@ -1,3 +1,5 @@
+- `test-subscription-cleanup-layout.mjs` validates the synthetic Settings fixture in English/Korean, light/dark and wide/narrow layouts with keyboard activation and focus preservation. Keep outputs outside the checkout and separate browser fixture evidence from native/account acceptance.
+
 # DeliDev scripts ownership
 - Language layout validation uses the synthetic device bridge in `settings-layout.fixture.tsx`, with no native storage or server mutation. `DELIDEV_LAYOUT_LANGUAGE_ONLY=1` selects its bounded English/Korean, Light/Dark/System and narrow/effective-zoom matrix. Verify the real search combobox, System-first English ordering and explicit selection saves; keep host browser evidence separate from packaged CEF acceptance.
 - English/Korean desktop, native and widget presentation follows `docs/apps-delidev-localization-contract.md`. Keep the device Language controller above connection/Settings visits, use bundled typed catalogs, preserve exact machine values, user/native content, draft/focus/query/request lifetimes and original server details, and never replay work on language change. Protect independent `language.json` and App Group preference storage with revision/atomic-write/uncertainty rules. Generate Swift/native resources from reconciled source catalogs during preparation/tests/packaging, and keep real platform/WidgetKit acceptance separate from fixtures and builds.
@@ -6,6 +8,8 @@
 - `qa/` owns the explicit parallel browser QA launcher and host under `docs/apps-delidev-qa-contract.md`. Track preparation, lifecycle and cleanup children, pin every browser control to its original private environment, and keep credentials out of logs/manifests. Delete state only after original product cleanup and process exit; preserve uncertainty and evidence outside the checkout.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+
+- macOS `dev:desktop` must use `tauri.conf.json`'s `bundle.macOS.minimumSystemVersion` as `MACOSX_DEPLOYMENT_TARGET` for both Cargo preparation and Tauri bundling. Do not alternate an ambient/default deployment target with the configured target in the shared Cargo cache.
 
 - Native builds and packaging must run the shared `prepare:assets` preflight before compilation. Hydrate only the exact DeliDev source-icon LFS path, first from the local cache and then by a path-scoped current-ref fetch. Validate the original pointer size/SHA-256 and PNG container, preserve local image/pointer edits, stop on failure or cancellation, and retain credential-free signing environments. A valid PNG needs neither Git nor network access. Follow `docs/apps-delidev-desktop-contract.md`.
 

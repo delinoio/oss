@@ -178,7 +178,9 @@ export function useClaudeSubscriptionLogin(
     [transport],
   );
   const pending = useRef<Pending | undefined>(undefined),
-    [view, setView] = useState<View>();
+    [view, setView] = useState<View>(),
+    [hidden, setHidden] = useState(false),
+    approvalInput = useRef<HTMLInputElement>(null);
   const [machinePage, setMachinePage] = useState("");
   const live = (p: Pending) =>
     pending.current === p && !p.disposed && !opening?.disposed;
@@ -196,10 +198,24 @@ export function useClaudeSubscriptionLogin(
       );
   };
   const leave = () => {
+    if (approvalInput.current) approvalInput.current.value = "";
     if (pending.current) dispose(pending.current);
     pending.current = undefined;
     setView(undefined);
+    setHidden(false);
     changed();
+  };
+  const hide = () => {
+    if (approvalInput.current) approvalInput.current.value = "";
+    const p = pending.current;
+    if (!p || (!p.account && !p.operation && !p.busy)) {
+      leave();
+      return;
+    }
+    setHidden(true);
+  };
+  const show = () => {
+    if (pending.current && live(pending.current)) setHidden(false);
   };
   useEffect(
     () => () => {
@@ -212,6 +228,7 @@ export function useClaudeSubscriptionLogin(
       if (pending.current) dispose(pending.current);
       pending.current = undefined;
       setView(undefined);
+      setHidden(false);
     }
   }, [active]);
   const machines = useQuery(
@@ -680,9 +697,10 @@ export function useClaudeSubscriptionLogin(
     );
   };
   const p = pending.current;
-  const body = view ? (
+  const body = view && !hidden ? (
     <ClaudeSubscriptionOnboarding
       view={view}
+      setApprovalInput={(input) => { approvalInput.current = input; }}
       runners={runnerResources}
       loading={machines.isFetching}
       readFailed={Boolean(machines.error)}
@@ -714,6 +732,7 @@ export function useClaudeSubscriptionLogin(
       reopen={reopen}
       submit={submit}
       save={save}
+      hide={hide}
       leave={leave}
       retry={
         p?.retry
@@ -736,12 +755,16 @@ export function useClaudeSubscriptionLogin(
     body,
     workflow: Boolean(view),
     retained: Boolean(p && (p.busy || p.account || p.operation || p.retry)),
+    hidden,
     available: Boolean(native),
+    hide,
+    show,
     leave,
   };
 }
 interface OnboardingProps {
   view: View;
+  setApprovalInput: (input: HTMLInputElement | null) => void;
   runners: Resource[];
   loading: boolean;
   readFailed: boolean;
@@ -756,13 +779,14 @@ interface OnboardingProps {
   reopen: () => void;
   submit: (code: string) => void;
   save: () => void;
+  hide: () => void;
   leave: () => void;
   retry?: () => void;
 }
 function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
   useLocale();
   const visible = useSettingsTaskVisible(),
-    back = useCloseSettingsTask(p.leave),
+    back = useCloseSettingsTask(p.hide),
     id = useId(),
     code = useRef<HTMLInputElement>(null),
     name = useRef<HTMLInputElement>(null);
@@ -956,7 +980,7 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                   </label>
                   <input
                     id={`${id}-code`}
-                    ref={code}
+                    ref={(input) => { code.current = input; p.setApprovalInput(input); }}
                     type="password"
                     autoComplete="off"
                     spellCheck={false}

@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SubscriptionServiceCleanupFailedSubscriptionsProcedure is the fully-qualified name of the
+	// SubscriptionService's CleanupFailedSubscriptions RPC.
+	SubscriptionServiceCleanupFailedSubscriptionsProcedure = "/delidev.v1.SubscriptionService/CleanupFailedSubscriptions"
+	// SubscriptionServiceGetFailedSubscriptionCleanupProcedure is the fully-qualified name of the
+	// SubscriptionService's GetFailedSubscriptionCleanup RPC.
+	SubscriptionServiceGetFailedSubscriptionCleanupProcedure = "/delidev.v1.SubscriptionService/GetFailedSubscriptionCleanup"
 	// SubscriptionServiceRequestSubscriptionObservationProcedure is the fully-qualified name of the
 	// SubscriptionService's RequestSubscriptionObservation RPC.
 	SubscriptionServiceRequestSubscriptionObservationProcedure = "/delidev.v1.SubscriptionService/RequestSubscriptionObservation"
@@ -82,6 +88,8 @@ const (
 
 // SubscriptionServiceClient is a client for the delidev.v1.SubscriptionService service.
 type SubscriptionServiceClient interface {
+	CleanupFailedSubscriptions(context.Context, *connect.Request[v1.CleanupFailedSubscriptionsRequest]) (*connect.Response[v1.CleanupFailedSubscriptionsResponse], error)
+	GetFailedSubscriptionCleanup(context.Context, *connect.Request[v1.GetFailedSubscriptionCleanupRequest]) (*connect.Response[v1.GetFailedSubscriptionCleanupResponse], error)
 	RequestSubscriptionObservation(context.Context, *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error)
 	RefreshAllSubscriptionQuotas(context.Context, *connect.Request[v1.RefreshAllSubscriptionQuotasRequest]) (*connect.Response[v1.RefreshAllSubscriptionQuotasResponse], error)
 	ReconcileSubscriptionCredit(context.Context, *connect.Request[v1.ReconcileSubscriptionCreditRequest]) (*connect.Response[v1.ReconcileSubscriptionCreditResponse], error)
@@ -110,6 +118,18 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 	baseURL = strings.TrimRight(baseURL, "/")
 	subscriptionServiceMethods := v1.File_delidev_v1_subscription_proto.Services().ByName("SubscriptionService").Methods()
 	return &subscriptionServiceClient{
+		cleanupFailedSubscriptions: connect.NewClient[v1.CleanupFailedSubscriptionsRequest, v1.CleanupFailedSubscriptionsResponse](
+			httpClient,
+			baseURL+SubscriptionServiceCleanupFailedSubscriptionsProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("CleanupFailedSubscriptions")),
+			connect.WithClientOptions(opts...),
+		),
+		getFailedSubscriptionCleanup: connect.NewClient[v1.GetFailedSubscriptionCleanupRequest, v1.GetFailedSubscriptionCleanupResponse](
+			httpClient,
+			baseURL+SubscriptionServiceGetFailedSubscriptionCleanupProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("GetFailedSubscriptionCleanup")),
+			connect.WithClientOptions(opts...),
+		),
 		requestSubscriptionObservation: connect.NewClient[v1.RequestSubscriptionObservationRequest, v1.RequestSubscriptionObservationResponse](
 			httpClient,
 			baseURL+SubscriptionServiceRequestSubscriptionObservationProcedure,
@@ -205,6 +225,8 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 
 // subscriptionServiceClient implements SubscriptionServiceClient.
 type subscriptionServiceClient struct {
+	cleanupFailedSubscriptions     *connect.Client[v1.CleanupFailedSubscriptionsRequest, v1.CleanupFailedSubscriptionsResponse]
+	getFailedSubscriptionCleanup   *connect.Client[v1.GetFailedSubscriptionCleanupRequest, v1.GetFailedSubscriptionCleanupResponse]
 	requestSubscriptionObservation *connect.Client[v1.RequestSubscriptionObservationRequest, v1.RequestSubscriptionObservationResponse]
 	refreshAllSubscriptionQuotas   *connect.Client[v1.RefreshAllSubscriptionQuotasRequest, v1.RefreshAllSubscriptionQuotasResponse]
 	reconcileSubscriptionCredit    *connect.Client[v1.ReconcileSubscriptionCreditRequest, v1.ReconcileSubscriptionCreditResponse]
@@ -220,6 +242,16 @@ type subscriptionServiceClient struct {
 	takeSubscription               *connect.Client[v1.TakeSubscriptionRequest, v1.TakeSubscriptionResponse]
 	publishSubscriptionProgress    *connect.Client[v1.PublishSubscriptionProgressRequest, v1.PublishSubscriptionProgressResponse]
 	finishSubscription             *connect.Client[v1.FinishSubscriptionRequest, v1.FinishSubscriptionResponse]
+}
+
+// CleanupFailedSubscriptions calls delidev.v1.SubscriptionService.CleanupFailedSubscriptions.
+func (c *subscriptionServiceClient) CleanupFailedSubscriptions(ctx context.Context, req *connect.Request[v1.CleanupFailedSubscriptionsRequest]) (*connect.Response[v1.CleanupFailedSubscriptionsResponse], error) {
+	return c.cleanupFailedSubscriptions.CallUnary(ctx, req)
+}
+
+// GetFailedSubscriptionCleanup calls delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup.
+func (c *subscriptionServiceClient) GetFailedSubscriptionCleanup(ctx context.Context, req *connect.Request[v1.GetFailedSubscriptionCleanupRequest]) (*connect.Response[v1.GetFailedSubscriptionCleanupResponse], error) {
+	return c.getFailedSubscriptionCleanup.CallUnary(ctx, req)
 }
 
 // RequestSubscriptionObservation calls
@@ -301,6 +333,8 @@ func (c *subscriptionServiceClient) FinishSubscription(ctx context.Context, req 
 
 // SubscriptionServiceHandler is an implementation of the delidev.v1.SubscriptionService service.
 type SubscriptionServiceHandler interface {
+	CleanupFailedSubscriptions(context.Context, *connect.Request[v1.CleanupFailedSubscriptionsRequest]) (*connect.Response[v1.CleanupFailedSubscriptionsResponse], error)
+	GetFailedSubscriptionCleanup(context.Context, *connect.Request[v1.GetFailedSubscriptionCleanupRequest]) (*connect.Response[v1.GetFailedSubscriptionCleanupResponse], error)
 	RequestSubscriptionObservation(context.Context, *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error)
 	RefreshAllSubscriptionQuotas(context.Context, *connect.Request[v1.RefreshAllSubscriptionQuotasRequest]) (*connect.Response[v1.RefreshAllSubscriptionQuotasResponse], error)
 	ReconcileSubscriptionCredit(context.Context, *connect.Request[v1.ReconcileSubscriptionCreditRequest]) (*connect.Response[v1.ReconcileSubscriptionCreditResponse], error)
@@ -325,6 +359,18 @@ type SubscriptionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	subscriptionServiceMethods := v1.File_delidev_v1_subscription_proto.Services().ByName("SubscriptionService").Methods()
+	subscriptionServiceCleanupFailedSubscriptionsHandler := connect.NewUnaryHandler(
+		SubscriptionServiceCleanupFailedSubscriptionsProcedure,
+		svc.CleanupFailedSubscriptions,
+		connect.WithSchema(subscriptionServiceMethods.ByName("CleanupFailedSubscriptions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	subscriptionServiceGetFailedSubscriptionCleanupHandler := connect.NewUnaryHandler(
+		SubscriptionServiceGetFailedSubscriptionCleanupProcedure,
+		svc.GetFailedSubscriptionCleanup,
+		connect.WithSchema(subscriptionServiceMethods.ByName("GetFailedSubscriptionCleanup")),
+		connect.WithHandlerOptions(opts...),
+	)
 	subscriptionServiceRequestSubscriptionObservationHandler := connect.NewUnaryHandler(
 		SubscriptionServiceRequestSubscriptionObservationProcedure,
 		svc.RequestSubscriptionObservation,
@@ -417,6 +463,10 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 	)
 	return "/delidev.v1.SubscriptionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SubscriptionServiceCleanupFailedSubscriptionsProcedure:
+			subscriptionServiceCleanupFailedSubscriptionsHandler.ServeHTTP(w, r)
+		case SubscriptionServiceGetFailedSubscriptionCleanupProcedure:
+			subscriptionServiceGetFailedSubscriptionCleanupHandler.ServeHTTP(w, r)
 		case SubscriptionServiceRequestSubscriptionObservationProcedure:
 			subscriptionServiceRequestSubscriptionObservationHandler.ServeHTTP(w, r)
 		case SubscriptionServiceRefreshAllSubscriptionQuotasProcedure:
@@ -455,6 +505,14 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 
 // UnimplementedSubscriptionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSubscriptionServiceHandler struct{}
+
+func (UnimplementedSubscriptionServiceHandler) CleanupFailedSubscriptions(context.Context, *connect.Request[v1.CleanupFailedSubscriptionsRequest]) (*connect.Response[v1.CleanupFailedSubscriptionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.CleanupFailedSubscriptions is not implemented"))
+}
+
+func (UnimplementedSubscriptionServiceHandler) GetFailedSubscriptionCleanup(context.Context, *connect.Request[v1.GetFailedSubscriptionCleanupRequest]) (*connect.Response[v1.GetFailedSubscriptionCleanupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup is not implemented"))
+}
 
 func (UnimplementedSubscriptionServiceHandler) RequestSubscriptionObservation(context.Context, *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.RequestSubscriptionObservation is not implemented"))

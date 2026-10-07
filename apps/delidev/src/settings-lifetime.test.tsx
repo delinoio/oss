@@ -21,7 +21,7 @@ function deferred() {
 function fixture() {
   const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const resources = [create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Sibling project" }) })];
-  const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Provider", enabled: true }) });
+  const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Provider", enabled: true, protocol: "openai-responses", authentication: "keyless", endpoint: "http://127.0.0.1:1234/v1" }) });
   const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Model", native_id: "fixture-native", provider_id: provider.id }) });
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Fixture account", type: "api", provider_id: provider.id, enabled: true, health: "unverified", connection: { id: newRequestId(), authentication: "keyless" } }) });
   resources.push(provider, model, account);

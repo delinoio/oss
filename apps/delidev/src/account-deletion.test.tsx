@@ -120,39 +120,42 @@ it.each([
   expect(value.remove).not.toHaveBeenCalled();
 });
 
-it.each(["X", "Escape"] as const)("retains deferred logout and its exact explicit retry across %s dismissal", async (method) => {
+it.each(["X", "Escape"] as const)("disposes deferred logout after %s without starting follow-up deletion", async method => {
   const value = fixture(); let release!: () => void;
-  value.logout.mockImplementationOnce(async (request) => {
+  value.logout.mockImplementationOnce(async request => {
     value.accept(request);
     await new Promise<void>(resolve => { release = resolve; });
     throw new ConnectError("lost logout acknowledgment", Code.Unavailable);
   });
-  value.logout.mockImplementationOnce(async request => ({ operationId: request.mutation!.requestId, account: value.current }));
   await openSettingsDeletion(value);
   fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
   await waitFor(() => expect(value.logout).toHaveBeenCalledTimes(1));
-  const original = value.logout.mock.calls[0][0];
   dismissTask(method);
-  expect(screen.getByText("Delete configuration: The original operation is in progress.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
-  expect(screen.getByText("Logging out and cleaning up credentials...")).toBeTruthy();
-  expect(value.logout).toHaveBeenCalledTimes(1);
-  dismissTask(method);
+  const destination = screen.getByRole("button", { name: "Reopen fixture" }); destination.focus();
   await act(async () => release());
-  expect(await screen.findByText("Delete configuration: The original result is unconfirmed.")).toBeTruthy();
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(value.logout).toHaveBeenCalledTimes(1);
   value.complete();
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
-  fireEvent.click(screen.getByRole("button", { name: "Retry original logout request" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await tick();
+  expect(value.logout).toHaveBeenCalledTimes(1);
+  expect(value.remove).not.toHaveBeenCalled();
+  expect(value.progress).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
-  expect(value.logout.mock.calls[1][0]).toEqual(original);
-  expect(value.remove).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("button", { name: "Retry original logout request" })).toBeNull();
+  expect(globalThis.document.activeElement).toBe(destination);
+  // A new explicit deletion observes the cleared account, without replaying logout.
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${alias}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+  expect(value.remove).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  // The category snapshot still has the original revision. Preserve the stale
+  // confirmation guard and explicitly confirm the newly read server state.
+  fireEvent.click(await screen.findByRole("button", { name: "Refresh account for confirmation" }));
+  fireEvent.click(await screen.findByRole("button", { name: confirmLabel }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1));
+  expect(value.logout).toHaveBeenCalledTimes(1);
   expect(value.remove.mock.calls[0][0].mutation!.expectedRevision).toBe(value.current.revision);
 });
 
-it.each(["X", "Escape"] as const)("retains an accepted deletion after response loss and %s dismissal", async (method) => {
+it.each(["X", "Escape"] as const)("discards an uncertain deletion after %s and requires fresh confirmation", async method => {
   const value = fixture(false); let release!: () => void;
   value.remove.mockImplementationOnce(async () => {
     await new Promise<void>(resolve => { release = resolve; });
@@ -164,20 +167,19 @@ it.each(["X", "Escape"] as const)("retains an accepted deletion after response l
   const original = value.remove.mock.calls[0][0];
   dismissTask(method);
   await act(async () => release());
-  expect(await screen.findByText("Delete configuration: The original result is unconfirmed.")).toBeTruthy();
-  expect(value.remove).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
-  dismissTask(method);
-  expect(value.remove).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
-  fireEvent.click(screen.getByRole("button", { name: "Retry the same deletion" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
-  expect(value.remove.mock.calls[1][0]).toEqual(original);
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${alias}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+  expect(screen.queryByRole("button", { name: "Retry the same deletion" })).toBeNull();
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(2));
+  expect(value.remove.mock.calls[1][0].mutation!.requestId).not.toBe(original.mutation!.requestId);
   expect(value.logout).not.toHaveBeenCalled();
 });
 
-it.each(["X", "Escape"] as const)("completes hidden deletion after %s without cleanup reads or taking focus", async method => {
+it.each(["X", "Escape"] as const)("ignores late deletion acknowledgment after %s without cleanup reads or taking focus", async method => {
   const value = fixture(false); let release!: () => void;
   value.remove.mockImplementationOnce(async request => {
     await new Promise<void>(resolve => { release = resolve; });

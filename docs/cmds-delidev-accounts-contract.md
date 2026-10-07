@@ -1,5 +1,41 @@
 # DeliDev account lifecycle
 
+## OAuth format selection extension
+
+The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
+own the main-first capability 8 and Start/attempt format fields. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. Reservations
+alone activate no support and add no database migration.
+
+## Per-account API formats
+
+API accounts may declare the closed `api_protocol` selection under the
+[catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection).
+Explicit selections use resource schema 3; legacy accounts retain their original
+provider tuple. Connect stores the selected protocol/URL/authentication in the
+immutable connection generation. Validation, discovery and execution resolve
+that same tuple. Disconnect must finish protected cleanup before a format edit;
+reconnection requires explicit key input and validation. An account cannot change
+between keyless and key-required authentication. Referenced profiles, including
+legacy defaults and disconnected accounts, cannot be removed or replaced.
+
+`account list --api-protocol openai-responses|openai-chat|anthropic-messages`
+requires ProviderInventory capability 7 and composes with API/provider filters
+before pagination. Unknown values and subscription selectors reject the request;
+snapshot/event APIs retain their existing shape. Desktop preference patches may
+add or replace the validated `api_protocol` token while preserving all protected
+JSON tokens and uint64 values exactly. Clearing explicit format identity is
+unsupported. Format edits preserve model/Usage/session identity and grant no
+inference, native execution or OAuth authority.
+
+
+A disconnected SQL record alone does not prove cleanup: a failed native Connect
+may retain protected staging intents. Format-change admission holds the account
+gate, checks the original revision and credential class, then verifies no remaining
+native references outside SQLite before publication. Failed enumeration rejects
+the edit. Exact accepted receipt replays do not reopen the vault. Keyless proof
+skips native enumeration and cannot be relabeled as credential-owning authority.
+
 OpenRouter OAuth uses the dedicated owner/client Start/Complete/Cancel/Status lifecycle in the [OAuth contract](cmds-delidev-account-oauth-contract.md). Durable completion receipts represent once-only dispatch, never retry authority. Exact original local recovery reads only its reserved protected reference. Account creation reuses configuration validation; final connection reuses the same locked transaction helper as manual Connect and atomically commits the private connected outcome. Defaults are OpenRouter/api/enabled, automatic selection allowed and recovery notifications enabled, preserving the approved API-creation default rather than changing existing accounts or subscription defaults. New connections remain unverified until explicit validation/discovery.
 
 ## Ownership and implemented scope
@@ -8,7 +44,7 @@ The server owns account state and credentials under [issue #964](cmds-delidev-re
 
 Account aliases/provider associations and display/routing preferences remain configuration. Health, connection generation, validation/catalog observations, quota observations and pending removal are server-owned. General configuration writes must preserve those fields exactly; new accounts start disconnected. An account's provider/type cannot be relabeled through configuration, and a referenced provider's authentication/authority cannot be changed in place. Credentials never enter configuration documents.
 
-Desktop edits of an existing Account patch only the top-level `alias`, `enabled`, `exclude_automatic` and `recovery_notifications` JSON tokens in the original resource bytes. General preferences, quota notifications and post-login naming share the bounded `account-preferences.ts` scanner. It validates JSON syntax and duplicate fields without converting protected numeric tokens to JavaScript Number values. All other tokens, including uint64 lease revisions above 2^53 and at the uint64 maximum, remain exact. Invalid or overflowing protected numbers are never rounded or repaired; Go retains numeric schema validation and exact protected-observation comparison. Uncertain replay retains the original UUID, protobuf revision and complete resource bytes. Stale revisions and unauthorized or protected-field changes remain rejected without changing account state.
+Desktop edits of an existing Account patch only the top-level `alias`, `enabled`, `exclude_automatic`, `recovery_notifications` and validated optional `api_protocol` JSON tokens in the original resource bytes. General preferences, quota notifications and post-login naming share the bounded `account-preferences.ts` scanner. It validates JSON syntax and duplicate fields without converting protected numeric tokens to JavaScript Number values. All other tokens, including uint64 lease revisions above 2^53 and at the uint64 maximum, remain exact. Invalid or overflowing protected numbers are never rounded or repaired; Go retains numeric schema validation and exact protected-observation comparison. Uncertain replay retains the original UUID, protobuf revision and complete resource bytes. Stale revisions and unauthorized or protected-field changes remain rejected without changing account state.
 
 ## CLI and RPC
 
@@ -96,3 +132,7 @@ AI API Keys includes keyed API entries and keyless local connections over the ex
 ## Independent subscription identities
 
 Issue #1235 uses the closed service-native account/model contract in [managed subscriptions](cmds-delidev-subscription-contract.md). `SaveConfiguration` requires schema 2 for subscription accounts/native models and schema 1 for API configuration, rejects mixed identity families and preserves exact request/revision receipts. System capability `SUBSCRIPTION_SERVICE_ACCOUNTS_V1` (17) negotiates this independent support. Metadata-only saves remain disconnected. CLI JSON configuration infers the matching document schema; generated Go/TypeScript descriptors expose the same service enum for new usage, pricing and diagnostic attribution. The CLI result envelope itself remains version 1.
+
+## Failed initial subscription deletion
+
+The [subscription batch contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) admits only failed initial ChatGPT server logins. Ordinary disconnected accounts remain outside it. Batch and public configuration deletion share `checkAccountDeletionLocked` and `deleteConfigurationTx`, retaining original vault intent checks, exact revision, complete configuration/history references, schedule updates, tombstones and browser obligations. Confirmed batch deletion records its per-account outcome and parent counts in the same deletion receipt transaction. Original actor revocation or account/login changes preserve the account; cleanup never substitutes server bookkeeping authority for the requester's deletion authority.

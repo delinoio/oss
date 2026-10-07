@@ -3,6 +3,7 @@ package store
 
 import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"time"
 )
 
@@ -58,20 +59,6 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 			if !provider.EnabledValue() {
 				source.Problem = domain.Fail(domain.ProviderDisabled, "The selected API provider is off.", "Enable this provider before starting another turn.")
 			}
-			// Configuration declarations do not establish native readiness. A known
-			// protocol mismatch must still block before any paid source can be selected.
-			if len(agent.Routes) > 0 {
-				protocol := domain.OpenAIResponses
-				switch agent.Harness {
-				case domain.ClaudeCode:
-					protocol = domain.AnthropicMessages
-				case domain.OpenCode, domain.GrokBuild:
-					protocol = domain.OpenAIChat
-				}
-				if provider.Protocol != protocol {
-					source.Problem = domain.Fail(domain.Unsupported, "The account source protocol does not match the harness.", "Configure an explicitly compatible provider; Codex requires Responses. Existing connections are never changed automatically.")
-				}
-			}
 		}
 		for _, link := range route.Accounts {
 			_, account, err := decodeEntity[domain.Account](t, domain.AccountKind, link.ID)
@@ -82,6 +69,14 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 				return result, err
 			}
 			source.Accounts[link.ID] = account
+			selected := provider
+			if account.Type == domain.APIAccount {
+				selected, err = providers.ResolveAccountProfile(provider, account)
+				if err != nil || !providers.HarnessMatches(agent.Harness, selected.Protocol) {
+					source.Blocked[link.ID] = domain.IncompatibleAccount
+					continue
+				}
+			}
 			if len(agent.Routes) > 0 {
 				blocked := false
 				if account.Type == domain.SubscriptionAccount {
@@ -91,8 +86,8 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 					validation, connection := account.Validation, account.Connection
 					blocked = validation == nil || connection == nil
 					if !blocked {
-						blocked = validation.ConnectionID != connection.ID || validation.State != domain.Observed || validation.Problem != nil || validation.ObservedAt.IsZero() || validation.ObservedAt.Before(connection.ConnectedAt) || validation.ObservedAt.After(t.now.Add(time.Second)) || connection.Authentication != provider.Authentication ||
-							validation.Authentication != domain.CredentialAccepted && validation.Authentication != domain.KeylessEndpoint || (provider.Authentication == domain.KeylessAuth) != (validation.Authentication == domain.KeylessEndpoint)
+						blocked = validation.ConnectionID != connection.ID || validation.State != domain.Observed || validation.Problem != nil || validation.ObservedAt.IsZero() || validation.ObservedAt.Before(connection.ConnectedAt) || validation.ObservedAt.After(t.now.Add(time.Second)) || connection.Authentication != selected.Authentication ||
+							validation.Authentication != domain.CredentialAccepted && validation.Authentication != domain.KeylessEndpoint || (selected.Authentication == domain.KeylessAuth) != (validation.Authentication == domain.KeylessEndpoint)
 					}
 				}
 				if blocked {

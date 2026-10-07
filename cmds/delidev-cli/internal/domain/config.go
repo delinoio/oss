@@ -399,6 +399,10 @@ func (p APIProtocol) Valid() bool {
 	return p == OpenAIResponses || p == OpenAIChat || p == AnthropicMessages || p == NativeSubscription
 }
 
+func (p APIProtocol) API() bool {
+	return p == OpenAIResponses || p == OpenAIChat || p == AnthropicMessages
+}
+
 type Authentication string
 
 const (
@@ -409,14 +413,34 @@ const (
 )
 
 type Provider struct {
-	Name                string            `json:"name"`
-	Endpoint            string            `json:"endpoint"`
-	Protocol            APIProtocol       `json:"protocol"`
-	Authentication      Authentication    `json:"authentication"`
-	Discovery           bool              `json:"discovery"`
-	Enabled             *bool             `json:"enabled,omitempty"`
-	PresetID            *ProviderPresetID `json:"preset_id,omitempty"`
-	SubscriptionHarness *Harness          `json:"subscription_harness,omitempty"`
+	Name                string              `json:"name"`
+	Endpoint            string              `json:"endpoint"`
+	Protocol            APIProtocol         `json:"protocol"`
+	Authentication      Authentication      `json:"authentication"`
+	Discovery           bool                `json:"discovery"`
+	Enabled             *bool               `json:"enabled,omitempty"`
+	PresetID            *ProviderPresetID   `json:"preset_id,omitempty"`
+	SubscriptionHarness *Harness            `json:"subscription_harness,omitempty"`
+	APIFormats          []ProviderAPIFormat `json:"api_formats,omitempty"`
+}
+
+// ProviderAPIFormat is a server-owned connection tuple. The legacy provider
+// tuple remains independent so existing accounts retain their original format.
+type ProviderAPIFormat struct {
+	Protocol       APIProtocol    `json:"protocol"`
+	Endpoint       string         `json:"endpoint"`
+	Authentication Authentication `json:"authentication"`
+}
+
+func (f ProviderAPIFormat) Validate() error {
+	if !f.Protocol.API() || (f.Authentication != BearerAuth && f.Authentication != APIKeyAuth && f.Authentication != KeylessAuth) {
+		return Fail(InvalidArgument, "Unsupported API format profile.", "Select Responses, Chat Completions or Messages and its API authentication.")
+	}
+	return ValidateEndpoint(f.Endpoint, f.Authentication == KeylessAuth)
+}
+
+func (p Provider) LegacyAPIFormat() ProviderAPIFormat {
+	return ProviderAPIFormat{Protocol: p.Protocol, Endpoint: p.Endpoint, Authentication: p.Authentication}
 }
 
 // EnabledValue keeps pre-activation provider documents available by default.
@@ -425,6 +449,19 @@ func (p Provider) EnabledValue() bool { return p.Enabled == nil || *p.Enabled }
 func (p *Provider) SetEnabled(enabled bool) { p.Enabled = &enabled }
 
 func (p Provider) Validate() error {
+	if p.APIFormats != nil && len(p.APIFormats) == 0 || len(p.APIFormats) > 3 {
+		return Fail(InvalidArgument, "Too many API format profiles.", "Configure each of the three supported API formats once.")
+	}
+	seen := map[APIProtocol]bool{}
+	for _, profile := range p.APIFormats {
+		if err := profile.Validate(); err != nil {
+			return err
+		}
+		if seen[profile.Protocol] {
+			return Fail(InvalidArgument, "Duplicate API format profile.", "Configure each API format once.")
+		}
+		seen[profile.Protocol] = true
+	}
 	if p.SubscriptionHarness != nil && (p.Protocol != NativeSubscription || *p.SubscriptionHarness != Codex) {
 		return Fail(InvalidArgument, "Unsupported managed subscription harness.", "Use codex only on a native subscription provider.")
 	}
@@ -438,7 +475,7 @@ func (p Provider) Validate() error {
 		return Fail(InvalidArgument, "Unknown managed provider preset.", "Use one of the supported API provider preset identifiers.")
 	}
 	if p.Protocol == NativeSubscription {
-		if p.Authentication != SubscriptionAuth || p.Endpoint != "" || p.PresetID != nil {
+		if p.Authentication != SubscriptionAuth || p.Endpoint != "" || p.PresetID != nil || len(p.APIFormats) != 0 {
 			return Fail(InvalidArgument, "Native subscription providers cannot configure an API endpoint.", "Use an isolated official account login.")
 		}
 		return nil
@@ -590,9 +627,10 @@ type QuotaWindow struct {
 	State           ObservationState `json:"state"`
 }
 type AccountConnection struct {
-	ID             ID             `json:"id"`
-	Authentication Authentication `json:"authentication"`
-	ConnectedAt    time.Time      `json:"connected_at"`
+	ID             ID                 `json:"id"`
+	Authentication Authentication     `json:"authentication"`
+	ConnectedAt    time.Time          `json:"connected_at"`
+	APIFormat      *ProviderAPIFormat `json:"api_format,omitempty"`
 }
 
 // Removal is independent of health: disconnected immediately blocks execution,
@@ -606,6 +644,7 @@ type Account struct {
 	ProviderID            ID                  `json:"provider_id,omitempty"`
 	SubscriptionService   SubscriptionService `json:"subscription_service,omitempty"`
 	Type                  AccountType         `json:"type"`
+	APIProtocol           APIProtocol         `json:"api_protocol,omitempty"`
 	Enabled               bool                `json:"enabled"`
 	ExcludeAutomatic      bool                `json:"exclude_automatic"`
 	RecoveryNotifications bool                `json:"recovery_notifications"`
@@ -620,6 +659,9 @@ type Account struct {
 }
 
 func (a Account) Validate() error {
+	if a.APIProtocol != "" && (a.Type != APIAccount || !a.APIProtocol.API()) {
+		return Fail(InvalidArgument, "Invalid account API format.", "Select one supported API format for an API account.")
+	}
 	if a.Subscription != nil {
 		if err := a.Subscription.Validate(a); err != nil {
 			return err
@@ -644,6 +686,14 @@ func (a Account) Validate() error {
 		return Fail(InvalidArgument, "Unknown account health.", "Refresh account health through the server.")
 	}
 	if a.Connection != nil {
+		if f := a.Connection.APIFormat; f != nil {
+			if err := f.Validate(); err != nil {
+				return err
+			}
+			if a.Type != APIAccount || a.Connection.Authentication != f.Authentication || (a.APIProtocol != "" && a.APIProtocol != f.Protocol) {
+				return Fail(InvalidArgument, "The connection API format does not match its account.", "Disconnect and finish credential cleanup before changing the format.")
+			}
+		}
 		if err := a.Connection.ID.Validate(); err != nil {
 			return err
 		}
@@ -753,7 +803,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != NativeClaudeSubscriptionsV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

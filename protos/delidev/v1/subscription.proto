@@ -31,6 +31,8 @@ enum SubscriptionLoginState {
 }
 
 service SubscriptionService {
+  rpc CleanupFailedSubscriptions(CleanupFailedSubscriptionsRequest) returns (CleanupFailedSubscriptionsResponse);
+  rpc GetFailedSubscriptionCleanup(GetFailedSubscriptionCleanupRequest) returns (GetFailedSubscriptionCleanupResponse);
   rpc RequestSubscriptionObservation(RequestSubscriptionObservationRequest) returns (RequestSubscriptionObservationResponse);
   rpc RefreshAllSubscriptionQuotas(RefreshAllSubscriptionQuotasRequest) returns (RefreshAllSubscriptionQuotasResponse);
   rpc ReconcileSubscriptionCredit(ReconcileSubscriptionCreditRequest) returns (ReconcileSubscriptionCreditResponse);
@@ -47,6 +49,65 @@ service SubscriptionService {
   rpc TakeSubscription(TakeSubscriptionRequest) returns (TakeSubscriptionResponse);
   rpc PublishSubscriptionProgress(PublishSubscriptionProgressRequest) returns (PublishSubscriptionProgressResponse);
   rpc FinishSubscription(FinishSubscriptionRequest) returns (FinishSubscriptionResponse);
+}
+
+// Explicit server-owned cleanup of failed initial logins. No native login or
+// callback authority is granted by these metadata-only operations.
+message CleanupFailedSubscriptionsRequest {
+  string request_id = 1;
+}
+message CleanupFailedSubscriptionsResponse {
+  FailedSubscriptionCleanupJob job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetFailedSubscriptionCleanupRequest {
+  string job_id = 1;
+  string page_token = 2;
+}
+message GetFailedSubscriptionCleanupResponse {
+  FailedSubscriptionCleanupJob job = 1;
+  // Fixed pages of at most 50 original account outcomes.
+  repeated FailedSubscriptionCleanupResult results = 2;
+  string next_page_token = 3;
+}
+message FailedSubscriptionCleanupJob {
+  string id = 1;
+  uint64 revision = 2;
+  FailedSubscriptionCleanupState state = 3;
+  uint32 total = 4;
+  uint32 processed = 5;
+  uint32 deleted = 6;
+  uint32 retained = 7;
+  string problem_code = 8;
+}
+message FailedSubscriptionCleanupResult {
+  string account_id = 1;
+  string alias = 2;
+  FailedSubscriptionCleanupOutcome outcome = 3;
+  FailedSubscriptionCleanupReason reason = 4;
+  string problem_code = 5;
+}
+enum FailedSubscriptionCleanupState {
+  FAILED_SUBSCRIPTION_CLEANUP_STATE_UNSPECIFIED = 0;
+  FAILED_SUBSCRIPTION_CLEANUP_STATE_PENDING = 1;
+  FAILED_SUBSCRIPTION_CLEANUP_STATE_COMPLETED = 2;
+  FAILED_SUBSCRIPTION_CLEANUP_STATE_FAILED = 3;
+}
+enum FailedSubscriptionCleanupOutcome {
+  FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_UNSPECIFIED = 0;
+  FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING = 1;
+  FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_DELETED = 2;
+  FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_RETAINED = 3;
+}
+enum FailedSubscriptionCleanupReason {
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_UNSPECIFIED = 0;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_CHANGED = 1;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_REFERENCED = 2;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED = 3;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_INVALID_OWNERSHIP = 4;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_AUTHORIZATION = 5;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE = 6;
 }
 
 message RequestSubscriptionRequest {

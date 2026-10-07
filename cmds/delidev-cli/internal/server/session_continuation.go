@@ -199,14 +199,14 @@ func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domai
 func continuationAssignment(session domain.Session, assignment domain.ExecutionJobInput, completion domain.ExecutionCompletion, digest string, intent domain.ExecutionIntent, account, connection domain.ID) domain.ExecutionJobInput {
 	input := assignment
 	// A successor must not inherit the preceding one-shot PR Git authority.
-	input.Remediation = nil
+	input.Remediation, input.Retry = nil, nil
 	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
 	// The first child turn imports the fork checkpoint. Every later turn uses
 	// its own verified completion on that history, never the creation boundary.
 	input.Fork = nil
 	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
 	input.AccountID, input.ConnectionID = account, connection
-	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
+	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
 	// A switch back may select the same account after its connection rotated.
 	// The checkpoint still belongs to the complete original account/connection.
 	if account != assignment.AccountID || connection != assignment.ConnectionID {

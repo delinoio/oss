@@ -137,6 +137,7 @@ it("allows independently readable preference editing under denied native permiss
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active /></MutationIntents></QueryClientProvider></TransportProvider>);
   await screen.findByText(/Notifications are disabled/);
   fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save notification preferences" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
   expect(native.invoke.mock.calls.every(([command]) => command === "notification_permission")).toBe(true);

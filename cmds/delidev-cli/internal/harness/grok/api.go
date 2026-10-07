@@ -49,6 +49,7 @@ type apiProfile struct {
 }
 
 type apiConnection struct {
+	nativeVersion   string
 	wire            *nativewire.Connection
 	profile         apiProfile
 	workspace       string
@@ -82,7 +83,7 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 	if !config.Mode.Valid() || (config.Instructions != "" && config.Mode != domain.ExecuteMode) {
 		return apiProfile{}, apiConfigurationError()
 	}
-	if config.Probe.Version != SupportedVersion {
+	if config.Probe.Version != "" && !domain.ValidNativeVersionMetadata(config.Probe.Version) {
 		return apiProfile{}, incompatible()
 	}
 	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) ||
@@ -201,7 +202,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 			if returned != nil {
 				logger.WarnContext(ctx, "Grok Build private API initialization failed", "owner_id", config.Probe.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code, "elapsed_ms", time.Since(started).Milliseconds())
 			} else {
-				logger.InfoContext(ctx, "Grok Build private API initialized", "owner_id", config.Probe.Process.OwnerID, "profile_version", SupportedVersion)
+				logger.InfoContext(ctx, "Grok Build private API initialized", "owner_id", config.Probe.Process.OwnerID, "native_version", api.nativeVersion)
 			}
 		}
 	}()
@@ -273,6 +274,8 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if response.ErrorCode != nil || validateInitializeResult(response.Result, prepared.Cwd, &profile) != nil {
 		return nil, incompatible()
 	}
+	var nativeMetadata initializeResult
+	_ = decode(response.Result, &nativeMetadata)
 	phase = authenticatePhase
 	response, err = connection.Call(ready, domain.NewID(), "authenticate", struct {
 		Method string `json:"methodId"`
@@ -288,7 +291,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if response.ErrorCode != nil || decode(response.Result, &struct{}{}) != nil || profile.checkInitialized() != nil {
 		return nil, incompatible()
 	}
-	return &apiConnection{wire: connection, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1)}, nil
+	return &apiConnection{nativeVersion: nativeMetadata.Meta.Version, wire: connection, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1)}, nil
 }
 
 func (a *apiConnection) Close() error { return a.wire.Close() }

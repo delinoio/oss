@@ -35,6 +35,7 @@ func (s *Service) ListProviderPresets(ctx context.Context, req *connect.Request[
 	legacyPresets := providers.Presets()
 	for i := range legacyPresets {
 		legacyPresets[i].Provider.PresetID = nil
+		legacyPresets[i].Provider.APIFormats = nil
 	}
 	raw, _ := json.Marshal(legacyPresets)
 	response := connect.NewResponse(&pb.ListProviderPresetsResponse{PresetsJson: raw})
@@ -70,6 +71,7 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1,
 	}}
 	for _, entry := range entries {
@@ -101,7 +103,15 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 				}
 			}
 			wire.Provider = rpc.Resource(*entry.Provider)
+			for _, profile := range providers.APIFormats(p) {
+				wire.ApiFormats = append(wire.ApiFormats, rpc.WireAPIFormat(profile))
+			}
 		} else if entry.PresetID != nil {
+			if p, ok := providerPresetDefaults(*entry.PresetID); ok {
+				for _, profile := range providers.APIFormats(p) {
+					wire.ApiFormats = append(wire.ApiFormats, rpc.WireAPIFormat(profile))
+				}
+			}
 			if p, ok := providerPresetDefaults(*entry.PresetID); ok && p.Authentication == domain.KeylessAuth {
 				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_KEYLESS
 			}

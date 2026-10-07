@@ -61,6 +61,7 @@ enum ProviderInventoryCapability {
   PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER = 4;
   PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1 = 5;
   PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1 = 6;
+  PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1 = 7;
 }
 
 message ListProviderInventoryRequest {
@@ -81,6 +82,7 @@ message ProviderInventoryEntry {
   Resource provider = 7;
   bool account_counts_available = 8;
   ProviderConnectionMethod connection_method = 9;
+  repeated ProviderApiFormat api_formats = 10;
 }
 
 message ListProviderInventoryResponse {

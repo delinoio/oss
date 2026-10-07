@@ -1,6 +1,7 @@
 import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
 import { dryRunEnvironment } from "./bundle-macos-dry-run.mjs";
@@ -20,6 +21,10 @@ export function desktopEnvironment(platform, source, home = homedir()) {
     // once so preparation and the CLI still share the same artifacts.
     ...(source.CARGO_TARGET_DIR ? { CARGO_TARGET_DIR: resolve(app, source.CARGO_TARGET_DIR) } : {}),
     CEF_PATH: join(home, "Library/Caches/tauri-cef"),
+    // The pinned Tauri CLI sets this from the bundle config. Match it during
+    // Cargo preparation so each launch does not invalidate macOS dependencies
+    // twice. Keep this tied to the config until both builds share one entry.
+    MACOSX_DEPLOYMENT_TARGET: JSON.parse(readFileSync(join(app, "src-tauri/tauri.conf.json"), "utf8")).bundle.macOS.minimumSystemVersion,
   };
 }
 

@@ -1,7 +1,7 @@
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
-import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
+import { SettingsTaskDialog, SettingsTaskScope, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
 import { useEffect, useRef, useState, useId } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
@@ -14,8 +14,16 @@ import { Problem } from "./ui";
 enum Authentication { Password = "password", PrivateKey = "private-key" }
 export function SSHSetup({ active }: { active: boolean }) {
   useLocale();
+  const [expanded, setExpanded] = useState(false);
+  return <section><button type="button" onClick={() => setExpanded(true)}>{copy("ssh-setup.setUpAWorkerOverSsh_9a1626")}</button>
+    {expanded ? <SettingsTaskScope><SSHSetupTask active={active} close={() => setExpanded(false)} /></SettingsTaskScope> : null}
+  </section>;
+}
+
+function SSHSetupTask({ active, close }: { active: boolean; close: () => void }) {
+  useLocale();
   const formId = useId();
-  const [expanded, setExpanded] = useState(false), [host, setHost] = useState(""), [port, setPort] = useState("22"), [user, setUser] = useState(""), [name, setName] = useState(""), [id, setId] = useState("");
+  const [host, setHost] = useState(""), [port, setPort] = useState("22"), [user, setUser] = useState(""), [name, setName] = useState(""), [id, setId] = useState("");
   const [submittedStartId, setSubmittedStartId] = useState("");
   const [accepted, setAccepted] = useState<Resource>(), [confirmed, setConfirmed] = useState(false), [method, setMethod] = useState(Authentication.PrivateKey);
   const [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false), [error, setError] = useState<unknown>();
@@ -23,9 +31,9 @@ export function SSHSetup({ active }: { active: boolean }) {
   const alive = useRef(true), controller = useRef<AbortController>(undefined);
   const transport = useTransport(), opening = useSettingsOpening();
   useEffect(() => { alive.current = true; return () => { alive.current = false; controller.current?.abort(); if (secret.current) secret.current.value = ""; if (passphrase.current) passphrase.current.value = ""; }; }, []);
-  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && expanded });
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const supported = status.data?.capabilities.includes(SystemCapability.SSH_WORKER_SETUP_V1) === true;
-  const currentRead = useQuery(InstallationQuery.getSSHSetup, { id }, { enabled: active && expanded && supported && Boolean(id), refetchInterval: active && expanded && id ? 2000 : false });
+  const currentRead = useQuery(InstallationQuery.getSSHSetup, { id }, { enabled: active && supported && Boolean(id), refetchInterval: active && id ? 2000 : false });
   const current = [accepted, currentRead.data?.setup].filter((r): r is Resource => Boolean(r) && r!.id === id).reduce<Resource | undefined>((a, b) => !a || b.revision >= a.revision ? b : a, undefined);
   const data = current ? document(current) : {}, target = object(data.target), identity = object(data.identity), result = object(data.result);
   const inspection = useRetainedMutation("ssh:inspect", InstallationQuery.inspectSSHHost, response => { if (response.setup) { setAccepted(response.setup); setId(response.setup.id); setConfirmed(false); setUncertain(false); } });
@@ -48,7 +56,7 @@ export function SSHSetup({ active }: { active: boolean }) {
     finally { bytes.fill(0); if (alive.current && !opening?.disposed) setBusy(false); }
   };
   const blocked = !active || busy || inspection.busy || inspection.uncertain || cancel.busy || reconcile.busy;
-  return <section><button type="button" onClick={() => setExpanded(true)}>{copy("ssh-setup.setUpAWorkerOverSsh_9a1626")}</button>{expanded ? <SettingsTaskDialog title={copy("ssh-setup.setUpAWorkerOverSsh_9a1626")} size={SettingsDialogSize.Wide} retained={busy || uncertain || inspection.busy || inspection.uncertain || cancel.busy || cancel.uncertain || reconcile.busy || reconcile.uncertain || Boolean(submittedStartId && (!current || !["SUCCEEDED", "CANCELED", "FAILED"].includes(text(data.state)))) || Boolean(current && !["OBSERVED", "SUCCEEDED", "CANCELED", "FAILED"].includes(text(data.state)))} onDismiss={() => { if (secret.current) secret.current.value = ""; if (passphrase.current) passphrase.current.value = ""; }} close={() => { setExpanded(false); setHost(""); setPort("22"); setUser(""); setName(""); setId(""); setSubmittedStartId(""); setAccepted(undefined); setConfirmed(false); }}>
+  return <SettingsTaskDialog title={copy("ssh-setup.setUpAWorkerOverSsh_9a1626")} size={SettingsDialogSize.Wide} onDismiss={() => { if (secret.current) secret.current.value = ""; if (passphrase.current) passphrase.current.value = ""; }} close={close}>
     <p>{copy("ssh-setup.firstInspectTheHostIdentityAnd_2194ce")}</p>
     {!supported ? <p>{status.isPending ? copy("ssh-setup.checkingServerSupport_8d95fa") : copy("ssh-setup.thisServerRequiresAnUpdateTo_df31b8")}</p> : <>
       <form id={`${formId}-inspect`} onSubmit={event => { event.preventDefault(); if (!blocked && !submittedStartId) void inspection.send({ requestId: newRequestId(), host, port: Number(port), user }); }}><fieldset disabled={blocked || Boolean(submittedStartId)}>
@@ -71,5 +79,5 @@ export function SSHSetup({ active }: { active: boolean }) {
       {inspection.uncertain ? <button disabled={inspection.busy} onClick={inspection.retry}>{copy("ssh-setup.retryTheSameHostInspection_7b2096")}</button> : null}
     </>}
     <Problem error={status.error || currentRead.error || inspection.error || cancel.error || reconcile.error || error} />
-  </SettingsTaskDialog> : null}</section>;
+  </SettingsTaskDialog>;
 }

@@ -20,6 +20,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -29,6 +30,7 @@ import (
 )
 
 type Config struct {
+	startup                  *executionStartupAttempt
 	nativeClaudeInstallation *domain.Installation
 	network                  *workerNetworkRuntime
 	observations             *managedObservationRegistry
@@ -239,7 +241,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
-	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -262,8 +264,8 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
 		if err == nil {
-			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && workerOpenCodeCompactionInstallation(attached.Msg.Machine)
-			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1) && workerOpenCodeCompactionInstallation(attached.Msg.Machine)
+			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
+			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
 			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
 			subagentExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
@@ -275,56 +277,30 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			remoteCloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
 			cloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
-			installation := codexTitleInstallation(attached.Msg.Machine)
-			executable, version := "", ""
-			if installation != nil {
-				executable, version = installation.ResolvedPath, installation.Version
-			}
-			// Adapter support is independent of the current installation inventory.
-			// Admission still requires the parent's exact verified pinned native
-			// installation; discovery must not require a process reconnect merely
-			// to advertise code that this Worker already implements.
+			// Capabilities describe implemented adapters, never inventory readiness.
+			// The original actual process validates its protocol before input.
 			sidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
-			verifiedTitleProfile := false
-			if executable != "" {
-				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
-				var probeErr error
-				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, version, config.Logger)
-				stopProbe()
-				if probeErr != nil {
-					if fatal := fatalTitleProfileProbeError(probeErr); fatal != nil {
-						return fatal
-					}
-					config.Logger.WarnContext(ctx, "automatic title capability probe failed", "machine_id", credential.MachineID, "code", domain.SafeError(probeErr).Code)
-				}
-			}
-			if executable != "" {
-				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
-				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable, version)
-				stopProbe()
-				if err != nil {
-					if domain.SafeError(err).Code == domain.RecoveryRequired {
-						return err
-					}
-					config.Logger.InfoContext(ctx, "managed_subscription_profile_unavailable", "code", domain.SafeError(err).Code)
-					err = nil
-				}
-			}
+			verifiedTitleProfile := true
+			managedCapabilityExpected = true
+			titleCapabilityExpected = true
+			profile := "implemented-adapters-v1"
 			config.nativeClaudeInstallation = nil
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1) {
 				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
 				claudeCapabilityExpected, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)
+				stop()
 				if claudeCapabilityExpected {
-					var m domain.Machine
-					if domain.Decode(attached.Msg.Machine.DocumentJson, &m) == nil {
-						for _, candidate := range m.Installations {
-							if candidate.Harness == domain.ClaudeCode {
+					var machine domain.Machine
+					if domain.Decode(attached.Msg.Machine.DocumentJson, &machine) == nil {
+						for index := range machine.Installations {
+							candidate := machine.Installations[index]
+							if candidate.Harness == domain.ClaudeCode && candidate.Version == claude.SupportedVersion && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
 								config.nativeClaudeInstallation = &candidate
+								break
 							}
 						}
 					}
 				}
-				stop()
 				if err != nil {
 					if domain.SafeError(err).Code == domain.RecoveryRequired {
 						return err
@@ -333,15 +309,10 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 					err = nil
 				}
 			}
-			titleCapabilityExpected = verifiedTitleProfile
-			profile := executable + "\x00" + version
-			if installation != nil {
-				profile += "\x00" + installation.ExecutableSHA256
-			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}
-			if compactionExpected && executable != "" {
+			if compactionExpected {
 				profile += "\x00codex-session-compaction-v1"
 			}
 			if subagentExpected {
@@ -392,7 +363,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
-			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
 			}
@@ -402,12 +373,12 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if openCodeForkExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			}
-			if compactionExpected && executable != "" {
+			if compactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			}
 			if openCodeCompactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
-				if !compactionExpected || executable == "" {
+				if !compactionExpected {
 					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1)
 				}
 			}

@@ -21,6 +21,110 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ApiProtocol int32
+
+const (
+	ApiProtocol_API_PROTOCOL_UNSPECIFIED        ApiProtocol = 0
+	ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES   ApiProtocol = 1
+	ApiProtocol_API_PROTOCOL_OPENAI_CHAT        ApiProtocol = 2
+	ApiProtocol_API_PROTOCOL_ANTHROPIC_MESSAGES ApiProtocol = 3
+)
+
+// Enum value maps for ApiProtocol.
+var (
+	ApiProtocol_name = map[int32]string{
+		0: "API_PROTOCOL_UNSPECIFIED",
+		1: "API_PROTOCOL_OPENAI_RESPONSES",
+		2: "API_PROTOCOL_OPENAI_CHAT",
+		3: "API_PROTOCOL_ANTHROPIC_MESSAGES",
+	}
+	ApiProtocol_value = map[string]int32{
+		"API_PROTOCOL_UNSPECIFIED":        0,
+		"API_PROTOCOL_OPENAI_RESPONSES":   1,
+		"API_PROTOCOL_OPENAI_CHAT":        2,
+		"API_PROTOCOL_ANTHROPIC_MESSAGES": 3,
+	}
+)
+
+func (x ApiProtocol) Enum() *ApiProtocol {
+	p := new(ApiProtocol)
+	*p = x
+	return p
+}
+
+func (x ApiProtocol) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ApiProtocol) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_common_proto_enumTypes[0].Descriptor()
+}
+
+func (ApiProtocol) Type() protoreflect.EnumType {
+	return &file_delidev_v1_common_proto_enumTypes[0]
+}
+
+func (x ApiProtocol) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ApiProtocol.Descriptor instead.
+func (ApiProtocol) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{0}
+}
+
+type ApiAuthentication int32
+
+const (
+	ApiAuthentication_API_AUTHENTICATION_UNSPECIFIED ApiAuthentication = 0
+	ApiAuthentication_API_AUTHENTICATION_BEARER      ApiAuthentication = 1
+	ApiAuthentication_API_AUTHENTICATION_API_KEY     ApiAuthentication = 2
+	ApiAuthentication_API_AUTHENTICATION_KEYLESS     ApiAuthentication = 3
+)
+
+// Enum value maps for ApiAuthentication.
+var (
+	ApiAuthentication_name = map[int32]string{
+		0: "API_AUTHENTICATION_UNSPECIFIED",
+		1: "API_AUTHENTICATION_BEARER",
+		2: "API_AUTHENTICATION_API_KEY",
+		3: "API_AUTHENTICATION_KEYLESS",
+	}
+	ApiAuthentication_value = map[string]int32{
+		"API_AUTHENTICATION_UNSPECIFIED": 0,
+		"API_AUTHENTICATION_BEARER":      1,
+		"API_AUTHENTICATION_API_KEY":     2,
+		"API_AUTHENTICATION_KEYLESS":     3,
+	}
+)
+
+func (x ApiAuthentication) Enum() *ApiAuthentication {
+	p := new(ApiAuthentication)
+	*p = x
+	return p
+}
+
+func (x ApiAuthentication) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ApiAuthentication) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_common_proto_enumTypes[1].Descriptor()
+}
+
+func (ApiAuthentication) Type() protoreflect.EnumType {
+	return &file_delidev_v1_common_proto_enumTypes[1]
+}
+
+func (x ApiAuthentication) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ApiAuthentication.Descriptor instead.
+func (ApiAuthentication) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{1}
+}
+
 type EntityKind int32
 
 const (
@@ -147,11 +251,11 @@ func (x EntityKind) String() string {
 }
 
 func (EntityKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_common_proto_enumTypes[0].Descriptor()
+	return file_delidev_v1_common_proto_enumTypes[2].Descriptor()
 }
 
 func (EntityKind) Type() protoreflect.EnumType {
-	return &file_delidev_v1_common_proto_enumTypes[0]
+	return &file_delidev_v1_common_proto_enumTypes[2]
 }
 
 func (x EntityKind) Number() protoreflect.EnumNumber {
@@ -160,7 +264,7 @@ func (x EntityKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EntityKind.Descriptor instead.
 func (EntityKind) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{0}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{2}
 }
 
 type UsageCoverage int32
@@ -198,11 +302,11 @@ func (x UsageCoverage) String() string {
 }
 
 func (UsageCoverage) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_common_proto_enumTypes[1].Descriptor()
+	return file_delidev_v1_common_proto_enumTypes[3].Descriptor()
 }
 
 func (UsageCoverage) Type() protoreflect.EnumType {
-	return &file_delidev_v1_common_proto_enumTypes[1]
+	return &file_delidev_v1_common_proto_enumTypes[3]
 }
 
 func (x UsageCoverage) Number() protoreflect.EnumNumber {
@@ -211,7 +315,7 @@ func (x UsageCoverage) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use UsageCoverage.Descriptor instead.
 func (UsageCoverage) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 // Irrevocable deletion remains pending until every managed resource is confirmed.
@@ -248,11 +352,11 @@ func (x SessionDeletionState) String() string {
 }
 
 func (SessionDeletionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_common_proto_enumTypes[2].Descriptor()
+	return file_delidev_v1_common_proto_enumTypes[4].Descriptor()
 }
 
 func (SessionDeletionState) Type() protoreflect.EnumType {
-	return &file_delidev_v1_common_proto_enumTypes[2]
+	return &file_delidev_v1_common_proto_enumTypes[4]
 }
 
 func (x SessionDeletionState) Number() protoreflect.EnumNumber {
@@ -261,7 +365,7 @@ func (x SessionDeletionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SessionDeletionState.Descriptor instead.
 func (SessionDeletionState) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{2}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{4}
 }
 
 // Native subscription identity is independent of API providers.
@@ -301,11 +405,11 @@ func (x SubscriptionServiceIdentity) String() string {
 }
 
 func (SubscriptionServiceIdentity) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_common_proto_enumTypes[3].Descriptor()
+	return file_delidev_v1_common_proto_enumTypes[5].Descriptor()
 }
 
 func (SubscriptionServiceIdentity) Type() protoreflect.EnumType {
-	return &file_delidev_v1_common_proto_enumTypes[3]
+	return &file_delidev_v1_common_proto_enumTypes[5]
 }
 
 func (x SubscriptionServiceIdentity) Number() protoreflect.EnumNumber {
@@ -314,7 +418,67 @@ func (x SubscriptionServiceIdentity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SubscriptionServiceIdentity.Descriptor instead.
 func (SubscriptionServiceIdentity) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{3}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{5}
+}
+
+type ProviderApiFormat struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Protocol       ApiProtocol            `protobuf:"varint,1,opt,name=protocol,proto3,enum=delidev.v1.ApiProtocol" json:"protocol,omitempty"`
+	Endpoint       string                 `protobuf:"bytes,2,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	Authentication ApiAuthentication      `protobuf:"varint,3,opt,name=authentication,proto3,enum=delidev.v1.ApiAuthentication" json:"authentication,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProviderApiFormat) Reset() {
+	*x = ProviderApiFormat{}
+	mi := &file_delidev_v1_common_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderApiFormat) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderApiFormat) ProtoMessage() {}
+
+func (x *ProviderApiFormat) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_common_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderApiFormat.ProtoReflect.Descriptor instead.
+func (*ProviderApiFormat) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ProviderApiFormat) GetProtocol() ApiProtocol {
+	if x != nil {
+		return x.Protocol
+	}
+	return ApiProtocol_API_PROTOCOL_UNSPECIFIED
+}
+
+func (x *ProviderApiFormat) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *ProviderApiFormat) GetAuthentication() ApiAuthentication {
+	if x != nil {
+		return x.Authentication
+	}
+	return ApiAuthentication_API_AUTHENTICATION_UNSPECIFIED
 }
 
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
@@ -338,7 +502,7 @@ type Resource struct {
 
 func (x *Resource) Reset() {
 	*x = Resource{}
-	mi := &file_delidev_v1_common_proto_msgTypes[0]
+	mi := &file_delidev_v1_common_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -350,7 +514,7 @@ func (x *Resource) String() string {
 func (*Resource) ProtoMessage() {}
 
 func (x *Resource) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[0]
+	mi := &file_delidev_v1_common_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -363,7 +527,7 @@ func (x *Resource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resource.ProtoReflect.Descriptor instead.
 func (*Resource) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{0}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Resource) GetId() string {
@@ -440,7 +604,7 @@ type Mutation struct {
 
 func (x *Mutation) Reset() {
 	*x = Mutation{}
-	mi := &file_delidev_v1_common_proto_msgTypes[1]
+	mi := &file_delidev_v1_common_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -452,7 +616,7 @@ func (x *Mutation) String() string {
 func (*Mutation) ProtoMessage() {}
 
 func (x *Mutation) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[1]
+	mi := &file_delidev_v1_common_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -465,7 +629,7 @@ func (x *Mutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mutation.ProtoReflect.Descriptor instead.
 func (*Mutation) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Mutation) GetRequestId() string {
@@ -499,7 +663,7 @@ type ForwardChange struct {
 
 func (x *ForwardChange) Reset() {
 	*x = ForwardChange{}
-	mi := &file_delidev_v1_common_proto_msgTypes[2]
+	mi := &file_delidev_v1_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -511,7 +675,7 @@ func (x *ForwardChange) String() string {
 func (*ForwardChange) ProtoMessage() {}
 
 func (x *ForwardChange) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[2]
+	mi := &file_delidev_v1_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -524,7 +688,7 @@ func (x *ForwardChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForwardChange.ProtoReflect.Descriptor instead.
 func (*ForwardChange) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{2}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ForwardChange) GetForward() *Resource {
@@ -560,7 +724,7 @@ type SessionDeletionJob struct {
 
 func (x *SessionDeletionJob) Reset() {
 	*x = SessionDeletionJob{}
-	mi := &file_delidev_v1_common_proto_msgTypes[3]
+	mi := &file_delidev_v1_common_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -572,7 +736,7 @@ func (x *SessionDeletionJob) String() string {
 func (*SessionDeletionJob) ProtoMessage() {}
 
 func (x *SessionDeletionJob) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_common_proto_msgTypes[3]
+	mi := &file_delidev_v1_common_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -585,7 +749,7 @@ func (x *SessionDeletionJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionDeletionJob.ProtoReflect.Descriptor instead.
 func (*SessionDeletionJob) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_common_proto_rawDescGZIP(), []int{3}
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SessionDeletionJob) GetId() string {
@@ -663,7 +827,11 @@ var File_delidev_v1_common_proto protoreflect.FileDescriptor
 const file_delidev_v1_common_proto_rawDesc = "" +
 	"\n" +
 	"\x17delidev/v1/common.proto\x12\n" +
-	"delidev.v1\"\xaa\x02\n" +
+	"delidev.v1\"\xab\x01\n" +
+	"\x11ProviderApiFormat\x123\n" +
+	"\bprotocol\x18\x01 \x01(\x0e2\x17.delidev.v1.ApiProtocolR\bprotocol\x12\x1a\n" +
+	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12E\n" +
+	"\x0eauthentication\x18\x03 \x01(\x0e2\x1d.delidev.v1.ApiAuthenticationR\x0eauthentication\"\xaa\x02\n" +
 	"\bResource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12*\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x16.delidev.v1.EntityKindR\x04kind\x12\x1a\n" +
@@ -700,7 +868,17 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x10database_removed\x18\b \x01(\bR\x0fdatabaseRemoved\x12'\n" +
 	"\x0fbackups_removed\x18\t \x01(\bR\x0ebackupsRemoved\x122\n" +
 	"\x15reclaimed_bytes_known\x18\n" +
-	" \x01(\bR\x13reclaimedBytesKnown*\xf9\x06\n" +
+	" \x01(\bR\x13reclaimedBytesKnown*\x91\x01\n" +
+	"\vApiProtocol\x12\x1c\n" +
+	"\x18API_PROTOCOL_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dAPI_PROTOCOL_OPENAI_RESPONSES\x10\x01\x12\x1c\n" +
+	"\x18API_PROTOCOL_OPENAI_CHAT\x10\x02\x12#\n" +
+	"\x1fAPI_PROTOCOL_ANTHROPIC_MESSAGES\x10\x03*\x96\x01\n" +
+	"\x11ApiAuthentication\x12\"\n" +
+	"\x1eAPI_AUTHENTICATION_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19API_AUTHENTICATION_BEARER\x10\x01\x12\x1e\n" +
+	"\x1aAPI_AUTHENTICATION_API_KEY\x10\x02\x12\x1e\n" +
+	"\x1aAPI_AUTHENTICATION_KEYLESS\x10\x03*\xf9\x06\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -764,27 +942,32 @@ func file_delidev_v1_common_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_common_proto_rawDescData
 }
 
-var file_delidev_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_delidev_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_delidev_v1_common_proto_goTypes = []any{
-	(EntityKind)(0),                  // 0: delidev.v1.EntityKind
-	(UsageCoverage)(0),               // 1: delidev.v1.UsageCoverage
-	(SessionDeletionState)(0),        // 2: delidev.v1.SessionDeletionState
-	(SubscriptionServiceIdentity)(0), // 3: delidev.v1.SubscriptionServiceIdentity
-	(*Resource)(nil),                 // 4: delidev.v1.Resource
-	(*Mutation)(nil),                 // 5: delidev.v1.Mutation
-	(*ForwardChange)(nil),            // 6: delidev.v1.ForwardChange
-	(*SessionDeletionJob)(nil),       // 7: delidev.v1.SessionDeletionJob
+	(ApiProtocol)(0),                 // 0: delidev.v1.ApiProtocol
+	(ApiAuthentication)(0),           // 1: delidev.v1.ApiAuthentication
+	(EntityKind)(0),                  // 2: delidev.v1.EntityKind
+	(UsageCoverage)(0),               // 3: delidev.v1.UsageCoverage
+	(SessionDeletionState)(0),        // 4: delidev.v1.SessionDeletionState
+	(SubscriptionServiceIdentity)(0), // 5: delidev.v1.SubscriptionServiceIdentity
+	(*ProviderApiFormat)(nil),        // 6: delidev.v1.ProviderApiFormat
+	(*Resource)(nil),                 // 7: delidev.v1.Resource
+	(*Mutation)(nil),                 // 8: delidev.v1.Mutation
+	(*ForwardChange)(nil),            // 9: delidev.v1.ForwardChange
+	(*SessionDeletionJob)(nil),       // 10: delidev.v1.SessionDeletionJob
 }
 var file_delidev_v1_common_proto_depIdxs = []int32{
-	0, // 0: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
-	4, // 1: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
-	2, // 2: delidev.v1.SessionDeletionJob.state:type_name -> delidev.v1.SessionDeletionState
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 0: delidev.v1.ProviderApiFormat.protocol:type_name -> delidev.v1.ApiProtocol
+	1, // 1: delidev.v1.ProviderApiFormat.authentication:type_name -> delidev.v1.ApiAuthentication
+	2, // 2: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
+	7, // 3: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
+	4, // 4: delidev.v1.SessionDeletionJob.state:type_name -> delidev.v1.SessionDeletionState
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_common_proto_init() }
@@ -797,8 +980,8 @@ func file_delidev_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_common_proto_rawDesc), len(file_delidev_v1_common_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   4,
+			NumEnums:      6,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

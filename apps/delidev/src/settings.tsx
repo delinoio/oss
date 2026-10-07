@@ -2,7 +2,6 @@
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import type { UsageEntry } from "./usage-entry";
 import { providerPresetNames } from "@delinoio/delidev-api-client";
-import { useAccountOAuth } from "./account-oauth";
 import { SubscriptionAccounts } from "./subscription-accounts";
 import { Backups } from "./backups";
 import { Integrations } from "./integrations";
@@ -13,7 +12,7 @@ import { NotificationSettings } from "./notification-settings";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, SystemQuery, SystemCapability, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, apiFormat, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, SystemQuery, SystemCapability, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { accountPreferencesDocument } from "./account-preferences";
 import { ConfigurationFields, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
@@ -45,7 +44,7 @@ import { RepositoryIcon, RepositoryRow } from "./repository-list";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import "./api-account.css";
 import { SettingsTasks, SettingsTaskBackground, SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
-import { useRetainSettingsTask, useSettingsTaskVisible, useInSettingsTask, useCloseSettingsTask } from "./settings-task-context";
+import { useSettingsTaskVisible, useInSettingsTask, useCloseSettingsTask } from "./settings-task-context";
 
 export enum ConfigurationEditorPresentation { Workflow, InlineServerPreferences }
 
@@ -58,12 +57,12 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
+  const [fieldsBlocked, setFieldsBlocked] = useState(false);
   const [problem, setProblem] = useProductMessage("");
   const [conflict, setConflict] = useState(false);
   const observedConflict = useRef<unknown>(undefined);
   const form = useRef<HTMLFormElement>(null);
   const formId = useId(), taskVisible = useSettingsTaskVisible(), inTask = useInSettingsTask(), cancelTask = useCloseSettingsTask(cancel);
-  useRetainSettingsTask(Boolean(job) || childPending);
   const current = useQuery(ResourceQuery.getResource, { kind, id: source?.id ?? "" }, { enabled: active && Boolean(source), refetchInterval: active ? 5000 : false });
   const repositoryStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.REPOSITORY, retry: false });
   const savedKind = { [EntityKind.AGENT]: "settings.savedKind.AGENT" as const, [EntityKind.TEMPLATE]: "settings.savedKind.TEMPLATE" as const, [EntityKind.PROJECT]: "settings.savedKind.PROJECT" as const, [EntityKind.REPOSITORY]: "settings.savedKind.REPOSITORY" as const, [EntityKind.ACCOUNT]: "settings.savedKind.ACCOUNT" as const, [EntityKind.MACHINE]: "settings.savedKind.MACHINE" as const, [EntityKind.PROVIDER]: "settings.savedKind.PROVIDER" as const, [EntityKind.MODEL]: "settings.savedKind.MODEL" as const, [EntityKind.SETTINGS]: "settings.savedKind.SETTINGS" as const };
@@ -114,12 +113,12 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const repositoryStatusPending = repositoryNeedsRemoteCapability && repositoryStatus.data === undefined && !repositoryStatus.error;
   const repositoryStatusFailed = repositoryNeedsRemoteCapability && Boolean(repositoryStatus.error);
   const repositoryUnsupported = repositoryNeedsRemoteCapability && repositoryStatus.data !== undefined && !repositoryStatus.data.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1);
-  const saveDisabled = repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
+  const saveDisabled = fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
   const submit = () => {
     if (saveDisabled) return;
     let documentJson: Uint8Array;
     try {
-      documentJson = kind === EntityKind.ACCOUNT && source ? accountPreferencesDocument(source, { alias: text(data.alias), enabled: data.enabled === true, exclude_automatic: data.exclude_automatic === true, recovery_notifications: data.recovery_notifications === true }) : encode(data);
+      documentJson = kind === EntityKind.ACCOUNT && source ? accountPreferencesDocument(source, { ...(data.type === "api" && apiFormat(data.api_protocol) ? { api_protocol: apiFormat(data.api_protocol)! } : {}), alias: text(data.alias), enabled: data.enabled === true, exclude_automatic: data.exclude_automatic === true, recovery_notifications: data.recovery_notifications === true }) : encode(data);
     } catch {
       setProblem(copy("settings.accountPreferencesCouldNotBeSavedReopen_4a7c1b")); return;
     }
@@ -131,7 +130,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   return <form id={formId} ref={form} aria-label={inline ? (serverPreferenceSection === ServerPreferenceSection.GitWorkflow ? "Git workflow form" : "Server preferences form") : undefined} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); submit(); }}>
     {inline ? null : isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? copy("settings.editPreferences_00b4cc") : copy("settings.newAiApiKeyEntry_5f978c")}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : <h3 hidden={inTask}>{initial ? copy("settings.edit_464c4f") : copy("settings.new_18fdd5")} {kindLabel}</h3>}
     {kind === EntityKind.AGENT && !initial ? <p className="agent-subtitle">{copy("settings.configureTheEssentialsThenCustomizeOnly_a8beda")}</p> : null}
-    <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>
+    <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields initial={source} saveBlocked={setFieldsBlocked} kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>
     {repositoryUnsupported ? <p role="status">Update the selected server before saving a repository.</p> : null}
     {stale || (inline && conflict) ? <p role="alert">{inline ? copy("settings.inlinePreferencesChangedElsewhereDraftRetained", { v0: kindLabel }) : copy("settings.thisEntryChangedElsewhereYourDraft_106fa0")}</p> : null}{currentUnavailable ? <p role="status">{inline ? copy("settings.inlinePreferencesUnavailableDraftRetained", { v0: kindLabel }) : copy("settings.serverPreferencesUnavailableDraftRetained")}</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error || (repositoryNeedsRemoteCapability ? repositoryStatus.error : undefined)} />{repositoryStatusFailed ? <button type="button" disabled={repositoryStatus.isFetching} onClick={() => void repositoryStatus.refetch()}>Retry repository capability check</button> : null}
     {subscriptionOnly && !validSubscriptionProvider ? <p role="alert">{copy("settings.subscriptionProvidersMustUseNativeSubscription_8e47b2")}</p> : null}
@@ -160,7 +159,7 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
   </>;
 }
 
-export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project" }
+export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance }
 enum SettingsCategory {
   Appearance = "appearance",
@@ -262,7 +261,7 @@ interface SettingsSelection { category: SettingsCategory; key: string; entry?: S
 type NavigateSettings = (category: SettingsCategory, entry?: SettingsCategoryEntry) => void;
 
 function entrySelection(destination?: SettingsEntryDestination): SettingsSelection {
-  return { category: destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
+  return { category: destination === SettingsEntryDestination.RunnerDevices ? SettingsCategory.ExecutionWorkers : destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
 }
 
 export function Settings({ visible = true, ...props }: SettingsProps) {
@@ -315,20 +314,6 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     window.document.getElementById("main")?.focus({ preventScroll: true });
     navigate(SettingsCategory.Diagnostics);
   };
-  const oauth = useAccountOAuth();
-  const oauthStarted = useRef(false);
-  useEffect(() => {
-    if (oauthStarted.current || entry?.kind !== SettingsEntryKind.AddAccount || !entry.provider?.oauthAvailable || !oauth.supports(entry.provider)) return;
-    let active = true;
-    // Wait until mount effects settle so Strict Mode's setup replay cannot
-    // create an OAuth owner that its simulated cleanup immediately disposes.
-    queueMicrotask(() => {
-      if (!active || oauthStarted.current) return;
-      oauthStarted.current = true;
-      oauth.start(entry.provider!);
-    });
-    return () => { active = false; };
-  }, [entry, oauth]);
   const [device, setDevice] = useState<Resource>();
   const [expandedDevices, setExpandedDevices] = useState<ReadonlySet<string>>(() => new Set());
   const pairedPageIds = useRef<ReadonlySet<string>>(new Set());
@@ -465,7 +450,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
             {controlLocalWorker && isRunnerDevices ? <div hidden={Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} onDiagnostics={openConnectionDiagnostics} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div hidden={Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             {isApiAccounts ? <div hidden={hasOverlay}>
-              <AccountSettings openUsage={openUsage} oauth={oauth} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
+              <AccountSettings apiFormatSelectingReady={Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && eligibleInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && !apiInventory.error && !eligibleInventory.error)} openUsage={openUsage} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
             </div> : null}
             {isSubscriptionAccounts ? <div>
               <SubscriptionAccounts active={visible && isSubscriptionAccounts && !hasOverlay} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} />

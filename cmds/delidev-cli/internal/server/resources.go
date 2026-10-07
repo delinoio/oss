@@ -100,6 +100,10 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 		}
 	}
 	f.SubscriptionService = rpc.SubscriptionService(input.SubscriptionService)
+	f.APIProtocol = rpc.APIProtocol(input.ApiProtocol)
+	if f.APIProtocol != "" && (!f.APIProtocol.API() || f.Kind != domain.AccountKind || f.SubscriptionService != "" || input.AccountType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION) {
+		return f, domain.Fail(domain.InvalidArgument, "Invalid account API format filter.", "Select one supported API format for API accounts.")
+	}
 	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || input.AccountType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API) {
 		return f, domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
 	}
@@ -327,7 +331,22 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		}
 		defer unlock()
 	}
-	result, err := SaveConfiguration(ctx, s.Store, ConfigurationMutation{RequestID: domain.ID(req.Msg.Mutation.RequestId), ID: domain.ID(req.Msg.Mutation.Id), ExpectedRevision: req.Msg.Mutation.ExpectedRevision, Kind: kind, Document: req.Msg.DocumentJson})
+	input := ConfigurationMutation{RequestID: domain.ID(req.Msg.Mutation.RequestId), ID: domain.ID(req.Msg.Mutation.Id), ExpectedRevision: req.Msg.Mutation.ExpectedRevision, Kind: kind, Document: req.Msg.DocumentJson}
+	if kind == domain.AccountKind && input.ExpectedRevision > 0 {
+		// A failed native Connect can leave protected intents while the account
+		// still appears disconnected. SQL state alone is not cleanup evidence.
+		// Exact accepted replays remain observational and do not reopen the vault.
+		_, replayed, err := s.Store.Replay(ctx, input.RequestID, "configuration.save", input)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		if !replayed {
+			if err := s.verifyAccountFormatCleanup(ctx, input); err != nil {
+				return nil, rpc.Error(err, correlation)
+			}
+		}
+	}
+	result, err := SaveConfiguration(ctx, s.Store, input)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -477,57 +496,13 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 			return reject(err)
 		}
 		defer unlock()
-		phase = configurationDeleteReceipt
-		_, replayed, err := s.Store.Replay(ctx, domain.ID(meta.RequestId), "configuration.delete", input)
-		if err != nil {
+		if err := s.checkAccountDeletionLocked(ctx, meta.RequestId, meta.Id, meta.ExpectedRevision, input, func(next configurationDeletePhase) { phase = next }); err != nil {
 			return reject(err)
-		}
-		if !replayed {
-			var keyless bool
-			err = s.Store.Read(ctx, func(tx *store.Tx) error {
-				if err := tx.Authorize(); err != nil {
-					return err
-				}
-				phase = configurationDeleteReferences
-				if err := validateDeletion(tx, kind, domain.ID(meta.Id)); err != nil {
-					return err
-				}
-				phase = configurationDeleteAccount
-				_, account, err := accountFromTx(tx, domain.ID(meta.Id), meta.ExpectedRevision)
-				if err != nil {
-					return err
-				}
-				keyless, err = accountWithoutCredentials(tx, account)
-				return err
-			})
-			if err != nil {
-				return reject(err)
-			}
-			if !keyless {
-				phase = configurationDeleteCredentials
-				vault, err := s.secrets()
-				if err != nil {
-					return reject(err)
-				}
-				refs, err := vault.UnremovedReferences(ctx, domain.ID(meta.Id))
-				if err != nil {
-					return reject(err)
-				}
-				if len(refs) != 0 {
-					return reject(domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect the account and complete credential cleanup before deleting it."))
-				}
-			}
 		}
 	}
 	phase = configurationDeleteCommit
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "configuration.delete", input, func(tx *store.Tx) (any, error) {
-		if err := validateDeletion(tx, kind, domain.ID(meta.Id)); err != nil {
-			return nil, err
-		}
-		if err := disableReferencedSchedules(tx, kind, domain.ID(meta.Id)); err != nil {
-			return nil, err
-		}
-		if err := tx.Delete(kind, domain.ID(meta.Id), meta.ExpectedRevision); err != nil {
+		if err := deleteConfigurationTx(tx, kind, domain.ID(meta.Id), meta.ExpectedRevision); err != nil {
 			return nil, err
 		}
 		return struct {
@@ -542,6 +517,69 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 	response := connect.NewResponse(&pb.DeleteConfigurationResponse{Id: meta.Id, RequestId: meta.RequestId, Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+var protectedAccountDeletion = domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect the account and complete credential cleanup before deleting it.")
+
+// Called under accountGate by ordinary and failed-login batch deletion.
+func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id string, revision uint64, input any, observe func(configurationDeletePhase)) error {
+	phase := func(next configurationDeletePhase) {
+		if observe != nil {
+			observe(next)
+		}
+	}
+	kind := domain.AccountKind
+	phase(configurationDeleteReceipt)
+	_, replayed, err := s.Store.Replay(ctx, domain.ID(request), "configuration.delete", input)
+	if err != nil {
+		return err
+	}
+	if !replayed {
+		var keyless bool
+		err = s.Store.Read(ctx, func(tx *store.Tx) error {
+			if err := tx.Authorize(); err != nil {
+				return err
+			}
+			phase(configurationDeleteReferences)
+			if err := validateDeletion(tx, kind, domain.ID(id)); err != nil {
+				return err
+			}
+			phase(configurationDeleteAccount)
+			_, account, err := accountFromTx(tx, domain.ID(id), revision)
+			if err != nil {
+				return err
+			}
+			keyless, err = accountWithoutCredentials(tx, account)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		if !keyless {
+			phase(configurationDeleteCredentials)
+			vault, err := s.secrets()
+			if err != nil {
+				return err
+			}
+			refs, err := vault.UnremovedReferences(ctx, domain.ID(id))
+			if err != nil {
+				return err
+			}
+			if len(refs) != 0 {
+				return protectedAccountDeletion
+			}
+		}
+	}
+	return nil
+}
+func deleteConfigurationTx(tx *store.Tx, kind domain.Kind, id domain.ID, revision uint64) error {
+	if err := validateDeletion(tx, kind, id); err != nil {
+		return err
+	}
+	if err := disableReferencedSchedules(tx, kind, id); err != nil {
+		return err
+	}
+	return tx.Delete(kind, id, revision)
 }
 func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 	existing, err := tx.Get(kind, id)

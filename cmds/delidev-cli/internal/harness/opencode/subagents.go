@@ -185,7 +185,7 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 		return nil, err
 	}
 	fields, err := shape(raw, []string{"id", "parentID", "slug", "projectID", "directory", "cost", "tokens", "title", "version", "time", "permission"}, []string{"path", "agent", "model", "metadata", "summary"})
-	if err != nil || !scalar(fields["id"], id) || !scalar(fields["parentID"], s.creation.identity.id) || !scalar(fields["directory"], s.cwd) || !scalar(fields["projectID"], s.creation.identity.project) || !scalar(fields["version"], SupportedVersion) || !validateCounters(fields["tokens"]) || !nonnegativeDecimal(fields["cost"]) {
+	if err != nil || !scalar(fields["id"], id) || !scalar(fields["parentID"], s.creation.identity.id) || !scalar(fields["directory"], s.cwd) || !scalar(fields["projectID"], s.creation.identity.project) || !nativeVersion(fields["version"]) || !validateCounters(fields["tokens"]) || !nonnegativeDecimal(fields["cost"]) {
 		return nil, observerProblem()
 	}
 	phase = "creation-time"

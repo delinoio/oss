@@ -139,7 +139,7 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 // Remove this compatibility rule when the pinned native profile emits a stable
 // source, after validating the replacement against installed native evidence.
 func codexApprovalSourceTransition(tx *store.Tx, input domain.ExecutionJobInput, event domain.ExecutionEvent, started uint64, prior, next domain.CommandSource) (bool, error) {
-	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || prior != domain.AgentCommand || next != domain.ExecStartupCommand {
+	if input.Configuration.Harness != domain.Codex || (input.Version != 4 && !domain.CodexVersionAllowed(input.Installation.Version)) || prior != domain.AgentCommand || next != domain.ExecStartupCommand {
 		return false, nil
 	}
 	ids, err := tx.ExecutionItemInteractions(input.ExecutionID, event.NativeThreadID, event.NativeTurnID, event.Tool.NativeID)
@@ -159,7 +159,7 @@ func codexApprovalSourceTransition(tx *store.Tx, input domain.ExecutionJobInput,
 			continue
 		}
 		approval := value.Approval
-		if approval.Harness == domain.Codex && approval.Version == input.Installation.Version && approval.Codex != nil && approval.Codex.Kind == domain.CodexCommandApproval && approval.Codex.Command != nil && approval.Codex.Command.Kind == domain.CodexExecuteCommandApproval && approval.Codex.Command.ApprovalID == nil {
+		if approval.Harness == domain.Codex && (input.Version == 4 || approval.Version == input.Installation.Version) && approval.Codex != nil && approval.Codex.Kind == domain.CodexCommandApproval && approval.Codex.Command != nil && approval.Codex.Command.Kind == domain.CodexExecuteCommandApproval && approval.Codex.Command.ApprovalID == nil {
 			return true, nil
 		}
 	}

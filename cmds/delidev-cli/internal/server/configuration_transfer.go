@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -106,6 +107,9 @@ func portableDocument(kind domain.Kind, raw []byte) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	if provider, ok := value.(*domain.Provider); ok {
+		*provider = providers.WithAPIFormats(*provider)
+	}
 	return json.Marshal(value)
 }
 func configurationSnapshot(tx *store.Tx) (map[domain.ID]store.Record, error) {
@@ -156,6 +160,8 @@ func exportConfiguration(tx *store.Tx) (domain.ConfigurationBundle, error) {
 				if v.Remediation.MachineID != "" {
 					machineIDs[v.Remediation.MachineID] = true
 				}
+			case *domain.Provider:
+				*v = providers.WithAPIFormats(*v)
 			}
 			raw, err := json.Marshal(value)
 			if err != nil {
@@ -299,7 +305,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if (bundle.Version != 1 && bundle.Version != 2 && bundle.Version != domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
+	if (bundle.Version < 1 || bundle.Version > domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {
@@ -311,6 +317,18 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	for _, entry := range bundle.Entries {
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
+		}
+		if bundle.Version < 4 && (entry.Kind == domain.ProviderKind || entry.Kind == domain.AccountKind) {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(entry.Document, &fields) != nil {
+				return plan, transferInvalid()
+			}
+			if _, present := fields["api_formats"]; present {
+				return plan, domain.Fail(domain.Unsupported, "API profiles require portable version 4.", "Export the complete current configuration.")
+			}
+			if _, present := fields["api_protocol"]; present {
+				return plan, domain.Fail(domain.Unsupported, "Account API formats require portable version 4.", "Export the complete current configuration.")
+			}
 		}
 		if bundle.Version == 1 {
 			var legacy struct {
@@ -512,6 +530,15 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			change.Before, err = portableDocument(old.Kind, old.Data)
 			if err != nil {
 				return plan, err
+			}
+			if change.Action == domain.ConfigurationReuse && change.Kind == domain.ProviderKind {
+				// Managed presets expose current profiles without rewriting legacy
+				// rows. Compare both reused documents through that same projection,
+				// including old portable bundles; reuse never updates the stored row.
+				change.After, err = portableDocument(change.Kind, change.After)
+				if err != nil {
+					return plan, err
+				}
 			}
 			if change.Action == domain.ConfigurationReuse && !bytes.Equal(change.Before, change.After) {
 				return plan, domain.Fail(domain.Conflict, "Explicitly reused configuration does not match the imported values.", "Preserve both configurations as separate entries, or edit the import before requesting another preview.")

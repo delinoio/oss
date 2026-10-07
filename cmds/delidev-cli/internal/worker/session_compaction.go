@@ -232,7 +232,11 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	if err != nil {
 		return nil, err
 	}
-	executable := i.Assignment.Installation.ResolvedPath
+	installation, err := resolveOriginalStartup(ctx, config, i.SourceJobID, i.Assignment)
+	if err != nil {
+		return nil, err
+	}
+	executable := installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.CompactionUncertain()
@@ -251,7 +255,7 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	}
 	// The existing original checkpoint derives the private runtime paths. The
 	// action never creates a replacement conversation or submits its old input.
-	native := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Logger: logger, Env: env}, Version: claude.SupportedVersion, Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: i.Assignment.SessionID, Model: i.Assignment.Configuration.NativeModel, Permission: permission, Effort: effort, Instructions: i.Assignment.Configuration.Instructions, API: claude.APIConfig{ServerOrigin: c.Credential.Endpoint}}
+	native := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Logger: logger, Env: env}, Version: installation.Version, Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: i.Assignment.SessionID, Model: i.Assignment.Configuration.NativeModel, Permission: permission, Effort: effort, Instructions: i.Assignment.Configuration.Instructions, API: claude.APIConfig{ServerOrigin: c.Credential.Endpoint}}
 	phase = compactionRestore
 	closed, err := readClaudeContinuation(ctx, config.Root, c.Credential, i.Restore, manifest, native)
 	if err != nil {

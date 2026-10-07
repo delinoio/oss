@@ -47,6 +47,7 @@
   "claude-subscription.availability": "Claude 로그인은 선택한 실행 장치를 사용합니다. Grok 로그인은 아직 지원하지 않습니다.",
   "claude-subscription.refreshRunners": "실행 장치 새로고침",
   "claude-subscription.moreRunners": "다음 실행 장치 페이지",
+  "claude-subscription.viewOriginalOperation": "원래 작업 보기",
   "claude-subscription.phase": "인증 작업 단계",
   "claude-subscription.phase1": "설치 확인",
   "claude-subscription.phase2": "버전 확인",

@@ -78,19 +78,20 @@ func (r ExecutionRecoveryRequest) Validate() error {
 // Claude inspection compares immutable launch settings without receiving the
 // instruction body, prompt, answer, credential or authority for a new process.
 type ClaudeRecoveryReference struct {
-	ClaimVersion       uint32               `json:"claim_version"`
-	Version            string               `json:"version"`
-	Executable         string               `json:"executable"`
-	Model              string               `json:"model"`
-	Effort             string               `json:"effort"`
-	Permission         ClaudePermissionMode `json:"permission"`
-	InstructionsDigest string               `json:"instructions_sha256"`
-	BindingRequestID   ID                   `json:"binding_request_id"`
-	InputRequestID     ID                   `json:"input_request_id"`
+	Startup            *ExecutionStartupSelection `json:"startup,omitempty"`
+	ClaimVersion       uint32                     `json:"claim_version"`
+	Version            string                     `json:"version"`
+	Executable         string                     `json:"executable"`
+	Model              string                     `json:"model"`
+	Effort             string                     `json:"effort"`
+	Permission         ClaudePermissionMode       `json:"permission"`
+	InstructionsDigest string                     `json:"instructions_sha256"`
+	BindingRequestID   ID                         `json:"binding_request_id"`
+	InputRequestID     ID                         `json:"input_request_id"`
 }
 
 func (r ClaudeRecoveryReference) Validate() error {
-	if (r.ClaimVersion != 1 && r.ClaimVersion != 2) || r.Version != ClaudeProtocolVersion || UniqueIDs([]ID{r.BindingRequestID, r.InputRequestID}) != nil || Text(r.Executable, "native executable", 4096, true) != nil || Text(r.Model, "native model", 1024, true) != nil || r.Effort != "" && !validClaudeEffort(r.Effort) || !r.Permission.Valid() {
+	if (r.ClaimVersion != 1 && r.ClaimVersion != 2) || (r.Version != "" && !ValidNativeVersionMetadata(r.Version)) || UniqueIDs([]ID{r.BindingRequestID, r.InputRequestID}) != nil || (r.Startup == nil && Text(r.Executable, "native executable", 4096, true) != nil || r.Startup != nil && (r.Startup.Validate(ClaudeCode) != nil || r.Startup.ExecutableSHA256 == "" || r.Executable != "")) || Text(r.Model, "native model", 1024, true) != nil || r.Effort != "" && !validClaudeEffort(r.Effort) || !r.Permission.Valid() {
 		return ExecutionRecoveryUncertain()
 	}
 	digest, err := hex.DecodeString(r.InstructionsDigest)

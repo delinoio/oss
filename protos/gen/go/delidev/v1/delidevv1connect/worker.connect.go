@@ -86,6 +86,9 @@ const (
 	// WorkerServiceDiscoverHarnessesProcedure is the fully-qualified name of the WorkerService's
 	// DiscoverHarnesses RPC.
 	WorkerServiceDiscoverHarnessesProcedure = "/delidev.v1.WorkerService/DiscoverHarnesses"
+	// WorkerServiceReportExecutionStartupProcedure is the fully-qualified name of the WorkerService's
+	// ReportExecutionStartup RPC.
+	WorkerServiceReportExecutionStartupProcedure = "/delidev.v1.WorkerService/ReportExecutionStartup"
 	// WorkerServiceRegisterExecutionProcedure is the fully-qualified name of the WorkerService's
 	// RegisterExecution RPC.
 	WorkerServiceRegisterExecutionProcedure = "/delidev.v1.WorkerService/RegisterExecution"
@@ -124,6 +127,7 @@ type WorkerServiceClient interface {
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	CloneRepository(context.Context, *connect.Request[v1.CloneRepositoryRequest]) (*connect.Response[v1.CloneRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
+	ReportExecutionStartup(context.Context, *connect.Request[v1.ReportExecutionStartupRequest]) (*connect.Response[v1.ReportExecutionStartupResponse], error)
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
 	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
 	ClaimQuestionResponse(context.Context, *connect.Request[v1.ClaimQuestionResponseRequest]) (*connect.Response[v1.ClaimQuestionResponseResponse], error)
@@ -250,6 +254,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("DiscoverHarnesses")),
 			connect.WithClientOptions(opts...),
 		),
+		reportExecutionStartup: connect.NewClient[v1.ReportExecutionStartupRequest, v1.ReportExecutionStartupResponse](
+			httpClient,
+			baseURL+WorkerServiceReportExecutionStartupProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportExecutionStartup")),
+			connect.WithClientOptions(opts...),
+		),
 		registerExecution: connect.NewClient[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse](
 			httpClient,
 			baseURL+WorkerServiceRegisterExecutionProcedure,
@@ -303,6 +313,7 @@ type workerServiceClient struct {
 	inspectRepository       *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
 	cloneRepository         *connect.Client[v1.CloneRepositoryRequest, v1.CloneRepositoryResponse]
 	discoverHarnesses       *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
+	reportExecutionStartup  *connect.Client[v1.ReportExecutionStartupRequest, v1.ReportExecutionStartupResponse]
 	registerExecution       *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
 	publishExecution        *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
 	claimQuestionResponse   *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
@@ -400,6 +411,11 @@ func (c *workerServiceClient) DiscoverHarnesses(ctx context.Context, req *connec
 	return c.discoverHarnesses.CallUnary(ctx, req)
 }
 
+// ReportExecutionStartup calls delidev.v1.WorkerService.ReportExecutionStartup.
+func (c *workerServiceClient) ReportExecutionStartup(ctx context.Context, req *connect.Request[v1.ReportExecutionStartupRequest]) (*connect.Response[v1.ReportExecutionStartupResponse], error) {
+	return c.reportExecutionStartup.CallUnary(ctx, req)
+}
+
 // RegisterExecution calls delidev.v1.WorkerService.RegisterExecution.
 func (c *workerServiceClient) RegisterExecution(ctx context.Context, req *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error) {
 	return c.registerExecution.CallUnary(ctx, req)
@@ -446,6 +462,7 @@ type WorkerServiceHandler interface {
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	CloneRepository(context.Context, *connect.Request[v1.CloneRepositoryRequest]) (*connect.Response[v1.CloneRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
+	ReportExecutionStartup(context.Context, *connect.Request[v1.ReportExecutionStartupRequest]) (*connect.Response[v1.ReportExecutionStartupResponse], error)
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
 	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
 	ClaimQuestionResponse(context.Context, *connect.Request[v1.ClaimQuestionResponseRequest]) (*connect.Response[v1.ClaimQuestionResponseResponse], error)
@@ -568,6 +585,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("DiscoverHarnesses")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceReportExecutionStartupHandler := connect.NewUnaryHandler(
+		WorkerServiceReportExecutionStartupProcedure,
+		svc.ReportExecutionStartup,
+		connect.WithSchema(workerServiceMethods.ByName("ReportExecutionStartup")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceRegisterExecutionHandler := connect.NewUnaryHandler(
 		WorkerServiceRegisterExecutionProcedure,
 		svc.RegisterExecution,
@@ -636,6 +659,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServiceCloneRepositoryHandler.ServeHTTP(w, r)
 		case WorkerServiceDiscoverHarnessesProcedure:
 			workerServiceDiscoverHarnessesHandler.ServeHTTP(w, r)
+		case WorkerServiceReportExecutionStartupProcedure:
+			workerServiceReportExecutionStartupHandler.ServeHTTP(w, r)
 		case WorkerServiceRegisterExecutionProcedure:
 			workerServiceRegisterExecutionHandler.ServeHTTP(w, r)
 		case WorkerServicePublishExecutionProcedure:
@@ -725,6 +750,10 @@ func (UnimplementedWorkerServiceHandler) CloneRepository(context.Context, *conne
 
 func (UnimplementedWorkerServiceHandler) DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.DiscoverHarnesses is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportExecutionStartup(context.Context, *connect.Request[v1.ReportExecutionStartupRequest]) (*connect.Response[v1.ReportExecutionStartupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportExecutionStartup is not implemented"))
 }
 
 func (UnimplementedWorkerServiceHandler) RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error) {

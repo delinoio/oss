@@ -38,7 +38,7 @@ it("observes failed launch and keeps detailed recovery in troubleshooting withou
 });
 function savedFixture(stopServer?: (_request: unknown) => Promise<object>) {
   const profile: SavedConnection = { version: 1, revision: 1, id: newRequestId(), name: "Remote fixture", endpoint: "https://fixture.example.test", server_id: newRequestId(), device_id: newRequestId(), pairing_id: newRequestId(), state: SavedConnectionState.Paired, created_at: "2026-09-25T00:00:00Z" };
-  const connection = { endpoint: profile.endpoint, server_id: profile.server_id, device_id: profile.device_id, token: "private-native-fixture-token" };
+  const connection = { runtime_generation: newRequestId(), runtime_key: "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk", endpoint: profile.endpoint, server_id: profile.server_id, device_id: profile.device_id, token: "private-native-fixture-token" };
   const status = vi.fn(() => ({ version: "0.1.0", protocolVersion: 1, serverId: profile.server_id }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status, stopServer });
@@ -263,7 +263,7 @@ it("rechecks an adopted local identity without startup and resets only changed-d
   bridge.invoke.mockImplementation(async (command: string) => {
     if (command === "connection_context") return null;
     if (command === "local_server_status") return { state: LocalServerState.Ready, attempts: 0, retry_ms: 0 };
-    if (command === "launch_local") return { endpoint: "http://127.0.0.1:46310", server_id: server, device_id: device, token: "private-test-client-token" };
+    if (command === "launch_local") return { endpoint: "http://127.0.0.1:46310", runtime_generation: newRequestId(), runtime_key: "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk", server_id: server, device_id: device, token: "private-test-client-token" };
     if (command === "notification_permission") return { permission: "unavailable", problem: "os-unavailable" };
     if (command === "begin_tray") return "fixture-presentation";
     if (command === "publish_tray" || command === "read_tray_action") return;

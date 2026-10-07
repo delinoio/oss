@@ -52,12 +52,8 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	if err != nil {
 		return r, session, input, err
 	}
-	installation, err := checkedExecutionSelection(tx, session, machine, input.SourceAssignment)
-	if err != nil {
+	if err := checkedExecutionSource(tx, r, session, machine, input.SourceAssignment); err != nil {
 		return r, session, input, err
-	}
-	if installation.Version != input.SourceAssignment.Installation.Version || installation.ResolvedPath != input.SourceAssignment.Installation.ResolvedPath {
-		return r, session, input, forkConflict()
 	}
 	instance, seen, err := tx.WorkerInstance(session.MachineID)
 	if err != nil || instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
@@ -65,13 +61,21 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	}
 	input.Version, input.SourceSessionID, input.SourceRevision = 1, id, r.Revision
 	if input.SourceAssignment.Configuration.Harness == domain.OpenCode {
-		if session.Workspace != domain.GeneralChat || machine.OS == "windows" || (machine.OS != "darwin" && machine.OS != "linux") || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.SourceAssignment.Installation.Version != domain.OpenCodeProtocolVersion {
+		if session.Workspace != domain.GeneralChat || machine.OS == "windows" || (machine.OS != "darwin" && machine.OS != "linux") || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.SourceAssignment.Version != 4 && !domain.ValidNativeVersionMetadata(input.SourceAssignment.Installation.Version) {
 			return r, session, input, domain.Fail(domain.Unsupported, "This Runner Device does not support OpenCode General Chat Fork.", "Update the original Unix Runner Device and keep the completed source session.")
 		}
 		if err := validateOpenCodeForkTranscript(tx, id, input.Completion.NativeThreadID); err != nil {
 			return r, session, input, err
 		}
 		input.Version = 2
+	}
+	if input.SourceAssignment.Version == 4 {
+		if job.Startup == nil || job.Startup.Ready == nil || job.Startup.Failure != nil || job.Startup.Ready.Validate() != nil {
+			return r, session, input, forkConflict()
+		}
+		selected := *input.SourceAssignment.Startup
+		selected.ExecutableSHA256 = job.Startup.Ready.ExecutableSHA256
+		input.Startup = &selected
 	}
 	input.SourceJobID, input.Progress, input.Snapshot = prior.ID, *session.Execution, *session.InitialExecution
 	return r, session, input, nil
@@ -379,7 +383,7 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 	if _, err := tx.PutJob(preparationID, 0, input.ChildSessionID, r.ProjectID, domain.Job{Type: domain.PrepareWorkspaceJob, State: domain.JobSucceeded, MachineID: job.MachineID, Input: output.Preparation, Output: output.Manifest, AcceptedAt: job.AcceptedAt, FinishedAt: &now}); err != nil {
 		return nil, err
 	}
-	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
+	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{Startup: input.Startup, SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
 	if input.Purpose == domain.SidechatFork {
 		snapshot, err := input.ChildSnapshot()
 		if err != nil {

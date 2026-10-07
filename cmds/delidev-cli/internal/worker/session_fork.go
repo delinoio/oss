@@ -112,10 +112,20 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
-	if !domain.CodexVersionAllowed(assignment.Installation.Version) {
+	if assignment.Version != 4 && !domain.CodexVersionAllowed(assignment.Installation.Version) {
 		return nil, executionCheckpointUncertain()
 	}
-	executable := assignment.Installation.ResolvedPath
+	installation, err := resolveOriginalStartup(ctx, config, input.SourceJobID, assignment)
+	if err != nil {
+		return nil, err
+	}
+	if input.Startup != nil && input.Startup.ExecutableSHA256 != installation.ExecutableSHA256 {
+		return nil, executionCheckpointUncertain()
+	}
+	if err := writeStartupExecutable(config.Root, owner, installation); err != nil {
+		return nil, publicationUncertain()
+	}
+	executable := installation.ResolvedPath
 	canonical, err := filepath.EvalSymlinks(executable)
 	if err != nil || canonical != executable || !filepath.IsAbs(executable) {
 		return nil, executionCheckpointUncertain()
@@ -134,6 +144,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, executionCheckpointUncertain()
+	}
+	if err := writeForkStartupExecutable(config.Root, input.RuntimeID, installation); err != nil {
+		return nil, publicationUncertain()
 	}
 	phase := forkRuntimeUnused
 	var unpublishedSidechatInput workspace.PrepareRequest
@@ -160,7 +173,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
-	sourceConfig := codex.Config{Mode: codex.ThreadProtocol, Version: assignment.Installation.Version, Home: sourceHome, Process: processConfig}
+	sourceConfig := codex.Config{Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
 		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -232,7 +245,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: assignment.Installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}

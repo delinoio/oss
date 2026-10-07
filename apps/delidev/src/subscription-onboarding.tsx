@@ -82,7 +82,7 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
       <p>{diagnostic?.message ?? props.problem ?? copy("subscription-onboarding.theServerDidNotReportNative_923694")}</p>
       <dl>
         <div><dt>{copy("subscription-onboarding.codexVersion_072e4d")}</dt><dd>{diagnostic ? diagnostic.version || copy("subscription-onboarding.extra.9f4a106271aa") : copy("subscription-onboarding.notReported_adadfa")}</dd></div>
-        <div><dt>{copy("subscription-onboarding.minimumVersion_3cab5a")}</dt><dd>{diagnostic?.minimum ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
+        {diagnostic?.minimum ? <div><dt>{copy("subscription-onboarding.minimumVersion_3cab5a")}</dt><dd>{diagnostic.minimum}</dd></div> : null}
         <div><dt>{copy("subscription-onboarding.failedStep_0ed199")}</dt><dd>{diagnostic?.phase ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         <div><dt>{copy("subscription-onboarding.errorCode_2c35f6")}</dt><dd>{diagnostic?.code ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         {diagnostic?.correlation ? <div><dt>{copy("subscription-onboarding.reference_44dc4a")}</dt><dd>{diagnostic.correlation}</dd></div> : null}
@@ -115,12 +115,12 @@ const phaseNames: Partial<Record<CodexDiagnosticPhase, string>> = {
 const wirePhaseNames: Partial<Record<CodexDiagnosticPhase, string>> = {
  [CodexDiagnosticPhase.DISCOVERY]:"Executable discovery", [CodexDiagnosticPhase.VERSION]:"Version validation", [CodexDiagnosticPhase.PROFILE]:"Profile validation", [CodexDiagnosticPhase.RUNTIME]:"Runtime preparation", [CodexDiagnosticPhase.LAUNCH]:"Native launch", [CodexDiagnosticPhase.INITIALIZE]:"Initialization", [CodexDiagnosticPhase.CONFIRM]:"Initialization confirmation", [CodexDiagnosticPhase.LOGIN]:"Sign-in", [CodexDiagnosticPhase.MODELS]:"Model discovery", [CodexDiagnosticPhase.EXECUTION]:"Execution", [CodexDiagnosticPhase.HISTORY]:"History verification", [CodexDiagnosticPhase.CLEANUP]:"Cleanup",
 };
-const versionText = (value: string) => value.length <= 256 && /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/.test(value);
+const versionText = (value: string) => value.length <= 64 && /^[a-zA-Z0-9.+_-]+$/.test(value);
 // Reconstruct text from closed metadata, never provider/native message strings.
 export function safeDiagnostic(d?: CodexDiagnostic) {
- if (!d || (d.detectedVersion && !versionText(d.detectedVersion)) || !versionText(d.minimumVersion) || !phaseNames[d.phase] || !Object.values(FailureCode).includes(d.code as FailureCode)) return;
+ if (!d || (d.detectedVersion && !versionText(d.detectedVersion)) || (d.minimumVersion && !versionText(d.minimumVersion)) || !phaseNames[d.phase] || !Object.values(FailureCode).includes(d.code as FailureCode)) return;
  const reasons: Partial<Record<FailureCode,string>> = { [FailureCode.NotFound]: copy("subscription-onboarding.extra.42fee8b5804e"), [FailureCode.Unsupported]: copy("subscription-onboarding.extra.19786363aa19"), [FailureCode.Unavailable]: copy("subscription-onboarding.extra.59b7856d21b8"), [FailureCode.Unauthenticated]: copy("subscription-onboarding.extra.09cda2aca67d"), [FailureCode.PermissionDenied]: copy("subscription-onboarding.extra.818b40d88444"), [FailureCode.RecoveryRequired]: copy("subscription-onboarding.extra.c5c34ea04a9b") };
  const timeout = d.code === FailureCode.Unavailable && d.message === `Codex ${d.detectedVersion || "not detected"} did not complete ${wirePhaseNames[d.phase]!.toLowerCase()}. The native operation timed out.`;
- const reason = timeout ? copy("subscription-onboarding.extra.7d66dfcbcdfe") : d.phase === CodexDiagnosticPhase.VERSION ? copy("subscription-onboarding.sentence.01720d6af7dc", { v0: d.minimumVersion }) : reasons[d.code as FailureCode] ?? copy("subscription-onboarding.extra.a421fd3a84fd");
+ const reason = timeout ? copy("subscription-onboarding.extra.7d66dfcbcdfe") : d.phase === CodexDiagnosticPhase.VERSION ? d.minimumVersion ? copy("subscription-onboarding.sentence.01720d6af7dc", { v0: d.minimumVersion }) : copy("subscription-onboarding.nativeVersionMetadataInvalid") : reasons[d.code as FailureCode] ?? copy("subscription-onboarding.extra.a421fd3a84fd");
  return { version:d.detectedVersion, minimum:d.minimumVersion, phase:phaseNames[d.phase], code:d.code, correlation:isEntityId(d.correlationId) ? d.correlationId : "", message:copy("subscription-onboarding.sentence.758270754713", { v0: d.detectedVersion || copy("subscription-onboarding.notDetected"), v1: phaseNames[d.phase]!.toLowerCase(), v2: reason }) };
 }

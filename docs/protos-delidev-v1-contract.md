@@ -1,60 +1,95 @@
 # DeliDev v1 Connect contract
 
-## API account protocol reservations
+## Key-preserving API format change reservations
 
-Issue #964 reserves ProviderInventory capability `ACCOUNT_API_PROTOCOL_V1 = 7`,
-`ProviderInventoryEntry.api_formats = 10` and the account-list-only
-`ListResourcesRequest.api_protocol = 5`. `ApiProtocol` reserves UNSPECIFIED 0,
-OPENAI_RESPONSES 1, OPENAI_CHAT 2 and ANTHROPIC_MESSAGES 3.
-`ApiAuthentication` reserves UNSPECIFIED 0, BEARER 1, API_KEY 2 and KEYLESS 3.
-`ProviderApiFormat` reserves protocol/endpoint/authentication fields 1–3.
-The complete declaration closure must reach main before dependent implementation.
-Reservations add no active schemas, bindings, capability advertisement, credential
-use, inference authority or database migration.
+Issue #964 reserves ProviderInventory capability
+`ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
+reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reserves request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response reserves account 1,
+request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
+Establish these complete allocations on main before implementation. Reservations
+alone grant no format change, key access or execution authority.
 
-The planned feature selects one explicit protocol when adding an API key. Custom
-providers declare bounded per-protocol endpoint/authentication profiles. Existing
-accounts retain their original defaults; connected accounts cannot change protocol.
-Disconnect and confirmed protected cleanup precede a changed selection and a new
-connection. Preserve immutable original execution/account ownership, keyless
-cleanup proofs and native uncertainty. API-specific resource schema 3 and portable
-configuration version 4 protect explicit selections from older-client writes while
-retaining legacy reads. Follow the catalog, account and proxy contracts.
+The approved extension permits changing a connected API account's format while
+keeping its protected key. Go owns atomic preference/profile publication and
+new connection generations sharing the original protected credential reference.
+Running executions and existing-session continuation retain their original
+connection/profile and admission evidence. New sessions use the new format only
+after explicit validation; saving sends no provider request. Preserve original
+OAuth receipts, account/Worker/history attribution, immutable referenced profiles,
+exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
+across all generations. Do not convert formats or change Provider identity or
+keyless credential ownership. No SQLite migration or native change is authorized.
+Capability 7 and its existing cleanup-required configuration operation remain
+unchanged; capability 9 owns the dedicated extension.
 
 
+## OAuth API format selection reservations
 
-## Direct execution startup reservation
+Issue #964 reserves ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
+`StartAccountOAuthRequest.api_protocol = 4` and
+`AccountOAuthAttempt.api_protocol = 7` before dependent implementation.
+The fields reuse the existing closed `ApiProtocol` enum. Capability 8 extends
+account format selection to accepted provider OAuth profiles; it does not replace
+capabilities 5, 6 or 7 or grant OAuth registration, credential, model or native
+execution authority. Reservation-only changes activate no schemas or runtime
+support and require no database migration.
 
-The [startup contract](cmds-delidev-execution-startup-contract.md) reserves System
-43, Worker 23, `ReportExecutionStartupRequest`, `ReportExecutionStartupResponse`,
-`ExecutionStartupObservation` and the four closed startup enums under issue #964.
-The allocation ledger owns every field and enum member of these new declarations.
-Establish the complete closure on main before dependent implementation. Preserve
-System 42 and Worker 22 for the separate inline-model reservation in PR #1642.
-These reservations activate no schema, execution or credential authority and add
-no migration.
+The implementation must bind an explicit selected profile to the original Start
+receipt and private attempt JSON, and preserve it through account creation,
+connection, status, completion and original-result recovery. Omitted legacy
+requests and attempts retain their original default and exact receipt behavior.
+OAuth authentication ownership remains independent of the selected inference
+format. Only currently eligible provider/authentication profiles may be selected;
+REST availability alone cannot grant OAuth support. Existing provider revisions,
+actor/login/credential ownership, once-only exchange and cleanup stay intact.
+
+The desktop uses one provider-metadata-driven format presentation for manual and
+OAuth connections: explicitly choose among multiple formats, or display the sole
+format. Preserve Google project binding and device approval. Existing accounts
+require Disconnect and confirmed cleanup before format changes. No historical
+account/execution rewrite, protocol conversion or native change is authorized.
+
+
+## API account format selection
+
+Reservation PR #1646 established the complete issue #964 allocation closure on
+main before implementation: ProviderInventory capability 7, profile field 10,
+account-list protocol field 5 and the closed API protocol/authentication/profile
+declarations. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection)
+owns their activated scope, schema-3 API families and portable version 4.
+Preserve legacy default tuples, disconnect and confirmed protected cleanup before
+format changes, connection-generation pinning, immutable original executions and
+keyless cleanup proofs. The common server resolver owns every consuming flow;
+regenerate bindings from the reconciled declarations. No SQLite migration or
+Worker assignment extension is introduced.
+
+
+## Direct execution startup allocation and activation
+
+PR #1645 established the complete [startup allocation](cmds-delidev-execution-startup-contract.md)
+on main at `03429673f2976ab52b98c613f9d3cc1ff4c41d84` before implementation.
+Runtime activation uses System 43, Worker 23, ReportExecutionStartup request/response,
+ExecutionStartupObservation and the four closed startup enums with their original
+ledger field/member numbers. Preserve separate System 42 and Worker 22 ownership
+for PR #1642. Negotiation permits private v4 direct assignments without inspection;
+the original process still proves protocol/settings and fresh account authority.
+Reports bind claimed revision, original machine/device/instance/server epoch and
+durable exact receipts. Ready/failure metadata uses existing session/terminal job
+JSON; no assignment rewrite, credential grant or SQLite migration is added.
 
 ## Failed subscription cleanup reservations
 
-Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the
-`CleanupFailedSubscriptions` and `GetFailedSubscriptionCleanup` request/response
-messages, `FailedSubscriptionCleanupJob` and `FailedSubscriptionCleanupResult`,
-and the closed cleanup state/outcome/reason enums in `allocations.json`.
-Establish this complete reservation on main before dependent implementation.
-The request reserves the original request ID; status reserves original job ID
-and pagination token. Responses reserve the job, original receipt identity,
-replay flag and bounded result pagination. Job metadata reserves ID/revision,
-state, total/processed/deleted/retained counts and safe problem code. Results
-reserve account ID/alias, outcome, reason and safe problem code.
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by PR #1614 before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
 
-The planned button deliberately starts one server-wide cleanup without another
-confirmation. Only failed, canceled, expired, unsupported or interrupted initial
-ChatGPT server logins without independent authentication or Worker ownership are
-candidates. Original native and protected-credential cleanup, fresh revisions,
-complete retained-reference checks and deletion receipts remain authoritative.
-Ordinary disconnected accounts and active logins remain outside the batch.
-Reservations introduce no active schemas, generated bindings, capability
-advertisement, native cleanup, configuration deletion or database migration.
+One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. Connected accounts, ordinary disconnected accounts, active logins, restored generations and independent Worker/native/observation ownership are excluded.
+
+The joined server controller applies the original 30-second account attempt and account gate. It rechecks the original requester, exact account revision and login ownership. It shares the existing native/credential cleanup and configuration deletion checks, including protected vault references and complete Agent/Project/retained Session references. Its native and credential checkpoints advance the child's expected revision in the same transaction. Changed settings or ownership remain retained. Failed attempts are terminal retained outcomes with closed reasons, never automatic retries. A later deliberate button click can create a fresh batch.
+
+Confirmed deletion, tombstone/browser obligations, the existing configuration receipt, child result and aggregate counts commit together. Restart reads only original jobs and confirmed cleanup checkpoints, never login or callbacks. An interrupted attempt without a native checkpoint remains retained; confirmed native cleanup may resume protected cleanup. Shutdown cancels and joins the controller before store/vault closure. Revocation permits server-owned retained-result bookkeeping only, never substituted account deletion authority. Restore blocks queued/pending cleanup jobs and quarantines historical nonterminal jobs and receipts, so restored work cannot regain deletion authority.
+
+`GetFailedSubscriptionCleanup(job_id, page_token)` returns current revision/state, total/processed/deleted/retained counts and at most 50 original account results. Signed cursors bind the actor and batch. Result metadata contains only the original alias, account ID, closed outcome/reason and safe problem code. Logs contain job/operation IDs, counts, phases and safe codes. Existing generic jobs/receipts need no migration or Rust/native change.
 
 ## Grok Build subscription reservations
 
@@ -112,7 +147,7 @@ mutation/revision/receipt response remains unchanged. Capability 36 advertises
 this complete configuration extension; capability 35 retains its separate known
 subscription catalog reservation. Schema 1/2 APIs and accountless CLI writes
 remain compatible; current clients retain schema 3 even with one remaining source.
-Resource reads expose schema 3 only for ordered-source Agents. Older clients must
+Resource reads expose schema 3 for ordered-source Agents, explicit-format API Accounts and profile-declaring API Providers. Older clients must
 treat that family as unsupported and cannot overwrite it through legacy saves.
 No Worker protocol shape or database migration changes. The selected-source native
 configuration remains unchanged; complete source decisions are additive server-owned

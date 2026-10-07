@@ -20,6 +20,7 @@ func Presets() []domain.ProviderPreset {
 	// One canonical product order is shared by presets, inventory and CLI.
 	items = append([]domain.ProviderPreset{items[2], items[3], items[1], items[0], items[4], items[5]}, append(additionalHostedPresets(), items[6:]...)...)
 	for i := range items {
+		items[i].Provider.APIFormats = presetAPIFormats(items[i].ID, items[i].Provider.LegacyAPIFormat())
 		items[i].Provider.Discovery = true
 		items[i].KeyCreationURL = keyCreationURL(items[i].ID)
 		presetID := items[i].ID

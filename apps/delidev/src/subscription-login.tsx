@@ -31,7 +31,7 @@ const stages: Partial<Record<SubscriptionLoginState, Stage>> = {
   [SubscriptionLoginState.RECOVERY_REQUIRED]: Stage.Recovery, [SubscriptionLoginState.FAILED]: Stage.Failed,
 };
 
-export function useSubscriptionLogin(active: boolean, changed: () => void) {
+export function useSubscriptionLogin(active: boolean, changed: () => void, closed?: () => void) {
   useLocale();
   const claude = useClaudeSubscriptionLogin(active,changed);
   const transport = useTransport(), opening = useSettingsOpening(), native = useOAuthNativeControl();
@@ -44,8 +44,12 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     p.disposed = true; p.retry = undefined; p.url = "";
     if (native) void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(() => undefined);
   };
-  const leave = () => { const p = pending.current; if (p) dispose(p); pending.current = undefined; setView(undefined); changed(); };
-  useEffect(() => () => { if (pending.current) dispose(pending.current); }, [opening, native]);
+  const leave = () => { const p = pending.current; if (p) dispose(p); pending.current = undefined; setView(undefined); changed(); closed?.(); };
+  useEffect(() => {
+    const close = () => { if (pending.current) dispose(pending.current); pending.current = undefined; };
+    opening?.controller.signal.addEventListener("abort", close, { once: true });
+    return () => { opening?.controller.signal.removeEventListener("abort", close); close(); };
+  }, [opening, native]);
   useEffect(() => { if (!active && pending.current) { dispose(pending.current); pending.current = undefined; setView(undefined); } }, [active]);
 
   const account = async (p: Pending) => {
@@ -212,5 +216,5 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
   };
   const p = pending.current;
   const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={resolveMessage(view.problem)} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? ownedMessage("subscription-login.extra.557b693dbfb7")); }}>{copy("subscription-login.retryOriginalRequest_008780")}</button> : null}</> : null;
-  return { service: claude.workflow ? SubscriptionServiceId.Claude : view?.service, begin, body: claude.body ?? body, workflow: Boolean(view) || claude.workflow, retained: claude.retained || Boolean(p?.busy || p?.retry || p?.operation || p?.account), available: Boolean(native), leave: claude.workflow ? claude.leave : leave };
+  return { service: claude.workflow ? SubscriptionServiceId.Claude : view?.service, begin, body: claude.body ?? body, workflow: Boolean(view) || claude.workflow, retained: claude.retained || Boolean(p?.busy || p?.retry || p?.operation || p?.account), hidden: claude.workflow && claude.hidden, available: Boolean(native), hide: claude.workflow ? claude.hide : leave, show: claude.show, leave: claude.workflow ? claude.leave : leave };
 }

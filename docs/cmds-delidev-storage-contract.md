@@ -1,5 +1,9 @@
 # DeliDev storage operations
 
+## Startup metadata without migration
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) stores the current bounded startup record in existing session JSON and mirrors it into the original terminal job JSON. Readiness and first failure remain separate immutable observations. Report receipts use existing durable mutations without changing the claimed assignment revision or its input bytes. Explicit retry retains the failed job/input and creates distinct IDs. Original private executable identity, process and outbox journals remain Worker-owned. No table or SQLite migration is added.
+
 ## Request diagnostic retention
 
 Schema 27 adds bounded metadata-only request diagnostic rows and session/execution indexes under the existing synchronized pre-migration backup boundary. It preserves all historical state, title claims, backup obligations and usage; no historical requests are synthesized. Rows retain immutable event-time attribution, exact revision checks and original publication receipts. Proxy revisions publish session invalidation events atomically at the unchanged session-state revision, while native observations share their original session publication. The 4 KiB row and 10,000-per-session admission limits do not evict history; existing observations may settle. Session deletion cascades rows, and reference-only old receipts cannot recreate them. Single-record and page reads reject row/body identity, session, execution or revision mismatches without exposing partial records. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for publication/cancellation/read ownership.
@@ -1044,6 +1048,14 @@ v2 omits protected subscription ownership; imported account preferences start
 without authentication. Native checkpoints serialize no profile paths or auth
 files and pin only the accepted profile reference through their comparison
 digest. Follow the [subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
+## Failed subscription cleanup jobs
+
+Server-owned `cleanup-failed-subscriptions` parent jobs and `cleanup-failed-subscription` children use existing generic entities, jobs and receipts, without a database migration. The subscription owner validates their closed input/checkpoint/results, original actor/server, fixed account revisions and original login/deletion identities. Only confirmed account cleanup transactions advance child revisions. Terminal retained attempts cannot rerun automatically; tombstone, deletion receipt, child result and parent counts are atomic. Narrow pending-job filtering occurs before bounds so unrelated Worker history cannot hide the one active batch.
+
+Managed restore eligibility includes queued cleanup parents/children as unsettled ownership. The existing image transformer cancels every historical nonterminal cleanup job and quarantines its receipts. Maintenance selects only pending original live jobs; historical canceled or terminal jobs cannot acquire account deletion authority. Follow the [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations).
+
+Each batch child records native and credential-attempt fences before external cleanup. A confirmed native checkpoint can resume only before the credential attempt begins. An interrupted credential attempt with no confirmed account checkpoint is retained without repeating vault effects, even when its previous outcome write failed. A fresh explicit batch can retry that account.
+
 ## Inline Worker models and endpoint-only completion reservation
 
 DB baseline 32 directly initializes the complete Model-free current schema: inline Worker definitions, source/native-ID pricing and immutable execution/usage attribution. Remove persistent catalogs and model indexes/suppressions. Earlier DBs and backups are unsupported. The owner waives earlier DB retention and permits explicit DB/sidecar reset; protected credentials and native ownership retain their original cleanup authority. No conversion or placeholder migration is permitted.

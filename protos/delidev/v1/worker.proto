@@ -33,6 +33,7 @@ service WorkerService {
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
   rpc CloneRepository(CloneRepositoryRequest) returns (CloneRepositoryResponse);
   rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
+  rpc ReportExecutionStartup(ReportExecutionStartupRequest) returns (ReportExecutionStartupResponse);
   rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
   rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
   rpc ClaimQuestionResponse(ClaimQuestionResponseRequest) returns (ClaimQuestionResponseResponse);
@@ -127,6 +128,7 @@ message AttachWorkerRequest {
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
   WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20;
+  WORKER_CAPABILITY_EXECUTION_STARTUP_V1 = 23;
   WORKER_CAPABILITY_REPOSITORY_CLONE_V1 = 18;
   WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1 = 19;
   WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1 = 17;
@@ -369,4 +371,56 @@ message CloneRepositoryResponse {
   Resource job = 1;
   string request_id = 2;
   bool replayed = 3;
+}
+
+// Original execution startup metadata. No raw native content or credentials.
+message ReportExecutionStartupRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  ExecutionStartupObservation observation = 4;
+}
+message ReportExecutionStartupResponse {
+  ExecutionStartupObservation observation = 1;
+  bool replayed = 2;
+}
+message ExecutionStartupObservation {
+  ExecutionStartupState state = 1;
+  ExecutionStartupPhase phase = 2;
+  string harness = 3;
+  string native_version = 4;
+  string executable_sha256 = 5;
+  string protocol = 6;
+  string problem_code = 7;
+  string correlation_id = 8;
+  ExecutionStartupInputDelivery input_delivery = 9;
+  ExecutionStartupCleanup cleanup = 10;
+}
+enum ExecutionStartupState {
+  EXECUTION_STARTUP_STATE_UNSPECIFIED = 0;
+  EXECUTION_STARTUP_STATE_READY = 1;
+  EXECUTION_STARTUP_STATE_FAILED = 2;
+  EXECUTION_STARTUP_STATE_UNCERTAIN = 3;
+}
+enum ExecutionStartupPhase {
+  EXECUTION_STARTUP_PHASE_UNSPECIFIED = 0;
+  EXECUTION_STARTUP_PHASE_RESOLVE = 1;
+  EXECUTION_STARTUP_PHASE_LAUNCH = 2;
+  EXECUTION_STARTUP_PHASE_INITIALIZE = 3;
+  EXECUTION_STARTUP_PHASE_SETTINGS = 4;
+  EXECUTION_STARTUP_PHASE_INPUT = 5;
+  EXECUTION_STARTUP_PHASE_EXECUTION = 6;
+  EXECUTION_STARTUP_PHASE_CLEANUP = 7;
+}
+enum ExecutionStartupInputDelivery {
+  EXECUTION_STARTUP_INPUT_DELIVERY_UNSPECIFIED = 0;
+  EXECUTION_STARTUP_INPUT_DELIVERY_NOT_SENT = 1;
+  EXECUTION_STARTUP_INPUT_DELIVERY_CLAIMED = 2;
+  EXECUTION_STARTUP_INPUT_DELIVERY_ACKNOWLEDGED = 3;
+  EXECUTION_STARTUP_INPUT_DELIVERY_UNCERTAIN = 4;
+}
+enum ExecutionStartupCleanup {
+  EXECUTION_STARTUP_CLEANUP_UNSPECIFIED = 0;
+  EXECUTION_STARTUP_CLEANUP_CONFIRMED = 1;
+  EXECUTION_STARTUP_CLEANUP_UNCERTAIN = 2;
 }

@@ -40,6 +40,21 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
+	if input.Version == 4 {
+		config.startup = newExecutionStartupAttempt(config, owner, input)
+		defer func() { returned = config.startup.finish(returned) }()
+		// An empty original process index is positive pre-launch cleanup proof.
+		// Without it, a missing executable could be confused with lost ownership.
+		if err := prepareStartupProcessIndex(config.Root, owner); err != nil {
+			return nil, publicationUncertain()
+		}
+		var err error
+		input.Installation, err = resolveExecutionStartup(ctx, config, owner, input)
+		if err != nil {
+			return nil, err
+		}
+		config.startup.observation.ExecutableSHA256 = input.Installation.ExecutableSHA256
+	}
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
@@ -69,7 +84,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Configuration.Harness == domain.GrokBuild {
 		return executeGrokSession(ctx, config, owner, input, logger)
 	}
-	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) {
+	if input.Configuration.Harness != domain.Codex || (input.Version != 4 && !domain.CodexVersionAllowed(input.Installation.Version)) {
 		return nil, domain.Fail(domain.Unsupported, "This native execution profile is not implemented.", "Select a verified installed Codex profile; no fallback harness is used.")
 	}
 	var preparation workspace.PrepareRequest
@@ -80,11 +95,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	executable := input.Installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
-		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery before another execution; no PATH fallback is used.")
+		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Review the selected executable path and recover original history; no PATH fallback is used.")
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
-	if c := input.Continuation; c != nil {
+	if retry := input.Retry; retry != nil {
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
+	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
 			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
@@ -98,7 +115,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, errors.Join(err, returned)
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	var prGit *workspace.PRGitTool
@@ -109,7 +126,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		defer func() {
 			if err := prGit.Close(); err != nil {
-				output, returned = nil, err
+				output, returned = nil, config.startup.cleanupFailure(returned, err)
 			}
 		}()
 	}
@@ -343,7 +360,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
 			defer func() {
 				if err := proxy.Close(); err != nil {
-					output, returned = nil, err
+					output, returned = nil, config.startup.cleanupFailure(returned, err)
 				}
 			}()
 		}
@@ -357,6 +374,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// may authorize removal. A definite failed Open already proves that closure;
 	// recovery-required startup must retain its authentication and lease.
 	managedPreNativeCleanup = false
+	config.startup.setPhase(domain.StartupInitialize)
 	client, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {
 		managedPreNativeCleanup = domain.SafeError(err).Code != domain.RecoveryRequired
@@ -376,7 +394,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer func() {
 		captureManagedBundle()
 		if err := client.Close(); err != nil {
-			output, returned = nil, domain.SafeError(err)
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 			return
 		}
 		if managed != nil {
@@ -390,6 +408,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		unregister := config.observations.register(input.AccountID, client, managed)
 		defer unregister()
 	}
+	input.Installation.Version = client.Version()
+	publisher.nativeVersion = client.Version()
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
@@ -420,6 +440,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	logger.InfoContext(ctx, "native_execution_thread_bound")
+	if err := config.startup.ready(ctx, client.Version()); err != nil {
+		return nil, err
+	}
+	config.startup.claimInput()
 	turn, err := client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)
 	if err != nil {
 		return nil, err
@@ -430,19 +454,20 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if !cancelBeforeAcceptance() {
 		return nil, domain.SafeError(context.Canceled)
 	}
+	config.startup.acknowledgeInput()
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
 	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
 	finishApprovals := startApprovalResponseController(ctx, nativeCtx, cancelNative, config.approvalControls, mapper, client)
 	finishSteers := startSteerController(ctx, nativeCtx, cancelNative, config.steerControls, mapper, client)
 	defer func() {
 		if err := finishSteers(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 		if err := finishApprovals(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 		if err := finishResponses(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	readContext, publicationContext := ctx, nativeCtx

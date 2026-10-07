@@ -1,4 +1,9 @@
 {
+  "account-settings.apiFormat": "API 포맷",
+  "account-settings.chooseApiFormat": "API 포맷 선택",
+  "account-settings.responsesHelp": "Codex용 포맷입니다. 이 선택은 이 API 키에 적용됩니다.",
+  "account-settings.formatHelp": "이 선택은 이 API 키에 적용됩니다. Agent Worker와 호환되는 포맷을 선택하세요.",
+  "account-settings.apiFormatUnsupported": "API 포맷을 선택할 수 없습니다. 프로바이더 확인을 기다리거나 선택한 서버를 업데이트하세요.",
   "account-settings.backToAiApiKeys_2d6214": "AI API 키로 돌아가기",
   "account-settings.aiApiKeys_da1a0f": "AI API 키",
   "account-settings.entrySavedCredentialConnectionIsSeparate_9ee9e5": "항목이 저장되었습니다. 자격 증명 연결은 검증 및 모델 검색과 별개입니다.",

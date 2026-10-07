@@ -54,7 +54,7 @@ func TestOwnedAPIInvalidSettingsFailBeforeNativeLaunch(t *testing.T) {
 		name string
 		edit func(*apiSessionConfig)
 	}{
-		{"version", func(c *apiSessionConfig) { c.Probe.Version = "foreign" }},
+		{"version", func(c *apiSessionConfig) { c.Probe.Version = "invalid/version" }},
 		{"owner", func(c *apiSessionConfig) { c.Probe.Process.OwnerID = "" }},
 		{"executable", func(c *apiSessionConfig) { c.Probe.Process.Executable = "opencode" }},
 		{"claim", func(c *apiSessionConfig) { c.Claim = nil }},

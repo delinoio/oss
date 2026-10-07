@@ -1,3 +1,4 @@
+import { createDesktopFetch } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
 import { OAuthNativeProvider, type OAuthNativeControl } from "./account-oauth";
 import { ServerPresentationKind } from "./server-presentation";
@@ -58,11 +59,12 @@ function LocalDesktop() {
   const acceptConnection = async (connection: NativeConnection, current: () => boolean = () => true) => {
     if (!current()) return;
     const generation = connectionReadGeneration.current;
-    const candidate = createDeliDevTransport({ origin: connection.endpoint, getToken: () => connection.token });
+    if (previous.current && previous.current.endpoint !== connection.endpoint) throw "invalid-evidence";
+    const candidate = createDeliDevTransport({ origin: connection.endpoint, getToken: () => connection.token, fetch: createDesktopFetch(connection) });
     await verifyLocalServer(candidate, connection.server_id);
     if (!current() || generation !== connectionReadGeneration.current) return;
     const old = previous.current;
-    if (!old || old.server_id !== connection.server_id || old.device_id !== connection.device_id || old.endpoint !== connection.endpoint || old.token !== connection.token) setTransport(candidate);
+    if (!old || old.server_id !== connection.server_id || old.device_id !== connection.device_id || old.endpoint !== connection.endpoint || old.token !== connection.token || old.runtime_generation !== connection.runtime_generation) setTransport(candidate);
     previous.current = connection;
     setConnectionVerified(true);
     setConnectionEpoch((epoch) => epoch + 1);

@@ -50,9 +50,9 @@ func publicCompactionOutcomeFixture(t *testing.T, outcome domain.ExecutionOutcom
 	return f, pf
 }
 
-func TestCompactionRejectsChangedClaudeInstallation(t *testing.T) {
+func TestCompactionPreservesOriginalClaudeStartupAfterDiscoveryChanges(t *testing.T) {
 	ctx := context.Background()
-	f, _ := publicCompactionFixture(t)
+	f, source := publicCompactionFixture(t)
 	machineRecord, err := f.service.Store.Get(ctx, domain.MachineKind, domain.ID(f.machine.Id))
 	if err != nil {
 		t.Fatal(err)
@@ -72,12 +72,14 @@ func TestCompactionRejectsChangedClaudeInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := f.refresh(t)
-	_, err = sessionClient(f.accountFixture).CompactSession(ctx, ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID())}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("changed installation was accepted: %v", err)
+	accepted, err := sessionClient(f.accountFixture).CompactSession(ctx, ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID())}))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if after := f.refresh(t); after.Revision != before.Revision {
-		t.Fatal("rejected compaction changed the session")
+	var job domain.Job
+	var input domain.SessionCompactionInput
+	if domain.Decode(accepted.Msg.Job.DocumentJson, &job) != nil || domain.DecodeCompactionInput(job.Input, &input) != nil || !reflect.DeepEqual(input.Assignment.Startup, source.input.Startup) || !reflect.DeepEqual(input.Assignment.Installation, domain.Installation{}) {
+		t.Fatal("discovery replaced the original startup selection")
 	}
 }
 

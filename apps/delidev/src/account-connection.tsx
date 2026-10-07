@@ -2,11 +2,11 @@ import { formatTimestamp } from "./localization";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
-import { useSettingsTaskDismiss, useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask } from "./settings-task-context";
+import { useSettingsTaskDismiss, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { ManagedSubscriptionAccount, serviceAccount } from "./subscription-accounts";
 import { useEffect, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { AccountQuery, EntityKind, ProviderQuery, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { AccountQuery, accountAPIProfile, apiFormatLabels, APIAuthenticationId, supportsResourceSchema, EntityKind, ProviderQuery, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text, type Document } from "./documents";
 import { Authentication } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
@@ -46,19 +46,19 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
   const discover = useRetainedMutation(`account-discover:${initial.id}`, ProviderQuery.discoverModels, (value) => changed(value.account));
   const operations = [connect, disconnect, validate, discover];
   const blocked = operations.some((operation) => operation.busy || operation.uncertain);
-  const metadata = document(provider.data?.resource), keyless = metadata.authentication === Authentication.Keyless;
-  const providerEnabled = provider.data?.resource !== undefined && metadata.enabled !== false;
+  const metadata = document(provider.data?.resource), profile = accountAPIProfile(metadata, data), keyless = profile?.authentication === APIAuthenticationId.Keyless;
+  const providerEnabled = Boolean(provider.data?.resource && supportsResourceSchema(provider.data.resource) && profile && !provider.error && metadata.enabled !== false);
   const disconnected = data.health === "disconnected" && !data.connection && !data.removal;
   useEffect(() => { if (!active || !disconnected) setKey(""); }, [active, disconnected]);
+  useEffect(() => { setKey(""); }, [current.revision, profile?.protocol, profile?.endpoint, profile?.authentication]);
   useSettingsTaskDismiss(() => setKey(""));
   const mutation = () => ({ id: initial.id, expectedRevision: current.revision, requestId: newRequestId() });
   const removal = current.id === initial.id ? accountRemovalMutation(current) : undefined;
-  useRetainSettingsTask(Boolean(data.removal));
   const retryRemoval = () => {
     if (blocked || !removal) return;
     void disconnect.send({ mutation: removal });
   };
-  return <section className={isApi ? "api-entry-workflow" : undefined}>{isApi ? <><button className="api-entry-back" onClick={closeTask}>{copy("account-connection.backToAiApiKeys_2d6214")}</button><header className="api-entry-heading"><h2 hidden={inTask}>{copy("account-connection.manageConnection_ad2892")}</h2><p>{resourceName(current)}</p><p className="api-entry-scope">{copy("account-connection.savedOnTheSelectedServer_93dbee")}</p></header></> : <header><h3>{resourceName(current)}</h3><button onClick={closeTask}>{copy("account-connection.backToAccounts_68d8e7")}</button></header>}<p><LocalizedText id="account-connection.health_842f5a" components={{ s0: <>{statusLabel(text(data.health))}</>, s1: <>{data.connection ? copy("account-connection.credentialConnected_eed6f1") : copy("account-connection.disconnected_04dfac")}</> }} /></p><p><LocalizedText id="account-connection.provider_0a5bc7" components={{ s0: <>{resourceName(provider.data?.resource)}</>, s1: <>{text(metadata.authentication)}</>, s2: <>{provider.data?.resource ? providerEnabled ? copy("account-connection.enabled_92c1cd") : copy("account-connection.off_ca7981") : copy("account-connection.unavailable_ca1844")}</> }} /></p>
+  return <section className={isApi ? "api-entry-workflow" : undefined}>{isApi ? <><button className="api-entry-back" onClick={closeTask}>{copy("account-connection.backToAiApiKeys_2d6214")}</button><header className="api-entry-heading"><h2 hidden={inTask}>{copy("account-connection.manageConnection_ad2892")}</h2><p>{resourceName(current)}</p><p className="api-entry-scope">{copy("account-connection.savedOnTheSelectedServer_93dbee")}</p></header></> : <header><h3>{resourceName(current)}</h3><button onClick={closeTask}>{copy("account-connection.backToAccounts_68d8e7")}</button></header>}<p><LocalizedText id="account-connection.health_842f5a" components={{ s0: <>{statusLabel(text(data.health))}</>, s1: <>{data.connection ? copy("account-connection.credentialConnected_eed6f1") : copy("account-connection.disconnected_04dfac")}</> }} /></p><p><LocalizedText id="account-connection.provider_0a5bc7" components={{ s0: <>{resourceName(provider.data?.resource)}</>, s1: <>{profile?.authentication ?? ""}</>, s2: <>{provider.data?.resource ? providerEnabled ? copy("account-connection.enabled_92c1cd") : copy("account-connection.off_ca7981") : copy("account-connection.unavailable_ca1844")}</> }} /></p>
     {data.type === "subscription" ? <p>{copy("account-connection.subscriptionLoginIsNotImplementedYet_68e05f")}</p> : disconnected ? <><form id={formId} onSubmit={(event) => {
       event.preventDefault(); if (blocked || !providerEnabled || !provider.data?.resource || (!keyless && !/^[!-~]{1,8192}$/.test(key))) return;
       const input = { mutation: mutation(), keyless, apiKey: keyless ? new Uint8Array() : new TextEncoder().encode(key) };
@@ -70,7 +70,7 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
     {data.type === "subscription" && data.removal ? <p role="status">{copy("account-connection.credentialCleanupPendingSubscriptionCredentialCleanup_bcd643")}</p> : null}
     {data.type !== "subscription" && data.removal ? <p>{copy("account-connection.disconnectedCredentialCleanupIsPending_66cdef")}<button disabled={blocked || !removal} onClick={retryRemoval}>{copy("account-connection.retryOriginalCredentialCleanup_bb5e5d")}</button></p> : null}
     {cleanup ? <ServiceProblem code={text(cleanup.code) || text(cleanup.problem_code)}><p role="alert">{text(cleanup.message)} {text(cleanup.guidance)}</p></ServiceProblem> : null}
-    <Observation label={copy("account-connection.validation_68e1ca")} value={data.validation} /><Observation label={copy("account-connection.modelDiscovery_3c49ba")} value={data.catalog} />
+    <p>{copy("account-connection.apiFormat")}: {profile ? apiFormatLabels[profile.protocol] : ""}</p><Observation label={copy("account-connection.validation_68e1ca")} value={data.validation} /><Observation label={copy("account-connection.modelDiscovery_3c49ba")} value={data.catalog} />
     <Problem error={result.error || provider.error} />{data.type !== "subscription" ? operations.map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="account-connection.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("account-connection.connection_b38d9d") : index === 1 ? copy("account-connection.disconnection_4bd886") : index === 2 ? copy("account-connection.validation_98c41d") : copy("account-connection.modelRefresh_795dab")}</> }} /></button> : null}</div>) : null}
   </section>;
 }

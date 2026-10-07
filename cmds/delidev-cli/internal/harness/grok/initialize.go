@@ -116,7 +116,7 @@ func validateInitialize(raw []byte, id domain.ID, cwd string) error {
 
 func validateInitializeResult(raw []byte, cwd string, profile *apiProfile) error {
 	var result initializeResult
-	if decode(raw, &result) != nil || result.ProtocolVersion != 1 || result.Meta.Version != SupportedVersion || result.Meta.Cwd != cwd ||
+	if decode(raw, &result) != nil || result.ProtocolVersion != 1 || !domain.ValidNativeVersionMetadata(result.Meta.Version) || result.Meta.Cwd != cwd ||
 		!isNull(result.Meta.Metadata) || !emptyArray(result.Meta.MCPServers) || result.Meta.MCPApps ||
 		!text(result.Meta.ModelState.Current, 256) || !text(result.Meta.Hostname, 1024) ||
 		!nativeUUID(result.Meta.AgentID, 5) || !nativeUUID(result.Meta.InstanceID, 4) || result.Meta.FeedbackTraceOffer {

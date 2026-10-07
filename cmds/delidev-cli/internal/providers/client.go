@@ -160,6 +160,7 @@ func directDial(ctx context.Context, network, address string) (net.Conn, error) 
 }
 
 func inspect(ctx context.Context, client *http.Client, provider domain.Provider, key []byte) Observation {
+	provider = inspectionProvider(provider)
 	o := Observation{Authentication: AuthenticationUnknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	base, _ := url.Parse(provider.Endpoint)
 	base.Path = strings.TrimSuffix(base.Path, "/")
@@ -197,7 +198,9 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 		if profile == openRouter {
 			query.Set("limit", "500")
 			query.Set("offset", strconv.Itoa(page*500))
-			query.Set("output_modalities", "all")
+			// Non-text generation models may report a zero token context. Request
+			// text output explicitly while retaining multimodal input models.
+			query.Set("output_modalities", "text")
 		}
 		if provider.Protocol == domain.AnthropicMessages {
 			query.Set("limit", "1000")

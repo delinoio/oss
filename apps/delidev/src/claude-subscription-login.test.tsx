@@ -152,13 +152,15 @@ function fixture(dialog = false) {
               title="Connect Claude account"
               size={SettingsDialogSize.Wide}
               retained={flow.retained}
-              close={flow.leave}
+              close={flow.hide}
             >
               {flow.body}
             </SettingsTaskDialog>
           ) : (
             flow.body
           )
+        ) : flow.hidden ? (
+          <button onClick={flow.show}>View original operation</button>
         ) : (
           <button onClick={() => flow.begin(SubscriptionServiceId.Claude)}>
             Add Claude

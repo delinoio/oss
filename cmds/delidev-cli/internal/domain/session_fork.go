@@ -6,43 +6,53 @@ import "encoding/json"
 // ForkOrigin is a retained boundary, never an executable copy of source input.
 // Snapshot remains immutable even before the child's first explicit input.
 type ForkOrigin struct {
-	SidechatParentSnapshot *InitialExecution `json:"sidechat_parent_snapshot,omitempty"`
-	SourceSessionID        ID                `json:"source_session_id"`
-	SourceRevision         uint64            `json:"source_revision"`
-	SourceExecutionID      ID                `json:"source_execution_id"`
-	SourceTurnID           NativeIdentity    `json:"source_turn_id"`
-	JobID                  ID                `json:"job_id"`
-	RuntimeID              ID                `json:"runtime_id"`
-	NativeThreadID         NativeIdentity    `json:"native_thread_id"`
-	NativeTurnID           NativeIdentity    `json:"native_turn_id,omitempty"`
-	CheckpointDigest       string            `json:"checkpoint_digest"`
-	Snapshot               InitialExecution  `json:"snapshot"`
-	WorkerDeviceID         ID                `json:"worker_device_id"`
-	JobInputDigest         string            `json:"job_input_digest"`
+	Startup                *ExecutionStartupSelection `json:"startup,omitempty"`
+	SidechatParentSnapshot *InitialExecution          `json:"sidechat_parent_snapshot,omitempty"`
+	SourceSessionID        ID                         `json:"source_session_id"`
+	SourceRevision         uint64                     `json:"source_revision"`
+	SourceExecutionID      ID                         `json:"source_execution_id"`
+	SourceTurnID           NativeIdentity             `json:"source_turn_id"`
+	JobID                  ID                         `json:"job_id"`
+	RuntimeID              ID                         `json:"runtime_id"`
+	NativeThreadID         NativeIdentity             `json:"native_thread_id"`
+	NativeTurnID           NativeIdentity             `json:"native_turn_id,omitempty"`
+	CheckpointDigest       string                     `json:"checkpoint_digest"`
+	Snapshot               InitialExecution           `json:"snapshot"`
+	WorkerDeviceID         ID                         `json:"worker_device_id"`
+	JobInputDigest         string                     `json:"job_input_digest"`
 }
 
 type ForkJobInput struct {
-	Purpose          ForkPurpose           `json:"purpose,omitempty"`
-	Version          uint32                `json:"version"`
-	OpenCode         *OpenCodeForkRequests `json:"opencode,omitempty"`
-	SourceSessionID  ID                    `json:"source_session_id"`
-	SourceRevision   uint64                `json:"source_revision"`
-	ChildSessionID   ID                    `json:"child_session_id"`
-	RuntimeID        ID                    `json:"runtime_id"`
-	NativeRequestID  ID                    `json:"native_request_id"`
-	Name             string                `json:"name"`
-	Workspace        WorkspaceType         `json:"workspace"`
-	LocalOrigin      *LocalOrigin          `json:"local_origin,omitempty"`
-	CreatedBy        ID                    `json:"created_by"`
-	Actor            Principal             `json:"actor"`
-	SourceJobID      ID                    `json:"source_job_id"`
-	SourceAssignment ExecutionJobInput     `json:"source_assignment"`
-	Completion       ExecutionCompletion   `json:"completion"`
-	Progress         ExecutionProgress     `json:"progress"`
-	Snapshot         InitialExecution      `json:"snapshot"`
+	Startup          *ExecutionStartupSelection `json:"startup,omitempty"`
+	Purpose          ForkPurpose                `json:"purpose,omitempty"`
+	Version          uint32                     `json:"version"`
+	OpenCode         *OpenCodeForkRequests      `json:"opencode,omitempty"`
+	SourceSessionID  ID                         `json:"source_session_id"`
+	SourceRevision   uint64                     `json:"source_revision"`
+	ChildSessionID   ID                         `json:"child_session_id"`
+	RuntimeID        ID                         `json:"runtime_id"`
+	NativeRequestID  ID                         `json:"native_request_id"`
+	Name             string                     `json:"name"`
+	Workspace        WorkspaceType              `json:"workspace"`
+	LocalOrigin      *LocalOrigin               `json:"local_origin,omitempty"`
+	CreatedBy        ID                         `json:"created_by"`
+	Actor            Principal                  `json:"actor"`
+	SourceJobID      ID                         `json:"source_job_id"`
+	SourceAssignment ExecutionJobInput          `json:"source_assignment"`
+	Completion       ExecutionCompletion        `json:"completion"`
+	Progress         ExecutionProgress          `json:"progress"`
+	Snapshot         InitialExecution           `json:"snapshot"`
 }
 
 func (i ForkJobInput) Validate() error {
+	if i.SourceAssignment.Version == 4 {
+		if i.Startup == nil || i.Startup.Validate(i.SourceAssignment.Configuration.Harness) != nil || i.Startup.ExecutableSHA256 == "" {
+			return Fail(RecoveryRequired, "The Fork executable selection is incomplete.", "Retain the original source assignment and executable identity.")
+		}
+	} else if i.Startup != nil {
+		return Fail(RecoveryRequired, "The Fork executable selection is incomplete.", "Retain the original source assignment and executable identity.")
+	}
+
 	if i.Purpose != IndependentFork && i.Purpose != SidechatFork {
 		return SidechatUnavailable()
 	}
@@ -126,6 +136,9 @@ func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 
 // Validate checks the child-owned publication seed without reopening its parent.
 func (f ForkOrigin) Validate() error {
+	if f.Startup != nil && (f.Startup.Validate(f.Snapshot.Configuration.Harness) != nil || f.Startup.ExecutableSHA256 == "") {
+		return Fail(RecoveryRequired, "The child lost its original executable selection.", "Preserve the child-owned Fork seed.")
+	}
 	if f.Snapshot.Configuration.SidechatPolicy != "" || f.SidechatParentSnapshot != nil {
 		if f.SidechatParentSnapshot == nil || f.SidechatParentSnapshot.Configuration.SidechatPolicy != "" {
 			return SidechatUnavailable()

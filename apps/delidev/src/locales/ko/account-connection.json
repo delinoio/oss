@@ -1,4 +1,5 @@
 {
+  "account-connection.apiFormat": "API 포맷",
   "account-connection.message_2fa20b": " · {{v0}}",
   "account-connection.backToAiApiKeys_2d6214": "AI API 키로 돌아가기",
   "account-connection.manageConnection_ad2892": "연결 관리",

@@ -128,7 +128,7 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, state := p.input, p.state
-	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || i.Installation.Version != opencode.SupportedVersion {
+	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || (i.Version != 4 && i.Installation.Version != opencode.SupportedVersion) {
 		return nil, publicationUncertain()
 	}
 	requested, err := openCodeExecutionSettings(i.Configuration, i.Input.Mode, "Native publication selection")

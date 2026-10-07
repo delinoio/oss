@@ -1,6 +1,6 @@
 import { LocalizedText, copy, useLocale } from "./localization";
 import { providerPresetNames, hostedProviderPresetOrder } from "@delinoio/delidev-api-client";
-import { subscriptionService, subscriptionServiceNames, supportsResourceSchema } from "@delinoio/delidev-api-client";
+import { configurationSchemaVersion, subscriptionService, subscriptionServiceNames, supportsResourceSchema } from "@delinoio/delidev-api-client";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -54,7 +54,7 @@ function ProviderToggle({ entry, presets, changed, refresh }: { entry: ProviderI
     void mutation.send({
       mutation: { id: saved?.id ?? "", expectedRevision: saved?.revision ?? 0n, requestId: newRequestId() },
       kind: EntityKind.PROVIDER,
-      schemaVersion: 1,
+      schemaVersion: configurationSchemaVersion(EntityKind.PROVIDER, next),
       documentJson: encode(next),
     });
   };
