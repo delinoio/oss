@@ -49,7 +49,7 @@ function activityPage(response: ListActivityResponse) {
 interface SearchFilters { query: string; archive: SearchArchiveState; projectId: string; sessionId: string; agentId: string; accountId: string; outcome: SearchExecutionOutcome }
 const emptySearch: SearchFilters = { query: "", archive: SearchArchiveState.UNSPECIFIED, projectId: "", sessionId: "", agentId: "", accountId: "", outcome: SearchExecutionOutcome.UNSPECIFIED };
 
-export function Search({ active, open, focusActivation = 0 }: { active: boolean; open: (id: string) => void; focusActivation?: number }) {
+export function Search({ active, open }: { active: boolean; open: (id: string) => void }) {
   useLocale();
   const [draft, setDraft] = useState<SearchFilters>(emptySearch);
   const [query, setQuery] = useState<SearchFilters>();
@@ -58,7 +58,6 @@ export function Search({ active, open, focusActivation = 0 }: { active: boolean;
   const searchInput = useRef<HTMLInputElement>(null);
   const focusedOnce = useRef(false);
   const requestedFocus = useRef(false);
-  const lastFocusActivation = useRef(0);
   const closeDrawer = useCloseSidebarDrawer();
   const drawerOpen = useSidebarDrawerOpen();
   const openDrawer = useOpenSidebarDrawer();
@@ -70,13 +69,11 @@ export function Search({ active, open, focusActivation = 0 }: { active: boolean;
     if (requestedFocus.current && drawerOpen) { requestedFocus.current = false; searchInput.current?.focus(); }
   }, [drawerOpen]);
   useEffect(() => {
-    const requested = focusActivation !== lastFocusActivation.current;
-    if (active && requested) { searchInput.current?.focus(); lastFocusActivation.current = focusActivation; focusedOnce.current = true; }
     if (!active || focusedOnce.current) return;
     if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches && !drawerOpen) return;
     const frame = window.requestAnimationFrame(() => { searchInput.current?.focus(); focusedOnce.current = true; });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, drawerOpen, focusActivation]);
+  }, [active, drawerOpen]);
   const shortcuts = useShortcuts([
     { id: ShortcutId.SearchFocus, scope: Surface.Search, active, label: "shortcuts.focusSearch", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, run: () => {
       if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches && !drawerOpen) { requestedFocus.current = true; openDrawer(); }

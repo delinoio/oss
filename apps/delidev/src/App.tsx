@@ -40,7 +40,6 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const [surface, setSurface] = useState(Surface.Sessions);
   useShortcutSurface(surface);
   const openHelp = useShortcutHelp();
-  const [searchFocusActivation, setSearchFocusActivation] = useState(0);
   const pendingFocusDestination = useRef<Surface>(undefined);
   const main = useRef<HTMLElement>(null);
   const contextOpener = useRef<HTMLButtonElement>(null);
@@ -120,11 +119,6 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   };
   useShortcuts([
     { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: globalShortcutBindings[ShortcutId.Help], run: openHelp },
-    { id: ShortcutId.Search, scope: ShortcutScope.Global, label: "shortcuts.openSearch", bindings: globalShortcutBindings[ShortcutId.Search], input: ShortcutInput.Allow, run: () => {
-      navigateHeader(Surface.Search);
-      setSearchFocusActivation(value => value + 1);
-      if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches) setDrawerOpen(true);
-    } },
     { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: globalShortcutBindings[ShortcutId.NewSession], input: ShortcutInput.Allow, run: startNewSession },
   ]);
   useLayoutEffect(() => {
@@ -142,7 +136,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} openRunnerSettings={() => openSettings(SettingsEntryDestination.RunnerDevices)} /> : <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Problem error={status.error} /></section>}</div>
     <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionEntry.activation} entryProjectId={newSessionEntry.projectId} projectSelectionBlockedChanged={setNewSessionProjectBlocked} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
     {newGeneralChatActivation > 0 ? <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} kind={NewSessionKind.GeneralChat} active={surface === Surface.NewGeneralChat} ownsActivation={surface === Surface.NewGeneralChat} activation={newGeneralChatActivation} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} /> : null}
-    <Search active={surface === Surface.Search} open={open} focusActivation={searchFocusActivation} />
+    <Search active={surface === Surface.Search} open={open} />
     <Activity active={surface === Surface.Activity} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} /></div>
     <Usage active={surface === Surface.Usage} open={open} entry={usageEntry} />

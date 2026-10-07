@@ -31,7 +31,7 @@ it("screen shortcuts reuse guarded forms and preserve drafts across keyboard nav
   fireEvent.keyDown(message, { key: "?" }); expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).not.toHaveBeenCalled();
   fireEvent.change(message, { target: { value: "Retained keyboard draft" } });
-  fireEvent.keyDown(message, { key: "k", ctrlKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   const search = await screen.findByRole("textbox", { name: "Search conversations" });
   await waitFor(() => expect(document.activeElement).toBe(search));
   fireEvent.change(search, { target: { value: "original query" } });
@@ -50,10 +50,12 @@ it("screen shortcuts reuse guarded forms and preserve drafts across keyboard nav
   await act(async () => { release(); await gate; });
 }, fullShellTimeoutMs);
 
-it("keyboard Search opens the compact drawer and explicitly refocuses retained drafts", async () => {
+it("Search input shortcut opens the compact drawer and refocuses retained drafts", async () => {
   viewport(true);
   render(<App transport={fixture().transport} />);
-  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
   const query = await screen.findByRole("textbox", { name: "Search conversations" });
   await waitFor(() => expect(document.activeElement).toBe(query));
   fireEvent.change(query, { target: { value: "Retained compact query" } });
@@ -66,8 +68,52 @@ it("keyboard Search opens the compact drawer and explicitly refocuses retained d
   await waitFor(() => expect(drawer.open).toBe(true)); expect(document.activeElement).toBe(query);
   fireEvent(drawer, new Event("cancel", { bubbles: true, cancelable: true }));
   await waitFor(() => expect(drawer.open).toBe(false));
-  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
   await waitFor(() => expect(document.activeElement).toBe(query)); expect((query as HTMLInputElement).value).toBe("Retained compact query");
+});
+
+it.each(["MacIntel", "Win32", "Linux x86_64"])("leaves primary+K native on %s without Search navigation or mutation", async platform => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  await screen.findByRole("button", { name: "New session" });
+  const chord = { key: "k", metaKey: platform === "MacIntel", ctrlKey: platform !== "MacIntel" };
+  const main = document.querySelector<HTMLElement>("#main")!;
+  const drawer = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  const drawerOpen = drawer.open;
+  main.focus();
+  expect(fireEvent.keyDown(main, chord)).toBe(true);
+  expect(document.activeElement).toBe(main);
+  expect(screen.queryByRole("textbox", { name: "Search conversations" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  const input = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(input, { target: { value: "Retained draft" } });
+  input.focus();
+  expect(fireEvent.keyDown(input, chord)).toBe(true);
+  expect(document.activeElement).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("Retained draft");
+  expect(screen.queryByRole("textbox", { name: "Search conversations" })).toBeNull();
+  expect(drawer.open).toBe(drawerOpen);
+  expect(value.searches).not.toHaveBeenCalled();
+  expect(value.creates).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Search" }).hasAttribute("aria-keyshortcuts")).toBe(false);
+});
+
+it.each(["en", "ko"])("omits global Search guidance from %s shortcut help on Sessions, New session and Search", async locale => {
+  await act(() => i18n.changeLanguage(locale));
+  render(<App transport={fixture().transport} />);
+  const newSession = locale === "en" ? "New session" : "새 세션";
+  const search = locale === "en" ? "Search" : "검색";
+  await screen.findByRole("button", { name: newSession });
+  for (const navigate of [undefined, newSession, search]) {
+    if (navigate) fireEvent.click(screen.getByRole("button", { name: navigate }));
+    fireEvent.keyDown(document.body, { key: "?" });
+    const dialog = document.querySelector<HTMLDialogElement>(".shortcut-help")!;
+    expect(dialog.open).toBe(true);
+    expect(dialog.textContent).not.toContain(locale === "en" ? "Open search" : "검색 열기");
+    expect([...dialog.querySelectorAll("kbd")].map(node => node.textContent)).not.toContain("K");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+  }
 });
 
 function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {

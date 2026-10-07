@@ -352,7 +352,6 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
 
   const openShortcutHelp = useShortcutHelp();
   const helpAria = useGlobalShortcutAria(ShortcutId.Help);
-  const searchAria = useGlobalShortcutAria(ShortcutId.Search);
   const newSessionAria = useGlobalShortcutAria(ShortcutId.NewSession);
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
   const chooseNewSession = (projectId?: string) => { newSession(projectId); setDrawerOpen(false); };
@@ -373,7 +372,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
         <h1>{copy("sidebar.delidev_44fcad")}</h1>
         {sessionNavigation ? <div className="sidebar-header-actions">
           <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.inbox_94835e")} onClick={() => navigateHeader(Surface.Inbox)}><Icon name="inbox" /></button>
-          <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.search_49c266")} aria-keyshortcuts={searchAria} onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
+          <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.search_49c266")} onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
         </div> : null}
       </header>
       <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>{copy("sidebar.closeNavigation_99904d")}</button>

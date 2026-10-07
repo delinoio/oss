@@ -4,13 +4,12 @@ import type { MessageKey } from "./localization";
 import { Surface } from "./surface";
 
 export enum ShortcutScope { Global = "global" }
-export enum ShortcutId { Help = "help", Search = "search", NewSession = "new-session", SessionFocus = "session-focus", SessionSend = "session-send", SessionNewline = "session-newline", NewSessionFocus = "new-session-focus", NewSessionSend = "new-session-send", NewSessionNewline = "new-session-newline", SearchFocus = "search-focus", SearchSubmit = "search-submit", FilesClose = "files-close", DiffClose = "diff-close", DiagnosticsClose = "diagnostics-close" }
+export enum ShortcutId { Help = "help", NewSession = "new-session", SessionFocus = "session-focus", SessionSend = "session-send", SessionNewline = "session-newline", NewSessionFocus = "new-session-focus", NewSessionSend = "new-session-send", NewSessionNewline = "new-session-newline", SearchFocus = "search-focus", SearchSubmit = "search-submit", FilesClose = "files-close", DiffClose = "diff-close", DiagnosticsClose = "diagnostics-close" }
 export enum ShortcutInput { Ignore = "ignore", Allow = "allow", Target = "target" }
 export enum ShortcutExecution { Action = "action", Native = "native" }
 export enum ShortcutPlatform { Mac = "mac", Other = "other" }
 export const globalShortcutBindings = {
   [ShortcutId.Help]: [{ key: "?", ariaKey: "/", ariaShift: true }],
-  [ShortcutId.Search]: [{ key: "k", primary: true }],
   [ShortcutId.NewSession]: [{ key: "n", primary: true, shift: true }],
 } as const;
 export interface ShortcutBinding { key: string; primary?: boolean; shift?: boolean; ariaKey?: string; ariaShift?: boolean }
