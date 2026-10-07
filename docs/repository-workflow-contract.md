@@ -41,11 +41,10 @@ only; it does not sign with production keys, notarize, publish releases or insta
 updates. Native runtime acceptance remains separate from package verification.
 
 The optional boolean `workspace_fixture_only` manual input defaults to false.
-Enabling it skips package planning and assembly and runs only the Windows
-these seven closed regressions, using isolated temporary directories:
+Enabling it skips package planning and assembly and runs only these six closed
+Windows regressions, using isolated temporary directories:
 
 - `TestClaimedRemovalPreservesUncapturedWritesDuringUnlink`
-- `TestSnapshotMaximumInventoryRemainsDeletable`
 - `TestSnapshotCreatePublicationFailureRetainsOriginalRecovery`
 - `TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart`
 - `TestSnapshotObservationSharesBudgetBeforeHashing`
@@ -258,7 +257,7 @@ Go execution streams `-json` events into the runner without retaining the raw st
 
 Native Git/PowerShell and durable SQLite fixtures on hosted Windows outgrew Go's default 10-minute package budget, and concurrent package suites starved bounded Worker and harness protocols. Independent runners shorten the critical path while retaining serial package execution within each Windows runner and each package's normal test parallelism. Remove `-p=1` only when full native Windows evidence supports concurrent package suites. This scheduling and bounded watchdog do not introduce a timeout for `ach` commands or change product concurrency limits. Bulk scheduler-only queue setup uses one durable transaction so it measures the worker scenario instead of thousands of independent disk flushes.
 
-The independent workspace shard owns maximum-inventory workspace cleanup regressions with thousands of actual durable claims and multiple fresh recovery owners. The workspace and Worker shards retain their 45-minute package watchdogs. The workspace budget covers the aggregate fixture runtime; every original or recovery operation retains the production five-minute deadline and the bounded recovery-attempt limit. The explicit Windows workspace investigation uses the same 45-minute package watchdog within a 60-minute job. Reassess these larger fixture budgets after native timing evidence permits reduction.
+The independent workspace shard owns durable workspace cleanup and recovery regressions, including bounded journal compaction across fresh recovery owners. The workspace and Worker shards retain their 45-minute package watchdogs. The workspace budget covers the aggregate fixture runtime; every original or recovery operation retains the production five-minute deadline and the bounded recovery-attempt limit. The explicit Windows workspace investigation uses the same 45-minute package watchdog within a 60-minute job. Reassess these larger fixture budgets after native timing evidence permits reduction.
 
 The September 30 baseline [main run 36677902250](https://github.com/delinoio/oss/actions/runs/36677902250/job/109767014132) spent 27m57s in Windows Go tests and 29m52s in that job; [PR run 36678529123](https://github.com/delinoio/oss/actions/runs/36678529123/job/109768905387) spent 26m53s and 29m45s respectively. Both restored Go caches. Windows validation targets a longest Windows job of at most 15 minutes, including setup; this is a target, not measured improvement. Compare two native runs, cache hits and restored keys, the slowest shard, summed Windows runner minutes and cache storage before claiming the target is met.
 
