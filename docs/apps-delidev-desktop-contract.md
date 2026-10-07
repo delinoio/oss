@@ -2245,3 +2245,7 @@ Local API account Add/Manage and subscription sign-in/Manage dialogs also pause 
 Integration Create/Rename/Manage and network profile Edit/Delete dialogs pause their background inventory and picker reads while retaining bounded row owners. Opening Network settings also pauses the containing Settings inventory. Retained API usage and repository item readers pause with the inert background; original native, accepted-operation and status controllers keep their own authority.
 
 Backup inspection pauses all three background inventory/history readers and refresh markers, retaining bounded resident pages. Independent accepted creation/deletion status polling and the original inspection/recovery controller remain active.
+
+### Frontend validation concurrency
+
+The shared hosted CI CPU budget permits at most two jsdom workers while Go/native preparation runs. Preserve individual test deadlines and product deadlines. Increase concurrency only after focus, lifetime and full-shell wizard regressions pass under peak concurrent build load.

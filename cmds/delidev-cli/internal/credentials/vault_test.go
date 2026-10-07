@@ -433,3 +433,59 @@ func TestVaultRecoversOnlyUnpublishedInitialPinScratch(t *testing.T) {
 		})
 	}
 }
+
+func TestSubscriptionReadFailuresOmitPrivateGeneration(t *testing.T) {
+	for _, failure := range []string{"missing", "locked", "damaged"} {
+		t.Run(failure, func(t *testing.T) {
+			v, backend, logs := setup(t)
+			ref := Ref{Owner: domain.NewID(), ID: domain.NewID(), Purpose: AccountLogin}
+			if failure != "missing" {
+				if _, err := v.Put(context.Background(), ref, []byte("synthetic-private-bundle")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if failure == "locked" {
+				backend.getFailure = locked()
+			}
+			if failure == "damaged" {
+				rec, err := v.read(ref)
+				if err != nil {
+					t.Fatal(err)
+				}
+				rec.Ciphertext[0] ^= 0xff
+				if err := v.write(rec); err != nil {
+					t.Fatal(err)
+				}
+			}
+			logs.Reset()
+			secret, err := v.Get(context.Background(), ref)
+			clear(secret)
+			if err == nil {
+				t.Fatal("fixture read unexpectedly succeeded")
+			}
+			var event map[string]any
+			if err := json.Unmarshal(logs.Bytes(), &event); err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := event["credential_id"]; exists || bytes.Contains(logs.Bytes(), []byte(ref.ID)) || bytes.Contains(logs.Bytes(), []byte("synthetic-private-bundle")) {
+				t.Fatal("private generation or bundle entered read logs")
+			}
+			if event["operation"] != "get" || event["purpose"] != string(AccountLogin) || event["owner_id"] != string(ref.Owner) || event["error_code"] != string(domain.SafeError(err).Code) {
+				t.Fatal("safe operational read evidence was lost")
+			}
+		})
+	}
+}
+func TestAPIReadFailureRetainsOriginalReferenceLog(t *testing.T) {
+	v, _, logs := setup(t)
+	ref := reference()
+	_, err := v.Get(context.Background(), ref)
+	wantCode(t, err, domain.NotFound)
+	var event map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event["credential_id"] != string(ref.ID) || event["purpose"] != string(AccountAPI) {
+		t.Fatal("API original-reference diagnostics changed")
+	}
+}
