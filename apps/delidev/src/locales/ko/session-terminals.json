@@ -29,5 +29,6 @@
   "session-terminals.closeTerminal_7d02fb": "터미널 닫기",
   "session-terminals.retryTheSameTerminalOperation_92eff7": "동일한 터미널 작업 다시 시도",
   "session-terminals.extra.d1bcaf842eff": "터미널 출력을 기다리는 중…",
-  "session-terminals.attribute.34ad7d49708a": "터미널 출력"
+  "session-terminals.attribute.34ad7d49708a": "터미널 출력",
+  "session-terminals.retryCapability": "터미널 기능 읽기 재시도"
 }

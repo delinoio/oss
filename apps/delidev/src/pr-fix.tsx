@@ -46,7 +46,7 @@ function PRFixForm({ blocked, project, setProject, cancel, send }: { blocked: bo
  return <form aria-label={copy("pr-fix.manualPrFix_5b64d4")} onSubmit={event => { event.preventDefault(); if (!blocked && uuid(project) && supported) send(); }}>
   <ResourceChoice label={copy("pr-fix.fixProject_e1ce32")} kind={EntityKind.PROJECT} value={project} change={setProject} active disabled={blocked} required autoFocus />
   <p>{copy("pr-fix.theServerReusesTheMostRecent_add8ed")}</p>
-  <Problem error={capability.error} />{capability.data && !supported ? <p>{copy("pr-fix.thisServerHasNoSupportedManual_5d3d3f")}</p> : null}
+  <Problem error={capability.error} actions={capability.error ? <button type="button" disabled={capability.isFetching} onClick={() => void capability.refetch()}>{copy("ui.retryCurrentRead")}</button> : undefined} />{capability.data && !supported ? <p>{copy("pr-fix.thisServerHasNoSupportedManual_5d3d3f")}</p> : null}
   <button disabled={blocked || !uuid(project) || !supported}>{copy("pr-fix.startFix_039be8")}</button><button type="button" disabled={blocked} onClick={cancel}>{copy("pr-fix.cancel_19766e")}</button>
  </form>;
 }

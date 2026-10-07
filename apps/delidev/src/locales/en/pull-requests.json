@@ -44,5 +44,6 @@
   "pull-requests.selectOneConfiguredRepositoryInThe_6c065a": "Select one configured repository in the sidebar to get started.",
   "pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad": "This repository is no longer available. Refresh the repository catalog and choose another entry.",
   "pull-requests.configureThisRepositorySGithubProfile_86db03": "Configure this repository's GitHub profile, owner and name in Repository settings before loading requests.",
-  "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "Choose the state and optional title/body terms, then select Load pull requests. Returning to this screen requires an explicit load again."
+  "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "Choose the state and optional title/body terms, then select Load pull requests. Returning to this screen requires an explicit load again.",
+  "pull-requests.pendingFix": "Manual PR fix · remote repository <s0/> · PR ID <s1/>"
 }

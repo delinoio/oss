@@ -52,5 +52,6 @@
   "account-oauth.confirmFormat": "연결할 API 형식을 확인하세요.",
   "account-oauth.formatHelp": "Codex에는 Responses, Claude Code에는 Messages, OpenCode에는 Chat Completions를 사용하세요.",
   "account-oauth.legacyFormat": "이 서버의 로그인 연결은 기본 형식을 사용합니다. 다른 형식을 선택하려면 API 키를 사용하거나 서버를 업데이트하세요.",
-  "account-oauth.formatUnavailable": "지원하는 API 형식이 없습니다. 연결 전에 제공업체를 새로고침하세요."
+  "account-oauth.formatUnavailable": "지원하는 API 형식이 없습니다. 연결 전에 제공업체를 새로고침하세요.",
+  "account-oauth.inline.recovery": "이 원래 로그인 시도와 저장된 계정을 유지하세요. 여기서 원래 시도를 조회하거나 제공되는 저장된 결과 복구를 사용하세요. 인증 교환은 한 번만 수행되며 다른 브라우저 승인이나 조회로 반복할 수 없습니다."
 }

@@ -20,5 +20,6 @@
   "native-claude-usage.extra.7fa3de9600ee": "Input excluding cache",
   "native-claude-usage.extra.085171a719a1": "Cache read input",
   "native-claude-usage.extra.7018ea47815e": "Cache creation input",
-  "native-claude-usage.extra.ca019159180d": "Output including thinking"
+  "native-claude-usage.extra.ca019159180d": "Output including thinking",
+  "native-claude-usage.evidenceHelp": "The original native report is missing or inconsistent; its exact cause is unavailable. These retained reports cannot be repaired by rerunning inference or replacing the execution. Missing usage or cost does not establish zero."
 }

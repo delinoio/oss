@@ -141,5 +141,7 @@
   "settings.repositoryEmptyHelp": "저장소 추가를 눌러 프로젝트에서 사용할 Git 저장소를 등록하세요.",
   "settings.repositoryPageEmpty": "이 페이지에 저장소가 없습니다.",
   "settings.repositoryPageCount_one": "이 페이지의 저장소 {{count}}개",
-  "settings.repositoryPageCount_other": "이 페이지의 저장소 {{count}}개"
+  "settings.repositoryPageCount_other": "이 페이지의 저장소 {{count}}개",
+  "settings.repositoryServerUpdateRequired": "저장소를 저장하기 전에 선택한 서버를 업데이트하세요.",
+  "settings.retryRepositoryCapability": "저장소 기능 확인 재시도"
 }

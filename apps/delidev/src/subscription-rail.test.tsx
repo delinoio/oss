@@ -38,15 +38,15 @@ it("continues exact pages with UUID deduplication",async()=>{
  const first=resource("Personal");const f=mount(token=>token?{resources:[first,resource("Second")],nextPageToken:""}:{resources:[first],nextPageToken:"tail"});await screen.findByRole("button",{name:/Personal/});fireEvent.click(screen.getByRole("button",{name:/Load more Subscriptions/}));await screen.findByRole("button",{name:/Second/});expect(screen.getAllByRole("button",{name:/Personal/})).toHaveLength(1);expect(f.requests.mock.calls.map(call=>call[0])).toEqual(["","tail"]);
 });
 it("failure makes retained badges unavailable and exact explicit read retry recovers",async()=>{
- const first=resource("Personal");let failed=false;const f=mount(()=>{if(failed)throw new ConnectError("read failed",Code.Unavailable);return{resources:[first]};});await screen.findByRole("button",{name:/28% remaining/});failed=true;fireEvent(windowThis(),new Event("focus"));await screen.findByRole("button",{name:/Personal · Quota unavailable/});expect(f.requests).toHaveBeenCalledTimes(2);failed=false;fireEvent.click(screen.getByRole("button",{name:"Retry"}));await screen.findByRole("button",{name:/28% remaining/});
+ const first=resource("Personal");let failed=false;const f=mount(()=>{if(failed)throw new ConnectError("read failed",Code.Unavailable);return{resources:[first]};});await screen.findByRole("button",{name:/28% remaining/});failed=true;fireEvent(windowThis(),new Event("focus"));await screen.findByRole("button",{name:/Personal · Quota unavailable/});expect(f.requests).toHaveBeenCalledTimes(2);failed=false;fireEvent.click(screen.getByRole("button",{name:"Explain subscription read problem"}));fireEvent.click(screen.getByRole("button",{name:"Retry"}));await screen.findByRole("button",{name:/28% remaining/});
 });
 function windowThis(){return globalThis.window;}
-it("hides unsupported inventory without reading accounts",async()=>{const f=mount(()=>({resources:[]}),false);await screen.findByText("Quota unavailable");expect(f.requests).not.toHaveBeenCalled();});
+it("hides unsupported inventory without reading accounts",async()=>{const f=mount(()=>({resources:[]}),false);fireEvent.click(await screen.findByRole("button",{name:"Explain subscription read problem"}));await screen.findByText("Update the server to read subscription accounts.");expect(f.requests).not.toHaveBeenCalled();});
 it("fences a deferred read after disconnection",async()=>{let resolve!:(value:{resources:Resource[]})=>void;const f=mount(()=>new Promise(done=>resolve=done));await waitFor(()=>expect(f.requests).toHaveBeenCalledOnce());f.rerender(f.view(false));await act(async()=>resolve({resources:[resource("Late")]}));expect(screen.queryByRole("button",{name:/Late/})).toBeNull();});
 it("requires Reload for repeating cursors without publishing the page",async()=>{
  const first=resource("Personal");const f=mount(token=>token?{resources:[resource("Should not publish")],nextPageToken:"tail"}:{resources:[first],nextPageToken:"tail"});await screen.findByRole("button",{name:/Personal/});fireEvent.click(screen.getByRole("button",{name:/Load more Subscriptions/}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(2));expect(screen.queryByRole("button",{name:/Should not publish/})).toBeNull();expect(screen.queryByRole("button",{name:"Retry"})).toBeNull();
 });
-it("clears private account projections on authentication loss",async()=>{const first=resource("Private");let lost=false;const f=mount(()=>{if(lost)throw new ConnectError("auth",Code.Unauthenticated);return{resources:[first]};});await screen.findByRole("button",{name:/Private/});lost=true;fireEvent(windowThis(),new Event("focus"));await screen.findByText("Authentication expired. Reconnect to read subscriptions.");expect(screen.queryByRole("button",{name:/Private/})).toBeNull();});
+it("clears private account projections on authentication loss",async()=>{const first=resource("Private");let lost=false;const f=mount(()=>{if(lost)throw new ConnectError("auth",Code.Unauthenticated);return{resources:[first]};});await screen.findByRole("button",{name:/Private/});lost=true;fireEvent(windowThis(),new Event("focus"));await waitFor(()=>expect(screen.queryByRole("button",{name:/Private/})).toBeNull());fireEvent.click(await screen.findByRole("button",{name:"Explain subscription read problem"}));await screen.findByText("Authentication expired. Reconnect to read subscriptions.");expect(screen.queryByRole("button",{name:/Private/})).toBeNull();});
 it("a successful empty inventory reserves no account region",async()=>{const f=mount(()=>({resources:[]}));await waitFor(()=>expect(f.requests).toHaveBeenCalledOnce());await waitFor(()=>expect(f.container.children).toHaveLength(0));});
 it("refreshes reached pages atomically without discovering an unseen tail",async()=>{
  const first=resource("Personal"), second=resource("Work");let refreshing=false;let finish!:(value:{resources:Resource[];nextPageToken:string})=>void;
@@ -60,7 +60,7 @@ it("refreshes saved reads at sixty seconds only while visible",async()=>{
 });
 it("keeps retained badges unconfirmed during a deferred retry",async()=>{
  const first=resource("Personal");let stage=0;let finish!:(value:{resources:Resource[]})=>void;
- const f=mount(()=>{if(stage===1)throw new ConnectError("read failed",Code.Unavailable);if(stage===2)return new Promise(done=>finish=done);return{resources:[first]};});await screen.findByRole("button",{name:/28% remaining/});stage=1;fireEvent(windowThis(),new Event("focus"));await screen.findByRole("button",{name:/Personal · Quota unavailable/});stage=2;fireEvent.click(screen.getByRole("button",{name:"Retry"}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(3));expect(screen.queryByRole("button",{name:/28% remaining/})).toBeNull();expect(screen.getByRole("button",{name:/Personal · Quota unavailable/})).toBeTruthy();await act(async()=>finish({resources:[first]}));await screen.findByRole("button",{name:/28% remaining/});
+ const f=mount(()=>{if(stage===1)throw new ConnectError("read failed",Code.Unavailable);if(stage===2)return new Promise(done=>finish=done);return{resources:[first]};});await screen.findByRole("button",{name:/28% remaining/});stage=1;fireEvent(windowThis(),new Event("focus"));await screen.findByRole("button",{name:/Personal · Quota unavailable/});stage=2;fireEvent.click(screen.getByRole("button",{name:"Explain subscription read problem"}));fireEvent.click(screen.getByRole("button",{name:"Retry"}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(3));expect(screen.queryByRole("button",{name:/28% remaining/})).toBeNull();expect(screen.getByRole("button",{name:/Personal · Quota unavailable/})).toBeTruthy();await act(async()=>finish({resources:[first]}));await screen.findByRole("button",{name:/28% remaining/});
 });
 it("rejects unknown blocking membership and malformed reset evidence",()=>{
  const quota=(extra:Record<string,unknown>)=>({id:"weekly",state:"observed",remaining:.28,observed_at:new Date(now).toISOString(),blocking:true,comparison_group:"weekly",...extra});
@@ -75,4 +75,21 @@ it("shows malformed observation dates as unknown without individual percentages"
 });
 it("missing observed timestamps cannot establish individual or aggregate evidence",()=>{
  for(const observed_at of [undefined, ""]){const projected=railAccount(resource("Missing observation","chatgpt",{quota:[{id:"weekly",state:"observed",remaining:.28,observed_at,blocking:true,comparison_group:"weekly"}]}));expect(projected.windows[0]!.valid).toBe(false);expect(remainingBadge(projected.windows,now)).toBeUndefined();}
+});
+
+it("explains a denied partial page locally and uses only its original read retry", async () => {
+ const first=resource("Retained"); let denied=true;
+ const f=mount(token=>{if(token && denied)throw new ConnectError("untrusted-private-path",Code.PermissionDenied);return token?{resources:[resource("Later")]}:{resources:[first],nextPageToken:"tail"};});
+ await screen.findByRole("button",{name:/Retained/}); fireEvent.click(screen.getByRole("button",{name:/Load more Subscriptions/}));
+ const trigger=await screen.findByRole("button",{name:"Explain subscription read problem"});
+ expect(screen.queryByRole("dialog")).toBeNull(); fireEvent.click(trigger);
+ const popup=screen.getByRole("dialog",{name:"Explain subscription read problem"});
+ expect(popup.textContent).toContain("unread pages do not establish"); expect(popup.textContent).toContain("not authorized");
+ expect(screen.queryByText(/untrusted-private-path/)).toBeNull(); expect(f.requests.mock.calls.map(call=>call[0])).toEqual(["","tail"]);expect(f.manage).not.toHaveBeenCalled();
+ denied=false;fireEvent.click(screen.getByRole("button",{name:"Retry"})); await screen.findByRole("button",{name:/Later/});
+ expect(f.requests.mock.calls.map(call=>call[0])).toEqual(["","tail","tail"]);expect(f.manage).not.toHaveBeenCalled();
+});
+it("offers a saved-evidence recheck in the owning account popup without quota mutation", async () => {
+ const f=mount(()=>({resources:[resource("Original")] }));fireEvent.click(await screen.findByRole("button",{name:/Original ·/}));
+ fireEvent.click(screen.getByRole("button",{name:"Recheck saved quota evidence"}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(2));expect(f.manage).not.toHaveBeenCalled();
 });

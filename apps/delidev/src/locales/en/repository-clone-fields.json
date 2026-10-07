@@ -1,0 +1,16 @@
+{
+  "repository-clone-fields.inline.e8fa94aba0": "Clone repository",
+  "repository-clone-fields.inline.cd01c2ef6a": "Git URL",
+  "repository-clone-fields.inline.a2116e2c72": "https://github.com/owner/repository.git",
+  "repository-clone-fields.inline.2f00f15706": "Enter a credential-free HTTPS or SSH Git URL.",
+  "repository-clone-fields.inline.274474037d": "Clone to",
+  "repository-clone-fields.inline.5dbae92725": "Choose a parent folder",
+  "repository-clone-fields.inline.93c6b664dc": "Browse…",
+  "repository-clone-fields.inline.50edff7c50": "A new repository folder will be created here.",
+  "repository-clone-fields.inline.734294b760": "Repository folder name",
+  "repository-clone-fields.inline.ebb54b60a0": "Enter a portable folder name without separators or reserved device names.",
+  "repository-clone-fields.inline.a0acf59b0f": "Choose an absolute parent folder on this computer.",
+  "repository-clone-fields.inline.51d016541d": "Final path:",
+  "repository-clone-fields.inline.4df6bcbdda": "Private repositories use this computer's Git or SSH credentials.",
+  "repository-clone-fields.inline.11e37089ac": "Update the selected server and this computer's Worker to clone repositories."
+}

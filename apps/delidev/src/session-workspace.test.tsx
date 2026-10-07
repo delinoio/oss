@@ -11,20 +11,22 @@ import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { SessionView } from "./session";
 
-function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false) {
+function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({
     name: "Original session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "blocked", recovery: "none",
+    ...extra,
     ...(problem ? { problem: { code: "unsupported", message: "Original installation evidence", guidance: "Original verification guidance" } } : {}),
   }) });
   const enqueue = vi.fn(async (_request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => ({ change: { session } }));
   const rename = vi.fn(async () => ({ change: { session } }));
+  const recover = vi.fn(async (_request: unknown) => ({ change: { session } }));
   const control = vi.fn(async () => ({ change: { session } }));
   const budget = vi.fn(() => ({ view: create(SessionBudgetViewSchema, { session, state, ...(state === BudgetState.THRESHOLD_REACHED ? { budget: { currency: "USD", threshold: "1" } } : {}) }) }));
   const list = vi.fn(async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[], nextPageToken: "" }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
-    router.service(SessionService, { listQueue: () => ({ inputs: [] }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control });
+    router.service(SessionService, { listQueue: () => ({ inputs: [] }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
       getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
       listResources: list,
@@ -36,7 +38,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
   const view = (value = "Original draft") => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionView id={id} draft={value} setDraft={draft} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { session, client, view, enqueue, rename, control, budget, draft, list };
+  return { session, client, view, enqueue, rename, control, recover, budget, draft, list };
 }
 
 it("retains composer, mode and staged information edits through tool switches and language changes", async () => {
@@ -132,4 +134,39 @@ it("appends forward transcript pages in server order without moving the composer
   expect(document.activeElement).toBe(composer);
   expect(f.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.MESSAGE).map(([request]) => request.filter?.pageToken)).toEqual(["", "accepted-forward-token"]);
   expect(f.enqueue).not.toHaveBeenCalled();
+});
+
+it("shows original uncertain startup recovery beside the conversation with one confirmation controller", async () => {
+  const execution = newRequestId(), job = newRequestId();
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, { dispatch: "paused", recovery: "required", execution: { execution_id: execution }, initial_execution: { id: execution }, startup: { job_id: job, execution_id: execution, failure: { state: 3, phase: 5, harness: "codex", problem_code: "recovery_required", correlation_id: job, input_delivery: 4, cleanup: 2 } } });
+  render(f.view("Retained first draft"));
+  const recovery = await screen.findByRole("button", { name: "Reconcile original execution" });
+  expect(screen.queryByRole("complementary", { name: "Session information" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true);
+  expect(f.recover).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+  fireEvent.click(recovery);
+  expect(f.recover).not.toHaveBeenCalled();
+  expect(screen.getByRole("complementary", { name: "Session information" })).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Confirm selected recovery action" }));
+  const confirmation = screen.getByRole("button", { name: "Confirm selected recovery action" });
+  fireEvent.click(screen.getByRole("button", { name: "Close session information" }));
+  expect(document.activeElement).toBe(recovery);
+  fireEvent.click(screen.getByRole("button", { name: "Info" }));
+  expect(screen.getByRole("button", { name: "Confirm selected recovery action" })).toBe(confirmation);
+  expect(screen.getAllByRole("button", { name: "Reconcile original execution" })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Reconcile original execution" })).toBe(recovery);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm selected recovery action" }));
+  await waitFor(() => expect(f.recover).toHaveBeenCalledTimes(1));
+  expect(f.recover.mock.calls[0][0]).toMatchObject({ mutation: { id: f.session.id, expectedRevision: 7n }, expectedExecutionId: execution });
+  expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "Retained first draft");
+  expect(f.control).not.toHaveBeenCalled(); expect(f.enqueue).not.toHaveBeenCalled();
+});
+
+it("keeps malformed startup evidence visible and does not grant retry", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, { dispatch: "paused", startup: { failure: { state: 2, input_delivery: 1, cleanup: 1, raw_output: "private-native-output" } } });
+  render(f.view());
+  await screen.findByText(/Startup evidence is unavailable/);
+  expect(screen.queryByText(/private-native-output/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true);
+  expect(f.control).not.toHaveBeenCalled();
 });

@@ -50,5 +50,7 @@
   "session-storage.extra.b764cdc0eab7": "Unknown",
   "session-storage.sentence.4c59147c97a5": "{{v0}} bytes",
   "session-storage.cleanupConfirmation": "Create and verify a snapshot of the original previewed workspace before removing its source files. Original independent cleanup must complete first.",
-  "session-storage.acceptanceLimit": "Acceptance does not establish native cleanup."
+  "session-storage.acceptanceLimit": "Acceptance does not establish native cleanup.",
+  "session-storage.retryCapability": "Retry storage capability read",
+  "session-storage.retryOriginalSession": "Recheck original session for storage"
 }

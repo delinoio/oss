@@ -29,5 +29,6 @@
   "session-terminals.closeTerminal_7d02fb": "Close terminal",
   "session-terminals.retryTheSameTerminalOperation_92eff7": "Retry the same terminal operation",
   "session-terminals.extra.d1bcaf842eff": "Waiting for terminal output…",
-  "session-terminals.attribute.34ad7d49708a": "Terminal output"
+  "session-terminals.attribute.34ad7d49708a": "Terminal output",
+  "session-terminals.retryCapability": "Retry terminal capability read"
 }

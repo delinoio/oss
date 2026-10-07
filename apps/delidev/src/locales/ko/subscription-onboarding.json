@@ -13,7 +13,7 @@
   "subscription-onboarding.errorCode_2c35f6": "오류 코드:",
   "subscription-onboarding.reference_44dc4a": "참조:",
   "subscription-onboarding.theOriginalSignInResultRequires_136770": "원래 로그인 결과에 복구가 필요합니다.",
-  "subscription-onboarding.checkConnectionDiagnosticsBeforeStartingAnother_3836fd": "다른 로그인을 시작하기 전에 연결 및 진단을 확인하세요.",
+  "subscription-onboarding.checkConnectionDiagnosticsBeforeStartingAnother_3836fd": "원래 로그인 작업을 유지하세요. 새 로그인을 명시적으로 시작하기 전에 여기서 해당 작업의 조회와 복구 안내를 사용하세요.",
   "subscription-onboarding.suggestedFromYourSignedInAccount_5ddc0f": "로그인한 계정에서 제안한 이름입니다. 변경할 수 있습니다.",
   "subscription-onboarding.chooseANameForYourSigned_6ec79b": "로그인한 계정의 이름을 선택하세요.",
   "subscription-onboarding.saveAccountName_7c6744": "계정 이름 저장",
@@ -57,5 +57,12 @@
   "subscription-onboarding.sentence.01720d6af7dc": "Codex에는 {{v0}} 이상의 유효한 SemVer가 필요합니다.",
   "subscription-onboarding.sentence.758270754713": "Codex {{v0}}이(가) {{v1}}을(를) 완료하지 못했습니다. {{v2}}",
   "subscription-onboarding.notDetected": "감지되지 않음",
-  "subscription-onboarding.nativeVersionMetadataInvalid": "실행 프로그램의 버전 정보가 올바르지 않습니다."
+  "subscription-onboarding.nativeVersionMetadataInvalid": "실행 프로그램의 버전 정보가 올바르지 않습니다.",
+  "subscription-onboarding.inline.install": "아래에 표시된 지원되는 Codex 릴리스를 선택한 서버에 설치하고 서버 프로세스에서 사용할 수 있게 하세요. 여기서 원래 로그인 상태를 다시 확인하세요. 조회는 다른 로그인을 시작하지 않습니다.",
+  "subscription-onboarding.inline.access": "원래 서버 프로세스와 보호된 자격 증명 저장소의 운영체제 권한을 복구하세요. 계정과 원래 작업을 유지하고 새 로그인이나 삭제 전에 여기서 상태를 다시 확인하세요.",
+  "subscription-onboarding.inline.recovery": "원래 로그인 또는 자격 증명 정리 결과에 복구가 필요합니다. 원래 계정과 네이티브 소유자를 유지하세요. 해당 소유자의 설치 및 자격 증명 접근을 복구한 뒤 여기서 원래 상태를 조회하세요. 조회는 종료된 로그인이나 정리를 재시도하지 않습니다.",
+  "subscription-onboarding.inline.browser": "제공되는 경우 이 원래 작업의 브라우저 다시 열기 또는 로그인 취소를 사용하세요. 브라우저나 콜백이 차단되면 운영체제에서 허용하고 원래 상태를 다시 확인하세요. 대체 로그인을 시작하지 마세요.",
+  "subscription-onboarding.inline.unknown": "네이티브 원인을 확인할 수 없거나 지원되지 않습니다. 원래 계정과 로그인 요청을 유지하세요. 여기서 상태를 다시 확인하고 실패가 계속되면 선택한 서버 관리자에게 지원되는 Codex 설치와 운영체제 접근을 확인하도록 요청하세요.",
+  "subscription-onboarding.inline.inspect": "원래 로그인 상태 조회",
+  "subscription-onboarding.inline.inspected": "원래 계정과 로그인 상태를 읽었습니다. 이 조회는 로그인을 시작하거나 콜백을 반복하거나 정리를 재시도하지 않았습니다."
 }

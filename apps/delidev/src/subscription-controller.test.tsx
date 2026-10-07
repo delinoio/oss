@@ -206,3 +206,43 @@ it("keeps an uncertain original browser opening visible across later waiting pol
  expect(value.native).toHaveBeenCalledTimes(nativeCalls);
  expect(value.login).toHaveBeenCalledTimes(1);
 });
+
+it("a successful missing account observation is unavailable and offers read recovery without login", async () => {
+ const account=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.ACCOUNT,revision:1n,schemaVersion:2,documentJson:encode({alias:"Original missing account",type:"subscription",subscription_service:"chatgpt",health:"disconnected"})});
+ const read=vi.fn(()=>({}));const login=vi.fn();const native=vi.fn(async()=>({generation:newRequestId()}));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1]})});router.service(ResourceService,{getResource:read});router.service(SubscriptionService,{requestSubscription:login});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={vi.fn()} /></MutationIntents></OAuthNativeProvider></QueryClientProvider></TransportProvider>);
+ await screen.findByText(/The current account could not be verified/);expect((screen.getByRole("button",{name:"Sign in to ChatGPT"}) as HTMLButtonElement).disabled).toBe(true);expect(login).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(read).toHaveBeenCalledTimes(2));expect(login).not.toHaveBeenCalled();
+});
+
+it("blocks fresh subscription actions for successful reads older than the original or accepted revision", async () => {
+ const account=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.ACCOUNT,revision:9007199254740993n,schemaVersion:2,documentJson:encode({alias:"Original subscription",type:"subscription",subscription_service:"chatgpt",health:"ready",connection:{id:newRequestId()},subscription:{owner_machine_id:newRequestId(),generation:newRequestId()}})});
+ let observed=create(ResourceSchema,{...account,revision:account.revision-1n});const accepted=create(ResourceSchema,{...account,revision:account.revision+1n});
+ const read=vi.fn(()=>({resource:observed}));const login=vi.fn();const quota=vi.fn(async request=>({account:accepted,operationId:request.mutation.requestId}));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,SystemCapability.SUBSCRIPTION_QUOTA_V1]})});router.service(ResourceService,{getResource:read});router.service(SubscriptionService,{requestSubscription:login,requestSubscriptionObservation:quota});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={vi.fn()} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ const unavailable=()=>screen.findByText(/The current account could not be verified/);
+ const freshButtons=()=>["Refresh login","Log out","Refresh quota"].map(name=>screen.getByRole("button",{name}) as HTMLButtonElement);
+ await unavailable();expect(freshButtons().every(button=>button.disabled)).toBe(true);expect(quota).not.toHaveBeenCalled();
+ observed=account;fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(freshButtons().every(button=>!button.disabled)).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Refresh quota"}));await waitFor(()=>expect(quota).toHaveBeenCalledOnce());await unavailable();
+ expect(quota.mock.calls[0][0].mutation.expectedRevision).toBe(account.revision);expect(freshButtons().every(button=>button.disabled)).toBe(true);expect(login).not.toHaveBeenCalled();
+ observed=accepted;fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(freshButtons().every(button=>!button.disabled)).toBe(true));
+ expect(quota).toHaveBeenCalledOnce();expect(login).not.toHaveBeenCalled();view.unmount();client.clear();
+});
+
+it("retains the exact uncertain subscription operation while a successful older read blocks fresh actions", async () => {
+ const account=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.ACCOUNT,revision:9007199254740993n,schemaVersion:2,documentJson:encode({alias:"Original subscription",type:"subscription",subscription_service:"chatgpt",health:"ready",connection:{id:newRequestId()}})});
+ let observed=account;const read=vi.fn(()=>({resource:observed}));const operation=vi.fn(async request=>({account:create(ResourceSchema,{...account,revision:account.revision+1n}),operationId:request.mutation.requestId}));operation.mockRejectedValueOnce(new ConnectError("original reply lost",Code.Unavailable));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1]})});router.service(ResourceService,{getResource:read});router.service(SubscriptionService,{requestSubscription:operation});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={vi.fn()} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Refresh login"}) as HTMLButtonElement).disabled).toBe(false));fireEvent.click(screen.getByRole("button",{name:"Refresh login"}));
+ const retry=await screen.findByRole("button",{name:"Retry original subscription operation"});const original=operation.mock.calls[0][0];
+ observed=create(ResourceSchema,{...account,revision:account.revision-1n});await act(async()=>{await client.invalidateQueries({refetchType:"active"});});await screen.findByText(/The current account could not be verified/);
+ expect((screen.getByRole("button",{name:"Refresh login"}) as HTMLButtonElement).disabled).toBe(true);expect((retry as HTMLButtonElement).disabled).toBe(false);
+ fireEvent.click(retry);await waitFor(()=>expect(operation).toHaveBeenCalledTimes(2));expect(operation.mock.calls[1][0]).toEqual(original);expect(original.mutation.expectedRevision).toBe(9007199254740993n);
+ view.unmount();client.clear();
+});

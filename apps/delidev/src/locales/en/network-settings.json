@@ -12,7 +12,7 @@
   "network-settings.desiredGeneration_f15f38": "Desired generation",
   "network-settings.effectiveControlGeneration_e8082d": "Effective control generation",
   "network-settings.nativeApiGeneration_02dc37": "Native API generation",
-  "network-settings.workerRoutingStatusIsUnreadableUpdate_1920c7": "Worker routing status is unreadable. Update the client/server and inspect the original route.",
+  "network-settings.workerRoutingStatusIsUnreadableUpdate_1920c7": "Worker routing status is unreadable. No current route state has been verified.",
   "network-settings.readingWorkerRouteStatus_71a350": "Reading Worker route status…",
   "network-settings.thisWorkerMustReconcileItsEncrypted_476d45": "This Worker must reconcile its encrypted configuration before starting new work. Already running work keeps its original generation.",
   "network-settings.nativeStatusConcernsSupportedCodexApi_0d7631": "Native status concerns supported Codex API execution and title traffic. Control readiness does not prove native routing or provider success.",
@@ -78,5 +78,17 @@
   "network-settings.profiles": "Network profiles",
   "network-settings.noProfiles": "No saved network profiles",
   "network-settings.createProfileHelp": "Create a profile to route through a proxy.",
-  "network-settings.workerTransfer": "Worker configuration transfer"
+  "network-settings.workerTransfer": "Worker configuration transfer",
+  "network-settings.capabilityReadHelp": "Network support could not be checked. Use Refresh routing to reread this server’s capabilities. No route was selected.",
+  "network-settings.routeReadHelp": "The current route could not be read. Use Refresh routing here before selecting a revision; failures never authorize Direct fallback.",
+  "network-settings.profileReadHelp": "Network profiles could not be read. Use Refresh routing or the original page retry below. Retained rows do not authorize a write.",
+  "network-settings.choiceReadHelp": "The selected profile revision could not be verified. Choose a profile again; this read does not change routing.",
+  "network-settings.selectionHelp": "Route selection was not confirmed. If its outcome is unknown, retry only the original selection below; otherwise reread routing before another explicit selection.",
+  "network-settings.profileSaveHelp": "Profile saving was not confirmed. Keep the original draft. Use the original save retry for an unknown outcome; otherwise correct the fields and save explicitly. Selected routes keep their original revisions.",
+  "network-settings.profileDeleteHelp": "Profile deletion was not confirmed. Referenced profiles cannot be deleted. An unknown outcome permits only the original deletion retry here, without another confirmation attempt.",
+  "network-settings.workerStatusHelp": "This Worker’s route status could not be verified. Use Refresh routing here to reread the same Worker. Keep its current encrypted configuration until the original status is verified.",
+  "network-settings.recipientRouteHelp": "The intended Worker’s route could not be read. Recheck its route here before exporting. No replacement recipient or route was created.",
+  "network-settings.recheckRecipientRoute": "Recheck recipient route",
+  "network-settings.exportHelp": "Encrypted export was not confirmed. Keep the intended recipient and original route. Use the original export retry for an unknown outcome; otherwise recheck the recipient route and explicitly export again.",
+  "network-settings.workerStaleHelp": "On the original computer, reconcile this Worker’s original encrypted configuration and explicitly restart it using its existing CLI or service. Use Refresh routing here to verify the same Worker afterward; this page does not restart it."
 }

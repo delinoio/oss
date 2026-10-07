@@ -153,3 +153,22 @@ it("rejects a foreign server before replacing the active transport", async () =>
   await screen.findByRole("alert");
   expect(f.recovered).not.toHaveBeenCalled();
 });
+
+it("retains the original recovery when its admission scope changes and reconciliation refuses adoption", async () => {
+  const f = fixture();
+  let generation = 1, resolve!: (value: typeof f.connection) => void;
+  native.invoke.mockResolvedValueOnce(f.status).mockImplementationOnce(() => new Promise(yes => { resolve = yes; }));
+  const recovered = vi.fn(async () => false), setBusy = vi.fn();
+  render(<LocalRegistrationRecovery busy={false} setBusy={setBusy} recovered={recovered} readGeneration={() => generation} />);
+  fireEvent.click(screen.getByRole("button", { name: "Check desktop registration" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Re-register this desktop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm desktop re-registration" }));
+  const original = native.invoke.mock.calls[1];
+  generation = 2; setBusy.mockClear();
+  await act(async () => resolve(f.connection));
+  expect(recovered).toHaveBeenCalledWith(f.connection, 1);
+  expect(setBusy).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Retry original desktop recovery" })).toBeTruthy();
+  expect(native.invoke).toHaveBeenCalledTimes(2);
+  expect(native.invoke.mock.calls[1]).toEqual(original);
+});

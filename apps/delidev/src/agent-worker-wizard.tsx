@@ -205,7 +205,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
     {!inTask ? <h2>{initial ? copy("agent-worker-wizard.editAgentWorker") : copy("agent-worker-wizard.newAgentWorker")}</h2> : null}
     <ol className="worker-steps" aria-label={copy("agent-worker-wizard.workerConfigurationSteps")}>{steps.map(value => <li key={value} aria-current={step === value ? "step" : undefined} data-completed={value < step}><span>{value}</span><span>{stepName(value)}</span></li>)}</ol>
     <h3 ref={heading} tabIndex={-1}>{stepName(step)}</h3>
-    <Problem error={status.error} />
+    <Problem error={status.error} actions={<button type="button" disabled={!active || blocked || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} />
     {status.isLoading ? <p role="status">{copy("agent-worker-wizard.checkingServerSupport")}</p> : status.data && !supported ? <p role="alert">{copy("agent-worker-wizard.updateServerWizard")}</p> : null}
     {initial && data.reconfiguration_required === true ? <p role="status">{copy("agent-worker-wizard.reconfigurationRequired")}</p> : null}
     <fieldset disabled={blocked || !supported}>
@@ -255,14 +255,14 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
         <Problem error={discovery.error} />{discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>{copy("agent-worker-wizard.retryModelRefresh")}</button> : null}
         {data.harness === Harness.Codex && source?.kind === SourceKind.Api ? <NativeModelSettings active={active && step === Step.Model} selectedAccounts={selectedRows} pendingOperation={setNativePending} createModel={value => { setInput(text(value.native_id)); setModel(undefined); setPopup(false); setHighlight(-1); setProblem(""); }} /> : null}
         <p>{copy(source?.kind === SourceKind.Subscription ? "agent-worker-wizard.subscriptionModelAvailability" : "agent-worker-wizard.modelReadiness")}</p>
-        <Problem error={currentModel.error} />
+        <Problem error={currentModel.error} actions={<button type="button" disabled={!active || blocked || currentModel.isFetching} onClick={() => void currentModel.refetch()}>{copy("ui.retryCurrentRead")}</button>} />
       </section>
       <fieldset hidden={step !== Step.Configure} disabled={step !== Step.Configure}>
         <ConfigurationFields kind={EntityKind.AGENT} data={data} change={change} active={active && step === Step.Configure} existing={Boolean(initial)} workerWizard />
         <section className="worker-summary" aria-label={copy("agent-worker-wizard.workerConfigurationSummary")}><h4>{copy("agent-worker-wizard.reviewConfiguration")}</h4><p>{harnessNames[data.harness as Harness]} · {sourceLabel}</p><p>{copy("agent-worker-wizard.modelSummary", { v0: input || copy("agent-worker-wizard.noneSelected") })}</p><ol>{ids.map(id => <li key={id}>{knownAccounts[id] ? resourceName(knownAccounts[id]) : selectedLabels.current[id]?.name || id}</li>)}</ol><p>{copy("agent-worker-wizard.routingSummary", { v0: text(data.routing) || copy("agent-worker-wizard.serverDefault") })}</p><p>{copy("agent-worker-wizard.savedCompatibility")}</p></section>
       </fieldset>
     </fieldset>
-    {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error || current.error || originalModel.error} />
+    {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} /><Problem error={current.error} actions={<button type="button" disabled={!active || blocked || current.isFetching} onClick={() => void current.refetch()}>{copy("ui.retryCurrentRead")}</button>} /><Problem error={originalModel.error} actions={<button type="button" disabled={!active || blocked || originalModel.isFetching} onClick={() => void originalModel.refetch()}>{copy("ui.retryCurrentRead")}</button>} />
     {stale ? <p role="alert">{copy("agent-worker-wizard.workerChangedElsewhere")}</p> : null}
     {model && currentModel.data?.resource && currentModel.data.resource.revision !== model.revision ? <p role="status">{copy("agent-worker-wizard.selectedModelChanged")}</p> : null}
     {model && currentModel.isLoading ? <p role="status">{copy("agent-worker-wizard.checkingModelRevision")}</p> : null}
@@ -275,6 +275,7 @@ export function AgentWorkerWizard(props: { initial?: Resource; active: boolean; 
   useLocale();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: props.active });
   if (status.data?.capabilities.includes(SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1)) return <AgentWorkerSourceWizard {...props} />;
+  if (props.initial?.schemaVersion === 3 && status.error) return <><Problem error={status.error} actions={<button type="button" disabled={!props.active || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} /><SettingsTaskDismissButton onClick={props.cancel}>{copy("agent-worker-wizard.cancel")}</SettingsTaskDismissButton></>;
   if (props.initial?.schemaVersion === 3) return <><p role="alert">{copy("agent-worker-wizard.updateSourceServer")}</p><SettingsTaskDismissButton onClick={props.cancel}>{copy("agent-worker-wizard.cancel")}</SettingsTaskDismissButton></>;
   return <LegacyAgentWorkerWizard {...props} />;
 }

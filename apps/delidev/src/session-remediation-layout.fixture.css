@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Match the real mounted Session container without granting App/native authority. */
+html, body, #root { height: 100%; }
+.fixture-session-owner.session-container:has(.session-workspace) { height: 100%; }

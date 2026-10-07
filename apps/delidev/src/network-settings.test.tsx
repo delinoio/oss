@@ -46,7 +46,9 @@ it("retains the exact original route revision after response loss", async () => 
   fireEvent.click(await screen.findByRole("option", { name: /Pinned proxy/ }));
   await waitFor(() => expect(screen.getByRole("combobox", { name: "Profile to select" }).dataset.value).toBe(f.row.id));
   fireEvent.click(screen.getByRole("button", { name: "Select this revision" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Retry original route selection" }));
+  await screen.findByRole("button", { name: "Retry original route selection" });
+  expect(screen.getByRole("alert").textContent).toContain("retry only the original selection");
+  fireEvent.click(screen.getByRole("button", { name: "Retry original route selection" }));
   await waitFor(() => expect(f.requests).toHaveLength(2));
   expect(f.requests[1]).toEqual(f.requests[0]);
   expect(f.requests[0]).toMatchObject({ mutation: { id: f.route.id, expectedRevision: f.route.revision }, machineId: f.machine, profileId: f.row.id, profileRevision: f.row.revision });

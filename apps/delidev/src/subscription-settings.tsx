@@ -131,6 +131,7 @@ function OperationNotice({ label, operation, retryBlocked = false }: { label: st
   if (!operation || operation.state === SubscriptionOperationState.Ready) return null;
   return <div className="subscription-operation" role={operation.state === SubscriptionOperationState.Failed ? "alert" : "status"}>
     <p>{label}: {operation.state === SubscriptionOperationState.Busy ? copy("subscription-settings.inProgress_c1f88e") : operation.state === SubscriptionOperationState.Uncertain ? copy("subscription-settings.resultNotConfirmed_a5d341") : operation.state === SubscriptionOperationState.CleanupPending ? copy("subscription-settings.credentialCleanupPending_50459d") : copy("subscription-settings.failed_031a8f")}{operation.message ? copy("subscription-settings.message_2fa20b", { v0: operation.message }) : ""}</p>
+    {operation.state === SubscriptionOperationState.Uncertain || operation.state === SubscriptionOperationState.CleanupPending ? <p>{copy("account-connection.inline.operation")}</p> : null}
     {operation.state !== SubscriptionOperationState.Busy && operation.retry ? <button type="button" disabled={retryBlocked} onClick={operation.retry}><LocalizedText id="subscription-settings.retryOriginal_74138b" components={{ s0: <>{label.toLowerCase()}</> }} /></button> : null}
   </div>;
 }
@@ -168,6 +169,7 @@ export function SubscriptionRow({ account, now, unavailable, actionsBlocked = fa
       </div>
     </div>
     {account.windows.length > 2 ? <button className="subscription-extra-windows" type="button" aria-expanded={details} aria-controls={detailsId} onClick={() => setDetails(!details)}><LocalizedText id="subscription-settings.allQuotaWindows_53404d" components={{ s0: <>{details ? copy("subscription-settings.hide_ac20a5") : copy("subscription-settings.show_0df6f1")}</>, s1: <>{account.windows.length}</> }} /></button> : null}
+    {["expired", "revoked", "failed"].includes(account.health) || account.connection === SubscriptionConnectionState.CleanupPending ? <p className="subscription-operation">{copy(account.connection === SubscriptionConnectionState.CleanupPending ? "account-connection.inline.subscriptionRecovery" : "account-connection.inline.quota")}</p> : null}
     <OperationNotice label={copy("subscription-settings.refresh_0e9161")} operation={account.refreshOperation} retryBlocked={retryBlocked} />
     <OperationNotice label={copy("subscription-settings.disconnection_1913a2")} operation={account.disconnectOperation} retryBlocked={retryBlocked} />
     {confirm ? <div className="subscription-confirmation" role="group" aria-label={copy("subscription-settings.confirmDisconnectionOf_476dd1", { v0: account.alias })} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeConfirm(); } }}>

@@ -7,7 +7,7 @@ import { createClient } from "@connectrpc/connect";
 import { EntityKind, FailureCode, GitHubTokenIdentityState as IdentityState, GitHubTokenKind, IntegrationService, SaveIntegrationProfileRequestSchema, clientFailure, isEntityId, newRequestId, type GitHubTokenIdentity, type Resource, type SaveIntegrationProfileRequest } from "@delinoio/delidev-api-client";
 import { document, encode, object, text, type Document } from "./documents";
 import { GitHubDraftTokenForm, githubOwnerValid } from "./github-opening";
-import { copy, useLocale } from "./localization";
+import { copy, useLocale, ownedMessage, useProductMessage, type OwnedMessage } from "./localization";
 import { useSettingsOpening } from "./settings-lifetime";
 import { Problem } from "./ui";
 
@@ -15,12 +15,12 @@ export type GitHubTokenRetry = { id: string; expectedRevision: bigint; requestId
 enum Stage { Token, Confirm }
 const tokenValid = (token: string) => /^[!-~]{1,512}$/.test(token);
 const uncertain = (error: unknown) => [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(clientFailure(error).code);
-const identityFailure: Partial<Record<IdentityState, string>> = {
-  [IdentityState.INVALID_TOKEN]: "GitHub rejected this token. Enter a valid token and try again.",
-  [IdentityState.ACCESS_RESTRICTED]: "GitHub restricted this token. Check its permissions and organization approval.",
-  [IdentityState.SSO_REQUIRED]: "Authorize this token for your organization’s SSO, then try again.",
-  [IdentityState.RATE_LIMITED]: "GitHub rate-limited verification. Wait for the limit to reset and try again.",
-  [IdentityState.UNAVAILABLE]: "GitHub identity could not be verified. Check the server connection and try again.",
+const identityFailure: Partial<Record<IdentityState, OwnedMessage>> = {
+  [IdentityState.INVALID_TOKEN]: ownedMessage("github-onboarding.invalidToken"),
+  [IdentityState.ACCESS_RESTRICTED]: ownedMessage("github-onboarding.restricted"),
+  [IdentityState.SSO_REQUIRED]: ownedMessage("github-onboarding.sso"),
+  [IdentityState.RATE_LIMITED]: ownedMessage("github-onboarding.rateLimited"),
+  [IdentityState.UNAVAILABLE]: ownedMessage("github-onboarding.unavailable"),
 };
 function validIdentity(identity?: GitHubTokenIdentity): identity is GitHubTokenIdentity {
   return Boolean(identity && /^[1-9][0-9]{0,19}$/.test(identity.id) && BigInt(identity.id) <= 18446744073709551615n && githubOwnerValid(identity.login) && identity.nodeId.trim() && !identity.nodeId.includes("\0") && new TextEncoder().encode(identity.nodeId).length <= 256);
@@ -32,8 +32,8 @@ function savedProfile(profile: Resource | undefined, request: SaveIntegrationPro
 }
 function replyProblem(raw: Uint8Array): Document | undefined {
   if (!raw.length) return;
-  if (raw.length > 4096) return { message: "Inspect the saved profile before continuing." };
-  try { return object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw))); } catch { return { message: "Inspect the saved profile before continuing." }; }
+  if (raw.length > 4096) return { message: copy("github-onboarding.inspect") };
+  try { return object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw))); } catch { return { message: copy("github-onboarding.inspect") }; }
 }
 
 export function GitHubOnboarding({ active, close, connected }: { active: boolean; close: () => void; connected: (profile: Resource, retry?: GitHubTokenRetry, problem?: Document) => void }) {
@@ -43,7 +43,8 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
   const [stage, setStage] = useState(Stage.Token), [token, setToken] = useState("");
   const [kind, setKind] = useState(GitHubTokenKind.FINE_GRAINED), [owner, setOwner] = useState("");
   const [name, setName] = useState(""), [identity, setIdentity] = useState<GitHubTokenIdentity>();
-  const [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(), [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false), [error, setError] = useState<unknown>();
+  const [message, setMessage] = useProductMessage("");
   const [saveUncertain, setSaveUncertain] = useState(false);
   const secret = useRef<Uint8Array | undefined>(undefined), sent = useRef<Uint8Array | undefined>(undefined);
   const originalSave = useRef<SaveIntegrationProfileRequest | undefined>(undefined);
@@ -116,7 +117,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
       // A metadata replay after uncertainty has no retained credential. Enter
       // Manage with the acknowledged profile instead of creating or deleting it.
       if (!bytes?.length || !bytes.some(byte => byte !== 0)) {
-        connected(profile, undefined, { message: "Profile saved. Reenter your token to finish connecting it." }); return;
+        connected(profile, undefined, { message: copy("github-onboarding.savedReenter") }); return;
       }
       tokenRetry = { id: profile.id, expectedRevision: profile.revision, requestId: newRequestId() };
       const tokenCopy = bytes.slice();
@@ -129,7 +130,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
       else close();
     } catch (reason) {
       if (!live(original)) return;
-      if (profile) connected(profile, uncertain(reason) ? tokenRetry : undefined, { message: "The profile was saved, but token connection was not confirmed. Inspect its current state and reenter the token to continue." });
+      if (profile) connected(profile, uncertain(reason) ? tokenRetry : undefined, { message: copy("github-onboarding.tokenUnconfirmed") });
       else {
         setSaveUncertain(uncertain(reason)); setError(reason);
         if (!uncertain(reason)) { originalSave.current = undefined; setIdentity(undefined); setStage(Stage.Token); }
@@ -138,31 +139,31 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
   };
   const back = () => { epoch.current++; clearSecrets(); setToken(""); setIdentity(undefined); setError(undefined); setMessage(""); setStage(Stage.Token); };
   const cancel = () => { epoch.current++; request.current?.abort(); clearSecrets(); close(); };
-  return <section className="integration-onboarding" aria-label="New GitHub profile">
-    <h3>New GitHub profile</h3>
-    <p className="integration-secondary">Step {stage === Stage.Token ? "1 of 2 · Verify token" : "2 of 2 · Confirm profile"}</p>
+  return <section className="integration-onboarding" aria-label={copy("github-onboarding.title")}>
+    <h3>{copy("github-onboarding.title")}</h3>
+    <p className="integration-secondary">{copy(stage === Stage.Token ? "github-onboarding.stepVerify" : "github-onboarding.stepConfirm")}</p>
     {stage === Stage.Token ? <>
       <form onSubmit={event => { event.preventDefault(); void verify(); }}>
-        <fieldset disabled={busy}><label>GitHub personal access token<input ref={tokenInput} type="password" autoComplete="off" spellCheck={false} maxLength={512} value={token} onChange={event => setToken(event.target.value)} placeholder="Enter a personal access token" /></label><p>We’ll use your token to find your GitHub username.</p></fieldset>
-        {busy ? <p role="status">Verifying GitHub token…</p> : null}{message ? <p role="alert">{message}</p> : null}<Problem error={error} />
-        <div className="actions"><button className="primary" disabled={busy || !tokenValid(token)}>Verify token</button><SettingsTaskDismissButton type="button" onClick={cancel}>Cancel</SettingsTaskDismissButton></div>
+        <fieldset disabled={busy}><label>{copy("github-onboarding.token")}<input ref={tokenInput} type="password" autoComplete="off" spellCheck={false} maxLength={512} value={token} onChange={event => setToken(event.target.value)} placeholder={copy("github-onboarding.placeholder")} /></label><p>{copy("github-onboarding.help")}</p></fieldset>
+        {busy ? <p role="status">{copy("github-onboarding.verifying")}</p> : null}{message ? <p role="alert">{message}</p> : null}<Problem error={error} />
+        <div className="actions"><button className="primary" disabled={busy || !tokenValid(token)}>{copy("github-onboarding.verify")}</button><SettingsTaskDismissButton type="button" onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
       </form>
       <GitHubDraftTokenForm changeKind={setKind} active={active} disabled={busy} />
-      <p className="integration-storage-note">Your token is saved only when you confirm the profile.</p>
+      <p className="integration-storage-note">{copy("github-onboarding.savedOnly")}</p>
     </> : <form onSubmit={event => { event.preventDefault(); void save(); }}>
-      <p className="integration-verified">Authenticated as <strong>{identity?.login}</strong></p>
+      <p className="integration-verified">{copy("github-onboarding.authenticated")} <strong>{identity?.login}</strong></p>
       <fieldset disabled={busy || saveUncertain}>
-        <label>Profile name<input ref={nameInput} required maxLength={160} value={name} onChange={event => { nameEdited.current = true; setName(event.target.value); }} /></label><p>Filled from your GitHub username. You can change it.</p>
-        {nameBytes > 160 ? <p role="alert">This profile name is too long. Shorten it before saving.</p> : name && !name.trim() ? <p role="alert">Enter a nonblank profile name.</p> : null}
-        <label>Token type<select value={kind} onChange={event => setKind(Number(event.target.value) as GitHubTokenKind)}><option value={GitHubTokenKind.FINE_GRAINED}>Fine-grained PAT (preferred)</option><option value={GitHubTokenKind.CLASSIC}>Classic PAT</option></select></label>
-        <label>Resource owner<input required={kind === GitHubTokenKind.FINE_GRAINED} maxLength={100} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" placeholder="GitHub user or organization" value={owner} onChange={event => setOwner(event.target.value)} /></label><p>{copy("github-opening.draft.confirmOwner")}</p>
-        <p>Use a separate fine-grained profile for each repository owner. Repositories explicitly select their profile.</p><p>Token type and owner cannot be changed after creation.</p>
+        <label>{copy("github-onboarding.name")}<input ref={nameInput} required maxLength={160} value={name} onChange={event => { nameEdited.current = true; setName(event.target.value); }} /></label><p>{copy("github-onboarding.nameHelp")}</p>
+        {nameBytes > 160 ? <p role="alert">{copy("github-onboarding.nameLong")}</p> : name && !name.trim() ? <p role="alert">{copy("github-onboarding.nameBlank")}</p> : null}
+        <label>{copy("github-onboarding.type")}<select value={kind} onChange={event => setKind(Number(event.target.value) as GitHubTokenKind)}><option value={GitHubTokenKind.FINE_GRAINED}>{copy("github-onboarding.fine")}</option><option value={GitHubTokenKind.CLASSIC}>{copy("github-onboarding.classic")}</option></select></label>
+        <label>{copy("github-onboarding.owner")}<input required={kind === GitHubTokenKind.FINE_GRAINED} maxLength={100} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" placeholder={copy("github-onboarding.ownerPlaceholder")} value={owner} onChange={event => setOwner(event.target.value)} /></label><p>{copy("github-opening.draft.confirmOwner")}</p>
+        <p>{copy("github-onboarding.separate")}</p><p>{copy("github-onboarding.immutable")}</p>
       </fieldset>
-      {busy ? <p role="status">Saving GitHub profile and connecting token…</p> : null}<Problem error={error} />
-      {saveUncertain ? <p role="status">The profile save is uncertain. Retry only the original save; your token was cleared and must be reentered after reconciliation.</p> : null}
-      <div className="actions"><button className="primary" disabled={busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>Save and connect</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>Retry the same profile save</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>Back</button><SettingsTaskDismissButton type="button" disabled={busy || saveUncertain} onClick={cancel}>Cancel</SettingsTaskDismissButton></div>
-      <p className="integration-storage-note">Tokens are stored in the selected server’s OS credential store. Saved tokens cannot be displayed.</p>
+      {busy ? <p role="status">{copy("github-onboarding.saving")}</p> : null}<Problem error={error} />
+      {saveUncertain ? <p role="status">{copy("github-onboarding.uncertain")}</p> : null}
+      <div className="actions"><button className="primary" disabled={busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>{copy("github-onboarding.save")}</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>{copy("github-onboarding.retry")}</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>{copy("github-onboarding.back")}</button><SettingsTaskDismissButton type="button" disabled={busy || saveUncertain} onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
+      <p className="integration-storage-note">{copy("github-onboarding.storage")}</p>
     </form>}
-    <p className="integration-access-note">Identity verification does not confirm repository access.</p>
+    <p className="integration-access-note">{copy("github-onboarding.access")}</p>
   </section>;
 }

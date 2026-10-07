@@ -231,9 +231,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
       <p className="transfer-load-guidance">{copy("configuration-transfer.youWillMapResourcesAndReview_44f7cd")}</p>
     </section>
     {loading || exportRead.isPending || previewRead.isPending || mutation.busy ? <p role="status">{loading ? copy("configuration-transfer.readingConfigurationFile_9ae6ad") : exportRead.isPending ? copy("configuration-transfer.exportingConfiguration_340dcb") : previewRead.isPending ? copy("configuration-transfer.loadingConfigurationChangePreview_7826df") : copy("configuration-transfer.sendingConfigurationImportRequest_f2dc3b")}</p> : null}
-    {remoteUnsupported ? <p role="status">Update the selected server before importing repositories by URL.</p> : null}
+    {remoteUnsupported ? <p role="status">{copy("configuration-transfer.updateRemoteServer")}</p> : null}
     {status.error ? <Problem error={status.error} /> : null}
-    {status.error ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry server capability check</button> : null}
+    {status.error ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>{copy("configuration-transfer.retryServerCapabilities")}</button> : null}
     {loaded ? <fieldset className="transfer-panel transfer-mapping" disabled={blocked}>
       <legend>{copy("configuration-transfer.mapImportedConfiguration_d0218d")}</legend>{runner.guidance}
       <p>{copy("configuration-transfer.newEntriesKeepTheirOriginalContents_63b0dc")}</p>

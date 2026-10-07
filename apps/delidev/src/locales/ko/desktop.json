@@ -40,9 +40,9 @@
   "desktop.keychainRetry": "다시 시도",
   "desktop.keychainConfirmation": "키체인 접근이 취소되거나 거부되었습니다. macOS 권한 창에서 접근을 허용한 뒤 다시 시도해 주세요.",
   "desktop.keychainUnavailable": "키체인에 접근할 수 없습니다. 이 컴퓨터의 키체인을 확인한 뒤 다시 시도해 주세요.",
-  "desktop.keychainRecovery": "저장된 인증 정보에 복구가 필요합니다. 기존 키를 유지하고 연결 및 진단을 열어 주세요.",
-  "desktop.keychainExecutableChanged": "실행 중인 서버 코드를 검증하지 못했습니다. 기존 키를 유지하고 연결 및 진단에서 다시 시작해 주세요.",
-  "desktop.keychainDenied": "이 데스크톱의 접근 권한이 없습니다. 연결 및 진단을 열어 주세요.",
+  "desktop.keychainRecovery": "저장된 인증 정보에 복구가 필요합니다. 기존 키를 유지하고 원래 macOS 키체인 항목에 대한 접근을 복구한 다음 이 시도를 다시 시도하세요. 접근 없이 계속하면 이 인증 정보가 필요하지 않은 작업을 사용할 수 있습니다.",
+  "desktop.keychainExecutableChanged": "실행 중인 서버 코드를 검증하지 못했습니다. 기존 키를 유지하세요. 신뢰할 수 있는 설치된 DeliDev 앱을 종료하고 다시 연 다음 재시도하세요. 키체인 요청에서 예상하지 못한 실행 파일을 승인하지 마세요.",
+  "desktop.keychainDenied": "이 데스크톱의 접근 권한이 없습니다. 기존 키를 유지하세요. 여기서 연결 제어를 열어 원래 등록을 확인한 다음 명시적으로 다시 등록하세요.",
   "desktop.keychainObservationFailed": "원래 접근 확인 결과를 읽지 못했습니다. 다시 시도하면 같은 작업의 결과를 확인합니다.",
   "desktop.keychainSkipped": "이번 실행에서는 키체인 접근 확인을 생략했습니다. 저장된 계정 상태는 변경되지 않았습니다.",
   "desktop.keychainDismiss": "닫기"

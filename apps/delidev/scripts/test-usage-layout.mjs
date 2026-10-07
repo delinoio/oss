@@ -80,6 +80,23 @@ try {
     checks++;
     console.log(JSON.stringify({ operation: "usage-layout-case", context, result: "passed" }));
   }
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [390,844]]) {
+    const context = `${language}/${theme}/${width}x${height}/failed-read`;
+    await page.setViewportSize({ width, height }); await page.goto(`${origin}/?theme=${theme}&language=${language}&failure=true`);
+    await page.getByRole("button", { name: language === "ko" ? "사용량" : "Usage", exact: true }).click();
+    const main = page.locator(".usage-page"), alert = main.getByRole("alert"); await alert.waitFor();
+    assert((await alert.textContent()).includes(language === "ko" ? "읽기 실패" : "failed read does not establish zero"), context);
+    assert.equal(await alert.locator("details").evaluate(node => node.open), false, context);
+    const refresh = main.getByRole("button", { name: language === "ko" ? "새로고침" : "Refresh", exact: true });
+    await refresh.focus(); await refresh.press("Enter"); await main.locator(".usage-summary").waitFor();
+    const requests = await page.evaluate(() => window.__usageFixture);
+    assert.equal(requests.summary, 2, context); assert.equal(requests.selections[0], requests.selections[1], context); assert.equal(requests.writes, 0, context);
+    await main.getByRole("tab").nth(1).click();
+    assert((await main.textContent()).includes(language === "ko" ? "불완전" : "unsupported or incomplete"), context);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, context);
+    if (screenshots) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `remediation-${width}-${language}-${theme}.png`) }); }
+    checks++; console.log(JSON.stringify({ operation: "usage-inline-remediation-case", context, result: "passed" }));
+  }
   assert.deepEqual(failures, []);
   console.log(JSON.stringify({ operation: "usage-layout-browser", source, checks, result: "passed", evidence: "synthetic App browser; effective zoom viewport only; no packaged/native acceptance" }));
 } finally {

@@ -13,7 +13,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: bridge.listen }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: bridge.invoke }));
 vi.mock("@delinoio/delidev-api-client", async (original) => ({ ...await original<typeof import("@delinoio/delidev-api-client")>(), createDeliDevTransport: (...args: unknown[]) => bridge.createTransport(...args) }));
 beforeEach(() => { bridge.invoke.mockReset(); bridge.createTransport.mockReset(); bridge.listen.mockReset().mockResolvedValue(() => {}); });
-it("observes failed launch and keeps detailed recovery in troubleshooting without automatic repair", async () => {
+it("shows failed launch guidance and original registration controls inline without automatic repair", async () => {
   bridge.invoke.mockImplementation(async (command: string) => {
     if (command === "connection_context") return null;
     if (command === "local_server_status") return { state: LocalServerState.Blocked, attempts: 1, retry_ms: 60000, failure: "permission-denied" };
@@ -24,7 +24,7 @@ it("observes failed launch and keeps detailed recovery in troubleshooting withou
   await screen.findByRole("button", { name: "Retry" });
   expect(screen.queryByRole("button", { name: "Start or connect" })).toBeNull();
   expect(bridge.invoke.mock.calls.some(([command]) => command === "connect_local" || command === "retry_local")).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Troubleshooting" }));
+  expect(screen.getByRole("button", { name: "Check desktop registration" })).toBeTruthy();
   const problem = await screen.findByText(/Access was denied/);
   expect(problem.textContent).toContain("selected device is authorized");
   expect(problem.textContent).toContain("accessible only to you");
@@ -189,7 +189,7 @@ it("never turns a stopped launch observation into readiness or a restart", async
   bridge.invoke.mockImplementation(async (command: string, args?: unknown) => command === "launch_local" ? Promise.reject("stopped") : original(command, args));
   render(<Desktop />);
   await screen.findByText(/DeliDev is disconnected on this computer/);
-  expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Start local server" }) as HTMLButtonElement).disabled).toBe(false);
   expect(bridge.createTransport).not.toHaveBeenCalled();
   expect(bridge.invoke.mock.calls.some(([command]) => command === "connect_local" || command === "retry_local")).toBe(false);
 });

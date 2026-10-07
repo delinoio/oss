@@ -26,7 +26,7 @@ it("shows distinct exact Grok totals in summary, day, model and session views wi
 it("distinguishes measured zero, missing units and an unnegotiated older server", () => {
   const data = create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 });
   const view = render(<GrokAccounting data={data} open={() => {}} />);
-  expect(screen.getByRole("status").textContent).toContain("unavailable from this server version");
+  expect(screen.getByRole("status").textContent).toContain("unsupported or incomplete");
   data.totals = create(GetUsageSummaryResponseSchema, { totals: {} }).totals;
   view.rerender(<GrokAccounting data={data} open={() => {}} />);
   expect(screen.getByText(/No verified Grok closed inputs/)).toBeTruthy();
@@ -35,7 +35,7 @@ it("distinguishes measured zero, missing units and an unnegotiated older server"
   expect(screen.getByText("1 closed inputs · 0 known total tokens")).toBeTruthy();
   data.accountingProfile = UsageAccountingProfile.UNSPECIFIED;
   view.rerender(<GrokAccounting data={data} open={() => {}} />);
-  expect(screen.getByRole("status").textContent).toContain("unavailable from this server version");
+  expect(screen.getByRole("status").textContent).toContain("unsupported or incomplete");
   expect(screen.queryByText(/1 closed inputs/)).toBeNull();
 });
 
@@ -83,12 +83,12 @@ it("retains original project IDs beside duplicate and renamed project labels", (
 it.each(["duplicate", "unknown"])("does not render an invalid %s source as an empty supported source", kind => {
   const accounting = kind === "duplicate" ? [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT }, { kind: AccountingUnitKind.GROK_CLOSED_INPUT }] : [{ kind: 99 as AccountingUnitKind }];
   render(<GrokAccounting data={create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, totals: { accounting } })} open={vi.fn()} />);
-  expect(screen.getByRole("status").textContent).toContain("unavailable from this server version");
+  expect(screen.getByRole("status").textContent).toContain("unsupported or incomplete");
   expect(screen.queryByText("No records does not establish zero usage or cost")).toBeNull();
 });
 
 it("keeps missing overall accounting evidence unavailable", () => {
   render(<GrokAccounting data={create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 })} open={vi.fn()} />);
-  expect(screen.getByRole("status").textContent).toContain("unavailable from this server version");
+  expect(screen.getByRole("status").textContent).toContain("unsupported or incomplete");
   expect(screen.queryByText("No records does not establish zero usage or cost")).toBeNull();
 });

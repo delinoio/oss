@@ -44,6 +44,6 @@ function NativeSummary({ data, timeZone, open, disclosures }: { data: NativeAcco
 export function NativeAccounting({ data, open, disclosures }: { data: GetUsageSummaryResponse; open: (id: string) => void; disclosures?: AccountingDisclosures }) {
   useLocale();
   const kinds = new Set(data.nativeAccounting.map((summary) => summary.totals?.kind));
-  if (data.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 || data.nativeAccounting.length !== 2 || kinds.size !== 2 || !kinds.has(AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT) || !kinds.has(AccountingUnitKind.OPENCODE_STEP)) return <p role="status">{copy("native-accounting.claudeAndOpencodeAccountingIsUnavailable_19b5e9")}</p>;
+  if (data.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 || data.nativeAccounting.length !== 2 || kinds.size !== 2 || !kinds.has(AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT) || !kinds.has(AccountingUnitKind.OPENCODE_STEP)) return <><p role="status">{copy("native-accounting.claudeAndOpencodeAccountingIsUnavailable_19b5e9")}</p><p>{copy("usage.accountingRecheckHelp")}</p></>;
   return <>{data.nativeAccounting.map((summary) => <NativeSummary key={summary.totals?.kind} data={summary} timeZone={data.analytics?.timeZone || "UTC"} open={open} disclosures={disclosures} />)}</>;
 }

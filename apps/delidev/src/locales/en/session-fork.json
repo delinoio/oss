@@ -23,5 +23,8 @@
   "session-fork.retryTheSameForkRequest_782e42": "Retry the same fork request",
   "session-fork.theForkAcknowledgmentIsIncompleteRetain_a0f92f": "The fork acknowledgment is incomplete. Retain the original request and inspect its operation before another fork.",
   "session-fork.returnToRetainedForkOperation_1beee5": "Return to retained fork operation",
-  "session-fork.extra.a00fb0c50741": "Accepted"
+  "session-fork.extra.a00fb0c50741": "Accepted",
+  "session-fork.retryCapability": "Retry fork capability read",
+  "session-fork.retryRunnerRead": "Recheck original fork Runner",
+  "session-fork.retryProfileRead": "Recheck original fork profile"
 }

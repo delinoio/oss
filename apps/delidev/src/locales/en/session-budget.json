@@ -27,5 +27,6 @@
   "session-budget.loadingBudget_ff9d54": "Loading budget…",
   "session-budget.theServerAcknowledgedTheBudgetWithout_6e9839": "The server acknowledged the budget without a readable result. Refresh the current session before making another change.",
   "session-budget.editSessionBudget_ee0f8a": "Edit session budget",
-  "session-budget.extra.96afe54d0f2e": "Review the budget fields."
+  "session-budget.extra.96afe54d0f2e": "Review the budget fields.",
+  "session-budget.budgetReadFailed": "Budget evidence could not be read. Refresh the budget here; keep the original execution and budget draft."
 }

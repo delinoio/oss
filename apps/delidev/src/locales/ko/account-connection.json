@@ -45,5 +45,22 @@
   "account-connection.validation_98c41d": "검증",
   "account-connection.modelRefresh_795dab": "모델 새로고침",
   "account-connection.retryTheSame_4cb78a": "같은 <s0/> 다시 시도",
-  "account-connection.extra.b764cdc0eab7": "알 수 없음"
+  "account-connection.extra.b764cdc0eab7": "알 수 없음",
+  "account-connection.inline.read": "현재 계정 또는 제공자를 확인할 수 없습니다. 저장된 계정 정보는 유지됩니다. 연결을 변경하기 전에 둘 다 다시 읽으세요.",
+  "account-connection.inline.recheck": "계정 및 제공자 다시 확인",
+  "account-connection.inline.cleanup": "계정은 연결 해제되었지만 보호된 자격 증명 정리가 확인되지 않았습니다. 원래 계정과 정리 요청을 유지하고 기존 정리 제어로만 재시도하세요.",
+  "account-connection.inline.operation": "계정 작업 결과가 확인되지 않았습니다. 원래 요청 재시도가 제공되면 사용하고, 그렇지 않으면 새 명시적 작업 전에 계정 상태를 다시 확인하세요.",
+  "account-connection.inline.provider": "제공자 또는 선택된 API 형식을 사용할 수 없거나 비활성화되어 있습니다. 선택한 서버 관리자에게 해당 제공자와 형식을 복구하도록 요청한 뒤 여기서 다시 확인하세요. 기존 정리는 별도로 유지됩니다.",
+  "account-connection.inline.permission": "선택한 서버 소유자에게 이 데스크톱의 계정 및 제공자 권한을 확인하도록 요청한 뒤 여기서 읽기를 재시도하세요. 읽기 실패는 계정이 없다는 뜻이 아닙니다.",
+  "account-connection.inline.deletion": "삭제 또는 자격 증명 정리가 확인되지 않아 계정을 유지했습니다. 아래에 원래 재시도가 제공되면 사용하세요. 그렇지 않으면 계정을 새로고침하고 다시 확인하세요. 조회는 종료된 정리 시도를 다시 시작하지 않습니다.",
+  "account-connection.inline.subscriptionRecovery": "원래 구독 자격 증명 소유자의 복구가 필요합니다. 계정과 원래 Runner 또는 서버 프로세스를 유지하세요. 운영체제 자격 증명 접근과 지원되는 설치를 복구한 뒤 여기서 계정 상태를 새로고침하세요. 일반 복구나 대체 로그인은 제공되지 않습니다.",
+  "account-connection.inline.subscriptionPending": "원래 구독 작업이 아직 이 계정을 소유합니다. 여기서 상태를 새로고침하세요. 결과가 확인되지 않은 동안 다른 로그인이나 정리 시도를 시작하지 마세요.",
+  "account-connection.inline.subscriptionUnsupported": "이 서버 또는 구독 서비스는 요청한 수명 주기 작업을 지원하지 않습니다. 선택한 서버를 지원되는 DeliDev 소프트웨어로 업데이트한 뒤 여기서 지원을 다시 확인하세요. 이 안내로 로그인은 시작되지 않습니다.",
+  "account-connection.inline.supportRecheck": "구독 지원 다시 확인",
+  "account-connection.inline.cleanupTerminal": "정리에서 계정을 유지했습니다. 아래의 유지 사유를 각각 확인하세요. 원래 소유자의 접근을 복구하거나 보호된 참조를 명시적으로 재설정한 뒤 계정을 새로고침하세요. 새 정리 배치에는 새로운 명시적 확인이 필요합니다.",
+  "account-connection.inline.quota": "할당량 관측 결과가 확인되지 않았습니다. 원래 계정, 연결 및 관측 소유자를 유지하세요. 원래 재시도가 제공되면 사용하세요. 저장된 증거를 다시 읽는 것만으로 할당량 복구를 입증할 수 없습니다.",
+  "account-connection.inline.railRecheck": "저장된 할당량 증거 다시 확인",
+  "account-connection.inline.railProblem": "구독 읽기 문제 설명",
+  "account-connection.inline.railPartial": "이 제한된 계정 페이지를 읽을 수 없습니다. 이전에 저장된 증거는 확인되지 않았습니다. 읽지 않은 페이지로 다른 계정이 없다고 판단할 수 없습니다.",
+  "account-connection.inline.supportLoading": "선택한 서버의 구독 지원 정보를 읽는 중입니다. 이 조회는 로그인을 시작하지 않습니다."
 }

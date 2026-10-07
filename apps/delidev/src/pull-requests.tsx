@@ -73,7 +73,7 @@ function PendingAllowance({ intent, repositoryId, pullRequestId }: { intent: Ret
 
 function PendingFix({ intent, remoteRepositoryId, pullRequestId }: { intent: RetainedMutationIntent; remoteRepositoryId: string; pullRequestId: string }) {
   const mutation = useRetainedMutation(intent.key, PullRequestFixQuery.requestPullRequestFix);
-  return <article className="pending-pr-action"><strong>Manual PR fix · remote repository {remoteRepositoryId} · PR ID {pullRequestId}</strong><p>{intent.busy ? "Submitting" : "Acknowledgment uncertain"}</p><Problem error={mutation.error} />{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>Retry original fix request</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.pendingFix" components={{ s0: <>{remoteRepositoryId}</>, s1: <>{pullRequestId}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p><Problem error={mutation.error} />{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pr-fix.retryOriginalFixRequest_3ecf60")}</button> : null}</article>;
 }
 
 function PendingPRActions() {

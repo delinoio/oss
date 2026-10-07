@@ -179,3 +179,7 @@ product lifecycle/credential rules also require their original domain owners.
 - [Protected credentials](cmds-delidev-credentials-contract.md)
 - [Source ownership and validation](cmds-delidev-structure-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+The issue #1699 session-remediation layout fixture exercises the real shared task presentation with synthetic closed startup evidence and original-controller counters. Validate bilingual themes, narrow widths and original draft/confirmation retention; keep its separate entry and browser outputs outside product releases. It cannot prove native startup, credential access, real-account acceptance or packaged CEF behavior.
+
+The issue #1699 account-remediation fixture similarly exercises safe ChatGPT/API account failure presentation, original read rechecks and compact rail failure popovers in localized responsive themes. Its separate marker is excluded from release output; synthetic counters never establish real login, OS authorization or account cleanup.

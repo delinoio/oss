@@ -390,7 +390,7 @@ it.each([Code.PermissionDenied, Code.Unauthenticated])("does not delete or retry
 it("preserves a definite server reference conflict and requires new confirmation", async () => {
   const value = fixture(); value.remove.mockRejectedValue(new ConnectError("This configuration is still referenced.", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: { code: "conflict", guidance: "Reconfigure its dependents before deleting it." } }]));
   await start(value); value.complete(); await tick();
-  await screen.findByText("This configuration is still referenced.");
+  await screen.findAllByText("This configuration is still referenced.");
   expect(screen.queryByRole("button", { name: "Retry the same deletion" })).toBeNull(); expect(value.remove).toHaveBeenCalledTimes(1);
 });
 

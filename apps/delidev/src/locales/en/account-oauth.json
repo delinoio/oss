@@ -52,5 +52,6 @@
   "account-oauth.confirmFormat": "Confirm the API format for this connection.",
   "account-oauth.formatHelp": "Use Responses for Codex, Messages for Claude Code, or Chat Completions for OpenCode.",
   "account-oauth.legacyFormat": "This server uses the default format for sign-in. To choose another format, use an API key or update the server.",
-  "account-oauth.formatUnavailable": "No supported API format is available. Refresh the provider before connecting."
+  "account-oauth.formatUnavailable": "No supported API format is available. Refresh the provider before connecting.",
+  "account-oauth.inline.recovery": "Keep this original sign-in attempt and its saved account. Inspect the original attempt here or recover its saved result when offered. Authorization exchange is once only; another browser approval or inspection cannot repeat it."
 }

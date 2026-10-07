@@ -26,7 +26,7 @@
   "native-accounting.revision_058534": "리비전 <s0/>",
   "native-accounting.pricedMissingUsageMissingPriceNot_393c9f": "<s0/>: <s1/> · 가격 산정 <s2/>개 · 사용량 누락 <s3/>개 · 가격 누락 <s4/>개 · 해당 없음 <s5/>개",
   "native-accounting.noOriginalUnitsAreRecordedFor_7dfc97": "이 필터에 기록된 원래 단위가 없습니다. 사용량 또는 비용이 0임을 입증하지 않습니다.",
-  "native-accounting.claudeAndOpencodeAccountingIsUnavailable_19b5e9": "이 서버 버전에서는 Claude와 OpenCode 사용량 집계를 제공하지 않습니다. 보려면 서버를 업데이트하세요.",
+  "native-accounting.claudeAndOpencodeAccountingIsUnavailable_19b5e9": "Claude 및 OpenCode 회계 증거가 지원되지 않거나 불완전합니다.",
   "native-accounting.extra.36ecb4f86691": "입력",
   "native-accounting.extra.0008ce30b97d": "캐시 읽기",
   "native-accounting.extra.e7fc264359d6": "캐시 쓰기",

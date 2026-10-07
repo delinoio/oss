@@ -22,5 +22,6 @@
   "ui.failure.cursor_expired": "이 페이지 커서가 만료되었습니다. 현재 첫 페이지를 읽으려면 목록을 새로 고치세요.",
   "ui.failure.provider_disabled": "공급자가 비활성화되었습니다. 계속하기 전에 구성을 확인하세요.",
   "ui.failure.canceled": "요청이 취소되었습니다. 이미 접수된 효과는 남아 있을 수 있습니다. 원래 작업을 확인하세요.",
-  "ui.failure.internal": "요청을 완료할 수 없습니다. 다시 시도하기 전에 기술 상세와 접수된 작업을 확인하세요."
+  "ui.failure.internal": "요청을 완료할 수 없습니다. 다시 시도하기 전에 기술 상세와 접수된 작업을 확인하세요.",
+  "ui.retryCurrentRead": "현재 정보 다시 읽기"
 }

@@ -38,3 +38,10 @@ it.each([
  expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
  expect(screen.queryByText("Input excluding cache")).toBeNull();
 });
+
+
+it("keeps missing retained usage distinct from zero without offering replacement execution", () => {
+ render(<NativeClaudeUsage value={{}} />);
+ expect(screen.getByText(/Missing usage or cost does not establish zero/)).toBeTruthy();
+ expect(screen.queryByRole("button")).toBeNull();
+});

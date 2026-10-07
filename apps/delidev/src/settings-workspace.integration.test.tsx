@@ -15,6 +15,7 @@ import { NewSession, NewSessionKind } from "./new-session";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { document, encode } from "./documents";
+import { copy } from "./localization";
 import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
@@ -91,7 +92,14 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) change(`${harness} executable path`, join(directory, `missing-${harness}`));
   fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
   fireEvent.click(await screen.findByRole("button", { name: "Finish inspection" }, { timeout: 15000 }));
-  await waitFor(() => expect(screen.getAllByText("missing · Version: Unknown")).toHaveLength(4));
+  await waitFor(() => {
+    for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) {
+      const article = screen.getByRole("heading", { name: harness }).closest("article")!;
+      expect(within(article).getByText(copy(harness === "claude-code" ? "claude-subscription.excluded.missing" : "machine-settings.excluded.missing"))).toBeTruthy();
+    }
+  });
+  const observedMachines = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.MACHINE } });
+  expect(document(observedMachines.resources[0]).installations).toEqual(expect.arrayContaining(["codex", "claude-code", "opencode", "grok-build"].map(harness => expect.objectContaining({ harness, state: "missing" }))));
   // An account-less Agent is valid configuration but cannot infer readiness or
   // launch a harness. The real Worker has only explicit missing executables.
   const configurations = createClient(ConfigurationService, transport);

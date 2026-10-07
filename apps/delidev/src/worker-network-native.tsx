@@ -3,6 +3,7 @@ import { createContext, useContext, useRef, useState, type ReactNode } from "rea
 import { useSettingsTaskDismiss } from "./settings-task-context";
 import type { PairingAuthority } from "./pairing-grant";
 import { useSettingsOpening } from "./settings-lifetime";
+import { InlineRemediation } from "./ui";
 import { encryptedInput, workerRecipient, type WorkerRecipient } from "./worker-network";
 export enum WorkerNetworkAction { Prepare = "prepare", Import = "import", Status = "status" }
 export type ControlWorkerNetwork = (machine: string, action: WorkerNetworkAction, ciphertext: Uint8Array, digest: string) => Promise<unknown>;
@@ -39,6 +40,6 @@ export function WorkerNetworkNative({ machine, authority, prepared }: { machine:
     {!control ? <p>{copy("worker-network-native.openTheTrustedDesktopAppTo_dce615")}</p> : <>
       <button disabled={busy || unconfirmed} onClick={() => void run(WorkerNetworkAction.Prepare)}>{copy("worker-network-native.prepareProtectedRecipient_5b5127")}</button><button disabled={busy} onClick={() => void run(WorkerNetworkAction.Status)}>{copy("worker-network-native.inspectOriginalPublicRecipient_579cd7")}</button>
       <label>{copy("worker-network-native.encryptedBundleToImportBase64_db23d6")}<textarea rows={4} maxLength={131072} spellCheck={false} disabled={busy || Boolean(originalImport)} value={ciphertext} onChange={event => { setCiphertext(event.target.value); setConfirm(false); }} /></label><label>{copy("worker-network-native.separatelyAuthenticatedDigest_be070a")}<input maxLength={64} disabled={busy || Boolean(originalImport)} value={digest} onChange={event => { setDigest(event.target.value); setConfirm(false); }} /></label><label><input type="checkbox" disabled={busy || Boolean(originalImport)} checked={confirm} onChange={event => setConfirm(event.target.checked)} />{copy("worker-network-native.iVerifiedThisDigestIndependentlyAnd_638722")}</label><button disabled={busy || !originalImport && !confirm} onClick={() => void run(WorkerNetworkAction.Import)}>{originalImport ? copy("worker-network-native.retryOriginalEncryptedImport_46c8e9") : copy("worker-network-native.importConfirmedEncryptedConfiguration_30d15e")}</button>
-    </>}{outcome ? <p role="status">{outcome}</p> : null}{problem ? <p role="alert">{problem}</p> : null}
+    </>}{outcome ? <p role="status">{outcome}</p> : null}{problem ? <InlineRemediation summary={<><p>{problem}</p><p>{copy("worker-network-native.manualRecheck")}</p></>} /> : null}
   </section>;
 }

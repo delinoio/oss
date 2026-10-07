@@ -164,7 +164,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
           [SubscriptionLoginState.RECOVERY_REQUIRED]: copy("account-deletion.extra.8c8625da5c7c"),
         };
         const reason = reasons[progress.state] ?? copy("account-deletion.extra.8d3007d5bd3d");
-        pause(p, diagnostic?.message ?? reason, copy("account-deletion.sentence.1ab129957de8", { v0: diagnostic?.correlation ? ` Reference: ${diagnostic.correlation}` : "" })); return;
+        pause(p, diagnostic?.message ?? reason, copy("account-deletion.sentence.1ab129957de8", { v0: diagnostic?.correlation ? ` ${copy("ui.reference_0eac07", { v0: diagnostic.correlation })}` : "" })); return;
       }
       const result = await clients.resource.getResource({ kind: EntityKind.ACCOUNT, id: p.confirmed.id });
       if (!live(p)) return;
@@ -255,7 +255,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     </> : <>
       <p role="status">{view.stage === Stage.Checking ? copy("account-deletion.checkingTheCurrentAccount_9c2ed5") : view.stage === Stage.Logout ? copy("account-deletion.loggingOutAndCleaningUpCredentials_6b3730") : view.stage === Stage.CleanupDeleting ? copy("account-deletion.cleaningUpAndDeleting") : view.stage === Stage.Deleting ? copy("account-deletion.deletingTheAccountConfiguration_9b97e4") : copy("account-deletion.accountDeletionPaused_df3fd2")}</p>
       {view.stage === Stage.Logout ? <p>{copy("account-deletion.theAccountWillBeDeletedAfter_6b177a")}</p> : null}
-      <Failure failure={view.failure} />
+      <Failure failure={view.failure} summary={view.failure ? <><p>{view.failure.message}</p><p>{copy("account-connection.inline.deletion")}</p></> : undefined} />
       {view.stage === Stage.Paused || hasReturnAction ? <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <button disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? copy("account-deletion.retryOriginalLogoutRequest_ce84e9") : pending.current.retry === Retry.Delete ? copy("account-deletion.retryTheSameDeletion_b32bf6") : copy("account-deletion.retryOriginalStatusCheck_88bd61")}</button> : <button disabled={!active || pending.current?.busy} onClick={() => void refresh()}>{copy("account-deletion.refreshAccountForConfirmation_deba05")}</button> : null}<SettingsTaskDismissButton disabled={!active} onClick={leave}>{copy("account-deletion.backToSubscriptions_257d53")}</SettingsTaskDismissButton></div> : null}
       <p className="settings-scope">{copy(pending.current?.deletion && !cleared(pending.current.confirmed) && failedInitialLogin(pending.current.confirmed) ? "account-deletion.acceptedServerDeletionContinues" : "account-deletion.leavingThisScreenStopsAutomaticDeletion_7a5a3c")}</p>
     </>}

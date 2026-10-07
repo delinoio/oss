@@ -5,7 +5,7 @@
   "subscription-accounts.connected_229655": "Connected",
   "subscription-accounts.disconnected_04dfac": "Disconnected",
   "subscription-accounts.nativeLoginForThisServiceIs_09b215": "Native login for this service is unavailable in this server profile.",
-  "subscription-accounts.theOriginalCredentialOwnerRequiresRecovery_4da135": "The original credential owner requires recovery. Inspect Connection & diagnostics before starting another operation.",
+  "subscription-accounts.theOriginalCredentialOwnerRequiresRecovery_4da135": "The original credential owner needs recovery. Keep the account and original operation while restoring that owner’s supported installation and OS credential access.",
   "subscription-accounts.signInTo_fa4edf": "Sign in to <s0/>",
   "subscription-accounts.refreshLogin_85188a": "Refresh login",
   "subscription-accounts.logOut_496161": "Log out",

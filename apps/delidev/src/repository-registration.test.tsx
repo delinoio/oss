@@ -562,3 +562,41 @@ it("does not send URL registration to a server without capability 37", async () 
   await screen.findByText("Update the selected server to add repositories by URL.");
   expect(f.save).not.toHaveBeenCalled(); expect(f.proof).not.toHaveBeenCalled();
 });
+
+it("rechecks the original Worker locally without replaying inspection or losing the folder", async () => {
+  const f = fixture(); f.control.mockResolvedValueOnce({ machine_id: f.machine.id, state: LocalWorkerState.Exited, controller_active: false });
+  f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByRole("button", { name: "Recheck original Worker" });
+  const originalPath = screen.getByRole("textbox", { name: "Absolute checkout path" });
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+  expect(screen.getByRole("button", { name: "원래 Worker 다시 확인" })).toBeTruthy();
+  expect(screen.getByText(/이 컴퓨터의 Worker가 종료되었습니다/)).toBeTruthy();
+  expect(originalPath).toHaveProperty("value", "/alias/repo");
+  expect(f.control).toHaveBeenCalledTimes(1); expect(f.proof).toHaveBeenCalledTimes(1);
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); });
+  fireEvent.click(screen.getByRole("button", { name: "Recheck original Worker" }));
+  await screen.findByText(/The Worker is verified/);
+  expect(f.control.mock.calls).toEqual([["status", undefined], ["status", undefined]]);
+  expect(f.inspected).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+  expect(screen.getByRole("textbox", { name: "Absolute checkout path" })).toHaveProperty("value", "/alias/repo");
+});
+
+it("rejects a replacement Worker during original verification recovery", async () => {
+  const f = fixture(); f.control.mockResolvedValueOnce({ machine_id: f.machine.id, state: LocalWorkerState.Uncertain, controller_active: false });
+  f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByRole("button", { name: "Recheck original Worker" });
+  f.proof.mockResolvedValueOnce({ machineId: newRequestId(), token: "A".repeat(43) });
+  fireEvent.click(screen.getByRole("button", { name: "Recheck original Worker" }));
+  await screen.findByText(/original Worker changed/);
+  expect(f.inspected).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+  expect(f.control).toHaveBeenCalledTimes(1);
+});
+
+it("shows safe original verification guidance instead of native error content", async () => {
+  const f = fixture(); f.proof.mockRejectedValueOnce(new ConnectError("private/token/path/native-output", Code.PermissionDenied));
+  f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByText(/Access to this computer's Worker was denied/);
+  expect(screen.queryByText(/private\/token/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Recheck original Worker" })).toBeTruthy();
+  expect(f.inspected).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+});

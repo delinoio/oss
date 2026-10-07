@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { SystemQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { LocalConnectionPresentation } from "./local-connection-presentation";
 
 export enum LocalServerState { Checking = "checking", Ready = "ready", Retrying = "retrying", Stopped = "stopped", Blocked = "blocked" }
 export interface LocalServerStatus { state: LocalServerState; attempts: number; retry_ms: number; failure?: string }
@@ -16,10 +17,10 @@ export function LocalServerControls({ status, restart, busy, problem }: { status
   const [confirm, setConfirm] = useState(false);
   const mutation = useRetainedMutation("stop-local-server", SystemQuery.stopServer, () => { setAccepted(true); setConfirm(false); });
   useEffect(() => { if (status?.state === LocalServerState.Stopped) setAccepted(false); }, [status?.state]);
-  return <details className="local-server"><summary>{copy("local-server.localServer_caf011")}</summary><LocalServerStatusText status={status} />
+  return <LocalConnectionPresentation><details className="local-server" open={status?.state === LocalServerState.Blocked || status?.state === LocalServerState.Stopped || mutation.uncertain}><summary>{copy("local-server.localServer_caf011")}</summary><LocalServerStatusText status={status} />
     {status?.state === LocalServerState.Stopped || status?.state === LocalServerState.Blocked ? <button disabled={busy || mutation.busy} onClick={restart}>{busy ? copy("local-server.starting_bbe5fc") : copy("local-server.startLocalServer_4d64e3")}</button> : null}
     {accepted ? <p>{copy("local-server.stopAcceptedWaitingForShutdownSession_631795")}</p> : null}
     {status?.state === LocalServerState.Ready && !accepted ? <>{confirm ? <><p>{copy("local-server.stoppingTheServerDisconnectsAllClients_c28c49")}</p><button disabled={busy || mutation.busy || mutation.uncertain} onClick={() => void mutation.send({ requestId: newRequestId() })}>{copy("local-server.confirmServerStop_61a825")}</button><button disabled={mutation.busy || mutation.uncertain} onClick={() => setConfirm(false)}>{copy("local-server.keepServerRunning_60fe0a")}</button></> : <button disabled={busy || mutation.busy || mutation.uncertain} onClick={() => setConfirm(true)}>{copy("local-server.stopLocalServer_c1eeb5")}</button>}</> : null}
     <Problem error={mutation.error} />{mutation.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("local-server.retryTheSameServerStop_b047eb")}</button> : null}{problem}
-  </details>;
+  </details></LocalConnectionPresentation>;
 }

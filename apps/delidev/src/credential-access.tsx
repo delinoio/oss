@@ -20,8 +20,8 @@ const issueMessages: Record<CredentialAccessIssue, MessageKey> = {
 
 // Polling observes the native process-owned attempt. Strict Mode replay and
 // renderer replacement must never own another Begin or an automatic retry.
-export function CredentialAccessGate({ connection, diagnostics, children }: {
-  connection: NativeConnection; diagnostics: () => void; children: ReactNode;
+export function CredentialAccessGate({ connection, diagnostics, children, registration }: {
+  connection: NativeConnection; registration?: () => void; diagnostics: () => void; children: ReactNode;
 }) {
   useLocale();
   const required = connection.keychain_access_required === true;
@@ -81,6 +81,7 @@ export function CredentialAccessGate({ connection, diagnostics, children }: {
     <h1 id="credential-access-title">{copy(failed ? "desktop.keychainFailed" : "desktop.keychainChecking")}</h1>
     <p>{copy("desktop.keychainDescription")}<br />{copy("desktop.keychainPrompt")}</p>
     {failed ? <p role="alert">{copy(error ? "desktop.keychainObservationFailed" : issueMessages[result!.issue!])}</p> : <p className="credential-access-progress" role="status"><span className="credential-access-spinner" aria-hidden="true" />{copy("desktop.keychainProgress")}</p>}
+    {result?.issue === CredentialAccessIssue.PermissionDenied && registration ? <button type="button" disabled={acting} onClick={registration}>{copy("desktop.connectionControls_6f99ea")}</button> : null}
     <div className="credential-access-actions">{failed ? <button className="primary" disabled={acting} onClick={() => void (error
       ? controller.current?.(CredentialAccessAction.Observe)
       : controller.current?.(CredentialAccessAction.Retry, result?.attempt_id))}>{copy("desktop.keychainRetry")}</button> : null}<button disabled={acting} onClick={() => void controller.current?.(CredentialAccessAction.Skip)}>{copy("desktop.keychainContinue")}</button></div>

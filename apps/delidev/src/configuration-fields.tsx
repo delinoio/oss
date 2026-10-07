@@ -1,3 +1,4 @@
+import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -91,7 +92,8 @@ export const ResourceSelectionPending = createContext<((identity: string, pendin
 // only for the retained selection and a deliberate selection callback.
 export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
   useLocale();
-  const reportRead = useContext(AgentReadProblem), reportPending = useContext(ResourceSelectionPending), readIdentity = useId();
+  const inspectRunner = useRunnerRemediation({ active });
+  const reportRead = useContext(AgentReadProblem), reportPending = useContext(ResourceSelectionPending), readIdentity = useId(), remediationIdentity = useId();
   const transport = useTransport(), client = useQueryClient(), generation = useRef(0);
   const latestChange = useRef(change); latestChange.current = change;
   const [selectionBusy, setSelectionBusy] = useState(false), [selectionError, setSelectionError] = useState<unknown>();
@@ -131,6 +133,8 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const resolvedSelection = resolvedChoice?.id === value && resolvedChoice.kind === kind && resolvedChoice.revision > 0n && supportsResourceSchema(resolvedChoice) && (allowedKey === "*" || (JSON.parse(allowedKey) as unknown[]).includes(value)) ? resolvedChoice : undefined;
   const selectedResource = selected.data?.resource?.id === value && selected.data.resource.kind === kind ? selected.data.resource : resolvedSelection;
   const selectedData = document(selectedResource);
+  const inspectionPending = kind === EntityKind.MACHINE && inspectRunner?.pendingFor(value) === true;
+  useLayoutEffect(() => { reportPending?.(remediationIdentity, inspectionPending); return () => reportPending?.(remediationIdentity, false); }, [reportPending, remediationIdentity, inspectionPending]);
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: kind === EntityKind.MODEL ? text(selectedData.provider_id) : "" }, { enabled: active && needsProviderCapability && kind === EntityKind.MODEL && Boolean(text(selectedData.provider_id)) });
   const selectedProviderOff = needsProviderCapability && (kind === EntityKind.PROVIDER ? selectedData.protocol !== Protocol.Subscription && selectedData.enabled === false : document(selectedProvider.data?.resource).enabled === false);
   const failure = selectionError ?? (needsProviderCapability ? inventory.error : undefined) ?? selected.error ?? (needsProviderCapability && kind === EntityKind.MODEL ? selectedProvider.error : undefined);
@@ -169,8 +173,13 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
     {(showStatus || reportRead || markRequired) && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy(result.nextPageToken ? "configuration-fields.sentence.244a41434b15" : "configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}
     {(showStatus || reportRead || markRequired) && value && selected.data?.resource && !result.rows.some(row => row.id === value) ? <p role="status">{copy("configuration-fields.sentence.5398fd2fa5b0", { v0: resourceLabel })}</p> : null}
     {(showStatus || reportRead || markRequired) && choiceFailure ? <p role="status">{copy(result.loaded ? "configuration-fields.sentence.054bff468121" : "configuration-fields.sentence.1ad5938a045c", { v0: result.loaded ? resourceLabel : reason, v1: reason })}</p> : null}
-    {result.error ? <ServiceProblem code={result.error.failure.code}><p>{result.error.failure.message}</p><p>{result.error.failure.guidance}</p></ServiceProblem> : null}
+    {result.error ? <ServiceProblem code={result.error.failure.code} actions={<button type="button" disabled={!active || disabled || Boolean(result.loading)} onClick={result.refreshExplicit}>{copy("ui.retryCurrentRead")}</button>}><p>{result.error.failure.message}</p><p>{result.error.failure.guidance}</p></ServiceProblem> : null}
     <Problem error={failure} />
+    {selected.error ? <button type="button" disabled={!active || disabled || selectionBusy || selected.isFetching} onClick={() => void selected.refetch()}>{copy("ui.retryCurrentRead")}</button> : null}
+    {needsProviderCapability && inventory.error ? <button type="button" disabled={!active || disabled || selectionBusy || inventory.isFetching} onClick={() => void inventory.refetch()}>{copy("ui.retryCurrentRead")}</button> : null}
+    {needsProviderCapability && kind === EntityKind.MODEL && selectedProvider.error ? <button type="button" disabled={!active || disabled || selectionBusy || selectedProvider.isFetching} onClick={() => void selectedProvider.refetch()}>{copy("agent-worker-wizard.retrySourceDetails")}</button> : null}
+    {kind === EntityKind.MACHINE && inspectRunner && selectedResource ? <button type="button" disabled={!active || disabled || selectionBusy || Boolean(failure) || selected.isFetching || (inspectRunner.locked && !inspectRunner.pendingFor(value))} onClick={() => inspectRunner(selectedResource)}>{copy("claude-subscription.inspectRunner")}</button> : null}
+    {kind === EntityKind.MACHINE ? inspectRunner?.body : null}
   </div>;
 }
 

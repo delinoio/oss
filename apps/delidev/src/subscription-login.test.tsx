@@ -46,7 +46,7 @@ function fixture(loginURL = url) {
     return <>{flow.body ?? <button onClick={() => flow.begin(SubscriptionServiceId.ChatGPT)}>Add account</button>}</>;
   }
   const view = () => <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><SettingsLifetime>{() => <Body />}</SettingsLifetime></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>;
-  return { authorization: (value: string) => { loginURL = value; }, view, save, login, progress, cancel, forward, read, native, client, generation, current: () => current, success: () => { state = State.SUCCEEDED; current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), connection: { id: newRequestId() }, subscription: { generation, server_operation: { id: operation }, lease: { revision: "preserved" } } }) }); }, suggestion: (name: string) => { suggested = name; } };
+  return { failed: () => { state = State.FAILED; }, authorization: (value: string) => { loginURL = value; }, view, save, login, progress, cancel, forward, read, native, client, generation, current: () => current, success: () => { state = State.SUCCEEDED; current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), connection: { id: newRequestId() }, subscription: { generation, server_operation: { id: operation }, lease: { revision: "preserved" } } }) }); }, suggestion: (name: string) => { suggested = name; } };
 }
 async function start(f: ReturnType<typeof fixture>) {
   const rendered = render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
@@ -263,4 +263,16 @@ it.each(["localhost", "127.0.0.1"])("refuses to replace an original %s callback 
   await waitFor(() => expect(f.native.mock.calls.filter(c => c[1] === OAuthNativeAction.Reopen)).toHaveLength(1));
   expect(f.native.mock.calls.find(c => c[1] === OAuthNativeAction.SubscriptionOpen)![4]).toBe(originalURL);
   expect(f.login).toHaveBeenCalledTimes(1);
+});
+
+it("explicitly inspects a terminal original sign-in without replaying login, callback or cleanup", async () => {
+ const f=fixture(); await start(f);f.failed();
+ await screen.findByText("ChatGPT sign-in failed",{}, {timeout:3000});
+ const initial=f.login.mock.calls[0][0].mutation;
+ const before={save:f.save.mock.calls.length,login:f.login.mock.calls.length,forward:f.forward.mock.calls.length,native:f.native.mock.calls.length,progress:f.progress.mock.calls.length};
+ fireEvent.click(screen.getByRole("button",{name:"Inspect original sign-in status"}));
+ await screen.findByText(/This inspection did not launch sign-in/);
+ expect(f.progress).toHaveBeenCalledTimes(before.progress+1);
+ expect(f.progress.mock.calls.at(-1)![0]).toMatchObject({accountId:initial.id,operationId:initial.requestId});
+ expect(f.save).toHaveBeenCalledTimes(before.save);expect(f.login).toHaveBeenCalledTimes(before.login);expect(f.forward).toHaveBeenCalledTimes(before.forward);expect(f.native).toHaveBeenCalledTimes(before.native);expect(f.cancel).not.toHaveBeenCalled();
 });
