@@ -16,6 +16,7 @@ export interface SettingsTaskContextValue {
   retain: (id: string, retained: boolean, status?: SettingsTaskStatus) => void;
   onDismiss: (id: string, action?: () => void) => void;
   present: (id: string, presentation?: SettingsTaskPresentation) => void;
+  retireOpener: (removed: (opener: HTMLElement) => boolean) => void;
 }
 export const SettingsTaskContext = createContext<SettingsTaskContextValue | undefined>(undefined);
 
