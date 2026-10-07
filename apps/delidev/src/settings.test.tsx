@@ -431,7 +431,7 @@ it("blocks stale settings writes without erasing the staged instructions", async
 });
 
 it("retains a secret only for its exact uncertain connection and excludes it from read cache keys", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "API provider", authentication: "bearer" });
+  const provider = resource(EntityKind.PROVIDER, { name: "API provider", endpoint: "https://api.example.test/v1", protocol: "openai-responses", authentication: "bearer", enabled: true });
   const account = resource(EntityKind.ACCOUNT, { alias: "API account", provider_id: provider.id, type: "api", health: "disconnected" }, 5n);
   const value = fixture([account, provider]);
   value.connect.mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable));
@@ -452,7 +452,7 @@ it("retains a secret only for its exact uncertain connection and excludes it fro
 });
 
 it("resumes pending credential cleanup using the original server-retained mutation", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "Provider", authentication: "bearer" });
+  const provider = resource(EntityKind.PROVIDER, { name: "Provider", endpoint: "https://api.example.test/v1", protocol: "openai-responses", authentication: "bearer", enabled: true });
   const requestId = newRequestId();
   const account = resource(EntityKind.ACCOUNT, { alias: "Cleanup", provider_id: provider.id, type: "api", health: "disconnected", removal: { request_id: requestId, expected_revision: 8 } }, 12n);
   const value = fixture([account, provider]);
