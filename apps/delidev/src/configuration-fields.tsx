@@ -126,7 +126,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const selectedData = document(selected.data?.resource);
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: kind === EntityKind.MODEL ? text(selectedData.provider_id) : "" }, { enabled: active && needsProviderCapability && kind === EntityKind.MODEL && Boolean(text(selectedData.provider_id)) });
   const selectedProviderOff = needsProviderCapability && (kind === EntityKind.PROVIDER ? selectedData.protocol !== Protocol.Subscription && selectedData.enabled === false : document(selectedProvider.data?.resource).enabled === false);
-  const failure = selectionError ?? inventory.error ?? selected.error ?? selectedProvider.error;
+  const failure = selectionError ?? (needsProviderCapability ? inventory.error : undefined) ?? selected.error ?? (needsProviderCapability && kind === EntityKind.MODEL ? selectedProvider.error : undefined);
   const choiceFailure = result.error?.failure ?? (failure ? clientFailure(failure) : undefined);
   const reason = choiceFailure?.code === FailureCode.PermissionDenied || choiceFailure?.code === FailureCode.Unauthenticated
     ? copy("configuration-fields.choices.denied")
