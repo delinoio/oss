@@ -63,18 +63,18 @@ it("shares one read across rows, owns each failure and keeps ordinary states out
 });
 
 it("preserves disclosure identity on reorder/refresh but resets it for changed server, connection or account revision", async () => {
-  const a = account("A"), b = account("B"), data = report([observation(a), observation(b)]), value = fixture(data);
-  const view = render(value.view(<List rows={[a, b]} />)); await screen.findAllByText("Protected credential was readable");
+  const a = account("A"), b = account("B"), data = report([observation(a, "failed", "permission_denied"), observation(b, "failed", "permission_denied")]), value = fixture(data);
+  const view = render(value.view(<List rows={[a, b]} />)); await screen.findAllByText("Protected credential could not be read");
   const details = within(screen.getByRole("article", { name: "A" })).getByText("Technical details").closest("details")!; details.open = true;
   view.rerender(value.view(<List rows={[b, a]} />)); await refresh();
   expect(value.doctor).toHaveBeenCalledTimes(2); expect(within(screen.getByRole("article", { name: "A" })).getByText("Technical details").closest("details")).toBe(details); expect(details.open).toBe(true);
   value.state.report = { ...data, server_id: newRequestId() }; await refresh();
   expect(within(screen.getByRole("article", { name: "A" })).getByText("Technical details").closest("details")!.open).toBe(false);
   const changed = create(ResourceSchema, { ...a, revision: 2n, documentJson: encode({ ...document(a), connection: { id: newRequestId() } }) });
-  value.state.report = { ...data, credentials: [observation(changed), observation(b)] };
+  value.state.report = { ...data, credentials: [observation(changed, "failed", "permission_denied"), observation(b, "failed", "permission_denied")] };
   view.rerender(value.view(<List rows={[changed, b]} />));
   await waitFor(() => expect(value.doctor).toHaveBeenCalledTimes(4));
-  await screen.findAllByText("Protected credential was readable");
+  await screen.findAllByText("Protected credential could not be read");
   expect(within(screen.getByRole("article", { name: "A" })).getByText("Technical details").closest("details")!.open).toBe(false);
 });
 
@@ -91,15 +91,15 @@ it("does not attach a late old-generation response after a connection change", a
 });
 
 it("labels retained observations during deferred refresh, failure and stale list reads", async () => {
-  const row = account("Account"), value = fixture(report([observation(row)]));
-  const view = render(value.view(<List rows={[row]} />)); await screen.findByText("Protected credential was readable");
+  const row = account("Account"), value = fixture(report([observation(row, "failed", "permission_denied")]));
+  const view = render(value.view(<List rows={[row]} />)); await screen.findByText("Protected credential could not be read");
   const pending = deferred<{ reportJson: Uint8Array }>(); value.doctor.mockImplementationOnce(() => pending.promise);
   fireEvent.click(screen.getByRole("button", { name: "Refresh account storage" }));
   await screen.findAllByText(/Showing a previous observation/);
   expect(screen.getByRole("button", { name: "Refresh account storage" })).toHaveProperty("disabled", true);
   await act(async () => pending.reject(new ConnectError("PRIVATE_RAW_ERROR", Code.PermissionDenied)));
-  await screen.findByRole("alert"); expect(screen.queryByText("PRIVATE_RAW_ERROR")).toBeNull();
-  expect(screen.getByText("Protected credential was readable")).toBeTruthy();
+  await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(2)); expect(screen.queryByText("PRIVATE_RAW_ERROR")).toBeNull();
+  expect(screen.getByText("Protected credential could not be read")).toBeTruthy();
   view.rerender(value.view(<List rows={[row]} stale />));
   expect(screen.getByRole("button", { name: "Refresh account storage" })).toHaveProperty("disabled", true);
 });
@@ -133,9 +133,9 @@ for (const kind of ["legacy", "future", "missing", "duplicate", "oversized", "in
 });
 
 it("keeps language/focus/disclosure identity without rereading and clears reader caches on category disposal", async () => {
-  const row = account("Account"), value = fixture(report([observation(row)]));
+  const row = account("Account"), value = fixture(report([observation(row, "failed", "permission_denied")]));
   const view = render(value.view(<StrictMode><SettingsLifetime>{() => <List rows={[row]} />}</SettingsLifetime></StrictMode>));
-  await screen.findByText("Protected credential was readable");
+  await screen.findByText("Protected credential could not be read");
   const summary = screen.getByText("Technical details"), details = summary.closest("details")!; details.open = true; summary.focus();
   const count = value.doctor.mock.calls.length;
   await act(() => i18n.changeLanguage("ko"));
@@ -160,7 +160,7 @@ it("handles initial denied reads and true/false/unknown inventory completeness i
   render(value.view(<List rows={[row]} />)); await screen.findByRole("alert");
   expect(screen.queryByText("Protected credential was readable")).toBeNull();
   expect(screen.queryByText("PRIVATE_DENIAL")).toBeNull();
-  await refresh(); await screen.findByText("Protected credential was readable");
+  await refresh(); expect(screen.queryByText("Protected credential was readable")).toBeNull();
   expect(screen.queryByText(/first 50 accounts/)).toBeNull(); expect(screen.queryByText(/completeness is unknown/)).toBeNull();
   delete value.state.report.more_credentials; await refresh();
   expect(screen.getByText("Account storage inventory completeness is unknown.")).toBeTruthy();
@@ -184,4 +184,28 @@ it("keeps ChatGPT saved storage independent of account health and localizes defe
   value.state.report = report([observation(row, "superseded", "conflict")]); await refresh();
   expect(screen.queryByText(/Saved ChatGPT storage cannot be inspected/)).toBeNull();
   expect(screen.getByText(/account connection changed during inspection/)).toBeTruthy();
+});
+
+it("hides matching successful API and subscription observations while retaining the shared reader", async () => {
+  const api = account("API key"), subscription = account("Subscription", "subscription");
+  const value = fixture(report([observation(api), observation(subscription)]));
+  render(value.view(<List rows={[api, subscription]} />));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Refresh account storage" })).toHaveProperty("disabled", false));
+  expect(value.doctor).toHaveBeenCalledTimes(1);
+  for (const name of ["API key", "Subscription"]) {
+    const row = screen.getByRole("article", { name });
+    expect(row.querySelector(".account-storage-notice")).toBeNull();
+    expect(within(row).queryByText("Technical details")).toBeNull();
+  }
+  expect(screen.queryByText("Protected credential was readable")).toBeNull();
+  const pending = deferred<{ reportJson: Uint8Array }>();
+  value.doctor.mockImplementationOnce(() => pending.promise);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh account storage" }));
+  await screen.findByText(/Showing a previous observation/);
+  expect(screen.getByRole("button", { name: "Refresh account storage" })).toHaveProperty("disabled", true);
+  await act(async () => pending.reject(new ConnectError("PRIVATE_SUCCESS_REFRESH_ERROR", Code.PermissionDenied)));
+  await screen.findByRole("alert");
+  expect(screen.queryByText("PRIVATE_SUCCESS_REFRESH_ERROR")).toBeNull();
+  expect(screen.queryByText("Protected credential was readable")).toBeNull();
+  expect(screen.getByRole("article", { name: "API key" }).querySelector(".account-storage-notice")).toBeNull();
 });

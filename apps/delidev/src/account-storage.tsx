@@ -104,13 +104,14 @@ function AccountStorageNotice({ row, report, stale, loading }: { row: Resource; 
   if (record.connectionId !== connectionId) return <div className="account-storage-notice"><p>{copy("account-storage.superseded")}</p></div>;
   const chatGPT = value.type === "subscription" && value.subscription_service === "chatgpt";
   const deferredSubscription = chatGPT && record.state === AccountStorageState.Unavailable && record.code !== FailureCode.Unsupported;
+  if (record.state === AccountStorageState.Observed) return null;
   const failed = record.state === AccountStorageState.Failed;
   const subscription = value.type === "subscription" && record.state === AccountStorageState.Unavailable && record.code === FailureCode.Unsupported;
   return <div className="account-storage-notice" data-failed={failed || undefined}>
     <div className="account-storage-summary" role={failed ? "alert" : "status"}>
       {failed ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z" /><path d="M12 9v5m0 3h.01" /></svg> : null}
       <div><p><strong>{copy(subscription ? "account-storage.subscription" : deferredSubscription ? "account-storage.chatGPTUnavailable" : labels[record.state])}</strong></p>
-        {failed ? <p>{copy(chatGPT ? "account-storage.chatGPTRecovery" : "account-storage.recovery")}</p> : record.state === AccountStorageState.Observed ? <p>{copy(chatGPT ? "account-storage.chatGPTReadableLimit" : "account-storage.readableLimit")}</p> : null}
+        {failed ? <p>{copy(chatGPT ? "account-storage.chatGPTRecovery" : "account-storage.recovery")}</p> : null}
         {stale ? <p>{copy("account-storage.previous")}</p> : null}
       </div>
     </div>
