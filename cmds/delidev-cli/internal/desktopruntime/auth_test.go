@@ -5,10 +5,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -81,7 +83,10 @@ func TestRuntimeBearerBindsMethodPathQueryAndServer(t *testing.T) {
 }
 
 func TestLocalFollowMarkerCannotAdoptForeignIdentity(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
 	original := domain.NewID()
 	if err := Follow(root, original); err != nil {
 		t.Fatal(err)

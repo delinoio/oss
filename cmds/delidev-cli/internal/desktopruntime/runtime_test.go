@@ -81,6 +81,9 @@ func TestForeignListenerNeverReceivesBearer(t *testing.T) {
 }
 func TestLocalRetirementCannotFallBackToPairingAddress(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
 	worker := filepath.Join(root, "worker")
 	if err := security.PrivateDir(worker); err != nil {
 		t.Fatal(err)
