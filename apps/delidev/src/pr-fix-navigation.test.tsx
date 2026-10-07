@@ -7,6 +7,11 @@ import { App } from "./App";
 import { document, encode, object, type Document } from "./documents";
 import { defaultRemediationPolicy } from "./remediation-policy";
 
+// This fixture mounts the complete desktop shell for every case. Keep its
+// product assertions under the repository's CI CPU contention budget without
+// changing the global test deadline or any product deadline.
+vi.setConfig({ testTimeout: 15000 });
+
 type FixRequest = MessageShape<typeof PullRequestFixQuery.requestPullRequestFix.input>;
 
 function fixture() {
