@@ -1,3 +1,6 @@
+import { useShortcuts } from "./shortcut-provider";
+import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
+import { Surface } from "./surface";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { Subagents } from "./subagents";
@@ -258,6 +261,14 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refetch(); });
   const control = useRetainedMutation(`control:${id}`, SessionQuery.controlSession, (value) => { if (value.change?.session) setAcknowledged(value.change.session); });
   const locked = send.busy || send.uncertain;
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const canSend = !locked && Boolean(draft.trim()) && text(data.archive) === "active";
+  const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }) }); };
+  const shortcuts = useShortcuts([
+    { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
+    { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
+    { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter" }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: !locked, unavailableReason: "shortcuts.pending" },
+  ]);
   const next = messages.data?.nextPageToken;
   // Stream arrivals have exact identities even when their JSON sequence exceeds
   // JavaScript's safe-integer range. Append only arrivals on the final page.
@@ -358,12 +369,12 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
           </div>
         </details>
       </div>
-      <form className="composer" onSubmit={event => { event.preventDefault(); void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }) }); }}>
+      <form className="composer" onSubmit={event => { event.preventDefault(); enqueue(); }}>
         <label className="sidebar-sr-only" htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label>
-        <textarea id={`prompt-${id}`} value={draft} onChange={event => setDraft(event.target.value)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
+        <textarea ref={composer} onKeyDown={shortcuts.onKeyDown} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={event => setDraft(event.target.value)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
         <div className="composer-actions">
           <label>{copy("session.mode_cd20bc")}<select value={mode} disabled={locked} onChange={event => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("session.plan_fa8ed0")}</option></select></label>
-          <button className="primary" disabled={locked || !draft.trim() || text(data.archive) !== "active"}>{copy("session.queueMessage_891d4e")}</button>
+          <button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}>{copy("session.queueMessage_891d4e")}</button>
           {send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
         </div>
       </form>

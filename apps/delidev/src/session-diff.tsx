@@ -1,3 +1,6 @@
+import { useShortcuts } from "./shortcut-provider";
+import { ShortcutId, ShortcutInput } from "./shortcuts";
+import { Surface } from "./surface";
 import { copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -10,6 +13,8 @@ import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 
 export function SessionDiff({ sessionId, worktree, close }: { sessionId: string; worktree: boolean; close: () => void }) {
   useLocale();
+  const panelRoot = useRef<HTMLElement>(null);
+  const shortcuts = useShortcuts([{ id: ShortcutId.DiffClose, scope: Surface.Sessions, label: "shortcuts.closeDiff", bindings: [{ key: "Escape" }], target: panelRoot, input: ShortcutInput.Target, run: close }]);
   const heading = useRef<HTMLHeadingElement>(null);
   const roots = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: "roots" }) }, workspaceReadOptions);
   const [repository, setRepository] = useState<string>();
@@ -17,8 +22,8 @@ export function SessionDiff({ sessionId, worktree, close }: { sessionId: string;
   const available = roots.data?.roots.filter((root) => root.repository_id);
   const selected = repository ?? available?.find((root) => root.primary)?.repository_id ?? available?.[0]?.repository_id;
   useEffect(() => { heading.current?.focus(); }, []);
-  return <aside className="session-files" aria-label={copy("session-diff.sessionGitDiff_d6706d")} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
-    <header><h2 ref={heading} tabIndex={-1}>{copy("session-diff.gitDiff_fa5e4e")}</h2><button onClick={close} aria-label={copy("session-diff.closeSessionDiff_43130b")}>{copy("session-diff.close_7d9eb7")}</button></header>
+  return <aside ref={panelRoot} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiffClose)} className="session-files" aria-label={copy("session-diff.sessionGitDiff_d6706d")} onKeyDown={shortcuts.onKeyDown}>
+    <header><h2 ref={heading} tabIndex={-1}>{copy("session-diff.gitDiff_fa5e4e")}</h2><button onClick={close} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiffClose)} aria-label={copy("session-diff.closeSessionDiff_43130b")}>{copy("session-diff.close_7d9eb7")}</button></header>
     <p>{copy("session-diff.gitComparisonOnThisSessionS_a10284")}</p>
     <Problem error={roots.error} />
     {roots.isPending ? <p role="status">{copy("session-diff.loadingWorkspaceRoots_0d8c0f")}</p> : null}

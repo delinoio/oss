@@ -1,4 +1,4 @@
-import { productError, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
+import { productError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -9,6 +9,9 @@ import { StartingReferences } from "./schedules";
 import { useRetainedMutation } from "./mutation";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
+import { Surface } from "./surface";
+import { useShortcuts } from "./shortcut-provider";
+import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -99,8 +102,10 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     if (entryProjectId && !blocked && entryProjectId !== project) projectChanged(entryProjectId);
   }, [active, activation, entryProjectId, blocked, project, projectChanged]);
 
+  const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked;
+
   const submit = async () => {
-    if (!active || blocked || !automaticTitles || !agent || !machine || !prompt.trim()) return;
+    if (!canCreate) return;
     let estimatedBudget;
     try {
       estimatedBudget = budgetInput(budget);
@@ -129,11 +134,12 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), localWorkerToken: proof?.token });
   };
 
-  const enter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-    event.preventDefault();
-    event.currentTarget.form?.requestSubmit();
-  };
+  const shortcutScope = generalChat ? Surface.NewGeneralChat : Surface.NewSession;
+  const shortcuts = useShortcuts([
+    { id: ShortcutId.NewSessionFocus, scope: shortcutScope, active, label: "shortcuts.focusFirstMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, enabled: !blocked, unavailableReason: "shortcuts.pending", run: () => firstMessage.current?.focus() },
+    { id: ShortcutId.NewSessionSend, scope: shortcutScope, active, label: "shortcuts.createSession", bindings: [{ key: "Enter" }, { key: "Enter", primary: true }], target: firstMessage, input: ShortcutInput.Target, enabled: canCreate, unavailableReason: blocked ? "shortcuts.pending" : !automaticTitles ? "shortcuts.updateServer" : "shortcuts.creationRequired", run: () => firstMessage.current?.form?.requestSubmit() },
+    { id: ShortcutId.NewSessionNewline, scope: shortcutScope, active, label: "shortcuts.newline", bindings: [{ key: "Enter", shift: true }], target: firstMessage, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: !blocked, unavailableReason: "shortcuts.pending" },
+  ]);
   const updatePrompt = (value: string) => {
     if (new TextEncoder().encode(value).byteLength > 256 << 10) {
       setPromptLimit(true);
@@ -170,7 +176,8 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               placeholder={generalChat ? copy("new-session.generalChatPlaceholder") : copy("new-session.describeATaskAskAQuestion_4ed4ad")}
               value={prompt}
               onChange={(event) => updatePrompt(event.target.value)}
-              onKeyDown={enter}
+              onKeyDown={shortcuts.onKeyDown}
+              aria-keyshortcuts={shortcuts.aria(ShortcutId.NewSessionFocus, ShortcutId.NewSessionSend, ShortcutId.NewSessionNewline)}
               rows={5}
               required
               autoComplete="off"
@@ -183,7 +190,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               </div>
               <div className="new-session-submit-row">
                 <button type="button" className="new-session-options-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((value) => !value)}>{copy("new-session.options_d0db8b")}</button>
-                <button className="new-session-submit" type="submit" aria-label={submitLabel} title={submitLabel} disabled={!automaticTitles || !agent || !machine || !prompt.trim() || blocked}>
+                <button className="new-session-submit" type="submit" aria-keyshortcuts={shortcuts.aria(ShortcutId.NewSessionSend)} aria-label={submitLabel} title={submitLabel} disabled={!canCreate}>
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
                 </button>
               </div>
