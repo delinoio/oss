@@ -1012,3 +1012,134 @@ fn oauth_polling_uses_original_verified_descriptor_without_sidecar_or_command_ga
         Err(NativeFailure::Stopped)
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn automatic_worker_keeps_stop_and_quits_only_its_original_child() {
+    use std::os::unix::fs::PermissionsExt;
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    fs::create_dir_all(root.join("worker")).unwrap();
+    let client = metadata();
+    let mut worker = client.clone();
+    worker.kind = DeviceType::Worker;
+    worker.device_id = uuid::Uuid::now_v7().to_string();
+    worker.machine_id = uuid::Uuid::now_v7().to_string();
+    let mut client_view: serde_json::Value = serde_json::from_slice(&document(&client)).unwrap();
+    let mut worker_view: serde_json::Value = serde_json::from_slice(&document(&worker)).unwrap();
+    client_view.as_object_mut().unwrap().remove("token");
+    worker_view.as_object_mut().unwrap().remove("token");
+    fs::write(root.join("worker/device.json"), document(&worker)).unwrap();
+    let generation = uuid::Uuid::now_v7().to_string();
+    let runtime = serde_json::json!({"state":"running", "controller_active":true, "lifecycle": {"version":1,"generation":generation,"server_id":worker.server_id,"machine_id":worker.machine_id,"endpoint":worker.endpoint,"desired":"running"}});
+    fs::write(
+        root.join("status.json"),
+        serde_json::to_vec(&serde_json::json!({"version":1,"result":runtime})).unwrap(),
+    )
+    .unwrap();
+    let executable = temporary.path().join("sidecar");
+    let script = format!(
+        r##"#!/bin/sh
+case "$3:$4" in
+device:inspect) printf '%s\n' '{client}' ;;
+worker:inspect) printf '%s\n' '{worker}' ;;
+worker:status) /bin/cat '{root}/status.json' ;;
+worker:stop) exit 2 ;;
+worker:desktop-prepare) printf '%s\n' '{{"version":1,"result":{{"executable":"{executable}"}}}}' ;;
+worker:desktop-host)
+  printf '%s\n' '{admission}'
+  IFS= read -r action
+  printf '%s\n' "$action" > '{root}/stop.json'
+  ;;
+*) exit 2 ;;
+esac
+"##,
+        client = serde_json::json!({"version":1,"result":client_view}),
+        worker = serde_json::json!({"version":1,"result":worker_view}),
+        admission = serde_json::json!({"version":1,"result":{"started":true,"generation":generation,"worker":runtime}}),
+        root = root.display(),
+        executable = executable.display(),
+    );
+    fs::write(&executable, script).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let connector = Connector::new(executable, root.clone()).unwrap();
+    connector.worker_auto_enabled.store(true, Ordering::Release);
+    *connector.worker_client_id.lock().unwrap() = Some(client.device_id.clone());
+    connector
+        .worker_launch_pending
+        .store(false, Ordering::Release);
+    let borrowed = connector
+        .local_worker(LocalWorkerAction::Status, None)
+        .unwrap();
+    assert!(!borrowed.management.unwrap().owned_by_app);
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Start, Some(&generation))
+            .is_err()
+    );
+    let owned = connector
+        .local_worker(LocalWorkerAction::Start, None)
+        .unwrap();
+    assert!(owned.management.unwrap().owned_by_app);
+    assert!(
+        connector
+            .local_worker(
+                LocalWorkerAction::Stop,
+                Some(&uuid::Uuid::now_v7().to_string())
+            )
+            .is_err()
+    );
+    assert!(connector.worker_pause_generation.lock().unwrap().is_none());
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Stop, Some(&generation))
+            .is_err()
+    );
+    let mut lost_stop = runtime.clone();
+    lost_stop["state"] = "exited".into();
+    lost_stop["controller_active"] = false.into();
+    fs::write(
+        root.join("status.json"),
+        serde_json::to_vec(&serde_json::json!({"version":1,"result":lost_stop})).unwrap(),
+    )
+    .unwrap();
+    connector.manage_worker();
+    assert_eq!(
+        connector.worker_management.lock().unwrap().state,
+        LocalWorkerManagementState::Blocked
+    );
+    assert_eq!(
+        connector.hosted.lock().unwrap().len(),
+        1,
+        "lost stop reply started another child"
+    );
+    let mut stopped = runtime.clone();
+    stopped["state"] = "exited".into();
+    stopped["controller_active"] = false.into();
+    stopped["lifecycle"]["desired"] = "stopped".into();
+    fs::write(
+        root.join("status.json"),
+        serde_json::to_vec(&serde_json::json!({"version":1,"result":stopped})).unwrap(),
+    )
+    .unwrap();
+    connector.manage_worker();
+    assert_eq!(
+        connector.worker_management.lock().unwrap().state,
+        LocalWorkerManagementState::Paused
+    );
+    assert_eq!(
+        connector.hosted.lock().unwrap().len(),
+        1,
+        "paused observation started another child"
+    );
+    connector.shutdown_owned().unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join("stop.json")).unwrap(),
+        "{\"version\":1,\"action\":\"stop\"}\n"
+    );
+    assert!(connector.hosted.lock().unwrap().is_empty());
+    assert!(matches!(
+        connector.local_worker(LocalWorkerAction::Start, None),
+        Err(NativeFailure::Stopped)
+    ));
+}

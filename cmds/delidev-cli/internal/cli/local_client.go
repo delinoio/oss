@@ -38,6 +38,12 @@ func pairLocalDevice(ctx context.Context, o options, root string, kind domain.De
 }
 
 func pairLocalDeviceJoined(ctx context.Context, o options, root string, kind domain.DeviceType, join bool) (any, error) {
+	return pairLocalDeviceAt(ctx, o, root, kind, join, "")
+}
+
+// The desktop's original endpoint is checked before creating pairing state or
+// issuing a grant. A changed local listener never authorizes another pairing.
+func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.DeviceType, join bool, expected string) (any, error) {
 	name := "DeliDev desktop"
 	if kind == domain.WorkerDevice {
 		name = "DeliDev local Worker"
@@ -75,6 +81,9 @@ func pairLocalDeviceJoined(ctx context.Context, o options, root string, kind dom
 	endpoint, err := server.LoadEndpoint(o.dataDir)
 	if err != nil {
 		return nil, err
+	}
+	if expected != "" && endpoint.URL != expected {
+		return nil, recoveryRequired()
 	}
 	if endpoint.Version != rpc.Version || endpoint.ProtocolVersion != rpc.ProtocolVersion {
 		return nil, domain.Fail(domain.Unsupported, "The local server is incompatible with this client.", "Preserve running work and select a compatible client.")

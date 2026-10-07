@@ -24,6 +24,10 @@ pub struct LocalWorkerStatus {
     pub machine_id: String,
     pub generation: Option<String>,
     pub controller_active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub management: Option<crate::LocalWorkerManagement>,
+    #[serde(skip)]
+    pub(crate) desired_stopped: bool,
 }
 #[derive(Deserialize)]
 struct RuntimeStatus {
@@ -38,6 +42,15 @@ struct Lifecycle {
     server_id: String,
     machine_id: String,
     endpoint: String,
+    #[serde(default)]
+    desired: Option<WorkerDesiredState>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum WorkerDesiredState {
+    Running,
+    Stopped,
 }
 
 impl Connector {
@@ -47,6 +60,52 @@ impl Connector {
         generation: Option<&str>,
     ) -> Result<LocalWorkerStatus> {
         let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        validate_action(action, generation)?;
+        if self.exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        if self.worker_auto_enabled.load(Ordering::Acquire) {
+            if matches!(action, LocalWorkerAction::Start) {
+                self.worker_launch_pending.store(false, Ordering::Release);
+                *self
+                    .worker_pause_generation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = None;
+                let result =
+                    self.start_managed_worker(crate::worker_supervision::WorkerHostMode::Launch);
+                if let Err(error) = &result {
+                    self.worker_management_failure(*error);
+                }
+                return result;
+            }
+            if matches!(action, LocalWorkerAction::Stop) {
+                let current = self.local_worker_inner(LocalWorkerAction::Status, None)?;
+                if current.generation.as_deref() != generation {
+                    return Err(NativeFailure::InvalidEvidence);
+                }
+                // Fence recovery before the Stop controller can lose its reply.
+                // This latch is tied only to the confirmed original generation.
+                self.worker_launch_pending.store(false, Ordering::Release);
+                *self
+                    .worker_pause_generation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = current.generation;
+            }
+            let result = self.local_worker_inner(action, generation);
+            if matches!(action, LocalWorkerAction::Stop)
+                && result.as_ref().is_ok_and(|status| status.desired_stopped)
+            {
+                self.worker_launch_pending.store(false, Ordering::Release);
+            }
+            return match result {
+                Ok(status) => Ok(self.managed_worker_status(status)),
+                Err(error) if matches!(action, LocalWorkerAction::Status) => {
+                    self.worker_management_failure(error);
+                    Ok(self.unavailable_worker_status())
+                }
+                Err(error) => Err(error),
+            };
+        }
         tracing::info!(operation = "local_worker", ?action, phase = "start");
         let result = self.local_worker_inner(action, generation);
         match &result {
@@ -60,7 +119,7 @@ impl Connector {
         result
     }
 
-    fn local_worker_inner(
+    pub(crate) fn local_worker_inner(
         &self,
         action: LocalWorkerAction,
         generation: Option<&str>,
@@ -305,7 +364,7 @@ fn validate_action(action: LocalWorkerAction, generation: Option<&str>) -> Resul
     Ok(())
 }
 
-fn worker_status(
+pub(crate) fn worker_status(
     value: serde_json::Value,
     server_id: &str,
     endpoint: &str,
@@ -338,5 +397,7 @@ fn worker_status(
         machine_id: machine_id.to_owned(),
         generation,
         controller_active: status.controller_active,
+        management: None,
+        desired_stopped: status.lifecycle.desired == Some(WorkerDesiredState::Stopped),
     })
 }
